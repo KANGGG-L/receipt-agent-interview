@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>收据识别系统 · LangChain 精简版 Demo</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f6f8; color: #222; }
+  header { background: #1a2b3c; color: #fff; padding: 16px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header .role { margin-left: auto; display: flex; gap: 8px; }
+  .role-btn { padding: 6px 14px; border: 1px solid #4a6a8a; border-radius: 6px; background: transparent; color: #a8c6e4; cursor: pointer; font-size: 13px; }
+  .role-btn.active { background: #2d5a8a; color: #fff; border-color: #2d5a8a; }
+  .container { max-width: 1100px; margin: 20px auto; padding: 0 20px; display: grid; grid-template-columns: 340px 1fr; gap: 20px; }
+  .panel { background: #fff; border-radius: 10px; padding: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+  .panel h2 { font-size: 15px; margin-bottom: 12px; color: #1a2b3c; border-bottom: 2px solid #eef1f4; padding-bottom: 8px; }
+  .panel h3 { font-size: 13px; margin: 14px 0 8px; color: #555; }
+  .left .panel + .panel { margin-top: 20px; }
+  .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; background: #2d5a8a; color: #fff; }
+  .btn:hover { opacity: 0.9; }
+  .btn.green { background: #2e7d32; }
+  .btn.red { background: #c62828; }
+  .btn.gray { background: #607d8b; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type=file], select, input[type=text] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; margin: 6px 0; }
+  .log { background: #0f1e2d; color: #7ee787; font-family: ui-monospace, Menlo, monospace; font-size: 12px; padding: 12px; border-radius: 8px; height: 320px; overflow-y: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 6px 8px; border-bottom: 1px solid #eee; text-align: left; }
+  th { background: #f5f7fa; color: #555; }
+  .status { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .status.parsed { background: #e3f2fd; color: #1565c0; }
+  .status.edited { background: #fff3e0; color: #e65100; }
+  .status.approved { background: #e8f5e9; color: #2e7d32; }
+  .status.error { background: #fdecea; color: #c62828; }
+  .discrep { color: #c62828; }
+  .note { font-size: 12px; color: #777; margin-top: 6px; }
+  .flash { animation: flash 1.5s ease; }
+  @keyframes flash { 0% { background: #fff9c4; } 100% { background: #fff; } }
+  .config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
+  .config-grid .item { background: #f5f7fa; padding: 8px; border-radius: 6px; }
+  .config-grid .item label { color: #777; display: block; font-size: 11px; }
+  .config-grid .item div { font-weight: 600; margin-top: 2px; }
+  .audit-card { background: #f8faff; border: 1px solid #dbe4f0; border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 12px; }
+  .audit-card .ok { color: #2e7d32; font-weight: 600; }
+  .audit-card .bad { color: #c62828; font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🧾 收据识别系统 · LangChain 精简版</h1>
+  <div class="role">
+    <button class="role-btn active" data-role="staff">staff 店员</button>
+    <button class="role-btn" data-role="owner">owner 老板</button>
+    <button class="role-btn" data-role="admin">admin 超管</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="left">
+    <div class="panel">
+      <h2>① 上传识别</h2>
+      <h3>当前角色：<span id="cur-role" style="color:#2d5a8a;font-weight:600;">staff</span></h3>
+      <input type="file" id="file-input" accept=".jpg,.jpeg,.png,.webp,.heic">
+      <input type="text" id="vendor-hint" placeholder="供应商提示（可选，如：祥興）">
+      <button class="btn" id="btn-upload">上传并识别（走 LangGraph 全链路）</button>
+      <div class="note">识别约 40s~2min，请耐心等待</div>
+    </div>
+
+    <div class="panel">
+      <h2>② 引擎配置 / 灰测（admin）</h2>
+      <div class="config-grid" id="engine-config">
+        <div class="item"><label>识别模型</label><div id="cfg-recognition">—</div></div>
+        <div class="item"><label>审核模型</label><div id="cfg-audit">—</div></div>
+        <div class="item"><label>灰测模式</label><div id="cfg-grey">—</div></div>
+        <div class="item"><label>审核开关</label><div id="cfg-audit-en">—</div></div>
+      </div>
+      <select id="model-select">
+        <option value="minimax-m3-pay">minimax-m3-pay（识别主）</option>
+        <option value="glm-5v-turbo">glm-5v-turbo（审核主）</option>
+        <option value="kimi-k3-2">kimi-k3-2（候选）</option>
+      </select>
+      <select id="grey-select">
+        <option value="cross_audit">cross_audit · 一识别一审核（交叉）</option>
+        <option value="single">single · 单模型识别</option>
+      </select>
+      <button class="btn gray" id="btn-apply-config">应用引擎配置</button>
+      <div class="note" id="grey-note">灰测：新模型先小流量试跑，识别率达标再全量切换</div>
+    </div>
+
+    <div class="panel">
+      <h2>③ 决策履历</h2>
+      <div class="log" id="log">启动就绪。选择角色 → 上传收据图测试。</div>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="panel">
+      <h2>识别结果</h2>
+      <div id="result-area"><div class="note">暂无结果。上传后此处显示结构化 JSON 与审核结论。</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>收据列表</h2>
+      <table>
+        <thead><tr><th>ID</th><th>状态</th><th>供应商</th><th>日期</th><th>总额</th><th>操作</th></tr></thead>
+        <tbody id="receipt-tbody"><tr><td colspan="6" style="color:#999">—</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>成本 / AI 复盘（owner）</h2>
+      <button class="btn green" id="btn-cost">查看成本</button>
+      <button class="btn" id="btn-review">AI 复盘</button>
+      <div id="cost-area"></div>
+      <div id="review-area"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = "";
+let currentRole = "staff";
+const $ = (id) => document.getElementById(id);
+const logEl = $("log");
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `\n[${t}] ${msg}`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function api(path, opts = {}) {
+  const headers = { "X-Role": currentRole, ...(opts.headers || {}) };
+  if (opts.body && !(opts.body instanceof FormData)) headers["Content-Type"] = "application/json";
+  return fetch(API + path, { ...opts, headers }).then(async (r) => {
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`);
+    return data;
+  });
+}
+
+document.querySelectorAll(".role-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".role-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentRole = btn.dataset.role;
+    $("cur-role").textContent = currentRole;
+    log(`切换到角色：${currentRole}`);
+    refresh();
+  });
+});
+
+async function refresh() {
+  try {
+    const cfg = await api("/api/admin/engine-config");
+    $("cfg-recognition").textContent = cfg.data.recognition_model;
+    $("cfg-audit").textContent = cfg.data.audit_model;
+    $("cfg-grey").textContent = cfg.data.grey_mode;
+    $("cfg-audit-en").textContent = cfg.data.audit_enabled ? "开" : "关";
+  } catch (e) { /* 非 admin 403 属预期 */ }
+  try {
+    const list = await api("/api/receipts");
+    renderList(list.data);
+  } catch (e) { /* owner 以下无权限 */ }
+}
+refresh();
+
+function renderList(list) {
+  const tbody = $("receipt-tbody");
+  tbody.innerHTML = "";
+  if (!list || !list.length) { tbody.innerHTML = '<tr><td colspan="6" style="color:#999">—</td></tr>'; return; }
+  list.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td><span class="status ${r.status}">${r.status}</span></td>
+      <td>${r.vendor || "—"}</td>
+      <td>${r.date || "—"}</td>
+      <td>${r.total ?? "—"}</td>
+      <td>
+        ${r.status === "parsed" ? '<button class="btn" onclick="reviewIt(\'' + r.id + '\')">复核</button>' : ""}
+        ${r.status === "edited" ? '<button class="btn green" onclick="approveIt(\'' + r.id + '\')">approve</button>' : ""}
+        ${r.status === "parsed" || r.status === "edited" ? '<button class="btn red" onclick="flagIt(\'' + r.id + '\')">flag</button>' : ""}
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+$("btn-upload").addEventListener("click", async () => {
+  const file = $("file-input").files[0];
+  if (!file) { alert("请先选择收据图片"); return; }
+  $("btn-upload").disabled = true;
+  $("btn-upload").textContent = "识别中…（40s~2min）";
+  const fd = new FormData();
+  fd.append("file", file);
+  const hint = $("vendor-hint").value;
+  if (hint) fd.append("vendor_hint", hint);
+  try {
+    log(`上传 ${file.name} 并触发 LangGraph 识别（角色 ${currentRole}）…`);
+    const res = await api("/api/receipts/upload", { method: "POST", body: fd });
+    log(`识别完成 → ${res.data.receipt_id} status=${res.data.status}`);
+    renderResult(res.data);
+    refresh();
+  } catch (e) {
+    log("✗ 上传失败: " + e.message);
+    alert("上传失败: " + e.message);
+  } finally {
+    $("btn-upload").disabled = false;
+    $("btn-upload").textContent = "上传并识别（走 LangGraph 全链路）";
+  }
+});
+
+function renderResult(d) {
+  const area = $("result-area");
+  const audit = d.audit || {};
+  let auditHtml = "";
+  if (audit.skipped) {
+    auditHtml = `<div class="audit-card">审核：跳过（${audit.reason || ""}）</div>`;
+  } else if (audit.overall_consistent === false) {
+    auditHtml = `<div class="audit-card"><span class="bad">审核发现 ${(audit.discrepancies || []).length} 处分歧</span><br>` +
+      (audit.discrepancies || []).map((x) => `· <span class="discrep">${x.field}</span>: ${x.issue}（${x.severity}）`).join("<br>") + "</div>";
+  } else {
+    auditHtml = `<div class="audit-card"><span class="ok">审核通过</span> trust=${audit.trust ?? "—"}</div>`;
+  }
+
+  let itemsHtml = "";
+  if (d.items && d.items.length) {
+    itemsHtml = "<table><thead><tr><th>名称</th><th>数量</th><th>单位</th><th>单价</th><th>小计</th></tr></thead><tbody>" +
+      d.items.map((i) => `<tr><td>${i.name}</td><td>${i.qty}</td><td>${i.unit}</td><td>${i.unit_price}</td><td>${i.amount}</td></tr>`).join("") +
+      "</tbody></table>";
+  }
+
+  const logHtml = d.log ? "<h3>决策履历</h3><div class='note'>" + d.log.map((e) => `${e.action}: ${e.reason}`).join("<br>") + "</div>" : "";
+  area.innerHTML = `
+    <div style="margin-bottom:10px">
+      <strong>${d.vendor || "—"}</strong> · ${d.date || "—"} · ${d.doc_form || "—"}
+      <br>总额 <strong>${d.total ?? "—"}</strong> · status <span class="status ${d.status}">${d.status}</span>
+    </div>
+    ${auditHtml}
+    ${itemsHtml}
+    ${logHtml}
+  `;
+  area.classList.remove("flash"); void area.offsetWidth; area.classList.add("flash");
+}
+
+window.reviewIt = async (id) => {
+  const vendor = prompt("复核修正供应商名（留空不修改）：");
+  try {
+    await api(`/api/receipts/${id}/review`, { method: "POST", body: JSON.stringify({ vendor: vendor || undefined }) });
+    log(`复核提交 ${id}（角色 ${currentRole}）`);
+    refresh();
+  } catch (e) { alert("复核失败: " + e.message); }
+};
+
+window.approveIt = async (id) => {
+  try {
+    const res = await api(`/api/receipts/${id}/approve`, { method: "POST" });
+    log(`approve 成功 ${id} → 入库 ${res.data.entries} 条（角色 ${currentRole}）`);
+    refresh();
+  } catch (e) { alert("approve 失败: " + e.message); }
+};
+
+window.flagIt = async (id) => {
+  try {
+    await api(`/api/receipts/${id}/flag`, { method: "POST" });
+    log(`flag ${id}（角色 ${currentRole}）`);
+    refresh();
+  } catch (e) { alert("flag 失败: " + e.message); }
+};
+
+$("btn-apply-config").addEventListener("click", async () => {
+  const body = {
+    recognition_model: $("model-select").value,
+    grey_mode: $("grey-select").value,
+  };
+  try {
+    const res = await api("/api/admin/engine-config", { method: "PUT", body: JSON.stringify(body) });
+    log(`引擎配置已更新：识别=${res.data.recognition_model} 灰测=${res.data.grey_mode}`);
+    alert("引擎配置已应用（仅 admin 可操作）");
+    refresh();
+  } catch (e) { alert("配置失败: " + e.message); }
+});
+
+$("btn-cost").addEventListener("click", async () => {
+  try {
+    const res = await api("/api/cost");
+    const items = Object.entries(res.data.items || {});
+    $("cost-area").innerHTML = `<div style="margin-top:10px">总成本 <strong>HK$ ${res.data.total_cost}</strong></div>` +
+      (items.length ? "<table style='margin-top:8px'><thead><tr><th>商品</th><th>数量</th><th>金额</th></tr></thead><tbody>" +
+        items.map(([k, v]) => `<tr><td>${k}</td><td>${v.qty}</td><td>${v.amount}</td></tr>`).join("") + "</tbody></table>" : "");
+  } catch (e) { alert("查看成本失败（需 owner）: " + e.message); }
+});
+
+$("btn-review").addEventListener("click", async () => {
+  $("btn-review").disabled = true; $("btn-review").textContent = "AI 复盘中…";
+  try {
+    const res = await api("/api/review");
+    const d = res.data || {};
+    let html = "<h3 style='margin-top:10px'>AI 复盘</h3>";
+    if (d.summary) html += `<div style='font-size:13px;margin:8px 0'>${d.summary}</div>`;
+    if (d.price_alerts && d.price_alerts.length) html += "<table style='margin-top:6px'><thead><tr><th>商品</th><th>现价</th><th>原价</th><th>涨幅</th></tr></thead><tbody>" + d.price_alerts.map((a) => `<tr><td>${a.name}</td><td>${a.current_price}</td><td>${a.previous_price}</td><td style='color:#c62828'>${a.change_pct}%</td></tr>`).join("") + "</tbody></table>";
+    if (d.supplier_insights && d.supplier_insights.length) html += "<div style='font-size:12px;margin-top:8px'>" + d.supplier_insights.map((s) => `· <strong>${s.vendor}</strong>: ${s.suggestion || s.observation}`).join("<br>") + "</div>";
+    if (!d.summary && !(d.price_alerts || []).length && !(d.supplier_insights || []).length) html += "<div class='note'>" + (d.error || "暂无数据") + "</div>";
+    $("review-area").innerHTML = html;
+  } catch (e) { alert("AI 复盘失败（需 owner）: " + e.message); }
+  finally { $("btn-review").disabled = false; $("btn-review").textContent = "AI 复盘"; }
+});
+</script>
+</body>
+</html>

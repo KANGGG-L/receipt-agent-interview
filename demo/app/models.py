@@ -1,0 +1,180 @@
+# -*- coding: utf-8 -*-
+from __future__ import annotations
+"""领域模型：Pydantic 契约 + SQLAlchemy 持久化。"""
+
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field, ConfigDict
+
+
+# -------------------------------------------------------------
+# 收据七种形态（对齐完整版调研结论）
+# -------------------------------------------------------------
+class DocForm(str, Enum):
+    PRINTED = "printed_delivery_note"   # 印刷送货单
+    NCR_HAND = "ncr_handwritten"        # 街市 NCR 手写单
+    THERMAL = "thermal"                 # 热敏机打
+    WEIGH = "weigh_slip"                # 磅单
+    CORRECTION = "correction_note"      # 更正单
+    CREDIT = "credit_note"              # Credit Note
+    MONTHLY = "monthly_statement"       # 月结账单
+
+
+# -------------------------------------------------------------
+# Pydantic 契约（AI 输出契约，契约门禁用）
+# -------------------------------------------------------------
+class ReceiptItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # 契约门禁：拒绝 schema 外字段
+
+    name: str = Field(description="商品/食材名称")
+    qty: float = Field(description="数量")
+    unit: str = Field(description="单位（斤/公斤/箱/包/只…）")
+    unit_price: float = Field(description="单价")
+    amount: float = Field(description="小计 = 数量 × 单价")
+
+
+class ReceiptData(BaseModel):
+    model_config = ConfigDict(extra="forbid")  # 契约门禁：拒绝 schema 外字段
+
+    doc_form: DocForm = Field(description="单据形态")
+    vendor: str = Field(description="供应商名称")
+    date: str = Field(description="单据日期，YYYY-MM-DD")
+    items: list[ReceiptItem] = Field(description="商品明细")
+    total: float = Field(description="总额")
+    payment_marked: bool = Field(description="是否有已付款标记（印章/手写）")
+    confidence: float = Field(ge=0.0, le=1.0, description="整体置信度")
+
+
+# -------------------------------------------------------------
+# 领域模型（SQLAlchemy）
+# -------------------------------------------------------------
+class Receipt(BaseModel):
+    """收据记录（内存态 + 轻量持久化的简化版）。"""
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[str] = None
+    image_path: str = ""
+    status: str = "uploaded"   # uploaded → parsing → parsed → edited → approved/flagged/error
+    vendor: str = ""
+    date: str = ""
+    doc_form: str = ""
+    total: float = 0.0
+    items: list[ReceiptItem] = []
+    raw_llm: str = ""          # VLM 原始输出（保留可审计）
+    audit_result: dict = {}    # 审核 Agent 结论
+    confidence: float = 0.0
+    created_at: str = ""
+
+
+class InventoryEntry(BaseModel):
+    """幂等入库记录（append-only）。"""
+    model_config = ConfigDict(extra="forbid")
+
+    receipt_id: str = ""
+    name: str = ""
+    qty: float = 0.0
+    unit: str = ""
+    amount: float = 0.0
+    vendor: str = ""
+    date: str = ""
+    created_at: str = ""
+
+
+class VendorMemory(BaseModel):
+    """VendorMemory：按供应商积累的识别上下文（RAG 语料）。"""
+    model_config = ConfigDict(extra="forbid")
+
+    vendor: str = ""
+    notes: str = ""            # layout_notes / 别称 / 单位基准
+    sample: str = ""           # 最近一次已确认明细（few-shot 来源）
+
+
+# -------------------------------------------------------------
+# 灰测 / 引擎配置（admin 可调整）
+# -------------------------------------------------------------
+class GreyAssignMode(str, Enum):
+    RECEIPT = "receipt"          # 按单据随机分配
+    SUPPLIER = "supplier"        # 按供应商分配（同供应商一致命中）
+
+
+class EngineKind(str, Enum):
+    CODEBUDDY = "codebuddy"      # 本机 CodeBuddy CLI
+    OPENCODE = "opencode"        # 本机 opencode CLI
+    OPENAI = "openai"            # 自定义 OpenAI 兼容（base_url + api_key + model）
+
+
+class EngineConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # ---- 常规引擎配置 ----
+    # 识别引擎
+    recognition_engine: EngineKind = EngineKind.OPENCODE
+    recognition_model: str = "opencode/mimo-v2.5-free"
+    # 审核引擎
+    audit_engine: EngineKind = EngineKind.OPENCODE
+    audit_model: str = "opencode/mimo-v2.5-free"
+    audit_enabled: bool = True
+    # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数）
+    openai_rec_base_url: str = ""
+    openai_rec_api_key: str = ""
+    openai_rec_model: str = ""
+    openai_aud_base_url: str = ""
+    openai_aud_api_key: str = ""
+    openai_aud_model: str = ""
+    # 常规解析 LLM（VLM 识别后 → LLM 规范化解析，可选）
+    parse_llm_enabled: bool = False
+    parse_llm_engine: EngineKind = EngineKind.OPENCODE
+    parse_llm_model: str = "opencode/mimo-v2.5-free"
+    openai_parse_base_url: str = ""
+    openai_parse_api_key: str = ""
+    openai_parse_model: str = ""
+
+    # ---- 分组测试（灰测）配置：与常规完全隔离 ----
+    grey_enabled: bool = False                       # 是否启用灰测
+    grey_percent: int = 0                            # 随机分配概率 0-100
+    grey_assign_mode: GreyAssignMode = GreyAssignMode.RECEIPT
+    # 灰测组识别引擎/模型
+    grey_recognition_engine: EngineKind = EngineKind.OPENCODE
+    grey_recognition_model: str = "opencode/mimo-v2.5-free"
+    # 灰测组审核引擎/模型
+    grey_audit_engine: EngineKind = EngineKind.OPENCODE
+    grey_audit_model: str = "opencode/mimo-v2.5-free"
+    # 灰测组自定义 OpenAI 兼容参数（识别/审核各自独立）
+    grey_openai_rec_base_url: str = ""
+    grey_openai_rec_api_key: str = ""
+    grey_openai_rec_model: str = ""
+    grey_openai_aud_base_url: str = ""
+    grey_openai_aud_api_key: str = ""
+    grey_openai_aud_model: str = ""
+    # 灰测组解析 LLM
+    grey_parse_llm_enabled: bool = False
+    grey_parse_llm_engine: EngineKind = EngineKind.OPENCODE
+    grey_parse_llm_model: str = "opencode/mimo-v2.5-free"
+    grey_openai_parse_base_url: str = ""
+    grey_openai_parse_api_key: str = ""
+    grey_openai_parse_model: str = ""
+
+
+def should_use_grey(cfg: "EngineConfig", supplier_name: str = "") -> bool:
+    """灰测分配：决定本单走常规还是灰测配置。
+
+    - 未启用 / 概率 0 → 常规
+    - grey_assign_mode=receipt → 每单按 random() < percent% 独立判断
+    - grey_assign_mode=supplier → 按供应商名 hash 落入 [0,100) 区间，
+      同供应商一致命中（确定性，可复现）
+    """
+    if not cfg.grey_enabled or cfg.grey_percent <= 0:
+        return False
+    pct = max(0, min(100, int(cfg.grey_percent)))
+    if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER and supplier_name:
+        import hashlib
+        bucket = int(hashlib.md5(supplier_name.encode("utf-8")).hexdigest(), 16) % 100
+        return bucket < pct
+    import random
+    return random.random() * 100 < pct
+
+
+def now_iso():
+    return datetime.now().isoformat(timespec="seconds")

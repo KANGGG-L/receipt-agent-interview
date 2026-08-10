@@ -1,0 +1,8 @@
+{
+  "supplier_name": "7-Eleven",
+  "date": "2016-10-01",
+  "total_amount": 13.0,
+  "items": [
+    {"name": "維他檸檬茶500毫升膠", "quantity": 1, "unit": "樽", "unit_price": 13.0, "amount": 13.0}
+  ]
+}

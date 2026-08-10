@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>香港餐饮 AI 进货收据识别与库存管理系统</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        /* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
+        .sidebar-btn { position: relative; }
+        .nav-red-dot {
+            position: absolute; top: 3px; right: 8px;
+            min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+            border-radius: 9px; background: var(--danger); color: #fff;
+            font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center;
+            box-shadow: 0 0 0 2px var(--bg-sidebar);
+        }
+        .pay-reminder-banner {
+            margin: 10px 18px 0; padding: 10px 14px; cursor: pointer;
+            border: 1px solid var(--warning-bg); border-radius: 10px;
+            background: var(--warning-bg);
+            color: var(--warning); font-size: 0.88rem; font-weight: 500;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .pay-reminder-banner:hover { border-color: var(--warning); }
+        tr.payable-row-overdue td { background: var(--danger-bg); }
+        tr.payable-row-due-soon td { background: var(--warning-bg); }
+        /* demo：无密码 RBAC 角色切换 */
+        .demo-role-switch {
+            margin: 10px 16px 4px; padding: 8px 10px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+        }
+        .demo-role-switch label { display: block; font-size: 0.72rem; color: var(--text-muted); margin-bottom: 4px; }
+        .demo-role-switch select {
+            width: 100%; padding: 5px 8px; border-radius: 6px;
+            background: var(--bg-input, #1e2936); color: #fff;
+            border: 1px solid rgba(255,255,255,0.2); font-size: 0.82rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-wrapper">
+
+        <!-- 左侧 Sider -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <img src="/static/images/logo_icon_perfect.png" class="brand-logo-img" alt="Logo"> AI 智能库存系统
+                </div>
+                <!-- demo：无密码 RBAC 角色切换（admin/owner/staff） -->
+                <div class="demo-role-switch">
+                    <label for="demoRoleSelect">当前角色</label>
+                    <select id="demoRoleSelect">
+                        <option value="admin" style="color:#d80d0d">● admin · 超管（模型/灰测）</option>
+                        <option value="owner" selected style="color:#2f6b4f">● owner · 老板（审批/成本）</option>
+                        <option value="staff" style="color:#1565c0">● staff · 店员（上传/复核）</option>
+                    </select>
+                </div>
+            </div>
+
+            <nav class="sidebar-nav">
+                <button class="sidebar-btn active" data-target="tab-scan" data-title="收据识别">
+                    <span class="icon"></span>
+                    <span>收据识别</span>
+                </button>
+                <button class="sidebar-btn" data-target="tab-inventory" data-title="实时库存与价格">
+                    <span class="icon"></span>
+                    <span>实时库存与价格</span>
+                </button>
+                <button class="sidebar-btn" data-target="tab-archive" data-title="供应商与归档">
+                    <span class="icon"></span>
+                    <span>供应商与归档</span>
+                    <!-- Wave 1：付款提醒红点（逾期+快到期计数，02 章） -->
+                    <span id="navPayRedDot" class="nav-red-dot hide">0</span>
+                </button>
+                <button class="sidebar-btn" data-target="tab-report" data-title="部门花销报表">
+                    <span class="icon"></span>
+                    <span>部门花销报表</span>
+                </button>
+                <button class="sidebar-btn" id="adminEngineBtn" data-title="引擎配置" style="display:none;" onclick="openAdminEngineModal()">
+                    <span class="icon" style="color:var(--danger);">⚙</span>
+                    <span>引擎配置</span>
+                    <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
+                </button>
+            </nav>
+        </aside>
+
+        <!-- 右侧主界面 -->
+        <div class="main-wrapper">
+
+            <!-- 顶部面包屑 Bar -->
+            <div class="breadcrumb-bar">
+                <div class="breadcrumb">
+                    <span class="bc-item">系统首页</span>
+                    <span class="bc-separator">/</span>
+                    <span id="bcActiveTitle" class="bc-item active">收据识别</span>
+                </div>
+            </div>
+
+            <!-- Wave 1：付款提醒横幅（02 章，有逾期/快到期时显示，点击进应付清单） -->
+            <div id="payReminderBanner" class="pay-reminder-banner hide" onclick="gotoPayablesList()" title="点击查看应付清单"></div>
+
+            <!-- 主内容区 -->
+            <main class="main-container">
+
+                <!-- TAB 1: 收据识别与 Side-by-Side 复核 -->
+                <section id="tab-scan" class="tab-content active">
+
+                    <!-- 上传卡片 -->
+                    <div id="uploadArea" class="upload-card">
+                        <div class="upload-icon"></div>
+                        <h3 style="margin-bottom: 16px;">上传/拖拽收据</h3>
+                        <div style="margin-bottom: 20px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+                            <input type="checkbox" id="chkCodebuddy" checked class="hide">
+                            <label style="font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--primary);">
+                                <input type="checkbox" id="chkAutoAnalyze"> 无需编辑图片，即刻开始分析
+                            </label>
+                        </div>
+                        <input type="file" id="receiptFile" accept="image/*" multiple class="hide">
+                        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                            <button class="btn btn-primary" onclick="document.getElementById('receiptFile').click()">
+                                 选择收据图片
+                            </button>
+                            <!-- D12：新建手工单（仅 owner 可见，AUTH_ENABLED=0 全员直通）——
+                                 无原图、不走 OCR、保存后经 approve 才入账；用于丢单/口头加单/历史补录 -->
+                            <button class="btn btn-secondary" id="btnNewManualEntry"
+                                    onclick="startManualEntry()" style="display:none;"
+                                    title="新建手工单（无原图）：用于丢单/口头加单/历史补录，仅老板可建，保存后需审核（approve）才入账">
+                                 新建手工单（无原图）
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Side-by-Side 左右分栏区域 -->
+                    <div id="splitViewArea" class="split-view hide">
+                        
+                        <!-- 左栏：收据图片预览、定点放大与调整 -->
+                        <div class="card">
+                            <div class="card-title">
+                                <span> 收据原图查看与调整</span>
+                                <div class="card-title-actions" id="leftCardTitleActions">
+                                    <button id="btnDeleteImage" class="btn-tool btn-tool-delete" onclick="deleteCurrentImage()" title="删除当前照片">
+                                         删除图片
+                                    </button>
+                                    <button id="btnReloadImage" class="btn-tool btn-tool-reload" onclick="startReselectImage()" title="替换当前照片">
+                                         更改图片
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="imgViewerContainer" class="img-viewer-container" style="cursor: crosshair;">
+                                <img id="previewImg" src="" alt="收据原图" draggable="false">
+                                <!-- HEIC/TIFF 等浏览器无法解码时常驻提示（不依赖 img src，避免被 reset 覆盖后消失） -->
+                                <div id="previewNonWebHint" class="preview-nonweb-hint hide" aria-live="polite">
+                                    <div class="preview-nonweb-hint-icon">📷</div>
+                                    <div class="preview-nonweb-hint-title" id="previewNonWebHintTitle">HEIC 照片</div>
+                                    <div class="preview-nonweb-hint-sub" id="previewNonWebHintSub">浏览器无法直接预览 HEIC，解析时会自动转为 JPEG</div>
+                                    <div class="preview-nonweb-hint-howto" id="previewNonWebHintHowto">
+                                        <div class="preview-nonweb-hint-howto-title">想自己先转成 JPEG？</div>
+                                        <ul class="preview-nonweb-hint-howto-list" id="previewNonWebHintHowtoList">
+                                            <li><strong>iPhone</strong>：设置 → 相机 → 格式 → 选「兼容性最佳」（之后拍照即为 JPEG）</li>
+                                            <li><strong>iPhone 导出</strong>：照片 App 选图 → 分享 → 储存到文件 / 隔空投送（系统常自动转 JPEG）</li>
+                                            <li><strong>Mac</strong>：预览 App 打开 → 文件 → 导出 → 格式选 JPEG</li>
+                                            <li><strong>Windows</strong>：用「照片」打开另存，或在线/画图工具导出为 JPG</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                <div id="cropOverlay" class="crop-overlay-box hide"></div>
+                                <!-- D12：手工录入「无原图」占位（样式复用 preview-nonweb-hint 提示层） -->
+                                <div id="manualEntryNoImage" class="preview-nonweb-hint hide">
+                                    <div class="preview-nonweb-hint-icon">📝</div>
+                                    <div class="preview-nonweb-hint-title">无原图</div>
+                                    <div class="preview-nonweb-hint-sub">手工录入单据（doc_form=manual_entry）：无原始收据图片，请直接填写右侧表单的供应商、开单日期与明细；保存后需审核（approve）才入账。</div>
+                                </div>
+                            </div>
+
+                            <div class="img-toolbar" id="imgToolbar">
+                                <button id="btnZoomToggle" class="btn-tool" onclick="toggleZoomMode()"> 定点放大</button>
+                                <button id="btnCropToggle" class="btn-tool" onclick="toggleCropMode()"> 裁剪区域</button>
+                                <button id="btnApplyCrop" class="btn-tool btn-success hide" onclick="applyCropSelection()"> 应用裁剪</button>
+                                <button id="btnRotate" class="btn-tool" onclick="rotateImg()"> 旋转 90°</button>
+                                <button id="btnReset" class="btn-tool" onclick="resetImgTransform()"> 重置</button>
+                            </div>
+                        </div>
+
+                        <!-- 右栏：根据状态显示（未分析确认卡片 / Loading 卡片 / AI Prefill 可编辑表格） -->
+                        <div id="rightPanel">
+
+                            <!-- 抽屉 sider 入口按钮：默认隐藏，仅当 batch 模式下出现 -->
+                            <button id="btnSiderToggle" class="sider-toggle hide" onclick="togglePhotoSider()" title="切换本批照片侧栏">
+                                 本批照片 <span id="siderToggleCount" class="sider-toggle-count">0</span>
+                            </button>
+
+                            <!-- 卡片 A: 预览调整确认卡片 (未勾选直接分析时显示) -->
+                            <div id="preConfirmCard" class="card">
+                                <div class="card-title">
+                                    <span> 步骤 1/2：收据调整与确认</span>
+                                    <span class="badge badge-warning">待确认分析</span>
+                                </div>
+                                <div style="padding: 20px 0; text-align: center;">
+                                    <div style="font-size: 3rem; margin-bottom: 12px;"></div>
+                                    <h4>收据图片已加载成功</h4>
+                                    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; margin-bottom: 24px;">
+                                        请在左侧检查收据清晰度，必要时可点击图片特定区域放大或旋转。<br>确认无误后点击下方按钮启动 AI 智能解析。
+                                    </p>
+                                    <button class="btn btn-primary" style="padding: 12px 28px; font-size: 1.05rem;" onclick="triggerAnalysisNow()">
+                                         确认无误，开始 AI 识别与分析
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 卡片 B: Loading 识别中卡片 -->
+                            <div id="loadingCard" class="card hide">
+                                <div style="padding: 36px 20px; text-align: center;">
+                                    <!-- AI 识别耗时动态 Timer -->
+                                    <div style="margin-bottom: 16px; display: inline-flex; align-items: center; gap: 8px; background: var(--bg-hover); padding: 8px 20px; border-radius: 24px; border: 1px solid var(--border-strong); box-shadow: var(--shadow);">
+                                        <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);"> AI 分析耗时 (Timer):</span>
+                                        <span id="ocrTimer" style="font-family: var(--font-mono); font-size: 1.4rem; font-weight: 700; color: var(--primary);">00:00.0</span>
+                                    </div>
+                                    <div style="font-size: 2.5rem; margin-bottom: 12px;"></div>
+                                </div>
+                            </div>
+
+                            <!-- 卡片 C: AI Prefill 可编辑数据表格 -->
+                            <div id="prefillFormCard" class="card hide">
+                                <div class="card-title">
+                                    <span id="manualEntryFormTitle"> 步骤 2/2：AI Prefill 字段复核与修改</span>
+                                    <span id="manualEntryFormBadge" class="badge badge-warning hide">无原图·手工录入</span>
+                                    <span class="badge badge-success">AI 已自检</span>
+                                </div>
+
+                                <!-- 算术与价格告警栏 -->
+                                <div id="alertBanner" class="alert-banner hide">
+                                    [警告] 注意事项将显示在此
+                                </div>
+
+                                <!-- Q29: 图像质量预检警告（上传/job 结果的 quality_warnings，多条可见） -->
+                                <div id="qualityWarningsBanner" class="alert-banner hide"
+                                     style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
+                                </div>
+
+                                <!-- 表头元数据 (供应商, 日期, 分表, 总额) -->
+                                <div class="form-grid">
+                                     <div class="form-group" style="grid-column: span 2;">
+                                         <label>供应商</label>
+                                         <div class="unit-combobox-wrap">
+                                             <input type="text" id="inpSupplier" class="form-control" style="padding-right:30px;" placeholder="如嘉顿、美心食品" autocomplete="off" onfocus="openSupplierMenu(this)" oninput="openSupplierMenu(this)" onblur="closeSupplierMenuDelay(this)">
+                                             <span class="combobox-arrow">▼</span>
+                                             <div id="supplierDropdownMenu" class="unit-dropdown-menu hide"></div>
+                                         </div>
+                                         <datalist id="dlUnits"></datalist>
+                                     </div>
+                                    <div class="form-group">
+                                        <label>开单日期 (Date)</label>
+                                        <input type="date" id="inpDate" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>归档月份 (Sheet Name)</label>
+                                        <input type="text" id="inpSheet" class="form-control" placeholder="2026-07">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>整单总金额 ($)</label>
+                                        <input type="number" step="0.01" id="inpTotal" class="form-control" style="font-weight:700; color:var(--primary);">
+                                    </div>
+                                    <!-- M3/D4: 单据分类——结算方式可人工修正，付款标记为 AI 识别只读展示 -->
+                                    <div class="form-group">
+                                        <label>结算方式 (Settlement)</label>
+                                        <select id="inpSettlementType" class="form-control" title="现结=现金单；月结=赊单，对账依据">
+                                            <option value="">未知</option>
+                                            <option value="cash">现结 (现金)</option>
+                                            <option value="credit">月结 (赊账)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>付款标记 (只读)</label>
+                                        <input type="text" id="inpPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
+                                    </div>
+                                    <!-- Wave 2（D44）：单据级部门——一键填充到全部明细（已手动改过的行不动，04 章三） -->
+                                    <div class="form-group" style="grid-column: span 2;">
+                                        <label>部门（单据级）</label>
+                                        <div style="display:flex; gap:8px; align-items:center;">
+                                            <select id="inpDepartmentId" class="form-control" style="flex:1;" title="单据级部门：选后点「应用到全部明细」填到所有明细行（已手动改过的行除外）；行内也可单独覆盖">
+                                                <option value="">未分配</option>
+                                            </select>
+                                            <button class="btn btn-secondary" style="padding:7px 12px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')" title="把单据级部门填入所有明细行（已手动改过的行保持不动）"> 应用到全部明细</button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 明细动态表格 -->
+                                <div class="table-container">
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:26%;">消费项目/SKU</th>
+                                                <th style="width:12%;">数量</th>
+                                                <th style="width:12%;">单位</th>
+                                                <th style="width:15%;">单价 ($)</th>
+                                                <th style="width:15%;">金额 ($)</th>
+                                                <th style="width:13%;">部门</th>
+                                                <th style="width:7%;">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="itemTableBody">
+                                            <!-- 动态渲染行 -->
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- 按钮操作栏 -->
+                                <div style="display:flex; justify-content:space-between; align-items:center;">
+                                    <button class="btn btn-secondary" onclick="addEmptyRow()">+ 新增明细行</button>
+                                    <div style="display:flex; gap:12px; align-items:center;">
+                                        <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果并彻底删除单据">放弃上传</button>
+                                        <!-- Q32: id 供保存中禁用防双击重提交 -->
+                                        <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <!-- 卡片 D: 识别失败错误卡片 (D28/D33 双出口：重试识别 / 转手工录入) -->
+                            <div id="errorCard" class="card hide">
+                                <div class="card-title">
+                                    <span>[失败] 识别失败，需要人工处理</span>
+                                    <span class="badge badge-danger">双出口可选</span>
+                                </div>
+                                <div style="padding: 28px 8px; text-align: center;">
+                                    <div style="font-size: 3rem; margin-bottom: 12px;"></div>
+                                    <h4 style="font-weight: 600; color: var(--text-main);">该收据未能自动识别成功</h4>
+                                    <p id="errorMsgText" style="color: var(--text-muted); font-size: 0.88rem; margin-top: 8px; margin-bottom: 20px;">
+                                        原图已保留，请选择以下任一出口继续处理。
+                                    </p>
+                                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                                        <button class="btn btn-primary" onclick="retryFromErrorCard()" title="复用原单据重跑识别，不新建记录"> 重试识别</button>
+                                        <button class="btn btn-secondary" id="btnConvertManual" onclick="convertManualFromErrorCard()" title="转为手工录入：保留原图与可识别部分，人工补录">️ 转手工录入</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                    <!-- 抽屉式本批照片 sider（识别 Tab 内、绝对定位，从右向左滑出） -->
+                    <aside id="photoSider" class="photo-sider-drawer">
+                        <div class="sider-header">
+                            <div class="sider-header-top">
+                                <span class="sider-title"> 本批照片 <span id="siderCount" class="sider-count">0</span></span>
+                                <button class="sider-close-btn" onclick="togglePhotoSider()" title="收起侧栏">x</button>
+                            </div>
+                            <!-- 多选工具栏：全选 / 解析选中 / 删除选中 / 全部保存 -->
+                            <div class="sider-toolbar">
+                                <label class="sider-tool" title="全选/取消全选">
+                                    <input type="checkbox" id="siderSelectAll" onchange="onSiderSelectAll(this.checked)">
+                                    <span>全选</span>
+                                </label>
+                                <button id="btnAnalyzeSelected" class="btn btn-primary btn-sider-tool" onclick="triggerBatchAnalysis(true)" disabled title="解析选中的照片">
+                                     解析 <span id="siderSelectedCount" class="sider-tool-badge">0</span>
+                                </button>
+                                <button id="btnRemoveSelected" class="btn btn-danger btn-sider-tool" onclick="removeSelectedPhotos()" disabled title="从本批中移除选中的照片">
+                                     删除 <span id="siderRemoveBadge" class="sider-tool-badge">0</span>
+                                </button>
+                            </div>
+                        </div>
+                        <ul id="photoSiderList" class="photo-sider-list"></ul>
+                    </aside>
+
+                </section>
+
+                <!-- TAB 2: 实时库存与价格走势 / 食材档案与库存工作台 -->
+                <section id="tab-inventory" class="tab-content">
+                    <div class="metrics-grid">
+                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryStockFilter('all')" title="点击查看全部食材">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">库存食材种数</div>
+                            <div id="valTotalSKU" class="metric-value">0</div>
+                        </div>
+                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryStockFilter('low')" title="点击筛选低库存食材">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">低库存预警数</div>
+                            <div id="valLowStock" class="metric-value" style="color:var(--danger);">0</div>
+                        </div>
+                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryPriceFilter('anomaly')" title="点击筛选涨价预警食材">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">涨价预警数</div>
+                            <div id="valPriceAnomaly" class="metric-value" style="color:#f59e0b;">0</div>
+                        </div>
+                    </div>
+
+
+
+                    <div class="card">
+                        <div class="inv-toolbar" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color, #e5e7eb);">
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; min-width: 280px;">
+                                <!-- 搜索框 -->
+                                <div style="position: relative; min-width: 160px; max-width: 240px; flex: 1;">
+                                    <input type="text" id="invSearchInput" class="form-control" style="font-size: 0.85rem; padding: 5px 8px;" placeholder="搜索食材品名 / 代码..." oninput="onInventorySearchInput(this.value)">
+                                </div>
+                                <!-- 分类筛选 -->
+                                <select id="invCategorySelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryCategoryChange(this.value)">
+                                    <option value="">全部分类</option>
+                                    <option value="肉类">肉类</option>
+                                    <option value="海鲜">海鲜</option>
+                                    <option value="蔬菜">蔬菜</option>
+                                    <option value="主食粮油">主食粮油</option>
+                                    <option value="调味品">调味品</option>
+                                    <option value="烘焙">烘焙</option>
+                                    <option value="饮品">饮品</option>
+                                    <option value="清洁">清洁</option>
+                                    <option value="其他">其他</option>
+                                </select>
+                                <!-- 指标/筛选 -->
+                                <select id="invFilterSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryFilterSelectChange(this.value)">
+                                    <option value="all">全部指标</option>
+                                    <option value="low">仅低库存</option>
+                                    <option value="anomaly">仅涨价</option>
+                                </select>
+                                <!-- 显示已停用 Checkbox -->
+                                <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; color: var(--text-muted, #666);">
+                                    <input type="checkbox" id="invIncludeInactive" onchange="onInventoryIncludeInactiveChange(this.checked)">
+                                    显示已停用
+                                </label>
+                            </div>
+
+                            <div style="display: flex; gap: 8px; align-items: center;">
+                                <button class="btn btn-primary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openAddSkuModal()">+ 新增食材</button>
+                                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryData()">刷新数据</button>
+                            </div>
+                        </div>
+
+                        <div class="table-container">
+                            <table class="data-table" style="table-layout: fixed; width: 100%;">
+                                <colgroup>
+                                    <col style="width: 22%;">
+                                    <col style="width: 12%;">
+                                    <col style="width: 14%;">
+                                    <col style="width: 14%;">
+                                    <col style="width: 16%;">
+                                    <col style="width: 22%;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>品名</th>
+                                        <th>分类</th>
+                                        <th class="col-right">当前库存</th>
+                                        <th class="col-right">警戒线</th>
+                                        <th class="col-right">最新进货单价</th>
+                                        <th class="col-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inventoryTableBody">
+                                    <!-- 动态渲染库存 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 3: 供应商与收据归档 -->
+                <section id="tab-archive" class="tab-content">
+                    <!-- ① 待办条（对齐「实时库存与价格」指标卡面板，可点击筛选，09 方案 M7） -->
+                    <div id="todoBar" class="metrics-grid" style="margin-bottom:16px;">
+                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('pending')" title="点击筛选待审核单据">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">待审核</div>
+                            <div id="todoPendingNum" class="metric-value">0</div>
+                        </div>
+                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('failed')" title="点击筛选识别失败单据">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">识别失败</div>
+                            <div id="todoFailedNum" class="metric-value" style="color:var(--danger);">0</div>
+                        </div>
+                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('overdue')" title="点击筛选逾期赊单">
+                            <div style="color:var(--text-muted); font-size:0.9rem;">逾期赊单</div>
+                            <div id="todoOverdueNum" class="metric-value" style="color:#f59e0b;">0</div>
+                        </div>
+                    </div>
+
+                    <!-- ② 供应商档案（09 方案 M1/M2/M3/M4/M6） -->
+                    <div class="card" style="margin-bottom:16px;">
+                        <div class="card-title">
+                            <span>供应商档案</span>
+                            <button class="btn btn-secondary" onclick="loadSupplierAdmin()">刷新</button>
+                        </div>
+                        <!-- 工具条：搜索名称 / 显示已停用 / 新增 -->
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;">
+                            <input type="text" id="supSearch" class="form-control" placeholder="搜索供应商名称 / 编号"
+                                   style="font-size:0.85rem; padding:6px 10px; width:220px;"
+                                   oninput="onSupplierSearchInput()">
+                            <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;">
+                                <input type="checkbox" id="supShowInactive" onchange="loadSupplierAdmin()"> 显示已停用
+                            </label>
+                            <button class="btn btn-primary" style="padding:5px 12px; font-size:0.82rem;" onclick="openSupplierModal()">+ 新增供应商</button>
+                        </div>
+                        <div class="table-container" style="max-height:340px; overflow-y:auto;">
+                            <table class="data-table">
+                                <colgroup>
+                                    <col style="width: 26%;">
+                                    <col style="width: 12%;">
+                                    <col style="width: 9%;">
+                                    <col style="width: 14%;">
+                                    <col style="width: 13%;">
+                                    <col style="width: 9%;">
+                                    <col style="width: 17%;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>名称 <span style="font-weight:400; color:var(--text-muted); font-size:0.72rem;">(编号)</span></th>
+                                        <th class="col-center">账期</th>
+                                        <th class="col-center">单据数</th>
+                                        <th class="col-right">未付赊单合计</th>
+                                        <th>电话</th>
+                                        <th class="col-center">状态</th>
+                                        <th class="col-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="supplierAdminBody"></tbody>
+                            </table>
+                        </div>
+                        <div id="supplierEmpty" class="archive-empty hide">还没有启用中的供应商。上传第一张送货单，或在上方「+ 新增供应商」建立你的供应商通讯录。</div>
+                    </div>
+
+                    <!-- 归档记录多维筛选面板 -->
+                    <div class="card" style="margin-bottom: 16px;">
+                        <div style="font-weight: 600; font-size: 0.95rem; margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span>归档单据多维筛选与排序</span>
+                                <span id="archiveRecordCount" class="badge badge-secondary" style="font-size:0.78rem;">共 0 条记录</span>
+                            </div>
+                            <div style="display:flex; gap:8px;">
+                                <button class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="applyArchiveFilters()">应用筛选</button>
+                                <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="resetArchiveFilters()">重置条件</button>
+                                <button class="btn btn-success" style="padding:4px 12px; font-size:0.82rem;" onclick="exportArchiveCsv()" title="按当前筛选条件导出 CSV（UTF-8 BOM，Excel 可直接打开）">导出 CSV</button>
+                            </div>
+                        </div>
+                        
+                        <!-- 关键字搜索（供应商名 / 单号 sheet_name / 单据 #id，09 方案 M5） -->
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <input type="text" id="fltKeyword" class="form-control" placeholder="搜关键字：供应商名 / 单号 / 单据 #id"
+                                   style="font-size:0.85rem; padding:6px 10px; flex:1; min-width:220px;"
+                                   oninput="onArchiveKeywordInput()">
+                            <span style="font-size:0.78rem; color:var(--text-muted);">状态：</span>
+                            <button type="button" class="chip" data-group="" onclick="setArchiveStatusGroup('')">全部</button>
+                            <button type="button" class="chip" data-group="pending" onclick="setArchiveStatusGroup('pending')">待处理</button>
+                            <button type="button" class="chip" data-group="posted" onclick="setArchiveStatusGroup('posted')">已入账</button>
+                            <button type="button" class="chip" data-group="problem" onclick="setArchiveStatusGroup('problem')">有问题</button>
+                            <button type="button" class="chip" data-group="failed" onclick="setArchiveStatusGroup('failed')">失败</button>
+                        </div>
+                        <!-- 时间快捷（本周 / 本月 / 上月，09 方案 S2） -->
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                            <span style="font-size:0.78rem; color:var(--text-muted);">时间：</span>
+                            <button type="button" class="chip" data-range="" onclick="setArchiveQuickRange('')">全部</button>
+                            <button type="button" class="chip" data-range="week" onclick="setArchiveQuickRange('week')">本周</button>
+                            <button type="button" class="chip" data-range="month" onclick="setArchiveQuickRange('month')">本月</button>
+                            <button type="button" class="chip" data-range="last_month" onclick="setArchiveQuickRange('last_month')">上月</button>
+                            <span id="archiveAdvancedToggle" class="archive-advanced-toggle" onclick="toggleArchiveAdvanced()">高级筛选 ▾</span>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 14px;" id="archiveFilterGrid">
+                            <!-- 第一行: 下拉与金额筛选项 -->
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; width: 100%;">
+                                <!-- 供应商 -->
+                                <div class="form-group" style="margin-bottom:0; min-width:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;">供应商</label>
+                                    <select id="fltSupplier" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
+                                        <option value="">全部供应商</option>
+                                    </select>
+                                </div>
+
+                                <!-- 状态 -->
+                                <!-- Q30: 补齐 7 态（与 T6 状态机一致），文案与归档徽章一致 -->
+                                <div class="form-group" style="margin-bottom:0; min-width:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;">单据状态</label>
+                                    <select id="fltStatus" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
+                                        <option value="">全部状态</option>
+                                        <option value="uploaded">已上传</option>
+                                        <option value="parsing">解析中</option>
+                                        <option value="parsed">已解析</option>
+                                        <option value="edited">已编辑</option>
+                                        <option value="approved">已审核</option>
+                                        <option value="flagged">已标记</option>
+                                        <option value="error">失败</option>
+                                    </select>
+                                </div>
+
+                                <!-- 排序 -->
+                                <div class="form-group" style="margin-bottom:0; min-width:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;">排序方式</label>
+                                    <select id="fltSort" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
+                                        <option value="id_desc">默认 (最新单据优先)</option>
+                                        <option value="amount_desc">整单金额从大到小</option>
+                                        <option value="amount_asc">整单金额从小到大</option>
+                                        <option value="receipt_date_desc">开单日期最新优先</option>
+                                        <option value="receipt_date_asc">开单日期最早优先</option>
+                                    </select>
+                                </div>
+
+                                <!-- Wave 1：付款状态轻量筛选（03 章六：paid/unpaid，不做行内编辑） -->
+                                <div class="form-group" style="margin-bottom:0; min-width:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;">付款状态</label>
+                                    <select id="fltPayState" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
+                                        <option value="">全部付款状态</option>
+                                        <option value="unpaid">未付（含逾期）</option>
+                                        <option value="paid">已付（含现结）</option>
+                                    </select>
+                                </div>
+
+                                <!-- 金额范围 -->
+                                <div class="form-group" style="margin-bottom:0; min-width:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;">整单金额范围 ($)</label>
+                                    <div style="display:flex; gap:4px; align-items:center; width:100%; min-width:0;">
+                                        <input type="number" step="0.01" id="fltAmountMin" class="form-control" placeholder="最小" style="font-size:0.8rem; padding:5px 6px; width:50%; min-width:0; box-sizing:border-box;" oninput="applyArchiveFilters()">
+                                        <span style="color:var(--text-muted); font-size:0.75rem; flex-shrink:0;">-</span>
+                                        <input type="number" step="0.01" id="fltAmountMax" class="form-control" placeholder="最大" style="font-size:0.8rem; padding:5px 6px; width:50%; min-width:0; box-sizing:border-box;" oninput="applyArchiveFilters()">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 高级筛选（高级：日期区间，默认收起，09 方案 S5/F1） -->
+                            <div id="archiveAdvanced" class="archive-advanced hide">
+                            <!-- 第二行: 日期区间筛选项 (使用 class="archive-date-grid" 强行固定 3 列，彻底防抖动) -->
+                            <div class="archive-date-grid">
+                                <!-- 开单日期区间 -->
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;"> 开单日期区间 <span style="font-size:0.72rem; color:var(--text-muted);">(未填默认截止当天)</span></label>
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltReceiptDateFrom" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="可直接打字输入，或点击右侧按钮选择日历" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltReceiptDateFrom').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                        <span style="color:var(--text-muted); font-size:0.75rem;">至</span>
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltReceiptDateTo" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="若留空默认截止至今天" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltReceiptDateTo').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 上传日期区间 -->
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;"> 上传日期区间 <span style="font-size:0.72rem; color:var(--text-muted);">(未填默认截止当天)</span></label>
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltUploadDateFrom" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="可直接打字输入，或点击右侧按钮选择日历" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltUploadDateFrom').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                        <span style="color:var(--text-muted); font-size:0.75rem;">至</span>
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltUploadDateTo" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="若留空默认截止至今天" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltUploadDateTo').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- 编辑日期区间 -->
+                                <div class="form-group" style="margin-bottom:0;">
+                                    <label style="font-size:0.8rem; margin-bottom:4px;"> 编辑日期区间 <span style="font-size:0.72rem; color:var(--text-muted);">(未填默认截止当天)</span></label>
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltUpdateDateFrom" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="可直接打字输入，或点击右侧按钮选择日历" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltUpdateDateFrom').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                        <span style="color:var(--text-muted); font-size:0.75rem;">至</span>
+                                        <div style="display:flex; align-items:center;">
+                                            <input type="date" id="fltUpdateDateTo" class="form-control" style="font-size:0.8rem; padding:4px 6px; width:120px;" title="若留空默认截止至今天" onchange="applyArchiveFilters(180)" oninput="applyArchiveFilters(180)">
+                                            <button type="button" class="btn btn-secondary" style="padding:4px 6px; margin-left:2px; font-size:0.82rem;" onclick="try{document.getElementById('fltUpdateDateTo').showPicker()}catch(e){}" title="弹出日历控件"></button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-title">
+                            <span> 历史收据与供应商归档记录</span>
+                            <button class="btn btn-secondary" onclick="loadReceiptsHistory()"> 刷新列表</button>
+                        </div>
+                        <div class="table-container">
+                            <table class="data-table" style="table-layout: fixed; width: 100%;">
+                                <colgroup>
+                                    <col style="width: 65px;">   <!-- 单据ID -->
+                                    <col style="width: auto;">   <!-- 供应商名称 -->
+                                    <col style="width: 95px;">   <!-- 上传日期 -->
+                                    <col style="width: 95px;">   <!-- 最后编辑日期 -->
+                                    <col style="width: 90px;">   <!-- 开单日期 -->
+                                    <col style="width: 90px;">   <!-- 总金额 -->
+                                    <col style="width: 70px;">   <!-- 部门 -->
+                                    <col style="width: 80px;">   <!-- 状态 -->
+                                    <col style="width: 110px;">  <!-- 付款状态 -->
+                                    <col style="width: 110px;">  <!-- 操作列 -->
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th style="white-space:nowrap; vertical-align:middle;">单据ID</th>
+                                        <th style="white-space:nowrap; vertical-align:middle;">供应商名称</th>
+                                        <th style="white-space:nowrap; vertical-align:middle;">上传日期</th>
+                                        <th style="white-space:nowrap; vertical-align:middle;">最后编辑日期</th>
+                                        <th style="white-space:nowrap; vertical-align:middle;">开单日期</th>
+                                        <th class="col-right" style="white-space:nowrap; vertical-align:middle;">总金额</th>
+                                        <th class="col-center" style="white-space:nowrap; vertical-align:middle;">部门</th>
+                                        <th class="col-center" style="white-space:nowrap; vertical-align:middle;">状态</th>
+                                        <th class="col-center" style="white-space:nowrap; vertical-align:middle;">付款状态</th>
+                                        <th class="col-center" style="white-space:nowrap; vertical-align:middle;">操作列</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="archiveTableBody">
+                                    <!-- 动态渲染归档列表 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Wave 1 应付清单（03 章）：跨供应商全局视图 + 支付登记与月结对账（沿用 Wave 2） -->
+                    <div class="card" id="payablesCard" style="margin-top:16px;">
+                        <div class="card-title">
+                            <span> 应付清单（跨供应商）与对账</span>
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <!-- 供应商：全局视图下的收敛筛选（默认全部） -->
+                                <select id="finSupplier" class="form-control" style="font-size:0.85rem; padding:6px 10px; min-width:190px; width:auto;" onchange="loadFinancePanel()">
+                                    <option value="">全部供应商</option>
+                                </select>
+                                <!-- 已付 / 未付 主筛选 -->
+                                <select id="fltFinPay" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:auto;" onchange="applyPayablesFilters()">
+                                    <option value="">全部付款态</option>
+                                    <option value="unpaid" selected>未付（含逾期）</option>
+                                    <option value="paid">已付（含现结）</option>
+                                </select>
+                                <!-- 付款方式筛选（03 章三） -->
+                                <select id="fltFinMethod" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:auto;" onchange="applyPayablesFilters()">
+                                    <option value="">全部付款方式</option>
+                                    <option value="cash">现金</option>
+                                    <option value="bank_transfer">银行转账</option>
+                                    <option value="cheque">支票</option>
+                                    <option value="fps">FPS 转数快</option>
+                                </select>
+                                <!-- 逾期 / 快到期 快捷筛选（02 章两级提醒） -->
+                                <select id="fltFinDue" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:auto;" onchange="applyPayablesFilters()">
+                                    <option value="">全部到期态</option>
+                                    <option value="overdue">已逾期</option>
+                                    <option value="due_soon">7 天内到期</option>
+                                    <option value="no_date">未设付款日</option>
+                                </select>
+                                <button class="btn btn-secondary" onclick="loadFinancePanel()"> 刷新</button>
+                            </div>
+                        </div>
+
+                        <!-- 顶部汇总：未付总额 / 逾期数 / 7 天内到期数 -->
+                        <div id="financeSummary" style="color:var(--text-muted); font-size:0.9rem; padding:6px 2px;"></div>
+
+                        <!-- 应付清单：默认列全部供应商赊单（03 章二） -->
+                        <div id="payablesArea" style="margin-top:8px;">
+                            <div class="table-container" style="max-height:420px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>单据 / 供应商</th><th>开单日期</th><th>金额 ($)</th>
+                                            <th>付款状态</th><th>预期付款日</th><th>付款方式</th><th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="payablesBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div id="financeActions" style="display:flex; gap:10px; margin:12px 0 4px; flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="openPaymentModal()"> 登记支付（先选供应商）</button>
+                            <button class="btn btn-secondary" onclick="openReconModal()"> 发起对账（先选供应商）</button>
+                        </div>
+
+                        <!-- 支付履历 -->
+                        <div id="paymentHistoryArea" class="hide" style="margin-top:12px;">
+                            <div id="paymentHistoryTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 支付履历</div>
+                            <div class="table-container" style="max-height:220px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>支付编号</th><th>供应商</th><th>支付日期</th><th>金额 ($)</th><th>方式</th>
+                                            <th>挂账赊单</th><th>凭证</th><th>备注</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="paymentHistoryBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 对账任务列表与差异明细 -->
+                        <div id="reconTaskArea" class="hide" style="margin-top:14px;">
+                            <div id="reconTaskTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 对账任务（周期 × 供应商）</div>
+                            <div class="table-container" style="max-height:240px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>任务ID</th><th>供应商</th><th>对账期间</th><th>周期</th><th>状态</th>
+                                            <th>行数</th><th>已匹配</th><th>待处理差异</th><th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="reconTaskBody"></tbody>
+                                </table>
+                            </div>
+
+                            <div id="reconDetailArea" class="hide" style="margin-top:14px; border-top:1px dashed var(--border-color); padding-top:12px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
+                                    <div style="font-size:0.88rem; font-weight:600;"> 对账差异明细 <span id="reconDetailTitle" style="color:var(--text-muted); font-weight:400;"></span></div>
+                                    <button id="btnConfirmRecon" class="btn btn-success" style="padding:5px 14px; font-size:0.85rem;" onclick="confirmReconTask()"> 确认对账完成</button>
+                                </div>
+                                <div class="table-container" style="max-height:340px; overflow-y:auto;">
+                                    <table class="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>行类型</th><th>日期</th><th>单号</th><th>金额 ($)</th>
+                                                <th>匹配状态</th><th>说明 / 处理记录</th><th>操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="reconLineBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB 4: 部门花销报表 -->
+                <section id="tab-report" class="tab-content">
+                    <!-- 部门管理（置顶，可折叠） -->
+                    <details id="deptAdminDetails" class="card" style="margin-bottom:16px;">
+                        <summary style="cursor:pointer; font-weight:600; display:flex; justify-content:space-between; align-items:center; user-select:none;">
+                            <span>部门管理</span>
+                            <div style="display:flex; gap:8px; align-items:center;" onclick="event.stopPropagation();">
+                                <button id="btnAddDepartment" class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="addDepartment()">+ 新增部门</button>
+                                <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="loadDepartmentAdmin()">刷新</button>
+                            </div>
+                        </summary>
+                        <div style="margin-top:12px;">
+                            <div class="table-container" style="max-height:320px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <colgroup>
+                                        <col style="width: 55%;">
+                                        <col style="width: 20%;">
+                                        <col style="width: 25%;">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>名称</th>
+                                            <th class="col-center">状态</th>
+                                            <th class="col-center">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="departmentAdminBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- 部门花销报表主卡片 -->
+                    <div class="card" style="margin-bottom:16px;">
+                        <div class="card-title" style="flex-wrap:wrap; gap:12px; justify-content:space-between; align-items:center;">
+                            <span style="font-size:1.1rem; font-weight:700;">部门花销报表</span>
+                            <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+                                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; background:var(--bg-hover, #f8fafc); padding:4px 8px; border-radius:6px;">
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        <label for="costReportMonth" style="font-size:0.82rem; color:var(--text-muted);">月份：</label>
+                                        <input type="month" id="costReportMonth" class="form-control" style="width:135px; padding:4px 6px; font-size:0.85rem;" title="选择月份" onchange="onCostReportMonthChange()">
+                                    </div>
+                                    <span style="color:var(--border-color, #cbd5e1);">|</span>
+                                    <div style="display:flex; gap:4px; align-items:center;">
+                                        <label style="font-size:0.82rem; color:var(--text-muted);">起止日期：</label>
+                                        <input type="date" id="costReportStartDate" class="form-control" style="width:125px; padding:4px 6px; font-size:0.85rem;" title="开始日期">
+                                        <span style="color:var(--text-muted);">-</span>
+                                        <input type="date" id="costReportEndDate" class="form-control" style="width:125px; padding:4px 6px; font-size:0.85rem;" title="结束日期">
+                                    </div>
+                                </div>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem; cursor:pointer;">
+                                        <input type="checkbox" id="costReportIncNonApproved" onchange="loadCostReport()">
+                                        <span>含未审核单据</span>
+                                    </label>
+                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;" onclick="setCostReportCurrentMonth()">本月</button>
+                                    <button class="btn btn-primary" style="padding:4px 14px; font-size:0.85rem;" onclick="loadCostReport()">查询</button>
+                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;" onclick="exportCostReportCSV()">导出本表</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="costReportSummary" style="color:var(--text-muted); font-size:0.9rem; padding:6px 2px;"></div>
+                        <div class="table-container">
+                            <table class="data-table">
+                                <colgroup>
+                                    <col style="width: 34%;">
+                                    <col style="width: 22%;">
+                                    <col style="width: 22%;">
+                                    <col style="width: 22%;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>部门</th>
+                                        <th class="col-right">本期进货 ($)</th>
+                                        <th class="col-right">上期对照 ($)</th>
+                                        <th class="col-right">变化 ($)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="costReportBody">
+                                    <!-- 动态渲染：部门汇总 + 未分配桶 + 合计 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+            </main>
+
+        </div>
+
+    </div>
+
+    <!-- 历史单据详情与独立校对 Modal 弹窗 (不跳转 Tab 1、不暴露上传图片接口) -->
+    <div id="archiveDetailModal" class="modal-backdrop hide">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="archiveModalTitle"> 历史收据明细与归档校对</h3>
+                <button class="modal-close-btn" onclick="closeArchiveModal()">x</button>
+            </div>
+
+            <div class="modal-body split-view" style="grid-template-columns: 420px 1fr; min-height: 520px;">
+                <!-- 左侧：历史收据原图查看 (无上传/重选接口) -->
+                <div class="card" style="margin-bottom:0; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div class="card-title">
+                            <span> 历史收据图像</span>
+                        </div>
+                        <div id="archiveImgContainer" class="img-viewer-container" style="height: 440px; cursor: default;">
+                            <img id="archivePreviewImg" src="" alt="历史收据原图" draggable="false">
+                        </div>
+                    </div>
+                    <div class="img-toolbar">
+                        <button id="btnArchiveZoomToggle" class="btn-tool" onclick="toggleArchiveZoomMode()"> 定点放大</button>
+                        <button class="btn-tool" onclick="rotateArchiveImg()"> 旋转 90°</button>
+                        <button class="btn-tool" onclick="resetArchiveImgTransform()"> 重置视图</button>
+                        <a id="btnArchiveOpenRaw" href="#" target="_blank" class="btn-tool btn-secondary">️ 查看大图</a>
+                    </div>
+                </div>
+
+                <!-- 右侧：归档数据编辑与明细校对 (无上传/AI分析接口) -->
+                <div class="card" style="margin-bottom:0; display:flex; flex-direction:column; justify-content:space-between;">
+                    <div>
+                        <div class="card-title">
+                            <span> 单据归档字段校对</span>
+                            <span class="badge badge-success">归档记录明细</span>
+                        </div>
+
+                        <div class="form-grid">
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label>供应商</label>
+                                <div class="unit-combobox-wrap">
+                                    <input type="text" id="arcSupplier" class="form-control" style="padding-right:30px;" placeholder="如嘉顿食品" autocomplete="off" onfocus="openSupplierMenu(this)" oninput="openSupplierMenu(this)" onblur="closeSupplierMenuDelay(this)">
+                                    <span class="combobox-arrow">▼</span>
+                                    <div id="arcSupplierDropdownMenu" class="unit-dropdown-menu hide"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>开单日期</label>
+                                <input type="date" id="arcDate" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>归档月份</label>
+                                <input type="text" id="arcSheet" class="form-control">
+                            </div>
+                            <div class="form-group">
+                                <label>整单总金额 ($)</label>
+                                <input type="number" step="0.01" id="arcTotal" class="form-control" style="font-weight:700; color:var(--primary);">
+                            </div>
+                            <!-- M3/D4: 归档弹窗同样提供结算方式修正与付款标记只读展示 -->
+                            <div class="form-group">
+                                <label>结算方式 (Settlement)</label>
+                                <select id="arcSettlementType" class="form-control" title="现结=现金单；月结=赊单，对账依据">
+                                    <option value="">未知</option>
+                                    <option value="cash">现结 (现金)</option>
+                                    <option value="credit">月结 (赊账)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>付款标记 (只读)</label>
+                                <input type="text" id="arcPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
+                            </div>
+                            <!-- Wave 2（D44）：归档单据级部门——历史单据可补打部门（04 章四） -->
+                            <div class="form-group" style="grid-column: span 2;">
+                                <label>部门（单据级 · 归档补打）</label>
+                                <div style="display:flex; gap:8px; align-items:center;">
+                                    <select id="arcDepartmentId" class="form-control" style="flex:1;" title="归档单据级部门：选后点「应用到全部明细」填到所有明细行（已手动改过的行除外）；行内也可单独覆盖">
+                                        <option value="">未分配</option>
+                                    </select>
+                                    <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.8rem; white-space:nowrap;" onclick="applyDeptToAll('arcTableBody','arcDepartmentId'); markArcDirty();" title="把单据级部门填入所有明细行（已手动改过的行保持不动）"> 应用到全部明细</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:26%;">消费项目/SKU</th>
+                                        <th style="width:12%;">数量</th>
+                                        <th style="width:13%;">单位</th>
+                                        <th style="width:15%;">单价 ($)</th>
+                                        <th style="width:15%;">金额 ($)</th>
+                                        <th style="width:12%;">部门</th>
+                                        <th style="width:7%;">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="arcTableBody">
+                                    <!-- 动态渲染明细 -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- 操作与编辑改动履历 Logs 区域 -->
+                        <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
+                            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                 操作与编辑改动履历 (Audit Logs)
+                            </div>
+                            <div id="arcAuditLogsContainer" style="max-height: 110px; overflow-y: auto; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem;">
+                                <!-- 动态渲染履历列表 -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-secondary" onclick="addArcEmptyRow()">+ 新增明细行</button>
+                            <button class="btn btn-danger" style="padding:6px 12px; font-size:0.85rem;" onclick="modalFlagReceipt()">[标记] 标记为异常</button>
+                        </div>
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn btn-secondary" onclick="closeArchiveModal()">取消</button>
+                            <button class="btn btn-primary" onclick="modalApproveReceipt()"> 审核通过 (Approve)</button>
+                            <!-- Q32: id 供保存中禁用防双击重提交 -->
+                            <button id="btnSaveArchive" class="btn btn-success" onclick="submitSaveArchiveEdited()"> 保存单据修改</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Wave 2：登记支付 Modal（T7/M7） -->
+    <div id="adminEngineModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:680px;">
+            <div class="modal-header">
+                <h3>⚙️ 引擎配置</h3>
+                <button class="modal-close-btn" onclick="closeModalById('adminEngineModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-grid">
+                    <div class="form-group" id="adminAuditToggleGroup" style="grid-column: span 1;">
+                        <label>审核开关（audit_enabled）</label>
+                        <select id="adminAuditEnabled" class="form-control">
+                            <option value="true">开 · 每单交叉审核</option>
+                            <option value="false">关 · 跳过审核</option>
+                        </select>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">关 = 识别后直接进复核，不交叉审核</div>
+                    </div>
+                    <div class="form-group" style="grid-column: span 1;">
+                        <label>解析 LLM（parse_llm_enabled）</label>
+                        <select id="adminParseEnabled" class="form-control">
+                            <option value="false">关</option>
+                            <option value="true">开 · VLM 识别后 → LLM 规范化解析</option>
+                        </select>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">纯文本任务，可用 LongCat 等文本模型</div>
+                    </div>
+                    <div class="form-group">
+                        <label>识别引擎</label>
+                        <select id="adminRecognitionEngine" class="form-control">
+                            <option value="opencode">opencode CLI（本机，支持视觉模型）</option>
+                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>识别模型</label>
+                        <select id="adminRecognitionModel" class="form-control"></select>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">负责把收据图转成结构化 JSON</div>
+                    </div>
+                    <div class="form-group">
+                        <label>解析引擎</label>
+                        <select id="adminParseEngine" class="form-control">
+                            <option value="opencode">opencode CLI（本机）</option>
+                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>解析模型</label>
+                        <select id="adminParseModel" class="form-control"></select>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">VLM 原始输出 → 严格 JSON 规范化</div>
+                    </div>
+                    <div class="form-group">
+                        <label>审核引擎</label>
+                        <select id="adminAuditEngine" class="form-control">
+                            <option value="opencode">opencode CLI（本机）</option>
+                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="adminAuditEngineGroup">
+                        <label>审核模型</label>
+                        <select id="adminAuditModel" class="form-control"></select>
+                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">交叉审核用（与识别不同家族，盲点互补）</div>
+                    </div>
+                </div>
+
+                <div style="margin-top:14px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; background:var(--bg-input, #f7f8fa);">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <span style="font-size:0.85rem; font-weight:600;">⚡ 预设 OpenAI 网关</span>
+                        <select id="adminOpenaiPreset" class="form-control" style="flex:1; min-width:260px;">
+                            <option value="">— 手动填写 —</option>
+                            <option value="siliconflow">SiliconFlow · 硅基流动（Qwen3-VL 视觉识别/审核）</option>
+                        </select>
+                        <span style="font-size:0.75rem; color:var(--text-muted);">选择预设自动填入下方识别/审核的 base_url · api_key · 模型名</span>
+                    </div>
+                </div>
+
+                <div id="adminOpenaiRecognitionBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#1565c0;">🔵 识别引擎 · OpenAI 兼容参数（必填）</div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL（如 https://api.openai.com/v1 或任意兼容网关）</label>
+                            <input type="text" id="adminOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminOpenaiRecApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名（如 gpt-4o-mini / qwen-vl-plus）</label>
+                            <input type="text" id="adminOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminOpenaiAuditBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#2f6b4f;">🟢 审核引擎 · OpenAI 兼容参数（必填）</div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL（如 https://api.openai.com/v1 或任意兼容网关）</label>
+                            <input type="text" id="adminOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminOpenaiAudApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名（如 gpt-4o-mini / qwen-vl-plus）</label>
+                            <input type="text" id="adminOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminParseOpenaiBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#6a1b9a;">🟣 解析 LLM · OpenAI 兼容参数（必填）</div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL</label>
+                            <input type="text" id="adminParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminParseOpenaiApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名</label>
+                            <input type="text" id="adminParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminGreySection" style="margin-top:16px; padding:14px; border:2px solid #f0c14b; border-radius:10px;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                        <span style="font-size:0.9rem; font-weight:700;">🧪 分组测试（灰测）</span>
+                        <select id="adminGreyEnabled" class="form-control" style="width:110px; padding:4px 8px; font-size:0.8rem;">
+                            <option value="false">停用</option>
+                            <option value="true">启用</option>
+                        </select>
+                    </div>
+                    <div id="adminGreyBody">
+                        <div style="color:var(--text-muted); font-size:0.8rem; margin-bottom:10px;">
+                            灰测 = 新模型按概率小流量试跑。命中灰测的单据走下方灰测组引擎/模型，其余走常规配置；识别率达标后再全量切换。
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>随机分配概率（%）</label>
+                                <input type="number" id="adminGreyPercent" class="form-control" min="0" max="100" step="1" placeholder="0-100">
+                                <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">用户受影响比例：0=全常规，100=全灰测</div>
+                            </div>
+                            <div class="form-group">
+                                <label>分配方式（assign_mode）</label>
+                                <select id="adminGreyAssignMode" class="form-control">
+                                    <option value="receipt">按单据随机（每单独立判断）</option>
+                                    <option value="supplier">按供应商（同供应商一致命中）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测识别引擎</label>
+                                <select id="adminGreyRecEngine" class="form-control">
+                                    <option value="opencode">opencode CLI（本机）</option>
+                                    <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                                    <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测识别模型</label>
+                                <select id="adminGreyRecModel" class="form-control"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测审核引擎</label>
+                                <select id="adminGreyAudEngine" class="form-control">
+                                    <option value="opencode">opencode CLI（本机）</option>
+                                    <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                                    <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测审核模型</label>
+                                <select id="adminGreyAudModel" class="form-control"></select>
+                            </div>
+                        </div>
+
+                        <div id="adminGreyOpenaiRecBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                            <div style="font-size:0.82rem; font-weight:600; margin-bottom:8px; color:#1565c0;">🔵 灰测识别 · OpenAI 兼容参数（必填）</div>
+                            <div class="form-grid">
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Base URL</label>
+                                    <input type="text" id="adminGreyOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="adminGreyOpenaiRecApiKey" class="form-control" placeholder="sk-...">
+                                </div>
+                                <div class="form-group">
+                                    <label>模型名</label>
+                                    <input type="text" id="adminGreyOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="adminGreyOpenaiAudBox" style="margin-top:10px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                            <div style="font-size:0.82rem; font-weight:600; margin-bottom:8px; color:#2f6b4f;">🟢 灰测审核 · OpenAI 兼容参数（必填）</div>
+                            <div class="form-grid">
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Base URL</label>
+                                    <input type="text" id="adminGreyOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="adminGreyOpenaiAudApiKey" class="form-control" placeholder="sk-...">
+                                </div>
+                                <div class="form-group">
+                                    <label>模型名</label>
+                                    <input type="text" id="adminGreyOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="adminGreyParseBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                                <span style="font-size:0.82rem; font-weight:600;">🧠 灰测解析 LLM（VLM 识别后 → LLM 规范化解析）</span>
+                                <select id="adminGreyParseEnabled" class="form-control" style="width:80px; padding:3px 6px; font-size:0.75rem;">
+                                    <option value="false">关</option>
+                                    <option value="true">开</option>
+                                </select>
+                            </div>
+                            <div style="color:var(--text-muted); font-size:0.72rem; margin-bottom:8px;">
+                                灰测组内开启后：识别原始输出交给下方解析 LLM 整理成严格 JSON。
+                            </div>
+                            <div id="adminGreyParseBody">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label>解析引擎</label>
+                                        <select id="adminGreyParseEngine" class="form-control">
+                                            <option value="opencode">opencode CLI（本机）</option>
+                                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
+                                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>解析模型</label>
+                                        <select id="adminGreyParseModel" class="form-control"></select>
+                                    </div>
+                                </div>
+                                <div id="adminGreyParseOpenaiBox" style="margin-top:10px; padding:10px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                                    <div style="font-size:0.78rem; font-weight:600; margin-bottom:8px; color:#6a1b9a;">🟣 灰测解析 · OpenAI 兼容参数（必填）</div>
+                                    <div class="form-grid">
+                                        <div class="form-group" style="grid-column: span 2;">
+                                            <label>Base URL</label>
+                                            <input type="text" id="adminGreyParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>API Key</label>
+                                            <input type="password" id="adminGreyParseOpenaiApiKey" class="form-control" placeholder="sk-...">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>模型名</label>
+                                            <input type="text" id="adminGreyParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminGreyStatus" style="margin-top:12px; padding:10px; border:1px dashed var(--border, #ccc); border-radius:8px; font-size:0.82rem; color:var(--text-muted);"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('adminEngineModal')">取消</button>
+                    <button class="btn btn-primary" onclick="saveAdminEngineConfig()">保存配置</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="paymentModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:640px;">
+            <div class="modal-header">
+                <h3> 登记支付（一次支付可挂账多张赊单）</h3>
+                <button class="modal-close-btn" onclick="closeModalById('paymentModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;" id="paymentSupplierHint"></div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>支付金额 ($)</label>
+                        <input type="number" step="0.01" min="0.01" id="payAmount" class="form-control" placeholder="如 3000.00">
+                    </div>
+                    <div class="form-group">
+                        <label>支付方式</label>
+                        <select id="payMethod" class="form-control">
+                            <option value="bank_transfer">银行转账</option>
+                            <option value="cheque">支票</option>
+                            <option value="cash">现金</option>
+                            <option value="fps">FPS 转数快</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>支付日期</label>
+                        <input type="date" id="payDate" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>付款凭证图（可选）</label>
+                        <input type="file" id="payVoucher" class="form-control" accept="image/*">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>备注</label>
+                        <input type="text" id="payNotes" class="form-control" placeholder="如：7 月份货款">
+                    </div>
+                </div>
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin:12px 0 6px;">勾选本次支付覆盖的赊单（未付月结单据）</div>
+                <div class="table-container" style="max-height:240px; overflow-y:auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width:44px;"><input type="checkbox" id="payCheckAll" onchange="togglePayCheckAll(this)"></th>
+                                <th>单据ID</th><th>开单日期</th><th>金额 ($)</th><th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="payReceiptBody"></tbody>
+                    </table>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('paymentModal')">取消</button>
+                    <button class="btn btn-primary" onclick="submitPayment()"> 确认登记支付</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wave 2：发起对账 Modal（T7/M8，D4 周期 × 供应商） -->
+    <div id="reconCreateModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:520px;">
+            <div class="modal-header">
+                <h3> 发起对账</h3>
+                <button class="modal-close-btn" onclick="closeModalById('reconCreateModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;" id="reconSupplierHint"></div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>对账周期类型</label>
+                        <select id="reconPeriodType" class="form-control" onchange="reconPeriodTypeChanged()">
+                            <option value="month">自然月（缺省上个自然月）</option>
+                            <option value="3d">最近 3 天</option>
+                            <option value="7d">最近 7 天</option>
+                            <option value="14d">最近 14 天</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>开始日期（可留空用缺省）</label>
+                        <input type="date" id="reconStart" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label>结束日期（可留空用缺省）</label>
+                        <input type="date" id="reconEnd" class="form-control">
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('reconCreateModal')">取消</button>
+                    <button class="btn btn-primary" onclick="submitReconCreate()"> 发起对账</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wave 2：对账差异处理 Modal（确认匹配需挑选赊单） -->
+    <div id="reconResolveModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:560px;">
+            <div class="modal-header">
+                <h3 id="reconResolveTitle">处理对账差异</h3>
+                <button class="modal-close-btn" onclick="closeModalById('reconResolveModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div id="reconResolveDesc" style="font-size:0.88rem; margin-bottom:12px;"></div>
+                <div class="form-group hide" id="reconResolveReceiptGroup">
+                    <label>选择要匹配的餐厅留底赊单</label>
+                    <select id="reconResolveReceipt" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <label>备注（写入处理记录）</label>
+                    <input type="text" id="reconResolveNote" class="form-control" placeholder="如：电话核实为漏拍 / 单价与合约不符">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('reconResolveModal')">取消</button>
+                    <button class="btn btn-primary" id="reconResolveSubmit" onclick="submitReconResolve()">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 09 方案：供应商新增 / 编辑 Modal（M1/M3/M4/S1） -->
+    <div id="supplierModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:520px;">
+            <div class="modal-header">
+                <h3 id="supplierModalTitle">新增供应商</h3>
+                <button class="modal-close-btn" onclick="closeModalById('supplierModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>名称 <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="supName" class="form-control" placeholder="如：德利行" maxlength="64">
+                </div>
+                <div class="form-group">
+                    <label>账期（谈妥的规矩）</label>
+                    <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                        <button type="button" class="chip" data-terms="" onclick="setSupplierTerms('')">现结</button>
+                        <button type="button" class="chip" data-terms="7" onclick="setSupplierTerms('7')">7 天</button>
+                        <button type="button" class="chip" data-terms="14" onclick="setSupplierTerms('14')">14 天</button>
+                        <button type="button" class="chip" data-terms="30" onclick="setSupplierTerms('30')">30 天</button>
+                        <input type="number" id="supTerms" class="form-control" placeholder="自定义天数 / 留空=现结" min="0" style="width:160px; font-size:0.82rem; padding:5px 8px;">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>联系电话</label>
+                    <input type="text" id="supPhone" class="form-control" placeholder="选填" maxlength="32">
+                </div>
+                <div class="form-group">
+                    <label>备注</label>
+                    <textarea id="supNotes" class="form-control" placeholder="选填，如送货时段、后门位置（≤500 字）" maxlength="500" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>结算习惯（仅标注，不改动单据）</label>
+                    <select id="supPref" class="form-control">
+                        <option value="">不设置</option>
+                        <option value="cash">现结</option>
+                        <option value="credit">赊账</option>
+                        <option value="mixed">混合</option>
+                    </select>
+                </div>
+                <div style="font-size:0.76rem; color:var(--text-muted);">编号：<span id="supCodePreview">（新增后自动生成）</span></div>
+                <div id="supplierModalError" class="form-error hide" style="margin-top:8px;"></div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('supplierModal')">取消</button>
+                    <button class="btn btn-primary" id="supplierModalSave" onclick="saveSupplier()"> 保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wave 2：供应商合并 Modal（D18） -->
+    <div id="mergeModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:560px;">
+            <div class="modal-header">
+                <h3> 供应商合并</h3>
+                <button class="modal-close-btn" onclick="closeModalById('mergeModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div id="mergeDropHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
+                <div class="form-group">
+                    <label>合并到（保留的供应商）</label>
+                    <select id="mergeKeepSelect" class="form-control"></select>
+                </div>
+                <div style="font-size:0.8rem; color:var(--danger); margin-top:8px; line-height:1.6;">
+                    [警告] 合并将把被并供应商的全部单据、别称、记忆、支付与对账任务迁至保留供应商，
+                    被并供应商档案将被删除且不可恢复。每张迁移单据会写入审计履历。
+                </div>
+                <div class="form-group" style="margin-top:10px;">
+                    <label style="display:flex; align-items:center; gap:8px; font-weight:400;">
+                        <input type="checkbox" id="mergeConfirmCheck">
+                        我已确认以上影响，同意执行合并
+                    </label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('mergeModal')">取消</button>
+                    <button class="btn btn-danger" onclick="submitMerge()"> 执行合并</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Wave 2：盘点调整 Modal（D15/M5） -->
+    <div id="stocktakeModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:480px;">
+            <div class="modal-header">
+                <h3> 盘点调整</h3>
+                <button class="modal-close-btn" onclick="closeModalById('stocktakeModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div id="stocktakeHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
+                <div class="form-group">
+                    <label>实盘数量</label>
+                    <input type="number" step="0.01" min="0" id="stocktakeQty" class="form-control" placeholder="输入实际盘点数量">
+                </div>
+                <div class="form-group">
+                    <label>盘点备注（可选）</label>
+                    <input type="text" id="stocktakeNote" class="form-control" placeholder="如：周日晚盘点，有损耗">
+                </div>
+                <div style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">
+                    差额 = 实盘 − 账面；确认后更新账面库存并留下盘点记录。
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('stocktakeModal')">取消</button>
+                    <button class="btn btn-primary" onclick="submitStocktake()"> 确认盘点</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- W4：出库消耗/损耗 Modal（B-30/B-31/B-32） -->
+    <div id="outboundModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:480px;">
+            <div class="modal-header">
+                <h3 id="outboundModalTitle">- 出库登记</h3>
+                <button class="modal-close-btn" onclick="closeModalById('outboundModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div id="outboundHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
+                <div class="form-group">
+                    <label>出库数量（标准单位）</label>
+                    <input type="number" step="0.01" min="0.01" id="outboundQty" class="form-control" placeholder="必须大于 0">
+                </div>
+                <div class="form-group">
+                    <label>备注（可选）</label>
+                    <input type="text" id="outboundNote" class="form-control" placeholder="如：午市炒菜 / 过期丢弃">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('outboundModal')">取消</button>
+                    <button class="btn btn-primary" id="outboundSubmitBtn" onclick="submitOutbound()">确认出库</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 食材档案 新增/编辑 Modal -->
+    <div id="skuModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:500px;">
+            <div class="modal-header">
+                <h3 id="skuModalTitle">新增食材</h3>
+                <button class="modal-close-btn" onclick="closeModalById('skuModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="skuModalId">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>品名 <span style="color:var(--danger, #ef4444);">*</span></label>
+                    <input type="text" id="skuModalName" class="form-control" placeholder="如：鲜鸡、五花肉 (1–64字)">
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>分类 <span style="color:var(--danger, #ef4444);">*</span></label>
+                    <input type="text" id="skuModalCategory" list="skuCategoryList" class="form-control" placeholder="选择或输入分类">
+                    <datalist id="skuCategoryList">
+                        <option value="肉类">
+                        <option value="海鲜">
+                        <option value="蔬菜">
+                        <option value="主食粮油">
+                        <option value="调味品">
+                        <option value="烘焙">
+                        <option value="饮品">
+                        <option value="清洁">
+                        <option value="其他">
+                    </datalist>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>基准单位 <span style="color:var(--danger, #ef4444);">*</span></label>
+                    <input type="text" id="skuModalUnit" list="skuUnitList" class="form-control" placeholder="如：kg, 包, 罐">
+                    <datalist id="skuUnitList">
+                        <option value="kg">
+                        <option value="g">
+                        <option value="斤">
+                        <option value="磅">
+                        <option value="包">
+                        <option value="件">
+                        <option value="罐">
+                        <option value="瓶">
+                        <option value="箱">
+                        <option value="只">
+                        <option value="条">
+                        <option value="个">
+                        <option value="升">
+                        <option value="L">
+                        <option value="打">
+                    </datalist>
+                    <div id="skuModalUnitNotice" style="display:none; font-size:0.8rem; color:#d97706; margin-top:4px;">
+                        ⚠️ 账面库存不为 0，禁止修改单位。请先通过盘点或记用量/报损耗将库存调整为 0。
+                    </div>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>补货警戒线 <span style="color:var(--danger, #ef4444);">*</span></label>
+                    <input type="number" step="any" min="0" id="skuModalAlert" class="form-control" placeholder="库存低于此数值触发预警">
+                </div>
+                <div id="skuModalActiveGroup" class="form-group" style="margin-bottom:12px; display:none;">
+                    <label>档案状态</label>
+                    <select id="skuModalActive" class="form-control">
+                        <option value="1">启用</option>
+                        <option value="0">停用</option>
+                    </select>
+                </div>
+                <div id="skuModalAdvancedCode" style="display:none; font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                    SKU 代码: <span id="skuModalCodeDisplay" style="font-family:monospace;"></span>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('skuModal')">取消</button>
+                    <button class="btn btn-primary" id="skuModalSubmitBtn" onclick="submitSkuModal()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 部门花销明细 Modal -->
+    <div id="costDrilldownModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:800px;">
+            <div class="modal-header">
+                <h3 id="costDrilldownTitle"> 部门花销明细</h3>
+                <button class="modal-close-btn" onclick="closeModalById('costDrilldownModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div id="costDrilldownNotice" style="display:none; font-size:0.85rem; background:var(--bg-hover, #f1f5f9); padding:8px 12px; border-radius:6px; margin-bottom:12px; color:var(--text-muted);">
+                </div>
+                <div class="table-container" style="max-height:480px; overflow-y:auto; margin-bottom:0;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th style="width:110px;">开单日期</th>
+                                <th style="width:90px;">单据号</th>
+                                <th>品名</th>
+                                <th style="width:80px;">数量</th>
+                                <th style="width:110px;" class="col-right">金额 ($)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="costDrilldownBody">
+                            <!-- 动态渲染：按供应商小计 + 明细 -->
+                        </tbody>
+                    </table>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+                    <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem;" onclick="loadCostReport(); closeModalById('costDrilldownModal');">刷新报表</button>
+                    <button class="btn btn-secondary" style="padding:4px 14px; font-size:0.85rem;" onclick="closeModalById('costDrilldownModal')">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- M5/P0：单 SKU 价格走势（曲线 + 异动 + 供应商/单据钻取） -->
+    <div id="priceHistoryModal" class="modal-backdrop hide">
+        <div class="modal-card price-history-modal-card" style="max-width:860px;">
+            <div class="modal-header">
+                <div class="price-history-header-text">
+                    <h3 id="priceHistoryTitle">价格走势</h3>
+                    <div id="priceHistorySubtitle" class="price-history-subtitle"></div>
+                </div>
+                <button class="modal-close-btn" onclick="closeModalById('priceHistoryModal')" aria-label="关闭">x</button>
+            </div>
+            <div class="modal-body price-history-body">
+                <div id="priceHistoryLoading" class="price-history-loading hide">加载价格数据…</div>
+                <div id="priceHistoryEmpty" class="price-history-empty hide">暂无历史价格记录。审核入库后将在此形成进价曲线。</div>
+                <div id="priceHistoryContent" class="hide">
+                    <div id="priceHistoryMetrics" class="price-history-metrics"></div>
+                    <div class="price-history-chart-wrap">
+                        <div id="priceHistoryChart" class="price-history-chart" role="img" aria-label="进货单价走势图"></div>
+                        <div class="price-history-chart-legend">
+                            <span class="ph-legend-item"><i class="ph-dot ph-dot-line"></i>进货单价</span>
+                            <span class="ph-legend-item"><i class="ph-dot ph-dot-avg"></i>30 日均价</span>
+                            <span class="ph-legend-item"><i class="ph-dot ph-dot-anomaly"></i>涨幅 &gt;10%</span>
+                        </div>
+                    </div>
+                    <div class="price-history-table-head">
+                        <span>进价明细</span>
+                        <span id="priceHistoryCount" class="price-history-count"></span>
+                    </div>
+                    <div class="table-container price-history-table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>日期</th>
+                                    <th>供应商</th>
+                                    <th class="col-right">单价 ($)</th>
+                                    <th class="col-right">数量</th>
+                                    <th>来源</th>
+                                    <th class="col-right">较上笔</th>
+                                    <th class="col-center">单据</th>
+                                </tr>
+                            </thead>
+                            <tbody id="priceHistoryTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
+    <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
+
+    <script src="/static/js/main.js"></script>
+</body>
+</html>
