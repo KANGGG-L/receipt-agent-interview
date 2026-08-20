@@ -19,6 +19,7 @@ from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
+from app.api_phase2 import router as phase2_router
 from app.api_receipts import router as receipts_router
 from app.api_suppliers import router as suppliers_router
 
@@ -29,6 +30,7 @@ app.include_router(inventory_router)
 app.include_router(suppliers_router)
 app.include_router(finance_router)
 app.include_router(admin_router)
+app.include_router(phase2_router)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
@@ -48,7 +50,86 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "time": time.strftime("%H:%M:%S")}
+    """结构化健康状态：组件异常汇总 → status=degraded（200），绝不 500（对齐完整版）。"""
+    import os
+    import shutil
+    from datetime import datetime, timezone
+    from sqlalchemy import text
+
+    def _db_health():
+        try:
+            s = db.get_session()
+            try:
+                result = s.execute(text("PRAGMA integrity_check")).scalar()
+            finally:
+                s.close()
+            if result == "ok":
+                return True, None
+            return False, f"integrity_check 结果异常: {result}"
+        except Exception as e:
+            return False, str(e)
+
+    def _wal_health():
+        try:
+            size_bytes = os.path.getsize(f"{db.DB_PATH}-wal")
+        except OSError:
+            size_bytes = 0
+        if size_bytes > 64 * 1024 * 1024:
+            return size_bytes, False, f"WAL 体积 {size_bytes} 字节 > 64MB（checkpoint 异常）"
+        return size_bytes, True, None
+
+    def _cli_available(path):
+        if not path:
+            return False
+        if os.path.exists(path):
+            return True
+        return shutil.which(path) is not None
+
+    def _engine_health():
+        from app import llm
+        cfg = db.get_engine_config()
+        return {
+            "opencode": _cli_available(llm._get_opencode_bin()),
+            "codebuddy": _cli_available(llm._get_codebuddy_bin()),
+            "openai": bool(getattr(cfg, "openai_rec_base_url", "")
+                           and getattr(cfg, "openai_rec_api_key", "")),
+        }
+
+    def _backup_health():
+        backup_dir = os.environ.get("BACKUP_DIR") or os.path.join(str(BASE_DIR), "backups")
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            probe = os.path.join(backup_dir, f".health_write_probe_{os.getpid()}")
+            with open(probe, "w") as f:
+                f.write("ok")
+            os.remove(probe)
+            return True, None
+        except Exception as e:
+            return False, f"备份目录不可写（BACKUP_DIR={backup_dir}）: {e}"
+
+    db_ok, db_err = _db_health()
+    wal_size, wal_ok, wal_err = _wal_health()
+    engines = _engine_health()
+    backup_ok, backup_err = _backup_health()
+
+    problems = []
+    if not db_ok:
+        problems.append(f"db: {db_err}")
+    if not wal_ok:
+        problems.append(f"wal: {wal_err}")
+    if not any(engines.values()):
+        problems.append("engine: 无可用识别引擎")
+    if not backup_ok:
+        problems.append(f"backup: {backup_err}")
+
+    return {
+        "status": "degraded" if problems else "ok",
+        "db": {"ok": db_ok, "error": db_err},
+        "wal": {"size_bytes": wal_size, "ok": wal_ok, "error": wal_err},
+        "engine": engines,
+        "backup": {"dir_writable": backup_ok, "error": backup_err},
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _smoke(image_path: str):
@@ -82,7 +163,7 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--smoke":
         sys.exit(_smoke(sys.argv[2]))
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=15010)
+    uvicorn.run("app.main:app", host="0.0.0.0", port=15010, reload=True)
 
 
 if __name__ == "__main__":

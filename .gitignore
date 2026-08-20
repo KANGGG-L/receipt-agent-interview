@@ -5,6 +5,7 @@ review/
 interview/prep/
 interview/phases/
 interview/review/
+docs/
 
 # Python
 __pycache__/
@@ -24,9 +25,14 @@ uploads/
 *.db-wal
 .rag_chroma/
 
-# 本地测试产物
-receipt_demo.db
-.pytest_cache/
+# 工具/Agent 本地状态（绝不提交）
+.omc/
+.omo/
+.codegraph
+
+# 面试展示脚本（本地便利工具，不提交；含运行时日志）
+/interview-show.sh
+/.interview.log
 
 # OS
 .DS_Store

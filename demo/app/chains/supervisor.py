@@ -12,6 +12,7 @@ from __future__ import annotations
 此场景无并行/分支回环需求，简单函数比状态机更可读、易测。
 """
 
+import json
 import time
 from typing import Optional
 
@@ -63,7 +64,10 @@ def _run_gates(data: ReceiptData):
 
 def run_pipeline(image_path: str, vendor_hint: str = "",
                  config: Optional[EngineConfig] = None,
-                 supplier_name: str = "") -> dict:
+                 supplier_name: str = "",
+                 receipt_id: Optional[int] = None,
+                 experiment_id: Optional[int] = None,
+                 ) -> dict:
     """完整识别管线入口（线性编排 + 重试阶梯）。
 
     supplier_name 供灰测按供应商分配（同供应商一致命中）。
@@ -154,6 +158,39 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         _snapshot(log, "audit_flag",
                   f"交叉审核发现 {len(audit.get('discrepancies', []))} 处分歧",
                   state["attempt"])
+
+    # ---- 阶段 2：写 AI 决策日志（audit 结果）----
+    try:
+        _ai_engine = str(getattr(config, "audit_engine", "") or "opencode")
+        _ai_model = str(getattr(config, "audit_model", "") or "")
+        if use_grey:
+            _ai_engine = str(getattr(config, "grey_audit_engine", _ai_engine) or _ai_engine)
+            _ai_model = str(getattr(config, "grey_audit_model", _ai_model) or _ai_model)
+        from app import db as _db
+        _db.log_ai_decision(
+            receipt_id=int(receipt_id) if receipt_id else None,
+            supplier_id=None,
+            experiment_id=int(experiment_id) if experiment_id else None,
+            grp="treatment" if use_grey else "control",
+            engine=_ai_engine,
+            model=_ai_model,
+            use_grey=1 if use_grey else 0,
+            decision_type="audit",
+            field_path="overall",
+            ai_value=json.dumps({
+                "overall_consistent": audit.get("overall_consistent"),
+                "trust": audit.get("trust"),
+                "discrepancies_count": len(audit.get("discrepancies", []) or []),
+                "reason": audit.get("reason", ""),
+            }, ensure_ascii=False),
+            confidence=audit.get("trust"),
+            extra=json.dumps({
+                "discrepancies": audit.get("discrepancies", []) or [],
+                "corrected_suggestions": audit.get("corrected_suggestions", {}) or {},
+            }, ensure_ascii=False),
+        )
+    except Exception:
+        pass
 
     state["status"] = "parsed"
     return state

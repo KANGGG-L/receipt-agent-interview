@@ -12,25 +12,9 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.llm import build_audit_model
 from app.models import ReceiptData
+from app.prompts import get_prompt
 
-AUDIT_SYSTEM = """你是一个严格的收据审核员。识别模型已把一张香港进货收据转成 JSON。
-你的任务：对照原图逐字段复核，找出识别错误。
-
-输出严格 JSON（只输出 JSON，不要解释）：
-{
-  "overall_consistent": true/false,
-  "discrepancies": [
-    {"field": "items[0].qty", "issue": "原图是5斤，识别成3斤", "severity": "high|medium|low"}
-  ],
-  "corrected_suggestions": {"items[0].qty": 5},
-  "trust": 0~1
-}
-规则：
-- 数字（数量/单价/小计/总额）务必与图对照，金额计算也要检查
-- 单位（斤/公斤/箱）错配是 high 严重度
-- 严重度：high=金额/数量错误；medium=单位/名称错误；low=格式/细节
-- corrected_suggestions 只填你有把握的修正，没把握不填
-"""
+AUDIT_SYSTEM = get_prompt("audit")
 
 
 def build_audit_prompt(image_path: str, data: ReceiptData) -> list:
@@ -93,10 +77,22 @@ def _parse_audit(raw: str) -> dict:
             payload = json.loads(text[start_i:end_i + 1])
         except json.JSONDecodeError:
             return {"skipped": True, "reason": "unparseable"}
+    reason = payload.get("reason")
+    discrepancies = payload.get("discrepancies", []) or []
+    corrected = payload.get("corrected_suggestions", {}) or {}
+    if not reason and discrepancies:
+        parts = []
+        for d in discrepancies:
+            if isinstance(d, dict) and d.get("issue"):
+                parts.append(d["issue"])
+        reason = "；".join(parts) if parts else "交叉审核发现分歧"
+    elif not reason:
+        reason = "AI 识别与原图一致"
     return {
         "overall_consistent": payload.get("overall_consistent"),
-        "discrepancies": payload.get("discrepancies", []),
-        "corrected_suggestions": payload.get("corrected_suggestions", {}),
+        "discrepancies": discrepancies,
+        "corrected_suggestions": corrected,
         "trust": payload.get("trust"),
+        "reason": reason,
         "skipped": False,
     }

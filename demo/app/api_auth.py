@@ -2,6 +2,7 @@
 """认证端点：/api/auth/login、/api/auth/me。"""
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth import authenticate, auth_enabled, issue_token, resolve_account
@@ -18,9 +19,12 @@ class LoginBody(BaseModel):
 def login(body: LoginBody, request: Request):
     acct = authenticate(body.email, body.password)
     if acct is None:
-        return {"status": "error", "msg": "邮箱或密码错误"}
+        # 与完整版一致：凭据错误 401
+        return JSONResponse(content={"status": "error", "msg": "邮箱或密码错误"},
+                            status_code=401)
     token = issue_token(acct["email"], acct["role"])
-    return {"status": "success", "token": token, "account": acct}
+    # demo 无 refresh 流程；字段面与完整版对齐（AUTH_ENABLED=0 时亦为 None）
+    return {"status": "success", "token": token, "refresh_token": None, "account": acct}
 
 
 @router.get("/api/auth/me")

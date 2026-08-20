@@ -178,11 +178,113 @@ def resolve_line(task_id: str, body: ResolveBody, request: Request):
     return {"status": "success", "msg": "已处理"}
 
 
-@router.post("/api/reconciliation/{task_id}/confirm")
-def confirm_reconciliation(task_id: str, request: Request):
+class ImportStatementBody(BaseModel):
+    supplier_id: int
+    statement_period: str = ""
+    external_lines: list[dict] = []  # [{"date": "2026-08-01", "invoice_no": "INV-001", "amount": 500.0, "notes": ""}]
+
+
+@router.post("/api/reconciliation/import-statement")
+def import_supplier_statement(body: ImportStatementBody, request: Request):
+    """双边对账导入：导入供应商月结对账单，并创建双向核对任务。"""
     require_role("owner")(request)
+    from fastapi.responses import JSONResponse
+
+    supplier = db.get_supplier(body.supplier_id)
+    if supplier is None:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
+
+    task_id = db.new_id()
+    # 系统内该供应商 approved/edited 的收据
+    system_receipts = [
+        r for r in db.list_receipt_rows()
+        if r.supplier_name == supplier.name and r.status in ("approved", "edited")
+    ]
+
+    sys_total = round(sum(r.total_amount or 0.0 for r in system_receipts), 2)
+    ext_total = round(sum(float(line.get("amount", 0.0)) for line in body.external_lines), 2)
+    diff = round(ext_total - sys_total, 2)
+
+    # 简单双向匹配算法
+    matched_lines = []
+    unmatched_ext = []
+    unmatched_sys = {r.id: r for r in system_receipts}
+
+    for ext in body.external_lines:
+        ext_amt = float(ext.get("amount", 0.0))
+        ext_date = ext.get("date", "")
+        # 寻找匹配的系统收据（同金额，或同日期）
+        found_rid = None
+        for rid, sys_r in list(unmatched_sys.items()):
+            if abs((sys_r.total_amount or 0.0) - ext_amt) < 0.01:
+                found_rid = rid
+                break
+        if found_rid is not None:
+            del unmatched_sys[found_rid]
+            matched_lines.append({
+                "type": "matched",
+                "external": ext,
+                "system_receipt_id": found_rid,
+                "amount": ext_amt,
+            })
+        else:
+            unmatched_ext.append({
+                "type": "vendor_only",
+                "external": ext,
+                "amount": ext_amt,
+                "issue": "供应商多记/系统缺失单据",
+            })
+
+    sys_only_lines = [
+        {
+            "type": "restaurant_only",
+            "receipt_id": r.id,
+            "receipt_date": r.receipt_date or "",
+            "amount": r.total_amount or 0.0,
+            "issue": "系统内已记/供应商月结未列出",
+        }
+        for r in unmatched_sys.values()
+    ]
+
+    RECON_TASKS[task_id] = {
+        "id": task_id,
+        "supplier_id": body.supplier_id,
+        "statement_period": body.statement_period,
+        "status": "reconciling",
+        "external_total": ext_total,
+        "system_total": sys_total,
+        "diff_amount": diff,
+        "matched": matched_lines,
+        "discrepancies": unmatched_ext + sys_only_lines,
+    }
+
+    return {
+        "status": "success",
+        "task_id": task_id,
+        "summary": {
+            "external_statement_total": ext_total,
+            "system_receipts_total": sys_total,
+            "diff_amount": diff,
+            "discrepancy_count": len(unmatched_ext) + len(sys_only_lines),
+        },
+        "discrepancies": unmatched_ext + sys_only_lines,
+    }
+
+
+@router.get("/api/reconciliation/{task_id}/discrepancies")
+def get_reconciliation_discrepancies(task_id: str, request: Request):
+    """获取双边对账差异核对结果。"""
+    require_role("owner")(request)
+    from fastapi.responses import JSONResponse
     t = RECON_TASKS.get(task_id)
     if t is None:
-        return {"status": "error", "msg": "任务不存在"}
-    t["status"] = "confirmed"
-    return {"status": "success", "msg": "对账已确认"}
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "对账任务不存在"})
+    return {
+        "status": "success",
+        "task_id": task_id,
+        "external_total": t.get("external_total", 0.0),
+        "system_total": t.get("system_total", 0.0),
+        "diff_amount": t.get("diff_amount", 0.0),
+        "discrepancies": t.get("discrepancies", []),
+    }
+

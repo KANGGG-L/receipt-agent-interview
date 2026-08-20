@@ -70,7 +70,7 @@ class SkuCreateBody(BaseModel):
 
 @router.post("/api/inventory/skus")
 def create_sku(body: SkuCreateBody, request: Request):
-    require_role("owner")(request)
+    require_role("staff")(request)
     sku_id, err = db.create_sku(body.name, body.category, body.base_unit,
                                 body.min_stock_alert)
     if err:
@@ -98,6 +98,43 @@ def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
     if row is None:
         return {"status": "error", "msg": "SKU 不存在"}
     return {"status": "success"}
+
+
+@router.delete("/api/inventory/skus/{sku_id}")
+def delete_sku_endpoint(sku_id: int, request: Request):
+    """删除或停用 SKU：无流水则彻底删除，有流水则安全停用。"""
+    require_role("owner")(request)
+    ok, action = db.delete_sku(sku_id)
+    if not ok:
+        return {"status": "error", "code": "NOT_FOUND", "msg": "SKU 不存在"}
+    msg = "SKU 已安全停用（因存在历史进货流水，保留历史记录）" if action == "DEACTIVATED" else "SKU 已彻底删除"
+    return {"status": "success", "action": action, "msg": msg}
+
+
+class SkuMergeBody(BaseModel):
+    primary_sku_id: int
+    secondary_sku_ids: list[int]
+    sync_vendor_memory: bool = True
+
+
+@router.post("/api/inventory/skus/merge")
+def merge_skus_endpoint(body: SkuMergeBody, request: Request):
+    """合并 SKU：迁移历史流水至主 SKU，停用副 SKU，并自动反哺供应商别名记忆。"""
+    require_role("owner")(request)
+    result, err = db.merge_skus(body.primary_sku_id, body.secondary_sku_ids)
+    if err:
+        return {"status": "error", "code": err, "msg": f"合并失败：{err}"}
+
+    # 反哺 VendorMemory 记忆库（实现同义别名自学习）
+    if body.sync_vendor_memory and result:
+        from app.services.rag import ingest_memory
+        primary_name = result.get("primary_name", "")
+        merged_names = result.get("merged_names", [])
+        if primary_name and merged_names:
+            alias_note = f"SKU同义合并映射：[{', '.join(merged_names)}] 统一映射为标准品类 [{primary_name}]"
+            ingest_memory("全局品类库", alias_note, notes=f"SKU别名合并学习：{primary_name}")
+
+    return {"status": "success", "data": result, "msg": "SKU 合并成功并已沉淀别名记忆"}
 
 
 class StocktakeBody(BaseModel):

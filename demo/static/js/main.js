@@ -1,3 +1,145 @@
+
+// 内置弹窗组件（替代 window.prompt 与 window.confirm）
+function showCustomInputModal({ title, message, defaultValue, placeholder, onConfirm, onCancel }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:99999; display:flex; align-items:center; justify-content:center;';
+    
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'width:420px; max-width:90vw; background:var(--card-bg, #fff); border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.2); animation:modalFadeIn 0.2s ease;';
+
+    const titleEl = document.createElement('h4');
+    titleEl.style.cssText = 'margin:0 0 10px 0; font-size:1.1rem; color:var(--text-main, #333); font-weight:600;';
+    titleEl.textContent = title || '请输入';
+    card.appendChild(titleEl);
+
+    if (message) {
+        const msgEl = document.createElement('div');
+        msgEl.style.cssText = 'font-size:0.85rem; color:var(--text-secondary, #666); margin-bottom:12px; white-space:pre-wrap; line-height:1.4;';
+        msgEl.textContent = message;
+        card.appendChild(msgEl);
+    }
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.style.cssText = 'width:100%; box-sizing:border-box; margin-bottom:16px; font-size:0.9rem; padding:8px 10px;';
+    input.value = defaultValue || '';
+    if (placeholder) input.placeholder = placeholder;
+    card.appendChild(input);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    cancelBtn.textContent = '取消';
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    confirmBtn.textContent = '确定';
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    card.appendChild(btnRow);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    input.focus();
+    input.select();
+
+    function close() {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }
+
+    cancelBtn.onclick = () => { close(); if (onCancel) onCancel(); };
+    confirmBtn.onclick = () => { const val = input.value; close(); if (onConfirm) onConfirm(val); };
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') { confirmBtn.click(); }
+        else if (e.key === 'Escape') { cancelBtn.click(); }
+    };
+}
+
+function showCustomConfirmModal({ title, message, confirmText = '确定', cancelText = '取消', onConfirm, onCancel }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop custom-modal-overlay';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:999999; display:flex; align-items:center; justify-content:center;';
+    
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'width:420px; max-width:90vw; background:var(--card-bg, #fff); border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25);';
+
+    const titleEl = document.createElement('h4');
+    titleEl.style.cssText = 'margin:0 0 10px 0; font-size:1.1rem; color:var(--text-main, #333); font-weight:600;';
+    titleEl.textContent = title || '请确认';
+    card.appendChild(titleEl);
+
+    if (message) {
+        const msgEl = document.createElement('div');
+        msgEl.style.cssText = 'font-size:0.9rem; color:var(--text-main, #444); margin-bottom:18px; white-space:pre-wrap; line-height:1.5; word-break:break-word;';
+        msgEl.textContent = message;
+        card.appendChild(msgEl);
+    }
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    cancelBtn.textContent = cancelText;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    confirmBtn.textContent = confirmText;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    card.appendChild(btnRow);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    confirmBtn.focus();
+
+    const keyHandler = (e) => {
+        if (e.key === 'Escape') {
+            cancelBtn.click();
+        } else if (e.key === 'Enter') {
+            confirmBtn.click();
+        }
+    };
+    window.addEventListener('keydown', keyHandler);
+
+    function close() {
+        window.removeEventListener('keydown', keyHandler);
+        if (overlay && overlay.parentNode) {
+            overlay.parentNode.removeChild(overlay);
+        }
+    }
+
+    cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        if (typeof onCancel === 'function') onCancel();
+    };
+
+    confirmBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        if (typeof onConfirm === 'function') onConfirm();
+    };
+}
+
 // ==========================================================================
 // 香港餐饮 AI 收据与库存管理系统 - 前端交互逻辑
 // ==========================================================================
@@ -76,8 +218,8 @@ function buildNonWebConvertHowtoItems(fmt) {
     }
     // HEIC / HEIF 默认
     return [
-        { strong: 'iPhone 以后拍照', text: '设置 → 相机 → 格式 → 选「兼容性最佳」（之后即为 JPEG）' },
-        { strong: 'iPhone 导出这张', text: '照片 App 选图 → 分享 → 储存到文件 / 隔空投送（系统常自动转 JPEG）' },
+        { strong: 'iPhone 以后拍照', text: '设置 → 相机 → 格式 → 选「兼容性最佳」' },
+        { strong: 'iPhone 导出这张', text: '照片 App 选图 → 分享 → 储存到文件 / 隔空投送' },
         { strong: 'Mac', text: '预览 App 打开 → 文件 → 导出 → 格式选 JPEG' },
         { strong: 'Windows', text: '用「照片」打开后另存，或在线工具导出为 JPG' },
         { strong: '本系统', text: '也可直接点解析，服务端会自动转为 JPEG，无需先转换' },
@@ -141,7 +283,7 @@ function resolvePhotoPreview(photo, fallbackFile) {
     if (isNonWeb) {
         return {
             url: makeLargeSvgDataUrl(
-                `📷 ${nonWebFormatLabel(file)} 照片`,
+                `${nonWebFormatLabel(file)} 照片`,
                 '浏览器无法直接预览 HEIC，解析时会自动转为 JPEG'
             ),
             showNonWebHint: true,
@@ -169,7 +311,7 @@ function setMainPreviewFromFile(file, objectUrl) {
     if (!img) return;
     if (isNonWebImageFile(file)) {
         img.src = makeLargeSvgDataUrl(
-            `📷 ${nonWebFormatLabel(file)} 照片`,
+            `${nonWebFormatLabel(file)} 照片`,
             '浏览器无法直接预览 HEIC，解析时会自动转为 JPEG'
         );
         setNonWebPreviewHint(true, file);
@@ -309,7 +451,7 @@ function showLoginPanel(hintMsg) {
     title.style.cssText = 'margin:0 0 6px; font-size:1.15rem; font-family:var(--font-display); color:var(--text-main);';
 
     const sub = document.createElement('div');
-    sub.textContent = '系统已开启鉴权（AUTH_ENABLED=1），请使用注册邮箱与密码登录后继续。';
+    sub.textContent = '系统已开启鉴权，请使用注册邮箱与密码登录后继续。';
     sub.style.cssText = 'color:var(--text-muted); font-size:0.85rem; margin-bottom:14px;';
 
     const errBox = document.createElement('div');
@@ -405,7 +547,7 @@ function probeAuthAndEnter(reloadData) {
         .then(([httpStatus, body]) => {
             if (decideAuthProbe(httpStatus, body) === 'login') {
                 setAuthToken(null);
-                showLoginPanel('请先登录（未登录或令牌无效）');
+                showLoginPanel('请先登录');
                 return;
             }
             AuthState.enabled = !!(body && body.auth_enabled);
@@ -469,7 +611,7 @@ let startMouseY = 0;
 
 // 可复用的计量单位池 (预置香港餐饮常用单位)
 let availableUnits = [
-    "kg", "g", "司马斤", "斤", "两", "磅", "磅(lb)",
+    "kg", "g", "司马斤", "斤", "两", "磅",
     "箱", "包", "件", "罐", "隻", "只", "瓶", "盒", "桶", "扎", "把", "袋"
 ];
 
@@ -505,7 +647,7 @@ function deptSelectOptionsHtml(selectedId) {
     if (cur !== null && !activeDepartments().some(d => Number(d.id) === cur)) {
         const inactiveDept = (allDepartments || []).find(d => Number(d.id) === cur);
         if (inactiveDept) {
-            html += `<option value="${Number(cur)}" selected>${w2Escape(inactiveDept.name)}（已停用）</option>`;
+            html += `<option value="${Number(cur)}" selected>${w2Escape(inactiveDept.name)} 已停用</option>`;
         }
     }
     return html;
@@ -532,8 +674,8 @@ function applyDeptToAll(tableBodyId, headerSelectId) {
         if (sel) { sel.value = deptId; applied++; }
     });
     showToast(applied > 0
-        ? `已将部门「${deptName}」应用到 ${applied} 行明细（已手动改过的行保持不动）`
-        : '没有可应用的明细行（当前行均已手动改过）', 'info');
+        ? `已将部门「${deptName}」应用到 ${applied} 行明细`
+        : '没有可应用的明细行', 'info');
 }
 
 // ---------------------------------------------------------------------
@@ -577,7 +719,7 @@ function loadDepartmentAdmin() {
                 }
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td>${w2Escape(d.name)}${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">（已停用）</span>'}</td>
+                    <td>${w2Escape(d.name)}${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">已停用</span>'}</td>
                     <td class="col-center">${statusBadge}</td>
                     <td class="col-center" style="white-space:nowrap;">${actions}</td>`;
                 body.appendChild(tr);
@@ -588,7 +730,7 @@ function loadDepartmentAdmin() {
 
 // 契约②：新增部门（owner）；prompt/confirm 均为纯文本，无插值注入面
 function addDepartment() {
-    const name = prompt('新增部门名称（如：水吧）：');
+    const name = prompt('新增部门名称：');
     if (name === null) return;
     const n = String(name).trim();
     if (!n) { showToast('部门名称不能为空', 'warning'); return; }
@@ -642,7 +784,7 @@ function renameDepartment(id) {
 function deactivateDepartment(id) {
     const dept = (allDepartments || []).find(d => Number(d.id) === Number(id));
     const label = dept ? dept.name : ('#' + Number(id));
-    if (!confirm('确定停用部门「' + label + '」？\n\n停用后它不再出现在「选部门」下拉中（新单据不可选），'
+    if (!confirm('确定停用部门「' + label + '」？\n\n停用后它不再出现在「选部门」下拉中，'
         + '但历史明细成本仍归属该部门并照常出现在花销报表。')) return;
     fetch('/api/departments/' + Number(id), { method: 'DELETE' })
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
@@ -763,14 +905,14 @@ function loadCostReport() {
                 const prevText = '$' + fmtMoney(prevVal);
                 let deltaHtml = '<span style="color:var(--text-muted);">$0.00</span>';
                 if (dep.delta > 0) {
-                    const tag = prevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">(新增)</span>' : '';
+                    const tag = prevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
                     deltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(dep.delta)}</span>${tag}`;
                 } else if (dep.delta < 0) {
                     deltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(dep.delta))}</span>`;
                 }
 
                 tr.innerHTML = `
-                    <td>${w2Escape(dep.name)}${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">（已停用）</span>'}</td>
+                    <td>${w2Escape(dep.name)}${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">已停用</span>'}</td>
                     <td class="col-right" style="font-weight:600;">$${fmtMoney(dep.total)}</td>
                     <td class="col-right" style="color:var(--text-muted);">${prevText}</td>
                     <td class="col-right">${deltaHtml}</td>`;
@@ -780,19 +922,19 @@ function loadCostReport() {
 
         // 未分配桶
         const unallocSubtext = unallocCount > 0
-            ? `未分配（有 ${unallocCount} 条明细还没选部门，点开可补）`
+            ? `未分配`
             : '未分配';
 
         const unallocTr = document.createElement('tr');
         unallocTr.style.cursor = 'pointer';
-        unallocTr.title = '未打部门的明细行成本（点击查看明细，可打开原单补打部门）';
+        unallocTr.title = '未打部门的明细行成本';
         unallocTr.addEventListener('click', () => openCostDrilldown(null, '未分配', periodLabel));
 
         const unallocPrevVal = Number(unalloc.prev_total) || 0;
         const unallocPrevText = '$' + fmtMoney(unallocPrevVal);
         let unallocDeltaHtml = '<span style="color:var(--text-muted);">$0.00</span>';
         if (unalloc.delta > 0) {
-            const tag = unallocPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">(新增)</span>' : '';
+            const tag = unallocPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
             unallocDeltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(unalloc.delta)}</span>${tag}`;
         } else if (unalloc.delta < 0) {
             unallocDeltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(unalloc.delta))}</span>`;
@@ -812,7 +954,7 @@ function loadCostReport() {
         const totalPrevText = '$' + fmtMoney(totalPrevVal);
         let totalDeltaHtml = '<span style="color:var(--text-muted);">$0.00</span>';
         if (d.delta > 0) {
-            const tag = totalPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">(新增)</span>' : '';
+            const tag = totalPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
             totalDeltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(d.delta)}</span>${tag}`;
         } else if (d.delta < 0) {
             totalDeltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(d.delta))}</span>`;
@@ -826,8 +968,7 @@ function loadCostReport() {
         body.appendChild(totalTr);
 
         if (summary) {
-            summary.textContent = '时段 ' + periodLabel + '：进货总额 $' + fmtMoney(d.month_total)
-                + '（含未分配）';
+            summary.textContent = '时段 ' + periodLabel + '：进货总额 $' + fmtMoney(d.month_total);
         }
     })
     .catch(err => {
@@ -942,10 +1083,10 @@ function exportCostReportCSV() {
     const d = lastCostReportData;
     const label = (d.period && d.period.label) ? d.period.label : (d.month || 'cost_report');
     let csvContent = '\uFEFF';
-    csvContent += '部门,本期进货($),上期对照($),变化($)\n';
+    csvContent += '部门,本期进货,上期对照,变化\n';
 
     (d.departments || []).forEach(dep => {
-        const name = dep.name + (Number(dep.active) === 1 ? '' : '（已停用）');
+        const name = dep.name + (Number(dep.active) === 1 ? '' : ' 已停用');
         const prev = Number(dep.prev_total || 0).toFixed(2);
         const deltaVal = Number(dep.delta) || 0;
         const deltaStr = (deltaVal >= 0 ? '+' : '') + deltaVal.toFixed(2);
@@ -1001,6 +1142,7 @@ function initDeptAdminDetails() {
     loadDepartmentsAll();        // Wave 2（D44）：部门下拉/管理/报表共用数据源
     loadFinancePanel();         // Wave 1：首屏即拉付款域，供导航红点/顶部横幅提醒
     initDeptAdminDetails();
+    loadAiInsights();           // 阶段 1：AI 发现卡片（owner 端）
 });
 
 // -------------------------------------------------------------
@@ -1028,11 +1170,13 @@ function initTabs() {
                 loadReceiptsHistory();
                 loadFinancePanel();      // Wave 2 支付与对账
                 loadSupplierAdmin();     // Wave 2 供应商管理（含合并）
+                loadAiInsights();        // 阶段 1：AI 发现卡片
             }
             if (targetId === 'tab-report') {
                 loadCostReport();        // Wave 2 部门花销报表
                 loadDepartmentAdmin();   // Wave 2 部门管理
             }
+            if (targetId === 'tab-engine') loadAdminEngineConfig();
         });
     });
 }
@@ -1393,7 +1537,7 @@ function showQualityWarnings(warnings) {
         return;
     }
     const head = document.createElement('div');
-    head.textContent = '️ 图像质量预检警告';
+    head.textContent = '图像质量预检警告';
     head.style.cssText = 'font-weight:600; margin-bottom:4px;';
     banner.appendChild(head);
     list.forEach(w => {
@@ -1730,7 +1874,7 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
 function validateManualEntry(data) {
     const dateStr = String((data && data.date) || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        return '手工录入必须提供合法开单日期（YYYY-MM-DD），当前值：' + (dateStr || '（空）');
+        return '手工录入必须提供合法开单日期，当前值：' + (dateStr || '空');
     }
     const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
@@ -1740,7 +1884,7 @@ function validateManualEntry(data) {
     }
     const supplier = String((data && data.supplier_name) || '').trim();
     if (!supplier || supplier === '通用供应商') {
-        return '手工录入必须提供真实供应商名称（不能为空或默认占位「通用供应商」）';
+        return '手工录入必须提供真实供应商名称';
     }
     const items = (data && data.items) || [];
     const hasRealItem = items.some(it =>
@@ -1777,7 +1921,7 @@ function setManualEntryFormBadge(on) {
     const title = document.getElementById('manualEntryFormTitle');
     if (title) {
         title.textContent = on
-            ? ' 步骤 2/2：手工录入复核与修改（无原图）'
+            ? ' 步骤 2/2：手工录入复核与修改'
             : ' 步骤 2/2：AI Prefill 字段复核与修改';
     }
 }
@@ -1789,19 +1933,15 @@ function resetManualEntryMode() {
     setManualEntryFormBadge(false);
 }
 
-// 新建手工单入口可见性：仅 owner（AUTH_ENABLED=0 时 /api/auth/me 返回 owner，全员直通）
+// 新建手工单入口可见性：staff 及以上均可见
 function syncManualEntryVisibility() {
     const btn = document.getElementById('btnNewManualEntry');
     if (!btn) return;
-    btn.style.display = isOwnerRole() ? '' : 'none';
+    btn.style.display = '';
 }
 
 // 进入新建手工单空态：无原图（左栏占位）、表单清空、明细可加行
 function startManualEntry() {
-    if (!isOwnerRole()) {
-        showToast('仅老板（owner）可新建手工单', 'error');
-        return;
-    }
     isManualEntry = true;
     currentReceiptId = null;
     currentReceiptData = null;
@@ -1845,7 +1985,7 @@ function startManualEntry() {
     document.getElementById('prefillFormCard').classList.remove('hide');
     document.getElementById('splitViewArea').classList.remove('hide');
 
-    showToast('已进入新建手工单（无原图）：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
+    showToast('已进入新建手工单：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
 }
 
 // 工具激活状态: null (未选中任何工具), 'zoom' (定点放大模式), 'crop' (裁剪模式)
@@ -2425,6 +2565,98 @@ function renderSupplierMenuItems(inputElem, menuElem) {
     menuElem.innerHTML = html;
 }
 
+// 智能剥离品名中混写的数量与单位（如 "菜心 20斤" -> {name: "菜心", qty: 20, unit: "斤"}）
+function smartSplitItemName(rawText) {
+    if (!rawText || typeof rawText !== 'string') return null;
+    const text = rawText.trim();
+    if (!text) return null;
+
+    // 模式 1：乘法复合包装（如 "大豆油 5L*2樽" / "可乐 330ml*6罐"）
+    const multMatch = text.match(/^(.*?)\s*(\d+(?:\.\d+)?)\s*(L|ml|mL|毫升|升|g|kg|斤|磅)?\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*([一-龥a-zA-Z]+)?$/);
+    if (multMatch) {
+        const baseName = multMatch[1].trim();
+        const specNum = multMatch[2];
+        const specUnit = multMatch[3] || '';
+        const count = parseFloat(multMatch[4]) || 1;
+        const mainUnit = multMatch[5] || specUnit || '箱';
+        const cleanName = baseName + (specNum ? ` ${specNum}${specUnit}` : '');
+        return {
+            cleanName: cleanName.trim(),
+            quantity: count,
+            unit: mainUnit
+        };
+    }
+
+    // 模式 2：末尾带数量与常见单位（如 "本地菜心 20斤" / "鲜牛肉 2.5kg" / "干贝 8两"）
+    const tailMatch = text.match(/^(.*?)\s+(\d+(?:\.\d+)?)\s*(司马斤|公斤|斤|两|磅|kg|g|L|ml|mL|升|箱|包|件|罐|隻|只|瓶|盒|桶|扎|把|袋|条|个)\s*$/i);
+    if (tailMatch && tailMatch[1].trim()) {
+        return {
+            cleanName: tailMatch[1].trim(),
+            quantity: parseFloat(tailMatch[2]) || 1,
+            unit: tailMatch[3]
+        };
+    }
+
+    return null;
+}
+
+// 行内触发智能剥离魔棒
+function triggerSmartSplitRow(btnElem) {
+    const tr = btnElem.closest('tr');
+    if (!tr) return;
+    const nameInput = tr.querySelector('.inp-name');
+    if (!nameInput) return;
+    const rawVal = nameInput.value || '';
+    const res = smartSplitItemName(rawVal);
+    if (!res) {
+        showToast('未在品名中检测到明确的数量与单位', 'info');
+        return;
+    }
+
+    nameInput.value = res.cleanName;
+    const qtyInput = tr.querySelector('.inp-qty');
+    const unitInput = tr.querySelector('.inp-unit');
+    if (qtyInput) qtyInput.value = res.quantity;
+    if (unitInput) unitInput.value = res.unit;
+
+    // 自动重算单价 (unit_price = amount / quantity)
+    const amtInput = tr.querySelector('.inp-amount');
+    const priceInput = tr.querySelector('.inp-price');
+    const amt = parseFloat(amtInput ? amtInput.value : 0) || 0;
+    if (amt > 0 && res.quantity > 0 && priceInput) {
+        priceInput.value = (amt / res.quantity).toFixed(2);
+    }
+
+    tr.dataset.manual = '1';
+    showToast(`已成功分离：【${res.cleanName}】 数量：${res.quantity} ${res.unit}`, 'success');
+}
+
+// 明细行内联快捷新建 SKU
+let activeInlineSkuInput = null;
+
+function openInlineAddSkuModal(prefillName, inputElem) {
+    activeInlineSkuInput = inputElem;
+    openAddSkuModal();
+    const nameInput = document.getElementById('skuModalName');
+    if (nameInput) nameInput.value = prefillName || '';
+    const unitInput = document.getElementById('skuModalUnit');
+    const tr = inputElem ? inputElem.closest('tr') : null;
+    const rowUnit = tr ? (tr.querySelector('.inp-unit')?.value || '') : '';
+    if (unitInput && rowUnit) unitInput.value = rowUnit;
+}
+
+// 代理行内快捷新建点击
+function triggerInlineAddSkuFromMenu(itemElem) {
+    isSelectingSku = true;
+    const wrap = itemElem.closest('.sku-combobox-wrap');
+    const skuInput = wrap ? wrap.querySelector('.inp-sku') : null;
+    const name = itemElem.getAttribute('data-prefill-name') || '';
+    const menu = wrap ? wrap.querySelector('.unit-dropdown-menu') : null;
+    if (menu) menu.classList.add('hide');
+    openInlineAddSkuModal(name, skuInput);
+    setTimeout(() => { isSelectingSku = false; }, 300);
+}
+
 // -------------------------------------------------------------
 // 5.6 明细行 SKU 内联指定（D19：复核当场指定 SKU，保存后自动学别称）
 // 候选来源优先级：① 该行 OCR 结果 fuzzy_candidates/entity_candidates（仅精确未命中非空）；
@@ -2535,6 +2767,8 @@ function renderSkuMenuItems(inputElem, menuElem) {
 function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
     const query = (inputElem.value || '').trim();
     const rows = candidates || [];
+    const tr = inputElem.closest('tr');
+    const rowName = tr ? (tr.querySelector('.inp-name')?.value || query) : query;
 
     // 候选来源 ③：恒备「不关联（保持未关联）」
     let html = `
@@ -2543,8 +2777,19 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
         </div>
     `;
 
+    // 快捷创建：当用户输入了品名/SKU 时，在最顶部展示一键创建并绑定入口
+    if (rowName) {
+        const safeName = w2Escape(rowName);
+        html += `
+            <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="triggerInlineAddSkuFromMenu(this)">
+                <div><span>➕ 为当前品名新建食材 SKU「${safeName}」</span></div>
+                <span class="badge-matched" style="background:var(--primary); color:#fff;">回车创建</span>
+            </div>
+        `;
+    }
+
     if (rows.length === 0) {
-        html += `<div style="padding:10px; color:var(--text-muted); font-size:0.85rem; text-align:center;">${query ? '无匹配食材' : '暂无候选，输入品名可搜索'}</div>`;
+        html += `<div style="padding:10px; color:var(--text-muted); font-size:0.85rem; text-align:center;">${query ? '无完全匹配食材，可点上方新建' : '暂无候选，输入品名可搜索或新建'}</div>`;
     } else {
         rows.forEach(c => {
             const codeSpan = c.sku_code
@@ -2604,6 +2849,10 @@ function renderEditForm(data) {
     // Q29：data 内携带 quality_warnings（ai_prefill 形态）时一并渲染；
     // 上传/识别路径会在 renderEditForm 之后再用顶层合并结果覆盖（collectQualityWarnings 优先顶层）
     showQualityWarnings(data.quality_warnings);
+
+    // 阶段 1：审核 reason + AI 建议对照面板
+    if (data.audit_result) renderAuditReason(data.audit_result);
+    renderAiCompare(data);
 }
 
 // -------------------------------------------------------------
@@ -2856,16 +3105,34 @@ function appendTableRow(item = {}) {
         updateGlobalDatalistUnits();
     }
 
+    // 智能预拆分：若品名中混写了数量单位且当前行数量为默认值 1，自动执行一次智能分离
+    let finalRawName = rawName;
+    let finalQty = qty;
+    let finalUnit = unit;
+    let finalPrice = price;
+    const splitRes = smartSplitItemName(rawName);
+    if (splitRes && (qty === 1 || !item.quantity)) {
+        finalRawName = splitRes.cleanName;
+        finalQty = splitRes.quantity;
+        finalUnit = splitRes.unit || unit;
+        if (amount > 0 && finalQty > 0) {
+            finalPrice = parseFloat((amount / finalQty).toFixed(2));
+        }
+    }
+
     // P0-2：品名/单位来自 OCR 输出可被注入污染——属性插值一律 w2Escape；
     // 数值列强制 Number() 防属性逃逸
     tr.innerHTML = `
         <td>
-            <input type="text" class="inp-name" value="${w2Escape(rawName)}" placeholder="品名(如走地鸡)">
+            <div style="display:flex; align-items:center; gap:4px;">
+                <input type="text" class="inp-name" value="${w2Escape(finalRawName)}" placeholder="品名" style="flex:1;">
+                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位">✨</button>
+            </div>
             ${rowWarnBadge}
             <div class="sku-combobox-wrap">
                 <div style="display:flex; align-items:center; gap:4px;">
                     <input type="text" class="inp-sku form-control" value="${w2Escape(skuName)}"
-                        placeholder="指定SKU(输入品名搜索)" style="flex:1; min-width:0; padding:5px; font-size:0.82rem;"
+                        placeholder="指定SKU" style="flex:1; min-width:0; padding:5px; font-size:0.82rem;"
                         onfocus="this.select(); openSkuMenu(this)" onclick="openSkuMenu(this)"
                         oninput="onSkuMenuInput(this)" onblur="closeSkuMenuDelay(this)">
                     <span class="badge ${skuId ? 'badge-success' : 'badge-warning'} sku-badge" style="flex:none;">
@@ -2876,20 +3143,20 @@ function appendTableRow(item = {}) {
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
-        <td><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="recalcRow(this)"></td>
+        <td><input type="number" step="0.01" class="inp-qty" value="${finalQty}" oninput="recalcRow(this)"></td>
         <td>
             <div class="unit-combobox-wrap">
-                <input type="text" class="inp-unit form-control" value="${w2Escape(unit)}" placeholder="单位(如kg)" style="padding:6px; font-size:0.85rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)">
+                <input type="text" class="inp-unit form-control" value="${w2Escape(finalUnit)}" placeholder="单位" style="padding:6px; font-size:0.85rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)">
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
         <td>
-            <input type="number" step="0.01" class="inp-price" value="${price}" oninput="recalcRow(this)">
+            <input type="number" step="0.01" class="inp-price" value="${finalPrice}" oninput="recalcRow(this)">
             ${isAnomaly ? `<span class="badge badge-danger">${(item.price_anomaly_direction === 'down') ? '偏低' : '偏高'}${Number(item.price_diff_percent || 10).toFixed(1)}%</span>` : ''}
         </td>
         <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="recalcTotalSum()"></td>
         <td>
-            <select class="inp-dept form-control" title="本行归属部门（可单独指定；保存时更新）" style="width:100%; padding:6px; font-size:0.82rem;">
+            <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;">
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
@@ -3063,7 +3330,7 @@ function extractVersionFromResponse(ret) {
 // 返回 true 表示已标记（可继续提交），false 表示未标记（应中断，不发请求）
 function requireSettlementMarked(settlementType) {
     if (settlementType === 'cash' || settlementType === 'credit') return true;
-    showToast('请选择结算方式（现结/月结）后再保存', 'error');
+    showToast('请选择结算方式后再保存', 'error');
     return false;
 }
 
@@ -3078,13 +3345,13 @@ function handleVersionConflictReload(receiptId, localData, reloadFn) {
         at: new Date().toISOString(),
     };
     try {
-        console.log('[VERSION_CONFLICT] 本地编辑副本已保留（window.lastVersionConflictCopy）',
+        console.log('[VERSION_CONFLICT] 本地编辑副本已保留',
                     lastVersionConflictCopy);
     } catch (e) { /* console 不可用不影响主流程 */ }
     const ok = confirm(
         '该单据已被他人修改，无法直接覆盖保存。\n\n' +
-        '您当前的未保存编辑已留副本（控制台 lastVersionConflictCopy）。\n' +
-        '点「确定」重新加载服务端最新内容（屏幕上的未保存编辑将被清空）；\n' +
+        '您当前的未保存编辑已留副本。\n' +
+        '点「确定」重新加载服务端最新内容；\n' +
         '点「取消」保留当前画面，您可自行记录编辑内容后再处理。'
     );
     if (ok && typeof reloadFn === 'function') {
@@ -3246,8 +3513,7 @@ function submitSaveEdited() {
             isManualEntry = false;
             currentReceiptId = ret.receipt_id;
             currentReceiptData = data;
-            showToast('已保存手工录入单据 #' + ret.receipt_id +
-                      '（状态 edited，审核通过后入账）', 'success', TOAST_DURATION.guide);
+            showToast('已保存手工录入单据 #' + ret.receipt_id, 'success', TOAST_DURATION.guide);
         } else if (BatchUploader.photos.length > 0) {
             // 批量：仅标记当前项为已保存，可切换其它照片继续保存
             const active = getActivePhoto();
@@ -3458,6 +3724,9 @@ function loadInventoryData() {
         const priceEl = document.getElementById('valPriceAnomaly');
         if (priceEl) priceEl.innerText = meta.price_anomaly_count != null ? meta.price_anomaly_count : skus.filter(s => s.price_anomaly).length;
 
+        // 同步加载极简 AI 发现胶囊
+        loadAiLeanInsights();
+
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
         tbody.innerHTML = '';
@@ -3591,6 +3860,7 @@ function toggleInventoryMoreMenu(btn, skuTarget) {
         <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)}, "consume")'>记用量</div>
         <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)}, "waste")'>报损耗</div>
         <div class="unit-dropdown-item" style="color:${isActive ? '#ef4444' : '#10b981'};" onclick='closeInvMoreMenu(); toggleSkuActive(${Number(skuId)})'>${toggleText}</div>
+        <div class="unit-dropdown-item" style="color:#ef4444; border-top:1px dashed var(--border-color);" onclick='closeInvMoreMenu(); deleteSkuDirect(${Number(skuId)}, ${jsStr(skuName)})'>删除/清理</div>
     `;
     menu.classList.remove('hide');
     setTimeout(() => {
@@ -3655,7 +3925,7 @@ function openEditSkuModal(skuTarget) {
         if (stock > 1e-9) {
             unitInput.disabled = true;
             if (noticeEl) {
-                noticeEl.innerText = `账面库存不为 0（当前: ${sku.current_stock} ${sku.base_unit}），禁止修改单位。请先通过盘点或记用量/报损耗将库存调整为 0。`;
+                noticeEl.innerText = `账面库存不为 0，禁止修改单位。请先通过盘点或记用量/报损耗将库存调整为 0。`;
                 noticeEl.style.display = 'block';
             }
         } else {
@@ -3724,6 +3994,24 @@ function submitSkuModal() {
             if (ret.status === 'success') {
                 closeModalById('skuModal');
                 loadInventoryData();
+                showToast(`食材 SKU【${name}】创建成功`, 'success');
+
+                // 若由明细行内联发起，自动绑定回该行
+                if (activeInlineSkuInput) {
+                    const wrap = activeInlineSkuInput.closest('.sku-combobox-wrap');
+                    if (wrap) {
+                        const skuInput = wrap.querySelector('.inp-sku');
+                        const idInput = wrap.querySelector('.inp-sku-id');
+                        const badge = wrap.querySelector('.sku-badge');
+                        if (skuInput) skuInput.value = name;
+                        if (idInput) idInput.value = ret.id;
+                        if (badge) {
+                            badge.textContent = '已匹配SKU';
+                            badge.className = 'badge badge-success sku-badge';
+                        }
+                    }
+                    activeInlineSkuInput = null;
+                }
             } else {
                 if (ret.code === 'SKU_NAME_CONFLICT') {
                     showToast('已存在同名的启用食材，请修改品名', 'warning');
@@ -3777,6 +4065,228 @@ function submitSkuModal() {
             showToast('更新失败，请检查网络后重试', 'error');
         });
     }
+}
+
+// -------------------------------------------------------------
+// SKU 合并管理 (SKU Merge Modal)
+// -------------------------------------------------------------
+function openSkuMergeModalFromInv() {
+    fetch('/api/inventory?include_inactive=0')
+    .then(res => res.json())
+    .then(ret => {
+        if (ret.status !== 'success' || !ret.data || ret.data.length < 2) {
+            showToast('现有启用食材少于 2 种，无需合并', 'info');
+            return;
+        }
+        const skus = ret.data;
+        const sel = document.getElementById('skuMergePrimarySelect');
+        const listDiv = document.getElementById('skuMergeSecondaryList');
+        if (!sel || !listDiv) return;
+
+        sel.innerHTML = '';
+        skus.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = `${s.name} (${s.category || '未分类'} · 当前库存 ${s.current_stock}${s.base_unit || ''})`;
+            sel.appendChild(opt);
+        });
+
+        function updateSecondaryCheckboxes() {
+            const primaryId = parseInt(sel.value);
+            let html = '';
+            skus.forEach(s => {
+                if (s.id !== primaryId) {
+                    html += `
+                        <label style="display:flex; align-items:center; gap:8px; margin:4px 0; cursor:pointer;">
+                            <input type="checkbox" class="chk-sku-sec" value="${s.id}">
+                            <span>${w2Escape(s.name)} <small style="color:var(--text-muted);">[库存:${s.current_stock}${s.base_unit}]</small></span>
+                        </label>
+                    `;
+                }
+            });
+            listDiv.innerHTML = html;
+        }
+
+        sel.onchange = updateSecondaryCheckboxes;
+        updateSecondaryCheckboxes();
+        openModalById('skuMergeModal');
+    })
+    .catch(err => {
+        console.error('加载合并食材列表异常:', err);
+        showToast('加载食材列表失败', 'error');
+    });
+}
+
+function submitSkuMerge() {
+    const primaryId = parseInt(document.getElementById('skuMergePrimarySelect').value);
+    const secCheckboxes = document.querySelectorAll('.chk-sku-sec:checked');
+    const secIds = Array.from(secCheckboxes).map(c => parseInt(c.value));
+    const syncMemory = document.getElementById('skuMergeSyncMemory')?.checked ?? true;
+
+    if (!primaryId || secIds.length === 0) {
+        showToast('请至少选择一个被合并的副食材', 'warning');
+        return;
+    }
+
+    const btn = document.getElementById('skuMergeSubmitBtn');
+    if (btn) btn.disabled = true;
+
+    fetch('/api/inventory/skus/merge', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            primary_sku_id: primaryId,
+            secondary_sku_ids: secIds,
+            sync_vendor_memory: syncMemory
+        })
+    })
+    .then(res => res.json())
+    .then(ret => {
+        if (btn) btn.disabled = false;
+        if (ret.status === 'success') {
+            closeModalById('skuMergeModal');
+            loadInventoryData();
+            showToast('食材合并成功，历史流水与别名映射已转移', 'success');
+        } else {
+            showToast('合并失败：' + (ret.msg || ret.message || '请稍后重试'), 'error');
+        }
+    })
+    .catch(err => {
+        if (btn) btn.disabled = false;
+        console.error('合并食材异常:', err);
+        showToast('合并请求失败，请检查网络', 'error');
+    });
+}
+
+function deleteSkuDirect(skuId, skuName) {
+    if (!confirm(`确定要删除/停用食材【${skuName}】吗？\n\n系统会自动判断：若无历史进货单据则彻底删除，若有单据关联则安全停用。`)) {
+        return;
+    }
+
+    fetch('/api/inventory/skus/' + skuId, {
+        method: 'DELETE'
+    })
+    .then(res => res.json())
+    .then(ret => {
+        if (ret.status === 'success') {
+            loadInventoryData();
+            showToast(ret.msg || '食材已处理', 'success');
+        } else {
+            showToast('删除失败：' + (ret.msg || '请稍后重试'), 'error');
+        }
+    })
+    .catch(err => {
+        console.error('删除食材异常:', err);
+        showToast('删除请求失败', 'error');
+    });
+}
+
+// -------------------------------------------------------------
+// 极简 AI 发现逻辑 (Lean AI Insights Banner & Cards)
+// -------------------------------------------------------------
+let aiLeanInsightsData = null;
+let aiLeanIgnoredSkuIds = new Set();
+
+function loadAiLeanInsights() {
+    const banner = document.getElementById('aiLeanBanner');
+    if (!banner) return;
+
+    fetch('/api/ai-insights')
+    .then(res => res.json())
+    .then(ret => {
+        if (ret.status !== 'success' || !ret.data) {
+            banner.classList.add('hide');
+            return;
+        }
+        const data = ret.data;
+        aiLeanInsightsData = data;
+        const rawItems = data.top_price_risers || [];
+        const activeItems = rawItems.filter(it => !aiLeanIgnoredSkuIds.has(it.sku_id));
+
+        if (activeItems.length === 0) {
+            banner.classList.add('hide');
+            return;
+        }
+
+        const sumText = document.getElementById('aiLeanSummaryText');
+        if (sumText) {
+            sumText.innerText = `检测到 ${activeItems.length} 项食材价格异常上涨，预估影响成本 HK$ ${data.total_impact_amount.toFixed(2)}`;
+        }
+
+        renderAiLeanCards(activeItems);
+        banner.classList.remove('hide');
+    })
+    .catch(err => {
+        console.error('加载极简 AI 发现异常:', err);
+        if (banner) banner.classList.add('hide');
+    });
+}
+
+function toggleAiLeanDetails() {
+    const cards = document.getElementById('aiLeanCardsContainer');
+    const btn = document.getElementById('btnToggleAiLean');
+    if (!cards || !btn) return;
+    const isHidden = cards.classList.contains('hide');
+    if (isHidden) {
+        cards.classList.remove('hide');
+        btn.innerText = '收起 ▲';
+    } else {
+        cards.classList.add('hide');
+        btn.innerText = '展开查看 ▼';
+    }
+}
+
+function renderAiLeanCards(items) {
+    const container = document.getElementById('aiLeanCardsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+
+    items.forEach(it => {
+        const card = document.createElement('div');
+        card.className = 'ai-lean-card-item';
+        card.id = `aiLeanCard_${it.sku_id}`;
+
+        card.innerHTML = `
+            <div class="ai-lean-card-left">
+                <div class="ai-lean-card-title">
+                    <span style="color:#dc2626;">🔴 ${w2Escape(it.name)}</span>
+                    <span style="font-size:0.75rem; color:var(--text-muted);">· ${w2Escape(it.vendor)}</span>
+                    <span class="badge badge-danger" style="font-size:0.7rem; padding:1px 6px;">涨幅 +${it.change_pct}%</span>
+                </div>
+                <div class="ai-lean-card-desc">
+                    单价 $${it.earliest_price} ➔ <strong style="color:#dc2626;">$${it.latest_price}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">HK$ ${it.impact_amount}</strong>
+                </div>
+            </div>
+            <div class="ai-lean-card-actions">
+                ${it.sku_id ? `<button type="button" class="btn-lean-act" onclick="viewPriceHistory(${Number(it.sku_id)})">📈 查看走势</button>` : ''}
+                <button type="button" class="btn-lean-act" onclick="copyAiLeanEvidence(${Number(it.sku_id)})" title="复制异动记录明细">📋 复制记录</button>
+                <button type="button" class="btn-lean-act" style="color:var(--text-muted);" onclick="ignoreAiLeanItem(${Number(it.sku_id)})">忽略</button>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function copyAiLeanEvidence(skuId) {
+    if (!aiLeanInsightsData || !aiLeanInsightsData.top_price_risers) return;
+    const item = aiLeanInsightsData.top_price_risers.find(x => x.sku_id === skuId);
+    if (!item || !item.evidence_text) return;
+
+    navigator.clipboard.writeText(item.evidence_text).then(() => {
+        showToast('已复制价格异动明细至剪贴板', 'success');
+    }).catch(() => {
+        showToast(item.evidence_text, 'info', TOAST_DURATION.long);
+    });
+}
+
+function ignoreAiLeanItem(skuId) {
+    aiLeanIgnoredSkuIds.add(skuId);
+    const card = document.getElementById(`aiLeanCard_${skuId}`);
+    if (card) card.style.opacity = '0';
+    setTimeout(() => {
+        loadAiLeanInsights();
+        showToast('已忽略本次异动提醒', 'info');
+    }, 200);
 }
 
 function toggleSkuActive(skuTarget) {
@@ -4105,7 +4615,7 @@ function renderArchiveTable(receipts) {
 
             html += '<tr>' +
                 '<td style="vertical-align:middle;">#' + rid + '</td>' +
-                '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + '</td>' +
+                '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:#60a5fa;">' + editDate + '</span></td>' +
                 '<td style="vertical-align:middle;">' + recDate + '</td>' +
@@ -4174,7 +4684,7 @@ function renderArchiveTable(receipts) {
 // Q33/W6 Q1：approve 必须携带 version（缺失 → 400 VERSION_REQUIRED）；
 // 处理 409 VERSION_CONFLICT（提示 + 重载详情）；返回 Promise<boolean> 供弹窗决定是否关闭。
 function approveReceipt(receiptId, knownVersion) {
-    if (!confirm(`确定要把单据 #${receiptId} 审核通过 (approved) 吗？`)) return Promise.resolve(false);
+    if (!confirm(`确定要把单据 #${receiptId} 审核通过吗？`)) return Promise.resolve(false);
 
     // D17/W6 Q1：始终提交 JSON body 含 version（详情加载时记录于 currentArchiveDetailData）
     const body = { version: knownVersion };
@@ -4217,7 +4727,7 @@ function approveReceipt(receiptId, knownVersion) {
 }
 
 function flagReceipt(receiptId) {
-    if (!confirm(`确定要把单据 #${receiptId} 标记为异常 (flagged) 吗？`)) return;
+    if (!confirm(`确定要把单据 #${receiptId} 标记为异常吗？`)) return;
     fetch(`/api/receipt/${receiptId}/flag`, { method: 'POST' })
     .then(res => res.json())
     .then(ret => {
@@ -4256,7 +4766,7 @@ function modalFlagReceipt() {
 function retryReceiptFromArchive(receiptId) {
     const rid = Number(receiptId);
     if (!Number.isFinite(rid) || rid <= 0) return;
-    if (!confirm(`确定对单据 #${rid} 重新发起识别（重试）吗？`)) return;
+    if (!confirm(`确定对单据 #${rid} 重新发起识别吗？`)) return;
     showToast(`单据 #${rid} 重试已提交…`, 'info');
     fetch(`/api/receipt/${rid}/retry`, { method: 'POST' })
         .then(res => res.json())
@@ -4323,7 +4833,7 @@ function loadReceiptDetail(receiptId) {
         hasUnsavedArcChanges = false;
         const data = ret.data;
 
-        document.getElementById('archiveModalTitle').innerText = ` 历史收据明细校对 - 单据 #${ret.receipt_id} (${data.supplier_name || '通用供应商'})`;
+        document.getElementById('archiveModalTitle').innerText = ` 历史收据明细校对 - 单据 #${ret.receipt_id}`;
         document.getElementById('archivePreviewImg').src = ret.image_url;
         document.getElementById('btnArchiveOpenRaw').href = ret.image_url;
         resetArchiveImgTransform();
@@ -4466,7 +4976,7 @@ function appendArcTableRow(item = {}) {
         <td><input type="number" step="0.01" class="inp-price" value="${price}" oninput="markArcDirty(); recalcArcRow(this)"></td>
         <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="markArcDirty(); recalcArcTotalSum()"></td>
         <td>
-            <select class="inp-dept form-control" title="本行归属部门（可单独指定；保存时更新）" style="width:100%; padding:4px; font-size:0.8rem;">
+            <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:4px; font-size:0.8rem;">
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
@@ -4999,7 +5509,7 @@ function renderPriceHistoryModal(ret) {
         const hasReceiptPoints = points.some(p => p.receipt_id || p.source === '进货单据' || p.source === '收据入库' || p.source === '已审核进货');
         const noticeHtml = !hasReceiptPoints ? `
             <div style="background-color:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; padding:8px 12px; border-radius:6px; font-size:0.85rem; margin-bottom:10px;">
-                💡 <strong>提示：</strong>当前为系统初始基准单价，暂无已审核入库的实际进货记录。审批进货单后将自动形成动态价格走势。
+                <strong>提示：</strong>当前为系统初始基准单价，暂无已审核入库的实际进货记录。审批进货单后将自动形成动态价格走势。
             </div>
         ` : '';
         chartEl.innerHTML = noticeHtml + buildPriceChartSvg(points, {
@@ -6025,7 +6535,7 @@ function renderSider() {
         const score = scoreOf(p);
         const isHigh = score != null && score >= SCORE_HIGHLIGHT_THRESHOLD;
         const scoreHtml = score != null
-            ? `<span class="sider-score${isHigh ? ' sider-score-high' : ''}" title="复核优先级分 ${score}（≥${SCORE_HIGHLIGHT_THRESHOLD} 高优先级）">${Math.round(score)}</span>`
+            ? `<span class="sider-score${isHigh ? ' sider-score-high' : ''}" title="复核优先级分 ${score}">${Math.round(score)}</span>`
             : '';
         const statusLabel = (
             p.status === 'parsed' ? ' 已解析' :
@@ -6047,12 +6557,12 @@ function renderSider() {
             ? `<div class="sider-item-actions"><button class="btn-sider-retry" title="复用原单据重试识别" onclick="event.stopPropagation(); retryPhotoFromSider(${idx})"> 重试</button></div>`
             : '';
         const isNonWeb = isNonWebImageFile(p.file || p.fileName);
-        const bgUrl = p.imageUrl || p.croppedObjectUrl || (isNonWeb ? makeSvgDataUrl('📷 HEIC') : p.objectUrl) || makeSvgDataUrl('📷 收据');
+        const bgUrl = p.imageUrl || p.croppedObjectUrl || (isNonWeb ? makeSvgDataUrl('HEIC') : p.objectUrl) || makeSvgDataUrl('收据');
         return `
             <li class="${cls}" data-idx="${idx}" onclick="onPhotoSiderItemClick(${idx})">
                 ${checkboxHtml}
                 <div class="thumb" style="background-image:url('${bgUrl}')">
-                    ${isActive ? '<span class="sider-active-badge" title="当前正在查看">👁</span>' : ''}
+                    ${isActive ? '' : ''}
                     ${scoreHtml}
                 </div>
                 <div class="meta">
@@ -6400,7 +6910,7 @@ function exportArchiveCsv() {
     if (max !== undefined && max !== '') params.set('amount_max', max);
 
     // P1-12：改 fetch+blob 下载——window.open 不携带 Authorization，AUTH=1 时会 401
-    showToast('正在按当前筛选条件导出 CSV（UTF-8 BOM，Excel 可直接打开）…', 'info');
+    showToast('正在按当前筛选条件导出 CSV…', 'info');
     fetch(`/api/receipts/export?${params.toString()}`)
         .then(res => {
             if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -6587,7 +7097,7 @@ function renderPayablesSummary() {
         </div>`;
     if (sup) {
         const overdueBadge = sup.is_overdue
-            ? `<span class="badge badge-danger">该供应商存在逾期（约 $${fmtMoney(sup.overdue_amount)}）</span>`
+            ? `<span class="badge badge-danger">该供应商存在逾期</span>`
             : '<span class="badge badge-success">该供应商账期内</span>';
         const termsTxt = (sup.payment_terms_days != null)
             ? w2Escape(String(sup.payment_terms_days)) + ' 天' : '未设置';
@@ -6811,11 +7321,11 @@ function loadPaymentHistory() {
                 return;
             }
             const title = document.getElementById('paymentHistoryTitle');
-            if (title) title.textContent = sup ? ` 支付履历（${sup.name}）` : ' 支付履历（全部供应商）';
+            if (title) title.textContent = '支付履历';
             payArea.classList.remove('hide');
             pays.forEach(p => {
                 const voucher = p.voucher_image_url
-                    ? `<a href="${w2Escape(p.voucher_image_url)}" target="_blank">️ 查看</a>` : '-';
+                    ? `<a href="${w2Escape(p.voucher_image_url)}" target="_blank">查看</a>` : '-';
                 const linked = Array.isArray(p.linked_receipt_ids) ? p.linked_receipt_ids : [];
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
@@ -6843,7 +7353,7 @@ function loadReconTasks() {
         .then(ret => {
             if (!ret || ret.status !== 'success') return;
             const title = document.getElementById('reconTaskTitle');
-            if (title) title.textContent = sup ? ` 对账任务（${sup.name}）` : ' 对账任务（全部供应商）';
+            if (title) title.textContent = '对账任务';
             renderReconTasks(ret.data || []);
         });
 }
@@ -6882,7 +7392,7 @@ function openPaymentModal() {
     if (!finState.supplierId) { showToast('请先选择供应商', 'warning'); return; }
     const sup = finState.suppliers.find(s => s.id === finState.supplierId);
     document.getElementById('paymentSupplierHint').innerText =
-        `供应商：${sup.name}（账期 ${sup.payment_terms_days} 天；未付赊单合计 $${fmtMoney(sup.unpaid_credit_total)}）`;
+        `供应商：${sup.name}`;
     document.getElementById('payAmount').value = sup.unpaid_credit_total > 0 ? sup.unpaid_credit_total : '';
     document.getElementById('payDate').value = getTodayDateStr();
     document.getElementById('payNotes').value = '';
@@ -7086,7 +7596,7 @@ function resolveLine(lineId, action) {
         const candidates = (detail.restaurant_receipts || []).filter(r =>
             !r.matched || r.id === line.matched_receipt_id);
         if (!candidates.length) {
-            sel.innerHTML = '<option value="">（期间内无可选赊单）</option>';
+            sel.innerHTML = '<option value="">期间内无可选赊单</option>';
         }
         candidates.forEach(r => {
             const opt = document.createElement('option');
@@ -7238,13 +7748,8 @@ function openSupplierModal(id) {
     const title = document.getElementById('supplierModalTitle');
     const errBox = document.getElementById('supplierModalError');
     if (errBox) errBox.classList.add('hide');
-    // 重置
-    document.getElementById('supName').value = '';
-    document.getElementById('supPhone').value = '';
-    document.getElementById('supNotes').value = '';
-    document.getElementById('supPref').value = '';
-    document.getElementById('supTerms').value = '';
-    document.getElementById('supCodePreview').textContent = '（新增后自动生成）';
+    ['supName', 'supPhone', 'supNotes', 'supPref', 'supTerms'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('supCodePreview').innerHTML = '新增后自动生成';
     setSupplierTerms('30'); // 默认 30 天（与 upsert 一致）
 
     if (_editSupplierId != null) {
@@ -7295,7 +7800,7 @@ function saveSupplier() {
     if (termsRaw !== '') {
         const n = Number(termsRaw);
         if (!Number.isInteger(n) || n < 0) {
-            if (errBox) { errBox.textContent = '账期必须为非负整数（留空 = 现结）'; errBox.classList.remove('hide'); }
+            if (errBox) { errBox.textContent = '账期必须为非负整数'; errBox.classList.remove('hide'); }
             return;
         }
         terms = n;
@@ -7319,7 +7824,7 @@ function saveSupplier() {
         .then(res => res.json().then(d => ({ status: res.status, body: d })))
         .then(({ status, body }) => {
             if (status === 409) {
-                if (errBox) { errBox.textContent = (body.msg || '已存在同名供应商') + '（请改用现有供应商，或先停用/改名冲突档）'; errBox.classList.remove('hide'); }
+                if (errBox) { errBox.textContent = (body.msg || '已存在同名供应商') ; errBox.classList.remove('hide'); }
                 return;
             }
             if (status === 400) {
@@ -7541,7 +8046,7 @@ function openMergeModal(dropId) {
             if (!drop) { showToast('供应商不存在', 'error'); return; }
 
             document.getElementById('mergeDropHint').innerHTML =
-                `被并供应商（将被删除）：<strong>${w2Escape(drop.name)}</strong>` +
+                `被并供应商：<strong>${w2Escape(drop.name)}</strong>` +
                 ` <span class="badge badge-secondary" style="font-family:monospace;">${w2Escape(drop.supplier_code || '-')}</span>` +
                 `｜单据 ${drop.receipt_count} 张｜未付 $${fmtMoney(drop.unpaid_credit_total)}`;
 
@@ -7608,7 +8113,7 @@ function submitStocktake() {
     const qtyRaw = document.getElementById('stocktakeQty').value;
     const actualQty = parseFloat(qtyRaw);
     if (qtyRaw === '' || isNaN(actualQty) || actualQty < 0) {
-        showToast('请输入有效的实盘数量（不小于 0）', 'warning');
+        showToast('请输入有效的实盘数量', 'warning');
         return;
     }
     const payload = { actual_qty: actualQty };
@@ -7674,7 +8179,7 @@ function submitOutbound() {
     const qtyRaw = document.getElementById('outboundQty').value;
     const qty = parseFloat(qtyRaw);
     if (qtyRaw === '' || isNaN(qty) || qty <= 0) {
-        showToast('请输入有效的出库数量（必须大于 0）', 'warning');
+        showToast('请输入有效的出库数量', 'warning');
         return;
     }
     const payload = { quantity: qty };
@@ -7752,41 +8257,252 @@ function applyDemoRoleColor(role) {
 // -------------------------------------------------------------
 // admin：引擎配置 / 灰测管理界面
 // -------------------------------------------------------------
-const DEMO_MODEL_OPTIONS = [
-    { value: 'opencode/mimo-v2.5-free', label: 'MiMo-V2.5 Free（opencode 视觉，免费）' },
-    { value: 'opencode/longcat-2.0-free', label: 'LongCat-2.0 Free（opencode）' },
-    { value: 'opencode/deepseek-v4-flash-free', label: 'deepseek-v4-flash-free（opencode）' },
-    { value: 'opencode-go/deepseek-v4-flash', label: 'deepseek-v4-flash（opencode-go）' },
-    { value: 'opencode-go/glm-5v-turbo', label: 'glm-5v-turbo（opencode-go 视觉）' },
-    { value: 'minimax-m3-pay', label: 'minimax-m3-pay（CodeBuddy 视觉主模型）' },
-    { value: 'qwen-vl-plus', label: 'qwen-vl-plus（DashScope 备选）' },
-];
+const DEFAULT_ENGINE_MODELS = {
+    opencode: [
+        { value: 'opencode/mimo-v2.5-free', label: 'MiMo-V2.5 Free' },
+        { value: 'opencode/longcat-2.0-free', label: 'LongCat-2.0 Free' },
+        { value: 'opencode/deepseek-v4-flash-free', label: 'deepseek-v4-flash-free' },
+        { value: 'opencode-go/deepseek-v4-flash', label: 'deepseek-v4-flash' },
+        { value: 'opencode-go/glm-5v-turbo', label: 'glm-5v-turbo' },
+    ],
+    codebuddy: [
+        { value: 'minimax-m3-pay', label: 'minimax-m3-pay' },
+    ],
+    openai: []
+};
 
-function fillModelOptions(selId, current) {
+// 连通性测试通过的白名单模型库 (已验证通过的模型跳过重复测试)
+function getVerifiedModels(engine) {
+    try {
+        const raw = localStorage.getItem('verified_models_' + engine);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function markModelVerified(engine, modelName) {
+    const trimmed = (modelName || '').trim();
+    if (!trimmed) return;
+    const verified = getVerifiedModels(engine);
+    if (!verified.includes(trimmed)) {
+        verified.push(trimmed);
+        try {
+            localStorage.setItem('verified_models_' + engine, JSON.stringify(verified));
+        } catch (e) {}
+    }
+}
+
+function isModelVerified(engine, modelName) {
+    if (!modelName || !modelName.trim()) return true;
+    const trimmed = modelName.trim();
+    // 1. 系统内置默认模型默认视为已验证
+    const defaults = (DEFAULT_ENGINE_MODELS[engine] || []).map(m => m.value);
+    if (defaults.includes(trimmed)) return true;
+    // 2. 之前测试通过并记录的模型
+    const verified = getVerifiedModels(engine);
+    return verified.includes(trimmed);
+}
+
+function getCustomModels(engine) {
+    try {
+        const raw = localStorage.getItem('custom_models_' + engine);
+        return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveCustomModels(engine, list) {
+    try {
+        localStorage.setItem('custom_models_' + engine, JSON.stringify(list));
+    } catch (e) {}
+}
+
+function addCustomModel(engine, modelName) {
+    const trimmed = (modelName || '').trim();
+    if (!trimmed) return false;
+    const defaults = (DEFAULT_ENGINE_MODELS[engine] || []).map(m => m.value);
+    if (defaults.includes(trimmed)) {
+        return true;
+    }
+    const customs = getCustomModels(engine);
+    if (!customs.includes(trimmed)) {
+        customs.push(trimmed);
+        saveCustomModels(engine, customs);
+    }
+    return true;
+}
+
+function removeCustomModel(engine, modelName) {
+    let customs = getCustomModels(engine);
+    customs = customs.filter(m => m !== modelName);
+    saveCustomModels(engine, customs);
+}
+
+function fillModelOptions(selId, current, engine) {
     const sel = document.getElementById(selId);
     if (!sel) return;
+    const eng = engine || 'opencode';
+    if (eng === 'openai') {
+        sel.innerHTML = '';
+        return;
+    }
+    const defaultModels = DEFAULT_ENGINE_MODELS[eng] || [];
+    const customModels = getCustomModels(eng);
+    
     sel.innerHTML = '';
-    DEMO_MODEL_OPTIONS.forEach((m) => {
+    // 1. 系统默认模型
+    defaultModels.forEach((m) => {
         const opt = document.createElement('option');
         opt.value = m.value;
         opt.textContent = m.label;
         sel.appendChild(opt);
     });
+    // 2. 用户自定义模型 (带 [自定义] 标记)
+    customModels.forEach((m) => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        opt.setAttribute('data-custom', 'true');
+        sel.appendChild(opt);
+    });
+    // 3. 自定义输入入口
+    const addOpt = document.createElement('option');
+    addOpt.value = '__ADD_CUSTOM__';
+    addOpt.textContent = '自定义输入模型...';
+    sel.appendChild(addOpt);
+
+    // 4. 若传入了 current：
+    // 若在列表中直接选中；若不在（用户刚刚输入的新自定义模型），则作为临时选项插入并选中
     if (current) {
         sel.value = current;
-        // 当前模型不在选项里 → 追加一个
         if (sel.value !== current) {
             const opt = document.createElement('option');
             opt.value = current;
-            opt.textContent = current + '（当前）';
-            sel.appendChild(opt);
+            opt.textContent = current;
+            opt.setAttribute('data-custom', 'true');
+            sel.insertBefore(opt, addOpt);
             sel.value = current;
+        }
+    }
+    if (!sel.value && sel.options.length > 0) {
+        sel.selectedIndex = 0;
+    }
+    updateModelDeleteButtonVisibility(selId);
+}
+
+function updateModelDeleteButtonVisibility(selId) {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const parentGroup = sel.closest('.form-group');
+    if (!parentGroup) return;
+    const delBtn = parentGroup.querySelector('.custom-del-btn');
+    if (!delBtn) return;
+    const selectedOpt = sel.options[sel.selectedIndex];
+    const isCustom = selectedOpt && selectedOpt.getAttribute('data-custom') === 'true';
+    delBtn.style.display = isCustom ? 'inline' : 'none';
+}
+
+function handleDeleteCurrentModel(selId, engineId) {
+    const sel = document.getElementById(selId);
+    const engineEl = document.getElementById(engineId);
+    if (!sel || !engineEl) return;
+    const val = sel.value;
+    const engine = engineEl.value;
+    if (!val) return;
+    showCustomConfirmModal({
+        title: '删除自定义模型',
+        message: '确定要删除自定义模型 [' + val + '] 吗？系统默认模型不受影响。',
+        confirmText: '确定删除',
+        cancelText: '取消',
+        onConfirm: () => {
+            removeCustomModel(engine, val);
+            showToast('已删除自定义模型：' + val, 'info');
+            fillModelOptions(selId, null, engine);
+            updateModelDeleteButtonVisibility(selId);
+        }
+    });
+}
+
+function handleModelSelectChange(selId, engineGetter) {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    const val = sel.value;
+    const engine = typeof engineGetter === 'function' ? engineGetter() : engineGetter;
+    if (val === '__ADD_CUSTOM__') {
+        let exampleModel = 'provider/model-name';
+        if (engine === 'opencode') {
+            exampleModel = 'opencode-go/gpt-5.6-luna';
+        } else if (engine === 'codebuddy') {
+            exampleModel = 'hy3';
+        }
+        showCustomInputModal({
+            title: '添加自定义模型',
+            message: '请输入 ' + engine + ' 引擎的模型名称：\n参考格式案例：' + exampleModel,
+            defaultValue: exampleModel,
+            placeholder: exampleModel,
+            onConfirm: (newModel) => {
+                const trimmed = (newModel || '').trim();
+                if (trimmed) {
+                    // 仅填入当前下拉框作为临时选中值，不在此时写入 localStorage
+                    fillModelOptions(selId, trimmed, engine);
+                    showToast('已选择模型：' + trimmed + '（保存配置通过后将持久化保存）', 'info');
+                } else {
+                    fillModelOptions(selId, null, engine);
+                }
+                updateModelDeleteButtonVisibility(selId);
+            },
+            onCancel: () => {
+                fillModelOptions(selId, null, engine);
+                updateModelDeleteButtonVisibility(selId);
+            }
+        });
+    }
+    updateModelDeleteButtonVisibility(selId);
+}
+
+// 辅助函数：根据引擎是否为 openai，动态插入或移除临时 placeholder 选项并选中
+function syncModelSelectOpenaiState(selId, isOpenai) {
+    const sel = document.getElementById(selId);
+    if (!sel) return;
+    let ph = sel.querySelector('option[data-placeholder="openai"]');
+    if (isOpenai) {
+        if (!ph) {
+            ph = document.createElement('option');
+            ph.value = '';
+            ph.setAttribute('data-placeholder', 'openai');
+            ph.textContent = '— 无（使用下方 OpenAI 模型） —';
+            sel.prepend(ph);
+        }
+        sel.value = '';
+    } else {
+        if (ph) {
+            ph.remove();
+            // 移除后若无选中，恢复首个有效模型
+            if (!sel.value && sel.options.length > 0) {
+                sel.selectedIndex = 0;
+            }
         }
     }
 }
 
 // 预设 OpenAI 网关（选择后自动填入识别/审核参数）
 const OPENAI_PRESETS = {
+    agnes: {
+        label: 'Agnes AI',
+        base_url: 'https://apihub.agnes-ai.com/v1',
+        api_key: 'sk-KnyyE7tPWC5VnZLnfSaeE5NdN5Mrymm5tjs8cdhSiLZAcoQl',
+        rec_model: 'agnes-2.0-flash',
+        aud_model: 'agnes-2.0-flash',
+    },
+    bailian: {
+        label: '阿里云百炼 · DashScope',
+        base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        api_key: 'sk-ws-H.EPEIEXY.YOjw.MEYCIQDD9x3fMZAG3kt9zbgY1_6_1cbr-zl7MKOghZiSpS79OgIhANDEX_nkT997LzjEvtPXhNemX3Gtax7zbDZUKf3-_-SI',
+        rec_model: 'qwen3-vl-flash',
+        aud_model: 'qwen3-vl-plus',
+    },
     siliconflow: {
         label: 'SiliconFlow · 硅基流动',
         base_url: 'https://api.siliconflow.cn/v1',
@@ -7796,32 +8512,72 @@ const OPENAI_PRESETS = {
     },
 };
 
-function applyOpenaiPreset() {
-    const key = document.getElementById('adminOpenaiPreset').value;
-    const p = OPENAI_PRESETS[key];
+function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud) {
+    const sel = document.getElementById(presetSelectId);
+    if (!sel) return;
+    const p = OPENAI_PRESETS[sel.value];
     if (!p) return;
-    document.getElementById('adminOpenaiRecBaseUrl').value = p.base_url;
-    document.getElementById('adminOpenaiRecApiKey').value = p.api_key;
-    document.getElementById('adminOpenaiRecModel').value = p.rec_model;
-    document.getElementById('adminOpenaiAudBaseUrl').value = p.base_url;
-    document.getElementById('adminOpenaiAudApiKey').value = p.api_key;
-    document.getElementById('adminOpenaiAudModel').value = p.aud_model;
-    // 若引擎还没选 openai，则自动切到 openai
-    if (document.getElementById('adminRecognitionEngine').value !== 'openai') {
-        document.getElementById('adminRecognitionEngine').value = 'openai';
-        updateOpenaiBoxes();
-    }
-    if (document.getElementById('adminAuditEngine').value !== 'openai') {
-        document.getElementById('adminAuditEngine').value = 'openai';
-        updateOpenaiBoxes();
-    }
+    const bEl = document.getElementById(baseUrlId);
+    const kEl = document.getElementById(apiKeyId);
+    const mEl = document.getElementById(modelId);
+    if (bEl) bEl.value = p.base_url;
+    if (kEl) kEl.value = p.api_key;
+    if (mEl) mEl.value = isAud ? p.aud_model : p.rec_model;
     showToast('已填入预设：' + p.label, 'info');
 }
 
-function openAdminEngineModal() {
-    // 仅 admin 可开
+let _adminEngineEventsBound = false;
+
+function bindAdminEngineEventsOnce() {
+    if (_adminEngineEventsBound) return;
+    _adminEngineEventsBound = true;
+
+    // 模型下拉变更（支持自定义添加）
+    document.getElementById('adminRecognitionModel').addEventListener('change', () => handleModelSelectChange('adminRecognitionModel', () => document.getElementById('adminRecognitionEngine').value));
+    document.getElementById('adminAuditModel').addEventListener('change', () => handleModelSelectChange('adminAuditModel', () => document.getElementById('adminAuditEngine').value));
+    document.getElementById('adminParseModel').addEventListener('change', () => handleModelSelectChange('adminParseModel', () => document.getElementById('adminParseEngine').value));
+    document.getElementById('adminGreyRecModel').addEventListener('change', () => handleModelSelectChange('adminGreyRecModel', () => document.getElementById('adminGreyRecEngine').value));
+    document.getElementById('adminGreyAudModel').addEventListener('change', () => handleModelSelectChange('adminGreyAudModel', () => document.getElementById('adminGreyAudEngine').value));
+    document.getElementById('adminGreyParseModel').addEventListener('change', () => handleModelSelectChange('adminGreyParseModel', () => document.getElementById('adminGreyParseEngine').value));
+
+    // 审核开关控制审核引擎/模型置灰
+    document.getElementById('adminAuditEnabled').addEventListener('change', updateAuditDisabledState);
+    document.getElementById('adminGreyAuditEnabled').addEventListener('change', updateGreyAuditDisabledState);
+    // 引擎选择 → OpenAI 参数区显隐（常规 + 灰测）
+    document.getElementById('adminRecognitionEngine').addEventListener('change', updateOpenaiBoxes);
+    document.getElementById('adminAuditEngine').addEventListener('change', updateOpenaiBoxes);
+    document.getElementById('adminGreyRecEngine').addEventListener('change', updateGreyOpenaiBoxes);
+    document.getElementById('adminGreyAudEngine').addEventListener('change', updateGreyOpenaiBoxes);
+    // 各 OpenAI 参数区独立预设网关绑定
+    [
+        ['adminOpenaiRecPreset', 'adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey', 'adminOpenaiRecModel', false],
+        ['adminOpenaiAudPreset', 'adminOpenaiAudBaseUrl', 'adminOpenaiAudApiKey', 'adminOpenaiAudModel', true],
+        ['adminParseOpenaiPreset', 'adminParseOpenaiBaseUrl', 'adminParseOpenaiApiKey', 'adminParseOpenaiModel', false],
+        ['adminGreyOpenaiRecPreset', 'adminGreyOpenaiRecBaseUrl', 'adminGreyOpenaiRecApiKey', 'adminGreyOpenaiRecModel', false],
+        ['adminGreyOpenaiAudPreset', 'adminGreyOpenaiAudBaseUrl', 'adminGreyOpenaiAudApiKey', 'adminGreyOpenaiAudModel', true],
+        ['adminGreyParseOpenaiPreset', 'adminGreyParseOpenaiBaseUrl', 'adminGreyParseOpenaiApiKey', 'adminGreyParseOpenaiModel', false]
+    ].forEach(([presetId, bId, kId, mId, isAud]) => {
+        const el = document.getElementById(presetId);
+        if (el) {
+            el.value = '';
+            el.addEventListener('change', () => applyBoxPreset(presetId, bId, kId, mId, isAud));
+        }
+    });
+    // 灰测停用 → 整块置灰
+    document.getElementById('adminGreyEnabled').addEventListener('change', updateGreyDisabledState);
+    // 解析 LLM 开关 → 置灰；引擎 → OpenAI 区显隐
+    document.getElementById('adminParseEnabled').addEventListener('change', updateParseDisabledState);
+    document.getElementById('adminParseEngine').addEventListener('change', updateParseOpenaiBox);
+    document.getElementById('adminGreyParseEnabled').addEventListener('change', updateGreyParseDisabledState);
+    document.getElementById('adminGreyParseEngine').addEventListener('change', updateGreyParseOpenaiBox);
+}
+
+function loadAdminEngineConfig() {
+    // 仅 admin 可查看
     const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
-    if (role !== 'admin') { showToast('仅 admin 可操作引擎配置', 'error'); return; }
+    if (role !== 'admin') return;
+    bindAdminEngineEventsOnce();
+
     fetch('/api/admin/engine-config')
         .then(res => res.json())
         .then(body => {
@@ -7833,9 +8589,9 @@ function openAdminEngineModal() {
             // 引擎类型
             document.getElementById('adminRecognitionEngine').value = cfg.recognition_engine || 'opencode';
             document.getElementById('adminAuditEngine').value = cfg.audit_engine || 'opencode';
-            // 模型下拉
-            fillModelOptions('adminRecognitionModel', cfg.recognition_model);
-            fillModelOptions('adminAuditModel', cfg.audit_model);
+            // 模型下拉（根据对应引擎渲染）
+            fillModelOptions('adminRecognitionModel', cfg.recognition_model, cfg.recognition_engine || 'opencode');
+            fillModelOptions('adminAuditModel', cfg.audit_model, cfg.audit_engine || 'opencode');
             document.getElementById('adminAuditEnabled').value = cfg.audit_enabled ? 'true' : 'false';
             // OpenAI 兼容参数（识别/审核各自独立）
             document.getElementById('adminOpenaiRecBaseUrl').value = cfg.openai_rec_base_url || '';
@@ -7847,14 +8603,14 @@ function openAdminEngineModal() {
             // 常规解析 LLM
             document.getElementById('adminParseEnabled').value = cfg.parse_llm_enabled ? 'true' : 'false';
             document.getElementById('adminParseEngine').value = cfg.parse_llm_engine || 'opencode';
-            fillModelOptions('adminParseModel', cfg.parse_llm_model);
+            fillModelOptions('adminParseModel', cfg.parse_llm_model, cfg.parse_llm_engine || 'opencode');
             document.getElementById('adminParseOpenaiBaseUrl').value = cfg.openai_parse_base_url || '';
             document.getElementById('adminParseOpenaiApiKey').value = cfg.openai_parse_api_key || '';
             document.getElementById('adminParseOpenaiModel').value = cfg.openai_parse_model || '';
             // 灰测解析 LLM
             document.getElementById('adminGreyParseEnabled').value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
             document.getElementById('adminGreyParseEngine').value = cfg.grey_parse_llm_engine || 'opencode';
-            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model);
+            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, cfg.grey_parse_llm_engine || 'opencode');
             document.getElementById('adminGreyParseOpenaiBaseUrl').value = cfg.grey_openai_parse_base_url || '';
             document.getElementById('adminGreyParseOpenaiApiKey').value = cfg.grey_openai_parse_api_key || '';
             document.getElementById('adminGreyParseOpenaiModel').value = cfg.grey_openai_parse_model || '';
@@ -7864,40 +8620,25 @@ function openAdminEngineModal() {
             document.getElementById('adminGreyAssignMode').value = cfg.grey_assign_mode || 'receipt';
             document.getElementById('adminGreyRecEngine').value = cfg.grey_recognition_engine || 'opencode';
             document.getElementById('adminGreyAudEngine').value = cfg.grey_audit_engine || 'opencode';
-            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model);
-            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model);
+            document.getElementById('adminGreyAuditEnabled').value = cfg.grey_audit_enabled ? 'true' : 'false';
+            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, cfg.grey_recognition_engine || 'opencode');
+            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, cfg.grey_audit_engine || 'opencode');
             document.getElementById('adminGreyOpenaiRecBaseUrl').value = cfg.grey_openai_rec_base_url || '';
             document.getElementById('adminGreyOpenaiRecApiKey').value = cfg.grey_openai_rec_api_key || '';
             document.getElementById('adminGreyOpenaiRecModel').value = cfg.grey_openai_rec_model || '';
             document.getElementById('adminGreyOpenaiAudBaseUrl').value = cfg.grey_openai_aud_base_url || '';
             document.getElementById('adminGreyOpenaiAudApiKey').value = cfg.grey_openai_aud_api_key || '';
             document.getElementById('adminGreyOpenaiAudModel').value = cfg.grey_openai_aud_model || '';
-            // 审核开关控制审核引擎/模型置灰
-            document.getElementById('adminAuditEnabled').addEventListener('change', updateAuditDisabledState);
+
             updateAuditDisabledState();
-            // 引擎选择 → OpenAI 参数区显隐（常规 + 灰测）
-            document.getElementById('adminRecognitionEngine').addEventListener('change', updateOpenaiBoxes);
-            document.getElementById('adminAuditEngine').addEventListener('change', updateOpenaiBoxes);
-            document.getElementById('adminGreyRecEngine').addEventListener('change', updateGreyOpenaiBoxes);
-            document.getElementById('adminGreyAudEngine').addEventListener('change', updateGreyOpenaiBoxes);
-            // 预设网关
-            document.getElementById('adminOpenaiPreset').value = '';
-            document.getElementById('adminOpenaiPreset').addEventListener('change', applyOpenaiPreset);
-            // 灰测停用 → 整块置灰
-            document.getElementById('adminGreyEnabled').addEventListener('change', updateGreyDisabledState);
             updateGreyDisabledState();
-            // 解析 LLM 开关 → 置灰；引擎 → OpenAI 区显隐
-            document.getElementById('adminParseEnabled').addEventListener('change', updateParseDisabledState);
-            document.getElementById('adminParseEngine').addEventListener('change', updateParseOpenaiBox);
-            document.getElementById('adminGreyParseEnabled').addEventListener('change', updateGreyParseDisabledState);
-            document.getElementById('adminGreyParseEngine').addEventListener('change', updateGreyParseOpenaiBox);
             updateParseDisabledState();
             updateParseOpenaiBox();
             updateGreyParseDisabledState();
             updateGreyParseOpenaiBox();
+            updateGreyAuditDisabledState();
             updateOpenaiBoxes();
             updateGreyOpenaiBoxes();
-            openModalById('adminEngineModal');
             // 灰测状态
             fetch('/api/admin/grey-test')
                 .then(r => r.json())
@@ -7910,12 +8651,8 @@ function openAdminEngineModal() {
                                '%</code> · 分配 <code>' + (cur.grey_assign_mode || '—') +
                                '</code><br>灰测识别 <code>' + (cur.grey_recognition_engine || '—') + '/' + (cur.grey_recognition_model || '—') +
                                '</code> · 灰测审核 <code>' + (cur.grey_audit_engine || '—') + '/' + (cur.grey_audit_model || '—'))
-                            : '<strong>灰测停用</strong>（全部单据走常规配置）';
-                        el.innerHTML =
-                            '<strong>常规配置：</strong>识别 <code>' + (cur.recognition_engine || '—') + '/' + (cur.recognition_model || '—') +
-                            '</code> · 审核 <code>' + (cur.audit_engine || '—') + '/' + (cur.audit_model || '—') +
-                            '</code><br>' + greyState +
-                            '<br>' + (gt.data.note || '');
+                            : '<strong>灰测停用</strong>';
+                        el.innerHTML = '';
                     }
                 })
                 .catch(() => {});
@@ -7924,6 +8661,9 @@ function openAdminEngineModal() {
 }
 
 function saveAdminEngineConfig() {
+    const saveBtn = document.getElementById('btnSaveAdminEngine');
+    const origText = saveBtn ? saveBtn.textContent : '保存配置';
+    
     const body = {
         recognition_engine: document.getElementById('adminRecognitionEngine').value,
         recognition_model: document.getElementById('adminRecognitionModel').value,
@@ -7948,6 +8688,7 @@ function saveAdminEngineConfig() {
         grey_recognition_engine: document.getElementById('adminGreyRecEngine').value,
         grey_recognition_model: document.getElementById('adminGreyRecModel').value,
         grey_audit_engine: document.getElementById('adminGreyAudEngine').value,
+        grey_audit_enabled: document.getElementById('adminGreyAuditEnabled').value === 'true',
         grey_audit_model: document.getElementById('adminGreyAudModel').value,
         grey_openai_rec_base_url: document.getElementById('adminGreyOpenaiRecBaseUrl').value,
         grey_openai_rec_api_key: document.getElementById('adminGreyOpenaiRecApiKey').value,
@@ -7962,51 +8703,291 @@ function saveAdminEngineConfig() {
         grey_openai_parse_api_key: document.getElementById('adminGreyParseOpenaiApiKey').value,
         grey_openai_parse_model: document.getElementById('adminGreyParseOpenaiModel').value,
     };
-    fetch('/api/admin/engine-config', {
-        method: 'PUT',
+
+    const skipTest = document.getElementById('adminSkipModelTest') && document.getElementById('adminSkipModelTest').checked;
+
+    function doSave() {
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.textContent = '正在保存配置...';
+        }
+        return fetch('/api/admin/engine-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        })
+            .then(r => r.json())
+            .then(ret => {
+                if (ret && ret.status === 'success') {
+                    // 保存成功：将有效的自定义模型正式持久化到 localStorage
+                    const recEngine = document.getElementById('adminRecognitionEngine').value;
+                    const recModel = document.getElementById('adminRecognitionModel').value;
+                    if (recEngine !== 'openai' && recModel) addCustomModel(recEngine, recModel);
+
+                    const parseEngine = document.getElementById('adminParseEngine').value;
+                    const parseModel = document.getElementById('adminParseModel').value;
+                    if (parseEngine !== 'openai' && parseModel) addCustomModel(parseEngine, parseModel);
+
+                    const audEngine = document.getElementById('adminAuditEngine').value;
+                    const audModel = document.getElementById('adminAuditModel').value;
+                    if (audEngine !== 'openai' && audModel) addCustomModel(audEngine, audModel);
+
+                    // 灰测区域自定义模型同步持久化
+                    const gRecEngine = document.getElementById('adminGreyRecEngine').value;
+                    const gRecModel = document.getElementById('adminGreyRecModel').value;
+                    if (gRecEngine !== 'openai' && gRecModel) addCustomModel(gRecEngine, gRecModel);
+
+                    const gAudEngine = document.getElementById('adminGreyAudEngine').value;
+                    const gAudModel = document.getElementById('adminGreyAudModel').value;
+                    if (gAudEngine !== 'openai' && gAudModel) addCustomModel(gAudEngine, gAudModel);
+
+                    const gParseEngine = document.getElementById('adminGreyParseEngine').value;
+                    const gParseModel = document.getElementById('adminGreyParseModel').value;
+                    if (gParseEngine !== 'openai' && gParseModel) addCustomModel(gParseEngine, gParseModel);
+
+                    // 记录通过测试并保存的模型到白名单库
+                    if (recEngine !== 'openai' && recModel) markModelVerified(recEngine, recModel);
+                    if (parseEngine !== 'openai' && parseModel) markModelVerified(parseEngine, parseModel);
+                    if (audEngine !== 'openai' && audModel) markModelVerified(audEngine, audModel);
+                    if (gRecEngine !== 'openai' && gRecModel) markModelVerified(gRecEngine, gRecModel);
+                    if (gAudEngine !== 'openai' && gAudModel) markModelVerified(gAudEngine, gAudModel);
+                    if (gParseEngine !== 'openai' && gParseModel) markModelVerified(gParseEngine, gParseModel);
+
+                    showToast('配置已成功保存', 'success');
+                } else {
+                    showToast((ret && ret.msg) || '保存失败', 'error');
+                }
+            })
+            .catch(err => {
+                showToast('保存异常: ' + (err.message || err), 'error');
+            })
+            .finally(() => {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = origText;
+                }
+            });
+    }
+
+    // 判断当前启用的各模块模型是否均已通过测试（已验证过）
+    const recEng = body.recognition_engine;
+    const recMod = body.recognition_model;
+    const parseEng = body.parse_llm_engine;
+    const parseMod = body.parse_llm_model;
+    const audEng = body.audit_engine;
+    const audMod = body.audit_model;
+
+    const gRecEng = body.grey_recognition_engine;
+    const gRecMod = body.grey_recognition_model;
+    const gParseEng = body.grey_parse_llm_engine;
+    const gParseMod = body.grey_parse_llm_model;
+    const gAudEng = body.grey_audit_engine;
+    const gAudMod = body.grey_audit_model;
+
+    let allVerified = true;
+    if (recEng !== 'openai' && !isModelVerified(recEng, recMod)) allVerified = false;
+    if (body.parse_llm_enabled && parseEng !== 'openai' && !isModelVerified(parseEng, parseMod)) allVerified = false;
+    if (body.audit_enabled && audEng !== 'openai' && !isModelVerified(audEng, audMod)) allVerified = false;
+
+    if (body.grey_enabled && body.grey_percent > 0) {
+        if (gRecEng !== 'openai' && !isModelVerified(gRecEng, gRecMod)) allVerified = false;
+        if (body.grey_parse_llm_enabled && gParseEng !== 'openai' && !isModelVerified(gParseEng, gParseMod)) allVerified = false;
+        if (body.audit_enabled && gAudEng !== 'openai' && !isModelVerified(gAudEng, gAudMod)) allVerified = false;
+    }
+
+    // 若用户勾选跳过测试，或当前所有配置的模型此前已通过测试，则直接秒级保存
+    if (skipTest || allVerified) {
+        return doSave();
+    }
+
+    let countdown = 45;
+    let timer = null;
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '正在测试引擎连接 (' + countdown + 's)...';
+        timer = setInterval(() => {
+            countdown -= 1;
+            if (countdown > 0) {
+                saveBtn.textContent = '正在测试引擎连接 (' + countdown + 's)...';
+            } else {
+                saveBtn.textContent = '测试即将完成，请稍候...';
+            }
+        }, 1000);
+    }
+    showToast('检测到新模型，正在测试连通性，最长需 45s...', 'info');
+
+    // 1. 仅针对未验证的新模型进行连接自测
+    fetch('/api/admin/test-engine-config', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     })
-        .then(res => res.json())
-        .then(ret => {
-            if (ret && ret.status === 'success') {
-                showToast('引擎配置已保存，识别链路将按新配置执行', 'success');
-                closeModalById('adminEngineModal');
-            } else {
-                showToast((ret && ret.msg) || '保存失败', 'error');
+        .then(res => res.json().then(data => ({ status: res.status, data: data })))
+        .then(resObj => {
+            if (timer) clearInterval(timer);
+            if (resObj.status !== 200 || resObj.data.status !== 'success') {
+                const errMsg = (resObj.data && resObj.data.msg) || '连接测试未通过';
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = origText;
+                }
+                showCustomConfirmModal({
+                    title: '引擎配置测试未通过',
+                    message: errMsg + '\n\n是否仍然强制保存当前配置？',
+                    confirmText: '强制保存',
+                    cancelText: '取消',
+                    onConfirm: () => {
+                        doSave();
+                    },
+                    onCancel: () => {
+                        showToast('已取消保存配置，恢复已生效设置', 'info');
+                        loadAdminEngineConfig();
+                    }
+                });
+                return;
             }
+
+            // 2. 测试通过，执行实际保存
+            return doSave();
         })
-        .catch(() => showToast('保存失败', 'error'));
+        .catch(err => {
+            if (timer) clearInterval(timer);
+            console.error('测试异常', err);
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = origText;
+            }
+            showCustomConfirmModal({
+                title: '测试请求异常',
+                message: (err.message || err) + '\n\n是否仍然强制保存当前配置？',
+                confirmText: '强制保存',
+                cancelText: '取消',
+                onConfirm: () => {
+                    doSave();
+                },
+                onCancel: () => {
+                    showToast('已取消保存配置', 'info');
+                }
+            });
+        });
 }
 
-// 审核开关：关 → 审核引擎/模型置灰（disabled）
+// 审核开关：关 → 审核引擎/模型置灰（disabled）并隐藏审核 OpenAI 参数窗口
 function updateAuditDisabledState() {
     const enabled = document.getElementById('adminAuditEnabled').value === 'true';
-    const ids = ['adminAuditEngine', 'adminAuditModel'];
-    ids.forEach((id) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.disabled = !enabled;
-        el.style.opacity = enabled ? '1' : '0.45';
-    });
-}
-
-// 引擎选择 → OpenAI 参数区显隐（常规识别/审核各自独立）
-function updateOpenaiBoxes() {
-    const recIsOpenai = document.getElementById('adminRecognitionEngine').value === 'openai';
     const audIsOpenai = document.getElementById('adminAuditEngine').value === 'openai';
+    const engineEl = document.getElementById('adminAuditEngine');
+    if (engineEl) {
+        engineEl.disabled = !enabled;
+        engineEl.style.opacity = enabled ? '1' : '0.45';
+    }
+    const modelEl = document.getElementById('adminAuditModel');
+    if (modelEl) {
+        const modelDisabled = !enabled || audIsOpenai;
+        modelEl.disabled = modelDisabled;
+        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminAuditModel', audIsOpenai);
+    }
+    const audBox = document.getElementById('adminOpenaiAuditBox');
+    if (audBox) {
+        audBox.style.display = (enabled && audIsOpenai) ? '' : 'none';
+    }
+}
+
+// 引擎选择 → 重新填充模型列表（切换引擎时自动重置为该引擎默认模型） & OpenAI 参数区显隐 & 相应模型下拉置灰
+function updateOpenaiBoxes(e) {
+    const recEngine = document.getElementById('adminRecognitionEngine').value;
+    const audEngine = document.getElementById('adminAuditEngine').value;
+    const recIsOpenai = recEngine === 'openai';
+    const auditEnabled = document.getElementById('adminAuditEnabled').value === 'true';
+    const audIsOpenai = audEngine === 'openai';
+    
+    // 识别模型根据引擎动态渲染并联动置灰（切换引擎时不保留上一引擎旧模型）
+    const recModelEl = document.getElementById('adminRecognitionModel');
+    if (recModelEl) {
+        const curVal = recModelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[recEngine] || []).map(m => m.value).concat(getCustomModels(recEngine));
+        const keepVal = (e && e.type === 'change' && e.target && e.target.id === 'adminRecognitionEngine')
+            ? (validModels.includes(curVal) ? curVal : null)
+            : (validModels.includes(curVal) ? curVal : null);
+        fillModelOptions('adminRecognitionModel', keepVal, recEngine);
+        recModelEl.disabled = recIsOpenai;
+        recModelEl.style.opacity = recIsOpenai ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminRecognitionModel', recIsOpenai);
+    }
+    
+    // 审核模型根据引擎动态渲染
+    const audModelEl = document.getElementById('adminAuditModel');
+    if (audModelEl) {
+        const curVal = audModelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[audEngine] || []).map(m => m.value).concat(getCustomModels(audEngine));
+        const keepVal = validModels.includes(curVal) ? curVal : null;
+        fillModelOptions('adminAuditModel', keepVal, audEngine);
+    }
+    
+    // 审核模型与窗口显隐联动
+    updateAuditDisabledState();
+    
     document.getElementById('adminOpenaiRecognitionBox').style.display = recIsOpenai ? '' : 'none';
-    document.getElementById('adminOpenaiAuditBox').style.display = audIsOpenai ? '' : 'none';
+    document.getElementById('adminOpenaiAuditBox').style.display = (auditEnabled && audIsOpenai) ? '' : 'none';
 }
 
-// 引擎选择 → 灰测 OpenAI 参数区显隐（灰测识别/审核各自独立）
+// 灰测引擎选择 → 重新填充模型列表（切换引擎时自动重置为该引擎默认模型） & 灰测 OpenAI 参数区显隐
 function updateGreyOpenaiBoxes() {
-    const recIsOpenai = document.getElementById('adminGreyRecEngine').value === 'openai';
-    const audIsOpenai = document.getElementById('adminGreyAudEngine').value === 'openai';
+    const recEngine = document.getElementById('adminGreyRecEngine').value;
+    const audEngine = document.getElementById('adminGreyAudEngine').value;
+    const recIsOpenai = recEngine === 'openai';
+    const audIsOpenai = audEngine === 'openai';
+
+    const recModelEl = document.getElementById('adminGreyRecModel');
+    if (recModelEl) {
+        const curVal = recModelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[recEngine] || []).map(m => m.value).concat(getCustomModels(recEngine));
+        const keepVal = validModels.includes(curVal) ? curVal : null;
+        fillModelOptions('adminGreyRecModel', keepVal, recEngine);
+        recModelEl.disabled = recIsOpenai;
+        recModelEl.style.opacity = recIsOpenai ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminGreyRecModel', recIsOpenai);
+    }
+
+    const audModelEl = document.getElementById('adminGreyAudModel');
+    if (audModelEl) {
+        const curVal = audModelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[audEngine] || []).map(m => m.value).concat(getCustomModels(audEngine));
+        const keepVal = validModels.includes(curVal) ? curVal : null;
+        fillModelOptions('adminGreyAudModel', keepVal, audEngine);
+        audModelEl.disabled = audIsOpenai;
+        audModelEl.style.opacity = audIsOpenai ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminGreyAudModel', audIsOpenai);
+    }
+
     document.getElementById('adminGreyOpenaiRecBox').style.display = recIsOpenai ? '' : 'none';
-    document.getElementById('adminGreyOpenaiAudBox').style.display = audIsOpenai ? '' : 'none';
+    // 灰测审核 OpenAI 参数区显隐由 updateGreyAuditDisabledState 统一管控（需 gate audit_enabled）
+    updateGreyAuditDisabledState();
 }
 
+// 灰测审核开关：关 → 灰测审核引擎/模型置灰并隐藏灰测审核 OpenAI 参数区（对齐常规审核）
+function updateGreyAuditDisabledState() {
+    const enabled = document.getElementById('adminGreyAuditEnabled').value === 'true';
+    const audIsOpenai = document.getElementById('adminGreyAudEngine').value === 'openai';
+    const engineEl = document.getElementById('adminGreyAudEngine');
+    if (engineEl) {
+        engineEl.disabled = !enabled;
+        engineEl.style.opacity = enabled ? '1' : '0.45';
+    }
+    const modelEl = document.getElementById('adminGreyAudModel');
+    if (modelEl) {
+        const modelDisabled = !enabled || audIsOpenai;
+        modelEl.disabled = modelDisabled;
+        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminGreyAudModel', audIsOpenai);
+    }
+    const audBox = document.getElementById('adminGreyOpenaiAudBox');
+    if (audBox) {
+        audBox.style.display = (enabled && audIsOpenai) ? '' : 'none';
+    }
+}
 // 灰测停用 → 整块（adminGreyBody）置灰：全部控件 disabled + 半透明
 function updateGreyDisabledState() {
     const enabled = document.getElementById('adminGreyEnabled').value === 'true';
@@ -8020,25 +9001,40 @@ function updateGreyDisabledState() {
     }
 }
 
-// 解析 LLM：关 → 置灰（引擎/模型/OpenAI 区）；引擎选 openai → 显示参数区
+// 解析 LLM：关 → 置灰（引擎/模型/OpenAI 区）；引擎选 openai → 模型置灰清空并显示参数区
 function updateParseDisabledState() {
     const enabled = document.getElementById('adminParseEnabled').value === 'true';
-    const ids = ['adminParseEngine', 'adminParseModel'];
-    ids.forEach((id) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.disabled = !enabled;
-        el.style.opacity = enabled ? '1' : '0.45';
-    });
+    const isOpenai = document.getElementById('adminParseEngine').value === 'openai';
+    const engineEl = document.getElementById('adminParseEngine');
+    if (engineEl) {
+        engineEl.disabled = !enabled;
+        engineEl.style.opacity = enabled ? '1' : '0.45';
+    }
+    const modelEl = document.getElementById('adminParseModel');
+    if (modelEl) {
+        const modelDisabled = !enabled || isOpenai;
+        modelEl.disabled = modelDisabled;
+        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminParseModel', isOpenai);
+    }
     const box = document.getElementById('adminParseOpenaiBox');
     if (box) {
-        box.querySelectorAll('input').forEach((el) => { el.disabled = !enabled; });
-        box.style.opacity = enabled ? '1' : '0.45';
+        box.style.display = (enabled && isOpenai) ? '' : 'none';
     }
 }
 function updateParseOpenaiBox() {
-    const isOpenai = document.getElementById('adminParseEngine').value === 'openai';
-    document.getElementById('adminParseOpenaiBox').style.display = isOpenai ? '' : 'none';
+    const enabled = document.getElementById('adminParseEnabled').value === 'true';
+    const parseEngine = document.getElementById('adminParseEngine').value;
+    const isOpenai = parseEngine === 'openai';
+    const parseModelEl = document.getElementById('adminParseModel');
+    if (parseModelEl) {
+        const curVal = parseModelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[parseEngine] || []).map(m => m.value).concat(getCustomModels(parseEngine));
+        const keepVal = validModels.includes(curVal) ? curVal : null;
+        fillModelOptions('adminParseModel', keepVal, parseEngine);
+    }
+    updateParseDisabledState();
+    document.getElementById('adminParseOpenaiBox').style.display = (enabled && isOpenai) ? '' : 'none';
 }
 
 // 灰测解析 LLM：关 → 置灰；引擎选 openai → 显示参数区
@@ -8050,8 +9046,410 @@ function updateGreyParseDisabledState() {
         body.style.opacity = enabled ? '1' : '0.45';
         body.style.pointerEvents = enabled ? 'auto' : 'none';
     }
+    updateGreyParseOpenaiBox();
 }
 function updateGreyParseOpenaiBox() {
-    const isOpenai = document.getElementById('adminGreyParseEngine').value === 'openai';
-    document.getElementById('adminGreyParseOpenaiBox').style.display = isOpenai ? '' : 'none';
+    const enabled = document.getElementById('adminGreyParseEnabled').value === 'true';
+    const parseEngine = document.getElementById('adminGreyParseEngine').value;
+    const isOpenai = parseEngine === 'openai';
+    const modelEl = document.getElementById('adminGreyParseModel');
+    if (modelEl) {
+        const curVal = modelEl.value;
+        const validModels = (DEFAULT_ENGINE_MODELS[parseEngine] || []).map(m => m.value).concat(getCustomModels(parseEngine));
+        const keepVal = validModels.includes(curVal) ? curVal : null;
+        fillModelOptions('adminGreyParseModel', keepVal, parseEngine);
+        modelEl.disabled = isOpenai;
+        modelEl.style.opacity = isOpenai ? '0.45' : '1';
+        syncModelSelectOpenaiState('adminGreyParseModel', isOpenai);
+    }
+    document.getElementById('adminGreyParseOpenaiBox').style.display = (enabled && isOpenai) ? '' : 'none';
 }
+
+// ---------------------------------- 推全 / 回滚 / 对比 ----------------------------------
+
+// 灰测↔常规配置对比：GET /api/admin/engine-config/diff
+function fetchAndRenderDiff(onRendered) {
+    const panel = document.getElementById('adminGreyDiffPanel');
+    if (panel) {
+        panel.classList.remove('hide');
+        panel.dataset.loading = '1';
+    }
+    fetch('/api/admin/engine-config/diff')
+        .then(r => r.json())
+        .then(body => {
+            if (!body || body.status !== 'success') {
+                showToast((body && body.msg) || '读取对比失败', 'warning');
+                if (panel) panel.classList.add('hide');
+                if (onRendered) onRendered(false);
+                return;
+            }
+            const { diffs, totalPairs, diffCount } = body.data || {};
+            renderGreyDiffPanel({ diffs, totalPairs, diffCount });
+            if (panel) panel.dataset.loading = '0';
+            if (onRendered) onRendered(true);
+        })
+        .catch(err => {
+            console.error('diff 请求异常', err);
+            showToast('对比请求异常', 'error');
+            if (panel) panel.classList.add('hide');
+            if (onRendered) onRendered(false);
+        });
+}
+
+// 渲染双列对照表：差异行高亮，敏感字段打码展示
+function renderGreyDiffPanel({ diffs, totalPairs, diffCount }) {
+    const panel = document.getElementById('adminGreyDiffPanel');
+    if (!panel) return;
+    const wrap = panel.querySelector('.diff-wrap');
+    if (!wrap) return;
+
+    const header = document.getElementById('adminGreyDiffHeader');
+    if (header) {
+        header.innerHTML = '配置对比 · 常规 <span style="color:#1565c0;">vs</span> 灰测 '
+            + (diffCount > 0
+                ? `<span style="color:#b8860b;">发现 <strong>${diffCount}</strong> 项差异（共 ${totalPairs} 项）</span>`
+                : '<span style="color:#2f6b4f;">两组配置完全一致</span>');
+    }
+
+    let html = '<table class="diff-table"><thead><tr><th>配置项</th><th>常规组</th><th>灰测组</th><th>状态</th></tr></thead><tbody>';
+    if (Array.isArray(diffs) && diffs.length > 0) {
+        diffs.forEach(d => {
+            const isDiff = !d.identical;
+            const rowCls = isDiff ? 'diff-row' : '';
+            const sensitive = d.sensitive;
+            const reg = sensitive ? (d.regular || '—') : `<code>${escapeHtml(String(d.regular || '—'))}</code>`;
+            const grey = sensitive ? (d.grey || '—') : `<code>${escapeHtml(String(d.grey || '—'))}</code>`;
+            const status = isDiff ? '<span class="badge" style="color:#b8860b;">差异</span>' : '<span class="badge" style="color:#2f6b4f;">一致</span>';
+            html += `<tr class="${rowCls}"><td>${escapeHtml(d.label)}</td><td>${reg}</td><td>${grey}</td><td>${status}</td></tr>`;
+        });
+    } else {
+        html += '<tr><td colspan="4" style="text-align:center; color:var(--text-muted);">无差异项</td></tr>';
+    }
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+}
+
+// 一键推全：PUT /api/admin/engine-config/promote
+function promoteGreyConfig() {
+    showCustomConfirmModal({
+        title: '一键推全：灰测组 → 常规组',
+        message: '确认将当前灰测组配置覆盖为常规组吗？\n\n推全将：\n① 记录当前常规组配置作为回滚快照\n② 将灰测组引擎/模型/OpenAI 参数/解析 LLM 全部覆盖到常规组\n③ 灰测组随后清空为默认态并停用灰测\n\n推全后如需回滚，可在同面板点击「一键回滚」。',
+        confirmText: '确认推全',
+        cancelText: '取消',
+        onConfirm: () => {
+            fetch('/api/admin/engine-config/promote', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
+                .then(r => r.json())
+                .then(body => {
+                    if (!body || body.status !== 'success') {
+                        showToast((body && body.msg) || '推全失败', 'error');
+                        return;
+                    }
+                    showToast('推全成功：灰测组已覆盖为常规组，快照已保存', 'success');
+                    const panel = document.getElementById('adminGreyDiffPanel');
+                    if (panel) panel.classList.add('hide');
+                    loadAdminEngineConfig();
+                })
+                .catch(err => { showToast('推全请求异常', 'error'); console.error(err); });
+        },
+        onCancel: () => { showToast('已取消推全', 'info'); }
+    });
+}
+
+// 回滚前先渲染一次 Diff（推全确认步骤）：默认直接走 fetch+render
+function preparePromoteWithDiff() {
+    fetchAndRenderDiff((ok) => {
+        if (!ok) {
+            // 若灰测未启用 → 直接提示
+            showToast('灰测未启用，无法推全', 'warning');
+            return;
+        }
+        const panel = document.getElementById('adminGreyDiffPanel');
+        const confirmBtn = document.getElementById('adminGreyPromoteConfirm');
+        if (confirmBtn) {
+            confirmBtn.classList.remove('hide');
+            confirmBtn.onclick = () => {
+                promoteGreyConfig();
+            };
+        }
+    });
+}
+
+// 一键回滚：PUT /api/admin/engine-config/rollback
+function rollbackEngineConfig() {
+    showCustomConfirmModal({
+        title: '一键回滚：恢复上次推全前的常规组',
+        message: '确认回滚到上一次推全前的配置吗？\n\n回滚将：\n① 用快照中的常规组配置覆盖当前常规组\n② 清空回滚快照（一次快照，回滚后不再可回）',
+        confirmText: '确认回滚',
+        cancelText: '取消',
+        onConfirm: () => {
+            fetch('/api/admin/engine-config/rollback', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
+                .then(r => r.json())
+                .then(body => {
+                    if (!body || body.status !== 'success') {
+                        showToast((body && body.msg) || '回滚失败', 'error');
+                        return;
+                    }
+                    showToast('回滚成功', 'success');
+                    const panel = document.getElementById('adminGreyDiffPanel');
+                    if (panel) panel.classList.add('hide');
+                    loadAdminEngineConfig();
+                })
+                .catch(err => { showToast('回滚请求异常', 'error'); console.error(err); });
+        },
+        onCancel: () => { showToast('已取消回滚', 'info'); }
+    });
+}
+
+// 辅助：转义 HTML
+function escapeHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/* =============================================================
+   阶段 1：AI 可见性与信任
+   1.1  audit_result.reason 展示（renderAuditReason）
+   1.2  AI 建议 vs 用户确认 对照面板 + 采纳事件（renderAiCompare / adoptAiField）
+   1.3  灰测组视觉标记（greyBadgeHtml）
+   1.4  AI 发现卡片加载与渲染（loadAiInsights / renderAiInsights）
+   ============================================================= */
+
+// 1.1 审核 reason 展示：green=一致，orange=分歧
+function renderAuditReason(auditResult) {
+    const banner = document.getElementById('auditReasonBanner');
+    if (!banner) return;
+    banner.innerHTML = '';
+    if (!auditResult || !auditResult.reason) {
+        banner.classList.add('hide');
+        return;
+    }
+    const reason = String(auditResult.reason);
+    banner.classList.remove('hide');
+    banner.classList.remove('reason-ok', 'reason-warn');
+    const isOk = auditResult.overall_consistent === true
+        || /一致|无分歧|无异常/.test(reason);
+    banner.classList.add(isOk ? 'reason-ok' : 'reason-warn');
+    const icon = isOk ? '✓' : '⚠';
+    const label = isOk ? 'AI 审核通过' : 'AI 发现差异';
+    const head = document.createElement('strong');
+    head.textContent = `${icon} ${label}`;
+    head.style.marginRight = '8px';
+    banner.appendChild(head);
+    const text = document.createElement('span');
+    text.textContent = reason;
+    banner.appendChild(text);
+}
+
+// 1.2 AI 建议 vs 用户确认 对照面板
+// 字段映射：ai_prefill 中的 items[*] 与 detail.items[*] 比对
+function renderAiCompare(data) {
+    const panel = document.getElementById('aiComparePanel');
+    const body = document.getElementById('aiCompareBody');
+    if (!panel || !body) return;
+    body.innerHTML = '';
+
+    const prefill = data && data.ai_prefill ? data.ai_prefill : {};
+    const aiItems = prefill.items || [];
+    const curItems = data.items || [];
+    const rows = [];
+
+    const cmp = (a, b) => {
+        if (a === b) return true;
+        if (a == null && b == null) return true;
+        return String(a) !== String(b);
+    };
+
+    const fieldDefs = [
+        { key: 'raw_name',  label: '商品名' },
+        { key: 'quantity',  label: '数量' },
+        { key: 'unit',      label: '单位' },
+        { key: 'unit_price',label: '单价' },
+        { key: 'amount',    label: '金额' },
+    ];
+
+    for (let i = 0; i < Math.max(aiItems.length, curItems.length); i++) {
+        const aiRow = aiItems[i];
+        const curRow = curItems[i];
+        const label = curRow
+            ? (curRow.raw_name || curRow.name || ('items[' + i + ']'))
+            : (aiRow && aiRow.raw_name ? aiRow.raw_name : ('items[' + i + ']'));
+        fieldDefs.forEach(fd => {
+            const aiVal = aiRow && aiRow[fd.key] != null ? aiRow[fd.key]
+                          : (aiRow && aiRow[fd.key + '_orig'] != null ? aiRow[fd.key + '_orig'] : null);
+            const curVal = curRow && curRow[fd.key] != null ? curRow[fd.key]
+                           : (curRow && curRow[fd.key + '_orig'] != null ? curRow[fd.key + '_orig'] : null);
+            if (aiVal == null && curVal == null) return;
+            if (cmp(aiVal, curVal)) {
+                rows.push({ idx: i, key: fd.key, label: fd.label, itemLabel: label,
+                            aiVal: aiVal, curVal: curVal });
+            }
+        });
+    }
+
+    if (rows.length === 0) {
+        panel.classList.add('hide');
+        return;
+    }
+
+    let html = '';
+    rows.forEach(r => {
+        const fmt = (v, k) => {
+            if (v == null) return '-';
+            if (k === 'unit_price' || k === 'amount') {
+                const n = Number(v);
+                return Number.isFinite(n) ? '$' + n.toFixed(2) : String(v);
+            }
+            return String(v);
+        };
+        html += `<tr>
+            <td class="col-field"><span style="font-size:0.78rem;color:var(--text-muted);">${w2Escape('items[' + r.idx + '] ' + r.itemLabel)}</span><br>${w2Escape(r.label)}</td>
+            <td class="col-ai">${w2Escape(fmt(r.aiVal, r.key))}</td>
+            <td class="col-user">${w2Escape(fmt(r.curVal, r.key))}</td>
+            <td style="font-size:0.78rem;color:var(--text-muted);">
+                <span>${w2Escape(String(r.aiVal))} → ${w2Escape(String(r.curVal))}</span>
+            </td>
+            <td class="col-center"><button class="ai-compare-adopt-btn"
+                onclick="adoptAiField(${r.idx}, '${r.key}', ${JSON.stringify(r.aiVal).replace(/'/g, "\\'")}, ${JSON.stringify(r.curVal).replace(/'/g, "\\'")})">采纳 AI</button></td>
+        </tr>`;
+    });
+    body.innerHTML = html;
+    panel.classList.remove('hide');
+}
+
+// 1.2 采纳 AI 值：恢复该字段为 AI 建议值，并写审计日志
+function adoptAiField(idx, field, aiVal, userVal) {
+    const receiptId = currentReceiptId || (currentArchiveDetailData && currentArchiveDetailData.receipt_id);
+    if (!receiptId) {
+        showToast('无法确定单据 ID，无法采纳 AI 建议', 'warning');
+        return;
+    }
+    const itemKey = 'items[' + idx + '].' + field;
+    // 乐观锁：后端 adopt-ai 强制校验 version（阶段 1 修复轮 F4），未传 → 400
+    const _v = currentReceiptData
+        ? currentReceiptData.version
+        : (currentArchiveDetailData ? currentArchiveDetailData.version : null);
+    // 同步表单：把当前字段改成 AI 值（edit 表单）
+    try {
+        const tbody = document.getElementById('itemTableBody');
+        if (tbody) {
+            const rows = tbody.querySelectorAll('tr');
+            if (idx >= 0 && idx < rows.length) {
+                const tr = rows[idx];
+                const input = tr.querySelector('[data-idx="' + idx + '"] input[name*="' + field + '"], input[name$="' + field + '"]');
+                if (input) {
+                    input.value = String(aiVal);
+                    markDirty();
+                }
+            }
+        }
+    } catch (_) {
+        // 表单更新失败不影响审计日志写入
+    }
+    fetch('/api/receipt/' + receiptId + '/adopt-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            field: itemKey,
+            old: userVal,
+            new: aiVal,
+            ai_value: aiVal,
+            user_value: userVal,
+            version: _v
+        })
+    })
+    .then(r => r.json().catch(() => null))
+    .then(ret => {
+        if (!ret || ret.status !== 'success') {
+            showToast('采纳记录写入失败', 'error');
+            return;
+        }
+        showToast('已采纳 AI 建议：' + itemKey + ' = ' + aiVal, 'success');
+    })
+    .catch(err => {
+        console.error('adoptAiField:', err);
+        showToast('采纳请求异常', 'error');
+    });
+}
+
+// 1.3 灰测组视觉标记：返回 <span class="badge-grey"> 或空串
+function greyBadgeHtml(useGrey) {
+    if (!useGrey) return '';
+    return '<span class="badge-grey" title="灰测组处理（cross_audit 双模型）">灰测组</span>';
+}
+
+// 1.4 AI 发现卡片加载
+function loadAiInsights() {
+    fetch('/api/ai-insights')
+        .then(r => r.json())
+        .then(ret => {
+            if (!ret || ret.status !== 'success' || !ret.data) {
+                renderAiInsights(null);
+                return;
+            }
+            renderAiInsights(ret.data);
+        })
+        .catch(err => {
+            console.warn('loadAiInsights:', err);
+            renderAiInsights(null);
+        });
+}
+
+function renderAiInsights(data) {
+    const card = document.getElementById('aiInsightsCard');
+    const ts = document.getElementById('aiInsightsTs');
+    const body = document.getElementById('aiInsightsBody');
+    if (!card) return;
+
+    card.classList.add('ai-insights-card');
+
+    if (!data || (!data.top_price_risers && data.top_price_risers !== 0
+        && !data.suggestions && data.anomaly_count === undefined)) {
+        card.style.display = 'none';
+        return;
+    }
+
+    if (ts) ts.textContent = data.updated_at || '';
+
+    let html = '';
+
+    if (data.suggestions && data.suggestions.length > 0) {
+        html += '<div style="font-weight:600; margin-bottom:6px; color:var(--text-main);">本周建议</div>';
+        data.suggestions.forEach(s => {
+            html += '<div style="padding:4px 0; color:var(--text-main); font-size:0.88rem;">• ' + w2Escape(String(s)) + '</div>';
+        });
+    }
+
+    if (data.top_price_risers && data.top_price_risers.length > 0) {
+        if (html) html += '<div style="margin-top:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:6px;"></div>';
+        html += '<div style="font-weight:600; margin-bottom:4px; color:var(--text-main);">价格涨幅 Top</div>';
+        data.top_price_risers.forEach(r => {
+            const supplier = r.supplier || r.vendor || '-';
+            const item = r.item || r.name || '-';
+            const pct = r.pct != null ? r.pct
+                    : r.change_pct != null ? r.change_pct : '-';
+            const earliest = r.earliest_price != null ? '$' + Number(r.earliest_price).toFixed(2) : '-';
+            const latest = r.latest_price != null ? '$' + Number(r.latest_price).toFixed(2) : '-';
+            html += '<div class="ai-insights-row">' +
+                '<span><strong>' + w2Escape(item) + '</strong> · <span style="font-size:0.78rem;color:var(--text-muted);">' + w2Escape(supplier) + '</span></span>' +
+                '<span class="ai-insights-price">' + w2Escape(earliest + ' → ' + latest + '  +' + pct + '%') + '</span>' +
+                '</div>';
+        });
+    }
+
+    if (data.anomaly_count != null) {
+        html += '<div style="margin-top:8px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.08); font-size:0.85rem; color:var(--text-muted);">' +
+            '待复核异常 ' + Number(data.anomaly_count) + ' 处' + '</div>';
+    }
+
+    if (!html) {
+        html = '<div style="color:var(--text-muted);">暂无 AI 发现，建议持续观察本周进货数据</div>';
+    }
+
+    if (body) body.innerHTML = html;
+    card.style.display = 'block';
+}
+
+

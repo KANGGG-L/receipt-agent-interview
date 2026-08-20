@@ -75,6 +75,37 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
     return job_id, receipt_id
 
 
+def sweep_parsing_timeout(timeout_seconds=300):
+    """Gate-2：扫描超时的 parsing 单据，强制置为 error(parsing_timeout)。
+
+    可由定时任务或请求入口调用，幂等、无副作用于已完成单据。
+    返回被置为 error 的 receipt_id 列表。
+    """
+    import datetime as _dt
+    cutoff = (_dt.datetime.now() - _dt.timedelta(seconds=timeout_seconds)).isoformat(timespec="seconds")
+    s = db.get_session()
+    try:
+        rows = s.query(db._ReceiptRow).filter(
+            db._ReceiptRow.status == "parsing",
+            db._ReceiptRow.created_at < cutoff,
+            db._ReceiptRow.deleted_at.is_(None),
+        ).all()
+        ids = []
+        for r in rows:
+            r.status = "error"
+            # reason 写入 audit_logs_json 供前端标红“识别超时”
+            logs = __import__("json").loads(r.audit_logs_json or "[]")
+            logs.append({"who": "system", "action": "timeout", "field": "status", "old": "parsing", "new": "error", "reason": "parsing_timeout", "ts": db.now_iso()})
+            r.audit_logs_json = __import__("json").dumps(logs, ensure_ascii=False)
+            r.updated_at = db.now_iso()
+            ids.append(r.id)
+        if ids:
+            s.commit()
+        return ids
+    finally:
+        s.close()
+
+
 def get_job(job_id):
     with JOBS_LOCK:
         job = dict(JOBS.get(job_id, {}))
@@ -110,6 +141,17 @@ def save_parsed_data(receipt_id, data, result):
         })
         _match_sku(items_raw[-1])
 
+    use_grey = int(bool(result.get("use_grey"))) if result.get("use_grey") is not None else 0
+    # Gate-3：交叉审核分歧 → review_priority_score（Top10%标重点复核）
+    audit_res = result.get("audit_result") or {}
+    discrepancies = audit_res.get("discrepancies") if isinstance(audit_res, dict) else None
+    if isinstance(discrepancies, list) and discrepancies:
+        review_priority_score = min(1.0, 0.5 + 0.15 * len(discrepancies))
+    elif audit_res.get("reason") == "AI 识别与原图一致":
+        review_priority_score = 0.0
+    else:
+        review_priority_score = 0.1 if discrepancies == [] else 0.0
+
     db.update_receipt(
         receipt_id,
         status="parsed",
@@ -121,9 +163,11 @@ def save_parsed_data(receipt_id, data, result):
         payment_mark="已付款" if data.payment_marked else "",
         confidence=sanitize_nan(data.confidence),
         raw_llm=result.get("raw", ""),
-        audit_json=json.dumps(result.get("audit_result", {}), ensure_ascii=False),
+        audit_json=json.dumps(audit_res, ensure_ascii=False),
         ai_prefill_json=json.dumps(data.model_dump(), ensure_ascii=False),
         math_warnings_json=json.dumps(result.get("math_problems", []), ensure_ascii=False),
+        use_grey=use_grey,
+        review_priority_score=review_priority_score,
     )
     db.set_receipt_items(receipt_id, items_raw)
     return build_detail(db.get_receipt_row(receipt_id))
@@ -210,8 +254,42 @@ def build_detail(row):
         "items": items,
         "audit_logs": json.loads(row.audit_logs_json or "[]"),
         "ai_prefill": json.loads(row.ai_prefill_json or "{}"),
+        "audit_result": _patch_audit_reason(json.loads(row.audit_json or "{}")),
+        "use_grey": row.use_grey or 0,
         "confidence": row.confidence or 0.0,
     }
+
+
+def _patch_audit_reason(audit_result):
+    """阶段 1：如果 audit_result 有 discrepancies 但 reason 为空/缺失，
+    根据 discrepancies 中的 issue 聚合生成人类可读 reason。
+    无 discrepancies → 补简短说明。
+    """
+    if not isinstance(audit_result, dict):
+        return audit_result
+    if audit_result.get("skipped"):
+        return audit_result
+    reason = audit_result.get("reason")
+    discrepancies = audit_result.get("discrepancies") or []
+    if not discrepancies:
+        if not reason:
+            return {**audit_result, "reason": "AI 识别与原图一致"}
+        return audit_result
+    # 已有 reason 则返回原样
+    if reason:
+        return audit_result
+    # 无 reason 时按 severity 聚合 discrepancies 中的 issue
+    parts = []
+    for d in discrepancies:
+        if not isinstance(d, dict):
+            continue
+        issue = d.get("issue") or ""
+        if not issue:
+            continue
+        parts.append(issue)
+    audit_result = {**audit_result}
+    audit_result["reason"] = "；".join(parts) if parts else "交叉审核发现分歧"
+    return audit_result
 
 
 def build_row(row):
@@ -248,4 +326,5 @@ def build_row(row):
         "due_soon": False,
         "paid_at": row.paid_at or "",
         "payment_id": row.payment_id,
+        "use_grey": row.use_grey or 0,
     }

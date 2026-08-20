@@ -518,7 +518,7 @@ body {
     box-shadow: 0 2px 8px rgba(65, 104, 88, 0.2);
 }
 
-/* 「📷 重新选择图片」：独立样式 */
+/* 「重新选择图片」：独立样式 */
 .btn-tool-reload {
     background: var(--danger-bg);
     border-color: rgba(216, 13, 13, 0.25);
@@ -532,7 +532,7 @@ body {
     color: var(--danger);
 }
 
-/* 「🗑 删除图片」：危险操作，实心红 */
+/* 「删除图片」：危险操作，实心红 */
 .btn-tool-delete {
     background: var(--danger);
     border-color: var(--danger);
@@ -926,6 +926,142 @@ table.data-table td input {
 .sku-combobox-wrap .form-control,
 .sku-combobox-wrap input {
     box-sizing: border-box !important;
+}
+
+/* 智能剥离小魔棒与新建 SKU 徽章 */
+.btn-magic-split {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 0 4px;
+    opacity: 0.8;
+    transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-magic-split:hover {
+    opacity: 1;
+    transform: scale(1.2) rotate(15deg);
+}
+
+.sku-quick-add-item {
+    background: rgba(3, 36, 37, 0.05);
+    border-bottom: 1px dashed var(--border-color);
+    color: var(--primary);
+    font-weight: 600;
+}
+
+.sku-quick-add-item:hover {
+    background: var(--primary) !important;
+    color: #ffffff !important;
+}
+
+.unit-calc-tooltip {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    white-space: nowrap;
+}
+
+/* 极简 AI 发现胶囊条 */
+.ai-lean-banner {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.ai-lean-banner-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ai-lean-banner-header:hover {
+    background: #fef3c7;
+}
+
+.ai-lean-badge {
+    background: #d97706;
+    color: #ffffff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+.btn-lean-toggle {
+    background: none;
+    border: none;
+    color: #b45309;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ai-lean-cards {
+    padding: 8px 14px 12px;
+    border-top: 1px dashed #fde68a;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ai-lean-card-item {
+    background: #ffffff;
+    border: 1px solid #fef3c7;
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    transition: opacity 0.2s ease;
+}
+
+.ai-lean-card-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.ai-lean-card-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ai-lean-card-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.ai-lean-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.btn-lean-act {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    cursor: pointer;
+}
+
+.btn-lean-act:hover {
+    background: var(--bg-hover);
 }
 
 /* ============================================================
@@ -1987,5 +2123,107 @@ table.data-table td input {
     .price-history-modal-card {
         max-width: 100%;
     }
+}
+
+/* -------------------------------------------------------------
+   阶段 1：AI 可见性与信任
+   - .audit-reason-banner  审核 reason 展示（绿色一致 / 橙色分歧）
+   - .ai-compare           AI 建议 vs 用户确认 三栏对照面板
+   - .ai-insights-card     首页"AI 发现"卡片
+   - .badge-grey           灰测组标签
+   ------------------------------------------------------------- */
+.audit-reason-banner {
+    font-size: 0.88rem;
+    padding: 8px 12px;
+    margin: 8px 0 10px 0;
+    border-radius: 6px;
+    line-height: 1.5;
+}
+.audit-reason-banner.reason-ok {
+    background: rgba(16, 185, 129, 0.10);
+    color: var(--success, #059669);
+    border: 1px solid rgba(16, 185, 129, 0.35);
+}
+.audit-reason-banner.reason-warn {
+    background: rgba(245, 158, 11, 0.10);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.40);
+}
+
+.ai-compare {
+    margin: 10px 0 14px 0;
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    background: rgba(245, 158, 11, 0.06);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.ai-compare-title {
+    padding: 8px 12px;
+    background: rgba(245, 158, 11, 0.10);
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #b45309;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.30);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.ai-compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.ai-compare-table th,
+.ai-compare-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.15);
+    vertical-align: middle;
+}
+.ai-compare-table thead th {
+    background: rgba(245, 158, 11, 0.06);
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.ai-compare-table td.col-field { font-weight: 600; }
+.ai-compare-table td.col-ai { color: #f59e0b; }
+.ai-compare-table td.col-user { font-weight: 600; }
+.ai-compare-table tr:last-child td { border-bottom: none; }
+.ai-compare-adopt-btn {
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    border: 1px solid rgba(16, 185, 129, 0.6);
+    background: rgba(16, 185, 129, 0.10);
+    color: var(--success, #059669);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.ai-compare-adopt-btn:hover {
+    background: rgba(16, 185, 129, 0.20);
+}
+
+.ai-insights-card {
+    border-left: 3px solid #f59e0b;
+}
+.ai-insights-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.ai-insights-row:last-child { border-bottom: none; }
+.ai-insights-price { color: #f59e0b; font-weight: 600; }
+
+.badge-grey {
+    display: inline-block;
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #92400e;
+    background: rgba(253, 224, 71, 0.35);
+    border: 1px solid rgba(253, 224, 71, 0.65);
+    border-radius: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
 }
 

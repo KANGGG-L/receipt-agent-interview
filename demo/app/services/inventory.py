@@ -60,13 +60,40 @@ def apply_receipt_to_inventory(row):
 
 
 def cost_summary() -> dict:
-    """成本核算：按商品累计 + 总成本。"""
+    """成本核算：按商品累计 + 总成本；计算加权平均单价（weighted_avg_price）并附加 prices 历史。"""
+    from app.chains.review_chain import _INSIGHTS_CACHE  # noqa: F401 触发 weekly_insights 时同步重算
     skus = db.list_skus(include_inactive=True)
-    total = sum(s.current_stock * s.last_unit_price for s in skus)
     items = {}
+    weighted_total = 0.0
+
     for s in skus:
+        prices = []
+        weighted_avg = s.last_unit_price or 0.0
+        if s.id:
+            try:
+                history = db.price_history(s.id)
+                if history:
+                    prices = [round(float(r.unit_price), 4) for r in history if getattr(r, "unit_price", 0) > 0]
+                    # 计算加权平均：sum(qty * unit_price) / sum(qty)
+                    total_q = sum(getattr(r, "qty", 1.0) for r in history)
+                    total_val = sum(getattr(r, "qty", 1.0) * getattr(r, "unit_price", 0.0) for r in history)
+                    if total_q > 0:
+                        weighted_avg = round(total_val / total_q, 4)
+            except Exception:
+                prices = []
+        if not prices and s.last_unit_price and s.last_unit_price > 0:
+            prices = [s.last_unit_price]
+
+        item_amount = round(s.current_stock * (weighted_avg or s.last_unit_price), 2)
+        weighted_total += item_amount
+
         items[s.name] = {
-            "qty": s.current_stock, "amount": s.current_stock * s.last_unit_price,
-            "unit": s.base_unit, "vendor": "", "last_price": s.last_unit_price,
+            "qty": s.current_stock,
+            "amount": item_amount,
+            "unit": s.base_unit,
+            "vendor": "",
+            "last_price": s.last_unit_price,
+            "weighted_avg_price": weighted_avg,
+            "prices": prices,
         }
-    return {"total_cost": round(total, 2), "items": items}
+    return {"total_cost": round(weighted_total, 2), "items": items}

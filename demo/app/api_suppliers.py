@@ -94,6 +94,71 @@ def merge_suppliers(body: MergeBody, request: Request):
     return {"status": "success", "msg": "已合并"}
 
 
+@router.get("/api/suppliers/{supplier_id}/receipts")
+def get_supplier_receipts(supplier_id: int, request: Request, desensitized: str = "false"):
+    """供应商收据时间线 + 采购金额趋势。支持 ?desensitized=true 脱敏。"""
+    require_role("owner")(request)
+    from fastapi.responses import JSONResponse
+    from collections import defaultdict
+    from app.api_receipts import _mask_sensitive
+
+    sup = db.get_supplier(supplier_id)
+    if sup is None:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
+
+    is_desens = desensitized.lower() == "true"
+    rows = db.list_receipt_rows()
+    # 匹配当前供应商的单据（按名字匹配）
+    matched = [r for r in rows if r.supplier_name == sup.name]
+
+    receipts_data = []
+    monthly_trend = defaultdict(float)
+
+    for r in matched:
+        items = db.get_receipt_items(r.id)
+        supplier_display = _mask_sensitive(r.supplier_name or "") if is_desens else (r.supplier_name or "")
+        receipts_data.append({
+            "id": r.id,
+            "receipt_date": r.receipt_date or "",
+            "total_amount": r.total_amount or 0.0,
+            "status": r.status,
+            "doc_form": r.doc_form or "",
+            "supplier_name": supplier_display,
+            "items_summary": [
+                {
+                    "name": _mask_sensitive(it.name) if is_desens else it.name,
+                    "qty": it.qty,
+                    "unit": it.unit,
+                    "unit_price": it.unit_price,
+                    "amount": it.amount,
+                } for it in items
+            ],
+            "paid_at": r.paid_at or "",
+            "paid_method": r.paid_method or "",
+            "is_paid": bool(r.paid_at),
+        })
+        if r.receipt_date and len(r.receipt_date) >= 7:
+            m = r.receipt_date[:7]
+            monthly_trend[m] += (r.total_amount or 0.0)
+
+    sorted_trend = [
+        {"month": m, "total_amount": round(amt, 2)}
+        for m, amt in sorted(monthly_trend.items())
+    ]
+
+    return {
+        "status": "success",
+        "supplier": {
+            "id": sup.id,
+            "name": _mask_sensitive(sup.name) if is_desens else sup.name,
+            "contact_phone": _mask_sensitive(sup.contact_phone or "") if is_desens else (sup.contact_phone or ""),
+        },
+        "receipt_count": len(receipts_data),
+        "receipts": receipts_data,
+        "monthly_trend": sorted_trend,
+    }
+
+
 # -------------------------------------------------------------
 # 部门
 # -------------------------------------------------------------

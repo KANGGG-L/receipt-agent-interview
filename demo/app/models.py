@@ -135,10 +135,12 @@ class EngineConfig(BaseModel):
     grey_enabled: bool = False                       # 是否启用灰测
     grey_percent: int = 0                            # 随机分配概率 0-100
     grey_assign_mode: GreyAssignMode = GreyAssignMode.RECEIPT
+    grey_supplier_ids: list[int] = []                # 灰测指定的供应商名单（ID allowlist）
     # 灰测组识别引擎/模型
     grey_recognition_engine: EngineKind = EngineKind.OPENCODE
     grey_recognition_model: str = "opencode/mimo-v2.5-free"
     # 灰测组审核引擎/模型
+    grey_audit_enabled: bool = True
     grey_audit_engine: EngineKind = EngineKind.OPENCODE
     grey_audit_model: str = "opencode/mimo-v2.5-free"
     # 灰测组自定义 OpenAI 兼容参数（识别/审核各自独立）
@@ -155,17 +157,25 @@ class EngineConfig(BaseModel):
     grey_openai_parse_base_url: str = ""
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""
+    # 推全回滚快照（一次：prev 为推全前常规组配置，meta 为操作信息）
+    rollback_snapshot: Optional[dict] = None
 
 
-def should_use_grey(cfg: "EngineConfig", supplier_name: str = "") -> bool:
+def should_use_grey(cfg: "EngineConfig", supplier_name: str = "", supplier_id: Optional[int] = None) -> bool:
     """灰测分配：决定本单走常规还是灰测配置。
 
     - 未启用 / 概率 0 → 常规
+    - grey_supplier_ids allowlist 非空时：优先判断 supplier_id 或 name 是否在白名单中
     - grey_assign_mode=receipt → 每单按 random() < percent% 独立判断
-    - grey_assign_mode=supplier → 按供应商名 hash 落入 [0,100) 区间，
-      同供应商一致命中（确定性，可复现）
+    - grey_assign_mode=supplier → 按供应商名 hash 落入 [0,100) 区间，同供应商一致命中
     """
-    if not cfg.grey_enabled or cfg.grey_percent <= 0:
+    if not cfg.grey_enabled:
+        return False
+    # allowlist 白名单优先
+    if cfg.grey_supplier_ids:
+        if supplier_id is not None and int(supplier_id) in [int(x) for x in cfg.grey_supplier_ids]:
+            return True
+    if cfg.grey_percent <= 0:
         return False
     pct = max(0, min(100, int(cfg.grey_percent)))
     if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER and supplier_name:

@@ -56,9 +56,9 @@
                 <div class="demo-role-switch">
                     <label for="demoRoleSelect">当前角色</label>
                     <select id="demoRoleSelect">
-                        <option value="admin" style="color:#d80d0d">● admin · 超管（模型/灰测）</option>
-                        <option value="owner" selected style="color:#2f6b4f">● owner · 老板（审批/成本）</option>
-                        <option value="staff" style="color:#1565c0">● staff · 店员（上传/复核）</option>
+                        <option value="admin" style="color:#d80d0d">● admin · 超管</option>
+                        <option value="owner" selected style="color:#2f6b4f">● owner · 老板</option>
+                        <option value="staff" style="color:#1565c0">● staff · 店员</option>
                     </select>
                 </div>
             </div>
@@ -82,8 +82,8 @@
                     <span class="icon"></span>
                     <span>部门花销报表</span>
                 </button>
-                <button class="sidebar-btn" id="adminEngineBtn" data-title="引擎配置" style="display:none;" onclick="openAdminEngineModal()">
-                    <span class="icon" style="color:var(--danger);">⚙</span>
+                <button class="sidebar-btn" id="adminEngineBtn" data-target="tab-engine" data-title="引擎配置" style="display:none;">
+                    <span class="icon"></span>
                     <span>引擎配置</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
@@ -126,12 +126,12 @@
                             <button class="btn btn-primary" onclick="document.getElementById('receiptFile').click()">
                                  选择收据图片
                             </button>
-                            <!-- D12：新建手工单（仅 owner 可见，AUTH_ENABLED=0 全员直通）——
+                            <!-- D12：新建手工单（staff 及以上均可见）——
                                  无原图、不走 OCR、保存后经 approve 才入账；用于丢单/口头加单/历史补录 -->
                             <button class="btn btn-secondary" id="btnNewManualEntry"
-                                    onclick="startManualEntry()" style="display:none;"
-                                    title="新建手工单（无原图）：用于丢单/口头加单/历史补录，仅老板可建，保存后需审核（approve）才入账">
-                                 新建手工单（无原图）
+                                    onclick="startManualEntry()"
+                                    title="新建手工单：用于丢单/口头加单/历史补录，保存后需 owner 审核才入账">
+                                 新建手工单
                             </button>
                         </div>
                     </div>
@@ -157,14 +157,14 @@
                                 <img id="previewImg" src="" alt="收据原图" draggable="false">
                                 <!-- HEIC/TIFF 等浏览器无法解码时常驻提示（不依赖 img src，避免被 reset 覆盖后消失） -->
                                 <div id="previewNonWebHint" class="preview-nonweb-hint hide" aria-live="polite">
-                                    <div class="preview-nonweb-hint-icon">📷</div>
+                                    <div class="preview-nonweb-hint-icon"></div>
                                     <div class="preview-nonweb-hint-title" id="previewNonWebHintTitle">HEIC 照片</div>
                                     <div class="preview-nonweb-hint-sub" id="previewNonWebHintSub">浏览器无法直接预览 HEIC，解析时会自动转为 JPEG</div>
                                     <div class="preview-nonweb-hint-howto" id="previewNonWebHintHowto">
                                         <div class="preview-nonweb-hint-howto-title">想自己先转成 JPEG？</div>
                                         <ul class="preview-nonweb-hint-howto-list" id="previewNonWebHintHowtoList">
-                                            <li><strong>iPhone</strong>：设置 → 相机 → 格式 → 选「兼容性最佳」（之后拍照即为 JPEG）</li>
-                                            <li><strong>iPhone 导出</strong>：照片 App 选图 → 分享 → 储存到文件 / 隔空投送（系统常自动转 JPEG）</li>
+                                            <li><strong>iPhone</strong>：设置 → 相机 → 格式 → 选「兼容性最佳」</li>
+                                            <li><strong>iPhone 导出</strong>：照片 App 选图 → 分享 → 储存到文件 / 隔空投送</li>
                                             <li><strong>Mac</strong>：预览 App 打开 → 文件 → 导出 → 格式选 JPEG</li>
                                             <li><strong>Windows</strong>：用「照片」打开另存，或在线/画图工具导出为 JPG</li>
                                         </ul>
@@ -173,9 +173,9 @@
                                 <div id="cropOverlay" class="crop-overlay-box hide"></div>
                                 <!-- D12：手工录入「无原图」占位（样式复用 preview-nonweb-hint 提示层） -->
                                 <div id="manualEntryNoImage" class="preview-nonweb-hint hide">
-                                    <div class="preview-nonweb-hint-icon">📝</div>
+                                    <div class="preview-nonweb-hint-icon"></div>
                                     <div class="preview-nonweb-hint-title">无原图</div>
-                                    <div class="preview-nonweb-hint-sub">手工录入单据（doc_form=manual_entry）：无原始收据图片，请直接填写右侧表单的供应商、开单日期与明细；保存后需审核（approve）才入账。</div>
+                                    <div class="preview-nonweb-hint-sub">手工录入单据：无原始收据图片，请直接填写右侧表单的供应商、开单日期与明细；保存后需审核才入账。</div>
                                 </div>
                             </div>
 
@@ -244,6 +244,29 @@
                                      style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
                                 </div>
 
+                                <!-- 阶段 1：审核结果自然语言说明（audit_result.reason） -->
+                                <div id="auditReasonBanner" class="audit-reason-banner hide"></div>
+
+                                <!-- 阶段 1："AI 建议 vs 用户确认"对照区（采纳 AI 建议时写入 audit_logs_json） -->
+                                <div id="aiComparePanel" class="ai-compare hide">
+                                    <div class="ai-compare-title">
+                                        <span> AI 建议 vs 用户确认</span>
+                                        <span style="font-size:0.78rem; font-weight:400; color:var(--text-muted);">点击"采纳 AI"可恢复字段为 AI 识别值</span>
+                                    </div>
+                                    <table class="ai-compare-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:24%;">字段</th>
+                                                <th style="width:22%;">AI 建议</th>
+                                                <th style="width:22%;">当前值</th>
+                                                <th style="width:18%;">差异</th>
+                                                <th style="width:14%; text-align:center;">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="aiCompareBody"></tbody>
+                                    </table>
+                                </div>
+
                                 <!-- 表头元数据 (供应商, 日期, 分表, 总额) -->
                                 <div class="form-grid">
                                      <div class="form-group" style="grid-column: span 2;">
@@ -256,38 +279,38 @@
                                          <datalist id="dlUnits"></datalist>
                                      </div>
                                     <div class="form-group">
-                                        <label>开单日期 (Date)</label>
+                                        <label>开单日期</label>
                                         <input type="date" id="inpDate" class="form-control">
                                     </div>
                                     <div class="form-group">
-                                        <label>归档月份 (Sheet Name)</label>
+                                        <label>归档月份</label>
                                         <input type="text" id="inpSheet" class="form-control" placeholder="2026-07">
                                     </div>
                                     <div class="form-group">
-                                        <label>整单总金额 ($)</label>
+                                        <label>整单总金额</label>
                                         <input type="number" step="0.01" id="inpTotal" class="form-control" style="font-weight:700; color:var(--primary);">
                                     </div>
                                     <!-- M3/D4: 单据分类——结算方式可人工修正，付款标记为 AI 识别只读展示 -->
                                     <div class="form-group">
-                                        <label>结算方式 (Settlement)</label>
+                                        <label>结算方式</label>
                                         <select id="inpSettlementType" class="form-control" title="现结=现金单；月结=赊单，对账依据">
                                             <option value="">未知</option>
-                                            <option value="cash">现结 (现金)</option>
-                                            <option value="credit">月结 (赊账)</option>
+                                            <option value="cash">现结</option>
+                                            <option value="credit">月结</option>
                                         </select>
                                     </div>
                                     <div class="form-group">
-                                        <label>付款标记 (只读)</label>
+                                        <label>付款标记</label>
                                         <input type="text" id="inpPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
                                     </div>
                                     <!-- Wave 2（D44）：单据级部门——一键填充到全部明细（已手动改过的行不动，04 章三） -->
                                     <div class="form-group" style="grid-column: span 2;">
-                                        <label>部门（单据级）</label>
+                                        <label>部门</label>
                                         <div style="display:flex; gap:8px; align-items:center;">
-                                            <select id="inpDepartmentId" class="form-control" style="flex:1;" title="单据级部门：选后点「应用到全部明细」填到所有明细行（已手动改过的行除外）；行内也可单独覆盖">
+                                            <select id="inpDepartmentId" class="form-control" style="flex:1;" title="单据级部门：选后点「应用到全部明细」填到所有明细行；行内也可单独覆盖">
                                                 <option value="">未分配</option>
                                             </select>
-                                            <button class="btn btn-secondary" style="padding:7px 12px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')" title="把单据级部门填入所有明细行（已手动改过的行保持不动）"> 应用到全部明细</button>
+                                            <button class="btn btn-secondary" style="padding:7px 12px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')" title="把单据级部门填入所有明细行"> 应用到全部明细</button>
                                         </div>
                                     </div>
                                 </div>
@@ -300,8 +323,8 @@
                                                 <th style="width:26%;">消费项目/SKU</th>
                                                 <th style="width:12%;">数量</th>
                                                 <th style="width:12%;">单位</th>
-                                                <th style="width:15%;">单价 ($)</th>
-                                                <th style="width:15%;">金额 ($)</th>
+                                                <th style="width:15%;">单价</th>
+                                                <th style="width:15%;">金额</th>
                                                 <th style="width:13%;">部门</th>
                                                 <th style="width:7%;">操作</th>
                                             </tr>
@@ -338,7 +361,7 @@
                                     </p>
                                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                                         <button class="btn btn-primary" onclick="retryFromErrorCard()" title="复用原单据重跑识别，不新建记录"> 重试识别</button>
-                                        <button class="btn btn-secondary" id="btnConvertManual" onclick="convertManualFromErrorCard()" title="转为手工录入：保留原图与可识别部分，人工补录">️ 转手工录入</button>
+                                        <button class="btn btn-secondary" id="btnConvertManual" onclick="convertManualFromErrorCard()" title="转为手工录入：保留原图与可识别部分，人工补录">转手工录入</button>
                                     </div>
                                 </div>
                             </div>
@@ -375,6 +398,20 @@
 
                 <!-- TAB 2: 实时库存与价格走势 / 食材档案与库存工作台 -->
                 <section id="tab-inventory" class="tab-content">
+                    <!-- 极简 AI 发现胶囊条 (40px，平时收起/无异常隐藏，点击滑出紧凑卡片) -->
+                    <div id="aiLeanBanner" class="ai-lean-banner hide">
+                        <div class="ai-lean-banner-header" onclick="toggleAiLeanDetails()">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="ai-lean-badge">💡 AI 发现</span>
+                                <span id="aiLeanSummaryText" style="font-weight:500; font-size:0.88rem;">检测到价格异常上涨，正在量化成本影响…</span>
+                            </div>
+                            <button type="button" id="btnToggleAiLean" class="btn-lean-toggle">展开查看 ▼</button>
+                        </div>
+                        <div id="aiLeanCardsContainer" class="ai-lean-cards hide">
+                            <!-- 动态渲染紧凑卡片 -->
+                        </div>
+                    </div>
+
                     <div class="metrics-grid">
                         <div class="metric-card" style="cursor:pointer;" onclick="setInventoryStockFilter('all')" title="点击查看全部食材">
                             <div style="color:var(--text-muted); font-size:0.9rem;">库存食材种数</div>
@@ -427,6 +464,7 @@
 
                             <div style="display: flex; gap: 8px; align-items: center;">
                                 <button class="btn btn-primary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openAddSkuModal()">+ 新增食材</button>
+                                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openSkuMergeModalFromInv()"> 合并食材</button>
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryData()">刷新数据</button>
                             </div>
                         </div>
@@ -461,6 +499,15 @@
 
                 <!-- TAB 3: 供应商与收据归档 -->
                 <section id="tab-archive" class="tab-content">
+                    <!-- AI 发现卡片（阶段 1：AI 可见性与信任） -->
+                    <div id="aiInsightsCard" class="card" style="margin-bottom:16px; display:none;">
+                        <div class="card-title">
+                            <span>AI 发现</span>
+                            <span style="font-size:0.78rem; color:var(--text-muted);" id="aiInsightsTs"></span>
+                        </div>
+                        <div id="aiInsightsBody" style="font-size:0.9rem;"></div>
+                    </div>
+
                     <!-- ① 待办条（对齐「实时库存与价格」指标卡面板，可点击筛选，09 方案 M7） -->
                     <div id="todoBar" class="metrics-grid" style="margin-bottom:16px;">
                         <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('pending')" title="点击筛选待审核单据">
@@ -531,7 +578,7 @@
                             <div style="display:flex; gap:8px;">
                                 <button class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="applyArchiveFilters()">应用筛选</button>
                                 <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="resetArchiveFilters()">重置条件</button>
-                                <button class="btn btn-success" style="padding:4px 12px; font-size:0.82rem;" onclick="exportArchiveCsv()" title="按当前筛选条件导出 CSV（UTF-8 BOM，Excel 可直接打开）">导出 CSV</button>
+                                <button class="btn btn-success" style="padding:4px 12px; font-size:0.82rem;" onclick="exportArchiveCsv()" title="按当前筛选条件导出 CSV">导出 CSV</button>
                             </div>
                         </div>
                         
@@ -588,7 +635,7 @@
                                 <div class="form-group" style="margin-bottom:0; min-width:0;">
                                     <label style="font-size:0.8rem; margin-bottom:4px;">排序方式</label>
                                     <select id="fltSort" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
-                                        <option value="id_desc">默认 (最新单据优先)</option>
+                                        <option value="id_desc">默认</option>
                                         <option value="amount_desc">整单金额从大到小</option>
                                         <option value="amount_asc">整单金额从小到大</option>
                                         <option value="receipt_date_desc">开单日期最新优先</option>
@@ -601,8 +648,8 @@
                                     <label style="font-size:0.8rem; margin-bottom:4px;">付款状态</label>
                                     <select id="fltPayState" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
                                         <option value="">全部付款状态</option>
-                                        <option value="unpaid">未付（含逾期）</option>
-                                        <option value="paid">已付（含现结）</option>
+                                        <option value="unpaid">未付</option>
+                                        <option value="paid">已付</option>
                                     </select>
                                 </div>
 
@@ -715,7 +762,7 @@
                     <!-- Wave 1 应付清单（03 章）：跨供应商全局视图 + 支付登记与月结对账（沿用 Wave 2） -->
                     <div class="card" id="payablesCard" style="margin-top:16px;">
                         <div class="card-title">
-                            <span> 应付清单（跨供应商）与对账</span>
+                            <span> 应付清单与对账</span>
                             <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                                 <!-- 供应商：全局视图下的收敛筛选（默认全部） -->
                                 <select id="finSupplier" class="form-control" style="font-size:0.85rem; padding:6px 10px; min-width:190px; width:auto;" onchange="loadFinancePanel()">
@@ -724,8 +771,8 @@
                                 <!-- 已付 / 未付 主筛选 -->
                                 <select id="fltFinPay" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:auto;" onchange="applyPayablesFilters()">
                                     <option value="">全部付款态</option>
-                                    <option value="unpaid" selected>未付（含逾期）</option>
-                                    <option value="paid">已付（含现结）</option>
+                                    <option value="unpaid" selected>未付</option>
+                                    <option value="paid">已付</option>
                                 </select>
                                 <!-- 付款方式筛选（03 章三） -->
                                 <select id="fltFinMethod" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:auto;" onchange="applyPayablesFilters()">
@@ -755,7 +802,7 @@
                                 <table class="data-table">
                                     <thead>
                                         <tr>
-                                            <th>单据 / 供应商</th><th>开单日期</th><th>金额 ($)</th>
+                                            <th>单据 / 供应商</th><th>开单日期</th><th>金额</th>
                                             <th>付款状态</th><th>预期付款日</th><th>付款方式</th><th>操作</th>
                                         </tr>
                                     </thead>
@@ -765,8 +812,8 @@
                         </div>
 
                         <div id="financeActions" style="display:flex; gap:10px; margin:12px 0 4px; flex-wrap:wrap;">
-                            <button class="btn btn-primary" onclick="openPaymentModal()"> 登记支付（先选供应商）</button>
-                            <button class="btn btn-secondary" onclick="openReconModal()"> 发起对账（先选供应商）</button>
+                            <button class="btn btn-primary" onclick="openPaymentModal()"> 登记支付</button>
+                            <button class="btn btn-secondary" onclick="openReconModal()"> 发起对账</button>
                         </div>
 
                         <!-- 支付履历 -->
@@ -776,7 +823,7 @@
                                 <table class="data-table">
                                     <thead>
                                         <tr>
-                                            <th>支付编号</th><th>供应商</th><th>支付日期</th><th>金额 ($)</th><th>方式</th>
+                                            <th>支付编号</th><th>供应商</th><th>支付日期</th><th>金额</th><th>方式</th>
                                             <th>挂账赊单</th><th>凭证</th><th>备注</th>
                                         </tr>
                                     </thead>
@@ -787,7 +834,7 @@
 
                         <!-- 对账任务列表与差异明细 -->
                         <div id="reconTaskArea" class="hide" style="margin-top:14px;">
-                            <div id="reconTaskTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 对账任务（周期 × 供应商）</div>
+                            <div id="reconTaskTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 对账任务</div>
                             <div class="table-container" style="max-height:240px; overflow-y:auto;">
                                 <table class="data-table">
                                     <thead>
@@ -809,7 +856,7 @@
                                     <table class="data-table">
                                         <thead>
                                             <tr>
-                                                <th>行类型</th><th>日期</th><th>单号</th><th>金额 ($)</th>
+                                                <th>行类型</th><th>日期</th><th>单号</th><th>金额</th>
                                                 <th>匹配状态</th><th>说明 / 处理记录</th><th>操作</th>
                                             </tr>
                                         </thead>
@@ -894,9 +941,9 @@
                                 <thead>
                                     <tr>
                                         <th>部门</th>
-                                        <th class="col-right">本期进货 ($)</th>
-                                        <th class="col-right">上期对照 ($)</th>
-                                        <th class="col-right">变化 ($)</th>
+                                        <th class="col-right">本期进货</th>
+                                        <th class="col-right">上期对照</th>
+                                        <th class="col-right">变化</th>
                                     </tr>
                                 </thead>
                                 <tbody id="costReportBody">
@@ -904,6 +951,359 @@
                                 </tbody>
                             </table>
                         </div>
+                    </div>
+                </section>
+
+                <section id="tab-engine" class="tab-content">
+                    <div class="card" style="max-width:960px; margin:0 auto;">
+                        <div class="card-title" style="justify-content:center;"><span>引擎配置</span></div>
+                <div style="display:flex; flex-direction:column; gap:12px;">
+                    <!-- 第一行：识别 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                        <div class="form-group">
+                            <label>识别引擎</label>
+                            <select id="adminRecognitionEngine" class="form-control">
+                                <option value="opencode">opencode CLI</option>
+                                <option value="codebuddy">CodeBuddy CLI</option>
+                                <option value="openai">OpenAI 兼容接口</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex; justify-content:space-between; align-items:center;"><span>识别模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminRecognitionModel', 'adminRecognitionEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                            <select id="adminRecognitionModel" class="form-control"></select>
+                        </div>
+                    </div>
+
+                    <!-- 第二行：解析 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+                        <div class="form-group">
+                            <label>解析 LLM开关</label>
+                            <select id="adminParseEnabled" class="form-control">
+                                <option value="true">开</option>
+                                <option value="false">关</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>解析引擎</label>
+                            <select id="adminParseEngine" class="form-control">
+                                <option value="opencode">opencode CLI</option>
+                                <option value="codebuddy">CodeBuddy CLI</option>
+                                <option value="openai">OpenAI 兼容接口</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label style="display:flex; justify-content:space-between; align-items:center;"><span>解析模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminParseModel', 'adminParseEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                            <select id="adminParseModel" class="form-control"></select>
+                        </div>
+                    </div>
+
+                    <!-- 第三行：审核 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+                        <div class="form-group" id="adminAuditToggleGroup">
+                            <label>审核开关</label>
+                            <select id="adminAuditEnabled" class="form-control">
+                                <option value="true">开</option>
+                                <option value="false">关</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>审核引擎</label>
+                            <select id="adminAuditEngine" class="form-control">
+                                <option value="opencode">opencode CLI</option>
+                                <option value="codebuddy">CodeBuddy CLI</option>
+                                <option value="openai">OpenAI 兼容接口</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="adminAuditEngineGroup">
+                            <label style="display:flex; justify-content:space-between; align-items:center;"><span>审核模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminAuditModel', 'adminAuditEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                            <select id="adminAuditModel" class="form-control"></select>
+                        </div>
+                    </div>
+                </div>
+
+
+                <div id="adminOpenaiRecognitionBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:0.85rem; font-weight:600; color:#1565c0;">识别引擎 · OpenAI 兼容参数</div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                            <select id="adminOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                <option value="">— 手动填写 —</option>
+                                <option value="agnes">Agnes AI</option>
+                                <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL</label>
+                            <input type="text" id="adminOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminOpenaiRecApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名</label>
+                            <input type="text" id="adminOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminOpenaiAuditBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:0.85rem; font-weight:600; color:#2f6b4f;">审核引擎 · OpenAI 兼容参数</div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                            <select id="adminOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                <option value="">— 手动填写 —</option>
+                                <option value="agnes">Agnes AI</option>
+                                <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL</label>
+                            <input type="text" id="adminOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminOpenaiAudApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名</label>
+                            <input type="text" id="adminOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminParseOpenaiBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <div style="font-size:0.85rem; font-weight:600; color:#6a1b9a;">解析 LLM · OpenAI 兼容参数</div>
+                        <div style="display:flex; align-items:center; gap:6px;">
+                            <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                            <select id="adminParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                <option value="">— 手动填写 —</option>
+                                <option value="agnes">Agnes AI</option>
+                                <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-grid">
+                        <div class="form-group" style="grid-column: span 2;">
+                            <label>Base URL</label>
+                            <input type="text" id="adminParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label>API Key</label>
+                            <input type="password" id="adminParseOpenaiApiKey" class="form-control" placeholder="sk-...">
+                        </div>
+                        <div class="form-group">
+                            <label>模型名</label>
+                            <input type="text" id="adminParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                        </div>
+                    </div>
+                </div>
+
+                <div id="adminGreySection" style="margin-top:16px; padding:14px; border:2px solid #f0c14b; border-radius:10px;">
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                        <span style="font-size:0.9rem; font-weight:700;">分组测试</span>
+                        <select id="adminGreyEnabled" class="form-control" style="width:110px; padding:4px 8px; font-size:0.8rem;">
+                            <option value="false">停用</option>
+                            <option value="true">启用</option>
+                        </select>
+                    </div>
+                    <div id="adminGreyBody">
+                        <div style="color:var(--text-muted); font-size:0.8rem; margin-bottom:10px;">
+   
+                        </div>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label>随机分配概率</label>
+                                <input type="number" id="adminGreyPercent" class="form-control" min="0" max="100" step="1" placeholder="0-100">
+                            </div>
+                            <div class="form-group">
+                                <label>分配方式</label>
+                                <select id="adminGreyAssignMode" class="form-control">
+                                    <option value="receipt">按单据随机</option>
+                                    <option value="supplier">按供应商</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测识别引擎</label>
+                                <select id="adminGreyRecEngine" class="form-control">
+                                    <option value="opencode">opencode CLI</option>
+                                    <option value="codebuddy">CodeBuddy CLI</option>
+                                    <option value="openai">OpenAI 兼容接口</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex; justify-content:space-between; align-items:center;"><span>灰测识别模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminGreyRecModel', 'adminGreyRecEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                                <select id="adminGreyRecModel" class="form-control"></select>
+                            </div>
+                            <div class="form-group">
+                                <label>灰测审核引擎</label>
+                                <select id="adminGreyAudEngine" class="form-control">
+                                    <option value="opencode">opencode CLI</option>
+                                    <option value="codebuddy">CodeBuddy CLI</option>
+                                    <option value="openai">OpenAI 兼容接口</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label style="display:flex; justify-content:space-between; align-items:center;"><span>灰测审核模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminGreyAudModel', 'adminGreyAudEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                                <select id="adminGreyAudModel" class="form-control"></select>
+                            </div>
+                            <div class="form-group" id="adminGreyAuditToggleGroup">
+                                <label>灰测审核开关</label>
+                                <select id="adminGreyAuditEnabled" class="form-control">
+                                    <option value="true">开</option>
+                                    <option value="false">关</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="adminGreyOpenaiRecBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                                <div style="font-size:0.82rem; font-weight:600; color:#1565c0;">灰测识别 · OpenAI 兼容参数</div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                                    <select id="adminGreyOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                        <option value="">— 手动填写 —</option>
+                                        <option value="agnes">Agnes AI</option>
+                                        <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Base URL</label>
+                                    <input type="text" id="adminGreyOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="adminGreyOpenaiRecApiKey" class="form-control" placeholder="sk-...">
+                                </div>
+                                <div class="form-group">
+                                    <label>模型名</label>
+                                    <input type="text" id="adminGreyOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="adminGreyOpenaiAudBox" style="margin-top:10px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                                <div style="font-size:0.82rem; font-weight:600; color:#2f6b4f;">灰测审核 · OpenAI 兼容参数</div>
+                                <div style="display:flex; align-items:center; gap:6px;">
+                                    <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                                    <select id="adminGreyOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                        <option value="">— 手动填写 —</option>
+                                        <option value="agnes">Agnes AI</option>
+                                        <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group" style="grid-column: span 2;">
+                                    <label>Base URL</label>
+                                    <input type="text" id="adminGreyOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                </div>
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="adminGreyOpenaiAudApiKey" class="form-control" placeholder="sk-...">
+                                </div>
+                                <div class="form-group">
+                                    <label>模型名</label>
+                                    <input type="text" id="adminGreyOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                                </div>
+                            </div>
+                        </div>
+                        <div id="adminGreyParseBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
+                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                                <span style="font-size:0.82rem; font-weight:600;">灰测解析 LLM</span>
+                                <select id="adminGreyParseEnabled" class="form-control" style="width:80px; padding:3px 6px; font-size:0.75rem;">
+                                    <option value="false">关</option>
+                                    <option value="true">开</option>
+                                </select>
+                            </div>
+                            <div id="adminGreyParseBody">
+                                <div class="form-grid">
+                                    <div class="form-group">
+                                        <label>解析引擎</label>
+                                        <select id="adminGreyParseEngine" class="form-control">
+                                            <option value="opencode">opencode CLI</option>
+                                            <option value="codebuddy">CodeBuddy CLI</option>
+                                            <option value="openai">OpenAI 兼容接口</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label style="display:flex; justify-content:space-between; align-items:center;"><span>解析模型</span><span class="custom-del-btn" onclick="handleDeleteCurrentModel('adminGreyParseModel', 'adminGreyParseEngine')" style="color:#e53935; cursor:pointer; font-size:0.75rem; display:none;" title="删除当前自定义模型">删除</span></label>
+                                        <select id="adminGreyParseModel" class="form-control"></select>
+                                    </div>
+                                </div>
+                                <div id="adminGreyParseOpenaiBox" style="margin-top:10px; padding:10px; border:1px solid #f0c14b; border-radius:8px; display:none;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                                        <div style="font-size:0.78rem; font-weight:600; color:#6a1b9a;">灰测解析 · OpenAI 兼容参数</div>
+                                        <div style="display:flex; align-items:center; gap:6px;">
+                                            <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
+                                            <select id="adminGreyParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
+                                                <option value="">— 手动填写 —</option>
+                                                <option value="agnes">Agnes AI</option>
+                                                <option value="bailian">阿里云百炼 · DashScope</option>
+                                        <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-grid">
+                                        <div class="form-group" style="grid-column: span 2;">
+                                            <label>Base URL</label>
+                                            <input type="text" id="adminGreyParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>API Key</label>
+                                            <input type="password" id="adminGreyParseOpenaiApiKey" class="form-control" placeholder="sk-...">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>模型名</label>
+                                            <input type="text" id="adminGreyParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 推全 / 回滚 / 对比 操作栏 -->
+                <div id="adminGreyActions" style="margin-top:14px; padding:12px 14px; border:1px solid #f0c14b; border-radius:8px; background:rgba(240,193,75,0.06);">
+                    <div style="display:flex; align-items:center; gap:10px; font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#b8860b;">
+                        <span>灰测产品闭环</span>
+                    </div>
+                    <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                        <button class="btn btn-outline" style="border-color:#f0c14b; color:#b8860b;" onclick="fetchAndRenderDiff()">配置对比</button>
+                        <button class="btn btn-primary" style="background:#f0c14b; color:#231c00; border-color:#f0c14b;" onclick="preparePromoteWithDiff()">一键推全</button>
+                        <button id="adminGreyPromoteConfirm" class="btn btn-primary hide" style="background:#b8860b; color:#fff;" onclick="promoteGreyConfig()">确认推全</button>
+                        <button class="btn btn-outline" style="border-color:#2f6b4f; color:#2f6b4f;" onclick="rollbackEngineConfig()">一键回滚</button>
+                    </div>
+                </div>
+
+                <!-- Diff 双列对照面板（默认隐藏，点「配置对比」或「一键推全」后展开） -->
+                <div id="adminGreyDiffPanel" class="hide" style="margin-top:12px; padding:12px 14px; border:1px solid var(--border, #ddd); border-radius:8px;">
+                    <div id="adminGreyDiffHeader" style="font-size:0.85rem; font-weight:600; margin-bottom:8px;">配置对比加载中…</div>
+                    <div class="diff-wrap"></div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; margin-top:18px;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
+                        <input type="checkbox" id="adminSkipModelTest" style="cursor:pointer;">
+                        <span>跳过连通性测试直接保存</span>
+                    </label>
+                    <button class="btn btn-primary" id="btnSaveAdminEngine" onclick="saveAdminEngineConfig()">保存配置</button>
+                </div>
                     </div>
                 </section>
 
@@ -936,7 +1336,7 @@
                         <button id="btnArchiveZoomToggle" class="btn-tool" onclick="toggleArchiveZoomMode()"> 定点放大</button>
                         <button class="btn-tool" onclick="rotateArchiveImg()"> 旋转 90°</button>
                         <button class="btn-tool" onclick="resetArchiveImgTransform()"> 重置视图</button>
-                        <a id="btnArchiveOpenRaw" href="#" target="_blank" class="btn-tool btn-secondary">️ 查看大图</a>
+                        <a id="btnArchiveOpenRaw" href="#" target="_blank" class="btn-tool btn-secondary">查看大图</a>
                     </div>
                 </div>
 
@@ -966,30 +1366,30 @@
                                 <input type="text" id="arcSheet" class="form-control">
                             </div>
                             <div class="form-group">
-                                <label>整单总金额 ($)</label>
+                                <label>整单总金额</label>
                                 <input type="number" step="0.01" id="arcTotal" class="form-control" style="font-weight:700; color:var(--primary);">
                             </div>
                             <!-- M3/D4: 归档弹窗同样提供结算方式修正与付款标记只读展示 -->
                             <div class="form-group">
-                                <label>结算方式 (Settlement)</label>
+                                <label>结算方式</label>
                                 <select id="arcSettlementType" class="form-control" title="现结=现金单；月结=赊单，对账依据">
                                     <option value="">未知</option>
-                                    <option value="cash">现结 (现金)</option>
-                                    <option value="credit">月结 (赊账)</option>
+                                    <option value="cash">现结</option>
+                                    <option value="credit">月结</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>付款标记 (只读)</label>
+                                <label>付款标记</label>
                                 <input type="text" id="arcPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
                             </div>
                             <!-- Wave 2（D44）：归档单据级部门——历史单据可补打部门（04 章四） -->
                             <div class="form-group" style="grid-column: span 2;">
-                                <label>部门（单据级 · 归档补打）</label>
+                                <label>部门</label>
                                 <div style="display:flex; gap:8px; align-items:center;">
-                                    <select id="arcDepartmentId" class="form-control" style="flex:1;" title="归档单据级部门：选后点「应用到全部明细」填到所有明细行（已手动改过的行除外）；行内也可单独覆盖">
+                                    <select id="arcDepartmentId" class="form-control" style="flex:1;" title="归档单据级部门：选后点「应用到全部明细」填到所有明细行；行内也可单独覆盖">
                                         <option value="">未分配</option>
                                     </select>
-                                    <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.8rem; white-space:nowrap;" onclick="applyDeptToAll('arcTableBody','arcDepartmentId'); markArcDirty();" title="把单据级部门填入所有明细行（已手动改过的行保持不动）"> 应用到全部明细</button>
+                                    <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.8rem; white-space:nowrap;" onclick="applyDeptToAll('arcTableBody','arcDepartmentId'); markArcDirty();" title="把单据级部门填入所有明细行"> 应用到全部明细</button>
                                 </div>
                             </div>
                         </div>
@@ -1001,8 +1401,8 @@
                                         <th style="width:26%;">消费项目/SKU</th>
                                         <th style="width:12%;">数量</th>
                                         <th style="width:13%;">单位</th>
-                                        <th style="width:15%;">单价 ($)</th>
-                                        <th style="width:15%;">金额 ($)</th>
+                                        <th style="width:15%;">单价</th>
+                                        <th style="width:15%;">金额</th>
                                         <th style="width:12%;">部门</th>
                                         <th style="width:7%;">操作</th>
                                     </tr>
@@ -1016,7 +1416,7 @@
                         <!-- 操作与编辑改动履历 Logs 区域 -->
                         <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
                             <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
-                                 操作与编辑改动履历 (Audit Logs)
+                                 操作与编辑改动履历
                             </div>
                             <div id="arcAuditLogsContainer" style="max-height: 110px; overflow-y: auto; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem;">
                                 <!-- 动态渲染履历列表 -->
@@ -1031,7 +1431,7 @@
                         </div>
                         <div style="display:flex; gap:10px;">
                             <button class="btn btn-secondary" onclick="closeArchiveModal()">取消</button>
-                            <button class="btn btn-primary" onclick="modalApproveReceipt()"> 审核通过 (Approve)</button>
+                            <button class="btn btn-primary" onclick="modalApproveReceipt()"> 审核通过</button>
                             <!-- Q32: id 供保存中禁用防双击重提交 -->
                             <button id="btnSaveArchive" class="btn btn-success" onclick="submitSaveArchiveEdited()"> 保存单据修改</button>
                         </div>
@@ -1043,289 +1443,18 @@
         </div>
     </div>
 
-    <!-- Wave 2：登记支付 Modal（T7/M7） -->
-    <div id="adminEngineModal" class="modal-backdrop hide">
-        <div class="modal-card" style="max-width:680px;">
-            <div class="modal-header">
-                <h3>⚙️ 引擎配置</h3>
-                <button class="modal-close-btn" onclick="closeModalById('adminEngineModal')">x</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-grid">
-                    <div class="form-group" id="adminAuditToggleGroup" style="grid-column: span 1;">
-                        <label>审核开关（audit_enabled）</label>
-                        <select id="adminAuditEnabled" class="form-control">
-                            <option value="true">开 · 每单交叉审核</option>
-                            <option value="false">关 · 跳过审核</option>
-                        </select>
-                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">关 = 识别后直接进复核，不交叉审核</div>
-                    </div>
-                    <div class="form-group" style="grid-column: span 1;">
-                        <label>解析 LLM（parse_llm_enabled）</label>
-                        <select id="adminParseEnabled" class="form-control">
-                            <option value="false">关</option>
-                            <option value="true">开 · VLM 识别后 → LLM 规范化解析</option>
-                        </select>
-                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">纯文本任务，可用 LongCat 等文本模型</div>
-                    </div>
-                    <div class="form-group">
-                        <label>识别引擎</label>
-                        <select id="adminRecognitionEngine" class="form-control">
-                            <option value="opencode">opencode CLI（本机，支持视觉模型）</option>
-                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>识别模型</label>
-                        <select id="adminRecognitionModel" class="form-control"></select>
-                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">负责把收据图转成结构化 JSON</div>
-                    </div>
-                    <div class="form-group">
-                        <label>解析引擎</label>
-                        <select id="adminParseEngine" class="form-control">
-                            <option value="opencode">opencode CLI（本机）</option>
-                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>解析模型</label>
-                        <select id="adminParseModel" class="form-control"></select>
-                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">VLM 原始输出 → 严格 JSON 规范化</div>
-                    </div>
-                    <div class="form-group">
-                        <label>审核引擎</label>
-                        <select id="adminAuditEngine" class="form-control">
-                            <option value="opencode">opencode CLI（本机）</option>
-                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                        </select>
-                    </div>
-                    <div class="form-group" id="adminAuditEngineGroup">
-                        <label>审核模型</label>
-                        <select id="adminAuditModel" class="form-control"></select>
-                        <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">交叉审核用（与识别不同家族，盲点互补）</div>
-                    </div>
-                </div>
-
-                <div style="margin-top:14px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; background:var(--bg-input, #f7f8fa);">
-                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-                        <span style="font-size:0.85rem; font-weight:600;">⚡ 预设 OpenAI 网关</span>
-                        <select id="adminOpenaiPreset" class="form-control" style="flex:1; min-width:260px;">
-                            <option value="">— 手动填写 —</option>
-                            <option value="siliconflow">SiliconFlow · 硅基流动（Qwen3-VL 视觉识别/审核）</option>
-                        </select>
-                        <span style="font-size:0.75rem; color:var(--text-muted);">选择预设自动填入下方识别/审核的 base_url · api_key · 模型名</span>
-                    </div>
-                </div>
-
-                <div id="adminOpenaiRecognitionBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
-                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#1565c0;">🔵 识别引擎 · OpenAI 兼容参数（必填）</div>
-                    <div class="form-grid">
-                        <div class="form-group" style="grid-column: span 2;">
-                            <label>Base URL（如 https://api.openai.com/v1 或任意兼容网关）</label>
-                            <input type="text" id="adminOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                        </div>
-                        <div class="form-group">
-                            <label>API Key</label>
-                            <input type="password" id="adminOpenaiRecApiKey" class="form-control" placeholder="sk-...">
-                        </div>
-                        <div class="form-group">
-                            <label>模型名（如 gpt-4o-mini / qwen-vl-plus）</label>
-                            <input type="text" id="adminOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
-                        </div>
-                    </div>
-                </div>
-
-                <div id="adminOpenaiAuditBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
-                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#2f6b4f;">🟢 审核引擎 · OpenAI 兼容参数（必填）</div>
-                    <div class="form-grid">
-                        <div class="form-group" style="grid-column: span 2;">
-                            <label>Base URL（如 https://api.openai.com/v1 或任意兼容网关）</label>
-                            <input type="text" id="adminOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                        </div>
-                        <div class="form-group">
-                            <label>API Key</label>
-                            <input type="password" id="adminOpenaiAudApiKey" class="form-control" placeholder="sk-...">
-                        </div>
-                        <div class="form-group">
-                            <label>模型名（如 gpt-4o-mini / qwen-vl-plus）</label>
-                            <input type="text" id="adminOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
-                        </div>
-                    </div>
-                </div>
-
-                <div id="adminParseOpenaiBox" style="margin-top:10px; padding:12px; border:1px solid var(--border, #ddd); border-radius:8px; display:none;">
-                    <div style="font-size:0.85rem; font-weight:600; margin-bottom:8px; color:#6a1b9a;">🟣 解析 LLM · OpenAI 兼容参数（必填）</div>
-                    <div class="form-grid">
-                        <div class="form-group" style="grid-column: span 2;">
-                            <label>Base URL</label>
-                            <input type="text" id="adminParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                        </div>
-                        <div class="form-group">
-                            <label>API Key</label>
-                            <input type="password" id="adminParseOpenaiApiKey" class="form-control" placeholder="sk-...">
-                        </div>
-                        <div class="form-group">
-                            <label>模型名</label>
-                            <input type="text" id="adminParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
-                        </div>
-                    </div>
-                </div>
-
-                <div id="adminGreySection" style="margin-top:16px; padding:14px; border:2px solid #f0c14b; border-radius:10px;">
-                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
-                        <span style="font-size:0.9rem; font-weight:700;">🧪 分组测试（灰测）</span>
-                        <select id="adminGreyEnabled" class="form-control" style="width:110px; padding:4px 8px; font-size:0.8rem;">
-                            <option value="false">停用</option>
-                            <option value="true">启用</option>
-                        </select>
-                    </div>
-                    <div id="adminGreyBody">
-                        <div style="color:var(--text-muted); font-size:0.8rem; margin-bottom:10px;">
-                            灰测 = 新模型按概率小流量试跑。命中灰测的单据走下方灰测组引擎/模型，其余走常规配置；识别率达标后再全量切换。
-                        </div>
-                        <div class="form-grid">
-                            <div class="form-group">
-                                <label>随机分配概率（%）</label>
-                                <input type="number" id="adminGreyPercent" class="form-control" min="0" max="100" step="1" placeholder="0-100">
-                                <div style="color:var(--text-muted); font-size:0.75rem; margin-top:2px;">用户受影响比例：0=全常规，100=全灰测</div>
-                            </div>
-                            <div class="form-group">
-                                <label>分配方式（assign_mode）</label>
-                                <select id="adminGreyAssignMode" class="form-control">
-                                    <option value="receipt">按单据随机（每单独立判断）</option>
-                                    <option value="supplier">按供应商（同供应商一致命中）</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>灰测识别引擎</label>
-                                <select id="adminGreyRecEngine" class="form-control">
-                                    <option value="opencode">opencode CLI（本机）</option>
-                                    <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                                    <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>灰测识别模型</label>
-                                <select id="adminGreyRecModel" class="form-control"></select>
-                            </div>
-                            <div class="form-group">
-                                <label>灰测审核引擎</label>
-                                <select id="adminGreyAudEngine" class="form-control">
-                                    <option value="opencode">opencode CLI（本机）</option>
-                                    <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                                    <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                                </select>
-                            </div>
-                            <div class="form-group">
-                                <label>灰测审核模型</label>
-                                <select id="adminGreyAudModel" class="form-control"></select>
-                            </div>
-                        </div>
-
-                        <div id="adminGreyOpenaiRecBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
-                            <div style="font-size:0.82rem; font-weight:600; margin-bottom:8px; color:#1565c0;">🔵 灰测识别 · OpenAI 兼容参数（必填）</div>
-                            <div class="form-grid">
-                                <div class="form-group" style="grid-column: span 2;">
-                                    <label>Base URL</label>
-                                    <input type="text" id="adminGreyOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                                </div>
-                                <div class="form-group">
-                                    <label>API Key</label>
-                                    <input type="password" id="adminGreyOpenaiRecApiKey" class="form-control" placeholder="sk-...">
-                                </div>
-                                <div class="form-group">
-                                    <label>模型名</label>
-                                    <input type="text" id="adminGreyOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="adminGreyOpenaiAudBox" style="margin-top:10px; padding:12px; border:1px solid #f0c14b; border-radius:8px; display:none;">
-                            <div style="font-size:0.82rem; font-weight:600; margin-bottom:8px; color:#2f6b4f;">🟢 灰测审核 · OpenAI 兼容参数（必填）</div>
-                            <div class="form-grid">
-                                <div class="form-group" style="grid-column: span 2;">
-                                    <label>Base URL</label>
-                                    <input type="text" id="adminGreyOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                                </div>
-                                <div class="form-group">
-                                    <label>API Key</label>
-                                    <input type="password" id="adminGreyOpenaiAudApiKey" class="form-control" placeholder="sk-...">
-                                </div>
-                                <div class="form-group">
-                                    <label>模型名</label>
-                                    <input type="text" id="adminGreyOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
-                                </div>
-                            </div>
-                        </div>
-                        <div id="adminGreyParseBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
-                            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
-                                <span style="font-size:0.82rem; font-weight:600;">🧠 灰测解析 LLM（VLM 识别后 → LLM 规范化解析）</span>
-                                <select id="adminGreyParseEnabled" class="form-control" style="width:80px; padding:3px 6px; font-size:0.75rem;">
-                                    <option value="false">关</option>
-                                    <option value="true">开</option>
-                                </select>
-                            </div>
-                            <div style="color:var(--text-muted); font-size:0.72rem; margin-bottom:8px;">
-                                灰测组内开启后：识别原始输出交给下方解析 LLM 整理成严格 JSON。
-                            </div>
-                            <div id="adminGreyParseBody">
-                                <div class="form-grid">
-                                    <div class="form-group">
-                                        <label>解析引擎</label>
-                                        <select id="adminGreyParseEngine" class="form-control">
-                                            <option value="opencode">opencode CLI（本机）</option>
-                                            <option value="codebuddy">CodeBuddy CLI（本机）</option>
-                                            <option value="openai">OpenAI 兼容接口（自填参数）</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group">
-                                        <label>解析模型</label>
-                                        <select id="adminGreyParseModel" class="form-control"></select>
-                                    </div>
-                                </div>
-                                <div id="adminGreyParseOpenaiBox" style="margin-top:10px; padding:10px; border:1px solid #f0c14b; border-radius:8px; display:none;">
-                                    <div style="font-size:0.78rem; font-weight:600; margin-bottom:8px; color:#6a1b9a;">🟣 灰测解析 · OpenAI 兼容参数（必填）</div>
-                                    <div class="form-grid">
-                                        <div class="form-group" style="grid-column: span 2;">
-                                            <label>Base URL</label>
-                                            <input type="text" id="adminGreyParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
-                                        </div>
-                                        <div class="form-group">
-                                            <label>API Key</label>
-                                            <input type="password" id="adminGreyParseOpenaiApiKey" class="form-control" placeholder="sk-...">
-                                        </div>
-                                        <div class="form-group">
-                                            <label>模型名</label>
-                                            <input type="text" id="adminGreyParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div id="adminGreyStatus" style="margin-top:12px; padding:10px; border:1px dashed var(--border, #ccc); border-radius:8px; font-size:0.82rem; color:var(--text-muted);"></div>
-                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:18px;">
-                    <button class="btn btn-secondary" onclick="closeModalById('adminEngineModal')">取消</button>
-                    <button class="btn btn-primary" onclick="saveAdminEngineConfig()">保存配置</button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <div id="paymentModal" class="modal-backdrop hide">
         <div class="modal-card" style="max-width:640px;">
             <div class="modal-header">
-                <h3> 登记支付（一次支付可挂账多张赊单）</h3>
+                <h3> 登记支付</h3>
                 <button class="modal-close-btn" onclick="closeModalById('paymentModal')">x</button>
             </div>
             <div class="modal-body">
                 <div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:10px;" id="paymentSupplierHint"></div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label>支付金额 ($)</label>
+                        <label>支付金额</label>
                         <input type="number" step="0.01" min="0.01" id="payAmount" class="form-control" placeholder="如 3000.00">
                     </div>
                     <div class="form-group">
@@ -1342,7 +1471,7 @@
                         <input type="date" id="payDate" class="form-control">
                     </div>
                     <div class="form-group">
-                        <label>付款凭证图（可选）</label>
+                        <label>付款凭证图</label>
                         <input type="file" id="payVoucher" class="form-control" accept="image/*">
                     </div>
                     <div class="form-group" style="grid-column: span 2;">
@@ -1350,13 +1479,13 @@
                         <input type="text" id="payNotes" class="form-control" placeholder="如：7 月份货款">
                     </div>
                 </div>
-                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin:12px 0 6px;">勾选本次支付覆盖的赊单（未付月结单据）</div>
+                <div style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin:12px 0 6px;">勾选本次支付覆盖的赊单</div>
                 <div class="table-container" style="max-height:240px; overflow-y:auto;">
                     <table class="data-table">
                         <thead>
                             <tr>
                                 <th style="width:44px;"><input type="checkbox" id="payCheckAll" onchange="togglePayCheckAll(this)"></th>
-                                <th>单据ID</th><th>开单日期</th><th>金额 ($)</th><th>状态</th>
+                                <th>单据ID</th><th>开单日期</th><th>金额</th><th>状态</th>
                             </tr>
                         </thead>
                         <tbody id="payReceiptBody"></tbody>
@@ -1383,18 +1512,18 @@
                     <div class="form-group">
                         <label>对账周期类型</label>
                         <select id="reconPeriodType" class="form-control" onchange="reconPeriodTypeChanged()">
-                            <option value="month">自然月（缺省上个自然月）</option>
+                            <option value="month">自然月</option>
                             <option value="3d">最近 3 天</option>
                             <option value="7d">最近 7 天</option>
                             <option value="14d">最近 14 天</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>开始日期（可留空用缺省）</label>
+                        <label>开始日期</label>
                         <input type="date" id="reconStart" class="form-control">
                     </div>
                     <div class="form-group">
-                        <label>结束日期（可留空用缺省）</label>
+                        <label>结束日期</label>
                         <input type="date" id="reconEnd" class="form-control">
                     </div>
                 </div>
@@ -1420,7 +1549,7 @@
                     <select id="reconResolveReceipt" class="form-control"></select>
                 </div>
                 <div class="form-group">
-                    <label>备注（写入处理记录）</label>
+                    <label>备注</label>
                     <input type="text" id="reconResolveNote" class="form-control" placeholder="如：电话核实为漏拍 / 单价与合约不符">
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
@@ -1444,7 +1573,7 @@
                     <input type="text" id="supName" class="form-control" placeholder="如：德利行" maxlength="64">
                 </div>
                 <div class="form-group">
-                    <label>账期（谈妥的规矩）</label>
+                    <label>账期</label>
                     <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
                         <button type="button" class="chip" data-terms="" onclick="setSupplierTerms('')">现结</button>
                         <button type="button" class="chip" data-terms="7" onclick="setSupplierTerms('7')">7 天</button>
@@ -1459,10 +1588,10 @@
                 </div>
                 <div class="form-group">
                     <label>备注</label>
-                    <textarea id="supNotes" class="form-control" placeholder="选填，如送货时段、后门位置（≤500 字）" maxlength="500" rows="2"></textarea>
+                    <textarea id="supNotes" class="form-control" placeholder="选填，如送货时段、后门位置" maxlength="500" rows="2"></textarea>
                 </div>
                 <div class="form-group">
-                    <label>结算习惯（仅标注，不改动单据）</label>
+                    <label>结算习惯</label>
                     <select id="supPref" class="form-control">
                         <option value="">不设置</option>
                         <option value="cash">现结</option>
@@ -1470,7 +1599,7 @@
                         <option value="mixed">混合</option>
                     </select>
                 </div>
-                <div style="font-size:0.76rem; color:var(--text-muted);">编号：<span id="supCodePreview">（新增后自动生成）</span></div>
+                <div style="font-size:0.76rem; color:var(--text-muted);">编号：<span id="supCodePreview">新增后自动生成</span></div>
                 <div id="supplierModalError" class="form-error hide" style="margin-top:8px;"></div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
                     <button class="btn btn-secondary" onclick="closeModalById('supplierModal')">取消</button>
@@ -1490,7 +1619,7 @@
             <div class="modal-body">
                 <div id="mergeDropHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
                 <div class="form-group">
-                    <label>合并到（保留的供应商）</label>
+                    <label>合并到</label>
                     <select id="mergeKeepSelect" class="form-control"></select>
                 </div>
                 <div style="font-size:0.8rem; color:var(--danger); margin-top:8px; line-height:1.6;">
@@ -1525,7 +1654,7 @@
                     <input type="number" step="0.01" min="0" id="stocktakeQty" class="form-control" placeholder="输入实际盘点数量">
                 </div>
                 <div class="form-group">
-                    <label>盘点备注（可选）</label>
+                    <label>盘点备注</label>
                     <input type="text" id="stocktakeNote" class="form-control" placeholder="如：周日晚盘点，有损耗">
                 </div>
                 <div style="font-size:0.8rem; color:var(--text-muted); margin-top:6px;">
@@ -1549,11 +1678,11 @@
             <div class="modal-body">
                 <div id="outboundHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
                 <div class="form-group">
-                    <label>出库数量（标准单位）</label>
+                    <label>出库数量</label>
                     <input type="number" step="0.01" min="0.01" id="outboundQty" class="form-control" placeholder="必须大于 0">
                 </div>
                 <div class="form-group">
-                    <label>备注（可选）</label>
+                    <label>备注</label>
                     <input type="text" id="outboundNote" class="form-control" placeholder="如：午市炒菜 / 过期丢弃">
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
@@ -1575,7 +1704,7 @@
                 <input type="hidden" id="skuModalId">
                 <div class="form-group" style="margin-bottom:12px;">
                     <label>品名 <span style="color:var(--danger, #ef4444);">*</span></label>
-                    <input type="text" id="skuModalName" class="form-control" placeholder="如：鲜鸡、五花肉 (1–64字)">
+                    <input type="text" id="skuModalName" class="form-control" placeholder="如：鲜鸡、五花肉">
                 </div>
                 <div class="form-group" style="margin-bottom:12px;">
                     <label>分类 <span style="color:var(--danger, #ef4444);">*</span></label>
@@ -1613,7 +1742,7 @@
                         <option value="打">
                     </datalist>
                     <div id="skuModalUnitNotice" style="display:none; font-size:0.8rem; color:#d97706; margin-top:4px;">
-                        ⚠️ 账面库存不为 0，禁止修改单位。请先通过盘点或记用量/报损耗将库存调整为 0。
+                        账面库存不为 0，禁止修改单位。请先通过盘点或记用量/报损耗将库存调整为 0。
                     </div>
                 </div>
                 <div class="form-group" style="margin-bottom:12px;">
@@ -1638,6 +1767,39 @@
         </div>
     </div>
 
+    <!-- SKU 合并管理 Modal -->
+    <div id="skuMergeModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:540px;">
+            <div class="modal-header">
+                <h3> 合并重复食材 SKU</h3>
+                <button class="modal-close-btn" onclick="closeModalById('skuMergeModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
+                    将多个同义或误建的食材合并为一个主 SKU。历史流水与库存将自动归集，副 SKU 将安全停用并沉淀供应商别名记忆。
+                </p>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>选择保留的主 SKU (Primary)</label>
+                    <select id="skuMergePrimarySelect" class="form-control"></select>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label>被合并的副 SKU 列表 (将被停用并迁移流水)</label>
+                    <div id="skuMergeSecondaryList" style="background:var(--bg-input); padding:8px 12px; border-radius:8px; font-size:0.85rem; max-height:120px; overflow-y:auto;"></div>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer;">
+                        <input type="checkbox" id="skuMergeSyncMemory" checked>
+                        <span>自动将副品名沉淀至供应商别名知识库（RAG 自学习）</span>
+                    </label>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('skuMergeModal')">取消</button>
+                    <button class="btn btn-danger" id="skuMergeSubmitBtn" onclick="submitSkuMerge()">确认合并</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 部门花销明细 Modal -->
     <div id="costDrilldownModal" class="modal-backdrop hide">
         <div class="modal-card" style="max-width:800px;">
@@ -1656,7 +1818,7 @@
                                 <th style="width:90px;">单据号</th>
                                 <th>品名</th>
                                 <th style="width:80px;">数量</th>
-                                <th style="width:110px;" class="col-right">金额 ($)</th>
+                                <th style="width:110px;" class="col-right">金额</th>
                             </tr>
                         </thead>
                         <tbody id="costDrilldownBody">
@@ -1705,7 +1867,7 @@
                                 <tr>
                                     <th>日期</th>
                                     <th>供应商</th>
-                                    <th class="col-right">单价 ($)</th>
+                                    <th class="col-right">单价</th>
                                     <th class="col-right">数量</th>
                                     <th>来源</th>
                                     <th class="col-right">较上笔</th>
