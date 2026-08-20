@@ -1142,7 +1142,7 @@ function initDeptAdminDetails() {
     loadDepartmentsAll();        // Wave 2（D44）：部门下拉/管理/报表共用数据源
     loadFinancePanel();         // Wave 1：首屏即拉付款域，供导航红点/顶部横幅提醒
     initDeptAdminDetails();
-    loadAiInsights();           // 阶段 1：AI 发现卡片（owner 端）
+
 });
 
 // -------------------------------------------------------------
@@ -1170,7 +1170,7 @@ function initTabs() {
                 loadReceiptsHistory();
                 loadFinancePanel();      // Wave 2 支付与对账
                 loadSupplierAdmin();     // Wave 2 供应商管理（含合并）
-                loadAiInsights();        // 阶段 1：AI 发现卡片
+
             }
             if (targetId === 'tab-report') {
                 loadCostReport();        // Wave 2 部门花销报表
@@ -3779,7 +3779,7 @@ function loadInventoryData() {
                 : '';
             tr.innerHTML = `
                 <td><strong>${w2Escape(sku.name)}</strong>${activeBadge}</td>
-                <td><span class="badge badge-secondary">${w2Escape(sku.category)}</span></td>
+                <td><span class="badge badge-secondary">${w2Escape(sku.category || 'N/A')}</span></td>
                 <td class="col-right">
                     <strong style="color:${sku.is_low_stock ? '#ef4444' : '#10b981'};">${skuStock}</strong> ${w2Escape(sku.base_unit)}
                     ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
@@ -4229,10 +4229,10 @@ function toggleAiLeanDetails() {
     const isHidden = cards.classList.contains('hide');
     if (isHidden) {
         cards.classList.remove('hide');
-        btn.innerText = '收起 ▲';
+        btn.innerText = '收起';
     } else {
         cards.classList.add('hide');
-        btn.innerText = '展开查看 ▼';
+        btn.innerText = '展开查看';
     }
 }
 
@@ -4249,7 +4249,7 @@ function renderAiLeanCards(items) {
         card.innerHTML = `
             <div class="ai-lean-card-left">
                 <div class="ai-lean-card-title">
-                    <span style="color:#dc2626;">🔴 ${w2Escape(it.name)}</span>
+                    <span style="color:#dc2626;">${w2Escape(it.name)}</span>
                     <span style="font-size:0.75rem; color:var(--text-muted);">· ${w2Escape(it.vendor)}</span>
                     <span class="badge badge-danger" style="font-size:0.7rem; padding:1px 6px;">涨幅 +${it.change_pct}%</span>
                 </div>
@@ -4258,8 +4258,8 @@ function renderAiLeanCards(items) {
                 </div>
             </div>
             <div class="ai-lean-card-actions">
-                ${it.sku_id ? `<button type="button" class="btn-lean-act" onclick="viewPriceHistory(${Number(it.sku_id)})">📈 查看走势</button>` : ''}
-                <button type="button" class="btn-lean-act" onclick="copyAiLeanEvidence(${Number(it.sku_id)})" title="复制异动记录明细">📋 复制记录</button>
+                ${it.sku_id ? `<button type="button" class="btn-lean-act" onclick="viewPriceHistory(${Number(it.sku_id)})">查看走势</button>` : ''}
+                <button type="button" class="btn-lean-act" onclick="copyAiLeanEvidence(${Number(it.sku_id)})" title="复制异动记录明细">复制记录</button>
                 <button type="button" class="btn-lean-act" style="color:var(--text-muted);" onclick="ignoreAiLeanItem(${Number(it.sku_id)})">忽略</button>
             </div>
         `;
@@ -9214,7 +9214,7 @@ function escapeHtml(s) {
    1.1  audit_result.reason 展示（renderAuditReason）
    1.2  AI 建议 vs 用户确认 对照面板 + 采纳事件（renderAiCompare / adoptAiField）
    1.3  灰测组视觉标记（greyBadgeHtml）
-   1.4  AI 发现卡片加载与渲染（loadAiInsights / renderAiInsights）
+
    ============================================================= */
 
 // 1.1 审核 reason 展示：green=一致，orange=分歧
@@ -9379,77 +9379,4 @@ function greyBadgeHtml(useGrey) {
     if (!useGrey) return '';
     return '<span class="badge-grey" title="灰测组处理（cross_audit 双模型）">灰测组</span>';
 }
-
-// 1.4 AI 发现卡片加载
-function loadAiInsights() {
-    fetch('/api/ai-insights')
-        .then(r => r.json())
-        .then(ret => {
-            if (!ret || ret.status !== 'success' || !ret.data) {
-                renderAiInsights(null);
-                return;
-            }
-            renderAiInsights(ret.data);
-        })
-        .catch(err => {
-            console.warn('loadAiInsights:', err);
-            renderAiInsights(null);
-        });
-}
-
-function renderAiInsights(data) {
-    const card = document.getElementById('aiInsightsCard');
-    const ts = document.getElementById('aiInsightsTs');
-    const body = document.getElementById('aiInsightsBody');
-    if (!card) return;
-
-    card.classList.add('ai-insights-card');
-
-    if (!data || (!data.top_price_risers && data.top_price_risers !== 0
-        && !data.suggestions && data.anomaly_count === undefined)) {
-        card.style.display = 'none';
-        return;
-    }
-
-    if (ts) ts.textContent = data.updated_at || '';
-
-    let html = '';
-
-    if (data.suggestions && data.suggestions.length > 0) {
-        html += '<div style="font-weight:600; margin-bottom:6px; color:var(--text-main);">本周建议</div>';
-        data.suggestions.forEach(s => {
-            html += '<div style="padding:4px 0; color:var(--text-main); font-size:0.88rem;">• ' + w2Escape(String(s)) + '</div>';
-        });
-    }
-
-    if (data.top_price_risers && data.top_price_risers.length > 0) {
-        if (html) html += '<div style="margin-top:8px; border-top:1px solid rgba(255,255,255,0.08); padding-top:6px;"></div>';
-        html += '<div style="font-weight:600; margin-bottom:4px; color:var(--text-main);">价格涨幅 Top</div>';
-        data.top_price_risers.forEach(r => {
-            const supplier = r.supplier || r.vendor || '-';
-            const item = r.item || r.name || '-';
-            const pct = r.pct != null ? r.pct
-                    : r.change_pct != null ? r.change_pct : '-';
-            const earliest = r.earliest_price != null ? '$' + Number(r.earliest_price).toFixed(2) : '-';
-            const latest = r.latest_price != null ? '$' + Number(r.latest_price).toFixed(2) : '-';
-            html += '<div class="ai-insights-row">' +
-                '<span><strong>' + w2Escape(item) + '</strong> · <span style="font-size:0.78rem;color:var(--text-muted);">' + w2Escape(supplier) + '</span></span>' +
-                '<span class="ai-insights-price">' + w2Escape(earliest + ' → ' + latest + '  +' + pct + '%') + '</span>' +
-                '</div>';
-        });
-    }
-
-    if (data.anomaly_count != null) {
-        html += '<div style="margin-top:8px; padding-top:6px; border-top:1px solid rgba(255,255,255,0.08); font-size:0.85rem; color:var(--text-muted);">' +
-            '待复核异常 ' + Number(data.anomaly_count) + ' 处' + '</div>';
-    }
-
-    if (!html) {
-        html = '<div style="color:var(--text-muted);">暂无 AI 发现，建议持续观察本周进货数据</div>';
-    }
-
-    if (body) body.innerHTML = html;
-    card.style.display = 'block';
-}
-
 

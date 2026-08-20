@@ -402,10 +402,10 @@
                     <div id="aiLeanBanner" class="ai-lean-banner hide">
                         <div class="ai-lean-banner-header" onclick="toggleAiLeanDetails()">
                             <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="ai-lean-badge">💡 AI 发现</span>
+                                <span class="ai-lean-badge">AI 发现</span>
                                 <span id="aiLeanSummaryText" style="font-weight:500; font-size:0.88rem;">检测到价格异常上涨，正在量化成本影响…</span>
                             </div>
-                            <button type="button" id="btnToggleAiLean" class="btn-lean-toggle">展开查看 ▼</button>
+                            <button type="button" id="btnToggleAiLean" class="btn-lean-toggle">展开查看</button>
                         </div>
                         <div id="aiLeanCardsContainer" class="ai-lean-cards hide">
                             <!-- 动态渲染紧凑卡片 -->
@@ -499,14 +499,6 @@
 
                 <!-- TAB 3: 供应商与收据归档 -->
                 <section id="tab-archive" class="tab-content">
-                    <!-- AI 发现卡片（阶段 1：AI 可见性与信任） -->
-                    <div id="aiInsightsCard" class="card" style="margin-bottom:16px; display:none;">
-                        <div class="card-title">
-                            <span>AI 发现</span>
-                            <span style="font-size:0.78rem; color:var(--text-muted);" id="aiInsightsTs"></span>
-                        </div>
-                        <div id="aiInsightsBody" style="font-size:0.9rem;"></div>
-                    </div>
 
                     <!-- ① 待办条（对齐「实时库存与价格」指标卡面板，可点击筛选，09 方案 M7） -->
                     <div id="todoBar" class="metrics-grid" style="margin-bottom:16px;">
