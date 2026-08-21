@@ -765,3 +765,96 @@ def get_grey_test_samples(request: Request):
         "avg_match_rate": avg_match_rate,
         "samples": samples
     }
+
+
+@router.get("/api/admin/golden-samples")
+def golden_samples(request: Request):
+    """黄金样本看板：57 张构成与当前库内覆盖率（按形态/币种/灰测维度）。"""
+    require_admin(request)
+    rows = db.list_receipt_rows()
+    # 黄金形态目标分布
+    target = {"printed_delivery_note": 15, "ncr_handwritten": 22, "thermal": 6, "weigh_slip": 4, "correction_note": 6, "monthly_statement": 4}
+    # 实际覆盖按 doc_form 统计
+    from collections import Counter
+    counter = Counter((r.doc_form or "unknown") for r in rows)
+    total = len(rows)
+    coverage = {k: {"target": v, "actual": counter.get(k, 0), "rate": round(counter.get(k, 0) / v * 100, 1) if v else 0} for k, v in target.items()}
+    # 币种覆盖
+    cur_counter = Counter((getattr(r, "currency", None) or "HKD") for r in rows)
+    # 逐行精简，用于表格（最近 57 行倒序）
+    items = []
+    for r in rows[:57]:
+        items.append({
+            "id": r.id,
+            "supplier_name": r.supplier_name or "",
+            "receipt_date": r.receipt_date or "",
+            "doc_form": r.doc_form or "",
+            "total_amount": r.total_amount or 0.0,
+            "status": r.status or "",
+            "currency": getattr(r, "currency", None) or "HKD",
+            "use_grey": getattr(r, "use_grey", 0) or 0,
+        })
+    return {"status": "success", "total": total, "target_total": 57, "coverage": coverage, "currency_breakdown": dict(cur_counter), "items": items}
+
+
+@router.post("/api/admin/golden-samples/import")
+def import_golden_samples(request: Request, limit: int = 10):
+    """一键导入黄金样本（调用 scripts/import_golden 逻辑，默认 10 张）。"""
+    require_admin(request)
+    limit = max(1, min(57, int(limit or 10)))
+    import subprocess
+    import sys as _sys
+    import os
+    script = os.path.join(os.path.dirname(__file__), "../scripts/import_golden.py")
+    try:
+        res = subprocess.run([_sys.executable, script, "--limit", str(limit)],
+                             capture_output=True, text=True, timeout=120,
+                             cwd=os.path.join(os.path.dirname(__file__), ".."))
+        out = (res.stdout or "") + ("\n" + res.stderr if res.stderr else "")
+        ok = res.returncode == 0
+        return {"status": "success" if ok else "error", "msg": out.strip()[:2000], "limit": limit}
+    except Exception as e:
+        return {"status": "error", "msg": str(e), "limit": limit}
+
+
+@router.get("/api/admin/experiments")
+def list_experiments_admin(request: Request):
+    require_admin(request)
+    return {"status": "success", "data": db.list_experiments()}
+
+
+@router.get("/api/admin/experiments/{exp_id}")
+def get_experiment_admin(exp_id: int, request: Request):
+    require_admin(request)
+    row = db.get_experiment(exp_id)
+    if not row:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
+    metrics = db.get_experiment_metrics(exp_id)
+    detail = db.experiment_detail(exp_id)
+    return {"status": "success", "experiment": row, "metrics": metrics, "detail": detail}
+
+
+@router.get("/api/admin/experiments/{exp_id}/pvalue")
+def experiment_pvalue_card(exp_id: int, request: Request):
+    """E-P1-3 p-value 卡片：显式返回显著性检验结果与样本阈值提示。"""
+    require_admin(request)
+    if db.get_experiment(exp_id) is None:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
+    metrics = db.get_experiment_metrics(exp_id)
+    tests = metrics.get("tests") or {}
+    # 统一卡片结构，供前端直接渲染
+    cards = []
+    for metric in ("accuracy", "hallucination_rate", "edit_rate"):
+        t = tests.get(metric)
+        if not t:
+            cards.append({"metric": metric, "p_value": None, "z": None, "effect_size_pp": None, "significant": None, "note": "样本不足或指标为空，无法计算"})
+            continue
+        p = t.get("p_value")
+        sig = p is not None and float(p) < 0.05
+        note = "显著 (p < 0.05)" if sig else "不显著 (p >= 0.05)"
+        if metrics.get("low_confidence"):
+            note += "｜样本不足，置信度低"
+        cards.append({"metric": metric, "p_value": p, "z": t.get("z"), "effect_size_pp": t.get("effect_size_pp"), "significant": sig, "note": note})
+    return {"status": "success", "experiment_id": exp_id, "low_confidence": metrics.get("low_confidence"), "cards": cards, "control": metrics.get("control"), "treatment": metrics.get("treatment")}

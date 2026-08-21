@@ -405,6 +405,10 @@ function createAuthFetchWrapper(originalFetch, opts) {
                 && isApiUrl(url) && AUTH_EXEMPT_FRONTEND.indexOf(url) === -1) {
                 try { onUnauthorized(); } catch (e) { /* 面板异常不影响响应传递 */ }
             }
+            if (res && res.status === 403 && isApiUrl(url)) {
+                // E-P1-4 克隆响应读取 detail 以人话 toast，不消费原响应
+                try { res.clone().json().then(b => { toastHttpError(403, b); }).catch(()=>{}); } catch(e) {}
+            }
             return res;
         });
     };
@@ -1142,6 +1146,12 @@ function initDeptAdminDetails() {
     loadDepartmentsAll();        // Wave 2（D44）：部门下拉/管理/报表共用数据源
     loadFinancePanel();         // Wave 1：首屏即拉付款域，供导航红点/顶部横幅提醒
     initDeptAdminDetails();
+    // F-P1-3 多币种：币种切换联动金额符号渲染
+    ['inpCurrency', 'arcCurrency'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.addEventListener('change', renderCurrencySymbol);
+    });
+    renderCurrencySymbol();
 
 });
 
@@ -1177,6 +1187,10 @@ function initTabs() {
                 loadDepartmentAdmin();   // Wave 2 部门管理
             }
             if (targetId === 'tab-engine') loadAdminEngineConfig();
+            if (targetId === 'tab-golden') {
+                loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
+                loadPValueCards();       // E-P1-3 p-value 显著性卡片
+            }
         });
     });
 }
@@ -1563,7 +1577,39 @@ function collectQualityWarnings(ret) {
     return [];
 }
 
+// F-P1-4 弱光/模糊重拍引导：按警告类型给出可执行的重拍建议（纯文本，无 Emoji）
+const RESHOOT_GUIDE = {
+    dark: [
+        '光线不足：请在明亮环境下拍摄，单据平放避免阴影遮挡',
+        '打开手机闪光灯或移至灯光正下方后重新拍摄',
+    ],
+    blur: [
+        '画面模糊：请持稳手机，对焦清楚后再拍',
+        '尽量让单据充满取景框，避免远距离拍摄',
+    ],
+    small_or_corrupted: [
+        '图片损坏或体积过小：请用相机重新拍摄原图，勿发送压缩图',
+    ],
+};
+
+// 纯函数：警告文本 → 重拍引导条目（供 node vm 逻辑测断言）
+function buildReshootGuideItems(warnings) {
+    const list = (Array.isArray(warnings) ? warnings : []).map(w => String(w || '').toLowerCase());
+    const items = [];
+    if (list.some(w => w.includes('过暗') || w.includes('dark') || w.includes('low_light') || w.includes('弱光'))) {
+        items.push(...RESHOOT_GUIDE.dark);
+    }
+    if (list.some(w => w.includes('模糊') || w.includes('blur'))) {
+        items.push(...RESHOOT_GUIDE.blur);
+    }
+    if (list.some(w => w.includes('损坏') || w.includes('corrupt') || w.includes('empty') || w.includes('过小'))) {
+        items.push(...RESHOOT_GUIDE.small_or_corrupted);
+    }
+    return Array.from(new Set(items));
+}
+
 // Q29：质量预检警告渲染（多条可见；一律 textContent，无插值注入面）
+// F-P1-4：命中弱光/模糊时附加重拍引导
 function showQualityWarnings(warnings) {
     const banner = document.getElementById('qualityWarningsBanner');
     if (!banner) return;
@@ -1584,6 +1630,24 @@ function showQualityWarnings(warnings) {
         row.textContent = '• ' + String(w);
         banner.appendChild(row);
     });
+    // F-P1-4 弱光/模糊 → 重拍引导块
+    const guideItems = buildReshootGuideItems(list);
+    if (guideItems.length > 0) {
+        const guideBox = document.createElement('div');
+        guideBox.className = 'reshoot-guide-box';
+        guideBox.style.cssText = 'margin-top:8px; padding:8px 10px; border:1px solid #f0c36d; background:#fff8e1; border-radius:6px;';
+        const guideTitle = document.createElement('div');
+        guideTitle.textContent = '建议重拍以提升识别准确率';
+        guideTitle.style.cssText = 'font-weight:600; color:#8a6d3b; margin-bottom:4px; font-size:0.82rem;';
+        guideBox.appendChild(guideTitle);
+        guideItems.forEach(g => {
+            const gRow = document.createElement('div');
+            gRow.textContent = '- ' + g;
+            gRow.style.cssText = 'color:#6c5b2e; font-size:0.78rem; line-height:1.5;';
+            guideBox.appendChild(gRow);
+        });
+        banner.appendChild(guideBox);
+    }
     banner.classList.remove('hide');
 }
 
@@ -3080,6 +3144,25 @@ function showToast(message, type = 'info', durationOrOpts) {
     return toast;
 }
 
+// E-P1-4 403 人话统一：后端返回含所需角色指引的 detail，前端统一按此文案提示
+function humanizeForbidden(detail, status) {
+    const raw = String(detail || '').trim();
+    // 已是后端人话文案（含角色指引）→ 原样透传
+    if (raw.includes('权限不足')) return raw;
+    if (status != null && status !== 403) return null;
+    if (raw.includes('仅 admin')) {
+        return '权限不足：此操作仅限超管（admin）执行，请切换为 admin 角色。';
+    }
+    if (raw) return '权限不足：' + raw + '。请切换角色或联系管理员。';
+    return '权限不足：当前角色无权执行此操作，请切换角色或联系管理员。';
+}
+function toastHttpError(status, body) {
+    const msg = (body && (body.detail || body.msg)) || '';
+    const human = humanizeForbidden(msg, status);
+    if (human) { showToast(human, 'error'); return true; }
+    return false;
+}
+
 // §7.1 语义糖（可选、向后兼容）：toast.success('已保存') / toast.error(msg, TOAST_DURATION.long)
 const toast = {
     info: (message, durationOrOpts) => showToast(message, 'info', durationOrOpts),
@@ -3159,21 +3242,24 @@ function appendTableRow(item = {}) {
         }
     }
 
+    const isVoidMain = !!(item.is_void);
+    if (isVoidMain) { tr.style.opacity = '0.55'; }
     // P0-2：品名/单位来自 OCR 输出可被注入污染——属性插值一律 w2Escape；
     // 数值列强制 Number() 防属性逃逸
     tr.innerHTML = `
         <td>
             <div style="display:flex; align-items:center; gap:4px;">
-                <input type="text" class="inp-name" value="${w2Escape(finalRawName)}" placeholder="品名" style="flex:1;">
-                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位">拆分</button>
+                <input type="text" class="inp-name" value="${w2Escape(finalRawName)}" placeholder="品名" style="flex:1; ${isVoidMain ? 'text-decoration:line-through; color:#6c757d;' : ''}" ${isVoidMain ? 'disabled' : ''}>
+                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位" ${isVoidMain ? 'disabled' : ''}>拆分</button>
             </div>
             ${rowWarnBadge}
+            ${isVoidMain ? `<span class="badge badge-secondary">作废</span>` : ''}
             <div class="sku-combobox-wrap">
                 <div style="display:flex; align-items:center; gap:4px;">
                     <input type="text" class="inp-sku form-control" value="${w2Escape(skuName)}"
                         placeholder="指定SKU" style="flex:1; min-width:0; padding:5px; font-size:0.82rem;"
                         onfocus="this.select(); openSkuMenu(this)" onclick="openSkuMenu(this)"
-                        oninput="onSkuMenuInput(this)" onblur="closeSkuMenuDelay(this)">
+                        oninput="onSkuMenuInput(this)" onblur="closeSkuMenuDelay(this)" ${isVoidMain ? 'disabled' : ''}>
                     <span class="badge ${skuId ? 'badge-success' : 'badge-warning'} sku-badge" style="flex:none;">
                         ${skuId ? '已匹配SKU' : '未关联'}
                     </span>
@@ -3182,27 +3268,29 @@ function appendTableRow(item = {}) {
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
-        <td><input type="number" step="0.01" class="inp-qty" value="${finalQty}" oninput="recalcRow(this)"></td>
+        <td><input type="number" step="0.01" class="inp-qty" value="${finalQty}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}></td>
         <td>
             <div class="unit-combobox-wrap">
-                <input type="text" class="inp-unit form-control" value="${w2Escape(finalUnit)}" placeholder="单位" style="padding:6px; font-size:0.85rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)">
+                <input type="text" class="inp-unit form-control" value="${w2Escape(finalUnit)}" placeholder="单位" style="padding:6px; font-size:0.85rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoidMain ? 'disabled' : ''}>
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
         <td>
-            <input type="number" step="0.01" class="inp-price" value="${finalPrice}" oninput="recalcRow(this)">
+            <input type="number" step="0.01" class="inp-price" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
             ${isAnomaly ? `<span class="badge badge-danger">${(item.price_anomaly_direction === 'down') ? '偏低' : '偏高'}${Number(item.price_diff_percent || 10).toFixed(1)}%</span>` : ''}
         </td>
-        <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="recalcTotalSum()"></td>
+        <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}></td>
         <td>
             <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;">
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
-        <td style="text-align:center;">
+        <td style="text-align:center; white-space:nowrap;">
+            <label style="font-size:0.7rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoidMain ? 'checked' : ''} onchange="toggleMainVoid(this)">作废</label>
             <button class="btn btn-danger" style="padding:4px 8px; font-size:0.8rem;" onclick="removeRow(this)"> 删除</button>
         </td>
     `;
+    tr.dataset.isVoid = isVoidMain ? '1' : '0';
     tbody.appendChild(tr);
 
     // D19：把预载 OCR 候选挂到行 SKU 输入框（下拉渲染时读取）
@@ -3244,10 +3332,70 @@ function recalcTotalSum() {
     const rows = tbody.querySelectorAll('tr');
     let sum = 0.0;
     rows.forEach(tr => {
+        // D-P1-4：划线作废行不计入总额（与后端算术门禁口径一致）
+        if (tr.dataset && tr.dataset.isVoid === '1') return;
         const amt = parseFloat(tr.querySelector('.inp-amount').value) || 0;
         sum += amt;
     });
     document.getElementById('inpTotal').value = sum.toFixed(2);
+    renderCurrencySymbol();
+}
+
+// D-P1-4：Tab1 明细行作废勾选联动（置灰 + 总额重算）
+function toggleMainVoid(cb) {
+    const tr = cb.closest('tr');
+    if (!tr) return;
+    tr.dataset.isVoid = cb.checked ? '1' : '0';
+    tr.style.opacity = cb.checked ? '0.55' : '';
+    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
+        inp.style.textDecoration = cb.checked ? 'line-through' : '';
+        if (!cb.checked) inp.style.color = '';
+        else inp.style.color = '#6c757d';
+    });
+    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount, .inp-sku').forEach(inp => {
+        inp.disabled = cb.checked;
+        if (inp.classList.contains('inp-qty')) {
+            inp.style.textDecoration = cb.checked ? 'line-through' : '';
+        }
+    });
+    const voidBadge = tr.querySelector('.void-badge-main');
+    if (cb.checked && !voidBadge) {
+        const span = document.createElement('span');
+        span.className = 'badge badge-secondary void-badge-main';
+        span.textContent = '作废';
+        span.title = '划线作废，不计入总额';
+        tr.querySelector('td').appendChild(span);
+    } else if (!cb.checked && voidBadge) {
+        voidBadge.remove();
+    }
+    recalcTotalSum();
+}
+
+// F-P1-3 币种符号渲染：按当前选择币种刷新金额前缀符号
+const CURRENCY_SYMBOLS = {
+    HKD: 'HK$', CNY: '¥', USD: '$', EUR: '€', JPY: 'JP¥', GBP: '£', MOP: 'MOP$', SGD: 'S$'
+};
+function currentCurrencyCode() {
+    const sel = document.getElementById('inpCurrency') || document.getElementById('arcCurrency');
+    return (sel && sel.value ? sel.value : 'HKD').toUpperCase();
+}
+function currencySymbol(code) {
+    return CURRENCY_SYMBOLS[(code || 'HKD').toUpperCase()] || (code || 'HKD') + ' ';
+}
+function renderCurrencySymbol() {
+    const code = currentCurrencyCode();
+    const sym = currencySymbol(code);
+    // Tab1 总额 label 前缀 + 归档弹窗总额 label 前缀
+    ['inpTotal', 'arcTotal'].forEach(id => {
+        const inp = document.getElementById(id);
+        if (!inp) return;
+        const label = inp.closest('.form-group')?.querySelector('label');
+        if (label) {
+            const base = id === 'inpTotal' ? '整单总金额' : '整单总金额';
+            if (!label.dataset.base) label.dataset.base = label.textContent.trim() || base;
+            label.textContent = label.dataset.base + '（' + sym + '）';
+        }
+    });
 }
 
 // -------------------------------------------------------------
@@ -3275,7 +3423,9 @@ function collectReviewFormData() {
             unit_price: parseFloat(tr.querySelector('.inp-price').value) || 0.00,
             amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
             // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
-            cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null
+            cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null,
+            // D-P1-4：划线作废状态随行保存（后端算术门禁剔除 is_void 行）
+            is_void: !!(tr.dataset && tr.dataset.isVoid === '1')
         };
         // D19：行内显式指定 SKU → 携带 sku_id；未指定（保持未关联）→ 缺省不传
         const skuIdInput = tr.querySelector('.inp-sku-id');
@@ -3289,6 +3439,8 @@ function collectReviewFormData() {
     // Wave 2（D44）：单据级部门（一键填充目标）；未打部门 → null 可空保存
     const deptSel = document.getElementById('inpDepartmentId');
     const departmentId = (deptSel && deptSel.value) ? Number(deptSel.value) : null;
+    // F-P1-3 多币种
+    const curSel = document.getElementById('inpCurrency');
 
     const data = {
         supplier_name: supplierName || '通用供应商',
@@ -3297,7 +3449,8 @@ function collectReviewFormData() {
         total_amount: totalAmt,
         items: items,
         settlement_type: settlementSel ? (settlementSel.value || null) : null,
-        department_id: departmentId
+        department_id: departmentId,
+        currency: (curSel && curSel.value ? curSel.value : (src.currency || 'HKD'))
     };
     // AI 判定的只读分类字段原样带回（可能暂时缺失，容错）
     if (src.payment_mark != null) data.payment_mark = src.payment_mark;
@@ -3326,7 +3479,9 @@ function buildSavePayloadFromData(data, receiptId) {
                 amount: parseFloat(it.amount) || 0.00,
                 // Wave 2（契约⑦）：明细行成本中心——行内实际显示值；未打部门 → null
                 cost_center_id: (it.cost_center_id != null && String(it.cost_center_id).trim() !== ''
-                    && Number(it.cost_center_id) > 0) ? Number(it.cost_center_id) : null
+                    && Number(it.cost_center_id) > 0) ? Number(it.cost_center_id) : null,
+                // D-P1-4：划线作废透传（后端算术门禁剔除 is_void 行）
+                is_void: !!(it.is_void)
             };
             // D19：行内显式指定的 sku_id 透传（未指定不携带，后端走安全精确匹配）
             if (it.sku_id != null && String(it.sku_id).trim() !== ''
@@ -3349,6 +3504,8 @@ function buildSavePayloadFromData(data, receiptId) {
     if (d.payment_mark != null) payload.payment_mark = d.payment_mark;
     if (d.doc_form != null) payload.doc_form = d.doc_form;
     if (d.layout_type != null) payload.layout_type = d.layout_type;
+    // F-P1-3 多币种透传（后端白名单校验，非法回退 HKD）
+    payload.currency = String(d.currency || 'HKD').toUpperCase();
     // D17/W6 Q1：更新已有单据必须携带 version（缺失 → 后端 400 VERSION_REQUIRED）
     // 新建手工单（receiptId 为空）不要求 version
     if (receiptId != null && receiptId !== '') {
@@ -3530,6 +3687,8 @@ function submitSaveEdited() {
             if (currentReceiptId) refreshReviewFormFromServer(currentReceiptId);
             return;
         }
+        // E-P1-4：403 人话统一（同步表单提交路径，与 fetch 包装双保险，去重由 toast key 保证）
+        if (toastHttpError(httpStatus, ret)) return;
         if (!ret || ret.status !== 'success') {
             showToast('保存失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
             return;
@@ -4744,6 +4903,8 @@ function approveReceipt(receiptId, knownVersion) {
             loadReceiptDetail(receiptId);
             return false;
         }
+        // E-P1-4：403 人话统一（审批为 owner 专属，staff 触发时给出角色指引）
+        if (toastHttpError(httpStatus, ret)) return false;
         if (!ret || ret.status !== 'success') {
             showToast('审核失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
             return false;
@@ -4858,8 +5019,16 @@ function markArcDirty() {
     hasUnsavedArcChanges = true;
 }
 
+function isRagDataOnlyEnabled() {
+    const cb = document.getElementById('arcDataOnlyToggle');
+    return !!(cb && cb.checked);
+}
+function toggleRagDataOnly() {
+    if (currentArchiveReceiptId) loadReceiptDetail(currentArchiveReceiptId);
+}
 function loadReceiptDetail(receiptId) {
-    fetch(`/api/receipt/${receiptId}`)
+    const qs = isRagDataOnlyEnabled() ? '?data_only=true' : '';
+    fetch(`/api/receipt/${receiptId}${qs}`)
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') {
@@ -4946,6 +5115,42 @@ function renderArchiveForm(data) {
     // M3/D4: 初始化结算方式与付款标记（字段可能缺失，容错）
     applySettlementToForm('arc', data);
 
+    // F-P1-3 多币种
+    const arcCur = document.getElementById('arcCurrency');
+    if (arcCur) arcCur.value = (data.currency || 'HKD').toUpperCase();
+    const inpCur = document.getElementById('inpCurrency');
+    if (inpCur && data.currency) inpCur.value = (data.currency || 'HKD').toUpperCase();
+    renderCurrencySymbol();
+
+    // E-P1-1 灰测 Tag：标题旁徽标
+    const titleEl = document.getElementById('archiveModalTitle');
+    if (titleEl) {
+        // 移除旧徽标
+        const old = titleEl.querySelector('.badge-grey');
+        if (old) old.remove();
+        if (data.use_grey) {
+            const badge = document.createElement('span');
+            badge.className = 'badge-grey';
+            badge.style.marginLeft = '8px';
+            badge.textContent = '灰测组';
+            badge.title = '灰测组处理';
+            titleEl.appendChild(badge);
+        }
+    }
+
+    // D-P1-3 RAG data_only 调试卡可见性
+    const ragCard = document.getElementById('arcRagContextCard');
+    const ragPre = document.getElementById('arcRagContextPre');
+    if (ragCard && ragPre) {
+        if (isRagDataOnlyEnabled() && (data.rag_context != null)) {
+            const ctx = String(data.rag_context || '').trim();
+            ragPre.textContent = ctx ? ctx : '（空）无 RAG 上下文（冷启动或未检索）';
+            ragCard.classList.remove('hide');
+        } else {
+            ragCard.classList.add('hide');
+        }
+    }
+
     // Wave 2（D44）：归档单据级部门下拉（只列 active；历史停用部门选择仍保留显示）
     populateDeptSelect(document.getElementById('arcDepartmentId'), data.department_id);
 
@@ -4999,30 +5204,36 @@ function appendArcTableRow(item = {}) {
         updateGlobalDatalistUnits();
     }
 
+    // D-P1-4 划线作废：is_void 行置灰 + 删除线 + 作废徽标 + 联动保存
+    const isVoid = !!(item.is_void);
+    if (isVoid) tr.style.opacity = '0.55';
     // P0-2：归档弹窗明细行与 Tab1 同口径——品名/单位属性插值过 w2Escape
     tr.innerHTML = `
         <td>
-            <input type="text" class="inp-name" value="${w2Escape(rawName)}" placeholder="品名" oninput="markArcDirty()">
+            <input type="text" class="inp-name" value="${w2Escape(rawName)}" placeholder="品名" oninput="markArcDirty()" style="${isVoid ? 'text-decoration:line-through; color:#6c757d;' : ''}">
             ${skuId ? `<span class="badge badge-success">已关联</span>` : ''}
+            ${isVoid ? `<span class="badge badge-secondary" title="划线作废，不计入总额">作废</span>` : ''}
         </td>
-        <td><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)"></td>
+        <td><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}></td>
         <td>
             <div class="unit-combobox-wrap">
-                <input type="text" class="inp-unit form-control" value="${w2Escape(unit)}" placeholder="单位" style="padding:4px; font-size:0.8rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="markArcDirty(); renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)">
+                <input type="text" class="inp-unit form-control" value="${w2Escape(unit)}" placeholder="单位" style="padding:4px; font-size:0.8rem; ${isVoid ? 'text-decoration:line-through; color:#6c757d;' : ''}" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="markArcDirty(); renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoid ? 'disabled' : ''}>
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
-        <td><input type="number" step="0.01" class="inp-price" value="${price}" oninput="markArcDirty(); recalcArcRow(this)"></td>
-        <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="markArcDirty(); recalcArcTotalSum()"></td>
+        <td><input type="number" step="0.01" class="inp-price" value="${price}" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled' : ''}></td>
+        <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="markArcDirty(); recalcArcTotalSum()" ${isVoid ? 'disabled' : ''}></td>
         <td>
             <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:4px; font-size:0.8rem;">
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
-        <td style="text-align:center;">
-            <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)"></button>
+        <td style="text-align:center; white-space:nowrap;">
+            <label style="font-size:0.72rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoid ? 'checked' : ''} onchange="toggleArcVoid(this)">作废</label>
+            <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
         </td>
     `;
+    tr.dataset.isVoid = isVoid ? '1' : '0';
     tbody.appendChild(tr);
 
     // Wave 2（D44）：归档行内任何手动改动（含部门下拉）→ data-manual + 未保存脏标记；
@@ -5061,10 +5272,44 @@ function recalcArcTotalSum() {
     const rows = tbody.querySelectorAll('tr');
     let sum = 0.0;
     rows.forEach(tr => {
+        // D-P1-4：划线作废行不计入总额（与后端算术门禁口径一致）
+        if (tr.dataset && tr.dataset.isVoid === '1') return;
         const amt = parseFloat(tr.querySelector('.inp-amount').value) || 0;
         sum += amt;
     });
     document.getElementById('arcTotal').value = sum.toFixed(2);
+}
+
+// D-P1-4：归档明细行作废勾选联动（置灰 + 总额重算）
+function toggleArcVoid(cb) {
+    const tr = cb.closest('tr');
+    if (!tr) return;
+    tr.dataset.isVoid = cb.checked ? '1' : '0';
+    tr.style.opacity = cb.checked ? '0.55' : '';
+    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
+        inp.style.textDecoration = cb.checked ? 'line-through' : '';
+        if (!cb.checked) inp.style.color = '';
+        else inp.style.color = '#6c757d';
+    });
+    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount').forEach(inp => {
+        inp.disabled = cb.checked;
+        if (inp.classList.contains('inp-qty')) {
+            inp.style.textDecoration = cb.checked ? 'line-through' : '';
+        }
+    });
+    const voidBadge = tr.querySelector('.void-badge-arc');
+    if (cb.checked && !voidBadge) {
+        const span = document.createElement('span');
+        span.className = 'badge badge-secondary void-badge-arc';
+        span.textContent = '作废';
+        span.title = '划线作废，不计入总额';
+        const nameTd = tr.querySelector('td');
+        if (nameTd) nameTd.appendChild(span);
+    } else if (!cb.checked && voidBadge) {
+        voidBadge.remove();
+    }
+    markArcDirty();
+    recalcArcTotalSum();
 }
 
 // Q32: 归档弹窗保存互斥旗标——保存中禁止再次触发（防双击重复提交）
@@ -5095,7 +5340,9 @@ function submitSaveArchiveEdited() {
                 unit_price: parseFloat(tr.querySelector('.inp-price').value) || 0.00,
                 amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
                 // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
-                cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null
+                cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null,
+                // D-P1-4：划线作废状态随行保存
+                is_void: !!(tr.dataset && tr.dataset.isVoid === '1')
             });
         }
     });
@@ -5124,6 +5371,8 @@ function submitSaveArchiveEdited() {
     // Wave 2（D44）：归档单据级部门（一键填充目标）；未打部门 → null 可空保存
     const arcDeptSel = document.getElementById('arcDepartmentId');
     const departmentId = (arcDeptSel && arcDeptSel.value) ? Number(arcDeptSel.value) : null;
+    // F-P1-3 多币种
+    const arcCurSel = document.getElementById('arcCurrency');
 
     const data = {
         supplier_name: supplierName || '通用供应商',
@@ -5132,7 +5381,8 @@ function submitSaveArchiveEdited() {
         total_amount: totalAmt,
         items: items,
         settlement_type: settlementType,
-        department_id: departmentId
+        department_id: departmentId,
+        currency: (arcCurSel && arcCurSel.value ? arcCurSel.value : (src.currency || 'HKD'))
     };
     // AI 判定的只读分类字段原样带回（可能暂时缺失，容错）
     if (src.payment_mark != null) data.payment_mark = src.payment_mark;
@@ -5165,6 +5415,8 @@ function submitSaveArchiveEdited() {
             if (currentArchiveReceiptId) loadReceiptDetail(currentArchiveReceiptId);
             return;
         }
+        // E-P1-4：403 人话统一（同步表单提交路径，与 fetch 包装双保险，去重由 toast key 保证）
+        if (toastHttpError(httpStatus, ret)) return;
         if (!ret || ret.status !== 'success') {
             showToast('保存失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
             return;
@@ -8813,7 +9065,9 @@ function saveAdminEngineConfig() {
 
                     showToast('配置已成功保存', 'success');
                 } else {
-                    showToast((ret && ret.msg) || '保存失败', 'error');
+                    // E-P1-4：403 人话统一（FastAPI HTTPException 返回 detail 字段）
+                    const errMsg = (ret && (ret.msg || ret.detail)) || '保存失败';
+                    showToast(humanizeForbidden(errMsg) || errMsg, 'error');
                 }
             })
             .catch(err => {
@@ -8885,7 +9139,9 @@ function saveAdminEngineConfig() {
         .then(resObj => {
             if (timer) clearInterval(timer);
             if (resObj.status !== 200 || resObj.data.status !== 'success') {
-                const errMsg = (resObj.data && resObj.data.msg) || '连接测试未通过';
+                let errMsg = (resObj.data && (resObj.data.msg || resObj.data.detail)) || '连接测试未通过';
+                // E-P1-4：403 人话统一（admin 专属接口被非 admin 触发时给出角色指引）
+                errMsg = humanizeForbidden(errMsg, resObj.status) || errMsg;
                 if (saveBtn) {
                     saveBtn.disabled = false;
                     saveBtn.textContent = origText;
@@ -9695,4 +9951,291 @@ function viewGreySampleDetail(idx) {
 function closeGreySampleModal() {
     const modal = document.getElementById('adminGreySampleModal');
     if (modal) modal.classList.add('hide');
+}
+
+// =====================================================================
+// E-P1-2 黄金样本 57 看板（Admin）
+// =====================================================================
+const GOLDEN_DOC_FORM_LABELS = {
+    printed_delivery_note: '印刷送货单',
+    ncr_handwritten: '手写街市单',
+    thermal: '热敏机打',
+    weigh_slip: '磅单',
+    correction_note: '更正单',
+    credit_note: 'Credit Note',
+    monthly_statement: '月结单',
+};
+
+function loadGoldenBoard() {
+    const body = document.getElementById('goldenBoardBody');
+    const summary = document.getElementById('goldenBoardSummary');
+    if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">加载中</td></tr>';
+    fetch('/api/admin/golden-samples')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (toastHttpError(httpStatus, ret)) return;
+                if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:18px;">加载失败：' + w2Escape((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)) + '</td></tr>';
+                return;
+            }
+            const cov = ret.coverage || {};
+            const covParts = Object.keys(cov).map(k => {
+                const c = cov[k] || {};
+                const label = GOLDEN_DOC_FORM_LABELS[k] || k;
+                return label + ' ' + (c.actual || 0) + '/' + (c.target || 0);
+            });
+            if (summary) summary.textContent = '库内单据 ' + (ret.total || 0) + ' / 目标 57 张。形态覆盖：' + covParts.join(' · ');
+            if (!body) return;
+            const items = ret.items || [];
+            if (items.length === 0) {
+                body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">暂无单据，可点击下方按钮导入黄金样本</td></tr>';
+                return;
+            }
+            let html = '';
+            items.forEach(it => {
+                const statusBadge = it.status === 'approved'
+                    ? '<span class="badge badge-success">已入库</span>'
+                    : (it.status === 'edited' ? '<span class="badge badge-warning">待审核</span>'
+                        : '<span class="badge badge-secondary">' + w2Escape(it.status || '-') + '</span>');
+                html += '<tr>'
+                    + '<td>#' + Number(it.id) + '</td>'
+                    + '<td>' + w2Escape(it.supplier_name || '-') + '</td>'
+                    + '<td>' + w2Escape(it.receipt_date || '-') + '</td>'
+                    + '<td>' + w2Escape(GOLDEN_DOC_FORM_LABELS[it.doc_form] || it.doc_form || '-') + '</td>'
+                    + '<td class="col-right">' + currencySymbol(it.currency) + fmtMoney(it.total_amount) + '</td>'
+                    + '<td>' + statusBadge + '</td>'
+                    + '<td><code>' + w2Escape(it.currency || 'HKD') + '</code></td>'
+                    + '<td><button class="btn btn-secondary" style="padding:2px 8px; font-size:0.72rem;" onclick="loadReceiptDetail(' + Number(it.id) + ')">详情</button></td>'
+                    + '</tr>';
+            });
+            body.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('黄金样本看板加载失败', err);
+            if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:18px;">加载失败，请稍后重试</td></tr>';
+        });
+}
+
+function importGoldenSamples(limit) {
+    if (!confirm('确认导入 ' + limit + ' 张黄金样本？将按 manifest 去重，已导入的自动跳过。')) return;
+    showToast('正在导入黄金样本...', 'info');
+    fetch('/api/admin/golden-samples/import?limit=' + Number(limit), { method: 'POST' })
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (toastHttpError(httpStatus, ret)) return;
+                showToast('导入失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)), 'error');
+                return;
+            }
+            showToast('导入完成', 'success', TOAST_DURATION.long);
+            loadGoldenBoard();
+        })
+        .catch(err => {
+            console.error('导入黄金样本失败', err);
+            showToast('导入请求失败，请稍后重试', 'error');
+        });
+}
+
+// =====================================================================
+// E-P1-3 p-value 卡片（A/B 显著性检验）
+// 阈值说明：双侧双比例 z 检验，alpha=0.05；p<0.05 显著；N<30 低置信度
+// =====================================================================
+var PVALUE_ALPHA = 0.05;
+var PVALUE_MIN_SAMPLE = 30;
+
+function loadPValueCards() {
+    const container = document.getElementById('pvalueCardsContainer');
+    const select = document.getElementById('pvalueExperimentSelect');
+    if (!container) return;
+    fetch('/api/admin/experiments')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (toastHttpError(httpStatus, ret)) return;
+                container.innerHTML = '<div style="color:#c00; font-size:0.82rem;">实验列表加载失败</div>';
+                return;
+            }
+            const exps = ret.data || [];
+            if (select) {
+                select.innerHTML = '';
+                if (exps.length === 0) {
+                    select.innerHTML = '<option value="">暂无实验</option>';
+                } else {
+                    exps.forEach(e => {
+                        const opt = document.createElement('option');
+                        opt.value = e.id;
+                        opt.textContent = '#' + e.id + ' ' + (e.name || '') + ' (' + (e.status || '') + ')';
+                        select.appendChild(opt);
+                    });
+                }
+            }
+            if (exps.length === 0) {
+                container.innerHTML = '<div style="color:var(--text-muted); font-size:0.82rem;">暂无 A/B 实验。可在灰测开启后创建实验，样本回流后此处展示显著性卡片。</div>';
+                return;
+            }
+            loadPValueCardsFor(Number(select.value || exps[0].id));
+        })
+        .catch(err => {
+            console.error('实验列表加载失败', err);
+            if (container) container.innerHTML = '<div style="color:#c00; font-size:0.82rem;">实验列表加载失败</div>';
+        });
+}
+
+function loadPValueCardsFor(expId) {
+    const container = document.getElementById('pvalueCardsContainer');
+    if (!container || !expId) return;
+    fetch('/api/admin/experiments/' + Number(expId) + '/pvalue')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (toastHttpError(httpStatus, ret)) return;
+                container.innerHTML = '<div style="color:#c00; font-size:0.82rem;">p-value 加载失败</div>';
+                return;
+            }
+            renderPValueCards(ret.cards || [], !!ret.low_confidence);
+        })
+        .catch(err => {
+            console.error('p-value 加载失败', err);
+            if (container) container.innerHTML = '<div style="color:#c00; font-size:0.82rem;">p-value 加载失败</div>';
+        });
+}
+
+function renderPValueCards(cards, lowConfidence) {
+    const container = document.getElementById('pvalueCardsContainer');
+    if (!container) return;
+    const METRIC_LABELS = { accuracy: '准确率', hallucination_rate: '幻觉率', edit_rate: '人工修改率' };
+    let html = '';
+    cards.forEach(c => {
+        const sig = c.significant;
+        const sigBadge = (sig == null)
+            ? '<span class="badge badge-secondary">无法判定</span>'
+            : (sig
+                ? '<span class="badge badge-success">显著 (p &lt; ' + PVALUE_ALPHA + ')</span>'
+                : '<span class="badge badge-warning">不显著 (p >= ' + PVALUE_ALPHA + ')</span>');
+        const pText = (c.p_value == null) ? '-' : Number(c.p_value).toFixed(4);
+        const zText = (c.z == null) ? '-' : Number(c.z).toFixed(3);
+        const effText = (c.effect_size_pp == null) ? '-' : ((c.effect_size_pp > 0 ? '+' : '') + Number(c.effect_size_pp).toFixed(2) + 'pp');
+        html += '<div style="border:1px solid var(--border-color); border-radius:10px; padding:10px 12px; background:var(--bg-main);">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+            + '<strong style="font-size:0.85rem;">' + w2Escape(METRIC_LABELS[c.metric] || c.metric) + '</strong>' + sigBadge
+            + '</div>'
+            + '<div style="font-size:0.78rem; color:var(--text-muted); line-height:1.7;">'
+            + 'p-value：<strong style="color:var(--text-main);">' + pText + '</strong><br>'
+            + 'z 分数：' + zText + '　效应量：' + effText + '<br>'
+            + '阈值：alpha=' + PVALUE_ALPHA + '（双侧）' + (lowConfidence ? '｜<span style="color:#b8860b;">低置信度（N&lt;' + PVALUE_MIN_SAMPLE + '）</span>' : '')
+            + '</div>'
+            + '</div>';
+    });
+    container.innerHTML = html;
+}
+
+// =====================================================================
+// F-P1-5 成本分摊（归档弹窗）：整单金额按部门比例分摊到明细行部门
+// =====================================================================
+let costShareRows = [];
+
+function openCostShareModal() {
+    const totalAmt = parseFloat((document.getElementById('arcTotal') || {}).value) || 0;
+    if (totalAmt <= 0) {
+        showToast('本单总额为 0，无可分摊成本', 'warning');
+        return;
+    }
+    costShareRows = [];
+    // 默认两行：当前单据级部门 + 未分配
+    const deptSel = document.getElementById('arcDepartmentId');
+    const curDept = deptSel && deptSel.value ? Number(deptSel.value) : '';
+    addCostShareRow(curDept, 70);
+    addCostShareRow('', 30);
+    renderCostShareRows();
+    recalcCostShareSummary();
+    const modal = document.getElementById('costShareModal');
+    if (modal) modal.classList.remove('hide');
+}
+
+function addCostShareRow(deptId, percent) {
+    costShareRows.push({ dept_id: deptId != null ? String(deptId) : '', percent: (percent != null ? Number(percent) : 0) });
+}
+
+function removeCostShareRow(idx) {
+    costShareRows.splice(Number(idx), 1);
+    renderCostShareRows();
+    recalcCostShareSummary();
+}
+
+function equalizeCostShare() {
+    const n = costShareRows.length;
+    if (n === 0) return;
+    const base = Math.floor(100 / n);
+    let remainder = 100 - base * n;
+    costShareRows.forEach(r => {
+        r.percent = base + (remainder > 0 ? 1 : 0);
+        if (remainder > 0) remainder--;
+    });
+    renderCostShareRows();
+    recalcCostShareSummary();
+}
+
+function onCostShareInput(idx, field, value) {
+    const row = costShareRows[Number(idx)];
+    if (!row) return;
+    if (field === 'percent') row.percent = parseFloat(value) || 0;
+    else row.dept_id = String(value || '');
+    recalcCostShareSummary();
+}
+
+function renderCostShareRows() {
+    const body = document.getElementById('costShareBody');
+    if (!body) return;
+    let html = '';
+    costShareRows.forEach((r, i) => {
+        html += '<div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">'
+            + '<select class="form-control" style="flex:1;" onchange="onCostShareInput(' + i + ', \'dept\', this.value)">'
+            + deptSelectOptionsHtml(r.dept_id)
+            + '</select>'
+            + '<input type="number" class="form-control" style="width:90px;" min="0" max="100" step="0.1" value="' + r.percent + '" oninput="onCostShareInput(' + i + ', \'percent\', this.value)">'
+            + '<span style="font-size:0.8rem; color:var(--text-muted);">%</span>'
+            + '<button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="removeCostShareRow(' + i + ')">删除</button>'
+            + '</div>';
+    });
+    body.innerHTML = html || '<div style="color:var(--text-muted); font-size:0.82rem;">暂无分摊行，请点击「增加部门」</div>';
+}
+
+function recalcCostShareSummary() {
+    const totalAmt = parseFloat((document.getElementById('arcTotal') || {}).value) || 0;
+    const sum = costShareRows.reduce((acc, r) => acc + (Number(r.percent) || 0), 0);
+    const el = document.getElementById('costShareSummary');
+    if (!el) return;
+    const parts = costShareRows.map(r => {
+        const amt = totalAmt * (Number(r.percent) || 0) / 100;
+        const sel = document.querySelector('#costShareBody select');
+        void sel;
+        return (r.dept_id ? ('部门#' + r.dept_id) : '未分配') + ' ' + r.percent + '% = ' + currencySymbol(currentCurrencyCode()) + amt.toFixed(2);
+    });
+    el.textContent = '合计 ' + sum.toFixed(1) + '%' + (Math.abs(sum - 100) < 0.05 ? '' : '（警告：比例合计应为 100%）') + (parts.length ? ' ｜ ' + parts.join('，') : '');
+}
+
+function applyCostShare() {
+    const sum = costShareRows.reduce((acc, r) => acc + (Number(r.percent) || 0), 0);
+    if (costShareRows.length === 0) { showToast('请先添加分摊行', 'warning'); return; }
+    if (Math.abs(sum - 100) > 0.05) { showToast('分摊比例合计须为 100%，当前 ' + sum.toFixed(1) + '%', 'error'); return; }
+
+    const tbody = document.getElementById('arcTableBody');
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(tr =>
+        !(tr.dataset && tr.dataset.isVoid === '1'));
+    if (rows.length === 0) { showToast('无有效明细行可分摊', 'warning'); return; }
+
+    // 按比例把行分配到各部门（大百分比优先占满），保证每行都有归属且不重复
+    const assignments = [];
+    costShareRows.forEach(r => {
+        const count = Math.round(rows.length * (Number(r.percent) || 0) / 100);
+        for (let k = 0; k < count; k++) assignments.push(r.dept_id);
+    });
+    while (assignments.length < rows.length) assignments.push(costShareRows[0] ? costShareRows[0].dept_id : '');
+    rows.forEach((tr, i) => {
+        const sel = tr.querySelector('.inp-dept');
+        if (sel) sel.value = assignments[i] || '';
+    });
+    markArcDirty();
+    closeModalById('costShareModal');
+    showToast('已按比例将 ' + rows.length + ' 行明细分摊至各部门，保存后生效', 'success', TOAST_DURATION.long);
 }
