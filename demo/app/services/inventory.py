@@ -13,12 +13,14 @@ def apply_receipt_to_inventory(row):
 
     - 匹配到 SKU → 累加 current_stock + 记录价格历史
     - 未匹配/错配 → 重新匹配或自动建 SKU（完整版走 SKU 匹配/人工确认）
+    - B-P0-1：入库前强制对 name 做 FR-7 核心词归一（剥离 _\\d{10} 流水号），防止 SKU 爆炸
     """
-    from app.services.receipt_utils import _normalize_sku_name
+    from app.services.receipt_utils import _normalize_sku_name, canonical_sku_name
 
     items = db.get_receipt_items(row.id)
     for it in items:
-        name = it["name"]
+        # B-P0-1 归一：确保流水号变体入库时落在同一 SKU
+        name = canonical_sku_name(it["name"])
         sku_id = it.get("sku_id")
 
         # 校验已匹配 SKU 是否合理：SKU 核心词与商品核心词不一致 → 视为错配，重新匹配
@@ -43,7 +45,7 @@ def apply_receipt_to_inventory(row):
                             sku = cand
                             break
                 if sku is None:
-                    sku_id, _ = db.create_sku(name, base_unit=it.get("unit") or "")
+                    sku_id, _ = db.create_sku(canonical_sku_name(name), base_unit=it.get("unit") or "")
                 else:
                     sku_id = sku.id
             else:
@@ -52,7 +54,7 @@ def apply_receipt_to_inventory(row):
         if sku_id and it.get("id"):
             db.update_item_sku(it["id"], sku_id)
         db.apply_stock_log(
-            sku_id=sku_id, name=name,
+            sku_id=sku_id, name=canonical_sku_name(name),
             qty=it.get("quantity", 0), unit=it.get("unit") or "",
             amount=it.get("amount", 0), vendor=row.supplier_name,
             date=row.receipt_date or "", receipt_id=row.id, kind="in",

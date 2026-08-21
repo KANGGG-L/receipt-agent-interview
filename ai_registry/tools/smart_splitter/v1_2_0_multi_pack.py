@@ -43,10 +43,13 @@ class SmartSplitterTool:
         re.compile(r"^\d+/\d+$"),                    # 60/70白虾
     ]
 
-    # 复合包装解耦正则 (Gap 4)
-    # 匹配: "大豆油 5L*2樽", "可口可乐 330ml x 24 罐", "特级生抽 1.8L*6支", "急冻肥牛 2kg*5包", "鲜鸡蛋 30只*3盘"
+    # B-P0-1 专用：严格 10 位数字流水号后缀正则 (FR-7 品名归一)
+    SERIAL_SUFFIX_RE = re.compile(r"_(\d{10})$")
+
+    # 复合包装解耦正则 (Gap 4) — 扩展支持 司馬斤/斤/公斤 等港式单位
+    # 匹配: "大豆油 5L*2樽", "可口可乐 330ml x 24 罐", "特级生抽 1.8L*6支", "急冻肥牛 2kg*5包", "鲜鸡蛋 30只*3盘", "本地新鲜菜心 10司馬斤"
     MULTI_PACK_PATTERN = re.compile(
-        r"^(?P<name>.+?)\s*(?P<spec>\d+(?:\.\d+)?\s*(?:ml|mL|L|l|g|kg|KG|G|斤|两|磅|lbs|oz|豪升|升|克|千克|只|粒|头|片|包|袋|瓶|听))\s*[*×xX]\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<unit>[斤公斤磅箱包罐樽扎打板只盘袋条桶瓶盒支听件]?)$",
+        r"^(?P<name>.+?)\s*(?P<spec>\d+(?:\.\d+)?\s*(?:ml|mL|L|l|g|kg|KG|G|斤|司馬斤|司马斤|两|磅|lbs|oz|豪升|升|克|千克|只|粒|头|片|包|袋|瓶|听))\s*[*×xX]\s*(?P<qty>\d+(?:\.\d+)?)\s*(?P<unit>[斤公斤磅箱包罐樽扎打板只盘袋条桶瓶盒支听件]?)$",
         re.I
     )
 
@@ -102,7 +105,15 @@ class SmartSplitterTool:
                 s = s[:bracket_m.start()] + s[bracket_m.end():]
                 s = s.strip()
 
-        # 5. 提取并剥离下划线流水号 (如 有机菜心_1787140420)
+        # 5. 提取并剥离下划线 + 10 位数字流水号 (B-P0-1 FR-7 核心词归一：有机菜心_1787140420→有机菜心, 本地新鲜菜心_1787140411→本地新鲜菜心)
+        serial_m = self.SERIAL_SUFFIX_RE.search(s)
+        if serial_m:
+            cand_code = serial_m.group(1)
+            if not self.is_protected_token(cand_code):
+                extracted_code = extracted_code or cand_code
+                s = s[:serial_m.start()].strip()
+
+        # 5b. 兼容剥离泛化下划线流水号 (如 菜心苗_20260819_003, 鲜鸡蛋_LOT20240815A)
         under_m = re.search(r"_([A-Za-z0-9_\-]+)$", s)
         if under_m:
             cand_code = under_m.group(1)
@@ -179,6 +190,18 @@ class SmartSplitterTool:
             "quantity": 1.0,
             "unit": "个"
         }
+
+    def canonical_name(self, raw_name: str) -> str:
+        """FR-7/B-P0-1 核心词归一：仅剥离流水号归一后的纯净品名（供库存去重/迁移用）。"""
+        return self.execute(raw_name)["item_name"]
+
+    def strip_serial_suffix(self, raw_name: str) -> str:
+        """显式正则剥离 _\\d{10} 后缀，返回 (clean, code)。"""
+        s = raw_name.strip()
+        m = self.SERIAL_SUFFIX_RE.search(s)
+        if m:
+            return s[:m.start()].strip(), m.group(1)
+        return s, ""
 
     def clean_sku(self, raw_name: str) -> Dict[str, Any]:
         return self.execute(raw_name)
