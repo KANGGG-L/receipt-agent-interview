@@ -995,6 +995,9 @@ function openCostDrilldown(deptId, deptName, displayPeriod) {
     let url = '/api/cost_report/items?' + lastCostReportQuery;
     if (deptId != null) {
         url += '&department_id=' + encodeURIComponent(deptId);
+    } else {
+        // 未分配下钻：显式传 0，让后端按未归属过滤（部门分摊空的精准回退）
+        url += '&department_id=0';
     }
     const body = document.getElementById('costDrilldownBody');
     if (body) body.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">加载中…</td></tr>';
@@ -2610,8 +2613,9 @@ function smartSplitItemName(rawText) {
     const text = rawText.trim();
     if (!text) return null;
 
-    // 模式 1：乘法复合包装（如 "大豆油 5L*2樽" / "可乐 330ml*6罐"）
-    const multMatch = text.match(/^(.*?)\s*(\d+(?:\.\d+)?)\s*(L|ml|mL|毫升|升|g|kg|斤|磅)?\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*([一-龥a-zA-Z]+)?$/);
+    // 模式 1：乘法复合包装（如 "大豆油 5L*2樽" / "可乐 330ml*6罐" / "鲜鸡蛋 30只*3盘"）
+    // 对齐后端 smart_splitter v1_2_0 MULTI_PACK_PATTERN（支持 5L*2樽回归）
+    const multMatch = text.match(/^(.*?)\s*(\d+(?:\.\d+)?)\s*(ml|mL|L|l|g|G|kg|KG|斤|两|磅|lbs|oz|豪升|升|克|千克|只|粒|头|片|包|袋|瓶|听)?\s*[*xX×]\s*(\d+(?:\.\d+)?)\s*([斤公斤磅箱包罐樽扎打板只盘袋条桶瓶盒支听件]|[一-龥a-zA-Z]+)?$/i);
     if (multMatch) {
         const baseName = multMatch[1].trim();
         const specNum = multMatch[2];
@@ -3773,7 +3777,7 @@ function loadInventoryData() {
         if (skus.length === 0) {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td colspan="6" class="col-center" style="padding: 32px 16px; color: var(--text-muted, #6b7280);">
+                <td colspan="7" class="col-center" style="padding: 32px 16px; color: var(--text-muted, #6b7280);">
                     <div style="font-size: 1rem; margin-bottom: 8px;">没有符合条件的食材</div>
                     <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
                         <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 0.82rem;" onclick="resetInventoryFilters()">清除筛选</button>
@@ -3816,6 +3820,17 @@ function loadInventoryData() {
             const activeBadge = !isActive
                 ? `<span class="badge badge-secondary" style="background:#6b7280; color:#fff; margin-left:6px;">已停用</span>`
                 : '';
+            // kg 列：仅重量单位显示折算（司马斤 0.6048），计件单位显示 -
+            let kgCell = '<span style="color:var(--text-muted);">-</span>';
+            if (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg))) {
+                const kgVal = Number(sku.standard_kg);
+                kgCell = `${kgVal.toFixed(3)} kg`;
+                // 司马斤特殊提示：若原单位含斤/两/磅则 hover 显示换算率
+                const weightHint = (sku.base_unit === '斤' || sku.base_unit === '司马斤' || sku.base_unit === '司馬斤')
+                    ? ' title="司马斤 x 0.6048 = kg"'
+                    : '';
+                kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
+            }
             tr.innerHTML = `
                 <td><strong>${w2Escape(sku.name)}</strong>${activeBadge}</td>
                 <td><span class="badge badge-secondary">${w2Escape(sku.category || 'N/A')}</span></td>
@@ -3823,6 +3838,7 @@ function loadInventoryData() {
                     <strong style="color:${sku.is_low_stock ? '#ef4444' : '#10b981'};">${skuStock}</strong> ${w2Escape(sku.base_unit)}
                     ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
                 </td>
+                <td class="col-right">${kgCell}</td>
                 <td class="col-right">
                     <span class="${sku.is_low_stock ? 'inv-alert-danger' : ''}">${alertVal} ${w2Escape(sku.base_unit)}</span>
                 </td>
