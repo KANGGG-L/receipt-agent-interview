@@ -27,6 +27,57 @@ def _canonical_name(raw: str) -> str:
 
 router = APIRouter()
 
+# 复用 currency_unit_converter 标准换算（司马斤 0.6048 kg）
+try:
+    from ai_registry.tools.currency_unit_converter.v1_0_0 import CurrencyUnitConverterTool
+    _kg_converter = CurrencyUnitConverterTool()
+except Exception:
+    _kg_converter = None
+
+
+def _standard_kg(current_stock, base_unit):
+    """严格仅对重量单位折算 kg；计件单位返回 None（绝不假装折算）。"""
+    if _kg_converter is None:
+        return None
+    u = (base_unit or "").strip()
+    if not u:
+        return None
+    # 仅重量单位参与折算（保持与 converter UNIT_TO_KG 的严格语义一致）
+    weight_units = set(_kg_converter.UNIT_TO_KG.keys())
+    # 兼容部分写法（如 Kg 大小写已在 converter 内部处理，但这里按 lower 判断）
+    if u not in weight_units and u.lower() not in [k.lower() for k in weight_units]:
+        # 尝试 lower 匹配（如 KG / Kg）
+        low = u.lower()
+        matched = None
+        for k in weight_units:
+            if k.lower() == low:
+                matched = k
+                break
+        if matched is None:
+            return None
+        u = matched
+    try:
+        kg_qty, _ = _kg_converter.convert_weight_to_standard_kg(float(current_stock or 0), u)
+        return round(kg_qty, 4)
+    except Exception:
+        return None
+
+
+def _compute_vs_avg_and_anomaly(sku_id, threshold=0.10):
+    """计算 vs_avg 涨幅与是否异动（阈值 10% 标红）。返回 (vs_avg_pct, is_anomaly, avg_30d)."""
+    rows = db.price_history(sku_id)
+    prices = [r.unit_price for r in rows if getattr(r, "unit_price", 0) > 0]
+    if not prices or len(prices) < 2:
+        return 0.0, False, (round(sum(prices) / len(prices), 2) if prices else 0.0)
+    avg = sum(prices) / len(prices)
+    last = prices[-1]
+    avg_30d = round(avg, 2)
+    if avg == 0:
+        return 0.0, False, avg_30d
+    vs = round(((last - avg) / avg) * 100, 1)
+    is_anomaly = vs > threshold * 100
+    return vs, is_anomaly, avg_30d
+
 
 @router.get("/api/inventory")
 def inventory_list(request: Request, q: str = "", category: str = "",
@@ -45,18 +96,20 @@ def inventory_list(request: Request, q: str = "", category: str = "",
         is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
         if stock == "low" and not is_low:
             continue
-        price_anomaly = _is_anomaly(s)
+        vs_avg_pct, price_anomaly, _ = _compute_vs_avg_and_anomaly(s.id, threshold=0.10)
         if price == "anomaly" and not price_anomaly:
             continue
         if is_low:
             low_count += 1
         if price_anomaly:
             anomaly_count += 1
+        kg_val = _standard_kg(s.current_stock, s.base_unit)
         out.append({
             "id": s.id, "name": s.name, "category": s.category or "",
             "base_unit": s.base_unit or "", "current_stock": s.current_stock,
+            "standard_kg": kg_val,
             "min_stock_alert": s.min_stock_alert, "last_unit_price": s.last_unit_price,
-            "price_anomaly": price_anomaly, "vs_avg_pct": 0.0,
+            "price_anomaly": price_anomaly, "vs_avg_pct": vs_avg_pct,
             "is_low_stock": is_low, "active": s.active, "sku_code": s.sku_code or "",
         })
     return {
@@ -68,14 +121,9 @@ def inventory_list(request: Request, q: str = "", category: str = "",
 
 
 def _is_anomaly(sku):
-    """价格异动判定：与 30 天均价偏离 >15%。（简化：用最近一次入库价 vs 均价）"""
-    rows = db.price_history(sku.id)
-    prices = [r.unit_price for r in rows if r.unit_price > 0]
-    if not prices or len(prices) < 2:
-        return False
-    avg = sum(prices) / len(prices)
-    last = prices[-1]
-    return abs(last - avg) / avg > 0.15
+    """价格异动判定：较 30 日均价涨幅 >10% 即标红（PRD 阈值 10%，价格下跌不标红）。"""
+    _, is_anomaly, _ = _compute_vs_avg_and_anomaly(sku.id, threshold=0.10)
+    return is_anomaly
 
 
 class SkuCreateBody(BaseModel):
@@ -217,13 +265,19 @@ def price_history(sku_id: int, request: Request):
              "supplier_name": r.vendor, "receipt_id": r.receipt_id,
              "source": "receipt"} for r in rows]
     prices = [d["unit_price"] for d in data if d["unit_price"] > 0]
+    vs_avg_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(sku_id, threshold=0.10)
+    # 兼容空序列：avg_30d 由 helper 已算出；但 vs=0 时不标红
+    if not prices:
+        vs_avg_pct = 0.0
+        is_anomaly = False
+        avg_30d = 0.0
     summary = {
         "count": len(data),
         "latest_price": prices[-1] if prices else 0.0,
-        "avg_30d": round(sum(prices) / len(prices), 2) if prices else 0.0,
+        "avg_30d": avg_30d if prices else 0.0,
         "min_price": min(prices) if prices else 0.0,
         "max_price": max(prices) if prices else 0.0,
-        "vs_avg_pct": 0.0, "is_anomaly": False, "threshold_pct": 15.0,
+        "vs_avg_pct": vs_avg_pct, "is_anomaly": is_anomaly, "threshold_pct": 10.0,
     }
     return {"status": "success", "sku_name": sku.name, "sku_code": sku.sku_code,
             "base_unit": sku.base_unit, "data": data, "summary": summary}
