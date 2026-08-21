@@ -24,6 +24,9 @@ uploads/
 *.db-wal
 .rag_chroma/
 
+# 本地评测批次素材（业务原图，绝不提交）
+batch1/
+
 # 工具/Agent 本地状态（绝不提交）
 .omc/
 .omo/
