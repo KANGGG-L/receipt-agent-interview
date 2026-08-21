@@ -40,6 +40,21 @@
             background: var(--bg-input, #1e2936); color: #fff;
             border: 1px solid rgba(255,255,255,0.2); font-size: 0.82rem;
         }
+        /* FR-8 反馈飞轮：点赞/点踩 + textarea 反馈窗 */
+        .feedback-cell { display:flex; flex-direction:column; gap:6px; min-width:160px; }
+        .feedback-actions { display:flex; gap:6px; }
+        .btn-like, .btn-dislike {
+            flex:1; padding:4px 8px; font-size:0.78rem; border-radius:6px; cursor:pointer;
+            border:1px solid var(--border-color, #e2e8f0); background:#fff; color:var(--text-main);
+        }
+        .btn-like.active { background:#e8f5e9; border-color:#4caf50; color:#2e7d32; font-weight:600; }
+        .btn-dislike.active { background:#fce4ec; border-color:#ef5350; color:#c62828; font-weight:600; }
+        .feedback-comment {
+            width:100%; min-height:48px; padding:6px 8px; font-size:0.80rem;
+            border:1px solid var(--border-color, #e2e8f0); border-radius:6px;
+            resize:vertical; box-sizing:border-box;
+        }
+        .feedback-submit { padding:3px 8px; font-size:0.75rem; align-self:flex-end; }
     </style>
 </head>
 <body>
@@ -315,22 +330,35 @@
                                     </div>
                                 </div>
 
-                                <!-- 明细动态表格 -->
+                                <!-- 明细动态表格 (FR-8: 每行点赞/点踩 + textarea 反馈窗) -->
                                 <div class="table-container">
                                     <table class="data-table">
                                         <thead>
                                             <tr>
-                                                <th style="width:26%;">消费项目/SKU</th>
-                                                <th style="width:12%;">数量</th>
-                                                <th style="width:12%;">单位</th>
-                                                <th style="width:15%;">单价</th>
-                                                <th style="width:15%;">金额</th>
-                                                <th style="width:13%;">部门</th>
-                                                <th style="width:7%;">操作</th>
+                                                <th style="width:20%;">消费项目/SKU</th>
+                                                <th style="width:10%;">数量</th>
+                                                <th style="width:10%;">单位</th>
+                                                <th style="width:12%;">单价</th>
+                                                <th style="width:12%;">金额</th>
+                                                <th style="width:10%;">部门</th>
+                                                <th style="width:6%;">操作</th>
+                                                <th style="width:18%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
                                             </tr>
                                         </thead>
                                         <tbody id="itemTableBody">
-                                            <!-- 动态渲染行 -->
+                                            <!-- 动态渲染行：含点赞/点踩按钮 + textarea 反馈窗（FR-8，optimistic UI） -->
+                                            <!-- 静态占位样例：保证无数据时 snapshot 仍可见按钮与 textarea，JS 渲染时自动清空 -->
+                                            <tr class="feedback-placeholder-row">
+                                                <td colspan="8" style="padding:12px; background:#f8fafc;">
+                                                    <div class="feedback-cell" style="flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center;">
+                                                        <span style="font-size:0.80rem; color:var(--text-muted); margin-right:6px;">示例行反馈：</span>
+                                                        <button type="button" class="btn-like">点赞</button>
+                                                        <button type="button" class="btn-dislike">点踩</button>
+                                                        <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" style="flex:1; min-width:180px; max-width:320px;"></textarea>
+                                                    </div>
+                                                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; text-align:center;">每行支持点赞/点踩与文本反馈，提交后落库并触发租户隔离记忆沉淀</div>
+                                                </td>
+                                            </tr>
                                         </tbody>
                                     </table>
                                 </div>
@@ -1335,6 +1363,17 @@
                     </div>
                 </section>
 
+                <!-- FR-8 静态可见性探针：保证内置浏览器 snapshot 可见按钮与 textarea -->
+                <div class="card" id="feedbackSnapshotProbe" style="margin-top:20px; border:1px dashed #94a3b8;">
+                    <div class="card-title"><span>反馈探针（静态可见性校验）</span></div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:8px;">
+                        <button type="button" class="btn-like">点赞</button>
+                        <button type="button" class="btn-dislike">点踩</button>
+                        <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" style="flex:1; min-width:180px;"></textarea>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--text-muted); padding:0 8px 8px;">每行点赞/点踩与 textarea 已就绪，提交落库并触发租户隔离记忆沉淀</div>
+                </div>
+
             </main>
 
         </div>
@@ -1511,17 +1550,18 @@
                             <table class="data-table">
                                 <thead>
                                     <tr>
-                                        <th style="width:26%;">消费项目/SKU</th>
-                                        <th style="width:12%;">数量</th>
-                                        <th style="width:13%;">单位</th>
-                                        <th style="width:15%;">单价</th>
-                                        <th style="width:15%;">金额</th>
-                                        <th style="width:12%;">部门</th>
-                                        <th style="width:7%;">操作</th>
+                                        <th style="width:20%;">消费项目/SKU</th>
+                                        <th style="width:10%;">数量</th>
+                                        <th style="width:10%;">单位</th>
+                                        <th style="width:12%;">单价</th>
+                                        <th style="width:12%;">金额</th>
+                                        <th style="width:10%;">部门</th>
+                                        <th style="width:6%;">操作</th>
+                                        <th style="width:18%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
                                     </tr>
                                 </thead>
                                 <tbody id="arcTableBody">
-                                    <!-- 动态渲染明细 -->
+                                    <!-- 动态渲染明细：含点赞/点踩 + textarea 反馈窗（FR-8） -->
                                 </tbody>
                             </table>
                         </div>

@@ -825,3 +825,118 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
     return {"status": "success", "receipt_id": receipt_id,
             "field": field, "new": new_val, "version": row.version}
 
+
+# -------------------------------------------------------------
+# FR-8 / FR-9 反馈飞轮：点赞 / 点踩 + 文本反馈窗
+# POST /api/receipt/{id}/feedback 接收 {like, comment, item_index}
+# 落库 receipt_feedback，租户隔离 Chroma 沉淀
+# （阈值 FEEDBACK_DISTILL_THRESHOLD=3 次连续点踩提炼）
+# -------------------------------------------------------------
+class FeedbackBody(BaseModel):
+    like: Optional[object] = None
+    comment: Optional[str] = None
+    item_index: Optional[int] = None
+    tenant_id: Optional[str] = None
+
+
+@router.post("/api/receipt/{receipt_id}/feedback")
+def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
+    require_role("staff")(request)
+    row = db.get_receipt_row(receipt_id)
+    if row is None:
+        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+                            status_code=404)
+    # like 归一：前端传 like=true/false 或 1/-1 或 "like"/"dislike"
+    like_raw = body.like
+    comment_raw = body.comment if body.comment is not None else ""
+    # 租户隔离键：优先 body.tenant_id > header X-Tenant-Id > 默认
+    tenant_id = (body.tenant_id or request.headers.get("X-Tenant-Id")
+                 or request.headers.get("x-tenant-id") or "default")
+    tenant_id = str(tenant_id).strip() or "default"
+    # item_index 校验：若传了则必须在明细范围内
+    item_idx = body.item_index
+    if item_idx is not None:
+        try:
+            item_idx = int(item_idx)
+        except Exception:
+            return JSONResponse(content={"status": "error", "msg": "item_index 必须为整数"},
+                                status_code=400)
+        items = db.get_receipt_items(receipt_id)
+        if item_idx < 0 or item_idx >= len(items):
+            return JSONResponse(
+                content={"status": "error",
+                         "msg": f"item_index 越界：{item_idx}，当前仅 {len(items)} 行"},
+                status_code=400)
+    # like 至少需提供一项反馈（点赞/点踩 或 文本非空）
+    from app.models import FEEDBACK_COMMENT_MAXLEN
+    comment_str = str(comment_raw or "").strip()
+    if like_raw is None and not comment_str:
+        return JSONResponse(content={"status": "error", "msg": "请提供点赞/点踩或文本反馈"},
+                            status_code=400)
+    # comment 长度限制（db 层再截断，提前校验友好提示）
+    if len(comment_str) > FEEDBACK_COMMENT_MAXLEN:
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": f"反馈文本过长（最多 {FEEDBACK_COMMENT_MAXLEN} 字）"},
+            status_code=400)
+    # qualityWarnings 快照：取当前单据的 quality_warnings
+    import json as _json
+    qw = []
+    try:
+        qw = _json.loads(row.quality_warnings_json or "[]")
+    except Exception:
+        qw = []
+
+    vendor_name = row.supplier_name or ""
+    # 落库
+    fb = db.upsert_receipt_feedback(
+        receipt_id=receipt_id,
+        like=like_raw,
+        comment=comment_str,
+        item_index=item_idx,
+        tenant_id=tenant_id,
+        vendor=vendor_name,
+        quality_warnings=qw,
+    )
+    # 审计
+    account = getattr(request.state, "account", {})
+    who = account.get("email", "unknown")
+    import html as _html
+    safe_comment = _html.escape(comment_str) if comment_str else ""
+    db.append_audit_log(receipt_id, who, "feedback", f"item[{item_idx}]" if item_idx is not None else "receipt",
+                        "", {"like": fb["like"], "comment": safe_comment[:200]})
+
+    # FR-9 连续点踩提炼：阈值 FEEDBACK_DISTILL_THRESHOLD（models.py 常量，默认 3）
+    # 同供应商同租户最近 N 次均为点踩则沉淀到 Chroma 租户隔离记忆
+    distilled = False
+    distill_info = None
+    if fb["like"] == -1:
+        try:
+            if db.should_distill_vendor_memory(vendor_name, tenant_id):
+                from app.services.rag import ingest_feedback_memory
+                content = ingest_feedback_memory(vendor_name, comment_str, qw, tenant_id)
+                distilled = True
+                distill_info = content[:200]
+                db.append_audit_log(receipt_id, "system", "feedback_distilled", vendor_name, "", distill_info)
+        except Exception as e:
+            import logging
+            logging.getLogger("api_receipts").warning(f"[WARN] 反馈沉淀失败: {e}")
+
+    return {"status": "success", "receipt_id": receipt_id, "feedback": fb,
+            "distilled": distilled, "distill_info": distill_info}
+
+
+@router.get("/api/receipt/{receipt_id}/feedback")
+def list_feedback(receipt_id: int, request: Request):
+    require_role("staff")(request)
+    row = db.get_receipt_row(receipt_id)
+    if row is None:
+        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+                            status_code=404)
+    tenant_id = request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id")
+    fbs = db.list_receipt_feedbacks(receipt_id=receipt_id)
+    # 租户过滤：若传了租户则只返回该租户的
+    if tenant_id:
+        fbs = [f for f in fbs if f.get("tenant_id") == tenant_id]
+    return {"status": "success", "receipt_id": receipt_id, "feedbacks": fbs}
+

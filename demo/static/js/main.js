@@ -3200,6 +3200,8 @@ function appendTableRow(item = {}) {
         }
     }
 
+    // 行索引用于 FR-8 反馈飞轮（optimistic UI 需定位行）
+    const rowIdx = tbody.children.length;
     // P0-2：品名/单位来自 OCR 输出可被注入污染——属性插值一律 w2Escape；
     // 数值列强制 Number() 防属性逃逸
     tr.innerHTML = `
@@ -3242,6 +3244,18 @@ function appendTableRow(item = {}) {
         </td>
         <td style="text-align:center;">
             <button class="btn btn-danger" style="padding:4px 8px; font-size:0.8rem;" onclick="removeRow(this)"> 删除</button>
+        </td>
+        <td>
+            <div class="feedback-cell" data-row-index="${rowIdx}">
+                <div class="feedback-actions">
+                    <button type="button" class="btn-like" data-like="1" onclick="handleRowFeedback(this, 1)">点赞</button>
+                    <button type="button" class="btn-dislike" data-like="-1" onclick="handleRowFeedback(this, -1)">点踩</button>
+                </div>
+                <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" oninput="onFeedbackCommentInput(this)"></textarea>
+                <span class="feedback-charcount" style="font-size:0.70rem; color:var(--text-muted); align-self:flex-end;"></span>
+                <button type="button" class="btn btn-secondary feedback-submit" onclick="submitRowFeedback(this)">提交反馈</button>
+                <span class="feedback-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
+            </div>
         </td>
     `;
     tbody.appendChild(tr);
@@ -3289,6 +3303,205 @@ function recalcTotalSum() {
         sum += amt;
     });
     document.getElementById('inpTotal').value = sum.toFixed(2);
+}
+
+// -------------------------------------------------------------
+// FR-8 反馈飞轮：点赞/点踩 + textarea 乐观 UI 与 qualityWarnings 联动
+// -------------------------------------------------------------
+function _feedbackTenantId() {
+    try { return localStorage.getItem('demo_tenant_id') || 'default'; } catch (e) { return 'default'; }
+}
+
+function _applyOptimisticLike(btn, likeVal) {
+    const cell = btn.closest('.feedback-cell');
+    if (!cell) return;
+    const likeBtn = cell.querySelector('.btn-like');
+    const dislikeBtn = cell.querySelector('.btn-dislike');
+    const statusEl = cell.querySelector('.feedback-status');
+    // 记录回滚前状态
+    cell.dataset.prevLike = cell.dataset.like || '';
+    cell.dataset.like = String(likeVal);
+    if (likeVal === 1) {
+        if (likeBtn) likeBtn.classList.add('active');
+        if (dislikeBtn) dislikeBtn.classList.remove('active');
+        if (statusEl) statusEl.textContent = '已点赞';
+    } else if (likeVal === -1) {
+        if (dislikeBtn) dislikeBtn.classList.add('active');
+        if (likeBtn) likeBtn.classList.remove('active');
+        if (statusEl) statusEl.textContent = '已点踩';
+    }
+}
+
+function _revertOptimisticLike(cell) {
+    if (!cell) return;
+    const prev = cell.dataset.prevLike;
+    const likeBtn = cell.querySelector('.btn-like');
+    const dislikeBtn = cell.querySelector('.btn-dislike');
+    const statusEl = cell.querySelector('.feedback-status');
+    if (likeBtn) likeBtn.classList.remove('active');
+    if (dislikeBtn) dislikeBtn.classList.remove('active');
+    if (prev === '1' && likeBtn) likeBtn.classList.add('active');
+    if (prev === '-1' && dislikeBtn) dislikeBtn.classList.add('active');
+    cell.dataset.like = prev || '';
+    if (statusEl) statusEl.textContent = prev ? (prev === '1' ? '已点赞' : '已点踩') : '';
+}
+
+function _qualityWarningsLink(comment, likeVal) {
+    if (likeVal !== -1) return;
+    const text = String(comment || '');
+    const triggers = ['模糊', '过暗', '遮挡', '算术', '金额', '单价', '数量', '错', '漏', '重'];
+    const hit = triggers.some(k => text.includes(k));
+    if (!hit && !text.trim()) return;
+    const banner = document.getElementById('qualityWarningsBanner');
+    if (!banner) return;
+    const existing = [];
+    try {
+        banner.querySelectorAll('div').forEach(d => {
+            const t = d.textContent || '';
+            if (t && t.indexOf('•') === 0) existing.push(t.slice(2).trim());
+        });
+    } catch (e) {}
+    const newWarning = text.trim() ? ('用户反馈：' + text.trim().slice(0, 80)) : '用户反馈：点踩';
+    if (existing.indexOf(newWarning) !== -1) return;
+    const merged = existing.concat([newWarning]);
+    showQualityWarnings(merged);
+}
+
+function _postFeedback(receiptId, likeVal, comment, itemIndex) {
+    const tenantId = _feedbackTenantId();
+    return fetch('/api/receipt/' + Number(receiptId) + '/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+        body: JSON.stringify({ like: likeVal, comment: comment || '', item_index: itemIndex, tenant_id: tenantId })
+    }).then(r => Promise.all([r.status, r.json().catch(() => null)])).then(([s, j]) => ({ status: s, body: j }));
+}
+
+function handleRowFeedback(btn, likeVal) {
+    const cell = btn.closest('.feedback-cell');
+    if (!cell) return;
+    _applyOptimisticLike(btn, likeVal);
+    // 仅切换选中态，不自动提交；用户可在 textarea 补充后点提交反馈
+    const textarea = cell.querySelector('.feedback-comment');
+    if (textarea && likeVal === -1) textarea.focus();
+}
+
+function submitRowFeedback(btn) {
+    const cell = btn.closest('.feedback-cell');
+    if (!cell) return;
+    const wrap = btn.closest('tr');
+    const rowIdx = cell.dataset.rowIndex != null ? Number(cell.dataset.rowIndex) : null;
+    const textarea = cell.querySelector('.feedback-comment');
+    const comment = textarea ? String(textarea.value || '').trim() : '';
+    const likeVal = cell.dataset.like ? Number(cell.dataset.like) : null;
+    const receiptId = currentReceiptId || (currentReceiptData && currentReceiptData.receipt_id) || (currentReceiptData && currentReceiptData.id);
+    if (!receiptId) {
+        showToast('请先完成识别或保存后再反馈', 'warning');
+        return;
+    }
+    if (likeVal == null && !comment) {
+        showToast('请选择点赞或点踩，或填写反馈原因', 'warning');
+        return;
+    }
+    const statusEl = cell.querySelector('.feedback-status');
+    const prevStatus = statusEl ? statusEl.textContent : '';
+    if (statusEl) statusEl.textContent = '提交中...';
+    btn.disabled = true;
+    _postFeedback(receiptId, likeVal, comment, rowIdx).then(({ status, body }) => {
+        btn.disabled = false;
+        if (status >= 200 && status < 300 && body && body.status === 'success') {
+            if (statusEl) statusEl.textContent = likeVal === 1 ? '已点赞' : (likeVal === -1 ? '已点踩' : '已提交');
+            showToast('反馈已提交', 'success');
+            _qualityWarningsLink(comment, likeVal);
+            if (body.distilled) {
+                showToast('已沉淀到供应商记忆（连续3次纠偏触发）', 'info', TOAST_DURATION.long);
+            }
+        } else {
+            if (statusEl) statusEl.textContent = prevStatus || '提交失败';
+            _revertOptimisticLike(cell);
+            const msg = (body && body.msg) ? body.msg : ('HTTP ' + status);
+            showToast('反馈提交失败：' + msg, 'error');
+        }
+    }).catch(err => {
+        btn.disabled = false;
+        if (statusEl) statusEl.textContent = prevStatus || '提交失败';
+        _revertOptimisticLike(cell);
+        showToast('反馈提交异常' + toastFailDetail(err), 'error');
+    });
+}
+
+function handleArcFeedback(btn, likeVal) {
+    const cell = btn.closest('.feedback-cell');
+    if (!cell) return;
+    _applyOptimisticLike(btn, likeVal);
+    const textarea = cell.querySelector('.feedback-comment');
+    if (textarea && likeVal === -1) textarea.focus();
+}
+
+function submitArcFeedback(btn) {
+    const cell = btn.closest('.feedback-cell');
+    if (!cell) return;
+    const rowIdx = cell.dataset.rowIndex != null ? Number(cell.dataset.rowIndex) : null;
+    const textarea = cell.querySelector('.feedback-comment');
+    const comment = textarea ? String(textarea.value || '').trim() : '';
+    const likeVal = cell.dataset.like ? Number(cell.dataset.like) : null;
+    const receiptId = currentArchiveReceiptId || (currentArchiveDetailData && currentArchiveDetailData.receipt_id);
+    if (!receiptId) {
+        showToast('归档单据 ID 缺失，无法提交反馈', 'warning');
+        return;
+    }
+    if (likeVal == null && !comment) {
+        showToast('请选择点赞或点踩，或填写反馈原因', 'warning');
+        return;
+    }
+    const statusEl = cell.querySelector('.feedback-status');
+    const prevStatus = statusEl ? statusEl.textContent : '';
+    if (statusEl) statusEl.textContent = '提交中...';
+    btn.disabled = true;
+    _postFeedback(receiptId, likeVal, comment, rowIdx).then(({ status, body }) => {
+        btn.disabled = false;
+        if (status >= 200 && status < 300 && body && body.status === 'success') {
+            if (statusEl) statusEl.textContent = likeVal === 1 ? '已点赞' : (likeVal === -1 ? '已点踩' : '已提交');
+            showToast('归档反馈已提交', 'success');
+            _qualityWarningsLink(comment, likeVal);
+            if (body.distilled) {
+                showToast('已沉淀到供应商记忆（连续3次纠偏触发）', 'info', TOAST_DURATION.long);
+            }
+        } else {
+            if (statusEl) statusEl.textContent = prevStatus || '提交失败';
+            _revertOptimisticLike(cell);
+            const msg = (body && body.msg) ? body.msg : ('HTTP ' + status);
+            showToast('归档反馈提交失败：' + msg, 'error');
+        }
+    }).catch(err => {
+        btn.disabled = false;
+        if (statusEl) statusEl.textContent = prevStatus || '提交失败';
+        _revertOptimisticLike(cell);
+        showToast('归档反馈提交异常' + toastFailDetail(err), 'error');
+    });
+}
+
+const FEEDBACK_COMMENT_MAXLEN_FRONTEND = 2000;   // 与后端 FEEDBACK_COMMENT_MAXLEN 对齐
+
+function onFeedbackCommentInput(textarea) {
+    // 即时提示：字数统计 + 接近上限告警；点踩态下联动 qualityWarnings 预览
+    const cell = textarea.closest('.feedback-cell');
+    if (!cell) return;
+    const len = String(textarea.value || '').length;
+    const charEl = cell.querySelector('.feedback-charcount');
+    if (charEl) {
+        const remain = FEEDBACK_COMMENT_MAXLEN_FRONTEND - len;
+        charEl.textContent = `${len}/${FEEDBACK_COMMENT_MAXLEN_FRONTEND}`;
+        if (remain <= 100) {
+            charEl.style.color = '#c62828';
+            charEl.textContent = `仅剩 ${remain} 字`;
+        } else {
+            charEl.style.color = '';
+        }
+    }
+    const likeVal = cell.dataset.like ? Number(cell.dataset.like) : null;
+    if (likeVal === -1 && len > 6) {
+        _qualityWarningsLink(textarea.value, likeVal);
+    }
 }
 
 // -------------------------------------------------------------
@@ -5040,6 +5253,7 @@ function appendArcTableRow(item = {}) {
         updateGlobalDatalistUnits();
     }
 
+    const arcRowIdx = tbody.children.length;
     // P0-2：归档弹窗明细行与 Tab1 同口径——品名/单位属性插值过 w2Escape
     tr.innerHTML = `
         <td>
@@ -5061,7 +5275,19 @@ function appendArcTableRow(item = {}) {
             </select>
         </td>
         <td style="text-align:center;">
-            <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)"></button>
+            <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
+        </td>
+        <td>
+            <div class="feedback-cell" data-row-index="${arcRowIdx}">
+                <div class="feedback-actions">
+                    <button type="button" class="btn-like" data-like="1" onclick="handleArcFeedback(this, 1)">点赞</button>
+                    <button type="button" class="btn-dislike" data-like="-1" onclick="handleArcFeedback(this, -1)">点踩</button>
+                </div>
+                <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" oninput="onFeedbackCommentInput(this)"></textarea>
+                <span class="feedback-charcount" style="font-size:0.70rem; color:var(--text-muted); align-self:flex-end;"></span>
+                <button type="button" class="btn btn-secondary feedback-submit" onclick="submitArcFeedback(this)">提交反馈</button>
+                <span class="feedback-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
+            </div>
         </td>
     `;
     tbody.appendChild(tr);
