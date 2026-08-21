@@ -791,6 +791,7 @@ table.data-table td input {
 }
 
 .hide { display: none !important; }
+#receiptFile { display: none !important; }
 
 /* 09 方案：芯片 / 空态（待办条已复用 .metrics-grid / .metric-card 指标卡） */
 .chip {

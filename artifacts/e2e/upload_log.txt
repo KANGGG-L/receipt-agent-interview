@@ -1,0 +1,23 @@
+>>> UPLOAD gold_statement_Kampery : /Users/ethan/Desktop/hk/My Drive/Receipts/batch1/_previews/IMG_5786.jpg
+{
+    "status": "queued",
+    "job_id": "5adabe00",
+    "receipt_id": 21,
+    "image_url": "/uploads/a52b831a.jpg"
+}
+  poll 1: running
+  poll 2: running
+  poll 3: running
+  poll 4: running
+  poll 5: running
+  poll 6: running
+  poll 7: running
+  poll 8: running
+  poll 9: running
+  poll 10: running
+  poll 11: running
+  poll 12: running
+  poll 13: running
+  poll 14: running
+  poll 15: running
+timeout gold_statement_Kampery

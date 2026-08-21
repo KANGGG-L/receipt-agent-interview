@@ -1,0 +1,1462 @@
+{
+  "id": "34ad3eb5-3c44-4f6b-9353-fdf11c33e89d",
+  "ok": true,
+  "result": {
+    "origin": "http://127.0.0.1:15010/",
+    "refs": {
+      "e1": {
+        "name": "当前角色",
+        "role": "combobox"
+      },
+      "e10": {
+        "name": "● staff · 店员",
+        "role": "option"
+      },
+      "e100": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e101": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e102": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e103": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e104": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e105": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e106": {
+        "name": "#28",
+        "role": "cell"
+      },
+      "e107": {
+        "name": "匿名供应商_#V00 (已脱敏)",
+        "role": "cell"
+      },
+      "e108": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e109": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e11": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e110": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e111": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e112": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e113": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e114": {
+        "name": "#27",
+        "role": "cell"
+      },
+      "e115": {
+        "name": "食材批发商_#V462 (已脱敏)",
+        "role": "cell"
+      },
+      "e116": {
+        "name": "printed_delivery_note",
+        "role": "cell"
+      },
+      "e117": {
+        "name": "HK$ 2**.*0",
+        "role": "cell"
+      },
+      "e118": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e119": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e12": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e120": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e121": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e122": {
+        "name": "#26",
+        "role": "cell"
+      },
+      "e123": {
+        "name": "匿名供应商_#V00 (已脱敏)",
+        "role": "cell"
+      },
+      "e124": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e125": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e126": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e127": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e128": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e129": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e13": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e130": {
+        "name": "#25",
+        "role": "cell"
+      },
+      "e131": {
+        "name": "食材批发商_#V498 (已脱敏)",
+        "role": "cell"
+      },
+      "e132": {
+        "name": "thermal",
+        "role": "cell"
+      },
+      "e133": {
+        "name": "HK$ 3**.*0",
+        "role": "cell"
+      },
+      "e134": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e135": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e136": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e137": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e138": {
+        "name": "#24",
+        "role": "cell"
+      },
+      "e139": {
+        "name": "食材批发商_#V582 (已脱敏)",
+        "role": "cell"
+      },
+      "e14": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e140": {
+        "name": "thermal",
+        "role": "cell"
+      },
+      "e141": {
+        "name": "HK$ 8**.*0",
+        "role": "cell"
+      },
+      "e142": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e143": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e144": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e145": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e146": {
+        "name": "#23",
+        "role": "cell"
+      },
+      "e147": {
+        "name": "食材批发商_#V766 (已脱敏)",
+        "role": "cell"
+      },
+      "e148": {
+        "name": "thermal",
+        "role": "cell"
+      },
+      "e149": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e15": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e150": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e151": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e152": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e153": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e154": {
+        "name": "#22",
+        "role": "cell"
+      },
+      "e155": {
+        "name": "食材批发商_#V839 (已脱敏)",
+        "role": "cell"
+      },
+      "e156": {
+        "name": "printed_delivery_note",
+        "role": "cell"
+      },
+      "e157": {
+        "name": "HK$ 2**.*0",
+        "role": "cell"
+      },
+      "e158": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e159": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e16": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e160": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e161": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e162": {
+        "name": "#21",
+        "role": "cell"
+      },
+      "e163": {
+        "name": "匿名供应商_#V00 (已脱敏)",
+        "role": "cell"
+      },
+      "e164": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e165": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e166": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e167": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e168": {
+        "name": "待复核校验 (50%)",
+        "role": "cell"
+      },
+      "e169": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e17": {
+        "name": "刷新脱敏单据流",
+        "role": "button"
+      },
+      "e170": {
+        "name": "#20",
+        "role": "cell"
+      },
+      "e171": {
+        "name": "食材批发商_#V723 (已脱敏)",
+        "role": "cell"
+      },
+      "e172": {
+        "name": "printed_delivery_note",
+        "role": "cell"
+      },
+      "e173": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e174": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e175": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e176": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e177": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e178": {
+        "name": "#19",
+        "role": "cell"
+      },
+      "e179": {
+        "name": "食材批发商_#V606 (已脱敏)",
+        "role": "cell"
+      },
+      "e18": {
+        "name": "",
+        "role": "LabelText"
+      },
+      "e180": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e181": {
+        "name": "HK$ 2**.*0",
+        "role": "cell"
+      },
+      "e182": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e183": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e184": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e185": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e186": {
+        "name": "#18",
+        "role": "cell"
+      },
+      "e187": {
+        "name": "蔬菜批发商_#V706 (已脱敏)",
+        "role": "cell"
+      },
+      "e188": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e189": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e19": {
+        "name": "保存配置",
+        "role": "button"
+      },
+      "e190": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e191": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e192": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e193": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e194": {
+        "name": "#17",
+        "role": "cell"
+      },
+      "e195": {
+        "name": "食材批发商_#V937 (已脱敏)",
+        "role": "cell"
+      },
+      "e196": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e197": {
+        "name": "HK$ 5**.*0",
+        "role": "cell"
+      },
+      "e198": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e199": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e2": {
+        "name": "关闭提示",
+        "role": "button"
+      },
+      "e20": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e200": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e201": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e202": {
+        "name": "#16",
+        "role": "cell"
+      },
+      "e203": {
+        "name": "食材批发商_#V878 (已脱敏)",
+        "role": "cell"
+      },
+      "e204": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e205": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e206": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e207": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e208": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e209": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e21": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e210": {
+        "name": "#15",
+        "role": "cell"
+      },
+      "e211": {
+        "name": "蔬菜批发商_#V132 (已脱敏)",
+        "role": "cell"
+      },
+      "e212": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e213": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e214": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e215": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e216": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e217": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e218": {
+        "name": "#14",
+        "role": "cell"
+      },
+      "e219": {
+        "name": "食材批发商_#V606 (已脱敏)",
+        "role": "cell"
+      },
+      "e22": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e220": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e221": {
+        "name": "HK$ 2**.*0",
+        "role": "cell"
+      },
+      "e222": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e223": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e224": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e225": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e226": {
+        "name": "#13",
+        "role": "cell"
+      },
+      "e227": {
+        "name": "蔬菜批发商_#V706 (已脱敏)",
+        "role": "cell"
+      },
+      "e228": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e229": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e23": {
+        "name": "配置对比",
+        "role": "button"
+      },
+      "e230": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e231": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e232": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e233": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e234": {
+        "name": "#12",
+        "role": "cell"
+      },
+      "e235": {
+        "name": "食材批发商_#V937 (已脱敏)",
+        "role": "cell"
+      },
+      "e236": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e237": {
+        "name": "HK$ 5**.*0",
+        "role": "cell"
+      },
+      "e238": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e239": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e24": {
+        "name": "一键推全",
+        "role": "button"
+      },
+      "e240": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e241": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e242": {
+        "name": "#11",
+        "role": "cell"
+      },
+      "e243": {
+        "name": "食材批发商_#V878 (已脱敏)",
+        "role": "cell"
+      },
+      "e244": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e245": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e246": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e247": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e248": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e249": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e25": {
+        "name": "一键回滚",
+        "role": "button"
+      },
+      "e250": {
+        "name": "#10",
+        "role": "cell"
+      },
+      "e251": {
+        "name": "蔬菜批发商_#V132 (已脱敏)",
+        "role": "cell"
+      },
+      "e252": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e253": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e254": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e255": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e256": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e257": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e258": {
+        "name": "#8",
+        "role": "cell"
+      },
+      "e259": {
+        "name": "蔬菜批发商_#V706 (已脱敏)",
+        "role": "cell"
+      },
+      "e26": {
+        "name": "跳过连通性测试直接保存",
+        "role": "checkbox"
+      },
+      "e260": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e261": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e262": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e263": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e264": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e265": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e266": {
+        "name": "#7",
+        "role": "cell"
+      },
+      "e267": {
+        "name": "食材批发商_#V937 (已脱敏)",
+        "role": "cell"
+      },
+      "e268": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e269": {
+        "name": "HK$ 5**.*0",
+        "role": "cell"
+      },
+      "e27": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e270": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e271": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e272": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e273": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e274": {
+        "name": "#6",
+        "role": "cell"
+      },
+      "e275": {
+        "name": "食材批发商_#V878 (已脱敏)",
+        "role": "cell"
+      },
+      "e276": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e277": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e278": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e279": {
+        "name": "店员已编辑",
+        "role": "cell"
+      },
+      "e28": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e280": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e281": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e282": {
+        "name": "#5",
+        "role": "cell"
+      },
+      "e283": {
+        "name": "蔬菜批发商_#V132 (已脱敏)",
+        "role": "cell"
+      },
+      "e284": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e285": {
+        "name": "HK$ 1**.*0",
+        "role": "cell"
+      },
+      "e286": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e287": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e288": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e289": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e29": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e290": {
+        "name": "#4",
+        "role": "cell"
+      },
+      "e291": {
+        "name": "食材批发商_#V606 (已脱敏)",
+        "role": "cell"
+      },
+      "e292": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e293": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e294": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e295": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e296": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e297": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e298": {
+        "name": "#3",
+        "role": "cell"
+      },
+      "e299": {
+        "name": "食材批发商_#V937 (已脱敏)",
+        "role": "cell"
+      },
+      "e3": {
+        "name": "收据识别",
+        "role": "button"
+      },
+      "e30": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e300": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e301": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e302": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e303": {
+        "name": "老板已入库",
+        "role": "cell"
+      },
+      "e304": {
+        "name": "用户赞同 · 完全采纳 (100%)",
+        "role": "cell"
+      },
+      "e305": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e306": {
+        "name": "#2",
+        "role": "cell"
+      },
+      "e307": {
+        "name": "食材批发商_#V878 (已脱敏)",
+        "role": "cell"
+      },
+      "e308": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e309": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e31": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e310": {
+        "name": "常规线上组",
+        "role": "cell"
+      },
+      "e311": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e312": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e313": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e314": {
+        "name": "#1",
+        "role": "cell"
+      },
+      "e315": {
+        "name": "蔬菜批发商_#V132 (已脱敏)",
+        "role": "cell"
+      },
+      "e316": {
+        "name": "ncr_handwritten",
+        "role": "cell"
+      },
+      "e317": {
+        "name": "HK$ 0.00",
+        "role": "cell"
+      },
+      "e318": {
+        "name": "灰测实验组",
+        "role": "cell"
+      },
+      "e319": {
+        "name": "待复核",
+        "role": "cell"
+      },
+      "e32": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e320": {
+        "name": "待复核校验 (100%)",
+        "role": "cell"
+      },
+      "e321": {
+        "name": "查看脱敏解析",
+        "role": "cell"
+      },
+      "e322": {
+        "name": "开",
+        "role": "option"
+      },
+      "e323": {
+        "name": "关",
+        "role": "option"
+      },
+      "e324": {
+        "name": "关",
+        "role": "option"
+      },
+      "e325": {
+        "name": "开",
+        "role": "option"
+      },
+      "e326": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e327": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e328": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e329": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e33": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e330": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e331": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e332": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e333": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e334": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e335": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e336": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e337": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e338": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e339": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e34": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e340": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e341": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e342": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e343": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e344": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e345": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e346": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e347": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e348": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e349": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e35": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e350": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e351": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e352": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e353": {
+        "name": "查看脱敏解析",
+        "role": "button"
+      },
+      "e354": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e355": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e356": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e357": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e358": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e359": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e36": {
+        "name": "开",
+        "role": "option"
+      },
+      "e360": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e361": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e362": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e37": {
+        "name": "关",
+        "role": "option"
+      },
+      "e38": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e39": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e4": {
+        "name": "实时库存与价格",
+        "role": "button"
+      },
+      "e40": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e41": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e42": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e43": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e44": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e45": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e46": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e47": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e48": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e49": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e5": {
+        "name": "供应商与归档",
+        "role": "button"
+      },
+      "e50": {
+        "name": "0-100",
+        "role": "spinbutton"
+      },
+      "e51": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e52": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e53": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e54": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e55": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e56": {
+        "name": "开",
+        "role": "option"
+      },
+      "e57": {
+        "name": "关",
+        "role": "option"
+      },
+      "e58": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e59": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e6": {
+        "name": "部门花销报表",
+        "role": "button"
+      },
+      "e60": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e61": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e62": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e63": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e64": {
+        "name": "停用",
+        "role": "option"
+      },
+      "e65": {
+        "name": "启用",
+        "role": "option"
+      },
+      "e66": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e67": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e68": {
+        "name": "按单据随机",
+        "role": "option"
+      },
+      "e69": {
+        "name": "按供应商",
+        "role": "option"
+      },
+      "e7": {
+        "name": "引擎与灰测 admin",
+        "role": "button"
+      },
+      "e70": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e71": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e72": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e73": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e74": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e75": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e76": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e77": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e78": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e79": {
+        "name": "opencode CLI",
+        "role": "option"
+      },
+      "e8": {
+        "name": "● admin · 超管 (灰测/引擎)",
+        "role": "option"
+      },
+      "e80": {
+        "name": "CodeBuddy CLI",
+        "role": "option"
+      },
+      "e81": {
+        "name": "OpenAI 兼容接口",
+        "role": "option"
+      },
+      "e82": {
+        "name": "MiMo-V2.5 Free",
+        "role": "option"
+      },
+      "e83": {
+        "name": "LongCat-2.0 Free",
+        "role": "option"
+      },
+      "e84": {
+        "name": "deepseek-v4-flash-free",
+        "role": "option"
+      },
+      "e85": {
+        "name": "deepseek-v4-flash",
+        "role": "option"
+      },
+      "e86": {
+        "name": "glm-5v-turbo",
+        "role": "option"
+      },
+      "e87": {
+        "name": "自定义输入模型...",
+        "role": "option"
+      },
+      "e88": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e89": {
+        "name": "",
+        "role": "combobox"
+      },
+      "e9": {
+        "name": "● owner · 老板",
+        "role": "option"
+      },
+      "e90": {
+        "name": "单据 ID",
+        "role": "columnheader"
+      },
+      "e91": {
+        "name": "脱敏供应商",
+        "role": "columnheader"
+      },
+      "e92": {
+        "name": "单据形态",
+        "role": "columnheader"
+      },
+      "e93": {
+        "name": "脱敏金额",
+        "role": "columnheader"
+      },
+      "e94": {
+        "name": "分流引擎",
+        "role": "columnheader"
+      },
+      "e95": {
+        "name": "使用状态",
+        "role": "columnheader"
+      },
+      "e96": {
+        "name": "AI 效果反馈",
+        "role": "columnheader"
+      },
+      "e97": {
+        "name": "操作",
+        "role": "columnheader"
+      },
+      "e98": {
+        "name": "#29",
+        "role": "cell"
+      },
+      "e99": {
+        "name": "匿名供应商_#V00 (已脱敏)",
+        "role": "cell"
+      }
+    },
+    "snapshot": "- complementary\n  - image \"Logo\"\n  - StaticText \"AI 智能库存系统\"\n  - LabelText\n    - StaticText \"当前角色\"\n  - combobox \"当前角色\" [expanded=false, ref=e1]: ● admin · 超管 (灰测/引擎)\n    - MenuListPopup\n      - option \"● admin · 超管 (灰测/引擎)\" [selected, ref=e8]\n      - option \"● owner · 老板\" [ref=e9]\n      - option \"● staff · 店员\" [ref=e10]\n  - navigation\n    - button \"收据识别\" [ref=e3]\n      - StaticText \"收据识别\"\n    - button \"实时库存与价格\" [ref=e4]\n      - StaticText \"实时库存与价格\"\n    - button \"供应商与归档\" [ref=e5]\n      - StaticText \"供应商与归档\"\n    - button \"部门花销报表\" [ref=e6]\n      - StaticText \"部门花销报表\"\n    - button \"引擎与灰测 admin\" [ref=e7]\n      - StaticText \"引擎与灰测\"\n      - StaticText \"admin\"\n- generic\n  - StaticText \"系统首页\"\n  - StaticText \"/\"\n  - StaticText \"引擎配置与灰测大盘\"\n  - main\n    - StaticText \"引擎配置\"\n    - LabelText\n      - StaticText \"识别引擎\"\n    - combobox [expanded=false, ref=e11]: opencode CLI\n      - MenuListPopup\n        - option \"opencode CLI\" [selected, ref=e27]\n        - option \"CodeBuddy CLI\" [ref=e28]\n        - option \"OpenAI 兼容接口\" [ref=e29]\n    - LabelText\n      - StaticText \"识别模型\"\n    - combobox [expanded=false, ref=e12]: MiMo-V2.5 Free\n      - MenuListPopup\n        - option \"MiMo-V2.5 Free\" [selected, ref=e30]\n        - option \"LongCat-2.0 Free\" [ref=e31]\n        - option \"deepseek-v4-flash-free\" [ref=e32]\n        - option \"deepseek-v4-flash\" [ref=e33]\n        - option \"glm-5v-turbo\" [ref=e34]\n        - option \"自定义输入模型...\" [ref=e35]\n    - LabelText\n      - StaticText \"解析 LLM开关\"\n    - combobox [expanded=false, ref=e13]: 关\n      - MenuListPopup\n        - option \"开\" [ref=e36]\n        - option \"关\" [selected, ref=e37]\n    - LabelText\n      - StaticText \"解析引擎\"\n    - combobox [expanded=false, disabled, ref=e14]: opencode CLI\n      - MenuListPopup\n        - option \"opencode CLI\" [selected, ref=e38]\n        - option \"CodeBuddy CLI\" [ref=e39]\n        - option \"OpenAI 兼容接口\" [ref=e40]\n    - LabelText\n      - StaticText \"解析模型\"\n    - combobox [expanded=false, disabled, ref=e15]: MiMo-V2.5 Free\n      - MenuListPopup\n        - option \"MiMo-V2.5 Free\" [disabled, ref=e41]\n        - option \"LongCat-2.0 Free\" [disabled, ref=e42]\n        - option \"deepseek-v4-flash-free\" [disabled, ref=e43]\n        - option \"deepseek-v4-flash\" [disabled, ref=e44]\n        - option \"glm-5v-turbo\" [disabled, ref=e45]\n        - option \"自定义输入模型...\" [disabled, ref=e46]\n    - generic\n      - LabelText\n        - StaticText \"审核开关\"\n      - combobox [expanded=false, ref=e20]: 开\n        - MenuListPopup\n          - option \"开\" [selected, ref=e56]\n          - option \"关\" [ref=e57]\n    - LabelText\n      - StaticText \"审核引擎\"\n    - combobox [expanded=false, ref=e16]: opencode CLI\n      - MenuListPopup\n        - option \"opencode CLI\" [selected, ref=e47]\n        - option \"CodeBuddy CLI\" [ref=e48]\n        - option \"OpenAI 兼容接口\" [ref=e49]\n    - generic\n      - LabelText\n        - StaticText \"审核模型\"\n      - combobox [expanded=false, ref=e21]: MiMo-V2.5 Free\n        - MenuListPopup\n          - option \"MiMo-V2.5 Free\" [selected, ref=e58]\n          - option \"LongCat-2.0 Free\" [ref=e59]\n          - option \"deepseek-v4-flash-free\" [ref=e60]\n          - option \"deepseek-v4-flash\" [ref=e61]\n          - option \"glm-5v-turbo\" [ref=e62]\n          - option \"自定义输入模型...\" [ref=e63]\n    - generic\n      - StaticText \"分组测试\"\n      - combobox [expanded=false, ref=e22]: 停用\n        - MenuListPopup\n          - option \"停用\" [selected, ref=e64]\n          - option \"启用\" [ref=e65]\n      - generic\n        - LabelText\n          - StaticText \"随机分配概率\"\n        - spinbutton \"0-100\" [disabled, ref=e50]: 0\n          - StaticText \"0\"\n        - LabelText\n          - StaticText \"分配方式\"\n        - combobox [expanded=false, disabled, ref=e51]: 按单据随机\n          - MenuListPopup\n            - option \"按单据随机\" [selected, ref=e68]\n            - option \"按供应商\" [ref=e69]\n        - LabelText\n          - StaticText \"灰测识别引擎\"\n        - combobox [expanded=false, disabled, ref=e52]: opencode CLI\n          - MenuListPopup\n            - option \"opencode CLI\" [selected, ref=e70]\n            - option \"CodeBuddy CLI\" [ref=e71]\n            - option \"OpenAI 兼容接口\" [ref=e72]\n        - LabelText\n          - StaticText \"灰测识别模型\"\n        - combobox [expanded=false, ref=e53]: MiMo-V2.5 Free\n          - MenuListPopup\n            - option \"MiMo-V2.5 Free\" [selected, ref=e73]\n            - option \"LongCat-2.0 Free\" [ref=e74]\n            - option \"deepseek-v4-flash-free\" [ref=e75]\n            - option \"deepseek-v4-flash\" [ref=e76]\n            - option \"glm-5v-turbo\" [ref=e77]\n            - option \"自定义输入模型...\" [ref=e78]\n        - LabelText\n          - StaticText \"灰测审核引擎\"\n        - combobox [expanded=false, ref=e54]: opencode CLI\n          - MenuListPopup\n            - option \"opencode CLI\" [selected, ref=e79]\n            - option \"CodeBuddy CLI\" [ref=e80]\n            - option \"OpenAI 兼容接口\" [ref=e81]\n        - LabelText\n          - StaticText \"灰测审核模型\"\n        - combobox [expanded=false, ref=e55]: MiMo-V2.5 Free\n          - MenuListPopup\n            - option \"MiMo-V2.5 Free\" [selected, ref=e82]\n            - option \"LongCat-2.0 Free\" [ref=e83]\n            - option \"deepseek-v4-flash-free\" [ref=e84]\n            - option \"deepseek-v4-flash\" [ref=e85]\n            - option \"glm-5v-turbo\" [ref=e86]\n            - option \"自定义输入模型...\" [ref=e87]\n        - generic\n          - LabelText\n            - StaticText \"灰测审核开关\"\n          - combobox [expanded=false, disabled, ref=e66]: 开\n            - MenuListPopup\n              - option \"开\" [selected, ref=e322]\n              - option \"关\" [ref=e323]\n        - generic\n          - StaticText \"灰测解析 LLM\"\n          - combobox [expanded=false, disabled, ref=e67]: 关\n            - MenuListPopup\n              - option \"关\" [selected, ref=e324]\n              - option \"开\" [ref=e325]\n          - generic\n            - LabelText\n              - StaticText \"解析引擎\"\n            - combobox [expanded=false, disabled, ref=e88]: opencode CLI\n              - MenuListPopup\n                - option \"opencode CLI\" [selected, ref=e354]\n                - option \"CodeBuddy CLI\" [ref=e355]\n                - option \"OpenAI 兼容接口\" [ref=e356]\n            - LabelText\n              - StaticText \"解析模型\"\n            - combobox [expanded=false, ref=e89]: MiMo-V2.5 Free\n              - MenuListPopup\n                - option \"MiMo-V2.5 Free\" [selected, ref=e357]\n                - option \"LongCat-2.0 Free\" [ref=e358]\n                - option \"deepseek-v4-flash-free\" [ref=e359]\n                - option \"deepseek-v4-flash\" [ref=e360]\n                - option \"glm-5v-turbo\" [ref=e361]\n                - option \"自定义输入模型...\" [ref=e362]\n    - generic\n      - StaticText \"灰测产品闭环\"\n      - button \"配置对比\" [ref=e23]\n      - button \"一键推全\" [ref=e24]\n      - button \"一键回滚\" [ref=e25]\n    - StaticText \"灰测单据与用户使用状态抽样观测 (已脱敏保护)\"\n    - button \"刷新脱敏单据流\" [ref=e17]\n    - generic\n      - StaticText \"总样本:\"\n      - StaticText \"28\"\n      - StaticText \"已审批入库:\"\n      - StaticText \"10\"\n      - StaticText \"店员已复核:\"\n      - StaticText \"11\"\n      - StaticText \"赞同(完全采纳):\"\n      - StaticText \"11\"\n      - StaticText \"纠偏(人工修正):\"\n      - StaticText \"0\"\n      - StaticText \"平均采纳率:\"\n      - StaticText \"98.2%\"\n      - StaticText \"灰测组:\"\n      - StaticText \"14\"\n    - table\n      - rowgroup\n        - row\n          - columnheader \"单据 ID\" [ref=e90]\n          - columnheader \"脱敏供应商\" [ref=e91]\n          - columnheader \"单据形态\" [ref=e92]\n          - columnheader \"脱敏金额\" [ref=e93]\n          - columnheader \"分流引擎\" [ref=e94]\n          - columnheader \"使用状态\" [ref=e95]\n          - columnheader \"AI 效果反馈\" [ref=e96]\n          - columnheader \"操作\" [ref=e97]\n      - rowgroup\n        - row\n          - cell \"#29\" [ref=e98]\n            - strong\n              - StaticText \"#29\"\n          - cell \"匿名供应商_#V00 (已脱敏)\" [ref=e99]\n            - StaticText \"匿名供应商_#V00 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e100]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e101]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"灰测实验组\" [ref=e102]\n          - cell \"待复核\" [ref=e103]\n          - cell \"待复核校验 (100%)\" [ref=e104]\n          - cell \"查看脱敏解析\" [ref=e105]\n            - button \"查看脱敏解析\" [ref=e326]\n        - row\n          - cell \"#28\" [ref=e106]\n            - strong\n              - StaticText \"#28\"\n          - cell \"匿名供应商_#V00 (已脱敏)\" [ref=e107]\n            - StaticText \"匿名供应商_#V00 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e108]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e109]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"常规线上组\" [ref=e110]\n          - cell \"待复核\" [ref=e111]\n          - cell \"待复核校验 (100%)\" [ref=e112]\n          - cell \"查看脱敏解析\" [ref=e113]\n            - button \"查看脱敏解析\" [ref=e327]\n        - row\n          - cell \"#27\" [ref=e114]\n            - strong\n              - StaticText \"#27\"\n          - cell \"食材批发商_#V462 (已脱敏)\" [ref=e115]\n            - StaticText \"食材批发商_#V462 (已脱敏)\"\n          - cell \"printed_delivery_note\" [ref=e116]\n            - code\n              - StaticText \"printed_delivery_note\"\n          - cell \"HK$ 2**.*0\" [ref=e117]\n            - code\n              - StaticText \"HK$ 2**.*0\"\n          - cell \"灰测实验组\" [ref=e118]\n          - cell \"待复核\" [ref=e119]\n          - cell \"待复核校验 (100%)\" [ref=e120]\n          - cell \"查看脱敏解析\" [ref=e121]\n            - button \"查看脱敏解析\" [ref=e328]\n        - row\n          - cell \"#26\" [ref=e122]\n            - strong\n              - StaticText \"#26\"\n          - cell \"匿名供应商_#V00 (已脱敏)\" [ref=e123]\n            - StaticText \"匿名供应商_#V00 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e124]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e125]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"常规线上组\" [ref=e126]\n          - cell \"待复核\" [ref=e127]\n          - cell \"待复核校验 (100%)\" [ref=e128]\n          - cell \"查看脱敏解析\" [ref=e129]\n            - button \"查看脱敏解析\" [ref=e329]\n        - row\n          - cell \"#25\" [ref=e130]\n            - strong\n              - StaticText \"#25\"\n          - cell \"食材批发商_#V498 (已脱敏)\" [ref=e131]\n            - StaticText \"食材批发商_#V498 (已脱敏)\"\n          - cell \"thermal\" [ref=e132]\n            - code\n              - StaticText \"thermal\"\n          - cell \"HK$ 3**.*0\" [ref=e133]\n            - code\n              - StaticText \"HK$ 3**.*0\"\n          - cell \"灰测实验组\" [ref=e134]\n          - cell \"待复核\" [ref=e135]\n          - cell \"待复核校验 (100%)\" [ref=e136]\n          - cell \"查看脱敏解析\" [ref=e137]\n            - button \"查看脱敏解析\" [ref=e330]\n        - row\n          - cell \"#24\" [ref=e138]\n            - strong\n              - StaticText \"#24\"\n          - cell \"食材批发商_#V582 (已脱敏)\" [ref=e139]\n            - StaticText \"食材批发商_#V582 (已脱敏)\"\n          - cell \"thermal\" [ref=e140]\n            - code\n              - StaticText \"thermal\"\n          - cell \"HK$ 8**.*0\" [ref=e141]\n            - code\n              - StaticText \"HK$ 8**.*0\"\n          - cell \"常规线上组\" [ref=e142]\n          - cell \"待复核\" [ref=e143]\n          - cell \"待复核校验 (100%)\" [ref=e144]\n          - cell \"查看脱敏解析\" [ref=e145]\n            - button \"查看脱敏解析\" [ref=e331]\n        - row\n          - cell \"#23\" [ref=e146]\n            - strong\n              - StaticText \"#23\"\n          - cell \"食材批发商_#V766 (已脱敏)\" [ref=e147]\n            - StaticText \"食材批发商_#V766 (已脱敏)\"\n          - cell \"thermal\" [ref=e148]\n            - code\n              - StaticText \"thermal\"\n          - cell \"HK$ 1**.*0\" [ref=e149]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"灰测实验组\" [ref=e150]\n          - cell \"待复核\" [ref=e151]\n          - cell \"待复核校验 (100%)\" [ref=e152]\n          - cell \"查看脱敏解析\" [ref=e153]\n            - button \"查看脱敏解析\" [ref=e332]\n        - row\n          - cell \"#22\" [ref=e154]\n            - strong\n              - StaticText \"#22\"\n          - cell \"食材批发商_#V839 (已脱敏)\" [ref=e155]\n            - StaticText \"食材批发商_#V839 (已脱敏)\"\n          - cell \"printed_delivery_note\" [ref=e156]\n            - code\n              - StaticText \"printed_delivery_note\"\n          - cell \"HK$ 2**.*0\" [ref=e157]\n            - code\n              - StaticText \"HK$ 2**.*0\"\n          - cell \"常规线上组\" [ref=e158]\n          - cell \"待复核\" [ref=e159]\n          - cell \"待复核校验 (100%)\" [ref=e160]\n          - cell \"查看脱敏解析\" [ref=e161]\n            - button \"查看脱敏解析\" [ref=e333]\n        - row\n          - cell \"#21\" [ref=e162]\n            - strong\n              - StaticText \"#21\"\n          - cell \"匿名供应商_#V00 (已脱敏)\" [ref=e163]\n            - StaticText \"匿名供应商_#V00 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e164]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e165]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"灰测实验组\" [ref=e166]\n          - cell \"待复核\" [ref=e167]\n          - cell \"待复核校验 (50%)\" [ref=e168]\n          - cell \"查看脱敏解析\" [ref=e169]\n            - button \"查看脱敏解析\" [ref=e334]\n        - row\n          - cell \"#20\" [ref=e170]\n            - strong\n              - StaticText \"#20\"\n          - cell \"食材批发商_#V723 (已脱敏)\" [ref=e171]\n            - StaticText \"食材批发商_#V723 (已脱敏)\"\n          - cell \"printed_delivery_note\" [ref=e172]\n            - code\n              - StaticText \"printed_delivery_note\"\n          - cell \"HK$ 1**.*0\" [ref=e173]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e174]\n          - cell \"老板已入库\" [ref=e175]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e176]\n          - cell \"查看脱敏解析\" [ref=e177]\n            - button \"查看脱敏解析\" [ref=e335]\n        - row\n          - cell \"#19\" [ref=e178]\n            - strong\n              - StaticText \"#19\"\n          - cell \"食材批发商_#V606 (已脱敏)\" [ref=e179]\n            - StaticText \"食材批发商_#V606 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e180]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 2**.*0\" [ref=e181]\n            - code\n              - StaticText \"HK$ 2**.*0\"\n          - cell \"灰测实验组\" [ref=e182]\n          - cell \"待复核\" [ref=e183]\n          - cell \"待复核校验 (100%)\" [ref=e184]\n          - cell \"查看脱敏解析\" [ref=e185]\n            - button \"查看脱敏解析\" [ref=e336]\n        - row\n          - cell \"#18\" [ref=e186]\n            - strong\n              - StaticText \"#18\"\n          - cell \"蔬菜批发商_#V706 (已脱敏)\" [ref=e187]\n            - StaticText \"蔬菜批发商_#V706 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e188]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e189]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e190]\n          - cell \"老板已入库\" [ref=e191]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e192]\n          - cell \"查看脱敏解析\" [ref=e193]\n            - button \"查看脱敏解析\" [ref=e337]\n        - row\n          - cell \"#17\" [ref=e194]\n            - strong\n              - StaticText \"#17\"\n          - cell \"食材批发商_#V937 (已脱敏)\" [ref=e195]\n            - StaticText \"食材批发商_#V937 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e196]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 5**.*0\" [ref=e197]\n            - code\n              - StaticText \"HK$ 5**.*0\"\n          - cell \"灰测实验组\" [ref=e198]\n          - cell \"老板已入库\" [ref=e199]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e200]\n          - cell \"查看脱敏解析\" [ref=e201]\n            - button \"查看脱敏解析\" [ref=e338]\n        - row\n          - cell \"#16\" [ref=e202]\n            - strong\n              - StaticText \"#16\"\n          - cell \"食材批发商_#V878 (已脱敏)\" [ref=e203]\n            - StaticText \"食材批发商_#V878 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e204]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e205]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e206]\n          - cell \"老板已入库\" [ref=e207]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e208]\n          - cell \"查看脱敏解析\" [ref=e209]\n            - button \"查看脱敏解析\" [ref=e339]\n        - row\n          - cell \"#15\" [ref=e210]\n            - strong\n              - StaticText \"#15\"\n          - cell \"蔬菜批发商_#V132 (已脱敏)\" [ref=e211]\n            - StaticText \"蔬菜批发商_#V132 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e212]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e213]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"灰测实验组\" [ref=e214]\n          - cell \"待复核\" [ref=e215]\n          - cell \"待复核校验 (100%)\" [ref=e216]\n          - cell \"查看脱敏解析\" [ref=e217]\n            - button \"查看脱敏解析\" [ref=e340]\n        - row\n          - cell \"#14\" [ref=e218]\n            - strong\n              - StaticText \"#14\"\n          - cell \"食材批发商_#V606 (已脱敏)\" [ref=e219]\n            - StaticText \"食材批发商_#V606 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e220]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 2**.*0\" [ref=e221]\n            - code\n              - StaticText \"HK$ 2**.*0\"\n          - cell \"常规线上组\" [ref=e222]\n          - cell \"待复核\" [ref=e223]\n          - cell \"待复核校验 (100%)\" [ref=e224]\n          - cell \"查看脱敏解析\" [ref=e225]\n            - button \"查看脱敏解析\" [ref=e341]\n        - row\n          - cell \"#13\" [ref=e226]\n            - strong\n              - StaticText \"#13\"\n          - cell \"蔬菜批发商_#V706 (已脱敏)\" [ref=e227]\n            - StaticText \"蔬菜批发商_#V706 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e228]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e229]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"灰测实验组\" [ref=e230]\n          - cell \"老板已入库\" [ref=e231]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e232]\n          - cell \"查看脱敏解析\" [ref=e233]\n            - button \"查看脱敏解析\" [ref=e342]\n        - row\n          - cell \"#12\" [ref=e234]\n            - strong\n              - StaticText \"#12\"\n          - cell \"食材批发商_#V937 (已脱敏)\" [ref=e235]\n            - StaticText \"食材批发商_#V937 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e236]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 5**.*0\" [ref=e237]\n            - code\n              - StaticText \"HK$ 5**.*0\"\n          - cell \"常规线上组\" [ref=e238]\n          - cell \"老板已入库\" [ref=e239]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e240]\n          - cell \"查看脱敏解析\" [ref=e241]\n            - button \"查看脱敏解析\" [ref=e343]\n        - row\n          - cell \"#11\" [ref=e242]\n            - strong\n              - StaticText \"#11\"\n          - cell \"食材批发商_#V878 (已脱敏)\" [ref=e243]\n            - StaticText \"食材批发商_#V878 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e244]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e245]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"灰测实验组\" [ref=e246]\n          - cell \"老板已入库\" [ref=e247]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e248]\n          - cell \"查看脱敏解析\" [ref=e249]\n            - button \"查看脱敏解析\" [ref=e344]\n        - row\n          - cell \"#10\" [ref=e250]\n            - strong\n              - StaticText \"#10\"\n          - cell \"蔬菜批发商_#V132 (已脱敏)\" [ref=e251]\n            - StaticText \"蔬菜批发商_#V132 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e252]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e253]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e254]\n          - cell \"待复核\" [ref=e255]\n          - cell \"待复核校验 (100%)\" [ref=e256]\n          - cell \"查看脱敏解析\" [ref=e257]\n            - button \"查看脱敏解析\" [ref=e345]\n        - row\n          - cell \"#8\" [ref=e258]\n            - strong\n              - StaticText \"#8\"\n          - cell \"蔬菜批发商_#V706 (已脱敏)\" [ref=e259]\n            - StaticText \"蔬菜批发商_#V706 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e260]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e261]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e262]\n          - cell \"老板已入库\" [ref=e263]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e264]\n          - cell \"查看脱敏解析\" [ref=e265]\n            - button \"查看脱敏解析\" [ref=e346]\n        - row\n          - cell \"#7\" [ref=e266]\n            - strong\n              - StaticText \"#7\"\n          - cell \"食材批发商_#V937 (已脱敏)\" [ref=e267]\n            - StaticText \"食材批发商_#V937 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e268]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 5**.*0\" [ref=e269]\n            - code\n              - StaticText \"HK$ 5**.*0\"\n          - cell \"灰测实验组\" [ref=e270]\n          - cell \"老板已入库\" [ref=e271]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e272]\n          - cell \"查看脱敏解析\" [ref=e273]\n            - button \"查看脱敏解析\" [ref=e347]\n        - row\n          - cell \"#6\" [ref=e274]\n            - strong\n              - StaticText \"#6\"\n          - cell \"食材批发商_#V878 (已脱敏)\" [ref=e275]\n            - StaticText \"食材批发商_#V878 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e276]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e277]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"常规线上组\" [ref=e278]\n          - cell \"店员已编辑\" [ref=e279]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e280]\n          - cell \"查看脱敏解析\" [ref=e281]\n            - button \"查看脱敏解析\" [ref=e348]\n        - row\n          - cell \"#5\" [ref=e282]\n            - strong\n              - StaticText \"#5\"\n          - cell \"蔬菜批发商_#V132 (已脱敏)\" [ref=e283]\n            - StaticText \"蔬菜批发商_#V132 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e284]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 1**.*0\" [ref=e285]\n            - code\n              - StaticText \"HK$ 1**.*0\"\n          - cell \"灰测实验组\" [ref=e286]\n          - cell \"待复核\" [ref=e287]\n          - cell \"待复核校验 (100%)\" [ref=e288]\n          - cell \"查看脱敏解析\" [ref=e289]\n            - button \"查看脱敏解析\" [ref=e349]\n        - row\n          - cell \"#4\" [ref=e290]\n            - strong\n              - StaticText \"#4\"\n          - cell \"食材批发商_#V606 (已脱敏)\" [ref=e291]\n            - StaticText \"食材批发商_#V606 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e292]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e293]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"常规线上组\" [ref=e294]\n          - cell \"待复核\" [ref=e295]\n          - cell \"待复核校验 (100%)\" [ref=e296]\n          - cell \"查看脱敏解析\" [ref=e297]\n            - button \"查看脱敏解析\" [ref=e350]\n        - row\n          - cell \"#3\" [ref=e298]\n            - strong\n              - StaticText \"#3\"\n          - cell \"食材批发商_#V937 (已脱敏)\" [ref=e299]\n            - StaticText \"食材批发商_#V937 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e300]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e301]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"灰测实验组\" [ref=e302]\n          - cell \"老板已入库\" [ref=e303]\n          - cell \"用户赞同 · 完全采纳 (100%)\" [ref=e304]\n          - cell \"查看脱敏解析\" [ref=e305]\n            - button \"查看脱敏解析\" [ref=e351]\n        - row\n          - cell \"#2\" [ref=e306]\n            - strong\n              - StaticText \"#2\"\n          - cell \"食材批发商_#V878 (已脱敏)\" [ref=e307]\n            - StaticText \"食材批发商_#V878 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e308]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e309]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"常规线上组\" [ref=e310]\n          - cell \"待复核\" [ref=e311]\n          - cell \"待复核校验 (100%)\" [ref=e312]\n          - cell \"查看脱敏解析\" [ref=e313]\n            - button \"查看脱敏解析\" [ref=e352]\n        - row\n          - cell \"#1\" [ref=e314]\n            - strong\n              - StaticText \"#1\"\n          - cell \"蔬菜批发商_#V132 (已脱敏)\" [ref=e315]\n            - StaticText \"蔬菜批发商_#V132 (已脱敏)\"\n          - cell \"ncr_handwritten\" [ref=e316]\n            - code\n              - StaticText \"ncr_handwritten\"\n          - cell \"HK$ 0.00\" [ref=e317]\n            - code\n              - StaticText \"HK$ 0.00\"\n          - cell \"灰测实验组\" [ref=e318]\n          - cell \"待复核\" [ref=e319]\n          - cell \"待复核校验 (100%)\" [ref=e320]\n          - cell \"查看脱敏解析\" [ref=e321]\n            - button \"查看脱敏解析\" [ref=e353]\n    - LabelText [ref=e18] clickable [cursor:pointer]\n      - checkbox \"跳过连通性测试直接保存\" [checked=false, ref=e26]\n      - StaticText \"跳过连通性测试直接保存\"\n    - button \"保存配置\" [ref=e19]\n- status\n  - StaticText \"已成功拉取 28 份脱敏灰测样本与效果评估\"\n  - button \"关闭提示\" [ref=e2]\n    - StaticText \"×\"",
+    "browserPageId": "298ca6d6-4ac5-4709-82ba-df93312a6d05"
+  },
+  "_meta": {
+    "runtimeId": "ed6bd2b2-e495-4843-9909-583246522d1c"
+  }
+}

@@ -1,0 +1,198 @@
+=== Orca capabilities evidence ===
+{
+  "id": "07df1a6b-72a4-4c31-88de-783290217f30",
+  "ok": true,
+  "result": {
+    "protocolVersion": 1,
+    "supports": {
+      "actions": {
+        "drag": true,
+        "setValue": true,
+        "click": true,
+        "hotkey": true,
+        "pressKey": true,
+        "performAction": true,
+        "typeText": true,
+        "pasteText": true,
+        "scroll": true
+      },
+      "surfaces": {
+        "dock": false,
+        "dialogs": false,
+        "menus": false,
+        "menubar": false
+      },
+      "windows": {
+        "list": true,
+        "targetByIndex": true,
+        "moveResize": false,
+        "focus": false,
+        "targetById": true
+      },
+      "apps": {
+        "list": true,
+        "bundleIds": true,
+        "pids": true
+      },
+      "observation": {
+        "ocr": false,
+        "annotatedScreenshot": false,
+        "screenshot": true,
+        "elementFrames": true
+      }
+    },
+    "providerVersion": "1.0.0",
+    "provider": "orca-computer-use-macos",
+    "platform": "darwin"
+  },
+  "_meta": {
+    "runtimeId": "ed6bd2b2-e495-4843-9909-583246522d1c"
+  }
+}
+
+=== list-apps ===
+{
+  "id": "407ec0d3-d6ef-4a78-b063-2fe1a217b430",
+  "ok": true,
+  "result": {
+    "apps": [
+      {
+        "lastUsedAt": null,
+        "isRunning": true,
+        "name": "Orca",
+        "pid": 1632,
+        "useCount": null,
+        "bundleId": "com.stablyai.orca"
+      },
+      {
+        "pid": 18845,
+        "useCount": null,
+        "name": "CC Switch",
+        "bundleId": "com.ccswitch.desktop",
+        "isRunning": true,
+        "lastUsedAt": null
+      },
+      {
+        "name": "Finder",
+        "pid": 590,
+        "isRunning": true,
+        "useCount": null,
+        "lastUsedAt": null,
+        "bundleId": "com.apple.finder"
+      },
+      {
+        "pid": 39329,
+        "name": "Google Chrome",
+        "useCount": null,
+        "bundleId": "com.google.Chrome",
+        "isRunning": true,
+        "lastUsedAt": null
+      },
+      {
+        "bundleId": "com.microsoft.autoupdate2",
+        "useCount": null,
+        "pid": 98415,
+        "isRunning": true,
+        "lastUsedAt": null,
+        "name": "Microsoft AutoUpdate"
+      },
+      {
+        "isRunning": true,
+        "name": "Obsidian",
+        "useCount": null,
+        "bundleId": "md.obsidian",
+        "pid": 7137,
+        "lastUsedAt": null
+      },
+      {
+        "lastUsedAt": null,
+        "name": "ThankVPN",
+        "bundleId": "com.thankvpn.macapp",
+        "pid": 7150,
+        "useCount": null,
+        "isRunning": true
+      },
+      {
+        "pid": 40907,
+        "lastUsedAt": null,
+        "isRunning": true,
+        "useCount": null,
+        "name": "UU远程",
+        "bundleId": "com.netease.uuremote"
+      },
+      {
+        "pid": 61820,
+        "isRunning": true,
+        "useCount": null,
+        "name": "千问",
+        "lastUsedAt": null,
+        "bundleId": "com.alibaba.tongyi"
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "ed6bd2b2-e495-4843-9909-583246522d1c"
+  }
+}
+
+=== list-windows Chrome ===
+{
+  "id": "a2d3d842-514a-4fc1-93b4-7e1365abe8ce",
+  "ok": true,
+  "result": {
+    "app": {
+      "pid": 39329,
+      "lastUsedAt": null,
+      "useCount": null,
+      "isRunning": true,
+      "name": "Google Chrome",
+      "bundleId": "com.google.Chrome"
+    },
+    "windows": [
+      {
+        "y": 96,
+        "app": {
+          "pid": 39329,
+          "name": "Google Chrome",
+          "bundleId": "com.google.Chrome"
+        },
+        "screenIndex": 0,
+        "isMinimized": false,
+        "isOffscreen": false,
+        "width": 1117,
+        "index": 0,
+        "height": 814,
+        "x": 74,
+        "platform": {
+          "layer": 0,
+          "alpha": 1
+        },
+        "title": "香港餐饮 AI 进货收据识别与库存管理系统",
+        "id": 25016,
+        "isMain": null
+      }
+    ]
+  },
+  "_meta": {
+    "runtimeId": "ed6bd2b2-e495-4843-9909-583246522d1c"
+  }
+}
+
+=== get-app-state attempt (expected permission_denied helper TCC) ===
+{
+  "id": "1b90d1e5-5ecb-4f0a-9f05-48b7d5143303",
+  "ok": false,
+  "error": {
+    "code": "permission_denied",
+    "message": "Accessibility permission is required for Orca Computer Use. Run `orca computer permissions` or open Settings > Computer Use, grant Accessibility to Orca Computer Use, then retry.",
+    "data": {
+      "nextSteps": [
+        "Run `orca computer permissions --json`, or `orca computer permissions --id accessibility --json` / `--id screenshots --json` when the message names one missing permission.",
+        "For remote or SSH targets, verify the command is running inside an active graphical desktop session."
+      ]
+    }
+  },
+  "_meta": {
+    "runtimeId": "ed6bd2b2-e495-4843-9909-583246522d1c"
+  }
+}
