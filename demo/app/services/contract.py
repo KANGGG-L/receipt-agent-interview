@@ -19,6 +19,57 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 ALLOWED_DOC_FORMS = {f.value for f in DocForm}
 
+# 红章 OCR 判定阈值：红色像素占比阈值，经验值 0.001（0.1%）
+_RED_STAMP_RATIO_THRESHOLD = 0.001
+_RED_R_MIN = 150
+_RED_G_MAX = 100
+_RED_B_MAX = 100
+_RED_DOMINANCE = 50
+
+
+def detect_red_stamp(image_path: str) -> bool:
+    """红章 OCR 辅助：检测图片中是否存在红色印章区域。
+
+    基于 RGB 阈值统计：R 高且 G/B 低且 R 显著高于 G/B 的像素占比。
+    缩放至 200x200 加速，ratio > 阈值 即判定有红章。
+    图片不存在或解析失败返回 False，不阻断主流程。
+    """
+    if not image_path:
+        return False
+    try:
+        from PIL import Image
+        import os
+        if not os.path.exists(image_path):
+            return False
+        with Image.open(image_path) as im:
+            im = im.convert("RGB")
+            # 缩放加速
+            im = im.resize((200, 200))
+            pixels = list(im.getdata())
+            if not pixels:
+                return False
+            red_cnt = 0
+            for r, g, b in pixels:
+                if r > _RED_R_MIN and g < _RED_G_MAX and b < _RED_B_MAX and (r - max(g, b)) > _RED_DOMINANCE:
+                    red_cnt += 1
+            ratio = red_cnt / len(pixels)
+            return ratio > _RED_STAMP_RATIO_THRESHOLD
+    except Exception:
+        return False
+
+
+def payment_mark_from_image(image_path: str, llm_marked: bool = False) -> str:
+    """综合判定 payment_mark：LLM 已标记 或 红章检测命中 → 非空标记。
+
+    返回：有付款痕迹时返回 "stamp"（红章）或 "已付款"，无则返回 ""。
+    优先保留 LLM 判定，红章检测作为补充避免漏检。
+    """
+    if llm_marked:
+        return "已付款"
+    if detect_red_stamp(image_path):
+        return "stamp"
+    return ""
+
 
 def validate_contract(payload: dict) -> Tuple[Optional[ReceiptData], Optional[str]]:
     """契约门禁入口。
