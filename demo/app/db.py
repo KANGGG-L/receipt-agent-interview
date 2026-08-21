@@ -31,6 +31,7 @@ _SessionLocal = None
 _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
+_ReceiptFeedbackRow = None
 
 
 def _make_engine():
@@ -38,6 +39,7 @@ def _make_engine():
     global _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow, _SupplierRow
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
+    global _ReceiptFeedbackRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -269,6 +271,25 @@ def _make_engine():
         grp = Column(String, default="control")
         assigned_at = Column(String, default="")
 
+    # -------------------------------------------------------------
+    # FR-8/FR-9 反馈飞轮：receipt_feedback
+    # like: 1=点赞, -1=点踩, 0=未表态；item_index: None=整单, 数字=明细行
+    # tenant_id 强制隔离，vendor 快照用于 FR-9 三次连续提炼
+    # -------------------------------------------------------------
+    class ReceiptFeedbackRow(Base):
+        """收据反馈表：逐行/整单点赞点踩 + 文本反馈，支撑 FR-8/FR-9 飞轮。"""
+        __tablename__ = "receipt_feedback"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        receipt_id = Column(Integer, index=True, nullable=False)
+        item_index = Column(Integer, nullable=True)
+        like = Column(Integer, nullable=True)          # 1=点赞 -1=点踩
+        comment = Column(Text, default="")
+        quality_warnings_json = Column(Text, default="[]")
+        tenant_id = Column(String, default="default", index=True)
+        vendor = Column(String, default="")
+        created_at = Column(String, default="")
+        updated_at = Column(String, default="")
+
     Base.metadata.create_all(_engine)
 
     # SQLite 迁移：给 receipts 表补 use_grey 列（阶段 1：AI 可见性与信任）
@@ -290,6 +311,7 @@ def _make_engine():
     _UserEventRow = UserEventRow
     _ExperimentRow = ExperimentRow
     _ExperimentAssignRow = ExperimentAssignRow
+    _ReceiptFeedbackRow = ReceiptFeedbackRow
     return Base
 
 
@@ -2170,5 +2192,171 @@ def snapshot_ai_metrics(period_days=1, granularity="global",
         s.add(row)
         s.commit()
         return snap
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# FR-8/FR-9 反馈飞轮：receipt_feedback CRUD + 三次连续提炼判定
+# -------------------------------------------------------------
+def upsert_receipt_feedback(receipt_id, like=None, comment="", item_index=None,
+                            tenant_id="default", vendor="", quality_warnings=None):
+    """写入/更新反馈。幂等：同 receipt_id+item_index 覆盖。
+
+    like: 1=点赞, -1=点踩, None/0=未表态
+    quality_warnings: list[str] 快照
+    返回 row dict。
+    """
+    s = get_session()
+    try:
+        # 归一 like
+        if like is True:
+            like_val = 1
+        elif like is False:
+            like_val = -1
+        elif isinstance(like, str):
+            lv = like.strip().lower()
+            if lv in ("1", "like", "up", "thumbs_up", "true"):
+                like_val = 1
+            elif lv in ("-1", "dislike", "down", "thumbs_down", "false"):
+                like_val = -1
+            else:
+                try:
+                    like_val = int(lv)
+                    like_val = 1 if like_val > 0 else (-1 if like_val < 0 else None)
+                except Exception:
+                    like_val = None
+        elif isinstance(like, (int, float)):
+            like_val = 1 if int(like) > 0 else (-1 if int(like) < 0 else None)
+        else:
+            like_val = None
+
+        # comment 净化：截断 2000 字，防注入（入库前已转义由前端负责）
+        comment_str = str(comment or "")[:2000]
+        qw_json = json.dumps(quality_warnings or [], ensure_ascii=False)
+
+        # 查找已存在（同 receipt + item_index 去重）
+        q = s.query(_ReceiptFeedbackRow).filter(
+            _ReceiptFeedbackRow.receipt_id == int(receipt_id)
+        )
+        if item_index is not None:
+            q = q.filter(_ReceiptFeedbackRow.item_index == int(item_index))
+        else:
+            q = q.filter(_ReceiptFeedbackRow.item_index.is_(None))
+        existing = q.first()
+
+        if existing:
+            existing.like = like_val
+            existing.comment = comment_str
+            existing.quality_warnings_json = qw_json
+            existing.tenant_id = tenant_id or "default"
+            if vendor:
+                existing.vendor = vendor
+            existing.updated_at = now_iso()
+            s.commit()
+            s.refresh(existing)
+            row = existing
+        else:
+            row = _ReceiptFeedbackRow(
+                receipt_id=int(receipt_id),
+                item_index=int(item_index) if item_index is not None else None,
+                like=like_val,
+                comment=comment_str,
+                quality_warnings_json=qw_json,
+                tenant_id=tenant_id or "default",
+                vendor=vendor or "",
+                created_at=now_iso(),
+                updated_at=now_iso(),
+            )
+            s.add(row)
+            s.commit()
+            s.refresh(row)
+
+        return {
+            "id": row.id,
+            "receipt_id": row.receipt_id,
+            "item_index": row.item_index,
+            "like": row.like,
+            "comment": row.comment,
+            "quality_warnings": json.loads(row.quality_warnings_json or "[]"),
+            "tenant_id": row.tenant_id,
+            "vendor": row.vendor,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
+    finally:
+        s.close()
+
+
+def list_receipt_feedbacks(receipt_id=None, vendor=None, tenant_id=None):
+    """查询反馈。支持按 receipt_id / vendor / tenant 过滤。"""
+    s = get_session()
+    try:
+        q = s.query(_ReceiptFeedbackRow)
+        if receipt_id is not None:
+            q = q.filter(_ReceiptFeedbackRow.receipt_id == int(receipt_id))
+        if vendor:
+            q = q.filter(_ReceiptFeedbackRow.vendor == str(vendor))
+        if tenant_id:
+            q = q.filter(_ReceiptFeedbackRow.tenant_id == str(tenant_id))
+        rows = q.order_by(_ReceiptFeedbackRow.id.desc()).all()
+        out = []
+        for r in rows:
+            out.append({
+                "id": r.id,
+                "receipt_id": r.receipt_id,
+                "item_index": r.item_index,
+                "like": r.like,
+                "comment": r.comment,
+                "quality_warnings": json.loads(r.quality_warnings_json or "[]"),
+                "tenant_id": r.tenant_id,
+                "vendor": r.vendor,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            })
+        return out
+    finally:
+        s.close()
+
+
+def count_vendor_feedbacks(vendor, tenant_id="default"):
+    """统计某供应商在某租户下的反馈数量与点踩次数。"""
+    s = get_session()
+    try:
+        q = s.query(_ReceiptFeedbackRow).filter(
+            _ReceiptFeedbackRow.vendor == str(vendor),
+            _ReceiptFeedbackRow.tenant_id == str(tenant_id or "default"),
+        )
+        rows = q.all()
+        total = len(rows)
+        dislike = sum(1 for r in rows if r.like == -1)
+        like = sum(1 for r in rows if r.like == 1)
+        return {"total": total, "dislike": dislike, "like": like}
+    finally:
+        s.close()
+
+
+def should_distill_vendor_memory(vendor, tenant_id="default", threshold=None):
+    """FR-9 判定：同供应商同租户连续 N 次点踩（dislike）触发提炼。
+
+    阈值取 FEEDBACK_DISTILL_THRESHOLD 常量（默认 3），可由 threshold 参数覆盖。
+    语义：最近 N 条反馈均为点踩，认为需要沉淀为供应商记忆。
+    返回 True 需调用 rag 沉淀。
+    """
+    from app.models import FEEDBACK_DISTILL_THRESHOLD
+
+    n = int(threshold) if threshold else int(FEEDBACK_DISTILL_THRESHOLD)
+    s = get_session()
+    try:
+        rows = s.query(_ReceiptFeedbackRow).filter(
+            _ReceiptFeedbackRow.vendor == str(vendor),
+            _ReceiptFeedbackRow.tenant_id == str(tenant_id or "default"),
+        ).order_by(_ReceiptFeedbackRow.id.desc()).limit(n).all()
+        if len(rows) < n:
+            return False
+        for r in rows:
+            if r.like != -1:
+                return False
+        return True
     finally:
         s.close()

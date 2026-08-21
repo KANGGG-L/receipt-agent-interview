@@ -102,6 +102,32 @@ class VendorMemory(BaseModel):
 
 
 # -------------------------------------------------------------
+# 收据反馈飞轮（FR-8 / FR-9）常量
+# -------------------------------------------------------------
+FEEDBACK_DISTILL_THRESHOLD = 3  # 连续点踩阈值：同供应商同租户连续 N 次点踩触发 Chroma 沉淀
+FEEDBACK_COMMENT_MAXLEN = 2000
+
+# -------------------------------------------------------------
+# 收据反馈飞轮（FR-8 / FR-9）
+# 每明细行可点赞/点踩 + 文本反馈，落库 receipt_feedback，Chroma 租户隔离沉淀
+# -------------------------------------------------------------
+class ReceiptFeedback(BaseModel):
+    """单据/明细行级反馈（FR-8 逐字段置信度闭环 + FR-9 记忆飞轮）。"""
+    model_config = ConfigDict(extra="forbid")
+
+    id: Optional[int] = None
+    receipt_id: int = Field(description="关联收据 ID")
+    item_index: Optional[int] = Field(default=None, description="明细行下标（None=整单反馈）")
+    like: Optional[int] = Field(default=None, description="1=点赞, -1=点踩, 0/None=未表态")
+    comment: str = Field(default="", description="文本反馈")
+    quality_warnings: list[str] = Field(default_factory=list, description="关联 qualityWarnings 快照")
+    tenant_id: str = Field(default="default", description="租户隔离键")
+    vendor: str = Field(default="", description="供应商名快照")
+    created_at: str = Field(default="", description="创建时间 ISO")
+    updated_at: str = Field(default="", description="更新时间 ISO")
+
+
+# -------------------------------------------------------------
 # 灰测 / 引擎配置（admin 可调整）
 # -------------------------------------------------------------
 class GreyAssignMode(str, Enum):
