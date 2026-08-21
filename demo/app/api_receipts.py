@@ -14,9 +14,21 @@ from pydantic import BaseModel
 
 from app import db
 from app.auth import require_role
+from app.services.contract import payment_mark_from_image
 from app.services.receipt_utils import (
     build_detail, build_row, get_job, start_recognition_job,
 )
+
+
+def _supplement_payment_mark(receipt_row) -> str:
+    """印章判定补红章：若已有 payment_mark 则保留，否则用红章检测补充。
+
+    红章检测单一来源：app.services.contract.detect_red_stamp。
+    """
+    existing = (receipt_row.payment_mark or "").strip()
+    if existing:
+        return existing
+    return payment_mark_from_image(receipt_row.image_path or "", llm_marked=False)
 
 
 def _track_event(account, session_id, event_type, receipt_id=None,
@@ -291,6 +303,10 @@ def list_receipts(request: Request):
     require_role("owner")(request)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
     rows = db.list_receipt_rows()
+    # 印章判定补红章：列表视图在 build_row 前补充，避免 LLM 漏检导致 payment_mark 空
+    for r in rows:
+        if not (r.payment_mark or "").strip():
+            r.payment_mark = _supplement_payment_mark(r)
     data = [build_row(r) for r in rows]
     if desensitized:
         for row in rows:
@@ -343,6 +359,9 @@ def get_receipt(receipt_id: int, request: Request):
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
+    # 印章判定补红章：详情视图补充，避免 payment_mark 空
+    if not (row.payment_mark or "").strip():
+        row.payment_mark = _supplement_payment_mark(row)
     data = build_detail(row)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
     if desensitized:

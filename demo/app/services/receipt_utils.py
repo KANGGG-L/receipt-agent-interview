@@ -159,6 +159,15 @@ def save_parsed_data(receipt_id, data, result):
     else:
         review_priority_score = 0.1 if discrepancies == [] else 0.0
 
+    # 红章补充：LLM 未标记但图片含红章 → 补充为 stamp（单一来源：contract.payment_mark_from_image）
+    try:
+        from app.services.contract import payment_mark_from_image
+        row_tmp = db.get_receipt_row(receipt_id)
+        img_path = row_tmp.image_path if row_tmp else ""
+        payment_mark_val = payment_mark_from_image(img_path, llm_marked=data.payment_marked)
+    except Exception:
+        payment_mark_val = "已付款" if data.payment_marked else ""
+
     db.update_receipt(
         receipt_id,
         status="parsed",
@@ -167,7 +176,7 @@ def save_parsed_data(receipt_id, data, result):
         sheet_name=(data.date or "")[:7],
         total_amount=sanitize_nan(data.total),
         doc_form=data.doc_form.value if hasattr(data.doc_form, "value") else str(data.doc_form),
-        payment_mark="已付款" if data.payment_marked else "",
+        payment_mark=payment_mark_val,
         confidence=sanitize_nan(data.confidence),
         raw_llm=result.get("raw", ""),
         audit_json=json.dumps(audit_res, ensure_ascii=False),
@@ -241,6 +250,14 @@ def build_detail(row):
                 dept_name = d.name
                 break
 
+    payment_mark_val = row.payment_mark or ""
+    if not payment_mark_val:
+        try:
+            from app.services.contract import payment_mark_from_image
+            payment_mark_val = payment_mark_from_image(row.image_path or "", llm_marked=False)
+        except Exception:
+            pass
+
     return {
         "receipt_id": row.id,
         "supplier_name": row.supplier_name or "",
@@ -249,7 +266,7 @@ def build_detail(row):
         "total_amount": row.total_amount or 0.0,
         "status": row.status,
         "settlement_type": row.settlement_type or "credit",
-        "payment_mark": row.payment_mark or "",
+        "payment_mark": payment_mark_val,
         "department_id": row.department_id,
         "department_name": dept_name,
         "doc_form": row.doc_form or "",
@@ -314,6 +331,19 @@ def build_row(row):
     elif row.settlement_type == "cash":
         payment_status = "paid_at_delivery"
 
+    # 红章补充：列表视图也补充 payment_mark 避免漏检（单一来源：contract.payment_mark_from_image）
+    payment_mark_val = row.payment_mark or ""
+    if not payment_mark_val:
+        try:
+            from app.services.contract import payment_mark_from_image
+            payment_mark_val = payment_mark_from_image(row.image_path or "", llm_marked=False)
+        except Exception:
+            pass
+
+    import json as _json
+    quality_warnings = _json.loads(row.quality_warnings_json or "[]") if getattr(row, "quality_warnings_json", None) else []
+    review_priority = getattr(row, "review_priority_score", 0.0) or 0.0
+
     return {
         "id": row.id,
         "supplier_name": row.supplier_name or "",
@@ -334,4 +364,7 @@ def build_row(row):
         "paid_at": row.paid_at or "",
         "payment_id": row.payment_id,
         "use_grey": row.use_grey or 0,
+        "payment_mark": payment_mark_val,
+        "quality_warnings": quality_warnings,
+        "review_priority_score": review_priority,
     }

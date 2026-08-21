@@ -3100,8 +3100,8 @@ function appendTableRow(item = {}) {
     const skuId = item.sku_id || '';
     const isAnomaly = item.price_anomaly || false;
 
-    // A2/D（批4）：行级复核警示——低置信度 / 单位不可折算 / 匹配未命中
-    // 时给行加警示底色（消费 OCR 结果内已有字段，无新增 API）。
+    // 行级复核警示——低置信度 / 单位不可折算 / 匹配未命中
+    // P1-2：补充绑定 quality_warnings 与 review_priority>0.6（黄底 row-warning）
     const rowWarnings = [];
     if (typeof item.confidence === 'number' && item.confidence < 0.5) {
         rowWarnings.push('低置信度');
@@ -3112,6 +3112,17 @@ function appendTableRow(item = {}) {
     if (item.matched === false && !item.sku_id) {
         rowWarnings.push('SKU未匹配');
     }
+    // 单据级质量预检与重点复核标记（quality_warnings / review_priority_score>0.6）
+    try {
+        const _qws = (typeof currentReceiptData !== 'undefined' && currentReceiptData && Array.isArray(currentReceiptData.quality_warnings)) ? currentReceiptData.quality_warnings : null;
+        if (_qws && _qws.length > 0) {
+            rowWarnings.push('质量预检');
+        }
+        const _rps = (typeof currentReceiptData !== 'undefined' && currentReceiptData && typeof currentReceiptData.review_priority_score === 'number') ? currentReceiptData.review_priority_score : null;
+        if (_rps != null && _rps > 0.6) {
+            rowWarnings.push('重点复核');
+        }
+    } catch (e) {}
     const rowWarnClass = rowWarnings.length ? ' row-warning' : '';
     const rowWarnBadge = rowWarnings.length
         ? `<span class="badge badge-warning" title="${w2Escape(rowWarnings.join('；'))}" style="margin-left:4px;">${w2Escape(rowWarnings.join('·'))}</span>`
@@ -4652,7 +4663,11 @@ function renderArchiveTable(receipts) {
             const editDate = renderDateCell(r.updated_date);
             const recDate = renderDateCell(r.receipt_date);
 
-            html += '<tr>' +
+            // P1-2：黄底 row-warning 绑定 quality_warnings / review_priority>0.6
+            const _hasQw = Array.isArray(r.quality_warnings) && r.quality_warnings.length > 0;
+            const _rps = typeof r.review_priority_score === 'number' ? r.review_priority_score : 0;
+            const _rowWarn = (_hasQw || _rps > 0.6) ? ' class="row-warning"' : '';
+            html += '<tr' + _rowWarn + '>' +
                 '<td style="vertical-align:middle;">#' + rid + '</td>' +
                 '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
@@ -6441,6 +6456,40 @@ function stopBatchTimer() {
     }
 }
 
+// P1-4：批量聚合进度条——聚合本批上传/解析进度，更新顶部进度组件
+window.updateBatchAggregateProgress = updateBatchAggregateProgress;
+function updateBatchAggregateProgress() {
+    const wrap = document.getElementById('batchAggregateProgress');
+    const bar = document.getElementById('batchProgressBar');
+    const text = document.getElementById('batchProgressText');
+    const detail = document.getElementById('batchProgressDetail');
+    if (!wrap || !bar || !text) return;
+    const total = BatchUploader.photos.length;
+    if (total < 2) {
+        wrap.classList.add('hide');
+        return;
+    }
+    wrap.classList.remove('hide');
+    let done = 0, uploading = 0, failed = 0, pending = 0;
+    BatchUploader.photos.forEach(p => {
+        if (p.status === 'parsed' || p.status === 'saved') done += 1;
+        else if (p.status === 'uploading') uploading += 1;
+        else if (p.status === 'error') failed += 1;
+        else pending += 1;
+    });
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    bar.style.width = pct + '%';
+    text.textContent = done + ' / ' + total + ' 完成 (' + pct + '%)';
+    if (detail) {
+        const parts = [];
+        if (uploading) parts.push(uploading + ' 解析中');
+        if (pending) parts.push(pending + ' 待解析');
+        if (failed) parts.push(failed + ' 失败');
+        if (done) parts.push(done + ' 已完成');
+        detail.textContent = parts.join(' · ') || '等待上传';
+    }
+}
+
 function setActivePhoto(idx) {
     if (idx < 0 || idx >= BatchUploader.photos.length) return;
     resetManualEntryMode();   // D12：切换照片 → 退出新建手工单态（恢复左栏原图区/标题徽章）
@@ -6555,6 +6604,7 @@ function renderSider() {
         list.innerHTML = '';
         updateSiderVisibility();
         updateSelectionUI();
+        updateBatchAggregateProgress();
         return;
     }
 
@@ -6631,6 +6681,7 @@ function renderSider() {
     list.innerHTML = html;
     updateSelectionUI();
     updateToolbarButtonStates();
+    updateBatchAggregateProgress();
     persistManifest();
 }
 

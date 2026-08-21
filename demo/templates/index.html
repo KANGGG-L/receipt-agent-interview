@@ -136,6 +136,18 @@
                         </div>
                     </div>
 
+                    <!-- P1-4：批量聚合进度条（聚合本批上传/解析进度，零Emoji） -->
+                    <div id="batchAggregateProgress" class="batch-progress hide" aria-live="polite">
+                        <div class="batch-progress-header">
+                            <span class="batch-progress-title">批量进度</span>
+                            <span id="batchProgressText" class="batch-progress-text">0 / 0</span>
+                        </div>
+                        <div class="batch-progress-track">
+                            <div id="batchProgressBar" class="batch-progress-bar" style="width:0%"></div>
+                        </div>
+                        <div id="batchProgressDetail" class="batch-progress-detail"></div>
+                    </div>
+
                     <!-- Side-by-Side 左右分栏区域 -->
                     <div id="splitViewArea" class="split-view hide">
                         
@@ -179,12 +191,16 @@
                                 </div>
                             </div>
 
+                            <!-- P1-3：框选显性入口——40px 胶囊卡，cropOverlay 视觉增强 -->
                             <div class="img-toolbar" id="imgToolbar">
-                                <button id="btnZoomToggle" class="btn-tool" onclick="toggleZoomMode()"> 定点放大</button>
-                                <button id="btnCropToggle" class="btn-tool" onclick="toggleCropMode()"> 裁剪区域</button>
-                                <button id="btnApplyCrop" class="btn-tool btn-success hide" onclick="applyCropSelection()"> 应用裁剪</button>
-                                <button id="btnRotate" class="btn-tool" onclick="rotateImg()"> 旋转 90°</button>
-                                <button id="btnReset" class="btn-tool" onclick="resetImgTransform()"> 重置</button>
+                                <div class="crop-capsule">
+                                    <button id="btnCropToggle" class="btn-tool btn-crop-capsule" onclick="toggleCropMode()" title="框选裁剪区域，拖拽选择后点应用">框选裁剪</button>
+                                    <button id="btnApplyCrop" class="btn-tool btn-success hide" onclick="applyCropSelection()">应用裁剪</button>
+                                    <span class="crop-capsule-hint">拖拽框选需识别区域</span>
+                                </div>
+                                <button id="btnZoomToggle" class="btn-tool" onclick="toggleZoomMode()">定点放大</button>
+                                <button id="btnRotate" class="btn-tool" onclick="rotateImg()">旋转 90°</button>
+                                <button id="btnReset" class="btn-tool" onclick="resetImgTransform()">重置</button>
                             </div>
                         </div>
 
