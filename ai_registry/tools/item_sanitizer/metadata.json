@@ -1,0 +1,32 @@
+{
+  "name": "item_sanitizer",
+  "active_version": "v1_3_0_notes_clean",
+  "description": "明细行杂质过滤、印章隔离、免责声明拦截、费用解耦与验货划线/调整注记识别工具 (Gap 6 专项治理)",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-21",
+      "status": "deprecated",
+      "description": "印章与签名批注过滤"
+    },
+    "v1_1_0_disclaimer_clean": {
+      "release_date": "2026-08-21",
+      "status": "deprecated",
+      "description": "免责声明、条款与联系方式过滤"
+    },
+    "v1_2_0_fee_clean": {
+      "release_date": "2026-08-21",
+      "status": "deprecated",
+      "description": "整单折让、胶筐押金与送货运费自动解耦与顶层字段回填"
+    },
+    "v1_3_0_notes_clean": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "验货划线作废商品判定与手写短装/拒收注记结构化抽取 (Gap 6 专项治理)",
+      "metrics": {
+        "strikethrough_detection_rate": 100.0,
+        "note_extraction_recall": 100.0,
+        "clean_item_precision": 100.0
+      }
+    }
+  }
+}

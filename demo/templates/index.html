@@ -56,8 +56,8 @@
                 <div class="demo-role-switch">
                     <label for="demoRoleSelect">当前角色</label>
                     <select id="demoRoleSelect">
-                        <option value="admin" style="color:#d80d0d">● admin · 超管</option>
-                        <option value="owner" selected style="color:#2f6b4f">● owner · 老板</option>
+                        <option value="admin" selected style="color:#d80d0d">● admin · 超管 (灰测/引擎)</option>
+                        <option value="owner" style="color:#2f6b4f">● owner · 老板</option>
                         <option value="staff" style="color:#1565c0">● staff · 店员</option>
                     </select>
                 </div>
@@ -82,9 +82,9 @@
                     <span class="icon"></span>
                     <span>部门花销报表</span>
                 </button>
-                <button class="sidebar-btn" id="adminEngineBtn" data-target="tab-engine" data-title="引擎配置" style="display:none;">
+                <button class="sidebar-btn" id="adminEngineBtn" data-target="tab-engine" data-title="引擎配置与灰测大盘">
                     <span class="icon"></span>
-                    <span>引擎配置</span>
+                    <span>引擎与灰测</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
             </nav>
@@ -1289,6 +1289,42 @@
                     <div class="diff-wrap"></div>
                 </div>
 
+                <!-- 灰测用户使用状态与脱敏单据抽样观测面板 (Admin 专属) -->
+                <div class="card" style="margin-top:20px; border:1px solid #b8860b; background:#fefdf8;">
+                    <div class="card-title" style="justify-content:space-between; align-items:center;">
+                        <span style="color:#b8860b; font-weight:700;">灰测单据与用户使用状态抽样观测 (已脱敏保护)</span>
+                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples()">刷新脱敏单据流</button>
+                    </div>
+                    <div id="adminGreySampleMetrics" style="display:flex; gap:12px; margin-bottom:12px; font-size:0.82rem; flex-wrap:wrap;">
+                        <span class="badge" style="background:#fff3cd; color:#856404;">总样本: <b id="mGreyTotal">0</b></span>
+                        <span class="badge" style="background:#d4edda; color:#155724;">已审批入库: <b id="mGreyApproved">0</b></span>
+                        <span class="badge" style="background:#cce5ff; color:#004085;">店员已复核: <b id="mGreyEdited">0</b></span>
+                        <span class="badge" style="background:#e8f5e9; color:#2e7d32;">赞同(完全采纳): <b id="mGreyPositive">0</b></span>
+                        <span class="badge" style="background:#fff8e1; color:#b8860b;">纠偏(人工修正): <b id="mGreyModified">0</b></span>
+                        <span class="badge" style="background:#ede7f6; color:#512da8;">平均采纳率: <b id="mGreyAvgMatch">0%</b></span>
+                        <span class="badge" style="background:#e2e3e5; color:#383d41;">灰测组: <b id="mGreyCanary">0</b></span>
+                    </div>
+                    <div class="table-container" style="max-height:280px; overflow-y:auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>单据 ID</th>
+                                    <th>脱敏供应商</th>
+                                    <th>单据形态</th>
+                                    <th>脱敏金额</th>
+                                    <th>分流引擎</th>
+                                    <th>使用状态</th>
+                                    <th>AI 效果反馈</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminGreySamplesBody">
+                                <tr><td colspan="8" style="text-align:center; color:#999;">点击「刷新脱敏单据流」拉取数据...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; margin-top:18px;">
                     <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
                         <input type="checkbox" id="adminSkipModelTest" style="cursor:pointer;">
@@ -1303,6 +1339,91 @@
 
         </div>
 
+    </div>
+
+    <!-- 灰测单据与脱敏解析全屏 Side-by-Side 观测 Modal (Admin 专属 · 全响应式自适应) -->
+    <div id="adminGreySampleModal" class="modal-backdrop hide" style="z-index:10000; padding:16px; box-sizing:border-box;">
+        <div class="modal-card" style="max-width:1320px; width:95vw; height:88vh; max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box; border-radius:12px; box-shadow:0 20px 40px rgba(0,0,0,0.18);">
+            <div class="modal-header" style="border-bottom:1px solid #e2e8f0; padding:12px 20px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center;">
+                <h3 id="adminGreyModalTitle" style="margin:0; font-size:1.05rem; color:#b8860b; font-weight:700;">单据脱敏解析详情与图像切片</h3>
+                <button class="modal-close-btn" onclick="closeGreySampleModal()" style="font-size:1.2rem; cursor:pointer;">x</button>
+            </div>
+
+            <div class="modal-body" style="display:grid; grid-template-columns: minmax(280px, 40%) minmax(340px, 60%); gap:16px; padding:16px 20px; flex:1; min-height:0; overflow:hidden; box-sizing:border-box;">
+                <!-- 左侧：脱敏单据原图查看 (全自适应缩放与内嵌滚动) -->
+                <div class="card" style="margin-bottom:0; display:flex; flex-direction:column; background:#f8fafc; border:1px solid #e2e8f0; min-height:0; height:100%; box-sizing:border-box; padding:12px;">
+                    <div style="font-weight:600; font-size:0.85rem; margin-bottom:8px; color:#475569; flex-shrink:0;">脱敏单据原图与切片</div>
+                    <div id="adminGreyModalImgContainer" class="img-viewer-container" style="flex:1; min-height:0; background:#fff; border:1px solid #cbd5e1; border-radius:8px; display:flex; align-items:center; justify-content:center; overflow:auto; padding:8px;">
+                        <img id="adminGreyModalImg" src="" alt="脱敏单据原图" style="max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain;" draggable="false">
+                    </div>
+                </div>
+
+                <!-- 右侧：脱敏结构化数据、AI vs 用户效果判定与 JSON 查看 (独立纵向滚动) -->
+                <div class="card" style="margin-bottom:0; display:flex; flex-direction:column; gap:12px; background:#fff; border:1px solid #e2e8f0; min-height:0; height:100%; overflow-y:auto; box-sizing:border-box; padding:14px;">
+                    <!-- 顶部汇总指标 -->
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:0.82rem; background:#f1f5f9; padding:8px 12px; border-radius:8px; flex-shrink:0;">
+                        <div><strong>脱敏供应商:</strong> <span id="mModalVendor" style="color:#2f6b4f; font-weight:600;">-</span></div>
+                        <div><strong>脱敏总额:</strong> <span id="mModalTotal" style="font-weight:600;">-</span></div>
+                        <div><strong>单据形态:</strong> <code id="mModalForm">-</code></div>
+                        <div><strong>使用状态:</strong> <span id="mModalStatus">-</span></div>
+                        <div style="grid-column: span 2;"><strong>分流引擎:</strong> <span id="mModalEngine">-</span></div>
+                    </div>
+
+                    <!-- AI 解析 vs 用户最终录入效果评估判定卡 (新增) -->
+                    <div id="adminGreyEffectCard" style="background:#fcfbf7; border:1px solid #e2d9bc; border-radius:8px; padding:10px 12px; flex-shrink:0;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <span style="font-weight:700; font-size:0.85rem; color:#856404;">AI 解析 vs 用户最终录入效果评估</span>
+                            <span id="mModalFeedbackBadge" class="badge" style="background:#d4edda; color:#155724; font-size:0.75rem;">用户赞同 · 完全采纳</span>
+                        </div>
+                        <div style="display:flex; gap:16px; font-size:0.8rem; color:#475569; flex-wrap:wrap; margin-bottom:8px;">
+                            <span>字段一致采纳率: <strong id="mModalMatchRate" style="color:#2f6b4f;">100%</strong></span>
+                            <span>采纳字段: <strong id="mModalMatchedFields">0</strong> 项</span>
+                            <span>人工纠偏: <strong id="mModalModifiedFields">0</strong> 项</span>
+                        </div>
+
+                        <!-- 字段级 AI 解析 vs 用户确认 对照表 -->
+                        <div class="table-container" style="max-height:140px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; margin-bottom:0;">
+                            <table class="data-table" style="font-size:0.75rem;">
+                                <thead>
+                                    <tr>
+                                        <th>比对字段</th>
+                                        <th>AI 原始解析值</th>
+                                        <th>用户最终确认值</th>
+                                        <th class="col-center">效果判定</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mModalFieldCompareBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 明细表格区 -->
+                    <div style="font-weight:600; font-size:0.85rem; color:#475569; margin-top:2px; flex-shrink:0;">脱敏明细行列表</div>
+                    <div class="table-container" style="max-height:160px; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px; flex-shrink:0;">
+                        <table class="data-table" style="font-size:0.8rem;">
+                            <thead>
+                                <tr>
+                                    <th>品名 (已脱敏)</th>
+                                    <th class="col-right">数量</th>
+                                    <th>单位</th>
+                                    <th class="col-right">单价</th>
+                                    <th class="col-right">金额</th>
+                                </tr>
+                            </thead>
+                            <tbody id="adminGreyModalItemsBody"></tbody>
+                        </table>
+                    </div>
+
+                    <!-- JSON 检查器 -->
+                    <div style="font-weight:600; font-size:0.85rem; color:#475569; margin-top:2px; flex-shrink:0;">算法解析结构化 JSON</div>
+                    <pre id="adminGreyModalJson" style="background:#1e293b; color:#f8fafc; padding:10px; border-radius:8px; font-size:0.75rem; flex:1; min-height:120px; overflow:auto; margin:0; line-height:1.4;"></pre>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="border-top:1px solid #e2e8f0; padding:10px 20px; display:flex; justify-content:flex-end; flex-shrink:0;">
+                <button class="btn btn-secondary" onclick="closeGreySampleModal()">关闭</button>
+            </div>
+        </div>
     </div>
 
     <!-- 历史单据详情与独立校对 Modal 弹窗 (不跳转 Tab 1、不暴露上传图片接口) -->

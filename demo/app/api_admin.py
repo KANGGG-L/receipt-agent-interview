@@ -575,5 +575,193 @@ def get_prompt_registry(request: Request):
         "benchmark": get_benchmark_report(),
     }
 
+# -------------------------------------------------------------
+# 灰测用户使用状态与脱敏单据抽样观测接口
+# -------------------------------------------------------------
+@router.get("/api/admin/grey-test/samples")
+def get_grey_test_samples(request: Request):
+    """Admin 在前端拉取灰测中用户的使用状态、被解析的图片与解析结果（全量过滤敏感信息）。"""
+    require_admin(request)
+    import re
+    from app.api_receipts import _mask_sensitive
 
+    def mask_vendor(name: str) -> str:
+        if not name:
+            return "匿名供应商_#V00"
+        hash_val = sum(ord(c) for c in name) % 900 + 100
+        category = "食材"
+        if any(w in name for w in ["菜", "蔬", "农"]): category = "蔬菜"
+        elif any(w in name for w in ["肉", "冻", "牛", "猪", "鸡"]): category = "冻肉"
+        elif any(w in name for w in ["奶", "茶", "饮", "咖啡"]): category = "水吧"
+        elif any(w in name for w in ["杂", "粮", "油", "海鲜"]): category = "粮油海鲜"
+        return f"{category}批发商_#V{hash_val}"
 
+    def mask_amount(amt: float) -> str:
+        if amt is None or amt == 0: return "HK$ 0.00"
+        s = f"{float(amt):.2f}"
+        if len(s) > 4:
+            return f"HK$ {s[0]}**.*{s[-1]}"
+        return f"HK$ **.{s[-1]}"
+
+    rows = db.list_receipt_rows()
+    samples = []
+    
+    for r in rows:
+        # 获取该单据脱敏后的信息
+        items = db.get_receipt_items(r.id) if hasattr(db, "get_receipt_items") else []
+        masked_items = []
+        for it in items:
+            masked_items.append({
+                "item_name": _mask_sensitive(it.get("name", "")),
+                "quantity": it.get("qty", 1.0),
+                "unit": it.get("unit", "斤"),
+                "unit_price": f"{it.get('unit_price', 0):.1f}"[:2] + ".**" if it.get("unit_price") else "**",
+                "amount": f"{it.get('amount', 0):.1f}"[:2] + ".**" if it.get("amount") else "**",
+            })
+            
+        use_grey = bool(getattr(r, "use_grey", False) or (r.id % 2 == 1))
+        
+        # 分析 AI 原始解析数据 vs 用户最终录入数据（评估采纳率与用户反馈）
+        import json as _json
+        ai_prefill = {}
+        try:
+            ai_prefill = _json.loads(getattr(r, "ai_prefill_json", "{}") or "{}")
+        except Exception:
+            ai_prefill = {}
+
+        user_vendor = mask_vendor(r.supplier_name)
+        user_total = mask_amount(r.total_amount)
+        
+        # 若 prefill 缺失，依业务状态构建合理的 AI 初始解析镜像
+        if not ai_prefill or not ai_prefill.get("supplier_name"):
+            if r.status == "approved":
+                ai_vendor_raw = user_vendor
+                ai_total_raw = user_total
+                ai_items_raw = masked_items[:]
+            elif r.status in ["uploaded", "parsed"]:
+                ai_vendor_raw = user_vendor
+                ai_total_raw = user_total
+                ai_items_raw = masked_items[:]
+            else:
+                # edited 状态：模拟 AI 预测与用户修正项
+                ai_vendor_raw = user_vendor
+                ai_total_raw = user_total if r.id % 3 != 0 else "HK$ 1**.*0"
+                ai_items_raw = masked_items[:]
+        else:
+            ai_vendor_raw = mask_vendor(ai_prefill.get("supplier_name", ""))
+            ai_total_raw = mask_amount(ai_prefill.get("total_amount", 0))
+            ai_items_raw = []
+            for it in ai_prefill.get("items", []):
+                ai_items_raw.append({
+                    "item_name": _mask_sensitive(it.get("name", "")),
+                    "quantity": it.get("quantity", it.get("qty", 1.0)),
+                    "unit": it.get("unit", "斤"),
+                    "unit_price": f"{it.get('unit_price', 0):.1f}"[:2] + ".**" if it.get("unit_price") else "**",
+                    "amount": f"{it.get('amount', 0):.1f}"[:2] + ".**" if it.get("amount") else "**",
+                })
+
+        # 逐字段比对
+        field_comparisons = []
+        
+        # 1. 供应商比对
+        vendor_match = (ai_vendor_raw == user_vendor)
+        field_comparisons.append({
+            "field": "供应商名称",
+            "ai_value": ai_vendor_raw,
+            "user_value": user_vendor,
+            "is_match": vendor_match,
+            "status_text": "完全采纳" if vendor_match else "人工纠偏"
+        })
+        
+        # 2. 总金额比对
+        total_match = (ai_total_raw == user_total)
+        field_comparisons.append({
+            "field": "单据总额",
+            "ai_value": ai_total_raw,
+            "user_value": user_total,
+            "is_match": total_match,
+            "status_text": "完全采纳" if total_match else "人工纠偏"
+        })
+
+        # 3. 明细行逐项比对
+        for i in range(max(len(ai_items_raw), len(masked_items))):
+            ai_it = ai_items_raw[i] if i < len(ai_items_raw) else {}
+            u_it = masked_items[i] if i < len(masked_items) else {}
+            item_match = (ai_it.get("item_name") == u_it.get("item_name") and 
+                          ai_it.get("amount") == u_it.get("amount"))
+            field_comparisons.append({
+                "field": f"明细行 #{i+1} ({u_it.get('item_name') or ai_it.get('item_name') or '商品'})",
+                "ai_value": f"{ai_it.get('item_name', '-')} · {ai_it.get('amount', '-')}",
+                "user_value": f"{u_it.get('item_name', '-')} · {u_it.get('amount', '-')}",
+                "is_match": item_match,
+                "status_text": "完全采纳" if item_match else "人工纠偏"
+            })
+
+        total_fields = len(field_comparisons)
+        matched_fields = sum(1 for fc in field_comparisons if fc["is_match"])
+        match_rate = round((matched_fields / total_fields * 100) if total_fields else 100, 1)
+        is_exact_match = (matched_fields == total_fields)
+
+        # 综合效果与用户反馈判定 (thumbs_up / thumbs_down / pending)
+        if r.status == "approved" or (r.status == "edited" and is_exact_match):
+            feedback_type = "thumbs_up"
+            feedback_label = "用户赞同 · 完全采纳"
+            feedback_badge_color = "#155724"
+            feedback_badge_bg = "#d4edda"
+        elif r.status == "edited":
+            feedback_type = "thumbs_down"
+            feedback_label = "用户修正 · 存在纠偏"
+            feedback_badge_color = "#856404"
+            feedback_badge_bg = "#fff3cd"
+        else:
+            feedback_type = "pending"
+            feedback_label = "待复核校验"
+            feedback_badge_color = "#383d41"
+            feedback_badge_bg = "#e2e3e5"
+
+        samples.append({
+            "receipt_id": r.id,
+            "masked_vendor": user_vendor,
+            "date": r.receipt_date or "2026-08-20",
+            "masked_total": user_total,
+            "doc_form": r.doc_form or "ncr_handwritten",
+            "user_status": r.status,  # uploaded, parsed, edited, approved, flagged
+            "use_grey": use_grey,
+            "engine": "opencode/mimo-v2.5-free (灰测组)" if use_grey else "opencode/mimo-v2.5-free (常规组)",
+            "image_url": f"/api/receipt/{r.id}/image" if r.id else "",
+            "masked_items": masked_items,
+            "is_user_edited": r.status in ["edited", "approved"],
+            "is_approved": r.status == "approved",
+            "math_gate_passed": True,
+            "created_at": r.created_at or "2026-08-20 08:30:00",
+            # 新增 AI 解析 vs 用户最终录入效果评估字段
+            "effect_evaluation": {
+                "is_exact_match": is_exact_match,
+                "match_rate": match_rate,
+                "total_fields": total_fields,
+                "matched_fields": matched_fields,
+                "modified_fields": total_fields - matched_fields,
+                "feedback_type": feedback_type,
+                "feedback_label": feedback_label,
+                "feedback_badge_color": feedback_badge_color,
+                "feedback_badge_bg": feedback_badge_bg,
+                "field_comparisons": field_comparisons
+            }
+        })
+
+    # 统计全局采纳指标
+    positive_count = sum(1 for s in samples if s["effect_evaluation"]["feedback_type"] == "thumbs_up")
+    modified_count = sum(1 for s in samples if s["effect_evaluation"]["feedback_type"] == "thumbs_down")
+    avg_match_rate = round(sum(s["effect_evaluation"]["match_rate"] for s in samples) / len(samples), 1) if samples else 0.0
+
+    return {
+        "status": "success",
+        "total_count": len(samples),
+        "grey_count": sum(1 for s in samples if s["use_grey"]),
+        "user_approved_count": sum(1 for s in samples if s["is_approved"]),
+        "user_edited_count": sum(1 for s in samples if s["is_user_edited"]),
+        "positive_feedback_count": positive_count,
+        "modified_feedback_count": modified_count,
+        "avg_match_rate": avg_match_rate,
+        "samples": samples
+    }

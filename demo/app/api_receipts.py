@@ -31,12 +31,13 @@ def _track_event(account, session_id, event_type, receipt_id=None,
             properties=properties or {},
             grp=str(grp) if grp else None,
         )
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("api_receipts").warning(f"[WARN] 记录用户事件失败: {e}")
 
 
 def _track_ai_decision(account, receipt_id, row=None, **kw):
-    """AI 决策日志封装：失败静默忽略。"""
+    """AI 决策日志封装。"""
     try:
         kwargs = dict(kw)
         kwargs.setdefault("grp", "control")
@@ -44,8 +45,9 @@ def _track_ai_decision(account, receipt_id, row=None, **kw):
             kwargs.setdefault("supplier_id", getattr(row, "supplier_id", None))
             kwargs.setdefault("use_grey", getattr(row, "use_grey", 0) or 0)
         db.log_ai_decision(receipt_id=receipt_id, **kwargs)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("api_receipts").warning(f"[WARN] 记录 AI 决策失败: {e}")
 
 router = APIRouter()
 
@@ -91,6 +93,48 @@ def _save_upload(file: UploadFile) -> str:
         import shutil
         shutil.copyfileobj(file.file, f)
     return str(path)
+
+
+# -------------------------------------------------------------
+# HEIC / 非 Web 格式即时转换接口
+# -------------------------------------------------------------
+@router.post("/api/convert-image")
+async def convert_image(
+    request: Request,
+    file: UploadFile = File(...),
+):
+    """将 HEIC/HEIF/TIFF 等浏览器无法直接预览的图片即时转换为标准高质量 JPEG。"""
+    try:
+        content = await file.read()
+        if not content:
+            return JSONResponse(status_code=400, content={"status": "error", "msg": "上传文件为空"})
+
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except Exception:
+            pass
+
+        from PIL import Image, ImageOps
+        import io
+
+        with Image.open(io.BytesIO(content)) as img:
+            # 依 EXIF 矫正拍摄朝向
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            out_buf = io.BytesIO()
+            img.save(out_buf, format="JPEG", quality=92, optimize=True)
+            jpeg_bytes = out_buf.getvalue()
+
+        from fastapi.responses import Response
+        return Response(content=jpeg_bytes, media_type="image/jpeg")
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
 
 
 # -------------------------------------------------------------
@@ -436,8 +480,9 @@ def save_edited(body: SaveEditedBody, request: Request):
                                 field_path=f"items[{i}].unit_price",
                                 ai_value=ai_val, user_value=user_val,
                                 adopted=0, engine="human")
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.getLogger("api_receipts").warning(f"[WARN] 记录编辑 AI 决策失败: {e}")
     return {"status": "success", "receipt_id": rid, "version": row.version}
 
 
@@ -492,13 +537,14 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
                 ai_val = ai_items[i].get("unit_price", "")
                 user_val = fi.get("unit_price", "")
                 adopted = 1 if str(ai_val) == str(user_val) else 0
-                _track_ai_decision(account, rid, row=row,
+                _track_ai_decision(account, receipt_id, row=row,
                     decision_type="approve",
                     field_path=f"items[{i}].unit_price",
                     ai_value=ai_val, user_value=user_val,
                     adopted=adopted, engine="human")
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("api_receipts").warning(f"[WARN] 记录审批 AI 决策失败: {e}")
     return {"status": "success", "version": row.version}
 
 

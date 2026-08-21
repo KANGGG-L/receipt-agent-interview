@@ -37,8 +37,10 @@ def validate_contract(payload: dict) -> Tuple[Optional[ReceiptData], Optional[st
         return None, "明细为空"
     if _is_nan_or_inf(data.total):
         return None, "总额非法（NaN/Infinity）"
-    if data.total <= 0:
-        return None, "总额必须 > 0"
+    if data.total == 0:
+        return None, "总额不能为0"
+    if data.total < 0 and data.doc_form not in (DocForm.CREDIT, DocForm.CORRECTION):
+        return None, f"非退款/更正单据总额不能为负数: {data.total}"
     for i, it in enumerate(data.items):
         if _is_nan_or_inf(it.qty) or _is_nan_or_inf(it.unit_price) or _is_nan_or_inf(it.amount):
             return None, f"第{i+1}行数值非法（NaN/Infinity）"

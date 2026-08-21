@@ -1,0 +1,11 @@
+{
+  "skill_name": "price_negotiation_review",
+  "version": "v1.1.0",
+  "last_evaluated": "2026-08-18",
+  "benchmark_score": 93.0,
+  "pass_rate": 95.0,
+  "metrics": {
+    "reasoning_accuracy": 94.0,
+    "strategy_actionability": 92.5
+  }
+}

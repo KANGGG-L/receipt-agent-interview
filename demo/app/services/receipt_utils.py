@@ -128,10 +128,17 @@ def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
     from app.services.contract import sanitize_nan
 
+    try:
+        from ai_registry.tools.smart_splitter.v1_1_0_sku_clean import SmartSplitterTool
+        _sanitizer = SmartSplitterTool()
+    except Exception:
+        _sanitizer = None
+
     items_raw = []
     for it in data.items:
+        clean_name = _sanitizer.sanitize_name(it.name) if _sanitizer else it.name
         items_raw.append({
-            "name": it.name, "raw_name": it.name,
+            "name": clean_name, "raw_name": it.name,
             "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
             "unit_price": sanitize_nan(it.unit_price), "amount": sanitize_nan(it.amount),
             "sku_id": None, "cost_center_id": None, "confidence": it.confidence if hasattr(it, 'confidence') else 0.5,

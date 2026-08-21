@@ -1,0 +1,17 @@
+{
+  "scene": "query",
+  "active_version": "v1_0_0",
+  "description": "自然语言查账与安全 SQL 生成提示词",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-01",
+      "status": "production",
+      "metrics": {
+        "intent_accuracy": 97.0,
+        "sql_safety_rate": 100.0,
+        "fact_accuracy": 98.5,
+        "avg_tokens": 420
+      }
+    }
+  }
+}

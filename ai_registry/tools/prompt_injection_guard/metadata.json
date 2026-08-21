@@ -1,0 +1,17 @@
+{
+  "name": "prompt_injection_guard",
+  "active_version": "v1_0_0",
+  "description": "供应商记忆 RAG 间接提示词注入、恶意指令逃逸与敏感数据投毒的确定性安全防护工具 (Gap 8 专项治理)",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "多语言注入指令识别、写时敏感词强过滤与 XML 数据沙箱封装",
+      "metrics": {
+        "injection_detection_rate": 100.0,
+        "sandbox_isolation_rate": 100.0,
+        "schema_leakage_rate": 0.0
+      }
+    }
+  }
+}

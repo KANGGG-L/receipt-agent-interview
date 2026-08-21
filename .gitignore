@@ -5,7 +5,6 @@ review/
 interview/prep/
 interview/phases/
 interview/review/
-docs/
 
 # Python
 __pycache__/
@@ -37,4 +36,3 @@ uploads/
 # OS
 .DS_Store
 
-docs/

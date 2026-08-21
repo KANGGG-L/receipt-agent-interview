@@ -146,9 +146,9 @@ def _smoke(image_path: str):
         print(f"  [{entry['ts']}] attempt={entry['attempt']} {entry['action']}: {entry['reason']}")
     data = result.get("data")
     if data is None:
-        print(f"✗ 识别失败: {result.get('contract_error') or result.get('last_error')}")
+        print(f"[FAIL]  识别失败: {result.get('contract_error') or result.get('last_error')}")
         return 1
-    print(f"✓ {data.vendor} | {data.date} | {data.doc_form.value} | 总额 {data.total}")
+    print(f"[PASS]  {data.vendor} | {data.date} | {data.doc_form.value} | 总额 {data.total}")
     for it in data.items:
         print(f"  - {it.name} {it.qty}{it.unit} @{it.unit_price} = {it.amount}")
     audit = result.get("audit_result", {})

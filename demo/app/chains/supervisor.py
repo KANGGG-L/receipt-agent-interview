@@ -189,8 +189,9 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                 "corrected_suggestions": audit.get("corrected_suggestions", {}) or {},
             }, ensure_ascii=False),
         )
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.getLogger("supervisor").warning(f"[WARN] 记录交叉审核 AI 决策失败: {e}")
 
     state["status"] = "parsed"
     return state

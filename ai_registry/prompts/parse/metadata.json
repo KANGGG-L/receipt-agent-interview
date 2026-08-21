@@ -1,0 +1,45 @@
+{
+  "scene": "parse",
+  "active_version": "v2_1_0_sku_clean",
+  "description": "文本规范化清洗、流水号剥离与单位转换提示词",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-06-01",
+      "status": "archived",
+      "metrics": {
+        "accuracy": 89.5,
+        "format_validity": 98.0,
+        "avg_tokens": 450
+      }
+    },
+    "v2_0_0_hk_units": {
+      "release_date": "2026-08-10",
+      "status": "archived",
+      "metrics": {
+        "accuracy": 96.8,
+        "unit_conversion_rate": 98.2,
+        "hallucination_rate": 0.3,
+        "avg_tokens": 580
+      },
+      "changelog": [
+        "增加香港司马斤与生鲜常用单位标准化换算能力",
+        "增强繁简字对齐与餐饮品名模糊归一"
+      ]
+    },
+    "v2_1_0_sku_clean": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "metrics": {
+        "accuracy": 98.5,
+        "unit_conversion_rate": 99.1,
+        "clean_name_accuracy": 99.5,
+        "overtrim_rate": 0.0,
+        "avg_tokens": 610
+      },
+      "changelog": [
+        "增加食材品名纯净化与流水号/条形码/批次号剥离规则",
+        "内建合法等级规格（M7/A级/头数/净重/品牌数字）防误删保护"
+      ]
+    }
+  }
+}

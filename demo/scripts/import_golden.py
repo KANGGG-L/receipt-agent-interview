@@ -70,7 +70,7 @@ def main():
         if not os.path.exists(os.path.join(RECEIPTS_DIR, img)):
             img = ef.replace(".json", ".jpeg")
         if not os.path.exists(os.path.join(RECEIPTS_DIR, img)):
-            print(f"  ⚠ 跳过（无图）: {ef}")
+            print(f"  [WARN]  跳过（无图）: {ef}")
             skipped += 1
             continue
 
@@ -78,7 +78,7 @@ def main():
         supplier = (exp.get("supplier_name") or "").strip()
         date = (exp.get("date") or "").strip()
         if not supplier:
-            print(f"  ⚠ 跳过（无供应商）: {ef}")
+            print(f"  [WARN]  跳过（无供应商）: {ef}")
             skipped += 1
             continue
         if args.vendor and args.vendor not in supplier:
@@ -158,7 +158,7 @@ def main():
             existing_suppliers.add(supplier)
         dedup_keys.add((supplier, date))
         imported += 1
-        print(f"  ✓ {supplier[:22]} | {date} | ${total} | {len(item_rows)}项 | {doc_form}")
+        print(f"  [PASS]  {supplier[:22]} | {date} | ${total} | {len(item_rows)}项 | {doc_form}")
 
     print(f"\n完成：导入 {imported} 张，跳过 {skipped} 张" + ("（dry-run 预览）" if args.dry_run else ""))
 

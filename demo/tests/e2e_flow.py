@@ -50,7 +50,7 @@ def main():
             break
         time.sleep(3)
     if job["job_status"] != "done":
-        print("✗ 识别失败:", job.get("error_msg"))
+        print("[FAIL]  识别失败:", job.get("error_msg"))
         return 1
     data = job["result"]["data"]
     print(f"2. 识别: {data['supplier_name'][:20]} | items={len(data['items'])} | total={data['total_amount']}")
@@ -90,7 +90,7 @@ def main():
     rec = call("/api/reconciliation", "POST", {"supplier_id": sups["data"][0]["id"] if sups["data"] else 1, "period_type": "month"})
     print("8. 对账 task:", rec.get("task_id"))
 
-    print("\n✓ 全链路通过")
+    print("\n[PASS]  全链路通过")
     return 0
 
 

@@ -33,6 +33,8 @@ class ReceiptItem(BaseModel):
     unit: str = Field(description="单位（斤/公斤/箱/包/只…）")
     unit_price: float = Field(description="单价")
     amount: float = Field(description="小计 = 数量 × 单价")
+    is_void: bool = Field(default=False, description="是否划线作废/拒收 (Gap 6)")
+    actual_qty: Optional[float] = Field(default=None, description="手写实收/修改后数量 (Gap 6)")
 
 
 class ReceiptData(BaseModel):
@@ -43,6 +45,14 @@ class ReceiptData(BaseModel):
     date: str = Field(description="单据日期，YYYY-MM-DD")
     items: list[ReceiptItem] = Field(description="商品明细")
     total: float = Field(description="总额")
+    discount_amount: float = Field(default=0.0, description="整单折让/折扣金额")
+    deposit_amount: float = Field(default=0.0, description="押金金额（如胶筐押金）")
+    delivery_fee: float = Field(default=0.0, description="运费/送货费")
+    service_fee: float = Field(default=0.0, description="加一服务费/服务费 (Gap 9)")
+    tax_amount: float = Field(default=0.0, description="税额/VAT/GST (Gap 9)")
+    rounding_adjustment: float = Field(default=0.0, description="尾数抹零/舍入调整 (Gap 9)")
+    fees_detail: dict[str, float] = Field(default_factory=dict, description="费用明细字典 (Gap 9)")
+    adjustment_notes: list[str] = Field(default_factory=list, description="手写调整、拒收或短装注记 (Gap 6)")
     payment_marked: bool = Field(description="是否有已付款标记（印章/手写）")
     confidence: float = Field(ge=0.0, le=1.0, description="整体置信度")
 

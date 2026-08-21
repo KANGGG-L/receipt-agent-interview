@@ -1,0 +1,20 @@
+{
+  "tool_name": "math_engine",
+  "active_version": "v2_0_0",
+  "description": "确定性算术守恒与差额校验工具",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-06-01",
+      "status": "archived",
+      "interception_rate": 95.0,
+      "latency_ms": 1.2
+    },
+    "v2_0_0": {
+      "release_date": "2026-08-10",
+      "status": "production",
+      "interception_rate": 100.0,
+      "latency_ms": 2.1,
+      "features": ["行内乘法校验", "整单求和校验", "非静默建议生成"]
+    }
+  }
+}

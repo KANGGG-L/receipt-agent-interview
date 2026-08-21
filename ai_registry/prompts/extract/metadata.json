@@ -1,0 +1,59 @@
+{
+  "scene": "extract",
+  "active_version": "v1_2_0_sku_clean",
+  "description": "多模态 VLM 收据视觉抽取提示词",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-06-01",
+      "status": "archived",
+      "description": "基础通用印刷单识别",
+      "metrics": {
+        "accuracy": 88.0,
+        "cer": 8.5,
+        "handwritten_accuracy": 72.0,
+        "clean_name_accuracy": 54.2,
+        "overtrim_rate": 0.0,
+        "code_extraction_recall": 12.5,
+        "avg_tokens": 620
+      }
+    },
+    "v1_1_0_hk": {
+      "release_date": "2026-08-15",
+      "status": "archived",
+      "description": "港式生鲜 NCR/繁体手写/印章专项优化",
+      "metrics": {
+        "accuracy": 95.5,
+        "cer": 3.2,
+        "handwritten_accuracy": 94.8,
+        "clean_name_accuracy": 68.0,
+        "overtrim_rate": 0.0,
+        "code_extraction_recall": 42.0,
+        "avg_tokens": 780
+      },
+      "changelog": [
+        "针对繁体手写草书与复合品名提取进行针对性优化",
+        "增加红蓝现金收讫印章检测逻辑",
+        "强化 NCR 复写纸底层透印过滤约束"
+      ]
+    },
+    "v1_2_0_sku_clean": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "品名纯净性规范与流水号/条形码智能剥离版",
+      "metrics": {
+        "accuracy": 98.2,
+        "cer": 1.8,
+        "handwritten_accuracy": 96.5,
+        "clean_name_accuracy": 99.1,
+        "overtrim_rate": 0.0,
+        "code_extraction_recall": 98.6,
+        "avg_tokens": 820
+      },
+      "changelog": [
+        "新增食材品名纯净性提取规范，剥离下划线流水号、井号编码、前缀货号与条形码",
+        "增加正反例 Few-Shot 对照，强化防误删保护（保留 M7/A级/头数/净重/品牌数字）",
+        "支持品名与追溯号/条形码独立结构化提取"
+      ]
+    }
+  }
+}

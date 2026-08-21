@@ -127,8 +127,9 @@ def weekly_insights(cost_summary: dict) -> dict:
                     logs = _db.price_history(sku_id)
                     if logs and logs[-1].vendor:
                         vendor = logs[-1].vendor
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.getLogger("review_chain").warning(f"[WARN] 溯源价格历史失败: {e}")
 
             # 量化影响金额 = (最新价 - 基准价) * 当前累计/在库数量
             impact_amount = round(max(0.0, (latest - earliest) * curr_stock), 2)

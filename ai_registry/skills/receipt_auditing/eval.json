@@ -1,0 +1,14 @@
+{
+  "skill_name": "receipt_auditing",
+  "version": "v1.2.0",
+  "last_evaluated": "2026-08-18",
+  "benchmark_score": 96.5,
+  "pass_rate": 98.2,
+  "test_cases_total": 57,
+  "test_cases_passed": 56,
+  "metrics": {
+    "false_positive_rate": 1.8,
+    "discrepancy_recall": 97.5,
+    "avg_execution_time_sec": 3.8
+  }
+}

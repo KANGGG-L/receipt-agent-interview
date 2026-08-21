@@ -1,0 +1,23 @@
+{
+  "last_updated": "2026-08-21",
+  "endpoints": [
+    {
+      "server": "chroma_vendor_memory",
+      "version": "v1.0.0",
+      "status": "healthy",
+      "avg_latency_ms": 12.4
+    },
+    {
+      "server": "db_readonly_query",
+      "version": "v1.0.0",
+      "status": "healthy",
+      "avg_latency_ms": 4.8
+    },
+    {
+      "server": "receipt_vision_preprocess",
+      "version": "v1.0.0",
+      "status": "healthy",
+      "avg_latency_ms": 28.5
+    }
+  ]
+}

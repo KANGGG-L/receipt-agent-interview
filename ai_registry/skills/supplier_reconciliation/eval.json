@@ -1,0 +1,11 @@
+{
+  "skill_name": "supplier_reconciliation",
+  "version": "v1.0.0",
+  "last_evaluated": "2026-08-18",
+  "benchmark_score": 98.0,
+  "pass_rate": 99.0,
+  "metrics": {
+    "reconciliation_accuracy": 98.5,
+    "missing_receipt_recall": 100.0
+  }
+}

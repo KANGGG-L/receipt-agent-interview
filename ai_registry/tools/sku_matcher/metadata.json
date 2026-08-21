@@ -1,0 +1,13 @@
+{
+  "tool_name": "sku_matcher",
+  "active_version": "v1_0_0",
+  "description": "品名核心词提取与单字防合并 SKU 智能归一工具",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-15",
+      "status": "production",
+      "interception_rate": 99.0,
+      "latency_ms": 1.8
+    }
+  }
+}

@@ -97,7 +97,7 @@ def main():
     el = round(time.time() - t0, 1)
     assert job["job_status"] == "done", f"识别失败: {job.get('error_msg')}"
     data = job["result"]["data"]
-    print(f"   ✓ 识别完成（{el}s）: {data['supplier_name'][:22]} | items={len(data['items'])} | total={data['total_amount']}")
+    print(f"   [PASS]  识别完成（{el}s）: {data['supplier_name'][:22]} | items={len(data['items'])} | total={data['total_amount']}")
     print(f"     决策履历: {[e['action'] for e in job['result'].get('log', [])]}")
     for it in data["items"][:3]:
         print(f"     - {it['name'][:20]} {it['quantity']}{it['unit']} @{it['unit_price']} = {it['amount']}")
@@ -112,7 +112,7 @@ def main():
     }, headers={"X-Role": "staff"})
     assert r["status"] == "success", f"save_edited: {r}"
     ver = r["version"]
-    print(f"3. 人工复核提交 ✓ version={ver}")
+    print(f"3. 人工复核提交 [PASS]  version={ver}")
 
     # 3.5 乐观锁验证：错误 version 应拒绝
     r = call("/api/save_edited", "POST", {
@@ -122,17 +122,17 @@ def main():
 
     # 4. RBAC：staff 不能 approve
     r = call(f"/api/receipt/{rid}/approve", "POST", {"version": ver}, headers={"X-Role": "staff"})
-    print(f"4. staff approve（应 403）: {'403 ✓' if r.get('detail') or r.get('msg') else r}")
+    print(f"4. staff approve（应 403）: {'403 [PASS] ' if r.get('detail') or r.get('msg') else r}")
     # 4b. owner approve
     r = call(f"/api/receipt/{rid}/approve", "POST", {"version": ver}, headers={"X-Role": "owner"})
     assert r["status"] == "success", f"approve: {r}"
-    print(f"4. owner approve ✓ → 入账（version → {r.get('version')}）")
+    print(f"4. owner approve [PASS]  → 入账（version → {r.get('version')}）")
 
     # 5. 库存 + 供应商
     inv = call("/api/inventory")
     print(f"5. 库存 SKU: {len(inv['data'])} 条 | {inv['meta']}")
     sups = call("/api/suppliers")
-    print(f"   ✓ 供应商自动建档: {[s['name'][:15] for s in sups['data']]}")
+    print(f"   [PASS]  供应商自动建档: {[s['name'][:15] for s in sups['data']]}")
 
     # 6. 成本报表
     cr = call("/api/cost_report?include_non_approved=1")
@@ -141,12 +141,12 @@ def main():
     # 7. AI 复盘（免费模型）
     print("7. AI 复盘（免费模型）...")
     rv = call("/api/review")
-    print(f"   ✓ summary: {(rv.get('data') or {}).get('summary', '—')[:60]}")
+    print(f"   [PASS]  summary: {(rv.get('data') or {}).get('summary', '—')[:60]}")
 
     # 8. 对账
     if sups["data"]:
         rec = call("/api/reconciliation", "POST", {"supplier_id": sups["data"][0]["id"], "period_type": "month"})
-        print(f"8. 对账创建 ✓ task={rec.get('task_id')}")
+        print(f"8. 对账创建 [PASS]  task={rec.get('task_id')}")
         rec_list = call("/api/reconciliation")
         print(f"   对账列表: {len(rec_list['data'])} 个 | {rec_list['data'][0]['summary']}")
 
@@ -156,19 +156,19 @@ def main():
             "supplier_id": str(sups["data"][0]["id"]), "amount": str(data["total_amount"]),
             "method": "bank_transfer", "paid_at": "2026-08-10", "notes": "workflow测试",
         })
-        print(f"9. 支付登记 ✓ {pay.get('msg')}")
+        print(f"9. 支付登记 [PASS]  {pay.get('msg')}")
 
     # 10. 收据导出 CSV（原始文本）
     try:
         req = urllib.request.Request(BASE + "/api/receipts/export", headers={"X-Role": "owner"})
         with urllib.request.urlopen(req, timeout=30) as resp:
             csv_text = resp.read().decode("utf-8")
-        print(f"10. 导出 CSV ✓ ({len(csv_text)} bytes)")
+        print(f"10. 导出 CSV [PASS]  ({len(csv_text)} bytes)")
     except Exception as e:
-        print(f"10. 导出 CSV ✗ {e}")
+        print(f"10. 导出 CSV [FAIL]  {e}")
 
     print("\n" + "=" * 60)
-    print("✅ 完整 WORKFLOW 全部通过（免费模型）")
+    print("[PASS]  完整 WORKFLOW 全部通过（免费模型）")
     print("=" * 60)
     return 0
 

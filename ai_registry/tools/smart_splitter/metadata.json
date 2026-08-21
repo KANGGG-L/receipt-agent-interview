@@ -1,0 +1,27 @@
+{
+  "name": "smart_splitter",
+  "active_version": "v1_2_0_multi_pack",
+  "description": "货号/流水号/批次号智能剥离、复合包装规格乘数解耦与计件单位保护工具 (Gap 4 专项治理)",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-21",
+      "status": "deprecated",
+      "description": "基础货号与规格拆分"
+    },
+    "v1_1_0_sku_clean": {
+      "release_date": "2026-08-21",
+      "status": "deprecated",
+      "description": "强化下划线流水号、井号货号、GTIN条码剥离与合法规格保护"
+    },
+    "v1_2_0_multi_pack": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "扩充复合包装容量乘数解耦 (大豆油 5L*2樽 -> 大豆油 5L, 2樽) 与计件单位保护",
+      "metrics": {
+        "multi_pack_accuracy": 100.0,
+        "clean_name_accuracy": 100.0,
+        "over_trim_rate": 0.0
+      }
+    }
+  }
+}

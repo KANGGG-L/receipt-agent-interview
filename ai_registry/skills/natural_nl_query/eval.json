@@ -1,0 +1,12 @@
+{
+  "skill_name": "natural_nl_query",
+  "version": "v1.0.0",
+  "last_evaluated": "2026-08-18",
+  "benchmark_score": 97.2,
+  "pass_rate": 98.5,
+  "metrics": {
+    "intent_accuracy": 97.0,
+    "sql_syntax_validity": 100.0,
+    "cantonese_understanding_rate": 96.5
+  }
+}

@@ -1245,7 +1245,46 @@ function initUpload() {
     });
 }
 
+// -------------------------------------------------------------
+// HEIC / TIFF 自动即时转码为 JPEG 辅助函数
+// -------------------------------------------------------------
+async function ensureWebDisplayableImageFile(file) {
+    if (!file || !isNonWebImageFile(file)) {
+        return file;
+    }
+    showToast(`检测到 ${escapeHtml(file.name)} 为 HEIC/非标准格式，正在自动转为 JPEG...`, 'info');
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch('/api/convert-image', {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) {
+            console.warn('转码接口异常，降级保留原文件');
+            return file;
+        }
+        const blob = await res.blob();
+        const baseName = file.name.replace(/\.(heic|heif|tif|tiff)$/i, '') || 'receipt';
+        const convertedFile = new File([blob], `${baseName}.jpg`, {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+        });
+        convertedFile._originalName = file.name;
+        convertedFile._convertedFromHeic = true;
+        showToast(`${escapeHtml(file.name)} 已自动转为 JPEG，可直接预览、旋转与裁剪`, 'success');
+        return convertedFile;
+    } catch (err) {
+        console.error('自动转码失败:', err);
+        return file;
+    }
+}
+
 async function handleFileSelect(file) {
+    // 自动将 HEIC/HEIF/TIFF 转码为 JPEG 便于预览和调整
+    if (isNonWebImageFile(file)) {
+        file = await ensureWebDisplayableImageFile(file);
+    }
     // D12：选择真实照片上传 → 退出新建手工单态（恢复左栏原图区/标题徽章）
     resetManualEntryMode();
     // D21 质量预检：亮度/模糊度本地预检，仅提示可强制继续，不阻断
@@ -2782,7 +2821,7 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
         const safeName = w2Escape(rowName);
         html += `
             <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="triggerInlineAddSkuFromMenu(this)">
-                <div><span>➕ 为当前品名新建食材 SKU「${safeName}」</span></div>
+                <div><span>为当前品名新建食材 SKU「${safeName}」</span></div>
                 <span class="badge-matched" style="background:var(--primary); color:#fff;">回车创建</span>
             </div>
         `;
@@ -3126,7 +3165,7 @@ function appendTableRow(item = {}) {
         <td>
             <div style="display:flex; align-items:center; gap:4px;">
                 <input type="text" class="inp-name" value="${w2Escape(finalRawName)}" placeholder="品名" style="flex:1;">
-                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位">✨</button>
+                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位">拆分</button>
             </div>
             ${rowWarnBadge}
             <div class="sku-combobox-wrap">
@@ -4254,7 +4293,7 @@ function renderAiLeanCards(items) {
                     <span class="badge badge-danger" style="font-size:0.7rem; padding:1px 6px;">涨幅 +${it.change_pct}%</span>
                 </div>
                 <div class="ai-lean-card-desc">
-                    单价 $${it.earliest_price} ➔ <strong style="color:#dc2626;">$${it.latest_price}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">HK$ ${it.impact_amount}</strong>
+                    单价 $${it.earliest_price} -&gt; <strong style="color:#dc2626;">$${it.latest_price}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">HK$ ${it.impact_amount}</strong>
                 </div>
             </div>
             <div class="ai-lean-card-actions">
@@ -5953,6 +5992,12 @@ document.addEventListener('click', function (e) {
 // 多文件入口（>=2 触发批量；P1-15：本批已存在时单张也路由进批次）
 async function handleFilesSelect(fileList) {
     if (!fileList || fileList.length === 0) return;
+    
+    // 若包含 HEIC / TIFF 等非 web 格式，批量即时自动转码为 JPEG
+    if (fileList.some(f => isNonWebImageFile(f))) {
+        fileList = await Promise.all(fileList.map(f => ensureWebDisplayableImageFile(f)));
+    }
+
     if (fileList.length === 1 && BatchUploader.photos.length === 0) {
         // 纯单张且无在途批次 → 走原 handleFileSelect（内部已含质量预检）
         if (typeof handleFileSelect === 'function') await handleFileSelect(fileList[0]);
@@ -6558,16 +6603,26 @@ function renderSider() {
             : '';
         const isNonWeb = isNonWebImageFile(p.file || p.fileName);
         const bgUrl = p.imageUrl || p.croppedObjectUrl || (isNonWeb ? makeSvgDataUrl('HEIC') : p.objectUrl) || makeSvgDataUrl('收据');
+        const activeBadgeHtml = isActive
+            ? `<span class="sider-active-badge" title="当前正在查看">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="vertical-align:middle;">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                </svg>当前
+               </span>`
+            : '';
+        const viewingTagHtml = isActive ? `<span class="sider-viewing-tag">当前查看</span>` : '';
+
         return `
             <li class="${cls}" data-idx="${idx}" onclick="onPhotoSiderItemClick(${idx})">
                 ${checkboxHtml}
                 <div class="thumb" style="background-image:url('${bgUrl}')">
-                    ${isActive ? '' : ''}
+                    ${activeBadgeHtml}
                     ${scoreHtml}
                 </div>
                 <div class="meta">
                     <div class="name" title="${safeName}">${safeName}</div>
-                    <div class="status">${statusLabel}</div>
+                    <div class="status">${statusLabel}${viewingTagHtml}</div>
                 </div>
                 ${retryBtnHtml}
             </li>
@@ -8217,8 +8272,9 @@ function initDemoRoleSwitch() {
     const sel = document.getElementById('demoRoleSelect');
     if (!sel) return;
     const saved = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
-    const initRole = (saved === 'admin' || saved === 'owner' || saved === 'staff') ? saved : 'owner';
+    const initRole = (saved === 'admin' || saved === 'owner' || saved === 'staff') ? saved : 'admin';
     sel.value = initRole;
+    try { localStorage.setItem('demo_role', initRole); } catch (e) { /* ignore */ }
     applyDemoRoleColor(initRole);
     sel.addEventListener('change', () => {
         const role = sel.value;
@@ -8239,7 +8295,7 @@ const DEMO_ROLE_COLORS = {
 };
 
 function applyDemoRoleColor(role) {
-    const color = DEMO_ROLE_COLORS[role] || DEMO_ROLE_COLORS.owner;
+    const color = DEMO_ROLE_COLORS[role] || DEMO_ROLE_COLORS.admin;
     const sel = document.getElementById('demoRoleSelect');
     if (sel) {
         sel.style.borderColor = color;
@@ -8249,9 +8305,9 @@ function applyDemoRoleColor(role) {
     const brand = document.querySelector('.sidebar-header .brand');
     if (brand) brand.style.borderLeft = '4px solid ' + color;
     document.documentElement.style.setProperty('--demo-role-accent', color);
-    // admin 按钮随角色显隐
+    // admin 按钮常驻可见，方便测试与灰测观测
     const adminBtn = document.getElementById('adminEngineBtn');
-    if (adminBtn) adminBtn.style.display = (role === 'admin') ? '' : 'none';
+    if (adminBtn) adminBtn.style.display = '';
 }
 
 // -------------------------------------------------------------
@@ -8639,6 +8695,8 @@ function loadAdminEngineConfig() {
             updateGreyAuditDisabledState();
             updateOpenaiBoxes();
             updateGreyOpenaiBoxes();
+            // 自动加载脱敏样本观测数据
+            try { loadAdminGreySamples(); } catch (e) { console.error(e); }
             // 灰测状态
             fetch('/api/admin/grey-test')
                 .then(r => r.json())
@@ -9232,7 +9290,7 @@ function renderAuditReason(auditResult) {
     const isOk = auditResult.overall_consistent === true
         || /一致|无分歧|无异常/.test(reason);
     banner.classList.add(isOk ? 'reason-ok' : 'reason-warn');
-    const icon = isOk ? '✓' : '⚠';
+    const icon = isOk ? '[通过]' : '[差异]';
     const label = isOk ? 'AI 审核通过' : 'AI 发现差异';
     const head = document.createElement('strong');
     head.textContent = `${icon} ${label}`;
@@ -9380,3 +9438,261 @@ function greyBadgeHtml(useGrey) {
     return '<span class="badge-grey" title="灰测组处理（cross_audit 双模型）">灰测组</span>';
 }
 
+// -------------------------------------------------------------
+// Admin 灰测用户使用状态与脱敏样本观测逻辑
+// -------------------------------------------------------------
+let _adminGreySamplesCache = [];
+
+function loadAdminGreySamples() {
+    const tbody = document.getElementById('adminGreySamplesBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666;">正在拉取脱敏单据流并执行 PII 过滤与 AI 效果评估...</td></tr>';
+
+    fetch('/api/admin/grey-test/samples')
+        .then(r => r.json())
+        .then(res => {
+            if (!res || res.status !== 'success' || !res.samples) {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00;">拉取失败，请确认是否具备 admin 权限</td></tr>';
+                return;
+            }
+            _adminGreySamplesCache = res.samples;
+            
+            // 更新指标
+            const mTotal = document.getElementById('mGreyTotal');
+            const mAppr = document.getElementById('mGreyApproved');
+            const mEdit = document.getElementById('mGreyEdited');
+            const mCanary = document.getElementById('mGreyCanary');
+            const mPos = document.getElementById('mGreyPositive');
+            const mMod = document.getElementById('mGreyModified');
+            const mAvg = document.getElementById('mGreyAvgMatch');
+
+            if (mTotal) mTotal.textContent = res.total_count || 0;
+            if (mAppr) mAppr.textContent = res.user_approved_count || 0;
+            if (mEdit) mEdit.textContent = res.user_edited_count || 0;
+            if (mCanary) mCanary.textContent = res.grey_count || 0;
+            if (mPos) mPos.textContent = res.positive_feedback_count || 0;
+            if (mMod) mMod.textContent = res.modified_feedback_count || 0;
+            if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '100%');
+
+            if (res.samples.length === 0) {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999;">暂无单据样本</td></tr>';
+                return;
+            }
+
+            let html = '';
+            res.samples.forEach((s, idx) => {
+                const statusBadge = s.is_approved
+                    ? '<span class="badge" style="background:#d4edda; color:#155724;">老板已入库</span>'
+                    : (s.is_user_edited
+                        ? '<span class="badge" style="background:#cce5ff; color:#004085;">店员已编辑</span>'
+                        : '<span class="badge" style="background:#fff3cd; color:#856404;">待复核</span>');
+                
+                const engineBadge = s.use_grey
+                    ? '<span class="badge-grey">灰测实验组</span>'
+                    : '<span class="badge" style="background:#e9ecef; color:#495057;">常规线上组</span>';
+
+                const evalData = s.effect_evaluation || {};
+                const feedbackBadge = `<span class="badge" style="background:${evalData.feedback_badge_bg || '#e2e3e5'}; color:${evalData.feedback_badge_color || '#383d41'}; font-size:0.75rem;">${evalData.feedback_label || '待复核'} (${evalData.match_rate || 100}%)</span>`;
+
+                html += `
+                    <tr>
+                        <td><strong>#${s.receipt_id}</strong></td>
+                        <td><span style="color:#2f6b4f; font-weight:600;">${s.masked_vendor}</span> <small style="color:#999;">(已脱敏)</small></td>
+                        <td><code>${s.doc_form}</code></td>
+                        <td><code>${s.masked_total}</code></td>
+                        <td>${engineBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>${feedbackBadge}</td>
+                        <td>
+                            <button class="btn btn-secondary" style="font-size:0.75rem; padding:3px 8px;" onclick="viewGreySampleDetail(${idx})">查看脱敏解析</button>
+                        </td>
+                    </tr>
+                `;
+            });
+            if (tbody) tbody.innerHTML = html;
+            showToast('已成功拉取 ' + res.samples.length + ' 份脱敏灰测样本与效果评估', 'success');
+        })
+        .catch(err => {
+            console.error(err);
+            if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00;">网络异常，请重试</td></tr>';
+        });
+}
+
+const DESENSITIZED_IMG_FALLBACK = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 480" width="100%" height="100%" fill="none">
+    <rect width="360" height="480" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+    <g fill="#94a3b8">
+        <rect x="30" y="36" width="140" height="14" rx="3" fill="#64748b"/>
+        <rect x="30" y="60" width="220" height="8" rx="2" fill="#cbd5e1"/>
+        <rect x="30" y="74" width="180" height="8" rx="2" fill="#cbd5e1"/>
+        <line x1="30" y1="96" x2="330" y2="96" stroke="#cbd5e1" stroke-dasharray="4 4"/>
+        <rect x="30" y="112" width="100" height="10" rx="2" fill="#94a3b8"/>
+        <rect x="250" y="112" width="80" height="10" rx="2" fill="#94a3b8"/>
+        <rect x="30" y="136" width="120" height="10" rx="2" fill="#cbd5e1"/>
+        <rect x="260" y="136" width="70" height="10" rx="2" fill="#cbd5e1"/>
+        <rect x="30" y="160" width="90" height="10" rx="2" fill="#cbd5e1"/>
+        <rect x="250" y="160" width="80" height="10" rx="2" fill="#cbd5e1"/>
+        <rect x="30" y="184" width="130" height="10" rx="2" fill="#cbd5e1"/>
+        <rect x="270" y="184" width="60" height="10" rx="2" fill="#cbd5e1"/>
+        <line x1="30" y1="210" x2="330" y2="210" stroke="#cbd5e1" stroke-dasharray="4 4"/>
+        <rect x="30" y="226" width="80" height="12" rx="2" fill="#64748b"/>
+        <rect x="240" y="226" width="90" height="12" rx="2" fill="#64748b"/>
+    </g>
+    <rect x="30" y="260" width="300" height="64" rx="6" fill="#f1f5f9" stroke="#e2e8f0"/>
+    <text x="180" y="288" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="12" font-weight="600" fill="#475569" text-anchor="middle">脱敏单据切片原图保护</text>
+    <text x="180" y="308" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="10" fill="#94a3b8" text-anchor="middle">原始单据图像已脱敏隔离存储</text>
+</svg>
+`);
+
+function viewGreySampleDetail(idx) {
+    const s = _adminGreySamplesCache[idx];
+    if (!s) return;
+    
+    // 1. 填充 Modal
+    const modal = document.getElementById('adminGreySampleModal');
+    const mTitle = document.getElementById('adminGreyModalTitle');
+    const mImg = document.getElementById('adminGreyModalImg');
+    const mVendor = document.getElementById('mModalVendor');
+    const mTotal = document.getElementById('mModalTotal');
+    const mForm = document.getElementById('mModalForm');
+    const mStatus = document.getElementById('mModalStatus');
+    const mEngine = document.getElementById('mModalEngine');
+    const mItemsBody = document.getElementById('adminGreyModalItemsBody');
+    const mJson = document.getElementById('adminGreyModalJson');
+
+    // 效果评估组件
+    const mBadge = document.getElementById('mModalFeedbackBadge');
+    const mMatchRate = document.getElementById('mModalMatchRate');
+    const mMatchedFields = document.getElementById('mModalMatchedFields');
+    const mModifiedFields = document.getElementById('mModalModifiedFields');
+    const mCompareBody = document.getElementById('mModalFieldCompareBody');
+
+    const evalData = s.effect_evaluation || {};
+
+    if (mTitle) mTitle.textContent = `单据 #${s.receipt_id} 脱敏解析详情与图像切片（${s.masked_vendor} · ${s.user_status}）`;
+    if (mImg) {
+        mImg.onerror = function() {
+            this.onerror = null;
+            this.src = DESENSITIZED_IMG_FALLBACK;
+        };
+        mImg.src = s.image_url || DESENSITIZED_IMG_FALLBACK;
+    }
+    if (mVendor) mVendor.textContent = s.masked_vendor || '-';
+    if (mTotal) mTotal.textContent = s.masked_total || '-';
+    if (mForm) mForm.textContent = s.doc_form || '-';
+    if (mStatus) {
+        mStatus.innerHTML = s.is_approved
+            ? '<span class="badge" style="background:#d4edda; color:#155724;">老板已入库</span>'
+            : (s.is_user_edited
+                ? '<span class="badge" style="background:#cce5ff; color:#004085;">店员已编辑</span>'
+                : '<span class="badge" style="background:#fff3cd; color:#856404;">待复核</span>');
+    }
+    if (mEngine) mEngine.textContent = s.engine || '-';
+
+    // 填充效果评估卡
+    if (mBadge) {
+        mBadge.textContent = evalData.feedback_label || '待复核';
+        mBadge.style.background = evalData.feedback_badge_bg || '#e2e3e5';
+        mBadge.style.color = evalData.feedback_badge_color || '#383d41';
+    }
+    if (mMatchRate) mMatchRate.textContent = (evalData.match_rate != null ? evalData.match_rate + '%' : '100%');
+    if (mMatchedFields) mMatchedFields.textContent = evalData.matched_fields || 0;
+    if (mModifiedFields) mModifiedFields.textContent = evalData.modified_fields || 0;
+
+    // 渲染 AI vs 用户最终输入 逐项对照表
+    if (mCompareBody) {
+        const comparisons = evalData.field_comparisons || [];
+        if (comparisons.length === 0) {
+            mCompareBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999;">暂无字段对照数据</td></tr>';
+        } else {
+            let compHtml = '';
+            comparisons.forEach(c => {
+                const badge = c.is_match
+                    ? '<span class="badge" style="background:#d4edda; color:#155724; font-size:0.7rem;">[完全采纳]</span>'
+                    : '<span class="badge" style="background:#fff3cd; color:#856404; font-size:0.7rem;">[人工纠偏]</span>';
+                compHtml += `
+                    <tr>
+                        <td><strong>${escapeHtml(c.field)}</strong></td>
+                        <td><code>${escapeHtml(c.ai_value)}</code></td>
+                        <td><strong style="color:${c.is_match ? '#2f6b4f' : '#b8860b'}">${escapeHtml(c.user_value)}</strong></td>
+                        <td class="col-center">${badge}</td>
+                    </tr>
+                `;
+            });
+            mCompareBody.innerHTML = compHtml;
+        }
+    }
+
+    // 渲染明细行
+    if (mItemsBody) {
+        if (!s.masked_items || s.masked_items.length === 0) {
+            mItemsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#999;">无明细行或未产生明细</td></tr>';
+        } else {
+            let itemHtml = '';
+            s.masked_items.forEach(it => {
+                itemHtml += `
+                    <tr>
+                        <td><strong>${escapeHtml(it.item_name || '-')}</strong></td>
+                        <td class="col-right">${it.quantity || 1}</td>
+                        <td>${escapeHtml(it.unit || '斤')}</td>
+                        <td class="col-right"><code>${escapeHtml(it.unit_price || '-')}</code></td>
+                        <td class="col-right"><code>${escapeHtml(it.amount || '-')}</code></td>
+                    </tr>
+                `;
+            });
+            mItemsBody.innerHTML = itemHtml;
+        }
+    }
+
+    if (mJson) {
+        mJson.textContent = JSON.stringify({
+            "receipt_id": s.receipt_id,
+            "masked_vendor": s.masked_vendor,
+            "receipt_date": s.date,
+            "doc_form": s.doc_form,
+            "masked_total_amount": s.masked_total,
+            "user_status_machine": s.user_status,
+            "engine_routing": s.engine,
+            "is_user_edited": s.is_user_edited,
+            "is_approved_by_owner": s.is_approved,
+            "math_gate_verified": s.math_gate_passed,
+            "effect_evaluation": {
+                "feedback_result": evalData.feedback_label,
+                "is_exact_match": evalData.is_exact_match,
+                "field_match_rate": evalData.match_rate + "%",
+                "matched_fields_count": evalData.matched_fields,
+                "user_modified_fields_count": evalData.modified_fields
+            },
+            "desensitized_items": s.masked_items
+        }, null, 2);
+    }
+
+    if (modal) {
+        modal.classList.remove('hide');
+    }
+
+    // 2. 同步填充底栏抽屉（备选展示）
+    const card = document.getElementById('adminGreySampleDetailCard');
+    const title = document.getElementById('adminGreySampleDetailTitle');
+    const img = document.getElementById('adminGreyDetailImg');
+    const jsonPre = document.getElementById('adminGreyDetailJson');
+
+    if (title) title.textContent = `单据 #${s.receipt_id} 脱敏解析详情（${s.masked_vendor} · ${s.user_status}）`;
+    if (img) {
+        img.onerror = function() {
+            this.onerror = null;
+            this.src = DESENSITIZED_IMG_FALLBACK;
+        };
+        img.src = s.image_url || DESENSITIZED_IMG_FALLBACK;
+    }
+    if (jsonPre) {
+        jsonPre.textContent = mJson ? mJson.textContent : '';
+    }
+    if (card) {
+        card.classList.remove('hide');
+    }
+}
+
+function closeGreySampleModal() {
+    const modal = document.getElementById('adminGreySampleModal');
+    if (modal) modal.classList.add('hide');
+}

@@ -1,0 +1,32 @@
+{
+  "plugins": {
+    "vlm_engines": [
+      {
+        "name": "opencode_plugin",
+        "version": "1.0.0",
+        "type": "cli_driver",
+        "active": true
+      },
+      {
+        "name": "openai_plugin",
+        "version": "1.1.0",
+        "type": "api_driver",
+        "active": true
+      }
+    ],
+    "notification": [
+      {
+        "name": "whatsapp_notifier",
+        "version": "1.0.0",
+        "active": true
+      }
+    ],
+    "pos_connectors": [
+      {
+        "name": "eats365_connector",
+        "version": "1.0.0",
+        "active": true
+      }
+    ]
+  }
+}

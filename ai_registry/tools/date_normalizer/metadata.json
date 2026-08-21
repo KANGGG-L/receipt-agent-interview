@@ -1,0 +1,17 @@
+{
+  "name": "date_normalizer",
+  "active_version": "v1_0_0",
+  "description": "香港餐饮单据本地化日期格式 (DD/MM/YYYY, DD-MM-YY, DD-Mon-YYYY) 确定性解析与标准 YYYY-MM-DD 归一化工具 (Gap 5 专项治理)",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "香港惯例 DD/MM/YYYY 优先推断、中英文月份解析与两位年份补齐",
+      "metrics": {
+        "dmy_accuracy": 100.0,
+        "format_resolution_rate": 100.0,
+        "latency_ms": 0.5
+      }
+    }
+  }
+}

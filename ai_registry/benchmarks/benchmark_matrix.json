@@ -1,0 +1,142 @@
+{
+  "last_updated": "2026-08-21T15:08:00+08:00",
+  "benchmark_dataset": "Hong Kong F&B Golden Samples 57 Receipts + 38 SKU Clean Benchmark Cases",
+  "prompts": [
+    {
+      "scene": "extract",
+      "active_version": "v1_2_0_sku_clean",
+      "accuracy": 98.2,
+      "cer": 1.8,
+      "clean_name_accuracy": 99.1,
+      "overtrim_rate": 0.0,
+      "code_extraction_recall": 98.6,
+      "avg_tokens": 820,
+      "description": "品名纯净性规范与流水号/条形码智能剥离版"
+    },
+    {
+      "scene": "parse",
+      "active_version": "v2_1_0_sku_clean",
+      "accuracy": 98.5,
+      "cer": 1.1,
+      "clean_name_accuracy": 99.5,
+      "overtrim_rate": 0.0,
+      "avg_tokens": 610,
+      "description": "司马斤换算 + 繁简对齐 + 流水号剥离与品名纯净化"
+    },
+    {
+      "scene": "audit",
+      "active_version": "v2_0_0_reason",
+      "accuracy": 96.0,
+      "cer": 0.5,
+      "avg_tokens": 520,
+      "description": "自然语言对比 Reason + 间接注入防御"
+    },
+    {
+      "scene": "review",
+      "active_version": "v2_0_0_cards",
+      "accuracy": 94.5,
+      "cer": 0.2,
+      "avg_tokens": 650,
+      "description": "4 步采购谈判推理 + 生成式 UI 卡片"
+    },
+    {
+      "scene": "query",
+      "active_version": "v1_0_0",
+      "accuracy": 97.0,
+      "cer": 0.1,
+      "avg_tokens": 420,
+      "description": "对话式跨表比价 + 提示词注入拦截"
+    },
+    {
+      "scene": "memory",
+      "active_version": "v1_0_0",
+      "accuracy": 94.2,
+      "cer": 1.2,
+      "avg_tokens": 380,
+      "description": "正向单据特征提取与 Few-shot 知识沉淀"
+    }
+  ],
+  "tools": [
+    {
+      "tool_name": "math_engine",
+      "active_version": "v2_0_0",
+      "interception_rate": 100.0,
+      "latency_ms": 2.1,
+      "description": "确定性代码数量*单价及求和守恒硬校验"
+    },
+    {
+      "tool_name": "smart_splitter",
+      "active_version": "v1_1_0_sku_clean",
+      "interception_rate": 99.6,
+      "clean_accuracy": 99.4,
+      "overtrim_rate": 0.0,
+      "latency_ms": 1.2,
+      "description": "品名规格解耦与流水号/条形码确定性剥离"
+    },
+    {
+      "tool_name": "sku_matcher",
+      "active_version": "v1_0_0",
+      "interception_rate": 99.0,
+      "latency_ms": 1.8,
+      "description": "品名核心词提取与单字防合并 SKU 归一工具"
+    },
+    {
+      "tool_name": "statement_reconciler",
+      "active_version": "v1_0_0",
+      "interception_rate": 100.0,
+      "latency_ms": 3.2,
+      "description": "供应商月结 Statement 散单自动勾稽比对工具"
+    },
+    {
+      "tool_name": "pii_masker",
+      "active_version": "v1_0_0",
+      "interception_rate": 100.0,
+      "latency_ms": 0.8,
+      "description": "香港身份证/银行卡/私人手机号敏感脱敏"
+    },
+    {
+      "tool_name": "currency_unit_converter",
+      "active_version": "v1_0_0",
+      "interception_rate": 99.2,
+      "latency_ms": 0.5,
+      "description": "司马斤(600g)/公斤/磅/打/板标准换算"
+    },
+    {
+      "tool_name": "query_sql_gen",
+      "active_version": "v1_0_0",
+      "interception_rate": 100.0,
+      "latency_ms": 5.4,
+      "description": "租户隔离只读聚合安全 SQL 生成器"
+    }
+  ],
+  "skills": [
+    {
+      "skill_name": "receipt_auditing",
+      "version": "v1.2.0",
+      "benchmark_score": 96.5,
+      "pass_rate": 98.2,
+      "description": "收据原图交叉审核与分歧打标技能"
+    },
+    {
+      "skill_name": "price_negotiation_review",
+      "version": "v1.1.0",
+      "benchmark_score": 93.0,
+      "pass_rate": 95.0,
+      "description": "食材暴涨谈判卡片与采购复盘技能"
+    },
+    {
+      "skill_name": "supplier_reconciliation",
+      "version": "v1.0.0",
+      "benchmark_score": 98.0,
+      "pass_rate": 99.0,
+      "description": "供应商月结 Statement 四向差异比对技能"
+    },
+    {
+      "skill_name": "natural_nl_query",
+      "version": "v1.0.0",
+      "benchmark_score": 97.2,
+      "pass_rate": 98.5,
+      "description": "粤语与多维跨表进销存问答技能"
+    }
+  ]
+}

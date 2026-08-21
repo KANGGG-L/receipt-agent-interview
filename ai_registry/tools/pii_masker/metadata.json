@@ -1,0 +1,13 @@
+{
+  "tool_name": "pii_masker",
+  "active_version": "v1_0_0",
+  "description": "香港 PDPO 敏感 PII 自动脱敏工具",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-01",
+      "status": "production",
+      "interception_rate": 100.0,
+      "latency_ms": 0.8
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "scene": "memory",
+  "active_version": "v1_0_0",
+  "description": "供应商先验知识提炼提示词",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-01",
+      "status": "production",
+      "metrics": {
+        "alias_extraction_accuracy": 94.2,
+        "knowledge_validity": 96.0,
+        "avg_tokens": 380
+      }
+    }
+  }
+}

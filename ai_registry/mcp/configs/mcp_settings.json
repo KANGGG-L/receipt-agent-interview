@@ -1,0 +1,26 @@
+{
+  "mcp_version": "1.0",
+  "servers": {
+    "chroma_vendor_memory": {
+      "command": "python",
+      "args": ["-m", "ai_registry.mcp.servers.chroma_vendor_memory_mcp"],
+      "env": {
+        "CHROMA_PERSIST_DIR": ".rag_chroma"
+      },
+      "active": true
+    },
+    "db_readonly_query": {
+      "command": "python",
+      "args": ["-m", "ai_registry.mcp.servers.db_readonly_mcp"],
+      "env": {
+        "DB_PATH": "receipt_demo.db"
+      },
+      "active": true
+    },
+    "receipt_vision_preprocess": {
+      "command": "python",
+      "args": ["-m", "ai_registry.mcp.servers.receipt_vision_mcp"],
+      "active": true
+    }
+  }
+}

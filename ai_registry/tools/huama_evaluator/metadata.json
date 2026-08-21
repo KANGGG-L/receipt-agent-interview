@@ -1,0 +1,17 @@
+{
+  "name": "huama_evaluator",
+  "active_version": "v1_0_0",
+  "description": "街市花码（苏州码子）与草书连笔特征检测、辅助转译与置信度硬性校准压降工具 (Gap 7 专项治理)",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-21",
+      "status": "production",
+      "description": "Unicode 苏州码子特征检测、花码转译与置信度强制压降 (<= 0.40)",
+      "metrics": {
+        "huama_detection_rate": 100.0,
+        "overconfidence_suppression_rate": 100.0,
+        "manual_review_trigger_rate": 100.0
+      }
+    }
+  }
+}

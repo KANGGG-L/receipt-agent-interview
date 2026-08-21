@@ -1,0 +1,31 @@
+{
+  "scene": "audit",
+  "active_version": "v2_0_0_reason",
+  "description": "交叉审核与差异归因提示词",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-06-01",
+      "status": "archived",
+      "metrics": {
+        "recall": 85.0,
+        "false_alarm_rate": 12.0,
+        "avg_tokens": 280
+      }
+    },
+    "v2_0_0_reason": {
+      "release_date": "2026-08-12",
+      "status": "production",
+      "metrics": {
+        "recall": 96.0,
+        "false_alarm_rate": 3.5,
+        "injection_defense_rate": 100.0,
+        "avg_tokens": 520
+      },
+      "changelog": [
+        "输出人类可读的差异原因 Reason",
+        "增加对原图手写涂改争议点的聚焦审核",
+        "集成防间接提示词注入隔离机制"
+      ]
+    }
+  }
+}

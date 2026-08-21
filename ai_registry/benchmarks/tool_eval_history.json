@@ -1,0 +1,41 @@
+{
+  "history": [
+    {
+      "date": "2026-08-10",
+      "tool_name": "math_engine",
+      "version": "v2_0_0",
+      "test_cases": 120,
+      "metrics": {
+        "interception_rate": 100.0,
+        "latency_ms": 2.1,
+        "zero_token": true
+      }
+    },
+    {
+      "date": "2026-08-01",
+      "tool_name": "smart_splitter",
+      "version": "v1_0_0",
+      "test_cases": 85,
+      "metrics": {
+        "split_accuracy": 98.4,
+        "clean_accuracy": 62.5,
+        "overtrim_rate": 0.0,
+        "latency_ms": 1.5
+      }
+    },
+    {
+      "date": "2026-08-21",
+      "tool_name": "smart_splitter",
+      "version": "v1_1_0_sku_clean",
+      "test_cases": 123,
+      "metrics": {
+        "split_accuracy": 99.6,
+        "clean_accuracy": 99.4,
+        "code_recall": 98.8,
+        "overtrim_rate": 0.0,
+        "latency_ms": 1.2,
+        "zero_token": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "history": [
+    {
+      "date": "2026-06-01",
+      "scene": "extract",
+      "version": "v1_0_0",
+      "model": "qwen3-vl-flash",
+      "dataset_size": 57,
+      "metrics": {
+        "accuracy": 88.0,
+        "cer": 8.5,
+        "handwritten_acc": 72.0,
+        "clean_name_acc": 54.2,
+        "overtrim_rate": 0.0,
+        "avg_tokens": 620
+      }
+    },
+    {
+      "date": "2026-08-15",
+      "scene": "extract",
+      "version": "v1_1_0_hk",
+      "model": "qwen3-vl-flash",
+      "dataset_size": 57,
+      "metrics": {
+        "accuracy": 95.5,
+        "cer": 3.2,
+        "handwritten_acc": 94.8,
+        "clean_name_acc": 68.0,
+        "overtrim_rate": 0.0,
+        "avg_tokens": 780
+      }
+    },
+    {
+      "date": "2026-08-21",
+      "scene": "extract",
+      "version": "v1_2_0_sku_clean",
+      "model": "qwen3-vl-flash",
+      "dataset_size": 95,
+      "metrics": {
+        "accuracy": 98.2,
+        "cer": 1.8,
+        "handwritten_acc": 96.5,
+        "clean_name_acc": 99.1,
+        "overtrim_rate": 0.0,
+        "code_extraction_recall": 98.6,
+        "avg_tokens": 820
+      }
+    },
+    {
+      "date": "2026-06-01",
+      "scene": "parse",
+      "version": "v1_0_0",
+      "model": "qwen-turbo",
+      "dataset_size": 57,
+      "metrics": {
+        "accuracy": 89.5,
+        "unit_conversion_rate": 84.0,
+        "avg_tokens": 450
+      }
+    },
+    {
+      "date": "2026-08-10",
+      "scene": "parse",
+      "version": "v2_0_0_hk_units",
+      "model": "qwen-turbo",
+      "dataset_size": 57,
+      "metrics": {
+        "accuracy": 96.8,
+        "unit_conversion_rate": 98.2,
+        "avg_tokens": 580
+      }
+    },
+    {
+      "date": "2026-08-21",
+      "scene": "parse",
+      "version": "v2_1_0_sku_clean",
+      "model": "qwen-turbo",
+      "dataset_size": 95,
+      "metrics": {
+        "accuracy": 98.5,
+        "unit_conversion_rate": 99.1,
+        "clean_name_acc": 99.5,
+        "overtrim_rate": 0.0,
+        "avg_tokens": 610
+      }
+    }
+  ]
+}

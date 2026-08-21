@@ -48,7 +48,7 @@
 </head>
 <body>
 <header>
-  <h1>🧾 收据识别系统 · LangChain 精简版</h1>
+  <h1> 收据识别系统 · LangChain 精简版</h1>
   <div class="role">
     <button class="role-btn active" data-role="staff">staff 店员</button>
     <button class="role-btn" data-role="owner">owner 老板</button>
@@ -203,7 +203,7 @@ $("btn-upload").addEventListener("click", async () => {
     renderResult(res.data);
     refresh();
   } catch (e) {
-    log("✗ 上传失败: " + e.message);
+    log("[FAIL]  上传失败: " + e.message);
     alert("上传失败: " + e.message);
   } finally {
     $("btn-upload").disabled = false;

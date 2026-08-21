@@ -1,0 +1,98 @@
+# AI 工程化能力资产库与评测中心 (AI Assets Registry & Benchmarks)
+
+> **定位**：面向 receipt_agent 系统全生命周期的 AI 资产集中治理中心。  
+> **纳管对象**：**Prompt（提示词）、Tool（确定性工具）、Skill（Agent 技能）、MCP（上下文协议服务）、Plugin（扩展插件）**。  
+> **核心特性**：语义化版本（SemVer）、全链路效果与评测指标追踪（Evaluation-Driven）、多租户防穿透、多模型热插拔。
+
+---
+
+## 目录结构全景
+
+```
+ai_registry/
+├── README.md                      # 本文档：工程化管理总纲与规范
+├── registry.py                    # 统一资产加载与路由注册中心 (Python API)
+├── eval_reporter.py               # 资产效果分析与版本对比报告生成器
+│
+├── prompts/                       # 1. 提示词资产库 (分场景、分版本、含评测元数据)
+│   ├── extract/                   # 视觉提取 VLM Prompts (v1.0.0, v1.1.0_hk)
+│   ├── parse/                     # 文本规范化 Prompts (v1.0.0, v2.0.0_hk_units)
+│   ├── audit/                     # 交叉审核 Prompts (v1.0.0, v2.0.0_reason)
+│   ├── review/                    # 采购复盘与议价 Prompts (v1.0.0, v2.0.0_cards)
+│   ├── query/                     # 自然语言查账 Prompts (v1.0.0)
+│   └── memory/                    # 供应商记忆提炼 Prompts (v1.0.0)
+│
+├── tools/                         # 2. 确定性工具资产库 (Tool Registry)
+│   ├── math_engine/               # 确定性算术校验工具 (零 Token 守恒计算)
+│   ├── smart_splitter/            # 品名规格智能正则剥离工具
+│   ├── pii_masker/                # 敏感信息 (HKID/银行卡/手机) 脱敏工具
+│   ├── query_sql_gen/             # 只读安全 SQL 动态生成器
+│   └── currency_unit_converter/   # 港式单位 (司马斤/磅/板) 换算工具
+│
+├── skills/                        # 3. Agent 技能资产库 (Standard SKILL.md)
+│   ├── receipt_auditing/          # 收据原图交叉审核技能
+│   ├── price_negotiation_review/  # 食材暴涨谈判与复盘卡片生成技能
+│   ├── supplier_reconciliation/   # 供应商月结 Statement 差异比对技能
+│   └── natural_nl_query/          # 粤语/多维跨表经营问答技能
+│
+├── mcp/                           # 4. Model Context Protocol 服务与端点
+│   ├── servers/                   # MCP 独立服务 (Chroma 记忆服务, DB 只读服务等)
+│   └── configs/                   # MCP 配置文件与环境变量映射
+│
+├── plugins/                       # 5. 扩展插件库 (Plugin Architecture)
+│   ├── vlm_engines/               # 多模态引擎插件 (Opencode, CodeBuddy, OpenAI, Ollama)
+│   ├── notification/              # 异动通知插件 (WhatsApp/Telegram/Email)
+│   └── pos_connectors/            # POS 销项数据打通插件 (Eats365, StoreHub)
+│
+└── benchmarks/                    # 6. 历史基准评测报告与版本效果追踪
+    ├── benchmark_matrix.json      # 全量资产版本效果总表
+    ├── prompt_eval_history.json   # 提示词效果演化指标追踪 (准确率/CER/Token)
+    └── tool_eval_history.json     # 确定性工具执行时延与拦截率统计
+```
+
+---
+
+## 快速使用指引 (Python API)
+
+### 1. 加载并使用特定版本的 Prompt
+```python
+from ai_registry.registry import ai_registry
+
+# 获取生产默认激活版 Prompt
+prompt_text = ai_registry.get_prompt("extract")
+
+# 指定版本并获取元数据及评测指标
+prompt_text, meta = ai_registry.get_prompt("extract", version="v1_1_0_hk", with_metadata=True)
+print(f"准确率: {meta['metrics']['accuracy']}, 平均 Token: {meta['metrics']['avg_tokens']}")
+```
+
+### 2. 调用确定性工具 (Tools)
+```python
+# 获取算术门禁工具
+math_tool = ai_registry.get_tool("math_engine", version="v2_0_0")
+is_valid, diffs, suggestions = math_tool.execute(receipt_items, total_amount)
+
+# 获取品名智能剥离工具
+splitter = ai_registry.get_tool("smart_splitter")
+res = splitter.execute("大豆油 5L*2樽")
+# -> {"item_name": "大豆油 5L", "quantity": 2.0, "unit": "樽"}
+```
+
+### 3. 查看资产效果与版本对比
+```bash
+# 查看全量资产评测矩阵
+python -m ai_registry.eval_reporter --summary
+
+# 对比 prompt extract 两个版本的指标变化
+python -m ai_registry.eval_reporter --diff --type prompt --name extract --v1 v1_0_0 --v2 v1_1_0_hk
+```
+
+---
+
+## 版本规范与准入规则 (SemVer & Production Gate)
+
+1. **版本命名规范**：遵循 `v<Major>_<Minor>_<Patch>[_<FeatureTag>]`（如 `v1_1_0_hk`、`v2_0_0_cards`）。
+2. **生产准入硬性门槛**：
+   - 提取类 Prompt：在 57 张黄金样本集上的准确率 $\ge 95\%$，CER $\le 4.0\%$；
+   - 门禁类 Tool：对算术差错拦截率必须达到 $100.0\%$，单次执行时延 $\le 10\text{ms}$；
+   - 技能 Skill：需具备标准 `SKILL.md`，并通过结构化自愈用例回归。
