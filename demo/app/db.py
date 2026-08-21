@@ -732,9 +732,10 @@ def merge_skus(primary_sku_id, secondary_sku_ids):
         total_sec_stock = sum(sku.current_stock for sku in secondary_skus)
         primary.current_stock += total_sec_stock
 
-        # 停用副 SKU
+        # 停用副 SKU 并清零迁移后的库存（避免重复合并翻倍）
         for sec in secondary_skus:
             sec.active = 0
+            sec.current_stock = 0.0
 
         s.commit()
         return {
@@ -744,6 +745,72 @@ def merge_skus(primary_sku_id, secondary_sku_ids):
             "merged_names": secondary_names,
             "new_stock": primary.current_stock
         }, None
+    finally:
+        s.close()
+
+
+def deduplicate_skus_by_canonical():
+    """B-P0-1 存量脏数据迁移：按 canonical 名归一去重，合并 _\\d{10} 变体。
+
+    遍历全部 SKU（含停用），以 canonical_name 为分组键，将同组内的
+    变体合并至组内 id 最小的活跃 SKU（保留主），其余停用并迁移流水。
+    特例保障：本地新鲜菜心_1787140411 → 本地新鲜菜心（sku 07 → sku 03）。
+    返回合并报告 list[dict]。
+    """
+    import re as _re
+    try:
+        from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool as _ST
+        _tool = _ST()
+        def _canon(n): return _tool.sanitize_name(n)
+    except Exception:
+        _pat = _re.compile(r"_\d{10}$")
+        def _canon(n): return _pat.sub("", (n or "").strip()).strip()
+
+    s = get_session()
+    try:
+        rows = s.query(_SkuRow).all()
+        groups = {}
+        for r in rows:
+            c = _canon(r.name)
+            groups.setdefault(c, []).append(r)
+        reports = []
+        for canon, members in groups.items():
+            if len(members) <= 1:
+                continue
+            # 仅对活跃 SKU 去重（已停用跳过，避免重复合并导致库存翻倍）
+            active_members = [m for m in members if m.active == 1]
+            if len(active_members) <= 1:
+                continue
+            # 主 SKU：优先 canonical==name 的干净主，其次活跃中最早创建
+            def _is_clean(m): return 0 if m.name == canon else 1
+            active_sorted = sorted(active_members, key=lambda x: (_is_clean(x), x.id))
+            primary = active_sorted[0]
+            secondaries = [m for m in active_sorted[1:]]
+            sec_ids = [m.id for m in secondaries]
+            sec_names = [m.name for m in secondaries]
+            # 迁移流水
+            s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).update(
+                {_StockLogRow.sku_id: primary.id}, synchronize_session=False
+            )
+            s.query(_ItemRow).filter(_ItemRow.sku_id.in_(sec_ids)).update(
+                {_ItemRow.sku_id: primary.id}, synchronize_session=False
+            )
+            total_sec_stock = sum(m.current_stock for m in secondaries)
+            primary.current_stock += total_sec_stock
+            for sec in secondaries:
+                sec.active = 0
+                sec.current_stock = 0.0
+            reports.append({
+                "canonical": canon,
+                "primary_id": primary.id,
+                "primary_name": primary.name,
+                "merged_ids": sec_ids,
+                "merged_names": sec_names,
+                "new_stock": primary.current_stock,
+            })
+        if reports:
+            s.commit()
+        return reports
     finally:
         s.close()
 

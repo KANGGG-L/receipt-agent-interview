@@ -1,12 +1,29 @@
 # -*- coding: utf-8 -*-
 """库存端点：SKU 列表/CRUD/盘点/消耗/损耗/价格历史。"""
 
+import re
+
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import Optional
 
 from app import db
 from app.auth import require_role
+
+# B-P0-1 流水号后缀正则（FR-7 品名归一）与归一辅助
+_SERIAL_RE = re.compile(r"_\d{10}$")
+
+
+def _canonical_name(raw: str) -> str:
+    """FR-7/B-P0-1 库存侧归一：优先走 SmartSplitter v1_2_0 剥离 _\\d{10} 后缀，失败则正则兜底。"""
+    name = (raw or "").strip()
+    if not name:
+        return name
+    try:
+        from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool
+        return SmartSplitterTool().sanitize_name(name)
+    except Exception:
+        return _SERIAL_RE.sub("", name).strip()
 
 router = APIRouter()
 
@@ -71,11 +88,19 @@ class SkuCreateBody(BaseModel):
 @router.post("/api/inventory/skus")
 def create_sku(body: SkuCreateBody, request: Request):
     require_role("staff")(request)
-    sku_id, err = db.create_sku(body.name, body.category, body.base_unit,
+    # B-P0-1: 创建前强制归一，阻止 _\d{10} 流水号污染 SKU 库导致库存爆炸
+    canonical = _canonical_name(body.name)
+    # 若归一后与存量 canonical 重名，视为冲突（幂等去重）
+    existing = db.find_sku_by_name(canonical)
+    if existing:
+        # 若原始名与归一后不同，说明是流水号变体，直接返回已存在的主 SKU
+        if canonical != body.name.strip():
+            return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在（归一后冲突）", "canonical_name": canonical, "existing_id": existing.id}
+    sku_id, err = db.create_sku(canonical, body.category, body.base_unit,
                                 body.min_stock_alert)
     if err:
         return {"status": "error", "code": err, "message": "同名 SKU 已存在"}
-    return {"status": "success", "id": sku_id}
+    return {"status": "success", "id": sku_id, "canonical_name": canonical}
 
 
 class SkuPatchBody(BaseModel):
@@ -90,6 +115,9 @@ class SkuPatchBody(BaseModel):
 def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
     require_role("owner")(request)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "name" in fields and fields["name"]:
+        # B-P0-1: 重命名时同样归一，防止通过改名注入流水号
+        fields["name"] = _canonical_name(fields["name"])
     row, err = db.update_sku(sku_id, **fields)
     if err == "SKU_NAME_CONFLICT":
         return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在"}

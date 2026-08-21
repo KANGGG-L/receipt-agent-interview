@@ -7,10 +7,21 @@
 """
 
 import json
+import re
 import threading
 
 from app import db
 from app.models import EngineConfig
+from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool as _S
+
+# B-P0-1 专用：流水号后缀正则 (FR-7 品名归一) —— 有机菜心_1787140420→有机菜心, 本地新鲜菜心_1787140411→本地新鲜菜心
+_SERIAL_SUFFIX_RE = re.compile(r"_\d{10}$")
+
+# 模块顶层单例：避免 save_parsed_data/canonical_sku_name 每次实例化
+try:
+    _sanitizer_singleton = _S()
+except Exception:
+    _sanitizer_singleton = None
 
 # 在内存 job 表（单进程部署约束，对齐完整版）
 JOBS = {}
@@ -124,19 +135,39 @@ def get_job(job_id):
 # -------------------------------------------------------------
 # AI 结果 → 前端数据模型
 # -------------------------------------------------------------
+def strip_serial_suffix(name: str) -> str:
+    """B-P0-1 核心词归一：显式正则剥离 _\\d{10} 后缀，返回纯净品名。"""
+    t = str(name or "").strip()
+    return _SERIAL_SUFFIX_RE.sub("", t).strip()
+
+
+def canonical_sku_name(name: str) -> str:
+    """FR-7/B-P0-1 统一归一入口：优先走 SmartSplitter v1_2_0 单例，fallback 正则剥离。"""
+    if _sanitizer_singleton is not None:
+        try:
+            return _sanitizer_singleton.sanitize_name(name)
+        except Exception:
+            pass
+    return strip_serial_suffix(name)
+
+
 def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
     from app.services.contract import sanitize_nan
 
-    try:
-        from ai_registry.tools.smart_splitter.v1_1_0_sku_clean import SmartSplitterTool
-        _sanitizer = SmartSplitterTool()
-    except Exception:
-        _sanitizer = None
+    # 使用模块顶层单例，避免每次实例化
+    _sanitizer = _sanitizer_singleton
 
     items_raw = []
     for it in data.items:
-        clean_name = _sanitizer.sanitize_name(it.name) if _sanitizer else it.name
+        raw = it.name or ""
+        if _sanitizer is not None:
+            try:
+                clean_name = _sanitizer.sanitize_name(raw)
+            except Exception:
+                clean_name = strip_serial_suffix(raw)
+        else:
+            clean_name = strip_serial_suffix(raw)
         items_raw.append({
             "name": clean_name, "raw_name": it.name,
             "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
@@ -181,13 +212,22 @@ def save_parsed_data(receipt_id, data, result):
 
 
 def _normalize_sku_name(name):
-    """SKU 匹配用规范化：去空格/去常见规格后缀，保留核心词。
+    """SKU 匹配用规范化：去空格/去常见规格后缀，保留核心词 + B-P0-1 流水号剥离。
 
     例："6包裝 維他朱古奶" → "維他朱古奶"
         "500毫升維他蘋果茉莉綠茶飲品" → "維他蘋果茉莉綠茶飲品"
+        "有机菜心_1787140420" → "有机菜心" (FR-7)
+        "本地新鲜菜心_1787140411" → "本地新鲜菜心"
     """
-    import re
     text = str(name or "").strip()
+    # B-P0-1：优先显式剥离 _\d{10} 后缀（核心词归一），再走通用清洗
+    text = _SERIAL_SUFFIX_RE.sub("", text).strip()
+    # 兼容：再尝试走 SmartSplitter 单例兜底（若本地正则未命中泛化流水号）
+    if _sanitizer_singleton is not None and "_" in text and re.search(r"_[A-Za-z0-9_\-]{4,}$", text):
+        try:
+            text = _sanitizer_singleton.sanitize_name(text)
+        except Exception:
+            pass
     # 去掉开头的数量/包装前缀（如 6包裝、500毫升、480毫升、500mL、10x100個）
     text = re.sub(r"^\d+(\.\d+)?(x\d+)*\s*(包裝|包|毫升|mL|ml|升|L|瓶|罐|條|盒|個|合|箱|隻)?\s*", "", text)
     # 去掉结尾规格（括号内容 / 数字x数字 / 体积容量）
