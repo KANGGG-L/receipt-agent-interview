@@ -1564,15 +1564,26 @@ function collectQualityWarnings(ret) {
 }
 
 // Q29：质量预检警告渲染（多条可见；一律 textContent，无插值注入面）
+// P0-1 极模糊置顶：image_blur → 中文“图像模糊度过高”，并保证在错误卡片中也置顶可见
+const QUALITY_WARNING_LABELS = {
+    'image_blur': '图像模糊度过高，请重新拍摄清晰单据',
+    'image_empty_or_corrupted': '上传图片损坏、模糊或为空，请重新拍摄清晰单据',
+    'duplicate': '疑似重复上传',
+};
+
 function showQualityWarnings(warnings) {
     const banner = document.getElementById('qualityWarningsBanner');
     if (!banner) return;
+    // 清理旧克隆（错误态置顶克隆）
+    const oldClone = document.getElementById('qualityWarningsBannerClone');
+    if (oldClone && oldClone.parentNode) oldClone.parentNode.removeChild(oldClone);
     const list = Array.isArray(warnings)
         ? warnings.filter(w => w != null && String(w).trim() !== '')
         : [];
     banner.innerHTML = '';
     if (list.length === 0) {
         banner.classList.add('hide');
+        // 若曾置顶克隆也隐藏
         return;
     }
     const head = document.createElement('div');
@@ -1580,11 +1591,32 @@ function showQualityWarnings(warnings) {
     head.style.cssText = 'font-weight:600; margin-bottom:4px;';
     banner.appendChild(head);
     list.forEach(w => {
+        const raw = String(w);
+        const label = QUALITY_WARNING_LABELS[raw] || raw;
+        // 若 raw 已含中文“模糊”则直接展示，否则用映射中文保证顶部文案含“图像模糊度过高”
+        const display = (raw === 'image_blur' && !label.includes('模糊')) ? QUALITY_WARNING_LABELS['image_blur'] : label;
         const row = document.createElement('div');
-        row.textContent = '• ' + String(w);
+        row.textContent = '• ' + display;
         banner.appendChild(row);
     });
     banner.classList.remove('hide');
+    // P0-1 置顶保证：若 banner 所在 prefillFormCard 隐藏（错误态），克隆一份到 rightPanel 顶部置顶
+    const prefill = document.getElementById('prefillFormCard');
+    const rightPanel = document.getElementById('rightPanel');
+    if (prefill && prefill.classList.contains('hide') && rightPanel) {
+        const clone = banner.cloneNode(true);
+        clone.id = 'qualityWarningsBannerClone';
+        // 保持与原 banner 相同样式，已含 border/background
+        clone.classList.remove('hide');
+        // 置顶插入到 rightPanel 首位（最顶部）
+        if (rightPanel.firstChild) rightPanel.insertBefore(clone, rightPanel.firstChild);
+        else rightPanel.appendChild(clone);
+    }
+    // 成功态若 banner 曾被克隆到顶部且当前 prefill 可见，移除克隆避免重复
+    if (prefill && !prefill.classList.contains('hide')) {
+        const c = document.getElementById('qualityWarningsBannerClone');
+        if (c && c.parentNode) c.parentNode.removeChild(c);
+    }
 }
 
 // Q34：上传响应带 duplicate_of → 给可点击关联动作（toast + 确认「查看原单」）
@@ -1728,6 +1760,15 @@ function triggerAnalysisNow() {
                 setMainPreviewFromFile(selectedFile, null);
             }
             showErrorCard(ret.msg || '识别失败', ret.receipt_id || null);
+            // P0-1 极模糊置顶：即使错误态也展示 quality_warnings 并置顶（<1s 快速失败不悬挂）
+            const qw = collectQualityWarnings(ret);
+            if (qw && qw.length) {
+                // 低置信度提示（≤0.40）与模糊警告一并置顶
+                showQualityWarnings(qw);
+            } else if (ret && ret.code === 'IMAGE_QUALITY_ERROR') {
+                // 兜底：code 为质量异常但顶层未带 warnings 时按 image_blur 展示
+                showQualityWarnings(['image_blur']);
+            }
             return;
         }
 
@@ -6228,10 +6269,16 @@ function uploadBatch(batchPhotos) {
             if (ret.image_url && isBrowserDisplayableImageUrl(ret.image_url)) {
                 photo.imageUrl = ret.image_url;
             }
+            // P0-1 极模糊批量路径：留存 quality_warnings 供切换照片时置顶
+            if (Array.isArray(ret.quality_warnings)) photo.qualityWarnings = ret.quality_warnings;
+            else if (ret && ret.code === 'IMAGE_QUALITY_ERROR') photo.qualityWarnings = ['image_blur'];
             renderSider();
             if (BatchUploader.activeIndex === idx) {
                 setMainPreview(photo);
                 showErrorCard(photo.errorMsg, photo.receiptId || null);
+                const qw = collectQualityWarnings(ret) || photo.qualityWarnings;
+                if (qw && qw.length) showQualityWarnings(qw);
+                else if (ret && ret.code === 'IMAGE_QUALITY_ERROR') showQualityWarnings(['image_blur']);
             } else {
                 showToast(`第 ${idx + 1} 张识别失败：${photo.errorMsg}`, 'error');
             }

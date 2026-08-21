@@ -95,6 +95,55 @@ def _save_upload(file: UploadFile) -> str:
     return str(path)
 
 
+# P0-1 极模糊前置拦截：Laplacian 方差阈值（与 image_quality_guard 对齐）
+BLUR_THRESHOLD = 30.0
+
+
+def _laplacian_variance(image_path: str):
+    """计算图像 Laplacian 方差（清晰度指标），<30 视为极模糊。失败回 None（不阻断）。"""
+    try:
+        try:
+            import pillow_heif  # noqa: F401
+            pillow_heif.register_heif_opener()
+        except Exception:
+            pass
+        from PIL import Image, ImageOps
+        with Image.open(image_path) as img:
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+            # 超大图限边 1000 保证 <1s 快速失败
+            max_side = max(img.size) if img.size[0] and img.size[1] else 0
+            if max_side > 1000:
+                scale = 1000.0 / max_side
+                new_w = max(1, int(img.size[0] * scale))
+                new_h = max(1, int(img.size[1] * scale))
+                img = img.resize((new_w, new_h), Image.BILINEAR)
+            gray = img.convert("L")
+            # 优先 numpy 向量化（最快），缺失时回退 PIL Kernel
+            try:
+                import numpy as np
+                arr = np.asarray(gray, dtype=np.float32)
+                if arr.shape[0] < 3 or arr.shape[1] < 3:
+                    return None
+                lap = -4 * arr[1:-1, 1:-1] + arr[:-2, 1:-1] + arr[2:, 1:-1] + arr[1:-1, :-2] + arr[1:-1, 2:]
+                return float(lap.var())
+            except ImportError:
+                from PIL import ImageFilter
+                kernel = ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], scale=1)
+                lap_img = gray.filter(kernel)
+                vals = list(lap_img.getdata())
+                if not vals:
+                    return None
+                mean = sum(vals) / len(vals)
+                var = sum((x - mean) ** 2 for x in vals) / len(vals)
+                return float(var)
+    except Exception:
+        return None
+    return None
+
+
 # -------------------------------------------------------------
 # HEIC / 非 Web 格式即时转换接口
 # -------------------------------------------------------------
@@ -167,6 +216,26 @@ async def upload_receipt(
             }
         )
 
+    # P0-1 极模糊前置拦截：Laplacian 方差 <30 直接 400 快速失败（<1s，不进 opencode 管线）
+    blur_score = _laplacian_variance(image_path)
+    if blur_score is not None and blur_score < BLUR_THRESHOLD:
+        if os.path.exists(image_path):
+            try:
+                os.remove(image_path)
+            except Exception:
+                pass
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "IMAGE_QUALITY_ERROR",
+                "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                "quality_warnings": ["image_blur"],
+                "blur_score": round(float(blur_score), 2),
+                "confidence": 0.35,
+            }
+        )
+
     job_id, receipt_id = start_recognition_job(
         image_path, vendor_hint=vendor_hint or "")
 
@@ -230,6 +299,24 @@ async def upload_batch(
     queue_pos = 0
     for f in files:
         image_path = _save_upload(f)
+        # P0-1 极模糊前置拦截（批量同单张）：<1s 快速失败，不进管线
+        blur_score = _laplacian_variance(image_path)
+        if blur_score is not None and blur_score < BLUR_THRESHOLD:
+            if os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except Exception:
+                    pass
+            results.append({
+                "status": "error",
+                "code": "IMAGE_QUALITY_ERROR",
+                "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                "quality_warnings": ["image_blur"],
+                "blur_score": round(float(blur_score), 2),
+                "confidence": 0.35,
+                "image_url": None,
+            })
+            continue
         # 简易pHash：基于文件内容hash（像素级pHash需imagehash库，此处用文件MD5近似去重）
         import hashlib
         file_hash = hashlib.md5(open(image_path, "rb").read()).hexdigest()
