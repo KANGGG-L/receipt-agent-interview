@@ -451,6 +451,7 @@ def get_receipt(receipt_id: int, request: Request):
         row.payment_mark = _supplement_payment_mark(row)
     data = build_detail(row)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
+    data_only = request.query_params.get("data_only", "false").lower() == "true"
     if desensitized:
         # 脱敏视图附加 raw_llm（与列表脱敏视图保持一致）
         data["raw_llm"] = _mask_sensitive(row.raw_llm or "")
@@ -458,6 +459,13 @@ def get_receipt(receipt_id: int, request: Request):
             data["payment_mark"] = _mask_sensitive(data["payment_mark"])
         if "supplier_name" in data and data["supplier_name"]:
             data["supplier_name"] = _mask_sensitive(data["supplier_name"])
+    # P1 D-P1-3: data_only 调试开关控制 rag_context 可见性；默认隐藏
+    if not data_only:
+        data.pop("rag_context", None)
+    else:
+        # data_only 显式开启时补充未持久化字段的提示
+        if not data.get("rag_context"):
+            data["rag_context"] = getattr(row, "rag_context_json", None) or ""
     return {"status": "success", "receipt_id": row.id,
             "image_url": "/uploads/" + (row.image_path.split("/")[-1] if row.image_path else ""),
             "data": data}
@@ -479,6 +487,7 @@ class SaveEditedBody(BaseModel):
     doc_form: str = ""
     layout_type: str = ""
     version: Optional[int] = None
+    currency: str = "HKD"
 
 
 @router.post("/api/save_edited")
@@ -530,8 +539,15 @@ def save_edited(body: SaveEditedBody, request: Request):
             "unit_conversion_warning": it.get("unit_conversion_warning", ""),
             "fuzzy_candidates": it.get("fuzzy_candidates", []),
             "entity_candidates": it.get("entity_candidates", []),
+            "is_void": int(bool(it.get("is_void", 0) or 0)),
+            "actual_qty": it.get("actual_qty"),
         })
 
+    # 币种白名单校验
+    _allowed_currencies = {"HKD", "CNY", "USD", "EUR", "JPY", "GBP", "MOP", "SGD"}
+    cur = (body.currency or "HKD").strip().upper()
+    if cur not in _allowed_currencies:
+        cur = "HKD"
     db.update_receipt(
         rid,
         supplier_name=body.supplier_name or "通用供应商",
@@ -545,6 +561,7 @@ def save_edited(body: SaveEditedBody, request: Request):
         department_id=body.department_id,
         status="edited",
         version=body.version + 1 if body.version is not None else 1,
+        currency=cur,
     )
     db.set_receipt_items(rid, items_raw)
 

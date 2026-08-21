@@ -82,12 +82,17 @@ def resolve_account(request: Request):
     return {"email": email, "role": role}
 
 
+_ROLE_LABEL = {"admin": "超管", "owner": "老板", "staff": "店员"}
+
 def require_role(role: str):
-    """FastAPI 依赖：请求者角色层级 >= 目标角色。"""
+    """FastAPI 依赖：请求者角色层级 >= 目标角色。403 文案人话统一（含当前角色与所需角色指引）。"""
     def _dep(request: Request):
         account = resolve_account(request)
         if ROLE_RANK.get(account.get("role", ""), 0) < ROLE_RANK.get(role, 99):
-            raise HTTPException(status_code=403, detail="权限不足")
+            cur = account.get("role", "unknown")
+            need_label = _ROLE_LABEL.get(role, role)
+            cur_label = _ROLE_LABEL.get(cur, cur)
+            raise HTTPException(status_code=403, detail=f"权限不足：当前角色为{cur_label}（{cur}），此操作需{need_label}（{role}）及以上权限。请切换角色或联系管理员。")
         try:
             request.state.account = account
         except AttributeError:
@@ -99,6 +104,8 @@ def require_role(role: str):
 def require_admin(request: Request):
     account = resolve_account(request)
     if account.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="仅 admin 可操作")
+        cur = account.get("role", "unknown")
+        cur_label = _ROLE_LABEL.get(cur, cur)
+        raise HTTPException(status_code=403, detail=f"权限不足：此操作仅限超管（admin）执行，当前角色为{cur_label}（{cur}）。请切换为 admin 角色。")
     request.state.account = account
     return account

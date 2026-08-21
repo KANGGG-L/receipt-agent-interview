@@ -102,6 +102,11 @@
                     <span>引擎与灰测</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
+                <button class="sidebar-btn" id="goldenBoardBtn" data-target="tab-golden" data-title="黄金样本57看板">
+                    <span class="icon"></span>
+                    <span>黄金样本</span>
+                    <span style="color:var(--primary); font-size:0.65rem; margin-left:auto; border:1px solid var(--primary); border-radius:4px; padding:0 4px;">57</span>
+                </button>
             </nav>
         </aside>
 
@@ -343,6 +348,20 @@
                                             </select>
                                             <button class="btn btn-secondary" style="padding:7px 12px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')" title="把单据级部门填入所有明细行"> 应用到全部明细</button>
                                         </div>
+                                    </div>
+                                    <!-- F-P1-3 多币种 -->
+                                    <div class="form-group">
+                                        <label>币种</label>
+                                        <select id="inpCurrency" class="form-control" title="多币种：HKD 默认，支持 CNY/USD/EUR/JPY/GBP/MOP/SGD">
+                                            <option value="HKD">HKD 港币</option>
+                                            <option value="CNY">CNY 人民币</option>
+                                            <option value="USD">USD 美元</option>
+                                            <option value="EUR">EUR 欧元</option>
+                                            <option value="JPY">JPY 日元</option>
+                                            <option value="GBP">GBP 英镑</option>
+                                            <option value="MOP">MOP 澳门币</option>
+                                            <option value="SGD">SGD 新币</option>
+                                        </select>
                                     </div>
                                 </div>
 
@@ -1378,6 +1397,44 @@
                 </div>
                     </div>
                 </section>
+                <section id="tab-golden" class="tab-content">
+                    <div class="card" style="max-width:960px; margin:0 auto;">
+                        <div class="card-title" style="justify-content:space-between;">
+                            <span>黄金样本看板（57 张）</span>
+                            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadGoldenBoard()">刷新</button>
+                        </div>
+                        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+                            <span class="badge" style="background:#eef2ff; color:#334155;">印刷送货单 15</span>
+                            <span class="badge" style="background:#eef2ff; color:#334155;">手写街市单 22</span>
+                            <span class="badge" style="background:#eef2ff; color:#334155;">磅单/热敏 10</span>
+                            <span class="badge" style="background:#eef2ff; color:#334155;">更正单 6</span>
+                            <span class="badge" style="background:#eef2ff; color:#334155;">月结单 4</span>
+                        </div>
+                        <div id="goldenBoardSummary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">点击刷新加载 57 张黄金样本状态与覆盖率。</div>
+                        <div class="table-container" style="max-height:420px; overflow:auto;">
+                            <table class="data-table">
+                                <thead><tr><th>编号</th><th>供应商</th><th>日期</th><th>形态</th><th>总额</th><th>状态</th><th>币种</th><th>操作</th></tr></thead>
+                                <tbody id="goldenBoardBody"><tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">加载中</td></tr></tbody>
+                            </table>
+                        </div>
+                        <div style="margin-top:12px; display:flex; gap:10px;">
+                            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.78rem;" onclick="importGoldenSamples(10)">导入 10 张样本</button>
+                            <button class="btn btn-primary" style="padding:4px 10px; font-size:0.78rem;" onclick="importGoldenSamples(57)">一键导入 57 张</button>
+                        </div>
+
+                        <!-- E-P1-3 p-value 卡片 -->
+                        <div style="margin-top:18px; border-top:1px dashed var(--border-color); padding-top:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                                <span style="font-weight:600; font-size:0.9rem;">A/B 显著性检验卡片（p-value）</span>
+                                <select id="pvalueExperimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="loadPValueCards()"></select>
+                            </div>
+                            <div id="pvalueThresholdNote" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
+                                判定阈值：双侧双比例 z 检验，显著性水平 alpha = 0.05。p &lt; 0.05 视为显著；样本量 N &lt; 30 时标记低置信度，仅作参考不作为推全依据。
+                            </div>
+                            <div id="pvalueCardsContainer" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px;"></div>
+                        </div>
+                    </div>
+                </section>
 
                 <!-- FR-8 静态可见性探针：保证内置浏览器 snapshot 可见按钮与 textarea -->
                 <div class="card" id="feedbackSnapshotProbe" style="margin-top:20px; border:1px dashed #94a3b8;">
@@ -1560,6 +1617,26 @@
                                     <button class="btn btn-secondary" style="padding:6px 12px; font-size:0.8rem; white-space:nowrap;" onclick="applyDeptToAll('arcTableBody','arcDepartmentId'); markArcDirty();" title="把单据级部门填入所有明细行"> 应用到全部明细</button>
                                 </div>
                             </div>
+                            <!-- F-P1-3 多币种 -->
+                            <div class="form-group">
+                                <label>币种</label>
+                                <select id="arcCurrency" class="form-control" onchange="markArcDirty()" title="多币种：HKD 默认，支持 CNY/USD/EUR/JPY/GBP/MOP/SGD">
+                                    <option value="HKD">HKD 港币</option>
+                                    <option value="CNY">CNY 人民币</option>
+                                    <option value="USD">USD 美元</option>
+                                    <option value="EUR">EUR 欧元</option>
+                                    <option value="JPY">JPY 日元</option>
+                                    <option value="GBP">GBP 英镑</option>
+                                    <option value="MOP">MOP 澳门币</option>
+                                    <option value="SGD">SGD 新币</option>
+                                </select>
+                            </div>
+                            <!-- D-P1-3 RAG data_only 调试开关 -->
+                            <div class="form-group" style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; margin:0;">
+                                    <input type="checkbox" id="arcDataOnlyToggle" onchange="toggleRagDataOnly()"> 调试：显示 RAG 上下文 (data_only)
+                                </label>
+                            </div>
                         </div>
 
                         <div class="table-container" style="max-height: 320px; overflow-y: auto;">
@@ -1582,7 +1659,20 @@
                             </table>
                         </div>
 
-                        <!-- 操作与编辑改动履历 Logs 区域 -->
+                         <!-- D-P1-3 RAG 上下文调试卡（默认隐藏，data_only 开启时展示） -->
+                        <div id="arcRagContextCard" class="hide" style="margin-top: 12px; border:1px solid #b8daff; background:#e7f3ff; border-radius:8px; padding:10px 12px;">
+                            <div style="font-size:0.82rem; font-weight:600; color:#004085; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
+                                <span>RAG 上下文 (data_only 调试)</span>
+                                <span id="arcRagContextTag" class="badge" style="background:#cce5ff; color:#004085; font-size:0.7rem;">vendor_context</span>
+                            </div>
+                            <pre id="arcRagContextPre" style="white-space:pre-wrap; word-break:break-word; font-size:0.78rem; color:#1a1a1a; max-height:160px; overflow:auto; background:#fff; border:1px solid #cce5ff; border-radius:6px; padding:8px; margin:0;">暂无上下文</pre>
+                        </div>
+                        <!-- F-P1-5 成本分摊 -->
+                        <div style="margin-top: 10px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.78rem;" onclick="openCostShareModal()">成本分摊</button>
+                            <span id="arcCostShareHint" style="font-size:0.75rem; color:var(--text-muted); align-self:center;"></span>
+                        </div>
+                         <!-- 操作与编辑改动履历 Logs 区域 -->
                         <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
                             <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
                                  操作与编辑改动履历
@@ -2047,6 +2137,29 @@
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- F-P1-5 成本分摊 Modal -->
+    <div id="costShareModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:560px;">
+            <div class="modal-header">
+                <h3>成本分摊</h3>
+                <button class="modal-close-btn" onclick="closeModalById('costShareModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px;">将本单成本按部门比例分摊，分摊后各明细行按比例写入不同部门。</div>
+                <div id="costShareBody" style="max-height:300px; overflow:auto; border:1px solid var(--border-color); border-radius:8px; padding:10px;"></div>
+                <div style="display:flex; gap:10px; margin-top:12px;">
+                    <button class="btn btn-secondary" style="font-size:0.8rem;" onclick="addCostShareRow()">+ 增加部门</button>
+                    <button class="btn btn-secondary" style="font-size:0.8rem;" onclick="equalizeCostShare()">均分</button>
+                </div>
+                <div id="costShareSummary" style="font-size:0.82rem; color:var(--text-muted); margin-top:8px;"></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; padding:12px 16px; border-top:1px solid var(--border-color);">
+                <button class="btn btn-secondary" onclick="closeModalById('costShareModal')">取消</button>
+                <button class="btn btn-primary" onclick="applyCostShare()">确认分摊</button>
             </div>
         </div>
     </div>

@@ -82,6 +82,8 @@ def _make_engine():
         # 审计日志
         audit_logs_json = Column(Text, default="[]")
         use_grey = Column(Integer, default=0)              # 灰测组标记（阶段 1 持久化）
+        rag_context_json = Column(Text, default="")        # RAG 检索上下文（data_only 调试开关可见）
+        currency = Column(String, default="HKD")           # 多币种（F-P1-3）
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
         deleted_at = Column(String, nullable=True)  # 软删除时间戳
@@ -107,6 +109,8 @@ def _make_engine():
         raw_unit = Column(String, default="")
         fuzzy_candidates_json = Column(Text, default="[]")
         entity_candidates_json = Column(Text, default="[]")
+        is_void = Column(Integer, default=0)                # 划线作废（Gap 6 / D-P1-4）
+        actual_qty = Column(Float, nullable=True)           # 手写实收数量（Gap 6）
 
     class SkuRow(Base):
         __tablename__ = "skus"
@@ -302,6 +306,20 @@ def _make_engine():
             _c.commit()
     except Exception:
         pass  # 列已存在则忽略
+    # SQLite 迁移：RAG 上下文 + 多币种（P1 治理）
+    for _ddl in (
+        "ALTER TABLE receipts ADD COLUMN rag_context_json TEXT DEFAULT ''",
+        "ALTER TABLE receipts ADD COLUMN currency VARCHAR(8) DEFAULT 'HKD'",
+        "ALTER TABLE receipt_items ADD COLUMN is_void INTEGER DEFAULT 0",
+        "ALTER TABLE receipt_items ADD COLUMN actual_qty REAL",
+    ):
+        try:
+            from sqlalchemy import text as _sa_text2
+            with _engine.connect() as _c:
+                _c.execute(_sa_text2(_ddl))
+                _c.commit()
+        except Exception:
+            pass
 
     _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow = ReceiptRow, ItemRow, SkuRow, StockLogRow
     _SupplierRow, _DeptRow, _PaymentRow = SupplierRow, DeptRow, PaymentRow
@@ -420,12 +438,16 @@ def set_receipt_items(receipt_id, items):
             entity = row.pop("entity_candidates", [])
             raw_name = row.pop("raw_name", None)
             raw_unit = row.pop("raw_unit", None)
+            is_void = 1 if row.pop("is_void", 0) else 0
+            actual_qty = row.pop("actual_qty", None)
             s.add(_ItemRow(
                 receipt_id=int(receipt_id),
                 raw_name=raw_name,
                 raw_unit=raw_unit,
                 fuzzy_candidates_json=json.dumps(fuzzy, ensure_ascii=False),
                 entity_candidates_json=json.dumps(entity, ensure_ascii=False),
+                is_void=is_void,
+                actual_qty=actual_qty,
                 **row,
             ))
         s.commit()
@@ -589,6 +611,8 @@ def _row_to_item(r):
         "unit_conversion_warning": r.unit_conversion_warning,
         "fuzzy_candidates": json.loads(r.fuzzy_candidates_json or "[]"),
         "entity_candidates": json.loads(r.entity_candidates_json or "[]"),
+        "is_void": bool(getattr(r, "is_void", 0) or 0),
+        "actual_qty": getattr(r, "actual_qty", None),
     }
 
 

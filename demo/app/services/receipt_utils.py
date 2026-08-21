@@ -176,6 +176,8 @@ def save_parsed_data(receipt_id, data, result):
             "matched": 0, "price_anomaly": 0, "price_anomaly_direction": "",
             "price_diff_percent": 0.0, "unit_conversion_warning": "",
             "fuzzy_candidates": [], "entity_candidates": [],
+            "is_void": int(bool(getattr(it, "is_void", False))),
+            "actual_qty": getattr(it, "actual_qty", None),
         })
         _match_sku(items_raw[-1])
 
@@ -199,6 +201,13 @@ def save_parsed_data(receipt_id, data, result):
     except Exception:
         payment_mark_val = "已付款" if data.payment_marked else ""
 
+    # RAG 上下文持久化（供 data_only 调试开关按需展示，默认不暴露）
+    rag_ctx = result.get("vendor_context") or result.get("rag_context") or ""
+    # 归一为结构化文本：保留供应商先验与检索片段
+    if isinstance(rag_ctx, dict):
+        rag_ctx_str = json.dumps(rag_ctx, ensure_ascii=False)
+    else:
+        rag_ctx_str = str(rag_ctx or "")
     db.update_receipt(
         receipt_id,
         status="parsed",
@@ -215,6 +224,8 @@ def save_parsed_data(receipt_id, data, result):
         math_warnings_json=json.dumps(result.get("math_problems", []), ensure_ascii=False),
         use_grey=use_grey,
         review_priority_score=review_priority_score,
+        rag_context_json=rag_ctx_str,
+        currency=getattr(data, "currency", None) or "HKD",
     )
     db.set_receipt_items(receipt_id, items_raw)
     return build_detail(db.get_receipt_row(receipt_id))
@@ -321,6 +332,8 @@ def build_detail(row):
         "audit_result": _patch_audit_reason(json.loads(row.audit_json or "{}")),
         "use_grey": row.use_grey or 0,
         "confidence": row.confidence or 0.0,
+        "currency": getattr(row, "currency", None) or "HKD",
+        "rag_context": getattr(row, "rag_context_json", None) or "",
     }
 
 
@@ -407,4 +420,5 @@ def build_row(row):
         "payment_mark": payment_mark_val,
         "quality_warnings": quality_warnings,
         "review_priority_score": review_priority,
+        "currency": getattr(row, "currency", None) or "HKD",
     }
