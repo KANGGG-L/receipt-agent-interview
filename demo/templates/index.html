@@ -337,7 +337,13 @@
                                     </div>
                                     <div class="form-group">
                                         <label>付款标记</label>
-                                        <input type="text" id="inpPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
+                                        <select id="inpPaymentMark" class="form-control" title="AI 对原图付款痕迹的判定，可人工修正">
+                                            <option value="无">无</option>
+                                            <option value="印章">印章</option>
+                                            <option value="手写批注">手写批注</option>
+                                            <option value="仅签名">仅签名</option>
+                                            <option value="已付款">已付款</option>
+                                        </select>
                                     </div>
                                     <!-- Wave 2（D44）：单据级部门——一键填充到全部明细（已手动改过的行不动，04 章三） -->
                                     <div class="form-group" style="grid-column: span 2;">
@@ -377,23 +383,11 @@
                                                 <th style="width:12%;">金额</th>
                                                 <th style="width:10%;">部门</th>
                                                 <th style="width:6%;">操作</th>
-                                                <th style="width:18%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
+                                                <th style="width:8%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
                                             </tr>
                                         </thead>
                                         <tbody id="itemTableBody">
-                                            <!-- 动态渲染行：含点赞/点踩按钮 + textarea 反馈窗（FR-8，optimistic UI） -->
-                                            <!-- 静态占位样例：保证无数据时 snapshot 仍可见按钮与 textarea，JS 渲染时自动清空 -->
-                                            <tr class="feedback-placeholder-row">
-                                                <td colspan="8" style="padding:12px; background:#f8fafc;">
-                                                    <div class="feedback-cell" style="flex-direction:row; align-items:center; gap:8px; flex-wrap:wrap; justify-content:center;">
-                                                        <span style="font-size:0.80rem; color:var(--text-muted); margin-right:6px;">示例行反馈：</span>
-                                                        <button type="button" class="btn-like">点赞</button>
-                                                        <button type="button" class="btn-dislike">点踩</button>
-                                                        <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" style="flex:1; min-width:180px; max-width:320px;"></textarea>
-                                                    </div>
-                                                    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; text-align:center;">每行支持点赞/点踩与文本反馈，提交后落库并触发租户隔离记忆沉淀</div>
-                                                </td>
-                                            </tr>
+                                            <!-- 动态渲染行：反馈按钮 + 已反馈徽标，弹层内点赞/点踩/textarea（FR-8，optimistic UI） -->
                                         </tbody>
                                     </table>
                                 </div>
@@ -1438,17 +1432,6 @@
                     </div>
                 </section>
 
-                <!-- FR-8 静态可见性探针：保证内置浏览器 snapshot 可见按钮与 textarea -->
-                <div class="card" id="feedbackSnapshotProbe" style="margin-top:20px; border:1px dashed #94a3b8;">
-                    <div class="card-title"><span>反馈探针（静态可见性校验）</span></div>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; padding:8px;">
-                        <button type="button" class="btn-like">点赞</button>
-                        <button type="button" class="btn-dislike">点踩</button>
-                        <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" style="flex:1; min-width:180px;"></textarea>
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--text-muted); padding:0 8px 8px;">每行点赞/点踩与 textarea 已就绪，提交落库并触发租户隔离记忆沉淀</div>
-                </div>
-
             </main>
 
         </div>
@@ -1607,7 +1590,13 @@
                             </div>
                             <div class="form-group">
                                 <label>付款标记</label>
-                                <input type="text" id="arcPaymentMark" class="form-control" readonly placeholder="无" title="AI 对原图付款痕迹的判定：印章 / 手写批注 / 仅签名 / 无">
+                                <select id="arcPaymentMark" class="form-control" title="AI 对原图付款痕迹的判定，可人工修正">
+                                    <option value="无">无</option>
+                                    <option value="印章">印章</option>
+                                    <option value="手写批注">手写批注</option>
+                                    <option value="仅签名">仅签名</option>
+                                    <option value="已付款">已付款</option>
+                                </select>
                             </div>
                             <!-- Wave 2（D44）：归档单据级部门——历史单据可补打部门（04 章四） -->
                             <div class="form-group" style="grid-column: span 2;">
@@ -1652,7 +1641,7 @@
                                         <th style="width:12%;">金额</th>
                                         <th style="width:10%;">部门</th>
                                         <th style="width:6%;">操作</th>
-                                        <th style="width:18%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
+                                        <th style="width:8%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
                                     </tr>
                                 </thead>
                                 <tbody id="arcTableBody">
@@ -1898,6 +1887,17 @@
                     <button class="btn btn-danger" onclick="submitMerge()"> 执行合并</button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- U-08：明细行 AI 效果反馈 Modal（FR-8，替代行内嵌 textarea） -->
+    <div id="rowFeedbackModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:440px;">
+            <div class="modal-header">
+                <h3>AI 效果反馈</h3>
+                <button class="modal-close-btn" onclick="closeRowFeedbackModal()">x</button>
+            </div>
+            <div class="modal-body" id="rowFeedbackModalBody"></div>
         </div>
     </div>
 
