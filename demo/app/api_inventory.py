@@ -63,19 +63,13 @@ def _standard_kg(current_stock, base_unit):
         return None
 
 
-def _compute_vs_avg_and_anomaly(sku_id, threshold=0.10):
-    """计算 vs_avg 涨幅与是否异动（阈值 10% 标红）。返回 (vs_avg_pct, is_anomaly, avg_30d)."""
-    rows = db.price_history(sku_id)
-    prices = [r.unit_price for r in rows if getattr(r, "unit_price", 0) > 0]
-    if not prices or len(prices) < 2:
-        return 0.0, False, (round(sum(prices) / len(prices), 2) if prices else 0.0)
-    avg = sum(prices) / len(prices)
-    last = prices[-1]
-    avg_30d = round(avg, 2)
-    if avg == 0:
-        return 0.0, False, avg_30d
-    vs = round(((last - avg) / avg) * 100, 1)
-    is_anomaly = vs > threshold * 100
+def _compute_vs_avg_and_anomaly(sku_id, threshold_pct=None):
+    """计算 vs_avg 涨幅与是否异动。返回 (vs_avg_pct, is_anomaly, avg_30d)。
+
+    口径统一走 services.price_anomaly（U-02），阈值取 models.PRICE_ANOMALY_THRESHOLD_PCT。
+    """
+    from app.services.price_anomaly import compute_vs_avg_and_anomaly
+    vs, is_anomaly, avg_30d, _latest = compute_vs_avg_and_anomaly(sku_id, threshold_pct)
     return vs, is_anomaly, avg_30d
 
 
@@ -96,7 +90,7 @@ def inventory_list(request: Request, q: str = "", category: str = "",
         is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
         if stock == "low" and not is_low:
             continue
-        vs_avg_pct, price_anomaly, _ = _compute_vs_avg_and_anomaly(s.id, threshold=0.10)
+        vs_avg_pct, price_anomaly, _ = _compute_vs_avg_and_anomaly(s.id)
         if price == "anomaly" and not price_anomaly:
             continue
         if is_low:
@@ -122,7 +116,7 @@ def inventory_list(request: Request, q: str = "", category: str = "",
 
 def _is_anomaly(sku):
     """价格异动判定：较 30 日均价涨幅 >10% 即标红（PRD 阈值 10%，价格下跌不标红）。"""
-    _, is_anomaly, _ = _compute_vs_avg_and_anomaly(sku.id, threshold=0.10)
+    _, is_anomaly, _ = _compute_vs_avg_and_anomaly(sku.id)
     return is_anomaly
 
 
@@ -265,7 +259,7 @@ def price_history(sku_id: int, request: Request):
              "supplier_name": r.vendor, "receipt_id": r.receipt_id,
              "source": "receipt"} for r in rows]
     prices = [d["unit_price"] for d in data if d["unit_price"] > 0]
-    vs_avg_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(sku_id, threshold=0.10)
+    vs_avg_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(sku_id)
     # 兼容空序列：avg_30d 由 helper 已算出；但 vs=0 时不标红
     if not prices:
         vs_avg_pct = 0.0

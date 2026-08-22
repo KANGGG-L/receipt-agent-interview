@@ -912,19 +912,44 @@ def find_supplier_by_name(name):
         s.close()
 
 
+def find_supplier_by_canonical_name(name):
+    """U-06：按归一 key（去英文括号注 + 繁转简）查找已有供应商，命中则返回该行。"""
+    from app.services.supplier_normalizer import canonical_supplier_key
+    key = canonical_supplier_key(name)
+    if not key:
+        return None
+    s = get_session()
+    try:
+        for sup in s.query(_SupplierRow).all():
+            if canonical_supplier_key(sup.name) == key:
+                return sup
+        return None
+    finally:
+        s.close()
+
+
 def create_supplier(name, **fields):
     s = get_session()
     try:
         existing = s.query(_SupplierRow).filter(_SupplierRow.name == name).first()
         if existing:
             return None, "已存在同名供应商"
+        s.close()
+        # U-06：核心词归一命中已有供应商 → 复用其 id，不再新建变体档案
+        hit = find_supplier_by_canonical_name(name)
+        if hit is not None:
+            return hit.id, None
+        s = get_session()
         row = _SupplierRow(name=name, supplier_code="SUP-" + new_id().upper(), **fields)
         s.add(row)
         s.commit()
         s.refresh(row)
         return row.id, None
     finally:
-        s.close()
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 def update_supplier(supplier_id, **fields):

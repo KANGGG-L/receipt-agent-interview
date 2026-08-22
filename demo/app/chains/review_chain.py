@@ -97,57 +97,54 @@ def weekly_insights(cost_summary: dict) -> dict:
         return dict(_INSIGHTS_CACHE["payload"])
 
     from app import db as _db
+    from app.models import PRICE_ANOMALY_THRESHOLD_PCT
+    from app.services.price_anomaly import compute_vs_avg_and_anomaly
     top_price_risers: list = []
     total_impact = 0.0
+    alert_count = 0
     items = cost_summary.get("items") or {}
 
-    for name, info in items.items():
-        if not isinstance(info, dict):
+    # U-02：统一 PRD FR-6 口径（最新单价 vs 均价 > PRICE_ANOMALY_THRESHOLD_PCT%），
+    # 与库存页 _compute_vs_avg_and_anomaly 共用同一 helper，保证两处数字一致。
+    for sku in _db.list_skus():
+        vs_pct, is_anomaly, avg_30d, latest = compute_vs_avg_and_anomaly(sku.id)
+        if not is_anomaly:
             continue
-        prices = info.get("prices") or []
-        prices = [p for p in prices if isinstance(p, (int, float)) and p > 0]
-        if len(prices) < 2:
-            continue
-        earliest = prices[0]
-        latest = prices[-1]
-        if earliest <= 0:
-            continue
+        alert_count += 1
 
-        change_pct = round((latest - earliest) / earliest * 100, 1)
-        if change_pct > 15:  # 灵敏度收紧至 15%
-            sku_obj = _db.find_sku_by_name(name)
-            sku_id = sku_obj.id if sku_obj else None
-            curr_stock = info.get("qty", 1.0) or 1.0
-            unit = info.get("unit") or "斤"
-            vendor = info.get("vendor") or "主要供应商"
+        info = items.get(sku.name) if isinstance(items.get(sku.name), dict) else {}
+        curr_stock = info.get("qty") or sku.current_stock or 0.0
+        unit = info.get("unit") or sku.base_unit or "斤"
+        vendor = info.get("vendor") or "主要供应商"
 
-            # 溯源最新单据的供应商名
-            if sku_id:
-                try:
-                    logs = _db.price_history(sku_id)
-                    if logs and logs[-1].vendor:
-                        vendor = logs[-1].vendor
-                except Exception as e:
-                    import logging
-                    logging.getLogger("review_chain").warning(f"[WARN] 溯源价格历史失败: {e}")
+        # 溯源最新单据的供应商名
+        try:
+            logs = _db.price_history(sku.id)
+            if logs and logs[-1].vendor:
+                vendor = logs[-1].vendor
+        except Exception as e:
+            import logging
+            logging.getLogger("review_chain").warning(f"[WARN] 溯源价格历史失败: {e}")
 
-            # 量化影响金额 = (最新价 - 基准价) * 当前累计/在库数量
-            impact_amount = round(max(0.0, (latest - earliest) * curr_stock), 2)
-            total_impact += impact_amount
+        # 量化影响金额 = (最新价 - 30天均价) * 当前在库数量
+        impact_amount = round(max(0.0, (latest - avg_30d) * curr_stock), 2)
+        total_impact += impact_amount
 
-            evidence = f"{vendor}：【{name}】近期单价由 ${earliest:.2f} 涨至 ${latest:.2f} (+{change_pct}%)，已累计影响成本 HK${impact_amount:.2f}。"
+        evidence = (f"{vendor}：【{sku.name}】最新单价 ${latest:.2f} 较均价 ${avg_30d:.2f} "
+                    f"上涨 {vs_pct}%（超过 {PRICE_ANOMALY_THRESHOLD_PCT:.0f}% 阈值），"
+                    f"按在库数量预估影响成本 HK${impact_amount:.2f}。")
 
-            top_price_risers.append({
-                "sku_id": sku_id,
-                "name": name,
-                "vendor": vendor,
-                "earliest_price": round(earliest, 2),
-                "latest_price": round(latest, 2),
-                "change_pct": change_pct,
-                "impact_amount": impact_amount,
-                "unit": unit,
-                "evidence_text": evidence
-            })
+        top_price_risers.append({
+            "sku_id": sku.id,
+            "name": sku.name,
+            "vendor": vendor,
+            "earliest_price": avg_30d,
+            "latest_price": latest,
+            "change_pct": vs_pct,
+            "impact_amount": impact_amount,
+            "unit": unit,
+            "evidence_text": evidence
+        })
 
     top_price_risers.sort(key=lambda x: (x["impact_amount"], x["change_pct"]), reverse=True)
     top_price_risers = top_price_risers[:5]
@@ -164,14 +161,14 @@ def weekly_insights(cost_summary: dict) -> dict:
             anomaly_items += sum(1 for it in items_ if it.get("price_anomaly"))
         anomaly_count = anomaly_items + flagged_count
     except Exception:
-        anomaly_count = len(top_price_risers)
+        anomaly_count = alert_count
 
     suggestions = _gen_suggestions(top_price_risers, anomaly_count)
 
     payload = {
         "has_alerts": len(top_price_risers) > 0,
         "total_impact_amount": round(total_impact, 2),
-        "alert_count": len(top_price_risers),
+        "alert_count": alert_count,
         "top_price_risers": top_price_risers,
         "anomaly_count": anomaly_count,
         "suggestions": suggestions,
@@ -184,10 +181,11 @@ def weekly_insights(cost_summary: dict) -> dict:
 
 def _gen_suggestions(top_risers, anomaly_count):
     """根据发现生成 1-3 条事实陈述与复核建议。"""
+    from app.models import PRICE_ANOMALY_THRESHOLD_PCT
     suggestions: list = []
     if top_risers:
         names = "、".join(r["name"] for r in top_risers[:2])
-        suggestions.append(f"「{names}」近期价格涨幅超过 15%，请在归档页核对调价记录。")
+        suggestions.append(f"「{names}」最新单价较均价涨幅超过 {PRICE_ANOMALY_THRESHOLD_PCT:.0f}%，请在归档页核对调价记录。")
     if anomaly_count > 0:
         suggestions.append(f"当前有 {anomaly_count} 处价格/状态异常记录，请在归档页优先复核对应单据。")
     if len(suggestions) < 2:

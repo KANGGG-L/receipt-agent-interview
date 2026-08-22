@@ -834,6 +834,33 @@ function setCostReportCurrentMonth() {
     loadCostReport();
 }
 
+// U-07：月份未选时，默认跳到最近有已入库（approved）单据的月份；全库为空才回落当前月
+function loadCostReportAutoMonth() {
+    const monthInput = document.getElementById('costReportMonth');
+    if (monthInput && monthInput.value.trim()) { loadCostReport(); return; }
+    fetch('/api/receipts')
+    .then(res => res.json())
+    .then(ret => {
+        let target = null;
+        if (ret && ret.status === 'success' && Array.isArray(ret.data)) {
+            const months = ret.data
+                .filter(r => r && r.status === 'approved' && r.receipt_date)
+                .map(r => String(r.receipt_date).slice(0, 7))
+                .sort();
+            if (months.length) target = months[months.length - 1];
+        }
+        const cur = currentMonthStr();
+        const finalMonth = target || cur;
+        if (monthInput) monthInput.value = finalMonth;
+        loadCostReport();
+        // 仅在发生自动切换（最近有记录月 ≠ 当前月）时提示
+        if (target && target !== cur) {
+            showToast('该月暂无进货记录，已为你切换到最近有记录的月份：' + target, 'info');
+        }
+    })
+    .catch(() => loadCostReport());
+}
+
 function loadCostReport() {
     const monthInput = document.getElementById('costReportMonth');
     const startInput = document.getElementById('costReportStartDate');
@@ -1186,7 +1213,8 @@ function initTabs() {
 
             }
             if (targetId === 'tab-report') {
-                loadCostReport();        // Wave 2 部门花销报表
+                // U-07：首次进入默认查最近有已入库单据的月份，避免空态误导
+                loadCostReportAutoMonth();
                 loadDepartmentAdmin();   // Wave 2 部门管理
             }
             if (targetId === 'tab-engine') loadAdminEngineConfig();
@@ -2638,6 +2666,8 @@ function renderSupplierMenuItems(inputElem, menuElem) {
     const regularList = [];
 
     availableSuppliers.forEach(sup => {
+        // U-06：软停用（active=0）的供应商不进联想下拉
+        if (sup.active === 0 || sup.active === '0' || sup.active === false) return;
         const supNameLower = (sup.name || "").toLowerCase();
         const supCodeLower = (sup.supplier_code || "").toLowerCase();
 
@@ -3030,7 +3060,12 @@ function applySettlementToForm(prefix, data) {
     }
     const markInput = document.getElementById(prefix + 'PaymentMark');
     if (markInput) {
-        markInput.value = formatPaymentMark(d.payment_mark);
+        // U-05：付款标记枚举下拉——后端值映射到最近枚举项，未匹配则追加临时 option 显示原值
+        const mapped = formatPaymentMark(d.payment_mark);
+        if (![...markInput.options].some(o => o.value === mapped)) {
+            markInput.appendChild(new Option(mapped, mapped, true, true));
+        }
+        markInput.value = mapped;
     }
 }
 
@@ -3347,8 +3382,10 @@ function appendTableRow(item = {}) {
             <label style="font-size:0.7rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoidMain ? 'checked' : ''} onchange="toggleMainVoid(this)">作废</label>
             <button class="btn btn-danger" style="padding:4px 8px; font-size:0.8rem;" onclick="removeRow(this)"> 删除</button>
         </td>
-        <td>
-            <div class="feedback-cell" data-row-index="${rowIdx}">
+        <td style="text-align:center; white-space:nowrap;">
+            <button type="button" class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="openRowFeedbackModal(this)">反馈</button>
+            <span class="feedback-badge badge" style="font-size:0.68rem; display:none;"></span>
+            <div class="feedback-cell" data-row-index="${rowIdx}" style="display:none;">
                 <div class="feedback-actions">
                     <button type="button" class="btn-like" data-like="1" onclick="handleRowFeedback(this, 1)">点赞</button>
                     <button type="button" class="btn-dislike" data-like="-1" onclick="handleRowFeedback(this, -1)">点踩</button>
@@ -3475,6 +3512,57 @@ function _feedbackTenantId() {
     try { return localStorage.getItem('demo_tenant_id') || 'default'; } catch (e) { return 'default'; }
 }
 
+// U-08：反馈收进弹层后，行内以小徽标呈现已反馈状态
+function _syncFeedbackBadge(cell) {
+    if (!cell) return;
+    const td = cell.closest('td') || _rowFeedbackHomeTd;
+    const badge = td ? td.querySelector('.feedback-badge') : null;
+    if (!badge) return;
+    const like = cell.dataset.like;
+    if (like === '1') {
+        badge.textContent = '已点赞';
+        badge.style.display = '';
+        badge.style.background = '#e8f5e9';
+        badge.style.color = '#2e7d32';
+    } else if (like === '-1') {
+        badge.textContent = '已点踩';
+        badge.style.display = '';
+        badge.style.background = '#fdecea';
+        badge.style.color = '#c62828';
+    } else {
+        badge.textContent = '';
+        badge.style.display = 'none';
+    }
+}
+
+// U-08：反馈弹层——点击行内「反馈」按钮，把该行 feedback-cell 移入 modal；关闭时移回
+let _rowFeedbackHomeTd = null;
+
+function openRowFeedbackModal(btn) {
+    const td = btn.closest('td');
+    const cell = td ? td.querySelector('.feedback-cell') : null;
+    const body = document.getElementById('rowFeedbackModalBody');
+    const modal = document.getElementById('rowFeedbackModal');
+    if (!cell || !body || !modal) return;
+    _rowFeedbackHomeTd = td;
+    body.innerHTML = '';
+    body.appendChild(cell);
+    cell.style.display = '';
+    cell.style.minWidth = '260px';
+    modal.classList.remove('hide');
+}
+
+function closeRowFeedbackModal() {
+    const body = document.getElementById('rowFeedbackModalBody');
+    const cell = body ? body.querySelector('.feedback-cell') : null;
+    if (cell && _rowFeedbackHomeTd) {
+        _rowFeedbackHomeTd.appendChild(cell);
+        cell.style.display = 'none';
+    }
+    _rowFeedbackHomeTd = null;
+    closeModalById('rowFeedbackModal');
+}
+
 function _applyOptimisticLike(btn, likeVal) {
     const cell = btn.closest('.feedback-cell');
     if (!cell) return;
@@ -3493,6 +3581,7 @@ function _applyOptimisticLike(btn, likeVal) {
         if (likeBtn) likeBtn.classList.remove('active');
         if (statusEl) statusEl.textContent = '已点踩';
     }
+    _syncFeedbackBadge(cell);
 }
 
 function _revertOptimisticLike(cell) {
@@ -3507,6 +3596,7 @@ function _revertOptimisticLike(cell) {
     if (prev === '-1' && dislikeBtn) dislikeBtn.classList.add('active');
     cell.dataset.like = prev || '';
     if (statusEl) statusEl.textContent = prev ? (prev === '1' ? '已点赞' : '已点踩') : '';
+    _syncFeedbackBadge(cell);
 }
 
 function _qualityWarningsLink(comment, likeVal) {
@@ -3721,8 +3811,10 @@ function collectReviewFormData() {
         department_id: departmentId,
         currency: (curSel && curSel.value ? curSel.value : (src.currency || 'HKD'))
     };
-    // AI 判定的只读分类字段原样带回（可能暂时缺失，容错）
-    if (src.payment_mark != null) data.payment_mark = src.payment_mark;
+    // U-05：付款标记改为枚举下拉，保存以用户选择为准；表单缺失时回落 AI 原值
+    const inpMarkSel = document.getElementById('inpPaymentMark');
+    if (inpMarkSel && inpMarkSel.value) data.payment_mark = inpMarkSel.value;
+    else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
     if (src.doc_form != null) data.doc_form = src.doc_form;
     if (src.layout_type != null) data.layout_type = src.layout_type;
     // D17: 乐观锁版本号（加载/保存成功后记录）
@@ -4852,7 +4944,11 @@ function populateFilterSuppliers() {
     
     const set = new Map();
     if (typeof availableSuppliers !== 'undefined' && availableSuppliers) {
-        availableSuppliers.forEach(sup => set.set(sup.name, sup.supplier_code));
+        // U-06：过滤软停用（active=0）供应商，脏名不进归档筛选下拉
+        availableSuppliers.forEach(sup => {
+            if (sup.active === 0 || sup.active === '0' || sup.active === false) return;
+            set.set(sup.name, sup.supplier_code);
+        });
     }
     allArchiveReceipts.forEach(r => {
         if (r.supplier_name && !set.has(r.supplier_name)) {
@@ -5518,8 +5614,10 @@ function appendArcTableRow(item = {}) {
             <label style="font-size:0.72rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoid ? 'checked' : ''} onchange="toggleArcVoid(this)">作废</label>
             <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
         </td>
-        <td>
-            <div class="feedback-cell" data-row-index="${arcRowIdx}">
+        <td style="text-align:center; white-space:nowrap;">
+            <button type="button" class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="openRowFeedbackModal(this)">反馈</button>
+            <span class="feedback-badge badge" style="font-size:0.68rem; display:none;"></span>
+            <div class="feedback-cell" data-row-index="${arcRowIdx}" style="display:none;">
                 <div class="feedback-actions">
                     <button type="button" class="btn-like" data-like="1" onclick="handleArcFeedback(this, 1)">点赞</button>
                     <button type="button" class="btn-dislike" data-like="-1" onclick="handleArcFeedback(this, -1)">点踩</button>
@@ -5682,8 +5780,10 @@ function submitSaveArchiveEdited() {
         department_id: departmentId,
         currency: (arcCurSel && arcCurSel.value ? arcCurSel.value : (src.currency || 'HKD'))
     };
-    // AI 判定的只读分类字段原样带回（可能暂时缺失，容错）
-    if (src.payment_mark != null) data.payment_mark = src.payment_mark;
+    // U-05：付款标记改为枚举下拉，保存以用户选择为准；弹窗缺失时回落 AI 原值
+    const arcMarkSel = document.getElementById('arcPaymentMark');
+    if (arcMarkSel && arcMarkSel.value) data.payment_mark = arcMarkSel.value;
+    else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
     if (src.doc_form != null) data.doc_form = src.doc_form;
     if (src.layout_type != null) data.layout_type = src.layout_type;
     // D17: 乐观锁版本号（加载详情时记录）
@@ -8897,9 +8997,23 @@ function applyDemoRoleColor(role) {
     const brand = document.querySelector('.sidebar-header .brand');
     if (brand) brand.style.borderLeft = '4px solid ' + color;
     document.documentElement.style.setProperty('--demo-role-accent', color);
-    // admin 按钮常驻可见，方便测试与灰测观测
-    const adminBtn = document.getElementById('adminEngineBtn');
-    if (adminBtn) adminBtn.style.display = '';
+    applyRoleVisibility(role);
+}
+
+// U-01：按角色控制 admin 专属导航入口可见性（API 层 owner/staff 均 403，前端同步隐藏）
+function applyRoleVisibility(role) {
+    const isAdmin = role === 'admin';
+    ['adminEngineBtn', 'goldenBoardBtn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.display = isAdmin ? '' : 'none';
+    });
+    if (!isAdmin) {
+        const active = document.querySelector('.tab-content.active');
+        if (active && (active.id === 'tab-engine' || active.id === 'tab-golden')) {
+            const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
+            if (scanBtn) scanBtn.click();
+        }
+    }
 }
 
 // -------------------------------------------------------------
@@ -9910,10 +10024,14 @@ function renderAiCompare(data) {
     const curItems = data.items || [];
     const rows = [];
 
-    const cmp = (a, b) => {
-        if (a === b) return true;
+    // U-04：语义相等判断（字符串 trim 全等，或数值 parseFloat 相等），相等字段不进差异表
+    const semEq = (a, b) => {
         if (a == null && b == null) return true;
-        return String(a) !== String(b);
+        if (a == null || b == null) return false;
+        const sa = String(a).trim(), sb = String(b).trim();
+        if (sa === sb) return true;
+        const na = parseFloat(sa), nb = parseFloat(sb);
+        return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
     };
 
     const fieldDefs = [
@@ -9936,7 +10054,7 @@ function renderAiCompare(data) {
             const curVal = curRow && curRow[fd.key] != null ? curRow[fd.key]
                            : (curRow && curRow[fd.key + '_orig'] != null ? curRow[fd.key + '_orig'] : null);
             if (aiVal == null && curVal == null) return;
-            if (cmp(aiVal, curVal)) {
+            if (!semEq(aiVal, curVal)) {
                 rows.push({ idx: i, key: fd.key, label: fd.label, itemLabel: label,
                             aiVal: aiVal, curVal: curVal });
             }
@@ -9944,7 +10062,8 @@ function renderAiCompare(data) {
     }
 
     if (rows.length === 0) {
-        panel.classList.add('hide');
+        body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:12px;">AI 与当前填写一致，无差异</td></tr>';
+        panel.classList.remove('hide');
         return;
     }
 
