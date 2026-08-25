@@ -30,6 +30,12 @@ class EngineConfigBody(BaseModel):
     openai_aud_base_url: str = None
     openai_aud_api_key: str = None
     openai_aud_model: str = None
+    # 新增开关（与 models.EngineConfig 对齐）：超时 / 审核模式 / transport
+    call_timeout_seconds: int = None
+    audit_mode: str = None
+    recognition_transport: str = None
+    audit_transport: str = None
+    parse_transport: str = None
     # 常规解析 LLM
     parse_llm_enabled: bool = None
     parse_llm_engine: str = None
@@ -60,6 +66,10 @@ class EngineConfigBody(BaseModel):
     grey_openai_parse_base_url: str = None
     grey_openai_parse_api_key: str = None
     grey_openai_parse_model: str = None
+    # 灰测组 transport 开关（与 models.EngineConfig 对齐）
+    grey_recognition_transport: str = None
+    grey_audit_transport: str = None
+    grey_parse_transport: str = None
 
 
 def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key: str, label: str):

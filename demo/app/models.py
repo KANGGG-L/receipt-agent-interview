@@ -33,6 +33,7 @@ class ReceiptItem(BaseModel):
     unit: str = Field(description="单位（斤/公斤/箱/包/只…）")
     unit_price: float = Field(description="单价")
     amount: float = Field(description="小计 = 数量 × 单价")
+    raw_name: Optional[str] = Field(default=None, description="原始品名")
     is_void: bool = Field(default=False, description="是否划线作废/拒收 (Gap 6)")
     actual_qty: Optional[float] = Field(default=None, description="手写实收/修改后数量 (Gap 6)")
 
@@ -54,6 +55,7 @@ class ReceiptData(BaseModel):
     fees_detail: dict[str, float] = Field(default_factory=dict, description="费用明细字典 (Gap 9)")
     adjustment_notes: list[str] = Field(default_factory=list, description="手写调整、拒收或短装注记 (Gap 6)")
     payment_marked: bool = Field(description="是否有已付款标记（印章/手写）")
+    currency: str = Field(default="HKD", description="币种 (HKD/CNY/USD)")
     confidence: float = Field(ge=0.0, le=1.0, description="整体置信度")
 
 
@@ -154,10 +156,18 @@ class EngineConfig(BaseModel):
     # 识别引擎
     recognition_engine: EngineKind = EngineKind.OPENCODE
     recognition_model: str = "opencode/mimo-v2.5-free"
+    # 识别 transport：subprocess(默认，CLI 快路径) | persistent(常驻进程，需显式开启)
+    recognition_transport: str = "subprocess"
     # 审核引擎
     audit_engine: EngineKind = EngineKind.OPENCODE
     audit_model: str = "opencode/mimo-v2.5-free"
     audit_enabled: bool = True
+    # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
+    #           vlm=原图 + JSON 交叉审核（原行为）
+    #           ondemand=置信度低于阈值才走 vlm，否则 text
+    audit_mode: str = "text"
+    # 审核 transport：subprocess(默认) | persistent
+    audit_transport: str = "subprocess"
     # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数）
     openai_rec_base_url: str = ""
     openai_rec_api_key: str = ""
@@ -165,6 +175,8 @@ class EngineConfig(BaseModel):
     openai_aud_base_url: str = ""
     openai_aud_api_key: str = ""
     openai_aud_model: str = ""
+    # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s
+    call_timeout_seconds: int = 90
     # 常规解析 LLM（VLM 识别后 → LLM 规范化解析，可选）
     parse_llm_enabled: bool = False
     parse_llm_engine: EngineKind = EngineKind.OPENCODE
@@ -172,6 +184,8 @@ class EngineConfig(BaseModel):
     openai_parse_base_url: str = ""
     openai_parse_api_key: str = ""
     openai_parse_model: str = ""
+    # 解析 LLM transport：subprocess(默认) | persistent
+    parse_transport: str = "subprocess"
 
     # ---- 分组测试（灰测）配置：与常规完全隔离 ----
     grey_enabled: bool = False                       # 是否启用灰测
@@ -181,10 +195,12 @@ class EngineConfig(BaseModel):
     # 灰测组识别引擎/模型
     grey_recognition_engine: EngineKind = EngineKind.OPENCODE
     grey_recognition_model: str = "opencode/mimo-v2.5-free"
+    grey_recognition_transport: str = "subprocess"
     # 灰测组审核引擎/模型
     grey_audit_enabled: bool = True
     grey_audit_engine: EngineKind = EngineKind.OPENCODE
     grey_audit_model: str = "opencode/mimo-v2.5-free"
+    grey_audit_transport: str = "subprocess"
     # 灰测组自定义 OpenAI 兼容参数（识别/审核各自独立）
     grey_openai_rec_base_url: str = ""
     grey_openai_rec_api_key: str = ""
@@ -199,6 +215,7 @@ class EngineConfig(BaseModel):
     grey_openai_parse_base_url: str = ""
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""
+    grey_parse_transport: str = "subprocess"
     # 推全回滚快照（一次：prev 为推全前常规组配置，meta 为操作信息）
     rollback_snapshot: Optional[dict] = None
 

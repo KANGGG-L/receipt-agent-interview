@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 import subprocess
 import time
@@ -34,7 +35,29 @@ load_dotenv()
 
 CODEBUDDY_DEFAULT_BIN = "/Users/ethan/.nvm/versions/node/v24.16.0/bin/codebuddy"
 OPENCODE_DEFAULT_BIN = "/Users/ethan/.opencode/bin/opencode"
-CALL_TIMEOUT_SECONDS = 240
+CALL_TIMEOUT_SECONDS = 240  # 模型字段默认回落值（历史硬上限）
+DEFAULT_CALL_TIMEOUT = 90   # 超时可控：缺省 90s 快速失败
+
+
+def _resolve_timeout(cfg=None):
+    """解析单引擎调用超时（秒）。
+
+    优先级：EngineConfig.call_timeout_seconds > env ENGINE_CALL_TIMEOUT > 90s 缺省。
+    即便某引擎变慢，也按此值快速失败而非阻塞 240s。
+    """
+    if cfg is not None:
+        v = getattr(cfg, "call_timeout_seconds", None)
+        if isinstance(v, int) and v > 0:
+            return v
+    env = os.environ.get("ENGINE_CALL_TIMEOUT")
+    if env:
+        try:
+            iv = int(env)
+            if iv > 0:
+                return iv
+        except (ValueError, TypeError):
+            pass
+    return DEFAULT_CALL_TIMEOUT
 
 
 def _get_codebuddy_bin():
@@ -43,6 +66,43 @@ def _get_codebuddy_bin():
 
 def _get_opencode_bin():
     return os.environ.get("OPENCODE_BIN", OPENCODE_DEFAULT_BIN)
+
+
+# -------------------------------------------------------------
+# 长驻进程 transport（Layer 3, §3.2）：仅当模型 transport=persistent 时启用，
+# 调用 engine_runtime.PersistentEngineManager；任何不可用都回退 subprocess。
+# 默认 transport=subprocess，本函数不会被触发，保证零影响、向后兼容。
+# -------------------------------------------------------------
+def _invoke_persistent(model, messages):
+    """transport=persistent 时走常驻进程；异常一律回退 subprocess 子进程模式。
+
+    model 须提供：_runtime_kind(str)、_bin()、model、call_timeout、
+    _messages_to_prompt(messages)、_run_cli(prompt)。
+    """
+    from app.engine_runtime import get_persistent_manager, PersistentEngineUnavailable
+
+    logger = logging.getLogger("llm")
+    mgr = get_persistent_manager()
+    # 仅在未启用时才 configure，避免每次调用都重建常驻进程
+    if not mgr.enabled:
+        mgr.configure(
+            enabled=True,
+            kind=getattr(model, "_runtime_kind", "opencode"),
+            bin_path=model._bin(),
+            request_timeout=model.call_timeout,
+        )
+    try:
+        openai_msgs = [_lc_to_openai(m) for m in messages]
+        content = mgr.complete(openai_msgs, model=model.model, timeout=model.call_timeout)
+    except PersistentEngineUnavailable as exc:
+        logger.warning("[llm] 长驻进程不可用，回退 subprocess: %s", exc)
+        return model._run_cli(model._messages_to_prompt(messages))
+    # 风险与回退（§3.3）：常驻进程返回空/空白内容视为不可用，回退子进程模式，
+    # 避免静默降级——保证可用性绝不劣于现状的 subprocess 路径。
+    if not content or not content.strip():
+        logger.warning("[llm] 长驻进程返回空内容，回退 subprocess")
+        return model._run_cli(model._messages_to_prompt(messages))
+    return content
 
 
 class CodeBuddyChatModel(BaseChatModel):
@@ -55,10 +115,16 @@ class CodeBuddyChatModel(BaseChatModel):
     model: str = "minimax-m3-pay"
     temperature: float = 0.01
     session_id: str = None  # 复用长会话，加速 + 上下文累计
+    call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build 注入
+    transport: str = "subprocess"  # subprocess(默认) | persistent(常驻进程)
 
     @property
     def _llm_type(self):
         return "codebuddy_cli"
+
+    @property
+    def _runtime_kind(self):
+        return "codebuddy"
 
     @property
     def _identifying_params(self):
@@ -71,6 +137,16 @@ class CodeBuddyChatModel(BaseChatModel):
         run_manager=None,
         **kwargs,
     ) -> ChatResult:
+        if self.transport == "persistent":
+            try:
+                content = _invoke_persistent(self, messages)
+            except Exception as exc:
+                # 任何意外异常都回退 subprocess，保证可用性不劣化
+                logging.getLogger("llm").warning(
+                    "[llm] persistent 分支异常，回退 subprocess: %s", exc
+                )
+                content = self._run_cli(self._messages_to_prompt(messages))
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
         prompt = self._messages_to_prompt(messages)
         output = self._run_cli(prompt)
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=output))])
@@ -88,10 +164,10 @@ class CodeBuddyChatModel(BaseChatModel):
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=CALL_TIMEOUT_SECONDS
+                cmd, capture_output=True, text=True, timeout=self.call_timeout
             )
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"CodeBuddy 超时（>{CALL_TIMEOUT_SECONDS}s）")
+            raise RuntimeError(f"CodeBuddy 超时（>{self.call_timeout}s）")
 
         if result.returncode != 0:
             raise RuntimeError(f"CodeBuddy 非零退出 rc={result.returncode}: {result.stderr[:500]}")
@@ -166,10 +242,16 @@ class OpencodeChatModel(BaseChatModel):
 
     model: str = "opencode/mimo-v2.5-free"
     temperature: float = 0.01
+    call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build 注入
+    transport: str = "subprocess"  # subprocess(默认) | persistent(常驻进程)
 
     @property
     def _llm_type(self):
         return "opencode_cli"
+
+    @property
+    def _runtime_kind(self):
+        return "opencode"
 
     @property
     def _identifying_params(self):
@@ -182,6 +264,16 @@ class OpencodeChatModel(BaseChatModel):
         run_manager=None,
         **kwargs,
     ) -> ChatResult:
+        if self.transport == "persistent":
+            try:
+                content = _invoke_persistent(self, messages)
+            except Exception as exc:
+                # 任何意外异常都回退 subprocess，保证可用性不劣化
+                logging.getLogger("llm").warning(
+                    "[llm] persistent 分支异常，回退 subprocess: %s", exc
+                )
+                content = self._run_cli(self._messages_to_prompt(messages))
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
         prompt = self._messages_to_prompt(messages)
         output = self._run_cli(prompt)
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=output))])
@@ -191,10 +283,10 @@ class OpencodeChatModel(BaseChatModel):
         cmd.append(prompt)
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=CALL_TIMEOUT_SECONDS
+                cmd, capture_output=True, text=True, timeout=self.call_timeout
             )
         except subprocess.TimeoutExpired:
-            raise RuntimeError(f"opencode 超时（>{CALL_TIMEOUT_SECONDS}s）")
+            raise RuntimeError(f"opencode 超时（>{self.call_timeout}s）")
 
         if result.returncode != 0:
             raise RuntimeError(
@@ -266,6 +358,7 @@ class OpenAIChatModel(BaseChatModel):
     api_key: str = ""
     model: str = ""
     temperature: float = 0.01
+    call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build / build_parse_model 注入
 
     @property
     def _llm_type(self):
@@ -291,7 +384,7 @@ class OpenAIChatModel(BaseChatModel):
             url, headers=headers,
             json={"model": self.model, "messages": payload_messages,
                   "temperature": self.temperature, "max_tokens": 4000},
-            timeout=CALL_TIMEOUT_SECONDS,
+            timeout=self.call_timeout,
         )
         if resp.status_code != 200:
             raise RuntimeError(f"OpenAI 兼容接口失败 {resp.status_code}: {resp.text[:300]}")
@@ -412,6 +505,17 @@ def _lc_to_dashscope(msg):
 # -------------------------------------------------------------
 # 模型工厂（按 EngineConfig 选择识别/审核引擎；use_grey 命中灰测组）
 # -------------------------------------------------------------
+# 轻量模型对象缓存（Layer 1, 1.4）：避免每次 build 都重新构造实例。
+# CLI 类（Opencode/CodeBuddy/Qwen）无状态可安全复用；OpenAIChatModel（HTTP）
+# 也复用实例。key 含 (kind, model, base_url, api_key, call_timeout)，PUT engine-config
+# 变更任意一项（含 call_timeout_seconds）时自然产生新 key，旧实例自动失效。
+_MODEL_CACHE: dict = {}
+
+
+def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=None):
+    return (kind, model_name, base_url, api_key, call_timeout)
+
+
 def _resolve_engine(model_name: str, engine_kind: str, cfg=None, side="rec", use_grey=False):
     """按模型名/引擎类型解析真实引擎与模型名。
 
@@ -451,6 +555,17 @@ def _engine_kind_for(cfg, side, use_grey):
     return raw.value if hasattr(raw, "value") else str(raw)
 
 
+def _transport_for(cfg, side, use_grey):
+    """解析每引擎 transport（subprocess/persistent），缺省 subprocess。"""
+    if cfg is None:
+        return "subprocess"
+    if use_grey:
+        raw = cfg.grey_recognition_transport if side == "rec" else cfg.grey_audit_transport
+    else:
+        raw = cfg.recognition_transport if side == "rec" else cfg.audit_transport
+    return raw if raw else "subprocess"
+
+
 def _model_name_for(cfg, side, use_grey):
     if use_grey:
         return cfg.grey_recognition_model if side == "rec" else cfg.grey_audit_model
@@ -463,7 +578,8 @@ def build_recognition_model(model_name=None, cfg=None, use_grey=False):
     default = _model_name_for(cfg, "rec", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
     name = model_name or (default or os.environ.get("CODEBUDDY_MODEL", "opencode/mimo-v2.5-free"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=use_grey)
-    return _build(kind, resolved, cfg, side="rec", use_grey=use_grey)
+    return _build(kind, resolved, cfg, side="rec", use_grey=use_grey,
+                   transport=_transport_for(cfg, "rec", use_grey))
 
 
 def build_audit_model(model_name=None, cfg=None, use_grey=False):
@@ -472,7 +588,8 @@ def build_audit_model(model_name=None, cfg=None, use_grey=False):
     default = _model_name_for(cfg, "aud", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
     name = model_name or (default or os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="aud", use_grey=use_grey)
-    return _build(kind, resolved, cfg, side="aud", use_grey=use_grey)
+    return _build(kind, resolved, cfg, side="aud", use_grey=use_grey,
+                   transport=_transport_for(cfg, "aud", use_grey))
 
 
 def build_parse_model(model_name=None, cfg=None, use_grey=False):
@@ -495,35 +612,66 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
 
     name = model_name or default
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=False)
+    parse_transport = cfg.grey_parse_transport if use_grey else cfg.parse_transport
+    parse_transport = parse_transport or "subprocess"
     if kind == "openai":
-        return OpenAIChatModel(base_url=base_url, api_key=api_key,
-                               model=openai_model or resolved)
-    if kind == "opencode":
-        return OpencodeChatModel(model=resolved)
-    if kind == "qwen":
-        return QwenChatModel(model=resolved)
-    return CodeBuddyChatModel(model=resolved)
+        m = OpenAIChatModel(base_url=base_url, api_key=api_key,
+                            model=openai_model or resolved,
+                            call_timeout=_resolve_timeout(cfg))
+    elif kind == "opencode":
+        m = OpencodeChatModel(model=resolved, call_timeout=_resolve_timeout(cfg),
+                              transport=parse_transport)
+    elif kind == "qwen":
+        m = QwenChatModel(model=resolved)
+    else:
+        m = CodeBuddyChatModel(model=resolved, call_timeout=_resolve_timeout(cfg),
+                               transport=parse_transport)
+    object.__setattr__(m, "kind", kind)
+    return m
 
 
-def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
-    if kind == "opencode":
-        return OpencodeChatModel(model=model_name)
-    if kind == "qwen":
-        return QwenChatModel(model=model_name)
+def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="subprocess"):
+    """按 kind 构建模型对象，并透传真实引擎 kind（供日志/AI 决策履历反映真实引擎）。
+
+    用 object.__setattr__ 挂载 kind，不修改任何模型类定义（OpenAIChatModel 完全不动）。
+    模型对象按 (kind, model, base_url, api_key, call_timeout) 缓存复用，避免每次构造的重复开销。
+    transport 透传给 Opencode/CodeBuddy（subprocess 默认；persistent 走常驻进程）。
+    """
+    call_timeout = _resolve_timeout(cfg)
+    base_url, api_key = "", ""
     if kind == "openai":
         if side == "rec":
             if use_grey:
-                return OpenAIChatModel(base_url=cfg.grey_openai_rec_base_url,
-                                       api_key=cfg.grey_openai_rec_api_key,
-                                       model=model_name)
-            return OpenAIChatModel(base_url=cfg.openai_rec_base_url,
-                                   api_key=cfg.openai_rec_api_key,
-                                   model=model_name)
-        if use_grey:
-            return OpenAIChatModel(base_url=cfg.grey_openai_aud_base_url,
-                                   api_key=cfg.grey_openai_aud_api_key,
-                                   model=model_name)
-        return OpenAIChatModel(base_url=cfg.openai_aud_base_url,
-                               api_key=cfg.openai_aud_api_key,
-                               model=model_name)
-    return CodeBuddyChatModel(model=model_name)
+                base_url = cfg.grey_openai_rec_base_url
+                api_key = cfg.grey_openai_rec_api_key
+            else:
+                base_url = cfg.openai_rec_base_url
+                api_key = cfg.openai_rec_api_key
+        elif use_grey:
+            base_url = cfg.grey_openai_aud_base_url
+            api_key = cfg.grey_openai_aud_api_key
+        else:
+            base_url = cfg.openai_aud_base_url
+            api_key = cfg.openai_aud_api_key
+
+    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout)
+    m = _MODEL_CACHE.get(key)
+    if m is not None:
+        object.__setattr__(m, "kind", kind)
+        object.__setattr__(m, "transport", transport)
+        object.__setattr__(m, "call_timeout", call_timeout)
+        return m
+
+    if kind == "opencode":
+        m = OpencodeChatModel(model=model_name, call_timeout=call_timeout, transport=transport)
+    elif kind == "qwen":
+        m = QwenChatModel(model=model_name)
+    elif kind == "openai":
+        m = OpenAIChatModel(base_url=base_url, api_key=api_key, model=model_name,
+                            call_timeout=call_timeout)
+    else:
+        m = CodeBuddyChatModel(model=model_name, call_timeout=call_timeout, transport=transport)
+    _MODEL_CACHE[key] = m
+    object.__setattr__(m, "kind", kind)
+    object.__setattr__(m, "transport", transport)
+    return m
