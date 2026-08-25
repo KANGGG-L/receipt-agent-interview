@@ -362,6 +362,12 @@ function isAuthInjectableUrl(url) {
     return isApiUrl(url) && AUTH_EXEMPT_FRONTEND.indexOf(url) === -1;
 }
 
+// 当前是否店员角色（与 buildAuthHeaders 同源：localStorage demo_role，同步可用，
+// 不依赖异步 /me 探测）——店员不发老板域请求（财务/对账/AI洞察/成本报表），避免全局 403 弹窗
+function isStaffRoleNow() {
+    try { return localStorage.getItem('demo_role') === 'staff'; } catch (e) { return false; }
+}
+
 // 纯函数：给定 url 与 token，返回应注入的请求头对象；不注入时返回 null
 function buildAuthHeaders(url, token) {
     if (!isAuthInjectableUrl(url)) return null;
@@ -595,6 +601,21 @@ let originalFile = null;
 let originalObjectUrl = null;
 let selectedFile = null;
 
+// U-12：文件选择与拖放并发锁 / 代数标识及防抖定时器
+let fileSelectionGen = 0;
+let _fileSelectDebounceTimer = null;
+function nextFileSelectionGen() {
+    fileSelectionGen++;
+    if (typeof window !== 'undefined') {
+        window.fileSelectionGen = fileSelectionGen;
+    }
+    return fileSelectionGen;
+}
+if (typeof window !== 'undefined') {
+    window.fileSelectionGen = 0;
+    window.nextFileSelectionGen = nextFileSelectionGen;
+}
+
 let currentZoom = 1.0;
 let currentRotation = 0;
 let isFocalZoomed = false;
@@ -732,56 +753,88 @@ function loadDepartmentAdmin() {
         .catch(err => { console.error('加载部门列表失败', err); showToast('加载部门列表失败' + toastFailDetail(err), 'error'); });
 }
 
-// 契约②：新增部门（owner）；prompt/confirm 均为纯文本，无插值注入面
+// 契约②：新增部门（owner）
 function addDepartment() {
+    const modal = document.getElementById('departmentModal');
+    const title = document.getElementById('departmentModalTitle');
+    const input = document.getElementById('inpDepartmentName');
+    const idInput = document.getElementById('modalDepartmentId');
+    if (modal && input) {
+        if (title) title.innerText = '新增部门';
+        input.value = '';
+        if (idInput) idInput.value = '';
+        modal.classList.remove('hide');
+        setTimeout(() => input.focus(), 50);
+        return;
+    }
     const name = prompt('新增部门名称：');
     if (name === null) return;
     const n = String(name).trim();
     if (!n) { showToast('部门名称不能为空', 'warning'); return; }
-    fetch('/api/departments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: n }),
-    })
-    .then(res => Promise.all([res.status, res.json().catch(() => null)]))
-    .then(([httpStatus, ret]) => {
-        if (!ret || ret.status !== 'success') {
-            console.error('[department] 新增失败', httpStatus, ret);
-            showToast('新增部门失败，请稍后重试', 'error');
-            return;
-        }
-        showToast('已新增部门「' + n + '」', 'success');
-        loadDepartmentAdmin();
-        loadDepartmentsAll();
-    })
-    .catch(err => { console.error('新增部门请求异常', err); showToast('新增部门失败' + toastFailDetail(err), 'error'); });
+    _saveDepartmentApi('', n);
 }
 
 // 契约③：重命名部门（owner）
 function renameDepartment(id) {
     const dept = (allDepartments || []).find(d => Number(d.id) === Number(id));
     const cur = dept ? dept.name : '';
+    const modal = document.getElementById('departmentModal');
+    const title = document.getElementById('departmentModalTitle');
+    const input = document.getElementById('inpDepartmentName');
+    const idInput = document.getElementById('modalDepartmentId');
+    if (modal && input) {
+        if (title) title.innerText = '重命名部门';
+        input.value = cur;
+        if (idInput) idInput.value = String(id);
+        modal.classList.remove('hide');
+        setTimeout(() => input.focus(), 50);
+        return;
+    }
     const name = prompt('重命名部门（原名：' + cur + '）：', cur);
     if (name === null) return;
     const n = String(name).trim();
     if (!n) { showToast('部门名称不能为空', 'warning'); return; }
-    fetch('/api/departments/' + Number(id), {
-        method: 'PATCH',
+    _saveDepartmentApi(id, n);
+}
+
+function submitDepartmentCreate() {
+    const input = document.getElementById('inpDepartmentName');
+    const idInput = document.getElementById('modalDepartmentId');
+    if (!input) return;
+    const n = input.value.trim();
+    if (!n) { showToast('部门名称不能为空', 'warning'); return; }
+    const id = idInput ? idInput.value.trim() : '';
+    _saveDepartmentApi(id, n);
+}
+
+function _saveDepartmentApi(id, n) {
+    const isEdit = !!id;
+    const url = isEdit ? ('/api/departments/' + Number(id)) : '/api/departments';
+    const method = isEdit ? 'PATCH' : 'POST';
+
+    fetch(url, {
+        method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: n }),
     })
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
         if (!ret || ret.status !== 'success') {
-            console.error('[department] 重命名失败', httpStatus, ret);
-            showToast('重命名部门失败，请稍后重试', 'error');
+            console.error('[department] 保存失败', httpStatus, ret);
+            showToast((isEdit ? '重命名' : '新增') + '部门失败，请稍后重试', 'error');
             return;
         }
-        showToast('已重命名为「' + n + '」', 'success');
+        closeModalById('departmentModal');
+        showToast((isEdit ? '已重命名为「' : '已新增部门「') + n + '」', 'success');
+        const details = document.getElementById('deptAdminDetails');
+        if (details) details.open = true;
         loadDepartmentAdmin();
         loadDepartmentsAll();
     })
-    .catch(err => { console.error('重命名部门请求异常', err); showToast('重命名部门失败' + toastFailDetail(err), 'error'); });
+    .catch(err => {
+        console.error('部门保存异常', err);
+        showToast('保存部门失败' + toastFailDetail(err), 'error');
+    });
 }
 
 // 契约④：停用部门（owner，软删除；不得停用最后一个启用部门——后端 400 兜底）
@@ -1240,6 +1293,54 @@ function initAutoAnalyzeSetting() {
 // -------------------------------------------------------------
 // 2. 收据图片选择与本地实时预览
 // -------------------------------------------------------------
+
+/** U-12：大图/HEIC 准备中轻量指示器（非阻断式） */
+function showImagePrepIndicator(show, text = '正在准备照片，请稍候...') {
+    const el1 = document.getElementById('imagePrepIndicator');
+    const txt1 = document.getElementById('imagePrepText');
+    if (el1) {
+        if (show) {
+            if (txt1) txt1.textContent = text;
+            el1.classList.remove('hide');
+        } else {
+            el1.classList.add('hide');
+        }
+    }
+    const el2 = document.getElementById('imgViewerPrepIndicator');
+    const txt2 = document.getElementById('imgViewerPrepText');
+    if (el2) {
+        if (show) {
+            if (txt2) txt2.textContent = text;
+            el2.classList.remove('hide');
+        } else {
+            el2.classList.add('hide');
+        }
+    }
+}
+
+/** U-12：文件选择/拖拽事件防抖与并发控制（150ms 窗口） */
+function queueFilesSelect(files) {
+    if (!files || files.length === 0) return;
+    const currentGen = nextFileSelectionGen();
+
+    // 若包含大图或 HEIC，立即给予视觉反馈，无需等待 150ms debounce 窗口结束
+    const hasLargeOrHeic = files.some(f => isNonWebImageFile(f) || (f && f.size > 1.5 * 1024 * 1024));
+    if (hasLargeOrHeic) {
+        showImagePrepIndicator(true, '正在准备照片，请稍候...');
+    }
+
+    if (_fileSelectDebounceTimer) {
+        clearTimeout(_fileSelectDebounceTimer);
+        _fileSelectDebounceTimer = null;
+    }
+
+    _fileSelectDebounceTimer = setTimeout(() => {
+        _fileSelectDebounceTimer = null;
+        if (currentGen !== fileSelectionGen) return;
+        handleFilesSelect(files, currentGen);
+    }, 150);
+}
+
 function initUpload() {
     const fileInput = document.getElementById('receiptFile');
     const uploadArea = document.getElementById('uploadArea');
@@ -1260,43 +1361,52 @@ function initUpload() {
         });
     }
 
-    fileInput.addEventListener('change', () => {
-        // 取消选择（无文件）时复位替换标记，避免污染后续普通添加
-        if (fileInput.files.length === 0) { _reselectReplaceMode = false; return; }
-        if (_reselectReplaceMode) {
-            // 先移除当前正在预览的照片，再以新选照片替换（而非追加）
-            const idx = BatchUploader.activeIndex;
-            const photo = BatchUploader.photos[idx];
-            if (photo) removePhotoFromSider(idx);
-            _reselectReplaceMode = false;
-        }
-        handleFilesSelect(Array.from(fileInput.files));
-        fileInput.value = '';
-    });
+    if (fileInput) {
+        fileInput.addEventListener('change', () => {
+            // 取消选择（无文件）时复位替换标记，避免污染后续普通添加
+            if (fileInput.files.length === 0) { _reselectReplaceMode = false; return; }
+            if (_reselectReplaceMode) {
+                // 先移除当前正在预览的照片，再以新选照片替换（而非追加）
+                const idx = BatchUploader.activeIndex;
+                const photo = BatchUploader.photos[idx];
+                if (photo) removePhotoFromSider(idx);
+                _reselectReplaceMode = false;
+            }
+            const files = Array.from(fileInput.files);
+            fileInput.value = '';
+            queueFilesSelect(files);
+        });
+    }
 
-    uploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        uploadArea.style.borderColor = '#3b82f6';
-    });
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.style.borderColor = '#475569';
-    });
-    uploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        uploadArea.style.borderColor = '#475569';
-        if (e.dataTransfer.files.length > 0) {
-            handleFilesSelect(Array.from(e.dataTransfer.files));
-        }
-    });
+    if (uploadArea) {
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#3b82f6';
+            uploadArea.classList.add('drag-over');
+        });
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.style.borderColor = '#475569';
+            uploadArea.classList.remove('drag-over');
+        });
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.style.borderColor = '#475569';
+            uploadArea.classList.remove('drag-over');
+            if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                queueFilesSelect(Array.from(e.dataTransfer.files));
+            }
+        });
+    }
 }
 
 // -------------------------------------------------------------
 // HEIC / TIFF 自动即时转码为 JPEG 辅助函数
 // -------------------------------------------------------------
-async function ensureWebDisplayableImageFile(file) {
+async function ensureWebDisplayableImageFile(file, gen) {
     if (!file || !isNonWebImageFile(file)) {
         return file;
     }
+    const currentGen = (typeof gen === 'number') ? gen : fileSelectionGen;
     showToast(`检测到 ${escapeHtml(file.name)} 为 HEIC/非标准格式，正在自动转为 JPEG...`, 'info');
     try {
         const formData = new FormData();
@@ -1305,11 +1415,17 @@ async function ensureWebDisplayableImageFile(file) {
             method: 'POST',
             body: formData,
         });
+        if (currentGen !== fileSelectionGen) {
+            return null;
+        }
         if (!res.ok) {
             console.warn('转码接口异常，降级保留原文件');
             return file;
         }
         const blob = await res.blob();
+        if (currentGen !== fileSelectionGen) {
+            return null;
+        }
         const baseName = file.name.replace(/\.(heic|heif|tif|tiff)$/i, '') || 'receipt';
         const convertedFile = new File([blob], `${baseName}.jpg`, {
             type: 'image/jpeg',
@@ -1317,75 +1433,129 @@ async function ensureWebDisplayableImageFile(file) {
         });
         convertedFile._originalName = file.name;
         convertedFile._convertedFromHeic = true;
+        if (currentGen !== fileSelectionGen) {
+            return null;
+        }
         showToast(`${escapeHtml(file.name)} 已自动转为 JPEG，可直接预览、旋转与裁剪`, 'success');
         return convertedFile;
     } catch (err) {
+        if (currentGen !== fileSelectionGen) {
+            return null;
+        }
         console.error('自动转码失败:', err);
         return file;
     }
 }
 
-async function handleFileSelect(file) {
-    // 自动将 HEIC/HEIF/TIFF 转码为 JPEG 便于预览和调整
-    if (isNonWebImageFile(file)) {
-        file = await ensureWebDisplayableImageFile(file);
+async function handleFileSelect(file, gen) {
+    const currentGen = (typeof gen === 'number') ? gen : nextFileSelectionGen();
+
+    const isLargeOrHeic = file && (isNonWebImageFile(file) || file.size > 1.5 * 1024 * 1024);
+    if (isLargeOrHeic) {
+        showImagePrepIndicator(true, '正在准备照片，请稍候...');
     }
-    // D12：选择真实照片上传 → 退出新建手工单态（恢复左栏原图区/标题徽章）
-    resetManualEntryMode();
-    // D21 质量预检：亮度/模糊度本地预检，仅提示可强制继续，不阻断
-    const quality = await checkImageQuality(file);
-    if (!quality.ok) {
-        const proceed = confirm(`质量预检：该照片${quality.reasons.join('、')}，可能影响识别质量。\n仍要上传吗？`);
-        if (!proceed) {
-            const fileInput = document.getElementById('receiptFile');
-            if (fileInput) fileInput.value = '';
-            return;
+
+    try {
+        // 自动将 HEIC/HEIF/TIFF 转码为 JPEG 便于预览和调整
+        if (isNonWebImageFile(file)) {
+            file = await ensureWebDisplayableImageFile(file, currentGen);
+            if (!file || currentGen !== fileSelectionGen) return;
+        }
+
+        // D12：选择真实照片上传 → 退出新建手工单态（恢复左栏原图区/标题徽章）
+        resetManualEntryMode();
+
+        // D21 质量预检：亮度/模糊度本地预检（温和提示，不阻断）
+        const quality = await checkImageQuality(file, currentGen);
+        if (currentGen !== fileSelectionGen) return;
+
+        let userForce = false;
+        let qualityWarn = false;
+        if (!quality.ok) {
+            qualityWarn = true;
+        }
+
+        originalFile = file;
+        selectedFile = file;
+        window._selectedFileForce = false;
+
+        // 释放先前分配的 ObjectURL，防止内存泄漏
+        if (Array.isArray(BatchUploader.photos)) {
+            BatchUploader.photos.forEach(p => {
+                if (p && p.objectUrl) {
+                    try { URL.revokeObjectURL(p.objectUrl); } catch (e) {}
+                    p.objectUrl = null;
+                }
+                if (p && p.croppedObjectUrl) {
+                    try { URL.revokeObjectURL(p.croppedObjectUrl); } catch (e) {}
+                    p.croppedObjectUrl = null;
+                }
+            });
+        }
+
+        if (originalObjectUrl) {
+            try { URL.revokeObjectURL(originalObjectUrl); } catch (e) {}
+            originalObjectUrl = null;
+        }
+
+        const newObjUrl = isNonWebImageFile(file) ? null : URL.createObjectURL(file);
+        originalObjectUrl = newObjUrl;
+
+        // 将单张照片也登记进“本批照片”（长度 1）
+        const photo = {
+            localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            file,
+            originalFile: file,
+            force: false,
+            objectUrl: newObjUrl,
+            croppedObjectUrl: null,
+            cropped: false,
+            status: 'pending',
+            receiptId: null,
+            imageUrl: null,
+            data: null,
+            errorMsg: null,
+            qualityWarnings: quality.reasons || [],
+        };
+        BatchUploader.photos = [photo];
+        BatchUploader.activeIndex = 0;
+        BatchUploader.selected.clear();
+        const countEl = document.getElementById('siderToggleCount');
+        if (countEl) countEl.innerText = '1';
+        updateSiderVisibility();
+        renderSider();
+
+        // 统一走 setActivePhoto 预览
+        setActivePhoto(0);
+        resetImgTransform();
+
+        const splitViewArea = document.getElementById('splitViewArea');
+        if (splitViewArea) splitViewArea.classList.remove('hide');
+
+        // 温和画质提示
+        const preConfirmWarn = document.getElementById('preConfirmQualityWarn');
+        if (preConfirmWarn) {
+            if (qualityWarn && quality.reasons && quality.reasons.length > 0) {
+                preConfirmWarn.textContent = `画质提示：检测到该照片${quality.reasons.join('、')}，已自动加载就绪，点击「继续 AI 智能解析」将由模型尽力识别。`;
+                preConfirmWarn.classList.remove('hide');
+            } else {
+                preConfirmWarn.classList.add('hide');
+            }
+        }
+
+        const autoAnalyze = document.getElementById('chkAutoAnalyze')?.checked;
+        if (autoAnalyze) {
+            triggerAnalysisNow(false);
+        }
+    } finally {
+        if (currentGen === fileSelectionGen) {
+            showImagePrepIndicator(false);
         }
     }
+}
 
-    originalFile = file;
-    selectedFile = file;
-
-    // 将单张照片也登记进“本批照片”（长度 1），保证后续再添加照片时
-    // 能被识别为续批而非替换先前照片——与批量入口逻辑保持一致
-    const photo = {
-        localId: `local-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        file,
-        originalFile: file,
-        objectUrl: isNonWebImageFile(file) ? null : URL.createObjectURL(file),
-        croppedObjectUrl: null,
-        cropped: false,
-        status: 'pending',
-        receiptId: null,
-        imageUrl: null,
-        data: null,
-        errorMsg: null,
-    };
-    BatchUploader.photos = [photo];
-    BatchUploader.activeIndex = 0;
-    BatchUploader.selected.clear();
-    document.getElementById('siderToggleCount').innerText = '1';
-    updateSiderVisibility();
-    renderSider();
-
-    if (originalObjectUrl) {
-        try { URL.revokeObjectURL(originalObjectUrl); } catch (e) {}
-        originalObjectUrl = null;
-    }
-    if (!isNonWebImageFile(file)) {
-        originalObjectUrl = URL.createObjectURL(file);
-    }
-    // 统一走 setActivePhoto 预览（pending 态会展示确认卡片，且兼容 HEIC）
-    setActivePhoto(0);
-    resetImgTransform();
-
-    document.getElementById('splitViewArea').classList.remove('hide');
-
-    const autoAnalyze = document.getElementById('chkAutoAnalyze').checked;
-
-    if (autoAnalyze) {
-        triggerAnalysisNow();
-    }
+async function handleSingleUploadSelection(file, gen) {
+    return await handleFileSelect(file, gen);
 }
 
 // -------------------------------------------------------------
@@ -1393,8 +1563,13 @@ async function handleFileSelect(file) {
 //     亮度 = 灰度均值；模糊度 = 拉普拉斯方差近似（越小越模糊）
 //     阈值从宽：仅提示，用户确认后可强制上传，绝不阻断
 // -------------------------------------------------------------
-function checkImageQuality(file) {
+function checkImageQuality(file, gen) {
     return new Promise((resolve) => {
+        const currentGen = (typeof gen === 'number') ? gen : fileSelectionGen;
+        if (currentGen !== fileSelectionGen) {
+            resolve({ ok: true, reasons: [], obsolete: true });
+            return;
+        }
         if (!file || !file.name) {
             resolve({ ok: true, reasons: [] });
             return;
@@ -1408,6 +1583,10 @@ function checkImageQuality(file) {
         const img = new Image();
         img.onload = () => {
             try {
+                if (currentGen !== fileSelectionGen) {
+                    resolve({ ok: true, reasons: [], obsolete: true });
+                    return;
+                }
                 // 缩样到长边 256px，够算亮度/模糊度且几乎零耗时
                 const maxSide = 256;
                 const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
@@ -1468,11 +1647,31 @@ function checkImageQuality(file) {
 let ocrTimerInterval = null;
 let ocrStartTime = 0;
 
+function updateLoadingStage(pct, stageName, stepNum) {
+    const bar = document.getElementById('loadingProgressBar');
+    if (bar) bar.style.width = pct + '%';
+    const stageNameEl = document.getElementById('loadingStageName');
+    if (stageNameEl) stageNameEl.textContent = stageName;
+    for (let i = 1; i <= 4; i++) {
+        const stepEl = document.getElementById('loadingStep' + i);
+        if (stepEl) {
+            if (i < stepNum) {
+                stepEl.className = 'loading-step-item done';
+            } else if (i === stepNum) {
+                stepEl.className = 'loading-step-item active';
+            } else {
+                stepEl.className = 'loading-step-item';
+            }
+        }
+    }
+}
+
 function startOcrTimer() {
     stopOcrTimer();
     ocrStartTime = Date.now();
     const timerElem = document.getElementById('ocrTimer');
     if (timerElem) timerElem.innerText = '00:00.0';
+    updateLoadingStage(25, '视觉语义读取中 (25%)...', 1);
 
     ocrTimerInterval = setInterval(() => {
         const elapsedMs = Date.now() - ocrStartTime;
@@ -1483,6 +1682,20 @@ function startOcrTimer() {
         if (timerElem) {
             timerElem.innerText = `${mins}:${secs}.${tenths}`;
         }
+
+        // 4 阶段清晰感知过渡与长等待预期提示
+        if (elapsedMs < 1200) {
+            updateLoadingStage(25, '视觉语义读取中 (25%)...', 1);
+        } else if (elapsedMs < 2800) {
+            updateLoadingStage(50, '契约提取与字段归一中 (50%)...', 2);
+        } else if (elapsedMs < 4500) {
+            updateLoadingStage(75, '算术守恒与异常自检中 (75%)...', 3);
+        } else if (elapsedMs < 25000) {
+            updateLoadingStage(95, 'SKU智能匹配中 (95%)...', 4);
+        } else {
+            // U-8: 耗时 >= 25s 时的长等待预期提示
+            updateLoadingStage(95, '本单明细较多，AI 正在加紧核对，预计还需 10 秒…', 4);
+        }
     }, 100);
 }
 
@@ -1491,6 +1704,7 @@ function stopOcrTimer() {
         clearInterval(ocrTimerInterval);
         ocrTimerInterval = null;
     }
+    updateLoadingStage(100, '识别完成 (100%)', 4);
 }
 
 // -------------------------------------------------------------
@@ -1663,37 +1877,12 @@ function showQualityWarnings(warnings) {
         // 若曾置顶克隆也隐藏
         return;
     }
-    const head = document.createElement('div');
-    head.textContent = '图像质量预检警告';
-    head.style.cssText = 'font-weight:600; margin-bottom:4px;';
-    banner.appendChild(head);
-    list.forEach(w => {
+    const msgs = list.map(w => {
         const raw = String(w);
         const label = QUALITY_WARNING_LABELS[raw] || raw;
-        // 若 raw 已含中文“模糊”则直接展示，否则用映射中文保证顶部文案含“图像模糊度过高”
-        const display = (raw === 'image_blur' && !label.includes('模糊')) ? QUALITY_WARNING_LABELS['image_blur'] : label;
-        const row = document.createElement('div');
-        row.textContent = '• ' + display;
-        banner.appendChild(row);
+        return (raw === 'image_blur' && !label.includes('模糊')) ? QUALITY_WARNING_LABELS['image_blur'] : label;
     });
-    // F-P1-4 弱光/模糊 → 重拍引导块
-    const guideItems = buildReshootGuideItems(list);
-    if (guideItems.length > 0) {
-        const guideBox = document.createElement('div');
-        guideBox.className = 'reshoot-guide-box';
-        guideBox.style.cssText = 'margin-top:8px; padding:8px 10px; border:1px solid #f0c36d; background:#fff8e1; border-radius:6px;';
-        const guideTitle = document.createElement('div');
-        guideTitle.textContent = '建议重拍以提升识别准确率';
-        guideTitle.style.cssText = 'font-weight:600; color:#8a6d3b; margin-bottom:4px; font-size:0.82rem;';
-        guideBox.appendChild(guideTitle);
-        guideItems.forEach(g => {
-            const gRow = document.createElement('div');
-            gRow.textContent = '- ' + g;
-            gRow.style.cssText = 'color:#6c5b2e; font-size:0.78rem; line-height:1.5;';
-            guideBox.appendChild(gRow);
-        });
-        banner.appendChild(guideBox);
-    }
+    banner.innerHTML = `<span style="font-weight:600;">⚠️ 提示：</span>${msgs.join(' · ')}`;
     banner.classList.remove('hide');
     // P0-1 置顶保证：若 banner 所在 prefillFormCard 隐藏（错误态），克隆一份到 rightPanel 顶部置顶
     const prefill = document.getElementById('prefillFormCard');
@@ -1741,7 +1930,7 @@ function findPhotoIndex(photo, photosArr) {
 let singleUploadGen = 0;
 let singlePollToken = null;
 
-function triggerAnalysisNow() {
+function triggerAnalysisNow(forceFlag = false) {
     if (!selectedFile) {
         showToast('请先选择一张收据图片', 'warning');
         return;
@@ -1756,8 +1945,11 @@ function triggerAnalysisNow() {
         return;
     }
 
+    const isForce = forceFlag === true || (activePhoto && activePhoto.force) || !!window._selectedFileForce;
+
     const formData = new FormData();
     formData.append('receipt', selectedFile);
+    formData.append('force', isForce ? 'true' : 'false');
 
     const useCodebuddy = document.getElementById('chkCodebuddy').checked;
 
@@ -1773,7 +1965,7 @@ function triggerAnalysisNow() {
     singlePollToken = { cancelled: false };
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true`, {
+    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${isForce ? 'true' : 'false'}`, {
         method: 'POST',
         body: formData
     })
@@ -1854,7 +2046,7 @@ function triggerAnalysisNow() {
             } else if (isNonWebImageFile(selectedFile)) {
                 setMainPreviewFromFile(selectedFile, null);
             }
-            showErrorCard(ret.msg || '识别失败', ret.receipt_id || null);
+            showErrorCard(ret.msg || '识别失败', ret.receipt_id || null, ret.code);
             // P0-1 极模糊置顶：即使错误态也展示 quality_warnings 并置顶（<1s 快速失败不悬挂）
             const qw = collectQualityWarnings(ret);
             if (qw && qw.length) {
@@ -1866,6 +2058,9 @@ function triggerAnalysisNow() {
             }
             return;
         }
+
+        // U-8: 成功解析完成，重置画质连续失败计数
+        resetQualityFailCount();
 
         // P1-13: 成功后提取 version 回写 data（后端未返回时无副作用）
         captureResultVersion(ret);
@@ -1881,10 +2076,11 @@ function triggerAnalysisNow() {
 
         // 批量模式：把本次上传结果同步回本批照片，避免状态漂移
         const photo = getActivePhoto();
-        if (photo && !photo.receiptId) {
+        if (photo) {
             photo.receiptId = ret.receipt_id;
             photo.status = 'parsed';
             photo.data = ret.data;
+            photo.errorMsg = null;
             if (ret.image_url && isBrowserDisplayableImageUrl(ret.image_url)) {
                 photo.imageUrl = ret.image_url;
             }
@@ -1904,68 +2100,282 @@ function triggerAnalysisNow() {
 }
 
 // -------------------------------------------------------------
-// 2c. 识别失败错误卡片与双出口 (D28 显式 error + 重试入口；D33 失败双出口)
+// 2c. 识别失败错误卡片与双出口 (D28 显式 error + D33 失败双出口)
+// U-3: 错误卡归因三分类 quality(画质) > gate(数字/契约门禁) > engine(引擎兜底)。
+//      正文一律固定文案（engine 不透出原始 str(e)）；gate 原因经人话化包装。
 // -------------------------------------------------------------
-function showErrorCard(msg, receiptId) {
+
+// U-3: 门禁 error_msg 最小改写为店员可读的「人话」（纯文本替换，输出仅经 innerText 文本节点渲染）
+function humanizeGateMsg(msg) {
+    let s = (msg == null) ? '' : String(msg);
+    // 1) 去掉门禁前缀（算术门禁: / 契约校验失败:，容忍中英文冒号与空白）
+    s = s.replace(/^\s*(算术门禁|契约校验失败|契约门禁)\s*[:：]\s*/, '');
+    // 2) 契约字段名映射（未知字段原样保留）
+    s = s.replace(/payment_marked/g, 'AI 填写的“是否已付款”一项');
+    // 3) 英文校验短语映射（AC2-a：不残留裸英文吓用户；先具体短语，后 Input should be 兜底）
+    s = s.replace(/Input should be a valid boolean/g, '填写的内容格式不对');
+    s = s.replace(/Input should be/gi, '填写的内容格式不对');
+    s = s.replace(/unable to interpret/gi, '无法理解该内容');
+    s = s.replace(/missing/gi, '缺少必填内容');
+    s = s.replace(/field required/gi, '缺少必填内容');
+    // 4) 算术门禁话术人话化（预期总额= 连等号一起替换，避免「应为=265」磕绊）
+    s = s.replace(/明细合计=/g, '明细合计');
+    s = s.replace(/预期总额=/g, '应为 ');
+    s = s.replace(/，但总额=/g, '，但单据写着');
+    s = s.replace(/（差(-?[0-9.]+)）/g, '，相差 $1');
+    return s.trim();
+}
+
+// -------------------------------------------------------------
+// U-8: 连续画质/识别失败递进引导与计数追踪
+// -------------------------------------------------------------
+let _memQualityFailCount = 0;
+
+function getQualityFailCount() {
+    try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+            const val = sessionStorage.getItem('receipt_quality_fail_count');
+            if (val !== null) {
+                const parsed = parseInt(val, 10);
+                return isNaN(parsed) ? 0 : parsed;
+            }
+            return 0;
+        }
+    } catch (e) {
+        // sessionStorage 不可用时兜底到内存变量
+    }
+    return _memQualityFailCount;
+}
+
+function incrementQualityFailCount() {
+    const nextCount = getQualityFailCount() + 1;
+    try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.setItem('receipt_quality_fail_count', String(nextCount));
+        }
+    } catch (e) {
+        // 兜底到内存变量
+    }
+    _memQualityFailCount = nextCount;
+    return nextCount;
+}
+
+function resetQualityFailCount() {
+    try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+            sessionStorage.removeItem('receipt_quality_fail_count');
+        }
+    } catch (e) {
+        // 兜底到内存变量
+    }
+    _memQualityFailCount = 0;
+}
+
+window.getQualityFailCount = getQualityFailCount;
+window.incrementQualityFailCount = incrementQualityFailCount;
+window.resetQualityFailCount = resetQualityFailCount;
+window.updateOcrProgress = updateLoadingStage;
+window.renderPrefillForm = function(data) {
+    resetQualityFailCount();
+    if (typeof renderEditForm === 'function') renderEditForm(data || {});
+};
+
+function showErrorCard(msg, receiptId, code) {
     lastErrorReceiptId = receiptId || null;
+    const splitView = document.getElementById('splitViewArea');
+    if (splitView) splitView.classList.remove('hide');
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('loadingCard').classList.add('hide');
     document.getElementById('prefillFormCard').classList.add('hide');
 
+    // U-3: msg 为 undefined/null/'' 时安全兜底为空串，归入 engine
+    const rawMsg = (msg == null) ? '' : String(msg);
+
+    // 归因优先级：quality(画质，用户可自救) > gate(数字/契约门禁，需人工核对) > engine(引擎繁忙/异常兜底)
+    const isQualityIssue = (code === 'IMAGE_QUALITY_ERROR') ||
+        /模糊|画质|曝光|分辨率|image_blur|quality/i.test(rawMsg);
+    const isGateIssue = !isQualityIssue &&
+        /算术门禁|契约校验|门禁|明细为空|总额不能|供应商为空|日期格式非法|数量非法|单价非法/.test(rawMsg);
+
+    const titleElem = document.getElementById('errorCardTitle');
+    const badgeElem = document.getElementById('errorCardBadge');
+    const headingElem = document.getElementById('errorCardHeading');
     const msgElem = document.getElementById('errorMsgText');
-    if (msgElem) {
-        msgElem.innerText = '原图已保留，请选择以下任一出口继续处理。';
+    const btnForce = document.getElementById('btnForceRetry');
+    const btnRetry = document.getElementById('btnRetryNormal');
+    const convertBtn = document.getElementById('btnConvertManual');
+
+    // 辅助函数：重置转手工按钮样式为标准次要按钮
+    function resetConvertBtnStyle() {
+        if (convertBtn) {
+            convertBtn.className = 'btn btn-secondary';
+            convertBtn.style.order = '';
+            convertBtn.style.fontWeight = '';
+            convertBtn.style.boxShadow = '';
+        }
     }
 
-    // 转手工录入需要已有单据行；没有时只允许重新上传/重试
-    const convertBtn = document.getElementById('btnConvertManual');
-    if (convertBtn) convertBtn.style.display = lastErrorReceiptId ? '' : 'none';
+    if (isQualityIssue) {
+        // U-8: 连续画质/识别失败递进引导
+        const count = incrementQualityFailCount();
+
+        if (titleElem) titleElem.innerText = '[提示] 图像画质预检未达标（可强制继续）';
+
+        if (count === 1) {
+            // Level 1: 初次失败，温和提示
+            if (badgeElem) {
+                badgeElem.innerText = '用户自主决定';
+                badgeElem.className = 'badge badge-warning';
+            }
+            if (headingElem) headingElem.innerText = '照片有点模糊，可能影响识别';
+            if (msgElem) {
+                msgElem.innerText = '系统已保留这张原图。您可以再拍一张更清晰的照片，或点下方「继续 AI 解析」让 AI 尽力识别，也可以转为手工录入。';
+            }
+            resetConvertBtnStyle();
+        } else if (count === 2) {
+            // Level 2: 再次失败，给出拍摄技巧指导
+            if (badgeElem) {
+                badgeElem.innerText = '拍摄技巧提示';
+                badgeElem.className = 'badge badge-warning';
+            }
+            if (headingElem) headingElem.innerText = '照片还是有些模糊';
+            if (msgElem) {
+                msgElem.innerText = '拍摄小贴士：请把单据摊平、光线充足、手机平行正对拍摄，避免反光或阴影。您也可以点「继续 AI 解析」尝试，或转为手工录入。';
+            }
+            resetConvertBtnStyle();
+        } else {
+            // Level 3+: 连续多次失败，高亮推荐转手工录入
+            if (badgeElem) {
+                badgeElem.innerText = '建议转手工';
+                badgeElem.className = 'badge badge-danger';
+            }
+            if (headingElem) headingElem.innerText = '连续多次无法清晰识别';
+            if (msgElem) {
+                msgElem.innerText = '连续多次未能清晰识别。为避免耽误时间，建议直接点击下方「转手工补录」快速录入单据，原图已在左侧为您展示。';
+            }
+            if (convertBtn) {
+                convertBtn.className = 'btn btn-warning';
+                convertBtn.style.order = '-1';
+                convertBtn.style.fontWeight = '600';
+                convertBtn.style.boxShadow = '0 0 0 2px rgba(217, 119, 6, 0.4)';
+            }
+        }
+
+        // 画质问题用户可自主决定是否强制继续：三按钮齐备
+        if (btnForce) {
+            btnForce.style.display = '';
+            btnForce.title = '忽略画质警告，继续 AI 智能解析';
+        }
+        if (btnRetry) {
+            btnRetry.style.display = '';
+            btnRetry.title = '重新发起识别';
+        }
+    } else if (isGateIssue) {
+        resetConvertBtnStyle();
+        if (titleElem) titleElem.innerText = '[拦截] AI 发现单据数字有疑问';
+        if (badgeElem) {
+            badgeElem.innerText = '需人工核对';
+            badgeElem.className = 'badge badge-warning';
+        }
+        if (headingElem) headingElem.innerText = '单据上的数字对不上，AI 已暂停录入';
+        if (msgElem) {
+            // 门禁原因人话化后展示；原因为空时给默认话术
+            const reason = humanizeGateMsg(rawMsg) || 'AI 多次核对仍未通过';
+            msgElem.innerText = 'AI 核对时发现这张单据的数字互相矛盾，为避免记错账已暂停。\n' +
+                '具体原因：' + reason + '\n' +
+                '请对照左侧原图核对金额；确认无误可点「重试」让 AI 再核一遍，或转为手工录入。';
+        }
+        // 门禁拦截是防记错账：不允许「忽略警告继续」，只能重核或转手工；
+        // 隐藏时 title 同步复位为中性文案，消除隐藏元素上的画质语义残留
+        if (btnForce) {
+            btnForce.style.display = 'none';
+            btnForce.title = '重新提交给 AI 解析';
+        }
+        if (btnRetry) {
+            btnRetry.style.display = '';
+            btnRetry.title = '让 AI 重新核对这张单据';
+        }
+    } else {
+        resetConvertBtnStyle();
+        if (titleElem) titleElem.innerText = '[稍后重试] AI 服务暂时繁忙';
+        if (badgeElem) {
+            badgeElem.innerText = '非照片问题';
+            badgeElem.className = 'badge badge-danger';
+        }
+        if (headingElem) headingElem.innerText = 'AI 服务现在很忙，这张单据还没识别完';
+        if (msgElem) {
+            // 引擎异常不透出原始 str(e)，避免吓到用户
+            msgElem.innerText = '这不是照片的问题，请不要重新拍照。原图已保留。请稍等 1 分钟后点「重试」；如果连续失败，请转为手工录入，或联系店长。';
+        }
+        // 引擎繁忙与画质无关：强制继续无意义，稍后重试或转手工；
+        // 隐藏时 title 同步复位为中性文案，消除隐藏元素上的画质语义残留
+        if (btnForce) {
+            btnForce.style.display = 'none';
+            btnForce.title = '重新提交给 AI 解析';
+        }
+        if (btnRetry) {
+            btnRetry.style.display = '';
+            btnRetry.title = '重新发起识别';
+        }
+    }
+
+    // 转手工录入需要已有单据行；没有时只允许重新上传/重试（画质 400 无 receiptId 场景仍隐藏）
+    // 转手工录入逃生通道随时可用，保留原图
+    if (convertBtn) convertBtn.style.display = '';
 
     document.getElementById('errorCard').classList.remove('hide');
 }
 
-function retryFromErrorCard() {
+function retryFromErrorCard(force = true) {
+    const ph = getActivePhoto();
+    if (ph) ph.force = !!force;
+    window._selectedFileForce = !!force;
+
     if (lastErrorReceiptId) {
         // D13: 复用原单据重跑识别
-        retryReceiptRecognition(lastErrorReceiptId);
+        retryReceiptRecognition(lastErrorReceiptId, force);
     } else {
-        // 未生成单据行（如网络异常）：重新上传
-        triggerAnalysisNow();
+        // 未生成单据行（如网络异常或画质拦截）：重新上传并显式指定 force
+        triggerAnalysisNow(force);
     }
 }
 
 function convertManualFromErrorCard() {
-    if (!lastErrorReceiptId) return;
-    const receiptId = lastErrorReceiptId;
+    if (lastErrorReceiptId) {
+        const receiptId = lastErrorReceiptId;
 
-    document.getElementById('errorCard').classList.add('hide');
-    document.getElementById('loadingCard').classList.remove('hide');
+        document.getElementById('errorCard').classList.add('hide');
+        document.getElementById('loadingCard').classList.remove('hide');
 
-    fetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
-    .then(res => res.json())
-    .then(ret => {
-        document.getElementById('loadingCard').classList.add('hide');
-        if (ret.status !== 'success') {
-            showToast('转手工录入失败：' + (ret.msg || '请稍后重试'), 'error');
-            showErrorCard(ret.msg || '转手工录入失败', receiptId);
-            return;
-        }
-        // D33: 转手工录入成功——保留原图，按返回数据渲染复核表单
-        applyRecognizedResult(ret, receiptId);
-        showToast('已转为手工录入，请对照左侧原图补录字段', 'info');
-    })
-    .catch(err => {
-        document.getElementById('loadingCard').classList.add('hide');
-        console.error('转手工录入请求异常', err);
-        showToast('转手工录入请求失败，请检查网络后重试', 'error');
-        showErrorCard('转手工录入失败，请稍后重试', receiptId);
-    });
+        fetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
+        .then(res => res.json())
+        .then(ret => {
+            document.getElementById('loadingCard').classList.add('hide');
+            if (ret.status !== 'success') {
+                showToast('转手工录入失败：' + (ret.msg || '请稍后重试'), 'error');
+                showErrorCard(ret.msg || '转手工录入失败', receiptId);
+                return;
+            }
+            // D33: 转手工录入成功——保留原图，按返回数据渲染复核表单
+            applyRecognizedResult(ret, receiptId);
+            showToast('已转为手工录入，请对照左侧原图补录字段', 'info');
+        })
+        .catch(err => {
+            document.getElementById('loadingCard').classList.add('hide');
+            console.error('转手工录入请求异常', err);
+            showToast('转手工录入请求失败，请检查网络后重试', 'error');
+            showErrorCard('转手工录入失败，请稍后重试', receiptId);
+        });
+    } else {
+        // 无单据行时（如画质 400 快速失败）：保留原图直接切入手工录入表单
+        abortLoadingAndSwitchToManual();
+    }
 }
 
 // 对已有单据行调用 retry 端点（复用原单据，attempt+1 由后端入审计）
-function retryReceiptRecognition(receiptId) {
+function retryReceiptRecognition(receiptId, force = false) {
     if (!receiptId) {
-        triggerAnalysisNow();
+        triggerAnalysisNow(force);
         return;
     }
     document.getElementById('errorCard').classList.add('hide');
@@ -1974,9 +2384,28 @@ function retryReceiptRecognition(receiptId) {
     document.getElementById('loadingCard').classList.remove('hide');
     startOcrTimer();
 
-    fetch(`/api/receipt/${receiptId}/retry`, { method: 'POST' })
+    const gen = ++singleUploadGen;
+    if (singlePollToken) singlePollToken.cancelled = true;
+    singlePollToken = { cancelled: false };
+
+    fetch(`/api/receipt/${receiptId}/retry?force=${force ? 'true' : 'false'}`, { method: 'POST' })
     .then(res => res.json())
     .then(ret => {
+        if (gen !== singleUploadGen) return;
+        if (ret.status === 'queued' && ret.job_id) {
+            pollReceiptJob(ret.job_id, (jobRet) => {
+                if (gen !== singleUploadGen) return;
+                stopOcrTimer();
+                document.getElementById('loadingCard').classList.add('hide');
+                if (jobRet.status === 'cancelled') return;
+                if (jobRet.status !== 'success') {
+                    showErrorCard(jobRet.msg || '重试识别失败', receiptId);
+                    return;
+                }
+                applyRecognizedResult(jobRet, receiptId);
+            }, { token: singlePollToken });
+            return;
+        }
         stopOcrTimer();
         document.getElementById('loadingCard').classList.add('hide');
         if (ret.status !== 'success') {
@@ -1987,6 +2416,7 @@ function retryReceiptRecognition(receiptId) {
         applyRecognizedResult(ret, receiptId);
     })
     .catch(err => {
+        if (gen !== singleUploadGen) return;
         stopOcrTimer();
         document.getElementById('loadingCard').classList.add('hide');
         showErrorCard("重试请求异常: " + err, receiptId);
@@ -1995,6 +2425,8 @@ function retryReceiptRecognition(receiptId) {
 
 // 重试/转手工录入成功后的统一渲染入口（单张与批量共用）
 function applyRecognizedResult(ret, fallbackReceiptId) {
+    // U-8: 解析/转录成功重置连续失败计数
+    resetQualityFailCount();
     // D12：真实单据接管主区域 → 退出新建手工单态
     resetManualEntryMode();
     // P1-13: 成功后提取 version 回写 data（retry/convert 响应契约同 upload）
@@ -2047,25 +2479,44 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
 // 手工录入前端校验：与后端 save_edited 手工分支 400 语义对齐。
 // 返回错误文案（空串 = 通过）。
 function validateManualEntry(data) {
+    const supplier = String((data && data.supplier_name) || '').trim();
+    if (!supplier || supplier === '通用供应商') {
+        return '请填写供应商名称';
+    }
     const dateStr = String((data && data.date) || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-        return '手工录入必须提供合法开单日期，当前值：' + (dateStr || '空');
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return '请选择开单日期';
     }
     const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
     const dt = new Date(y, mo - 1, d);
     if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
-        return '手工录入开单日期 ' + dateStr + ' 不是真实存在的日期';
+        return '开单日期不正确，请选择真实存在的日历日期';
     }
-    const supplier = String((data && data.supplier_name) || '').trim();
-    if (!supplier || supplier === '通用供应商') {
-        return '手工录入必须提供真实供应商名称';
+    const totalAmt = Number((data && data.total_amount) || 0);
+    if (isNaN(totalAmt) || totalAmt <= 0) {
+        return '单据总金额必须大于 0';
     }
     const items = (data && data.items) || [];
-    const hasRealItem = items.some(it =>
-        String((it && (it.name || it.raw_name)) || '').trim() !== '');
-    if (items.length === 0 || !hasRealItem) {
-        return '手工录入必须包含至少一条消费明细';
+    if (items.length === 0) {
+        return '请至少输入一行消费明细';
+    }
+    let hasRealItem = false;
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const name = String((it && (it.name || it.raw_name)) || '').trim();
+        if (!name) {
+            return `第 ${i + 1} 行的品名不能为空，请填写或删除该行`;
+        }
+        const qty = Number(it && it.quantity);
+        const price = Number(it && it.unit_price);
+        if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
+            return `第 ${i + 1} 行的单价或数量不是有效数字，请重新输入`;
+        }
+        hasRealItem = true;
+    }
+    if (!hasRealItem) {
+        return '请至少输入一行消费明细';
     }
     return '';
 }
@@ -2161,6 +2612,94 @@ function startManualEntry() {
     document.getElementById('splitViewArea').classList.remove('hide');
 
     showToast('已进入新建手工单：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
+}
+
+// U-11: 识别过程随时转手工逃生通道（保留原图，中止识别，直接切入复核/手工表单）
+function abortLoadingAndSwitchToManual() {
+    // 1. 停止识别计时器与进度
+    stopOcrTimer();
+    stopBatchTimer();
+
+    // 2. 作废单张/批量轮询令牌与代际标记，丢弃任何迟到的识别响应
+    singleUploadGen++;
+    if (singlePollToken) singlePollToken.cancelled = true;
+
+    const curPhoto = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
+    if (curPhoto) {
+        if (curPhoto.pollToken) curPhoto.pollToken.cancelled = true;
+        if (curPhoto.status === 'uploading') {
+            curPhoto.status = 'pending';
+        }
+        if (typeof renderSider === 'function') renderSider();
+    }
+
+    // 3. 隐藏 Loading / PreConfirm / Error 卡片
+    const loadingCard = document.getElementById('loadingCard');
+    if (loadingCard) loadingCard.classList.add('hide');
+    const preConfirmCard = document.getElementById('preConfirmCard');
+    if (preConfirmCard) preConfirmCard.classList.add('hide');
+    const errorCard = document.getElementById('errorCard');
+    if (errorCard) errorCard.classList.add('hide');
+
+    // 4. 确保左侧原图完好保留，不清除图片与工具栏
+    setManualEntryLeftPanel(false);
+    const noImage = document.getElementById('manualEntryNoImage');
+    if (noImage) noImage.classList.add('hide');
+    const previewImg = document.getElementById('previewImg');
+    if (previewImg) previewImg.style.display = '';
+    updateToolbarButtonStates();
+
+    // 5. 显示分栏与表单卡片
+    const splitView = document.getElementById('splitViewArea');
+    if (splitView) splitView.classList.remove('hide');
+    const prefillCard = document.getElementById('prefillFormCard');
+    if (prefillCard) prefillCard.classList.remove('hide');
+
+    // 6. 表单标题与徽章设置
+    if (!currentReceiptId) {
+        isManualEntry = true;
+    }
+    const title = document.getElementById('manualEntryFormTitle');
+    if (title) title.textContent = ' 步骤 2/2：手工录入与复核';
+    const badge = document.getElementById('manualEntryFormBadge');
+    if (badge) badge.classList.add('hide');
+
+    // 7. 表单字段初始化/保底（若为空则赋默认值，保留已有输入）
+    const inpSupplier = document.getElementById('inpSupplier');
+    const inpDate = document.getElementById('inpDate');
+    const inpSheet = document.getElementById('inpSheet');
+    const inpTotal = document.getElementById('inpTotal');
+    const inpSettlement = document.getElementById('inpSettlementType');
+    const inpPaymentMark = document.getElementById('inpPaymentMark');
+    const inpDept = document.getElementById('inpDepartmentId');
+
+    if (inpDate && !inpDate.value) {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        inpDate.value = todayStr;
+        if (inpSheet && !inpSheet.value) {
+            inpSheet.value = todayStr.slice(0, 7);
+        }
+    }
+    if (inpTotal && (!inpTotal.value || inpTotal.value === '0.00')) {
+        inpTotal.value = '0.00';
+    }
+    if (inpPaymentMark && !inpPaymentMark.value) {
+        inpPaymentMark.value = '无';
+    }
+    if (inpDept && !inpDept.value) {
+        populateDeptSelect(inpDept, null);
+    }
+    showQualityWarnings([]);
+
+    const tbody = document.getElementById('itemTableBody');
+    if (tbody && tbody.children.length === 0) {
+        addEmptyRow();
+    }
+
+    renderCurrencySymbol();
+
+    // 8. 友好人话提示
+    showToast('已停止等待，原图已在左侧保留，请直接手工录入', 'info', TOAST_DURATION.guide);
 }
 
 // 工具激活状态: null (未选中任何工具), 'zoom' (定点放大模式), 'crop' (裁剪模式)
@@ -2843,13 +3382,69 @@ function triggerInlineAddSkuFromMenu(itemElem) {
 // 安全纪律：候选文本来自 OCR/DB，一律 w2Escape；交互事件委托 + data-* 传值。
 // -------------------------------------------------------------
 let isSelectingSku = false;
+let itemNameDebounceTimer = null;
+
+function onItemNameInput(inputElem) {
+    const tr = inputElem.closest('tr');
+    if (!tr) return;
+    tr.dataset.manual = '1';
+    const val = (inputElem.value || '').trim();
+    const wrap = tr.querySelector('.sku-combobox-wrap');
+    if (!wrap) return;
+    const skuInput = wrap.querySelector('.inp-sku');
+    const idInput = wrap.querySelector('.inp-sku-id');
+    const pill = wrap.querySelector('.sku-pill');
+
+    if (itemNameDebounceTimer) clearTimeout(itemNameDebounceTimer);
+    if (!val) {
+        if (idInput) idInput.value = '';
+        if (skuInput) skuInput.value = '';
+        if (pill) {
+            pill.className = 'sku-pill sku-pill-unlinked';
+            pill.title = '未关联SKU (点击搜索关联)';
+            const nameSpan = pill.querySelector('.sku-pill-name');
+            if (nameSpan) nameSpan.textContent = '未关联SKU';
+        }
+        return;
+    }
+
+    itemNameDebounceTimer = setTimeout(() => {
+        fetch('/api/inventory?q=' + encodeURIComponent(val))
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success') return;
+            const searched = (ret.data || []).map(sku => ({
+                sku_id: sku.id,
+                sku_name: sku.name,
+                sku_code: sku.sku_code,
+                score: null,
+            }));
+            if (skuInput) {
+                skuInput.__skuCandidates = searched;
+            }
+            // 若完全同名，自动静默关联
+            const exact = searched.find(s => s.sku_name === val);
+            if (exact) {
+                if (idInput) idInput.value = exact.sku_id;
+                if (skuInput) skuInput.value = exact.sku_name;
+                if (pill) {
+                    pill.className = 'sku-pill sku-pill-matched';
+                    pill.title = '已自动匹配: ' + exact.sku_name;
+                    const nameSpan = pill.querySelector('.sku-pill-name');
+                    if (nameSpan) nameSpan.textContent = exact.sku_name;
+                }
+            }
+        })
+        .catch(err => console.error('SKU 联想失败:', err));
+    }, 200);
+}
+window.onItemNameInput = onItemNameInput;
 
 function skuMenuOf(inputElem) {
     const wrap = inputElem && inputElem.closest ? inputElem.closest('.sku-combobox-wrap') : null;
     return wrap && wrap.querySelector ? wrap.querySelector('.unit-dropdown-menu') : null;
 }
 
-// 多来源候选并集去重（OCR fuzzy/entity + /api/inventory 搜索），按 sku_id 去重保序
 function mergeSkuCandidates(primary, secondary) {
     const seen = {};
     const out = [];
@@ -2863,28 +3458,65 @@ function mergeSkuCandidates(primary, secondary) {
     return out;
 }
 
-function openSkuMenu(inputElem) {
-    if (isSelectingSku) return;
-    document.querySelectorAll('.unit-dropdown-menu').forEach(m => m.classList.add('hide'));
-    const menu = skuMenuOf(inputElem);
+function toggleSkuMenu(pillElem) {
+    const wrap = pillElem.closest('.sku-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.unit-dropdown-menu');
     if (!menu) return;
-    renderSkuMenuItems(inputElem, menu);
-    menu.classList.remove('hide');
+    const isHidden = menu.classList.contains('hide');
+    document.querySelectorAll('.unit-dropdown-menu').forEach(m => m.classList.add('hide'));
+    if (isHidden) {
+        const inpSku = wrap.querySelector('.inp-sku') || pillElem;
+        renderSkuMenuItems(inpSku, menu);
+        menu.classList.remove('hide');
+        const searchInput = menu.querySelector('.inp-sku-search');
+        if (searchInput) {
+            setTimeout(() => { searchInput.focus(); searchInput.select(); }, 40);
+        }
+    }
 }
+window.toggleSkuMenu = toggleSkuMenu;
 
-function closeSkuMenuDelay(inputElem) {
-    setTimeout(() => {
-        if (isSelectingSku) return;
-        const menu = skuMenuOf(inputElem);
+let skuSearchDebounceTimer = null;
+
+function onSkuSearchInput(searchInput) {
+    const wrap = searchInput.closest('.sku-combobox-wrap');
+    if (!wrap) return;
+    const inpSku = wrap.querySelector('.inp-sku');
+    const val = searchInput.value;
+    if (inpSku) {
+        inpSku.__skuSearchQuery = val;
+    }
+    const menu = wrap.querySelector('.unit-dropdown-menu');
+    if (!menu) return;
+
+    if (skuSearchDebounceTimer) clearTimeout(skuSearchDebounceTimer);
+    skuSearchDebounceTimer = setTimeout(() => {
+        if (inpSku) renderSkuMenuItems(inpSku, menu);
+    }, 100);
+}
+window.onSkuSearchInput = onSkuSearchInput;
+
+function onSkuSearchKeydown(event, searchInput) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        const wrap = searchInput.closest('.sku-combobox-wrap');
+        if (!wrap) return;
+        const menu = wrap.querySelector('.unit-dropdown-menu');
+        if (!menu) return;
+        const firstCandidate = menu.querySelector('.unit-dropdown-item[data-sku-id]:not([data-sku-id=""])');
+        if (firstCandidate) {
+            selectSkuItem(firstCandidate);
+        } else {
+            const quickAdd = menu.querySelector('.sku-quick-add-item');
+            if (quickAdd) quickCreateAndBindSku(quickAdd);
+        }
+    } else if (event.key === 'Escape') {
+        const menu = searchInput.closest('.unit-dropdown-menu');
         if (menu) menu.classList.add('hide');
-    }, 200);
+    }
 }
-
-function onSkuMenuInput(inputElem) {
-    const menu = skuMenuOf(inputElem);
-    if (!menu || menu.classList.contains('hide')) return;
-    renderSkuMenuItems(inputElem, menu);
-}
+window.onSkuSearchKeydown = onSkuSearchKeydown;
 
 function selectSkuItem(itemElem) {
     isSelectingSku = true;
@@ -2899,15 +3531,78 @@ function selectSkuItem(itemElem) {
         const badge = wrap.querySelector('.sku-badge');
         if (badge) {
             badge.textContent = skuId ? '已匹配SKU' : '未关联';
-            badge.className = 'badge ' + (skuId ? 'badge-success' : 'badge-warning') + ' sku-badge';
+            badge.className = 'badge ' + (skuId ? 'badge-success' : 'badge-warning') + ' sku-badge hide';
+        }
+        const pill = wrap.querySelector('.sku-pill');
+        if (pill) {
+            pill.className = 'sku-pill ' + (skuId ? 'sku-pill-matched' : 'sku-pill-unlinked');
+            pill.title = skuId ? ('已匹配: ' + skuName) : '未关联SKU (点击搜索关联)';
+            const nameSpan = pill.querySelector('.sku-pill-name');
+            if (nameSpan) {
+                nameSpan.textContent = skuId ? (skuName || '已匹配SKU') : '未关联SKU';
+            }
         }
         const menu = wrap.querySelector('.unit-dropdown-menu');
         if (menu) menu.classList.add('hide');
     }
-    setTimeout(() => { isSelectingSku = false; }, 300);
+    setTimeout(() => { isSelectingSku = false; }, 200);
 }
 
-// 候选分数展示：OCR fuzzy 分数为 0-100 相似度，实体 RAG 分数为 0-1 相似度，搜索无分数
+// 1-Click 极速一键建档绑定（无需打开繁琐 Modal）
+function quickCreateAndBindSku(itemElem) {
+    isSelectingSku = true;
+    const rawName = itemElem.getAttribute('data-prefill-name') || '';
+    const cleanName = rawName.trim();
+    if (!cleanName) return;
+    const wrap = itemElem.closest('.sku-combobox-wrap');
+    const tr = itemElem.closest('tr');
+    const rowUnit = tr ? (tr.querySelector('.inp-unit')?.value || '斤') : '斤';
+
+    fetch('/api/inventory/skus', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            name: cleanName,
+            category: '食材',
+            base_unit: rowUnit,
+            min_stock_alert: 5.0
+        })
+    })
+    .then(res => res.json())
+    .then(ret => {
+        const targetId = ret.id || ret.existing_id;
+        if (ret.status === 'success' || targetId) {
+            if (wrap) {
+                const skuInput = wrap.querySelector('.inp-sku');
+                const idInput = wrap.querySelector('.inp-sku-id');
+                if (skuInput) skuInput.value = cleanName;
+                if (idInput) idInput.value = targetId || '';
+                const pill = wrap.querySelector('.sku-pill');
+                if (pill) {
+                    pill.className = 'sku-pill sku-pill-matched';
+                    pill.title = '已建档: ' + cleanName;
+                    const nameSpan = pill.querySelector('.sku-pill-name');
+                    if (nameSpan) nameSpan.textContent = cleanName;
+                }
+                const menu = wrap.querySelector('.unit-dropdown-menu');
+                if (menu) menu.classList.add('hide');
+            }
+            showToast(`已一键建档并关联「${cleanName}」`, 'success');
+            if (typeof loadInventoryData === 'function') loadInventoryData();
+        } else {
+            showToast('建档提示: ' + (ret.message || '请重试'), 'warning');
+        }
+    })
+    .catch(err => {
+        console.error('一键建档失败:', err);
+        showToast('建档网络异常', 'error');
+    })
+    .finally(() => {
+        setTimeout(() => { isSelectingSku = false; }, 200);
+    });
+}
+window.quickCreateAndBindSku = quickCreateAndBindSku;
+
 function formatSkuScore(score) {
     const n = Number(score);
     if (!isFinite(n) || n == null) return '';
@@ -2915,14 +3610,65 @@ function formatSkuScore(score) {
     return ' 相似度' + Math.round(n) + '%';
 }
 
-function renderSkuMenuItems(inputElem, menuElem) {
-    const query = (inputElem.value || '').trim();
-    const current = (inputElem.__skuCandidates) || [];
+function buildSkuDropdownItemsHtml(inputElem, candidates) {
+    const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
+    const rows = candidates || [];
+    const tr = inputElem.closest('tr');
+    const rowName = query || (tr ? (tr.querySelector('.inp-name')?.value || '') : '');
+    const cleanRowName = rowName ? rowName.trim() : '';
 
-    // 候选来源 ②：输入品名/SKU 后 GET /api/inventory?q= 模糊搜索
-    // 同一查询只发一次；结果与 OCR 候选并集后重渲染下拉
-    if (query && query !== inputElem.__skuSearchQuery) {
-        inputElem.__skuSearchQuery = query;
+    let itemsHtml = '';
+    if (cleanRowName) {
+        const safeName = w2Escape(cleanRowName);
+        itemsHtml += `
+            <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="quickCreateAndBindSku(this)" style="background:rgba(47,107,79,0.06); border-bottom:1px solid #e2e8f0;">
+                <div><span style="font-weight:600; color:var(--primary);">＋ 一键为「${safeName}」建档入库</span></div>
+                <span class="badge-matched" style="background:var(--primary); color:#fff; font-size:0.72rem; padding:2px 8px; border-radius:4px;">1秒建档</span>
+            </div>
+        `;
+    }
+
+    if (rows.length > 0) {
+        rows.forEach(c => {
+            const codeSpan = c.sku_code
+                ? `<span style="font-size:0.75rem; color:#94a3b8; font-family:monospace; margin-left:6px;">[${w2Escape(c.sku_code)}]</span>`
+                : '';
+            const scoreSpan = formatSkuScore(c.score)
+                ? `<span style="font-size:0.72rem; color:#2f6b4f; font-weight:600; margin-left:6px;">${w2Escape(formatSkuScore(c.score))}</span>`
+                : '';
+            itemsHtml += `
+                <div class="unit-dropdown-item" data-sku-id="${w2Escape(c.sku_id)}" data-sku-name="${w2Escape(c.sku_name || '')}" onmousedown="selectSkuItem(this)">
+                    <div>
+                        <span style="font-weight:500;">${w2Escape(c.sku_name || '')}</span>
+                        ${codeSpan}
+                        ${scoreSpan}
+                    </div>
+                    <span class="badge-matched" style="font-size:0.72rem; padding:1px 6px;">选择</span>
+                </div>
+            `;
+        });
+    }
+
+    itemsHtml += `
+        <div class="unit-dropdown-item" data-sku-id="" data-sku-name="" onmousedown="selectSkuItem(this)" style="border-top:1px solid #f1f5f9; color:var(--text-muted);">
+            <div><span>✕ 设为未关联 (临时消费单)</span></div>
+        </div>
+    `;
+    return itemsHtml;
+}
+
+function renderSkuDropdownScrollOnly(inputElem, menuElem, candidates) {
+    const scrollElem = menuElem.querySelector('.sku-dropdown-scroll');
+    if (scrollElem) {
+        scrollElem.innerHTML = buildSkuDropdownItemsHtml(inputElem, candidates);
+    }
+}
+
+function renderSkuMenuItems(inputElem, menuElem) {
+    const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
+
+    if (query && query !== inputElem.__skuLastFetchedQuery) {
+        inputElem.__skuLastFetchedQuery = query;
         fetch('/api/inventory?q=' + encodeURIComponent(query))
         .then(res => res.json())
         .then(ret => {
@@ -2933,60 +3679,37 @@ function renderSkuMenuItems(inputElem, menuElem) {
                 sku_code: sku.sku_code,
                 score: null,
             }));
-            inputElem.__skuCandidates = mergeSkuCandidates(inputElem.__skuCandidates, searched);
-            if (!menuElem.classList.contains('hide')) renderSkuMenuItems(inputElem, menuElem);
+            inputElem.__skuCandidates = searched;
+            if (!menuElem.classList.contains('hide')) {
+                renderSkuDropdownScrollOnly(inputElem, menuElem, inputElem.__skuCandidates);
+            }
         })
         .catch(err => console.error('SKU 候选搜索失败:', err));
     }
 
-    renderSkuDropdownHtml(inputElem, menuElem, current);
+    renderSkuDropdownHtml(inputElem, menuElem, inputElem.__skuCandidates || []);
 }
 
 function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
-    const query = (inputElem.value || '').trim();
-    const rows = candidates || [];
-    const tr = inputElem.closest('tr');
-    const rowName = tr ? (tr.querySelector('.inp-name')?.value || query) : query;
+    const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
+    const existingSearch = menuElem.querySelector('.inp-sku-search');
+    if (existingSearch && !menuElem.classList.contains('hide')) {
+        renderSkuDropdownScrollOnly(inputElem, menuElem, candidates);
+        return;
+    }
 
-    // 候选来源 ③：恒备「不关联（保持未关联）」
+    const itemsHtml = buildSkuDropdownItemsHtml(inputElem, candidates);
     let html = `
-        <div class="unit-dropdown-item" data-sku-id="" data-sku-name="" onmousedown="selectSkuItem(this)">
-            <div><span>不关联（保持未关联）</span></div>
+        <div class="sku-search-header" style="padding:6px 8px; border-bottom:1px solid var(--border-color, #e5e7eb);" onclick="event.stopPropagation()">
+            <input type="text" class="form-control inp-sku-search" placeholder="输入名称或回车快速匹配..."
+                   value="${w2Escape(query)}"
+                   oninput="onSkuSearchInput(this)" onkeydown="onSkuSearchKeydown(event, this)" onclick="event.stopPropagation()"
+                   style="font-size:0.82rem; padding:5px 8px; width:100%; box-sizing:border-box; border-radius:6px;">
+        </div>
+        <div class="sku-dropdown-scroll" style="max-height:220px; overflow-y:auto;">
+            ${itemsHtml}
         </div>
     `;
-
-    // 快捷创建：当用户输入了品名/SKU 时，在最顶部展示一键创建并绑定入口
-    if (rowName) {
-        const safeName = w2Escape(rowName);
-        html += `
-            <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="triggerInlineAddSkuFromMenu(this)">
-                <div><span>为当前品名新建食材 SKU「${safeName}」</span></div>
-                <span class="badge-matched" style="background:var(--primary); color:#fff;">回车创建</span>
-            </div>
-        `;
-    }
-
-    if (rows.length === 0) {
-        html += `<div style="padding:10px; color:var(--text-muted); font-size:0.85rem; text-align:center;">${query ? '无完全匹配食材，可点上方新建' : '暂无候选，输入品名可搜索或新建'}</div>`;
-    } else {
-        rows.forEach(c => {
-            const codeSpan = c.sku_code
-                ? `<span style="font-size:0.75rem; color:#94a3b8; font-family:monospace; margin-left:6px;">[${w2Escape(c.sku_code)}]</span>`
-                : '';
-            const scoreSpan = formatSkuScore(c.score)
-                ? `<span style="font-size:0.72rem; color:#94a3b8; margin-left:6px;">${w2Escape(formatSkuScore(c.score))}</span>`
-                : '';
-            html += `
-                <div class="unit-dropdown-item" data-sku-id="${Number(c.sku_id)}" data-sku-name="${w2Escape(c.sku_name || '')}" onmousedown="selectSkuItem(this)">
-                    <div>
-                        <span>${w2Escape(c.sku_name || '')}</span>
-                        ${codeSpan}
-                        ${scoreSpan}
-                    </div>
-                </div>
-            `;
-        });
-    }
     menuElem.innerHTML = html;
 }
 
@@ -2994,15 +3717,39 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
 // 6. 右侧 Prefill 渲染与动态表格编辑
 // -------------------------------------------------------------
 function renderEditForm(data) {
+    if (!data) data = {};
     document.getElementById('inpSupplier').value = data.supplier_name || '';
     document.getElementById('inpDate').value = data.date || '';
-    document.getElementById('inpSheet').value = data.sheet_name || '';
-    document.getElementById('inpTotal').value = data.total_amount ? data.total_amount.toFixed(2) : '0.00';
+    document.getElementById('inpSheet').value = data.sheet_name || (data.date ? data.date.slice(0, 7) : '');
+    const rawTotal = (data.total_amount != null) ? data.total_amount : ((data.total != null) ? data.total : 0);
+    document.getElementById('inpTotal').value = Number(rawTotal).toFixed(2);
 
-    // M3/D4: 从 prefill 数据初始化结算方式与付款标记（字段可能缺失，容错）
+    // 单据形态与币种
+    const docFormElem = document.getElementById('inpDocForm');
+    if (docFormElem) {
+        docFormElem.value = data.doc_form || 'printed_delivery_note';
+    }
+    const curElem = document.getElementById('inpCurrency');
+    if (curElem) {
+        curElem.value = data.currency || 'HKD';
+    }
+
+    // 附加费用
+    const discElem = document.getElementById('inpDiscount');
+    if (discElem) discElem.value = (data.discount_amount != null && data.discount_amount > 0) ? Number(data.discount_amount).toFixed(2) : '0.00';
+    const delivElem = document.getElementById('inpDeliveryFee');
+    if (delivElem) delivElem.value = (data.delivery_fee != null && data.delivery_fee > 0) ? Number(data.delivery_fee).toFixed(2) : '0.00';
+    const depElem = document.getElementById('inpDeposit');
+    if (depElem) depElem.value = (data.deposit_amount != null && data.deposit_amount > 0) ? Number(data.deposit_amount).toFixed(2) : '0.00';
+    const roundElem = document.getElementById('inpRounding');
+    if (roundElem) roundElem.value = (data.rounding_adjustment != null && data.rounding_adjustment > 0) ? Number(data.rounding_adjustment).toFixed(2) : '0.00';
+
+    updateFeesSummaryBadge();
+
+    // M3/D4: 从 prefill 数据初始化结算方式与付款标记
     applySettlementToForm('inp', data);
 
-    // Wave 2（D44）：单据级部门下拉（只列 active；历史停用部门选择仍保留显示）
+    // Wave 2（D44）：单据级部门下拉
     populateDeptSelect(document.getElementById('inpDepartmentId'), data.department_id);
 
     const alertBanner = document.getElementById('alertBanner');
@@ -3016,22 +3763,59 @@ function renderEditForm(data) {
     const tbody = document.getElementById('itemTableBody');
     tbody.innerHTML = '';
 
-    // P3/R5：过滤空名行——无品名的明细行保存时会被后端静默丢弃
-    // （save_edited 跳过空名行），渲染出来只会误导编辑，故 Tab1 不再展示
     const items = (data.items || []).filter(item =>
         String((item && (item.raw_name || item.name)) || '').trim() !== '');
     items.forEach((item) => {
         appendTableRow(item);
     });
 
-    // Q29：data 内携带 quality_warnings（ai_prefill 形态）时一并渲染；
-    // 上传/识别路径会在 renderEditForm 之后再用顶层合并结果覆盖（collectQualityWarnings 优先顶层）
     showQualityWarnings(data.quality_warnings);
-
-    // 阶段 1：审核 reason + AI 建议对照面板
-    if (data.audit_result) renderAuditReason(data.audit_result);
-    renderAiCompare(data);
+    renderCurrencySymbol();
 }
+
+function toggleFeesDrawer() {
+    const drawer = document.getElementById('feesDrawerContent');
+    const icon = document.getElementById('feesToggleIcon');
+    if (!drawer) return;
+    const isHidden = drawer.classList.contains('hide');
+    if (isHidden) {
+        drawer.classList.remove('hide');
+        if (icon) icon.textContent = '▲';
+    } else {
+        drawer.classList.add('hide');
+        if (icon) icon.textContent = '▾';
+    }
+}
+window.toggleFeesDrawer = toggleFeesDrawer;
+
+function updateFeesSummaryBadge() {
+    const disc = parseFloat(document.getElementById('inpDiscount')?.value) || 0;
+    const deliv = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
+    const dep = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
+    const round = parseFloat(document.getElementById('inpRounding')?.value) || 0;
+    const badge = document.getElementById('feesSummaryBadge');
+    if (!badge) return;
+    const hasFees = (disc > 0 || deliv > 0 || dep > 0 || round > 0);
+    if (hasFees) {
+        const netFee = (deliv + dep - disc - round);
+        const sign = netFee >= 0 ? '+' : '';
+        badge.textContent = `差额: ${sign}${netFee.toFixed(2)}`;
+        badge.classList.remove('hide');
+    } else {
+        badge.classList.add('hide');
+    }
+}
+window.updateFeesSummaryBadge = updateFeesSummaryBadge;
+
+function autoFillSheetNameFromDate(dateVal) {
+    const sheetInp = document.getElementById('inpSheet');
+    if (sheetInp && (!sheetInp.value || sheetInp.value.trim() === '')) {
+        if (dateVal && dateVal.length >= 7) {
+            sheetInp.value = dateVal.slice(0, 7);
+        }
+    }
+}
+window.autoFillSheetNameFromDate = autoFillSheetNameFromDate;
 
 // -------------------------------------------------------------
 // 6b. 结算方式与付款标记 (M3/D4)：字段可能暂时缺失，须容错
@@ -3044,6 +3828,7 @@ function formatPaymentMark(mark) {
         'stamp': '印章', 'seal': '印章', '印章': '印章',
         'handwritten': '手写批注', 'handwritten_note': '手写批注', 'annotation': '手写批注', '手写批注': '手写批注',
         'signature_only': '仅签名', 'signature': '仅签名', '仅签名': '仅签名',
+        'paid': '已付款', '已付款': '已付款',
         'none': '无', '无': '无'
     };
     const key = String(mark).trim().toLowerCase();
@@ -3062,8 +3847,10 @@ function applySettlementToForm(prefix, data) {
     if (markInput) {
         // U-05：付款标记枚举下拉——后端值映射到最近枚举项，未匹配则追加临时 option 显示原值
         const mapped = formatPaymentMark(d.payment_mark);
-        if (![...markInput.options].some(o => o.value === mapped)) {
-            markInput.appendChild(new Option(mapped, mapped, true, true));
+        if (markInput.options) {
+            if (![...markInput.options].some(o => o.value === mapped)) {
+                markInput.appendChild(new Option(mapped, mapped, true, true));
+            }
         }
         markInput.value = mapped;
     }
@@ -3236,9 +4023,101 @@ function humanizeForbidden(detail, status) {
     if (raw) return '权限不足：' + raw + '。请切换角色或联系管理员。';
     return '权限不足：当前角色无权执行此操作，请切换角色或联系管理员。';
 }
+
+// U-10 文案去技术化：将 Pydantic 422 / 后端 400 / 500 / 堆栈错误翻译为店员人话
+function humanizeBackendError(status, body) {
+    if (status === 403) {
+        const msg = (body && (body.detail || body.msg)) || '';
+        return humanizeForbidden(msg, status);
+    }
+    // 422 校验错误 (FastAPI / Pydantic)
+    if (status === 422 || (body && Array.isArray(body.detail))) {
+        const details = Array.isArray(body.detail) ? body.detail : [];
+        if (details.length > 0) {
+            const first = details[0];
+            const loc = Array.isArray(first.loc) ? first.loc.map(String) : [];
+            const field = loc[loc.length - 1] || '';
+            const parentField = loc[loc.length - 2] || '';
+            const rowIdx = !isNaN(Number(parentField)) ? Number(parentField) + 1 : (!isNaN(Number(field)) ? Number(field) + 1 : null);
+
+            if (field === 'supplier_name') return '请填写供应商名称';
+            if (field === 'date' || field === 'receipt_date') return '请选择开单日期';
+            if (field === 'total_amount') return '单据总金额必须大于 0';
+            if (field === 'items') return '请至少输入一行消费明细';
+            if (field === 'settlement_type') return '请选择结算方式（如现结或挂账）';
+            if (field === 'name' || field === 'raw_name') {
+                return rowIdx ? `第 ${rowIdx} 行的品名不能为空，请填写或删除该行` : '请填写明细品名';
+            }
+            if (field === 'quantity' || field === 'unit_price' || field === 'amount') {
+                return rowIdx ? `第 ${rowIdx} 行的单价或数量不是有效数字，请重新输入` : '明细单价或数量不是有效数字，请重新输入';
+            }
+            if (first.msg) {
+                const m = String(first.msg);
+                if (m.includes('greater than 0')) return '单据总金额必须大于 0';
+                if (m.includes('Field required') || m.includes('missing')) return '请完整填写必填项';
+                if (m.includes('valid boolean')) return '输入类型有误，请核对后重试';
+            }
+        }
+        return '输入内容格式有误，请核对后重试';
+    }
+    // 400 / 业务错误
+    if (status === 400 || (body && body.code)) {
+        if (body && body.code === 'SETTLEMENT_REQUIRED') {
+            return '请选择结算方式（如现结或挂账）';
+        }
+        if (body && body.code === 'VERSION_REQUIRED') {
+            return '缺少版本号，已重新加载最新内容';
+        }
+        if (body && body.code === 'VERSION_CONFLICT') {
+            return '该单据已被他人修改，请重新加载最新内容';
+        }
+        if (body && body.code === 'IMAGE_QUALITY_ERROR') {
+            return '图片有点模糊或光线不足，请重新拍摄或调整后再试';
+        }
+    }
+    // 检查文案中的技术术语或英文错误，转化为通俗人话
+    let raw = '';
+    if (body) {
+        if (typeof body === 'string') raw = body;
+        else raw = String(body.msg || body.detail || body.message || '');
+    }
+    if (raw) {
+        if (raw.includes('supplier_name') || raw.includes('真实供应商名称') || raw.includes('通用供应商')) {
+            return '请填写供应商名称';
+        }
+        if (raw.includes('合法开单日期') || raw.includes('未填写开单日期') || raw.includes('receipt_date')) {
+            return '请选择开单日期';
+        }
+        if (raw.includes('不是真实存在的日期') || raw.includes('开单日期不正确')) {
+            return '开单日期不正确，请选择真实存在的日历日期';
+        }
+        if (raw.includes('total_amount') || raw.includes('总金额必须大于 0') || raw.includes('<= 0')) {
+            return '单据总金额必须大于 0';
+        }
+        if (raw.includes('至少一条消费明细') || raw.includes('至少包含一条') || raw.includes('至少输入一行') || raw.includes('至少保留一条')) {
+            return '请至少输入一行消费明细';
+        }
+        if (raw.includes('结算方式')) {
+            return '请选择结算方式（如现结或挂账）';
+        }
+        if (raw.includes('品名不能为空')) {
+            return raw;
+        }
+        if (raw.includes('不是有效数字')) {
+            return raw;
+        }
+        if (/Traceback|JSONDecodeError|pydantic|ValidationError|Internal Server/i.test(raw)) {
+            return '服务处理异常，请稍后重试';
+        }
+    }
+    if (status >= 500) {
+        return 'AI 服务现在很忙，请稍后重试';
+    }
+    return null;
+}
+
 function toastHttpError(status, body) {
-    const msg = (body && (body.detail || body.msg)) || '';
-    const human = humanizeForbidden(msg, status);
+    const human = humanizeBackendError(status, body);
     if (human) { showToast(human, 'error'); return true; }
     return false;
 }
@@ -3255,16 +4134,14 @@ const toast = {
 function appendTableRow(item = {}) {
     const tbody = document.getElementById('itemTableBody');
 
-    const rawName = item.raw_name || item.name || '';
+    const rawName = item.name || item.raw_name || '';
     const qty = Number(item.quantity || 1.0);
     const unit = item.raw_unit || item.unit || 'kg';
     const price = Number(item.unit_price || 0.00);
-    const amount = Number(item.amount || (qty * price));
+    const amount = Number(item.amount != null ? item.amount : (qty * price));
     const skuId = item.sku_id || '';
     const isAnomaly = item.price_anomaly || false;
 
-    // 行级复核警示——低置信度 / 单位不可折算 / 匹配未命中
-    // P1-2：补充绑定 quality_warnings 与 review_priority>0.6（黄底 row-warning）
     const rowWarnings = [];
     if (typeof item.confidence === 'number' && item.confidence < 0.5) {
         rowWarnings.push('低置信度');
@@ -3275,7 +4152,7 @@ function appendTableRow(item = {}) {
     if (item.matched === false && !item.sku_id) {
         rowWarnings.push('SKU未匹配');
     }
-    // 单据级质量预检与重点复核标记（quality_warnings / review_priority_score>0.6）
+
     try {
         const _qws = (typeof currentReceiptData !== 'undefined' && currentReceiptData && Array.isArray(currentReceiptData.quality_warnings)) ? currentReceiptData.quality_warnings : null;
         if (_qws && _qws.length > 0) {
@@ -3286,18 +4163,12 @@ function appendTableRow(item = {}) {
             rowWarnings.push('重点复核');
         }
     } catch (e) {}
-    const rowWarnClass = rowWarnings.length ? ' row-warning' : '';
-    const rowWarnBadge = rowWarnings.length
-        ? `<span class="badge badge-warning" title="${w2Escape(rowWarnings.join('；'))}" style="margin-left:4px;">${w2Escape(rowWarnings.join('·'))}</span>`
-        : '';
 
+    const rowWarnClass = rowWarnings.length ? ' row-warning' : '';
     const tr = document.createElement('tr');
     tr.className = rowWarnClass;
 
-    // D19：明细行内联指定 SKU——已匹配行显示 SKU 名可重新指定；未关联行提供
-    // 候选下拉（OCR fuzzy/entity 候选 + /api/inventory 搜索 + 恒备"不关联"）。
     const skuName = item.sku_name || '';
-    // 候选来源 ①：该行 OCR 结果 fuzzy_candidates / entity_candidates（仅精确未命中非空）
     const skuCandidates = mergeSkuCandidates(
         (item.fuzzy_candidates || []).map(c => ({
             sku_id: c.sku_id,
@@ -3318,7 +4189,6 @@ function appendTableRow(item = {}) {
         updateGlobalDatalistUnits();
     }
 
-    // 智能预拆分：若品名中混写了数量单位且当前行数量为默认值 1，自动执行一次智能分离
     let finalRawName = rawName;
     let finalQty = qty;
     let finalUnit = unit;
@@ -3333,79 +4203,72 @@ function appendTableRow(item = {}) {
         }
     }
 
-    // 行索引用于 FR-8 反馈飞轮（optimistic UI 需定位行）
-    const rowIdx = tbody.children.length;
     const isVoidMain = !!(item.is_void);
-    if (isVoidMain) { tr.style.opacity = '0.55'; }
-    // P0-2：品名/单位来自 OCR 输出可被注入污染——属性插值一律 w2Escape；
-    // 数值列强制 Number() 防属性逃逸
+    if (isVoidMain) {
+        tr.dataset.isVoid = '1';
+        tr.style.opacity = '0.5';
+    }
+
+    const anomalyHtml = isAnomaly ? `
+        <span class="badge ${item.price_anomaly_direction === 'down' ? 'badge-info' : 'badge-danger'} anomaly-pill" title="价格偏离历史均值">
+            ${item.price_anomaly_direction === 'down' ? '↓ 偏低' : '↑ 偏高'}${Number(item.price_diff_percent || 10).toFixed(1)}%
+        </span>
+    ` : '';
+
     tr.innerHTML = `
         <td>
-            <div style="display:flex; align-items:center; gap:4px;">
-                <input type="text" class="inp-name" value="${w2Escape(finalRawName)}" placeholder="品名" style="flex:1; ${isVoidMain ? 'text-decoration:line-through; color:#6c757d;' : ''}" ${isVoidMain ? 'disabled' : ''}>
-                <button type="button" class="btn-magic-split" onclick="triggerSmartSplitRow(this)" title="智能分离品名中的数量与单位" ${isVoidMain ? 'disabled' : ''}>拆分</button>
-            </div>
-            ${rowWarnBadge}
-            ${isVoidMain ? `<span class="badge badge-secondary">作废</span>` : ''}
-            <div class="sku-combobox-wrap">
-                <div style="display:flex; align-items:center; gap:4px;">
-                    <input type="text" class="inp-sku form-control" value="${w2Escape(skuName)}"
-                        placeholder="指定SKU" style="flex:1; min-width:0; padding:5px; font-size:0.82rem;"
-                        onfocus="this.select(); openSkuMenu(this)" onclick="openSkuMenu(this)"
-                        oninput="onSkuMenuInput(this)" onblur="closeSkuMenuDelay(this)" ${isVoidMain ? 'disabled' : ''}>
-                    <span class="badge ${skuId ? 'badge-success' : 'badge-warning'} sku-badge" style="flex:none;">
-                        ${skuId ? '已匹配SKU' : '未关联'}
-                    </span>
+            <div class="item-name-sku-stack">
+                <div class="item-name-top">
+                    <input type="text" class="inp-name form-control" value="${w2Escape(finalRawName)}" placeholder="品名(如走地鸡)" autocomplete="off" oninput="onItemNameInput(this)" ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
                 </div>
-                <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
-                <div class="unit-dropdown-menu hide"></div>
+                <div class="sku-capsule-wrapper sku-combobox-wrap">
+                    <div class="sku-pill ${skuId ? 'sku-pill-matched' : 'sku-pill-unlinked'}" onclick="toggleSkuMenu(this)" title="${skuId ? ('已匹配: ' + w2Escape(skuName)) : '未关联SKU (点击搜索关联)'}" ${isVoidMain ? 'style="pointer-events:none; opacity:0.6;"' : ''}>
+                        <span class="sku-pill-dot"></span>
+                        <span class="sku-pill-name">${w2Escape(skuId ? (skuName ? skuName : '已匹配SKU') : '未关联SKU')}</span>
+                        <span class="sku-pill-arrow">▾</span>
+                    </div>
+                    <input type="hidden" class="inp-sku" value="${w2Escape(skuName)}">
+                    <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
+                    <span class="badge ${skuId ? 'badge-success' : 'badge-warning'} sku-badge hide">${skuId ? '已匹配SKU' : '未关联'}</span>
+                    <div class="unit-dropdown-menu sku-dropdown-floating hide"></div>
+                </div>
             </div>
         </td>
-        <td><input type="number" step="0.01" class="inp-qty" value="${finalQty}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}></td>
+        <td>
+            <input type="number" step="0.01" class="inp-qty form-control text-right" value="${finalQty}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
+        </td>
         <td>
             <div class="unit-combobox-wrap">
-                <input type="text" class="inp-unit form-control" value="${w2Escape(finalUnit)}" placeholder="单位" style="padding:6px; font-size:0.85rem;" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoidMain ? 'disabled' : ''}>
+                <input type="text" class="inp-unit form-control text-center" value="${w2Escape(finalUnit)}" placeholder="单位" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
         <td>
-            <input type="number" step="0.01" class="inp-price" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
-            ${isAnomaly ? `<span class="badge badge-danger">${(item.price_anomaly_direction === 'down') ? '偏低' : '偏高'}${Number(item.price_diff_percent || 10).toFixed(1)}%</span>` : ''}
+            <div class="price-input-wrap">
+                <input type="number" step="0.01" class="inp-price form-control text-right" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
+                ${anomalyHtml}
+            </div>
         </td>
-        <td><input type="number" step="0.01" class="inp-amount" value="${amount}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}></td>
         <td>
-            <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;">
+            <input type="number" step="0.01" class="inp-amount form-control text-right" value="${amount.toFixed(2)}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}>
+        </td>
+        <td>
+            <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;" ${isVoidMain ? 'disabled' : ''}>
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
-        <td style="text-align:center; white-space:nowrap;">
-            <label style="font-size:0.7rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoidMain ? 'checked' : ''} onchange="toggleMainVoid(this)">作废</label>
-            <button class="btn btn-danger" style="padding:4px 8px; font-size:0.8rem;" onclick="removeRow(this)"> 删除</button>
-        </td>
-        <td style="text-align:center; white-space:nowrap;">
-            <button type="button" class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="openRowFeedbackModal(this)">反馈</button>
-            <span class="feedback-badge badge" style="font-size:0.68rem; display:none;"></span>
-            <div class="feedback-cell" data-row-index="${rowIdx}" style="display:none;">
-                <div class="feedback-actions">
-                    <button type="button" class="btn-like" data-like="1" onclick="handleRowFeedback(this, 1)">点赞</button>
-                    <button type="button" class="btn-dislike" data-like="-1" onclick="handleRowFeedback(this, -1)">点踩</button>
-                </div>
-                <textarea class="feedback-comment" placeholder="反馈原因（选填）" rows="2" maxlength="2000" oninput="onFeedbackCommentInput(this)"></textarea>
-                <span class="feedback-charcount" style="font-size:0.70rem; color:var(--text-muted); align-self:flex-end;"></span>
-                <button type="button" class="btn btn-secondary feedback-submit" onclick="submitRowFeedback(this)">提交反馈</button>
-                <span class="feedback-status" style="font-size:0.72rem; color:var(--text-muted);"></span>
+        <td style="text-align:center;">
+            <div class="row-actions">
+                <button type="button" class="btn-action-void ${isVoidMain ? 'is-void' : ''}" onclick="toggleRowVoid(this)" title="${isVoidMain ? '恢复此行' : '作废此行 (划线不计入总额)'}">${isVoidMain ? '恢复' : '作废'}</button>
+                <button type="button" class="btn-action-delete" onclick="removeRow(this)" title="删除此明细行">删除</button>
             </div>
         </td>
     `;
-    tr.dataset.isVoid = isVoidMain ? '1' : '0';
     tbody.appendChild(tr);
 
-    // D19：把预载 OCR 候选挂到行 SKU 输入框（下拉渲染时读取）
     const skuInput = tr.querySelector('.inp-sku');
     if (skuInput) skuInput.__skuCandidates = skuCandidates;
 
-    // Wave 2（D44）：行内任何手动改动（含部门下拉）→ 打 data-manual 标志，
-    // 单据级"应用到全部明细"一键填充时跳过该行（04 章三）。程序化赋值不触发事件，不受影响。
     tr.addEventListener('input', () => { tr.dataset.manual = '1'; });
     tr.addEventListener('change', () => { tr.dataset.manual = '1'; });
 }
@@ -3419,8 +4282,55 @@ function addEmptyRow() {
 }
 
 function removeRow(btn) {
-    btn.closest('tr').remove();
+    const tr = btn.closest('tr');
+    if (tr) tr.remove();
     recalcTotalSum();
+}
+
+function toggleRowVoid(btn) {
+    const tr = btn.closest('tr');
+    if (!tr) return;
+    const isVoid = tr.dataset && tr.dataset.isVoid === '1';
+    const newVoid = !isVoid;
+    tr.dataset.isVoid = newVoid ? '1' : '0';
+    tr.style.opacity = newVoid ? '0.5' : '';
+
+    btn.classList.toggle('is-void', newVoid);
+    btn.textContent = newVoid ? '恢复' : '作废';
+    btn.title = newVoid ? '恢复此行' : '作废此行 (划线不计入总额)';
+
+    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
+        inp.style.textDecoration = newVoid ? 'line-through' : '';
+        inp.style.color = newVoid ? '#94a3b8' : '';
+    });
+    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount, .inp-dept').forEach(inp => {
+        inp.disabled = newVoid;
+        if (inp.classList.contains('inp-qty')) {
+            inp.style.textDecoration = newVoid ? 'line-through' : '';
+        }
+    });
+    const pill = tr.querySelector('.sku-pill');
+    if (pill) {
+        pill.style.pointerEvents = newVoid ? 'none' : '';
+        pill.style.opacity = newVoid ? '0.6' : '';
+    }
+
+    recalcTotalSum();
+}
+window.toggleRowVoid = toggleRowVoid;
+
+function toggleMainVoid(cb) {
+    const tr = cb.closest('tr');
+    if (!tr) return;
+    const voidBtn = tr.querySelector('.btn-action-void');
+    if (voidBtn) {
+        toggleRowVoid(voidBtn);
+    } else {
+        const isVoid = cb.checked;
+        tr.dataset.isVoid = isVoid ? '1' : '0';
+        tr.style.opacity = isVoid ? '0.55' : '';
+        recalcTotalSum();
+    }
 }
 
 function recalcRow(inputElem) {
@@ -3437,48 +4347,44 @@ function recalcRow(inputElem) {
 function recalcTotalSum() {
     const tbody = document.getElementById('itemTableBody');
     const rows = tbody.querySelectorAll('tr');
-    let sum = 0.0;
+    let itemsSum = 0.0;
     rows.forEach(tr => {
-        // D-P1-4：划线作废行不计入总额（与后端算术门禁口径一致）
         if (tr.dataset && tr.dataset.isVoid === '1') return;
-        const amt = parseFloat(tr.querySelector('.inp-amount').value) || 0;
-        sum += amt;
+        const amt = parseFloat(tr.querySelector('.inp-amount')?.value) || 0;
+        itemsSum += amt;
     });
-    document.getElementById('inpTotal').value = sum.toFixed(2);
+
+    const discount = parseFloat(document.getElementById('inpDiscount')?.value) || 0;
+    const delivery = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
+    const deposit = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
+    const rounding = parseFloat(document.getElementById('inpRounding')?.value) || 0;
+
+    const netTotal = Math.max(0, itemsSum - discount - rounding + delivery + deposit);
+    document.getElementById('inpTotal').value = netTotal.toFixed(2);
+    updateFeesSummaryBadge();
     renderCurrencySymbol();
 }
 
-// D-P1-4：Tab1 明细行作废勾选联动（置灰 + 总额重算）
-function toggleMainVoid(cb) {
-    const tr = cb.closest('tr');
-    if (!tr) return;
-    tr.dataset.isVoid = cb.checked ? '1' : '0';
-    tr.style.opacity = cb.checked ? '0.55' : '';
-    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
-        inp.style.textDecoration = cb.checked ? 'line-through' : '';
-        if (!cb.checked) inp.style.color = '';
-        else inp.style.color = '#6c757d';
-    });
-    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount, .inp-sku').forEach(inp => {
-        inp.disabled = cb.checked;
-        if (inp.classList.contains('inp-qty')) {
-            inp.style.textDecoration = cb.checked ? 'line-through' : '';
-        }
-    });
-    const voidBadge = tr.querySelector('.void-badge-main');
-    if (cb.checked && !voidBadge) {
-        const span = document.createElement('span');
-        span.className = 'badge badge-secondary void-badge-main';
-        span.textContent = '作废';
-        span.title = '划线作废，不计入总额';
-        tr.querySelector('td').appendChild(span);
-    } else if (!cb.checked && voidBadge) {
-        voidBadge.remove();
+// 展开/收起 Prefill 表头更多元数据
+function togglePrefillMoreMeta() {
+    const box = document.getElementById('prefillMoreMetaBox');
+    const text = document.getElementById('moreMetaToggleText');
+    const icon = document.getElementById('moreMetaToggleIcon');
+    if (!box) return;
+    const isHidden = box.classList.contains('hide');
+    if (isHidden) {
+        box.classList.remove('hide');
+        if (text) text.textContent = '收起辅助字段';
+        if (icon) icon.textContent = '▲';
+    } else {
+        box.classList.add('hide');
+        if (text) text.textContent = '更多字段 (币种/付款/归档)';
+        if (icon) icon.textContent = '▼';
     }
-    recalcTotalSum();
 }
+window.togglePrefillMoreMeta = togglePrefillMoreMeta;
 
-// F-P1-3 币种符号渲染：按当前选择币种刷新金额前缀符号
+// F-P1-3 币种符号渲染：按当前选择币种刷新金额前缀符号 (U-13)
 const CURRENCY_SYMBOLS = {
     HKD: 'HK$', CNY: '¥', USD: '$', EUR: '€', JPY: 'JP¥', GBP: '£', MOP: 'MOP$', SGD: 'S$'
 };
@@ -3489,21 +4395,38 @@ function currentCurrencyCode() {
 function currencySymbol(code) {
     return CURRENCY_SYMBOLS[(code || 'HKD').toUpperCase()] || (code || 'HKD') + ' ';
 }
-function renderCurrencySymbol() {
-    const code = currentCurrencyCode();
-    const sym = currencySymbol(code);
-    // Tab1 总额 label 前缀 + 归档弹窗总额 label 前缀
-    ['inpTotal', 'arcTotal'].forEach(id => {
-        const inp = document.getElementById(id);
-        if (!inp) return;
-        const label = inp.closest('.form-group')?.querySelector('label');
-        if (label) {
-            const base = id === 'inpTotal' ? '整单总金额' : '整单总金额';
-            if (!label.dataset.base) label.dataset.base = label.textContent.trim() || base;
-            label.textContent = label.dataset.base + '（' + sym + '）';
-        }
-    });
+function formatCurrency(amount, currency = 'HKD') {
+    const num = Number(amount);
+    const validNum = (amount == null || isNaN(num) || !isFinite(num)) ? 0.00 : num;
+    const cur = (currency || 'HKD').toString().trim().toUpperCase();
+    const sym = CURRENCY_SYMBOLS[cur] || (cur ? cur + ' ' : 'HK$ ');
+    const prefix = sym.endsWith(' ') || sym.endsWith('$') ? sym + ' ' : sym + ' ';
+    return prefix + validNum.toFixed(2);
 }
+window.formatCurrency = formatCurrency;
+window.currencySymbol = currencySymbol;
+window.currentCurrencyCode = currentCurrencyCode;
+
+function renderCurrencySymbol() {
+    const inpCur = (document.getElementById('inpCurrency')?.value || 'HKD').toUpperCase();
+    const arcCur = (document.getElementById('arcCurrency')?.value || 'HKD').toUpperCase();
+
+    const inpTotal = document.getElementById('inpTotal');
+    if (inpTotal) {
+        const label = inpTotal.closest('.form-group')?.querySelector('label');
+        if (label) {
+            label.textContent = '整单总金额（' + currencySymbol(inpCur) + '）';
+        }
+    }
+    const arcTotal = document.getElementById('arcTotal');
+    if (arcTotal) {
+        const label = arcTotal.closest('.form-group')?.querySelector('label');
+        if (label) {
+            label.textContent = '整单总金额（' + currencySymbol(arcCur) + '）';
+        }
+    }
+}
+window.renderCurrencySymbol = renderCurrencySymbol;
 
 // -------------------------------------------------------------
 // FR-8 反馈飞轮：点赞/点踩 + textarea 乐观 UI 与 qualityWarnings 联动
@@ -3800,6 +4723,7 @@ function collectReviewFormData() {
     const departmentId = (deptSel && deptSel.value) ? Number(deptSel.value) : null;
     // F-P1-3 多币种
     const curSel = document.getElementById('inpCurrency');
+    const docFormSel = document.getElementById('inpDocForm');
 
     const data = {
         supplier_name: supplierName || '通用供应商',
@@ -3809,13 +4733,17 @@ function collectReviewFormData() {
         items: items,
         settlement_type: settlementSel ? (settlementSel.value || null) : null,
         department_id: departmentId,
-        currency: (curSel && curSel.value ? curSel.value : (src.currency || 'HKD'))
+        doc_form: (docFormSel && docFormSel.value ? docFormSel.value : (src.doc_form || 'printed_delivery_note')),
+        currency: (curSel && curSel.value ? curSel.value : (src.currency || 'HKD')),
+        discount_amount: parseFloat(document.getElementById('inpDiscount')?.value) || 0.00,
+        delivery_fee: parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0.00,
+        deposit_amount: parseFloat(document.getElementById('inpDeposit')?.value) || 0.00,
+        rounding_adjustment: parseFloat(document.getElementById('inpRounding')?.value) || 0.00,
     };
     // U-05：付款标记改为枚举下拉，保存以用户选择为准；表单缺失时回落 AI 原值
     const inpMarkSel = document.getElementById('inpPaymentMark');
     if (inpMarkSel && inpMarkSel.value) data.payment_mark = inpMarkSel.value;
     else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
-    if (src.doc_form != null) data.doc_form = src.doc_form;
     if (src.layout_type != null) data.layout_type = src.layout_type;
     // D17: 乐观锁版本号（加载/保存成功后记录）
     if (src.version != null) data.version = src.version;
@@ -3827,6 +4755,7 @@ function buildSavePayloadFromData(data, receiptId) {
     const d = data || {};
     const payload = {
         receipt_id: receiptId,
+        source: d.source || 'manual',
         supplier_name: d.supplier_name || '通用供应商',
         date: d.date || '',
         sheet_name: d.sheet_name || '',
@@ -3853,7 +4782,13 @@ function buildSavePayloadFromData(data, receiptId) {
         }),
         // M3/D4: 结算方式必填——提交前已由 requireSettlementMarked 校验；
         // 此处仅保留 cash/credit，未知兜底 null（后端对非手工单 400 SETTLEMENT_REQUIRED）
-        settlement_type: (d.settlement_type === 'cash' || d.settlement_type === 'credit') ? d.settlement_type : null
+        settlement_type: (d.settlement_type === 'cash' || d.settlement_type === 'credit') ? d.settlement_type : null,
+        doc_form: d.doc_form || 'printed_delivery_note',
+        currency: String(d.currency || 'HKD').toUpperCase(),
+        discount_amount: parseFloat(d.discount_amount) || 0.00,
+        delivery_fee: parseFloat(d.delivery_fee) || 0.00,
+        deposit_amount: parseFloat(d.deposit_amount) || 0.00,
+        rounding_adjustment: parseFloat(d.rounding_adjustment) || 0.00,
     };
     // Wave 2（契约⑦）：单据级部门归属——未打部门可空保存（null 不覆盖旧值语义）
     if (d.department_id != null && String(d.department_id).trim() !== ''
@@ -3863,10 +4798,7 @@ function buildSavePayloadFromData(data, receiptId) {
         payload.department_id = null;
     }
     if (d.payment_mark != null) payload.payment_mark = d.payment_mark;
-    if (d.doc_form != null) payload.doc_form = d.doc_form;
     if (d.layout_type != null) payload.layout_type = d.layout_type;
-    // F-P1-3 多币种透传（后端白名单校验，非法回退 HKD）
-    payload.currency = String(d.currency || 'HKD').toUpperCase();
     // D17/W6 Q1：更新已有单据必须携带 version（缺失 → 后端 400 VERSION_REQUIRED）
     // 新建手工单（receiptId 为空）不要求 version
     if (receiptId != null && receiptId !== '') {
@@ -3887,7 +4819,7 @@ function extractVersionFromResponse(ret) {
 // 返回 true 表示已标记（可继续提交），false 表示未标记（应中断，不发请求）
 function requireSettlementMarked(settlementType) {
     if (settlementType === 'cash' || settlementType === 'credit') return true;
-    showToast('请选择结算方式后再保存', 'error');
+    showToast('请选择结算方式（如现结或挂账）', 'error');
     return false;
 }
 
@@ -4011,9 +4943,47 @@ function submitSaveEdited() {
             showToast(manualErr, 'error');
             return;
         }
-    } else if (data.items.length === 0) {
-        showToast('请至少添加一条消费明细项', 'warning');
-        return;
+    } else {
+        const supplier = String((data && data.supplier_name) || '').trim();
+        if (!supplier || supplier === '通用供应商') {
+            showToast('请填写供应商名称', 'error');
+            return;
+        }
+        const dateStr = String((data && data.date) || '').trim();
+        if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            showToast('请选择开单日期', 'error');
+            return;
+        }
+        const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+        const dt = new Date(y, mo - 1, d);
+        if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
+            showToast('开单日期不正确，请选择真实存在的日历日期', 'error');
+            return;
+        }
+        const totalAmt = Number((data && data.total_amount) || 0);
+        if (isNaN(totalAmt) || totalAmt <= 0) {
+            showToast('单据总金额必须大于 0', 'error');
+            return;
+        }
+        if (!data.items || data.items.length === 0) {
+            showToast('请至少输入一行消费明细', 'warning');
+            return;
+        }
+        for (let i = 0; i < data.items.length; i++) {
+            const it = data.items[i];
+            const name = String((it && (it.name || it.raw_name)) || '').trim();
+            if (!name) {
+                showToast(`第 ${i + 1} 行的品名不能为空，请填写或删除该行`, 'error');
+                return;
+            }
+            const qty = Number(it && it.quantity);
+            const price = Number(it && it.unit_price);
+            if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
+                showToast(`第 ${i + 1} 行的单价或数量不是有效数字，请重新输入`, 'error');
+                return;
+            }
+        }
     }
 
     // M3/D4 结算方式必填化：未标记 → 阻断提交，不发请求。
@@ -4024,6 +4994,7 @@ function submitSaveEdited() {
     }
 
     const payload = buildSavePayloadFromData(data, currentReceiptId);
+    payload.source = 'manual';
 
     isSavingReview = true;
     const saveBtn = document.getElementById('btnSaveReview');
@@ -4054,6 +5025,9 @@ function submitSaveEdited() {
             showToast('保存失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
             return;
         }
+
+        // U-8: 保存成功，重置连续失败计数
+        resetQualityFailCount();
 
         // 乐观锁：保存成功后刷新本地版本号，便于连续保存
         const newVersion = extractVersionFromResponse(ret);
@@ -4761,6 +5735,8 @@ let aiLeanIgnoredSkuIds = new Set();
 function loadAiLeanInsights() {
     const banner = document.getElementById('aiLeanBanner');
     if (!banner) return;
+    // 店员不发 AI 洞察（owner 域接口），横幅保持隐藏
+    if (isStaffRoleNow()) { banner.classList.add('hide'); return; }
 
     fetch('/api/ai-insights')
     .then(res => res.json())
@@ -5127,6 +6103,29 @@ function resetArchiveFilters() {
     applyArchiveFilters();
 }
 
+function renderStatusBadge(st) {
+    const _SUB_LABEL = {
+        uploaded: '已上传', parsing: '解析中', parsed: '待核对 (AI自动入库)',
+        edited: '已修改 (店员人工保存)', flagged: '有问题 (已标记)', approved: '已入账 (老板审核通过)', error: '失败',
+    };
+    if (st === 'uploaded' || st === 'parsing') {
+        return '<span class="badge badge-warning" title="' + w2Escape(_SUB_LABEL[st] || st) + '">' + w2Escape(_SUB_LABEL[st] || '待处理') + '</span>';
+    } else if (st === 'parsed') {
+        return '<span class="badge badge-warning" title="AI自动识别落库">待核对 (AI自动入库)</span>';
+    } else if (st === 'edited') {
+        return '<span class="badge badge-info" title="店员手工修改保存">已修改 (店员人工保存)</span>';
+    } else if (st === 'approved') {
+        return '<span class="badge badge-success" title="老板审核通过">已入账 (老板审核通过)</span>';
+    } else if (st === 'flagged') {
+        return '<span class="badge badge-danger" title="已标记">有问题 (已标记)</span>';
+    } else if (st === 'error') {
+        return '<span class="badge badge-danger" title="失败">失败</span>';
+    } else {
+        return '<span class="badge badge-secondary">' + w2Escape(st) + '</span>';
+    }
+}
+window.renderStatusBadge = renderStatusBadge;
+
 // 渲染归档表格逻辑（锁高防抖动与焦点恢复优化）
 function renderArchiveTable(receipts) {
     const recordBadge = document.getElementById('archiveRecordCount');
@@ -5154,23 +6153,7 @@ function renderArchiveTable(receipts) {
         let html = '';
         receipts.forEach(function(r) {
             const st = r.status || 'uploaded';
-            // 状态口语聚合（09 方案 4.3）：7 态归并为老板词；细分保留作 tooltip
-            const _SUB_LABEL = {
-                uploaded: '已上传', parsing: '解析中', parsed: '已解析',
-                edited: '已编辑', flagged: '已标记', approved: '已审核', error: '失败',
-            };
-            let statusBadgeHTML = '';
-            if (['uploaded', 'parsing', 'parsed', 'edited'].includes(st)) {
-                statusBadgeHTML = '<span class="badge badge-warning" title="' + w2Escape(_SUB_LABEL[st] || st) + '">待处理</span>';
-            } else if (st === 'approved') {
-                statusBadgeHTML = '<span class="badge badge-success" title="已审核">已入账</span>';
-            } else if (st === 'flagged') {
-                statusBadgeHTML = '<span class="badge badge-danger" title="已标记">有问题</span>';
-            } else if (st === 'error') {
-                statusBadgeHTML = '<span class="badge badge-danger" title="失败">失败</span>';
-            } else {
-                statusBadgeHTML = '<span class="badge badge-secondary">' + w2Escape(st) + '</span>';
-            }
+            const statusBadgeHTML = renderStatusBadge(st);
 
             const supCode = r.supplier_code
                 ? '<span class="badge badge-secondary" style="font-size:0.72rem; font-family:monospace; margin-left:4px; opacity:0.85;">' + w2Escape(r.supplier_code) + '</span>'
@@ -5197,8 +6180,7 @@ function renderArchiveTable(receipts) {
                 '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:#60a5fa;">' + editDate + '</span></td>' +
-                '<td style="vertical-align:middle;">' + recDate + '</td>' +
-                '<td class="col-right" style="vertical-align:middle;"><strong>$' + (r.total_amount ? Number(r.total_amount).toFixed(2) : '0.00') + '</strong></td>' +
+                '<td class="col-right" style="vertical-align:middle;"><strong>' + formatCurrency(r.total_amount, r.currency) + '</strong></td>' +
                 // Wave 2（D44）：归档列表展示单据级部门（未打 → 未分配）
                 '<td class="col-center" style="vertical-align:middle;">' + (r.department_name
                     ? '<span class="badge badge-secondary" style="font-size:0.75rem;">' + w2Escape(r.department_name) + '</span>'
@@ -5352,7 +6334,7 @@ function retryReceiptFromArchive(receiptId) {
     fetch(`/api/receipt/${rid}/retry`, { method: 'POST' })
         .then(res => res.json())
         .then(ret => {
-            if (ret.status === 'success') {
+            if (ret.status === 'success' || ret.status === 'queued') {
                 showToast(`单据 #${rid} 已重新进入识别流程`, 'success');
                 loadReceiptsHistory();   // 刷新归档列表（状态变为 parsing/uploaded）
             } else {
@@ -5439,6 +6421,7 @@ function loadReceiptDetail(receiptId) {
         const arcDeptSel = document.getElementById('arcDepartmentId');
         if (arcDeptSel) arcDeptSel.onchange = markArcDirty;
 
+        applyModalRoleVisibility();
         document.getElementById('archiveDetailModal').classList.remove('hide');
     })
     .catch(err => {
@@ -5463,11 +6446,16 @@ function closeArchiveModal(force = false) {
 // 原始值，保证徽章语义不失真。
 const AUDIT_ACTION_BADGES = {
     'upload':           { label: '初始上传',   cls: 'badge-secondary' },
-    'edit':             { label: '校对编辑',   cls: 'badge-success' },
+    'auto_save':        { label: 'AI自动入库', cls: 'badge-warning' },
+    'save_edited':      { label: '店员人工修改', cls: 'badge-info' },
+    'edit':             { label: '店员人工修改', cls: 'badge-info' },
     'approve':          { label: '审批通过',   cls: 'badge-success' },
+    'approve_receipt':  { label: '审批通过',   cls: 'badge-success' },
     'flag':             { label: '标记异常',   cls: 'badge-warning' },
+    'flag_receipt':     { label: '标记异常',   cls: 'badge-warning' },
     'retry':            { label: '重试识别',   cls: 'badge-secondary' },
     'convert_manual':   { label: '转手工录入', cls: 'badge-secondary' },
+    'discard_receipt':  { label: '放弃单据',   cls: 'badge-secondary' },
     'ocr_parsed':       { label: '识别完成',   cls: 'badge-success' },
     'ocr_error':        { label: '识别失败',   cls: 'badge-danger' },
     'ocr_attempt':      { label: '识别尝试',   cls: 'badge-secondary' },
@@ -5477,6 +6465,9 @@ const AUDIT_ACTION_BADGES = {
     'recon_confirm':    { label: '对账确认',   cls: 'badge-success' },
     'supplier_merge':   { label: '供应商合并', cls: 'badge-secondary' },
     'state_change':     { label: '状态变更',   cls: 'badge-secondary' },
+    'feedback':         { label: '用户反馈',   cls: 'badge-secondary' },
+    'feedback_distilled': { label: '先验提炼', cls: 'badge-secondary' },
+    'timeout':          { label: '识别超时',   cls: 'badge-danger' },
 };
 
 function auditActionBadge(actionType) {
@@ -5551,22 +6542,108 @@ function renderArchiveForm(data) {
             let html = "";
             logs.forEach(l => {
                 // P3/R5：按真实 action_type 映射徽章（消除二分失真）
-                const typeBadge = auditActionBadge(l.action_type);
-                // P0-3：operator（注册邮箱）与 details 均可被外部输入污染
-                // （职员→老板提权链），一律 w2Escape 后再插值
+                const actionType = l.action_type || l.action;
+                const typeBadge = auditActionBadge(actionType);
+                const operator = l.operator || l.who || 'unknown';
+                const ts = l.timestamp || l.ts || '';
+                let details = l.details;
+                if (!details) {
+                    if (l.field && l.field !== 'receipt' && l.field !== 'status') {
+                        details = `${l.field}: ${JSON.stringify(l.old)} -> ${JSON.stringify(l.new)}`;
+                    } else if (l.field === 'receipt') {
+                        details = `新建单据 #${l.new || ''}`;
+                    } else if (l.field === 'status') {
+                        details = `状态: ${l.old || ''} -> ${l.new || ''}`;
+                    } else {
+                        details = '';
+                    }
+                }
                 html += `
                     <div style="padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <strong> ${w2Escape(l.operator)}</strong> ${typeBadge}
-                            <span style="margin-left:8px; color:var(--text-main);">${w2Escape(l.details)}</span>
+                            <strong> ${w2Escape(operator)}</strong> ${typeBadge}
+                            <span style="margin-left:8px; color:var(--text-main);">${w2Escape(details)}</span>
                         </div>
-                        <div style="color:var(--text-muted); font-size:0.75rem; white-space:nowrap; margin-left:12px;"> ${renderDateCell(l.timestamp)}</div>
+                        <div style="color:var(--text-muted); font-size:0.75rem; white-space:nowrap; margin-left:12px;"> ${renderDateCell(ts)}</div>
                     </div>
                 `;
             });
             logContainer.innerHTML = html;
         }
     }
+
+    // U-2：渲染 AI 决策履历（extract 各轮 + audit 交叉审核）
+    renderArcAiDecisions(data.ai_decisions);
+}
+
+// U-2：AI 决策履历徽章映射
+// extract_ok→绿「识别完成」/ gate_reject→红「门禁拦截」/ extract_fail→灰「识别失败」
+// audit→蓝「交叉审核」/ 审核跳过→「审核跳过」/ auto_save→黄「AI自动入库」
+function aiDecisionBadge(decisionType, p) {
+    if (decisionType === 'audit') {
+        const skipped = !!(p && (p.skipped || /^audit_(disabled|error)/.test(String(p.reason || ''))));
+        if (skipped) {
+            return `<span class="badge badge-secondary">${w2Escape('审核跳过')}</span>`;
+        }
+        return `<span class="badge" style="background:#cce5ff; color:#004085;">${w2Escape('交叉审核')}</span>`;
+    }
+    if (decisionType === 'auto_save') {
+        return `<span class="badge badge-warning">${w2Escape('AI自动入库')}</span>`;
+    }
+    const status = String((p && p.status) || '');
+    if (status === 'extract_ok') return `<span class="badge badge-success">${w2Escape('识别完成')}</span>`;
+    if (status === 'gate_reject') return `<span class="badge badge-danger">${w2Escape('门禁拦截')}</span>`;
+    if (status === 'extract_fail') return `<span class="badge badge-secondary">${w2Escape('识别失败')}</span>`;
+    return `<span class="badge badge-secondary">${w2Escape(String(decisionType || 'AI 决策'))}</span>`;
+}
+
+// U-2：AI 决策履历渲染（arcAiDecisionsContainer）
+// 安全纪律（AC-D3 阻断级）：所有动态文本一律 w2Escape 后再插 innerHTML
+function renderArcAiDecisions(decisions) {
+    const container = document.getElementById('arcAiDecisionsContainer');
+    if (!container) return;
+    const list = Array.isArray(decisions) ? decisions : [];
+    if (list.length === 0) {
+        container.innerHTML = `<div style="color:var(--text-muted);">暂无 AI 决策记录</div>`;
+        return;
+    }
+    let html = '';
+    list.forEach(d => {
+        let p = {};
+        try {
+            p = JSON.parse(d.ai_value || '{}');
+            // 兼容历史 audit 行的双重编码（log_ai_decision 曾收 json.dumps 字符串）
+            if (typeof p === 'string') p = JSON.parse(p);
+        } catch (e) { p = {}; }
+        if (!p || typeof p !== 'object') p = {};
+        const badge = aiDecisionBadge(d.decision_type, p);
+        let summary;
+        if (d.decision_type === 'audit') {
+            summary = [w2Escape(String(d.engine || '')), w2Escape(String(p.reason || ''))]
+                .filter(Boolean).join(' · ');
+        } else if (d.decision_type === 'auto_save') {
+            summary = 'AI自动识别落库';
+        } else {
+            const attemptNo = Number(p.attempt || 0);
+            const segs = [
+                `第${w2Escape(String(attemptNo))}轮`,
+                w2Escape(String(p.engine || d.engine || '')),
+                w2Escape(String(p.status || '')),
+            ];
+            if (p.gate_err) segs.push(w2Escape(String(p.gate_err)));
+            summary = segs.filter(Boolean).join(' · ');
+        }
+        html += `
+            <div style="padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    ${badge}
+                    <span style="margin-left:8px; color:var(--text-main);">${summary}</span>
+                </div>
+                <div style="color:var(--text-muted); font-size:0.75rem; white-space:nowrap; margin-left:12px;">${w2Escape(d.ts || '')}</div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
 }
 
 function appendArcTableRow(item = {}) {
@@ -5719,21 +6796,52 @@ function submitSaveArchiveEdited() {
     const sheetName = document.getElementById('arcSheet').value.trim();
     const totalAmt = parseFloat(document.getElementById('arcTotal').value) || 0.00;
 
+    if (!supplierName || supplierName === '通用供应商') {
+        showToast('请填写供应商名称', 'error');
+        return;
+    }
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        showToast('请选择开单日期', 'error');
+        return;
+    }
+    const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+    const dt = new Date(y, mo - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
+        showToast('开单日期不正确，请选择真实存在的日历日期', 'error');
+        return;
+    }
+    if (isNaN(totalAmt) || totalAmt <= 0) {
+        showToast('单据总金额必须大于 0', 'error');
+        return;
+    }
+
     const tbody = document.getElementById('arcTableBody');
     const rows = tbody.querySelectorAll('tr');
     registerNewUnitsFromRows(rows);
 
     const items = [];
+    let rowErr = null;
+    let rowIndex = 0;
     rows.forEach(tr => {
+        rowIndex++;
         const nameVal = tr.querySelector('.inp-name').value.trim();
-        // 自动过滤未填写的空白新增行 (不将其算作实际变动)
+        const qtyVal = parseFloat(tr.querySelector('.inp-qty').value);
+        const priceVal = parseFloat(tr.querySelector('.inp-price').value);
+        if (!nameVal && rows.length === 1) {
+            rowErr = `第 ${rowIndex} 行的品名不能为空，请填写或删除该行`;
+            return;
+        }
         if (nameVal) {
+            if (isNaN(qtyVal) || qtyVal <= 0 || isNaN(priceVal) || priceVal < 0) {
+                if (!rowErr) rowErr = `第 ${rowIndex} 行的单价或数量不是有效数字，请重新输入`;
+            }
             const deptInput = tr.querySelector('.inp-dept');
             items.push({
                 name: nameVal,
-                quantity: parseFloat(tr.querySelector('.inp-qty').value) || 1.0,
+                quantity: isNaN(qtyVal) ? 1.0 : qtyVal,
                 unit: tr.querySelector('.inp-unit').value.trim(),
-                unit_price: parseFloat(tr.querySelector('.inp-price').value) || 0.00,
+                unit_price: isNaN(priceVal) ? 0.00 : priceVal,
                 amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
                 // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
                 cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null,
@@ -5743,8 +6851,13 @@ function submitSaveArchiveEdited() {
         }
     });
 
+    if (rowErr) {
+        showToast(rowErr, 'error');
+        return;
+    }
+
     if (items.length === 0) {
-        showToast('请至少保留一条有效的消费明细项', 'warning');
+        showToast('请至少输入一行消费明细', 'warning');
         return;
     }
 
@@ -5790,6 +6903,7 @@ function submitSaveArchiveEdited() {
     if (src.version != null) data.version = src.version;
 
     const payload = buildSavePayloadFromData(data, currentArchiveReceiptId);
+    payload.source = 'manual';
 
     isSavingArchive = true;
     const arcSaveBtn = document.getElementById('btnSaveArchive');
@@ -6640,75 +7754,103 @@ document.addEventListener('click', function (e) {
 }, true);
 
 // 多文件入口（>=2 触发批量；P1-15：本批已存在时单张也路由进批次）
-async function handleFilesSelect(fileList) {
+async function handleFilesSelect(fileList, gen) {
     if (!fileList || fileList.length === 0) return;
-    
-    // 若包含 HEIC / TIFF 等非 web 格式，批量即时自动转码为 JPEG
-    if (fileList.some(f => isNonWebImageFile(f))) {
-        fileList = await Promise.all(fileList.map(f => ensureWebDisplayableImageFile(f)));
+
+    const currentGen = (typeof gen === 'number') ? gen : nextFileSelectionGen();
+
+    const hasLargeOrHeic = fileList.some(f => isNonWebImageFile(f) || (f && f.size > 1.5 * 1024 * 1024));
+    if (hasLargeOrHeic) {
+        showImagePrepIndicator(true, '正在准备照片，请稍候...');
     }
 
-    if (fileList.length === 1 && BatchUploader.photos.length === 0) {
-        // 纯单张且无在途批次 → 走原 handleFileSelect（内部已含质量预检）
-        if (typeof handleFileSelect === 'function') await handleFileSelect(fileList[0]);
-        return;
-    }
-    // P1-15: 批量存在时单张文件选择路由进批次（handleFilesSelect([file]) 语义）——
-    // 原单张直传路径的 settle 会把结果误记到当前激活的旧照片（混合污染），
-    // 并进批次后由照片对象引用承载各自结果，互不串扰。
+    try {
+        // 若包含 HEIC / TIFF 等非 web 格式，批量即时自动转码为 JPEG
+        if (fileList.some(f => isNonWebImageFile(f))) {
+            const convertedList = await Promise.all(fileList.map(f => ensureWebDisplayableImageFile(f, currentGen)));
+            if (currentGen !== fileSelectionGen) return;
+            fileList = convertedList.filter(Boolean);
+            if (fileList.length === 0) return;
+        }
 
-    // D21 质量预检：批量模式对每张检查、汇总提示（仅警告，确认后可继续）
-    const checks = await Promise.all(fileList.map(f => checkImageQuality(f)));
-    const badList = [];
-    checks.forEach((c, i) => {
-        if (c && !c.ok) badList.push({ file: fileList[i], reasons: c.reasons });
-    });
-    if (badList.length > 0) {
-        const detail = badList.map(b => `• ${b.file.name}：${b.reasons.join('、')}`).join('\n');
-        const proceed = confirm(`质量预检：${fileList.length} 张照片中有 ${badList.length} 张可能存在问题：\n${detail}\n\n可能影响识别质量，仍要全部上传吗？`);
-        if (!proceed) {
-            const fileInput = document.getElementById('receiptFile');
-            if (fileInput) fileInput.value = '';
+        if (fileList.length === 1 && (BatchUploader.photos.length === 0 || (BatchUploader.photos.length === 1 && BatchUploader.photos[0].status !== 'uploading'))) {
+            // 纯单张且无在途多图批次 → 走原 handleFileSelect（内部已含质量预检与预览替换）
+            if (typeof handleFileSelect === 'function') await handleFileSelect(fileList[0], currentGen);
             return;
         }
-    }
+        // P1-15: 批量存在时单张文件选择路由进批次（handleFilesSelect([file]) 语义）——
+        // 原单张直传路径的 settle 会把结果误记到当前激活的旧照片（混合污染），
+        // 并进批次后由照片对象引用承载各自结果，互不串扰。
 
-    const newPhotos = fileList.map((file, i) => ({
-        localId: `local-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
-        file,
-        originalFile: file,
-        objectUrl: URL.createObjectURL(file),
-        croppedObjectUrl: null,
-        cropped: false,
-        status: 'pending',
-        receiptId: null,
-        imageUrl: null,
-        data: null,
-        errorMsg: null,
-    }));
+        // D21 质量预检：批量模式对每张检查、汇总提示（仅警告，确认后可继续）
+        const checks = await Promise.all(fileList.map(f => checkImageQuality(f, currentGen)));
+        if (currentGen !== fileSelectionGen) return;
 
-    const startIndex = BatchUploader.photos.length;
-    BatchUploader.photos = BatchUploader.photos.concat(newPhotos);
+        const badList = [];
+        const badIndices = new Set();
+        checks.forEach((c, i) => {
+            if (c && !c.ok) {
+                badList.push({ file: fileList[i], reasons: c.reasons });
+                badIndices.add(i);
+            }
+        });
+        let batchForced = false;
+        if (badList.length > 0) {
+            const detail = badList.map(b => `• ${b.file.name}：${b.reasons.join('、')}`).join('\n');
+            const proceed = confirm(`质量预检：${fileList.length} 张照片中有 ${badList.length} 张可能存在问题：\n${detail}\n\n可能影响识别质量，仍要全部上传吗？`);
+            if (currentGen !== fileSelectionGen) return;
+            if (!proceed) {
+                const fileInput = document.getElementById('receiptFile');
+                if (fileInput) fileInput.value = '';
+                return;
+            }
+            batchForced = true;
+        }
 
-    document.getElementById('splitViewArea').classList.remove('hide');
-    document.getElementById('siderToggleCount').innerText = BatchUploader.photos.length;
-    // 统一由 updateSiderVisibility 决定入口按钮是否展示（仅本批 >= 2 张时）
-    updateSiderVisibility();
+        if (currentGen !== fileSelectionGen) return;
 
-    renderSider();
+        const newPhotos = fileList.map((file, i) => ({
+            localId: `local-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+            file,
+            originalFile: file,
+            force: batchForced || badIndices.has(i),
+            objectUrl: isNonWebImageFile(file) ? null : URL.createObjectURL(file),
+            croppedObjectUrl: null,
+            cropped: false,
+            status: 'pending',
+            receiptId: null,
+            imageUrl: null,
+            data: null,
+            errorMsg: null,
+        }));
 
-    // 默认激活第一张新加入的照片
-    if (BatchUploader.activeIndex < 0 || BatchUploader.activeIndex >= BatchUploader.photos.length - newPhotos.length) {
-        setActivePhoto(startIndex);
-    }
-    updateSelectionUI();
+        const startIndex = BatchUploader.photos.length;
+        BatchUploader.photos = BatchUploader.photos.concat(newPhotos);
 
-    // 自动展开 sider 让用户看到 batch（仅当本批 >= 2 张时才弹出）
-    if (BatchUploader.photos.length >= 2 && !BatchUploader.siderOpen) togglePhotoSider();
+        document.getElementById('splitViewArea').classList.remove('hide');
+        document.getElementById('siderToggleCount').innerText = BatchUploader.photos.length;
+        // 统一由 updateSiderVisibility 决定入口按钮是否展示（仅本批 >= 2 张时）
+        updateSiderVisibility();
 
-    const autoAnalyze = document.getElementById('chkAutoAnalyze').checked;
-    if (autoAnalyze) {
-        triggerBatchAnalysis(false);
+        renderSider();
+
+        // 默认激活第一张新加入的照片
+        if (BatchUploader.activeIndex < 0 || BatchUploader.activeIndex >= BatchUploader.photos.length - newPhotos.length) {
+            setActivePhoto(startIndex);
+        }
+        updateSelectionUI();
+
+        // 自动展开 sider 让用户看到 batch（仅当本批 >= 2 张时才弹出）
+        if (BatchUploader.photos.length >= 2 && !BatchUploader.siderOpen) togglePhotoSider();
+
+        const autoAnalyze = document.getElementById('chkAutoAnalyze')?.checked;
+        if (autoAnalyze) {
+            triggerBatchAnalysis(false);
+        }
+    } finally {
+        if (currentGen === fileSelectionGen) {
+            showImagePrepIndicator(false);
+        }
     }
 }
 
@@ -6723,13 +7865,14 @@ function uploadSinglePhoto(idx) {
 
     const formData = new FormData();
     formData.append('receipt', photo.file);
+    formData.append('force', photo.force ? 'true' : 'false');
     const useCodebuddy = document.getElementById('chkCodebuddy').checked;
 
     showLoadingCard();
     startBatchTimer();
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true`, { method: 'POST', body: formData })
+    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'queued') {
@@ -6820,8 +7963,9 @@ function uploadBatch(batchPhotos) {
     targets.forEach(photo => {
         const formData = new FormData();
         formData.append('receipt', photo.file);
+        formData.append('force', photo.force ? 'true' : 'false');
 
-        fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true`, { method: 'POST', body: formData })
+        fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'queued') {
@@ -6930,7 +8074,7 @@ function triggerBatchAnalysis(onlySelected = false) {
         return;
     }
 
-    targets.forEach(({ p }) => { p.status = 'uploading'; p.errorMsg = null; });
+    targets.forEach(({ p }) => { p.status = 'uploading'; p.errorMsg = null; p.force = true; });
     renderSider();
     updateSelectionUI();
 
@@ -7425,6 +8569,44 @@ function retryPhotoFromSider(idx) {
         fetch(`/api/receipt/${photo.receiptId}/retry`, { method: 'POST' })
             .then(res => res.json())
             .then(ret => {
+                if (ret.status === 'queued' && ret.job_id) {
+                    pollReceiptJob(ret.job_id, (jobRet) => {
+                        stopBatchTimer();
+                        if (!isPhotoInBatch(photo)) {
+                            if (!BatchUploader.photos.some(p => p.status === 'uploading')) hideLoadingCard();
+                            return;
+                        }
+                        const curIdx = findPhotoIndex(photo);
+                        const isActive = BatchUploader.activeIndex === curIdx;
+                        if (wasActive || isActive) hideLoadingCard();
+                        if (jobRet.status === 'success') {
+                            photo.status = 'parsed';
+                            if (jobRet.receipt_id) photo.receiptId = jobRet.receipt_id;
+                            if (jobRet.image_url) photo.imageUrl = jobRet.image_url;
+                            photo.data = jobRet.data || photo.data;
+                            captureResultVersion(jobRet);
+                            if (Array.isArray(jobRet.quality_warnings)) photo.qualityWarnings = jobRet.quality_warnings;
+                            renderSider();
+                            autoSaveParsedPhoto(curIdx);
+                            if (isActive) {
+                                applyPhotoToMainArea(photo);
+                            } else {
+                                showToast(`第 ${curIdx + 1} 张重试识别完成，可切换复核`, 'success');
+                                flashSiderItem(curIdx);
+                            }
+                        } else {
+                            photo.status = 'error';
+                            photo.errorMsg = jobRet.msg || '重试识别失败';
+                            renderSider();
+                            if (isActive) {
+                                showErrorCard(photo.errorMsg, photo.receiptId);
+                            } else {
+                                showToast(`第 ${curIdx + 1} 张重试失败：${photo.errorMsg}`, 'error');
+                            }
+                        }
+                    });
+                    return;
+                }
                 stopBatchTimer();
                 // P1-14: 回调时按 localId 校验照片仍在批次中，已移除则丢弃结果
                 if (!isPhotoInBatch(photo)) {
@@ -7487,9 +8669,10 @@ function retryPhotoFromSider(idx) {
         const useCodebuddy = document.getElementById('chkCodebuddy').checked;
         const formData = new FormData();
         formData.append('files', photo.file);
+        formData.append('force', photo.force ? 'true' : 'false');
         showLoadingCard();
         startBatchTimer();
-        fetch(`/api/upload_batch?codebuddy=${useCodebuddy}`, { method: 'POST', body: formData })
+        fetch(`/api/upload_batch?codebuddy=${useCodebuddy}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 stopBatchTimer();
@@ -7547,6 +8730,7 @@ function autoSaveParsedPhoto(idx) {
     // 解析即按 AI 预填保存，不读取正在编辑的表单，避免覆盖用户复核中的内容
     const data = p.data;
     const payload = buildSavePayloadFromData(data, p.receiptId);
+    payload.source = 'auto';
 
     fetch('/api/save_edited', {
         method: 'POST',
@@ -7570,6 +8754,7 @@ function autoSaveParsedPhoto(idx) {
                 return;
             }
             // 保存成功
+            resetQualityFailCount();
             p.status = 'saved';
             p.data = data;
             const newVersion = extractVersionFromResponse(body);
@@ -7598,6 +8783,7 @@ window.retryFromErrorCard = retryFromErrorCard;
 window.convertManualFromErrorCard = convertManualFromErrorCard;
 // D12：新建手工单入口（index.html 内联 onclick 引用）
 window.startManualEntry = startManualEntry;
+window.abortLoadingAndSwitchToManual = abortLoadingAndSwitchToManual;
 window.syncManualEntryVisibility = syncManualEntryVisibility;
 // Q35：归档 error 行入口
 window.retryReceiptFromArchive = retryReceiptFromArchive;
@@ -7788,6 +8974,8 @@ function computePayStats(receipts) {
 }
 
 function loadFinancePanel() {
+    // 店员不发财务域请求（payments/reconciliation 为 owner 域），红点/横幅提醒属老板视角
+    if (isStaffRoleNow()) return;
     // 全局视图：供应商 + 全量单据并拉（契约①③）
     Promise.all([
         fetch('/api/suppliers').then(res => res.json()),
@@ -9001,19 +10189,45 @@ function applyDemoRoleColor(role) {
 }
 
 // U-01：按角色控制 admin 专属导航入口可见性（API 层 owner/staff 均 403，前端同步隐藏）
+// 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
     ['adminEngineBtn', 'goldenBoardBtn'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = isAdmin ? '' : 'none';
     });
-    if (!isAdmin) {
-        const active = document.querySelector('.tab-content.active');
-        if (active && (active.id === 'tab-engine' || active.id === 'tab-golden')) {
-            const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
-            if (scanBtn) scanBtn.click();
-        }
+    const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
+    if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
+    // 当前停留在已隐藏的页签时回落到收据识别（admin 不受影响）
+    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-report']
+                     : (role === 'owner') ? ['tab-engine', 'tab-golden'] : [];
+    const active = document.querySelector('.tab-content.active');
+    if (active && hiddenTabs.indexOf(active.id) !== -1) {
+        const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
+        if (scanBtn) scanBtn.click();
     }
+    applyModalRoleVisibility(role);
+}
+
+// U-6: 弹窗内老板级按钮的视觉级隐藏
+// 针对 #archiveDetailModal，若当前角色为 staff（isStaffRoleNow() 或 role === 'staff'），
+// 视觉上彻底隐藏「审核通过」(modalApproveBtn)、「标记为异常」(modalFlagBtn)、「成本分摊」(modalCostShareBtn / modalCostShareContainer)；
+// 仅对 owner / admin 展现，杜绝店员误点击触发 403 越权。
+function applyModalRoleVisibility(optionalRole) {
+    const isStaff = optionalRole ? (optionalRole === 'staff') : isStaffRoleNow();
+    const ownerElements = ['modalApproveBtn', 'modalFlagBtn', 'modalCostShareBtn', 'modalCostShareContainer'];
+    ownerElements.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (isStaff) {
+                el.classList.add('hide');
+                el.style.display = 'none';
+            } else {
+                el.classList.remove('hide');
+                el.style.display = '';
+            }
+        }
+    });
 }
 
 // -------------------------------------------------------------
@@ -9979,173 +11193,11 @@ function escapeHtml(s) {
 
 /* =============================================================
    阶段 1：AI 可见性与信任
-   1.1  audit_result.reason 展示（renderAuditReason）
-   1.2  AI 建议 vs 用户确认 对照面板 + 采纳事件（renderAiCompare / adoptAiField）
+   （PM 反馈：audit_reason 差异横幅与「AI 建议 vs 用户确认」对照面板已移除，
+     AI 解析结果直接展示在步骤 2/2 的表单字段与明细表中）
    1.3  灰测组视觉标记（greyBadgeHtml）
 
    ============================================================= */
-
-// 1.1 审核 reason 展示：green=一致，orange=分歧
-function renderAuditReason(auditResult) {
-    const banner = document.getElementById('auditReasonBanner');
-    if (!banner) return;
-    banner.innerHTML = '';
-    if (!auditResult || !auditResult.reason) {
-        banner.classList.add('hide');
-        return;
-    }
-    const reason = String(auditResult.reason);
-    banner.classList.remove('hide');
-    banner.classList.remove('reason-ok', 'reason-warn');
-    const isOk = auditResult.overall_consistent === true
-        || /一致|无分歧|无异常/.test(reason);
-    banner.classList.add(isOk ? 'reason-ok' : 'reason-warn');
-    const icon = isOk ? '[通过]' : '[差异]';
-    const label = isOk ? 'AI 审核通过' : 'AI 发现差异';
-    const head = document.createElement('strong');
-    head.textContent = `${icon} ${label}`;
-    head.style.marginRight = '8px';
-    banner.appendChild(head);
-    const text = document.createElement('span');
-    text.textContent = reason;
-    banner.appendChild(text);
-}
-
-// 1.2 AI 建议 vs 用户确认 对照面板
-// 字段映射：ai_prefill 中的 items[*] 与 detail.items[*] 比对
-function renderAiCompare(data) {
-    const panel = document.getElementById('aiComparePanel');
-    const body = document.getElementById('aiCompareBody');
-    if (!panel || !body) return;
-    body.innerHTML = '';
-
-    const prefill = data && data.ai_prefill ? data.ai_prefill : {};
-    const aiItems = prefill.items || [];
-    const curItems = data.items || [];
-    const rows = [];
-
-    // U-04：语义相等判断（字符串 trim 全等，或数值 parseFloat 相等），相等字段不进差异表
-    const semEq = (a, b) => {
-        if (a == null && b == null) return true;
-        if (a == null || b == null) return false;
-        const sa = String(a).trim(), sb = String(b).trim();
-        if (sa === sb) return true;
-        const na = parseFloat(sa), nb = parseFloat(sb);
-        return Number.isFinite(na) && Number.isFinite(nb) && na === nb;
-    };
-
-    const fieldDefs = [
-        { key: 'raw_name',  label: '商品名' },
-        { key: 'quantity',  label: '数量' },
-        { key: 'unit',      label: '单位' },
-        { key: 'unit_price',label: '单价' },
-        { key: 'amount',    label: '金额' },
-    ];
-
-    for (let i = 0; i < Math.max(aiItems.length, curItems.length); i++) {
-        const aiRow = aiItems[i];
-        const curRow = curItems[i];
-        const label = curRow
-            ? (curRow.raw_name || curRow.name || ('items[' + i + ']'))
-            : (aiRow && aiRow.raw_name ? aiRow.raw_name : ('items[' + i + ']'));
-        fieldDefs.forEach(fd => {
-            const aiVal = aiRow && aiRow[fd.key] != null ? aiRow[fd.key]
-                          : (aiRow && aiRow[fd.key + '_orig'] != null ? aiRow[fd.key + '_orig'] : null);
-            const curVal = curRow && curRow[fd.key] != null ? curRow[fd.key]
-                           : (curRow && curRow[fd.key + '_orig'] != null ? curRow[fd.key + '_orig'] : null);
-            if (aiVal == null && curVal == null) return;
-            if (!semEq(aiVal, curVal)) {
-                rows.push({ idx: i, key: fd.key, label: fd.label, itemLabel: label,
-                            aiVal: aiVal, curVal: curVal });
-            }
-        });
-    }
-
-    if (rows.length === 0) {
-        body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:12px;">AI 与当前填写一致，无差异</td></tr>';
-        panel.classList.remove('hide');
-        return;
-    }
-
-    let html = '';
-    rows.forEach(r => {
-        const fmt = (v, k) => {
-            if (v == null) return '-';
-            if (k === 'unit_price' || k === 'amount') {
-                const n = Number(v);
-                return Number.isFinite(n) ? '$' + n.toFixed(2) : String(v);
-            }
-            return String(v);
-        };
-        html += `<tr>
-            <td class="col-field"><span style="font-size:0.78rem;color:var(--text-muted);">${w2Escape('items[' + r.idx + '] ' + r.itemLabel)}</span><br>${w2Escape(r.label)}</td>
-            <td class="col-ai">${w2Escape(fmt(r.aiVal, r.key))}</td>
-            <td class="col-user">${w2Escape(fmt(r.curVal, r.key))}</td>
-            <td style="font-size:0.78rem;color:var(--text-muted);">
-                <span>${w2Escape(String(r.aiVal))} → ${w2Escape(String(r.curVal))}</span>
-            </td>
-            <td class="col-center"><button class="ai-compare-adopt-btn"
-                onclick="adoptAiField(${r.idx}, '${r.key}', ${JSON.stringify(r.aiVal).replace(/'/g, "\\'")}, ${JSON.stringify(r.curVal).replace(/'/g, "\\'")})">采纳 AI</button></td>
-        </tr>`;
-    });
-    body.innerHTML = html;
-    panel.classList.remove('hide');
-}
-
-// 1.2 采纳 AI 值：恢复该字段为 AI 建议值，并写审计日志
-function adoptAiField(idx, field, aiVal, userVal) {
-    const receiptId = currentReceiptId || (currentArchiveDetailData && currentArchiveDetailData.receipt_id);
-    if (!receiptId) {
-        showToast('无法确定单据 ID，无法采纳 AI 建议', 'warning');
-        return;
-    }
-    const itemKey = 'items[' + idx + '].' + field;
-    // 乐观锁：后端 adopt-ai 强制校验 version（阶段 1 修复轮 F4），未传 → 400
-    const _v = currentReceiptData
-        ? currentReceiptData.version
-        : (currentArchiveDetailData ? currentArchiveDetailData.version : null);
-    // 同步表单：把当前字段改成 AI 值（edit 表单）
-    try {
-        const tbody = document.getElementById('itemTableBody');
-        if (tbody) {
-            const rows = tbody.querySelectorAll('tr');
-            if (idx >= 0 && idx < rows.length) {
-                const tr = rows[idx];
-                const input = tr.querySelector('[data-idx="' + idx + '"] input[name*="' + field + '"], input[name$="' + field + '"]');
-                if (input) {
-                    input.value = String(aiVal);
-                    markDirty();
-                }
-            }
-        }
-    } catch (_) {
-        // 表单更新失败不影响审计日志写入
-    }
-    fetch('/api/receipt/' + receiptId + '/adopt-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            field: itemKey,
-            old: userVal,
-            new: aiVal,
-            ai_value: aiVal,
-            user_value: userVal,
-            version: _v
-        })
-    })
-    .then(r => r.json().catch(() => null))
-    .then(ret => {
-        if (!ret || ret.status !== 'success') {
-            showToast('采纳记录写入失败', 'error');
-            return;
-        }
-        showToast('已采纳 AI 建议：' + itemKey + ' = ' + aiVal, 'success');
-    })
-    .catch(err => {
-        console.error('adoptAiField:', err);
-        showToast('采纳请求异常', 'error');
-    });
-}
 
 // 1.3 灰测组视觉标记：返回 <span class="badge-grey"> 或空串
 function greyBadgeHtml(useGrey) {
@@ -10698,3 +11750,13 @@ function applyCostShare() {
     closeModalById('costShareModal');
     showToast('已按比例将 ' + rows.length + ' 行明细分摊至各部门，保存后生效', 'success', TOAST_DURATION.long);
 }
+
+// U-12：全局挂载辅助函数与并发锁
+if (typeof window !== 'undefined') {
+    window.handleFileSelect = handleFileSelect;
+    window.handleSingleUploadSelection = handleSingleUploadSelection;
+    window.handleFilesSelect = handleFilesSelect;
+    window.showImagePrepIndicator = showImagePrepIndicator;
+    window.queueFilesSelect = queueFilesSelect;
+}
+

@@ -154,6 +154,11 @@
                                  新建手工单
                             </button>
                         </div>
+                        <!-- U-12：轻量准备中指示器（防抖与大图/HEIC转码中提示） -->
+                        <div id="imagePrepIndicator" class="image-prep-indicator hide" aria-live="polite">
+                            <span class="loading-spinner-dot" style="margin-right: 6px;"></span>
+                            <span id="imagePrepText">正在准备照片，请稍候...</span>
+                        </div>
                     </div>
 
                     <!-- P1-4：批量聚合进度条（聚合本批上传/解析进度，零Emoji） -->
@@ -187,6 +192,11 @@
 
                             <div id="imgViewerContainer" class="img-viewer-container" style="cursor: crosshair;">
                                 <img id="previewImg" src="" alt="收据原图" draggable="false">
+                                <!-- U-12：预览区轻量准备中指示器 -->
+                                <div id="imgViewerPrepIndicator" class="image-prep-indicator preview-prep-overlay hide" aria-live="polite">
+                                    <span class="loading-spinner-dot" style="margin-right: 6px;"></span>
+                                    <span id="imgViewerPrepText">正在准备照片，请稍候...</span>
+                                </div>
                                 <!-- HEIC/TIFF 等浏览器无法解码时常驻提示（不依赖 img src，避免被 reset 覆盖后消失） -->
                                 <div id="previewNonWebHint" class="preview-nonweb-hint hide" aria-live="polite">
                                     <div class="preview-nonweb-hint-icon"></div>
@@ -235,30 +245,75 @@
                             <!-- 卡片 A: 预览调整确认卡片 (未勾选直接分析时显示) -->
                             <div id="preConfirmCard" class="card">
                                 <div class="card-title">
-                                    <span> 步骤 1/2：收据调整与确认</span>
-                                    <span class="badge badge-warning">待确认分析</span>
+                                    <span> 步骤 1/2：收据确认</span>
+                                    <span class="badge badge-warning">待解析</span>
                                 </div>
-                                <div style="padding: 20px 0; text-align: center;">
-                                    <div style="font-size: 3rem; margin-bottom: 12px;"></div>
-                                    <h4>收据图片已加载成功</h4>
-                                    <p style="color: var(--text-muted); font-size: 0.9rem; margin-top: 8px; margin-bottom: 24px;">
-                                        请在左侧检查收据清晰度，必要时可点击图片特定区域放大或旋转。<br>确认无误后点击下方按钮启动 AI 智能解析。
+                                <div style="padding: 16px 0; text-align: center;">
+                                    <div id="preConfirmQualityWarn" class="alert-banner hide" style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning); margin-bottom: 12px; font-size: 0.85rem; padding: 6px 12px;"></div>
+                                    <h4 style="margin-bottom: 6px;">收据图片已就绪</h4>
+                                    <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 18px;">
+                                        请核对左侧原图清晰度，点击下方按钮开始智能解析。
                                     </p>
-                                    <button class="btn btn-primary" style="padding: 12px 28px; font-size: 1.05rem;" onclick="triggerAnalysisNow()">
-                                         确认无误，开始 AI 识别与分析
-                                    </button>
+                                    <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                                        <button class="btn btn-success" style="padding: 10px 24px; font-size: 1rem;" onclick="triggerAnalysisNow(false)">
+                                             开始 AI 智能解析
+                                        </button>
+                                        <button class="btn btn-secondary" style="padding: 10px 20px; font-size: 0.9rem;" onclick="startManualEntry()">
+                                             转手工录入
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
-                            <!-- 卡片 B: Loading 识别中卡片 -->
+                            <!-- 卡片 B: Loading 识别中卡片 (4 阶段清晰感知) -->
                             <div id="loadingCard" class="card hide">
-                                <div style="padding: 36px 20px; text-align: center;">
-                                    <!-- AI 识别耗时动态 Timer -->
-                                    <div style="margin-bottom: 16px; display: inline-flex; align-items: center; gap: 8px; background: var(--bg-hover); padding: 8px 20px; border-radius: 24px; border: 1px solid var(--border-strong); box-shadow: var(--shadow);">
-                                        <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-muted);"> AI 分析耗时 (Timer):</span>
-                                        <span id="ocrTimer" style="font-family: var(--font-mono); font-size: 1.4rem; font-weight: 700; color: var(--primary);">00:00.0</span>
+                                <div class="loading-progress-container">
+                                    <div class="loading-header">
+                                        <div class="loading-stage-badge">
+                                            <span class="loading-spinner-dot"></span>
+                                            <span id="loadingStageName">视觉语义读取中 (25%)...</span>
+                                        </div>
+                                        <div class="loading-timer-wrap">
+                                            <span class="loading-timer-label">AI 分析耗时:</span>
+                                            <span id="ocrTimer" class="loading-timer-value">00:00.0</span>
+                                        </div>
                                     </div>
-                                    <div style="font-size: 2.5rem; margin-bottom: 12px;"></div>
+                                    <div class="loading-progress-track">
+                                        <div id="loadingProgressBar" class="loading-progress-bar" style="width: 25%;"></div>
+                                    </div>
+                                    <div class="loading-steps-grid">
+                                        <div class="loading-step-item active" id="loadingStep1">
+                                            <div class="loading-step-num">1</div>
+                                            <div class="loading-step-text">
+                                                <div class="loading-step-title">视觉语义读取</div>
+                                                <div class="loading-step-desc">25% · OCR与版面分析</div>
+                                            </div>
+                                        </div>
+                                        <div class="loading-step-item" id="loadingStep2">
+                                            <div class="loading-step-num">2</div>
+                                            <div class="loading-step-text">
+                                                <div class="loading-step-title">契约提取</div>
+                                                <div class="loading-step-desc">50% · 实体与字段归一</div>
+                                            </div>
+                                        </div>
+                                        <div class="loading-step-item" id="loadingStep3">
+                                            <div class="loading-step-num">3</div>
+                                            <div class="loading-step-text">
+                                                <div class="loading-step-title">算术守恒自检</div>
+                                                <div class="loading-step-desc">75% · 费用校验与守恒</div>
+                                            </div>
+                                        </div>
+                                        <div class="loading-step-item" id="loadingStep4">
+                                            <div class="loading-step-num">4</div>
+                                            <div class="loading-step-text">
+                                                <div class="loading-step-title">SKU匹配</div>
+                                                <div class="loading-step-desc">100% · 食材档案对齐</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div style="text-align: center; margin-top: 14px;">
+                                        <button id="btnAbortLoadingToManual" class="btn btn-warning" style="min-height:38px; padding:8px 18px; font-weight:600; margin-top:12px;" onclick="abortLoadingAndSwitchToManual()">等不及？点击取消并转手工补录</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -280,35 +335,12 @@
                                      style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
                                 </div>
 
-                                <!-- 阶段 1：审核结果自然语言说明（audit_result.reason） -->
-                                <div id="auditReasonBanner" class="audit-reason-banner hide"></div>
-
-                                <!-- 阶段 1："AI 建议 vs 用户确认"对照区（采纳 AI 建议时写入 audit_logs_json） -->
-                                <div id="aiComparePanel" class="ai-compare hide">
-                                    <div class="ai-compare-title">
-                                        <span> AI 建议 vs 用户确认</span>
-                                        <span style="font-size:0.78rem; font-weight:400; color:var(--text-muted);">点击"采纳 AI"可恢复字段为 AI 识别值</span>
-                                    </div>
-                                    <table class="ai-compare-table">
-                                        <thead>
-                                            <tr>
-                                                <th style="width:24%;">字段</th>
-                                                <th style="width:22%;">AI 建议</th>
-                                                <th style="width:22%;">当前值</th>
-                                                <th style="width:18%;">差异</th>
-                                                <th style="width:14%; text-align:center;">操作</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="aiCompareBody"></tbody>
-                                    </table>
-                                </div>
-
-                                <!-- 表头元数据 (供应商, 日期, 分表, 总额) -->
+                                <!-- 表头元数据 (供应商, 日期, 归档月份, 总额, 结算方式, 单据形态, 币种, 部门) -->
                                 <div class="form-grid">
                                      <div class="form-group" style="grid-column: span 2;">
                                          <label>供应商</label>
                                          <div class="unit-combobox-wrap">
-                                             <input type="text" id="inpSupplier" class="form-control" style="padding-right:30px;" placeholder="如嘉顿、美心食品" autocomplete="off" onfocus="openSupplierMenu(this)" oninput="openSupplierMenu(this)" onblur="closeSupplierMenuDelay(this)">
+                                             <input type="text" id="inpSupplier" class="form-control" style="padding-right:30px;" placeholder="如嘉顿、美心食品、祥興食品" autocomplete="off" onfocus="openSupplierMenu(this)" oninput="openSupplierMenu(this)" onblur="closeSupplierMenuDelay(this)">
                                              <span class="combobox-arrow">▼</span>
                                              <div id="supplierDropdownMenu" class="unit-dropdown-menu hide"></div>
                                          </div>
@@ -316,24 +348,58 @@
                                      </div>
                                     <div class="form-group">
                                         <label>开单日期</label>
-                                        <input type="date" id="inpDate" class="form-control">
+                                        <input type="date" id="inpDate" class="form-control" onchange="autoFillSheetNameFromDate(this.value)">
                                     </div>
                                     <div class="form-group">
                                         <label>归档月份</label>
-                                        <input type="text" id="inpSheet" class="form-control" placeholder="2026-07">
+                                        <input type="text" id="inpSheet" class="form-control" placeholder="2026-08">
                                     </div>
                                     <div class="form-group">
                                         <label>整单总金额</label>
-                                        <input type="number" step="0.01" id="inpTotal" class="form-control" style="font-weight:700; color:var(--primary);">
+                                        <input type="number" step="0.01" id="inpTotal" class="form-control" style="font-weight:700; color:var(--primary);" oninput="renderCurrencySymbol()">
                                     </div>
-                                    <!-- M3/D4: 单据分类——结算方式可人工修正，付款标记为 AI 识别只读展示 -->
                                     <div class="form-group">
                                         <label>结算方式</label>
-                                        <select id="inpSettlementType" class="form-control" title="现结=现金单；月结=赊单，对账依据">
-                                            <option value="">未知</option>
-                                            <option value="cash">现结</option>
-                                            <option value="credit">月结</option>
+                                        <select id="inpSettlementType" class="form-control">
+                                            <option value="">请选择结算方式...</option>
+                                            <option value="cash">现结 (现金单)</option>
+                                            <option value="credit">月结 (赊账/对账)</option>
                                         </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>单据形态</label>
+                                        <select id="inpDocForm" class="form-control">
+                                            <option value="printed_delivery_note">印刷送货单</option>
+                                            <option value="ncr_handwritten">街市手写单</option>
+                                            <option value="thermal">热敏小票</option>
+                                            <option value="weigh_slip">磅单</option>
+                                            <option value="correction_note">更正单</option>
+                                            <option value="credit_note">折让单 (Credit Note)</option>
+                                            <option value="monthly_statement">月结账单</option>
+                                            <option value="manual_entry">手工补录单</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>币种</label>
+                                        <select id="inpCurrency" class="form-control" onchange="renderCurrencySymbol()">
+                                            <option value="HKD">HKD (港币 HK$)</option>
+                                            <option value="CNY">CNY (人民币 ¥)</option>
+                                            <option value="USD">USD (美元 $)</option>
+                                            <option value="EUR">EUR (欧元 €)</option>
+                                            <option value="JPY">JPY (日元 JP¥)</option>
+                                            <option value="GBP">GBP (英镑 £)</option>
+                                            <option value="MOP">MOP (澳门元 MOP$)</option>
+                                            <option value="SGD">SGD (新加坡元 S$)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group" style="grid-column: span 2;">
+                                        <label>归属部门</label>
+                                        <div style="display:flex; gap:8px; align-items:center;">
+                                            <select id="inpDepartmentId" class="form-control" style="flex:1;">
+                                                <option value="">未分配部门</option>
+                                            </select>
+                                            <button type="button" class="btn btn-secondary" style="padding:7px 14px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')">应用到全部明细</button>
+                                        </div>
                                     </div>
                                     <div class="form-group">
                                         <label>付款标记</label>
@@ -345,80 +411,100 @@
                                             <option value="已付款">已付款</option>
                                         </select>
                                     </div>
-                                    <!-- Wave 2（D44）：单据级部门——一键填充到全部明细（已手动改过的行不动，04 章三） -->
-                                    <div class="form-group" style="grid-column: span 2;">
-                                        <label>部门</label>
-                                        <div style="display:flex; gap:8px; align-items:center;">
-                                            <select id="inpDepartmentId" class="form-control" style="flex:1;" title="单据级部门：选后点「应用到全部明细」填到所有明细行；行内也可单独覆盖">
-                                                <option value="">未分配</option>
-                                            </select>
-                                            <button class="btn btn-secondary" style="padding:7px 12px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')" title="把单据级部门填入所有明细行"> 应用到全部明细</button>
+                                </div>
+
+                                <!-- 附加费用可折叠小抽屉 -->
+                                <div class="fees-drawer-container">
+                                    <div class="fees-drawer-toggle" onclick="toggleFeesDrawer()" title="点击展开/收起附加费用调节">
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span class="fees-drawer-title">附加费用调节 (折扣 / 运费 / 押金 / 抹零)</span>
+                                            <span id="feesSummaryBadge" class="fees-summary-badge hide">¥0.00</span>
                                         </div>
+                                        <span id="feesToggleIcon" class="fees-toggle-icon">▾</span>
                                     </div>
-                                    <!-- F-P1-3 多币种 -->
-                                    <div class="form-group">
-                                        <label>币种</label>
-                                        <select id="inpCurrency" class="form-control" title="多币种：HKD 默认，支持 CNY/USD/EUR/JPY/GBP/MOP/SGD">
-                                            <option value="HKD">HKD 港币</option>
-                                            <option value="CNY">CNY 人民币</option>
-                                            <option value="USD">USD 美元</option>
-                                            <option value="EUR">EUR 欧元</option>
-                                            <option value="JPY">JPY 日元</option>
-                                            <option value="GBP">GBP 英镑</option>
-                                            <option value="MOP">MOP 澳门币</option>
-                                            <option value="SGD">SGD 新币</option>
-                                        </select>
+                                    <div id="feesDrawerContent" class="fees-drawer-content hide">
+                                        <div class="fees-grid">
+                                            <div class="form-group">
+                                                <label>整单折扣/折让 (-)</label>
+                                                <input type="number" step="0.01" id="inpDiscount" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                            <div class="form-group">
+                                                <label>送货运费 (+)</label>
+                                                <input type="number" step="0.01" id="inpDeliveryFee" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                            <div class="form-group">
+                                                <label>胶筐押金 (+)</label>
+                                                <input type="number" step="0.01" id="inpDeposit" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                            <div class="form-group">
+                                                <label>尾数抹零 (-)</label>
+                                                <input type="number" step="0.01" id="inpRounding" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
-                                <!-- 明细动态表格 (FR-8: 每行点赞/点踩 + textarea 反馈窗) -->
+                                <!-- 明细动态表格 (7列标准排版) -->
                                 <div class="table-container">
-                                    <table class="data-table">
+                                    <table class="data-table receipt-item-table">
+                                        <colgroup>
+                                            <col style="width:30%;">
+                                            <col style="width:10%;">
+                                            <col style="width:10%;">
+                                            <col style="width:14%;">
+                                            <col style="width:14%;">
+                                            <col style="width:12%;">
+                                            <col style="width:10%;">
+                                        </colgroup>
                                         <thead>
                                             <tr>
-                                                <th style="width:20%;">消费项目/SKU</th>
-                                                <th style="width:10%;">数量</th>
-                                                <th style="width:10%;">单位</th>
-                                                <th style="width:12%;">单价</th>
-                                                <th style="width:12%;">金额</th>
-                                                <th style="width:10%;">部门</th>
-                                                <th style="width:6%;">操作</th>
-                                                <th style="width:8%; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">AI 效果反馈</th>
+                                                <th style="width:30%;">消费项目 / SKU</th>
+                                                <th style="width:10%; text-align:right;">数量</th>
+                                                <th style="width:10%; text-align:center;">单位</th>
+                                                <th style="width:14%; text-align:right;">单价 ($)</th>
+                                                <th style="width:14%; text-align:right;">金额 ($)</th>
+                                                <th style="width:12%; text-align:center;">部门</th>
+                                                <th style="width:10%; text-align:center;">操作</th>
                                             </tr>
                                         </thead>
                                         <tbody id="itemTableBody">
-                                            <!-- 动态渲染行：反馈按钮 + 已反馈徽标，弹层内点赞/点踩/textarea（FR-8，optimistic UI） -->
+                                            <!-- 动态渲染行 -->
                                         </tbody>
                                     </table>
                                 </div>
 
                                 <!-- 按钮操作栏 -->
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <button class="btn btn-secondary" onclick="addEmptyRow()">+ 新增明细行</button>
+                                    <button id="btnAddRow" class="btn btn-secondary" onclick="addEmptyRow()">+ 新增明细行</button>
                                     <div style="display:flex; gap:12px; align-items:center;">
                                         <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果并彻底删除单据">放弃上传</button>
-                                        <!-- Q32: id 供保存中禁用防双击重提交 -->
                                         <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
                                     </div>
                                 </div>
 
                             </div>
 
-                            <!-- 卡片 D: 识别失败错误卡片 (D28/D33 双出口：重试识别 / 转手工录入) -->
+                            <!-- 卡片 D: 识别失败/画质警告提示卡片 (双出口：继续AI解析 / 转手工补录) -->
                             <div id="errorCard" class="card hide">
                                 <div class="card-title">
-                                    <span>[失败] 识别失败，需要人工处理</span>
-                                    <span class="badge badge-danger">双出口可选</span>
+                                    <span id="errorCardTitle">识别提示</span>
+                                    <span class="badge badge-warning" id="errorCardBadge">需人工确认</span>
                                 </div>
-                                <div style="padding: 28px 8px; text-align: center;">
-                                    <div style="font-size: 3rem; margin-bottom: 12px;"></div>
-                                    <h4 style="font-weight: 600; color: var(--text-main);">该收据未能自动识别成功</h4>
-                                    <p id="errorMsgText" style="color: var(--text-muted); font-size: 0.88rem; margin-top: 8px; margin-bottom: 20px;">
-                                        原图已保留，请选择以下任一出口继续处理。
+                                <div style="padding: 20px 16px; text-align: center;">
+                                    <h4 id="errorCardHeading" style="font-weight: 600; color: var(--text-main); margin-bottom: 8px;">收据画质偏低或未识别成功</h4>
+                                    <p id="errorMsgText" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; max-width: 480px; margin-left: auto; margin-right: auto;">
+                                        原图已在左侧保留。您可以强制继续解析或直接转手工录入。
                                     </p>
                                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
-                                        <button class="btn btn-primary" onclick="retryFromErrorCard()" title="复用原单据重跑识别，不新建记录"> 重试识别</button>
-                                        <button class="btn btn-secondary" id="btnConvertManual" onclick="convertManualFromErrorCard()" title="转为手工录入：保留原图与可识别部分，人工补录">转手工录入</button>
+                                        <button class="btn btn-success" id="btnForceRetry" onclick="retryFromErrorCard(true)" title="忽略画质警告，继续 AI 智能解析">
+                                            继续 AI 解析
+                                        </button>
+                                        <button class="btn btn-secondary" id="btnConvertManual" onclick="convertManualFromErrorCard()" title="转为手工补录：保留原图，人工填报">
+                                            转手工补录
+                                        </button>
+                                        <button class="btn btn-secondary" id="btnRetryNormal" onclick="retryFromErrorCard(false)" title="重新发起识别">
+                                            重试
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -674,10 +760,10 @@
                                         <option value="">全部状态</option>
                                         <option value="uploaded">已上传</option>
                                         <option value="parsing">解析中</option>
-                                        <option value="parsed">已解析</option>
-                                        <option value="edited">已编辑</option>
-                                        <option value="approved">已审核</option>
-                                        <option value="flagged">已标记</option>
+                                        <option value="parsed">待核对 (AI自动入库)</option>
+                                        <option value="edited">已修改 (店员人工保存)</option>
+                                        <option value="approved">已入账 (老板审核通过)</option>
+                                        <option value="flagged">有问题 (已标记)</option>
                                         <option value="error">失败</option>
                                     </select>
                                 </div>
@@ -924,10 +1010,10 @@
                     <!-- 部门管理（置顶，可折叠） -->
                     <details id="deptAdminDetails" class="card" style="margin-bottom:16px;">
                         <summary style="cursor:pointer; font-weight:600; display:flex; justify-content:space-between; align-items:center; user-select:none;">
-                            <span>部门管理</span>
-                            <div style="display:flex; gap:8px; align-items:center;" onclick="event.stopPropagation();">
-                                <button id="btnAddDepartment" class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="addDepartment()">+ 新增部门</button>
-                                <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="loadDepartmentAdmin()">刷新</button>
+                            <span>🏢 部门管理</span>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <button type="button" id="btnAddDepartment" class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="event.stopPropagation(); event.preventDefault(); addDepartment(); return false;">+ 新增部门</button>
+                                <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="event.stopPropagation(); event.preventDefault(); loadDepartmentAdmin(); return false;">刷新</button>
                             </div>
                         </summary>
                         <div style="margin-top:12px;">
@@ -1611,7 +1697,7 @@
                             <!-- F-P1-3 多币种 -->
                             <div class="form-group">
                                 <label>币种</label>
-                                <select id="arcCurrency" class="form-control" onchange="markArcDirty()" title="多币种：HKD 默认，支持 CNY/USD/EUR/JPY/GBP/MOP/SGD">
+                                <select id="arcCurrency" class="form-control" onchange="markArcDirty(); renderCurrencySymbol();" title="多币种：HKD 默认，支持 CNY/USD/EUR/JPY/GBP/MOP/SGD">
                                     <option value="HKD">HKD 港币</option>
                                     <option value="CNY">CNY 人民币</option>
                                     <option value="USD">USD 美元</option>
@@ -1659,9 +1745,18 @@
                             <pre id="arcRagContextPre" style="white-space:pre-wrap; word-break:break-word; font-size:0.78rem; color:#1a1a1a; max-height:160px; overflow:auto; background:#fff; border:1px solid #cce5ff; border-radius:6px; padding:8px; margin:0;">暂无上下文</pre>
                         </div>
                         <!-- F-P1-5 成本分摊 -->
-                        <div style="margin-top: 10px; display:flex; gap:8px; flex-wrap:wrap;">
-                            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.78rem;" onclick="openCostShareModal()">成本分摊</button>
+                        <div id="modalCostShareContainer" style="margin-top: 10px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <button id="modalCostShareBtn" class="btn btn-secondary" style="padding:6px 14px; font-size:0.85rem; min-height:38px;" onclick="openCostShareModal()">成本分摊</button>
                             <span id="arcCostShareHint" style="font-size:0.75rem; color:var(--text-muted); align-self:center;"></span>
+                        </div>
+                         <!-- U-2: AI 决策履历（extract 各轮 + audit），位于操作与编辑改动履历上方 -->
+                        <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
+                            <div style="font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+                                 AI 决策履历
+                            </div>
+                            <div id="arcAiDecisionsContainer" style="max-height: 110px; overflow-y: auto; background: var(--bg-main); border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 10px; font-size: 0.8rem;">
+                                <!-- 动态渲染 AI 决策履历列表 -->
+                            </div>
                         </div>
                          <!-- 操作与编辑改动履历 Logs 区域 -->
                         <div style="margin-top: 12px; border-top: 1px dashed var(--border-color); padding-top: 10px;">
@@ -1676,14 +1771,14 @@
 
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-top:16px;">
                         <div style="display:flex; gap:8px;">
-                            <button class="btn btn-secondary" onclick="addArcEmptyRow()">+ 新增明细行</button>
-                            <button class="btn btn-danger" style="padding:6px 12px; font-size:0.85rem;" onclick="modalFlagReceipt()">[标记] 标记为异常</button>
+                            <button id="modalAddRowBtn" class="btn btn-secondary" style="min-height:38px;" onclick="addArcEmptyRow()">+ 新增明细行</button>
+                            <button id="modalFlagBtn" class="btn btn-danger" style="padding:6px 14px; font-size:0.85rem; min-height:38px;" onclick="modalFlagReceipt()">[标记] 标记为异常</button>
                         </div>
                         <div style="display:flex; gap:10px;">
-                            <button class="btn btn-secondary" onclick="closeArchiveModal()">取消</button>
-                            <button class="btn btn-primary" onclick="modalApproveReceipt()"> 审核通过</button>
+                            <button id="modalCancelBtn" class="btn btn-secondary" style="min-height:38px;" onclick="closeArchiveModal()">取消</button>
+                            <button id="modalApproveBtn" class="btn btn-primary" style="min-height:38px;" onclick="modalApproveReceipt()"> 审核通过</button>
                             <!-- Q32: id 供保存中禁用防双击重提交 -->
-                            <button id="btnSaveArchive" class="btn btn-success" onclick="submitSaveArchiveEdited()"> 保存单据修改</button>
+                            <button id="btnSaveArchive" class="btn btn-success" style="min-height:38px;" onclick="submitSaveArchiveEdited()"> 保存单据修改</button>
                         </div>
                     </div>
 
@@ -1854,6 +1949,27 @@
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
                     <button class="btn btn-secondary" onclick="closeModalById('supplierModal')">取消</button>
                     <button class="btn btn-primary" id="supplierModalSave" onclick="saveSupplier()"> 保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 部门管理：新增 / 编辑部门 Modal -->
+    <div id="departmentModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:440px;">
+            <div class="modal-header">
+                <h3 id="departmentModalTitle">新增部门</h3>
+                <button class="modal-close-btn" onclick="closeModalById('departmentModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>部门名称 <span style="color:var(--danger);">*</span></label>
+                    <input type="text" id="inpDepartmentName" class="form-control" placeholder="如：后厨、楼面、财务部" autocomplete="off" onkeydown="if(event.key==='Enter') submitDepartmentCreate()">
+                    <input type="hidden" id="modalDepartmentId" value="">
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
+                    <button class="btn btn-secondary" onclick="closeModalById('departmentModal')">取消</button>
+                    <button class="btn btn-primary" id="btnSubmitDepartment" onclick="submitDepartmentCreate()">确认</button>
                 </div>
             </div>
         </div>
@@ -2169,6 +2285,6 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js"></script>
+    <script src="/static/js/main.js?v=20260824a"></script>
 </body>
 </html>
