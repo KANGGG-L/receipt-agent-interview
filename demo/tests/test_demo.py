@@ -217,6 +217,159 @@ def test_supplier_autocreate_on_approve():
     assert db.find_supplier_by_name("測試供應商") is not None
 
 
+# -------------------------------------------------------------
+# U-2：AI 决策履历断链修复（extract 各轮决策落库 / 查询 / 详情透出）
+# -------------------------------------------------------------
+def _fake_extract_ok(image_path, vendor_hint, config, use_grey, retry_feedback, attempt,
+                     vendor_prior=""):
+    """mock 单轮 extract 成功（不调外部 LLM）。"""
+    from app.models import ReceiptData
+    data = ReceiptData(doc_form="printed_delivery_note", vendor="祥興", date="2024-03-25",
+                       items=[{"name": "菜心", "qty": 5, "unit": "斤",
+                               "unit_price": 10, "amount": 50}],
+                       total=50, payment_marked=False, confidence=0.9)
+    return {"data": data, "raw": "raw-mock", "error": "", "elapsed_ms": 1,
+            "engine": "opencode", "vendor_context": "prior-mock"}
+
+
+def _patch_pipeline(monkeypatch, audit_result=None):
+    """mock extract + audit（零外部调用）。"""
+    from app.chains import supervisor
+    monkeypatch.setattr(supervisor, "_run_extract", _fake_extract_ok)
+    monkeypatch.setattr(supervisor.audit_chain, "run_audit",
+                        lambda *a, **k: audit_result or {"skipped": True, "reason": "test_skip"})
+
+
+def test_u2_extract_decision_logged_with_receipt_id(monkeypatch):
+    """① run_pipeline 传 receipt_id 后 extract 决策落库且 receipt_id 非 NULL。"""
+    from app import db
+    from app.chains import supervisor
+    _patch_pipeline(monkeypatch)
+    rid = db.create_receipt(status="uploaded")
+    state = supervisor.run_pipeline("/tmp/nonexistent.jpg", config=EngineConfig(),
+                                    receipt_id=rid)
+    assert state["status"] == "parsed"
+    s = db.get_session()
+    try:
+        rows = s.query(db._DecisionLogRow).filter_by(
+            receipt_id=rid, decision_type="extract").all()
+    finally:
+        s.close()
+    assert rows, "extract 决策应落库"
+    assert all(r.receipt_id == rid for r in rows), "receipt_id 应非 NULL"
+    import json as _json
+    payload = _json.loads(rows[0].ai_value)
+    assert payload["status"] == "extract_ok"
+    assert payload["attempt"] == 1
+    assert payload["engine"] == "opencode"
+    assert payload["use_grey"] == 0
+    assert "gate_err" not in payload, "extract_ok 轮不携带 gate_err"
+
+
+def test_u2_receipt_id_none_skips_extract_decision(monkeypatch):
+    """② receipt_id=None（直接调用场景）→ 跳过 extract 决策写库且不抛错。"""
+    from app import db
+    from app.chains import supervisor
+    _patch_pipeline(monkeypatch)
+    calls = []
+    _orig = db.log_ai_decision
+
+    def _spy(**kwargs):
+        calls.append(kwargs)
+        return _orig(**kwargs)
+
+    monkeypatch.setattr(db, "log_ai_decision", _spy)
+    state = supervisor.run_pipeline("/tmp/nonexistent.jpg", config=EngineConfig())
+    assert state["status"] == "parsed"  # 不抛错、主链路正常
+    assert state["data"] is not None
+    extract_calls = [c for c in calls if c.get("decision_type") == "extract"]
+    assert extract_calls == [], "receipt_id=None 时 extract 决策应跳过写库"
+
+
+def test_u2_decision_log_failure_warns_not_raises(monkeypatch, caplog):
+    """③ log_ai_decision 抛 RuntimeError → run_pipeline 正常返回 parsed 并记 warning。"""
+    import logging as _logging
+    from app.chains import supervisor
+    _patch_pipeline(monkeypatch)
+
+    def _boom(**kwargs):
+        raise RuntimeError("db down")
+
+    from app import db
+    monkeypatch.setattr(db, "log_ai_decision", _boom)
+    with caplog.at_level(_logging.WARNING, logger="supervisor"):
+        state = supervisor.run_pipeline("/tmp/nonexistent.jpg", config=EngineConfig(),
+                                        receipt_id=None)
+    assert state["status"] == "parsed"
+    assert state["data"] is not None
+    # receipt_id=None 时 extract 轮本就跳过；audit 落库失败被吞 → 主链路不受影响。
+    # 再用带 receipt_id 的场景验证 extract 轮失败也被吞：
+    rid_calls = []
+
+    def _boom2(**kwargs):
+        rid_calls.append(kwargs)
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(db, "log_ai_decision", _boom2)
+    from app import db as _db2
+    rid = _db2.create_receipt(status="uploaded")
+    with caplog.at_level(_logging.WARNING, logger="supervisor"):
+        state2 = supervisor.run_pipeline("/tmp/nonexistent.jpg", config=EngineConfig(),
+                                         receipt_id=rid)
+    assert state2["status"] == "parsed"
+    assert any("记录 AI 决策失败" in r.message for r in caplog.records), \
+        "应记录『记录 AI 决策失败』warning"
+
+
+def test_u2_list_ai_decisions_order_and_empty():
+    """④ list_ai_decisions：按 (ts ASC, id ASC) 排序 + 空态。"""
+    from app import db
+    rid = db.create_receipt(status="edited")
+    assert db.list_ai_decisions(rid) == [], "无决策记录时应返回空列表"
+    assert db.list_ai_decisions(None) == []
+    # 乱序插入：ts 晚的先插、同 ts 两条验证 id 次序
+    s = db.get_session()
+    try:
+        for ts, ai_value in [("2026-01-01T00:00:05", '{"status":"extract_fail"}'),
+                             ("2026-01-01T00:00:01", '{"status":"gate_reject"}'),
+                             ("2026-01-01T00:00:01", '{"status":"extract_ok"}')]:
+            s.add(db._DecisionLogRow(ts=ts, receipt_id=rid, grp="control",
+                                     engine="opencode", model="m",
+                                     use_grey=0, decision_type="extract",
+                                     field_path="overall", ai_value=ai_value))
+        s.commit()
+    finally:
+        s.close()
+    rows = db.list_ai_decisions(rid)
+    assert len(rows) == 3
+    assert [r["ai_value"] for r in rows] == [
+        '{"status":"gate_reject"}', '{"status":"extract_ok"}', '{"status":"extract_fail"}']
+    for key in ("id", "ts", "decision_type", "engine", "model",
+                "use_grey", "field_path", "ai_value"):
+        assert key in rows[0], f"缺少字段 {key}"
+
+
+def test_u2_build_detail_includes_ai_decisions():
+    """⑤ build_detail 含 ai_decisions 且既有字段不丢。"""
+    from app import db
+    from app.services.receipt_utils import build_detail
+    rid = db.create_receipt(supplier_name="祥興", status="edited")
+    db.log_ai_decision(receipt_id=rid, decision_type="extract", field_path="overall",
+                       engine="opencode", model="m", use_grey=0,
+                       ai_value={"attempt": 1, "engine": "opencode",
+                                 "status": "extract_ok", "use_grey": 0})
+    detail = build_detail(db.get_receipt_row(rid))
+    assert "ai_decisions" in detail
+    assert len(detail["ai_decisions"]) == 1
+    assert detail["ai_decisions"][0]["decision_type"] == "extract"
+    # 既有字段全部保留
+    for key in ("receipt_id", "supplier_name", "date", "total_amount", "status",
+                "items", "audit_logs", "ai_prefill", "audit_result", "use_grey",
+                "confidence", "math_warnings", "quality_warnings",
+                "review_priority_score", "rag_context", "currency"):
+        assert key in detail, f"build_detail 旧字段丢失: {key}"
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

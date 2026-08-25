@@ -163,7 +163,7 @@ def test_pvalue_card_returns_three_metric_cards_with_threshold_note():
 # E-P1-4 403 人话统一
 # -------------------------------------------------------------
 def test_403_message_includes_role_guidance_for_owner_api():
-    resp = client.get("/api/receipts", headers={"X-Role": "staff"})
+    resp = client.get("/api/receipts/export", headers={"X-Role": "staff"})
     assert resp.status_code == 403
     detail = resp.json().get("detail", "")
     assert "权限不足" in detail
