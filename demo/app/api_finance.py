@@ -15,7 +15,8 @@ from app.auth import require_role
 
 router = APIRouter()
 
-VOUCHER_DIR = Path("./uploads/vouchers")
+BASE_DIR = Path(__file__).resolve().parent.parent
+VOUCHER_DIR = BASE_DIR / "uploads" / "vouchers"
 VOUCHER_DIR.mkdir(parents=True, exist_ok=True)
 
 

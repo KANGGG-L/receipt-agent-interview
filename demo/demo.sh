@@ -15,8 +15,8 @@ IMG="${2:-samples/20161001_711_thermal_receipt.jpg}"
 
 case "${1:-}" in
   run)
-    echo "启动 API: http://127.0.0.1:15010 （完整版前端 + LangChain 精简后端）"
-    $PY -m uvicorn app.main:app --port 15010
+    echo "启动 API: http://127.0.0.1:15010 （完整版前端 + LangChain 精简后端，已开启热重载）"
+    $PY -m uvicorn app.main:app --port 15010 --reload --reload-dir app --reload-dir ../ai_registry
     ;;
   smoke)
     $PY -m app.main --smoke "$IMG"

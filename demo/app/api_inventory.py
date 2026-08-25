@@ -77,7 +77,8 @@ def _compute_vs_avg_and_anomaly(sku_id, threshold_pct=None):
 def inventory_list(request: Request, q: str = "", category: str = "",
                    stock: str = "all", price: str = "all",
                    include_inactive: int = 0):
-    require_role("owner")(request)
+    # 只读列表对店员开放（收据页 SKU/单位数据源需要）；入库/调整等写操作仍按各自权限
+    require_role("staff")(request)
     skus = db.list_skus(include_inactive=bool(include_inactive))
     out = []
     low_count = 0

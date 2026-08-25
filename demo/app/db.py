@@ -375,6 +375,8 @@ def get_receipt_row(receipt_id):
 
 def update_receipt(receipt_id, **fields):
     """按字段更新收据；version 字段若传入则 +1。返回更新后的 row。"""
+    if receipt_id is None or _ReceiptRow is None:
+        return None
     s = get_session()
     try:
         row = s.get(_ReceiptRow, int(receipt_id))
@@ -455,10 +457,10 @@ def set_receipt_items(receipt_id, items):
         s.close()
 
 
-def append_audit_log(receipt_id, who, action, field, old, new):
+def append_audit_log(receipt_id, who, action, field, old, new, details=None):
     """向 receipts.audit_logs_json 追加一条审计记录。
 
-    结构：list[{who, action, field, old, new, ts}]。
+    结构：list[{who, action, field, old, new, ts, details}]。
     允许 old/new 为 dict/list（用于结构化变更，如 engine config）。
     """
     _s = get_session()
@@ -469,14 +471,17 @@ def append_audit_log(receipt_id, who, action, field, old, new):
         logs = json.loads(row.audit_logs_json or "[]")
         if not isinstance(logs, list):
             logs = []
-        logs.append({
+        entry = {
             "who": who or "unknown",
             "action": action,
             "field": field,
             "old": old,
             "new": new,
             "ts": now_iso(),
-        })
+        }
+        if details is not None:
+            entry["details"] = details
+        logs.append(entry)
         row.audit_logs_json = json.dumps(logs, ensure_ascii=False)
         row.updated_at = now_iso()
         _s.commit()
@@ -1094,12 +1099,23 @@ def upsert_vendor_memory(vendor, notes, sample):
 
 
 def get_vendor_memory(vendor):
+    if not vendor or not str(vendor).strip():
+        return None
     s = get_session()
     try:
         row = s.get(_VendorMemoryRow, vendor)
-        if row is None:
-            return None
-        return {"vendor": row.vendor, "notes": row.notes or "", "sample": row.sample or ""}
+        if row is not None:
+            return {"vendor": row.vendor, "notes": row.notes or "", "sample": row.sample or ""}
+        # 模糊/别名/归一化查找（处理中英文后缀或繁简差异，如 "德利行" <-> "德利行 Tak Lee Hong"）
+        try:
+            from app.services.rag import _vendor_related
+            all_rows = s.query(_VendorMemoryRow).all()
+            for r in all_rows:
+                if _vendor_related(vendor, r.vendor):
+                    return {"vendor": r.vendor, "notes": r.notes or "", "sample": r.sample or ""}
+        except Exception:
+            pass
+        return None
     finally:
         s.close()
 
@@ -1764,6 +1780,40 @@ def log_ai_decision(
         s.add(row)
         s.commit()
         return row.id
+    finally:
+        s.close()
+
+
+def list_ai_decisions(receipt_id):
+    """U-2：查询单据的 AI 决策履历（只读）。
+
+    按 (ts ASC, id ASC) 排序返回 dict 列表：
+    id/ts/decision_type/engine/model/use_grey/field_path/ai_value。
+    用于 /api/receipt/{id} 详情与归档弹窗「AI 决策履历」块。
+    """
+    if not receipt_id:
+        return []
+    s = get_session()
+    try:
+        rows = (
+            s.query(_DecisionLogRow)
+            .filter(_DecisionLogRow.receipt_id == int(receipt_id))
+            .order_by(_DecisionLogRow.ts.asc(), _DecisionLogRow.id.asc())
+            .all()
+        )
+        return [
+            {
+                "id": r.id,
+                "ts": r.ts or "",
+                "decision_type": r.decision_type or "",
+                "engine": r.engine or "",
+                "model": r.model or "",
+                "use_grey": r.use_grey or 0,
+                "field_path": r.field_path or "",
+                "ai_value": r.ai_value or "",
+            }
+            for r in rows
+        ]
     finally:
         s.close()
 

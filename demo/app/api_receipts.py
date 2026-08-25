@@ -63,7 +63,8 @@ def _track_ai_decision(account, receipt_id, row=None, **kw):
 
 router = APIRouter()
 
-UPLOAD_DIR = Path("./uploads")
+BASE_DIR = Path(__file__).resolve().parent.parent
+UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".tif", ".tiff"}
@@ -208,6 +209,7 @@ async def upload_receipt(
     codebuddy: str = Form("true"),
     async_: str = Form("true"),
     vendor_hint: str = Form(""),
+    force: str = Form("false"),  # true → 用户已确认继续，跳过极模糊硬拦截
 ):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
@@ -228,25 +230,31 @@ async def upload_receipt(
             }
         )
 
-    # P0-1 极模糊前置拦截：Laplacian 方差 <30 直接 400 快速失败（<1s，不进 opencode 管线）
+    # P0-1 极模糊前置拦截：Laplacian 方差 <30 默认 400 快速失败（<1s，不进 opencode 管线）
+    # 若 force=true（用户已确认继续），仅记录 warning，不阻断
     blur_score = _laplacian_variance(image_path)
+    quality_warnings = []
+    is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
     if blur_score is not None and blur_score < BLUR_THRESHOLD:
-        if os.path.exists(image_path):
-            try:
-                os.remove(image_path)
-            except Exception:
-                pass
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "code": "IMAGE_QUALITY_ERROR",
-                "msg": "图像模糊度过高，请重新拍摄清晰单据",
-                "quality_warnings": ["image_blur"],
-                "blur_score": round(float(blur_score), 2),
-                "confidence": 0.35,
-            }
-        )
+        if is_force:
+            quality_warnings.append("image_blur")
+        else:
+            if os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except Exception:
+                    pass
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "code": "IMAGE_QUALITY_ERROR",
+                    "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                    "quality_warnings": ["image_blur"],
+                    "blur_score": round(float(blur_score), 2),
+                    "confidence": 0.35,
+                }
+            )
 
     job_id, receipt_id = start_recognition_job(
         image_path, vendor_hint=vendor_hint or "")
@@ -296,6 +304,7 @@ async def upload_batch(
     request: Request,
     files: list[UploadFile] = File(...),
     codebuddy: str = Form("true"),
+    force: str = Form("false"),
 ):
     require_role("staff")(request)
     # C5：批量限流 — 单次≤20张
@@ -311,24 +320,30 @@ async def upload_batch(
     queue_pos = 0
     for f in files:
         image_path = _save_upload(f)
-        # P0-1 极模糊前置拦截（批量同单张）：<1s 快速失败，不进管线
+        # P0-1 极模糊前置拦截（批量同单张）：默认 <1s 快速失败，不进管线
+        # 若 force=true（用户已确认继续），仅记录 warning，不阻断
         blur_score = _laplacian_variance(image_path)
+        photo_warnings = []
+        is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
         if blur_score is not None and blur_score < BLUR_THRESHOLD:
-            if os.path.exists(image_path):
-                try:
-                    os.remove(image_path)
-                except Exception:
-                    pass
-            results.append({
-                "status": "error",
-                "code": "IMAGE_QUALITY_ERROR",
-                "msg": "图像模糊度过高，请重新拍摄清晰单据",
-                "quality_warnings": ["image_blur"],
-                "blur_score": round(float(blur_score), 2),
-                "confidence": 0.35,
-                "image_url": None,
-            })
-            continue
+            if is_force:
+                photo_warnings.append("image_blur")
+            else:
+                if os.path.exists(image_path):
+                    try:
+                        os.remove(image_path)
+                    except Exception:
+                        pass
+                results.append({
+                    "status": "error",
+                    "code": "IMAGE_QUALITY_ERROR",
+                    "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                    "quality_warnings": ["image_blur"],
+                    "blur_score": round(float(blur_score), 2),
+                    "confidence": 0.35,
+                    "image_url": None,
+                })
+                continue
         # 简易pHash：基于文件内容hash（像素级pHash需imagehash库，此处用文件MD5近似去重）
         import hashlib
         file_hash = hashlib.md5(open(image_path, "rb").read()).hexdigest()
@@ -348,7 +363,7 @@ async def upload_batch(
             "status": "queued", "receipt_id": receipt_id,
             "image_url": "/uploads/" + os.path.basename(image_path),
             "engine_used": None,
-            "quality_warnings": [],
+            "quality_warnings": photo_warnings,
             "version": row.version if row else None,
             "queue_position": queue_pos,
             "data": build_detail(row),
@@ -387,7 +402,8 @@ def _mask_sensitive(text: str) -> str:
 
 @router.get("/api/receipts")
 def list_receipts(request: Request):
-    require_role("owner")(request)
+    # 列表查看对店员开放（上传/复核需要看到列表）；导出仍限 owner
+    require_role("staff")(request)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
     rows = db.list_receipt_rows()
     # 印章判定补红章：列表视图在 build_row 前补充，避免 LLM 漏检导致 payment_mark 空
@@ -488,6 +504,11 @@ class SaveEditedBody(BaseModel):
     layout_type: str = ""
     version: Optional[int] = None
     currency: str = "HKD"
+    discount_amount: float = 0.0
+    delivery_fee: float = 0.0
+    deposit_amount: float = 0.0
+    rounding_adjustment: float = 0.0
+    source: Optional[str] = "manual"
 
 
 @router.post("/api/save_edited")
@@ -499,12 +520,16 @@ def save_edited(body: SaveEditedBody, request: Request):
     # 初始化，新建手工单路径不会有历史数据
     row = None
     old_items = []
+    is_auto = (body.source == "auto")
+    target_status = "parsed" if is_auto else "edited"
+    action_type = "auto_save" if is_auto else "save_edited"
+    action_details = "AI自动识别落库" if is_auto else "[店员手工修改/保存]"
 
     if body.receipt_id is None:
         # 新建手工单
         rid = db.create_receipt(supplier_name=body.supplier_name or "通用供应商",
-                                status="edited")
-        db.append_audit_log(rid, who, "save_edited", "receipt", None, rid)
+                                status=target_status)
+        db.append_audit_log(rid, who, action_type, "receipt", None, rid, details=action_details)
     else:
         rid = body.receipt_id
         row = db.get_receipt_row(rid)
@@ -516,7 +541,7 @@ def save_edited(body: SaveEditedBody, request: Request):
             return ver_err
         old_status = row.status
         old_items = db.get_receipt_items(rid)
-        db.append_audit_log(rid, who, "save_edited", "status", old_status, "edited")
+        db.append_audit_log(rid, who, action_type, "status", old_status, target_status, details=action_details)
 
     if body.settlement_type is None and body.receipt_id is not None:
         return {"status": "error", "code": "SETTLEMENT_REQUIRED",
@@ -559,14 +584,14 @@ def save_edited(body: SaveEditedBody, request: Request):
         doc_form=body.doc_form or "",
         layout_type=body.layout_type or "",
         department_id=body.department_id,
-        status="edited",
+        status=target_status,
         version=body.version + 1 if body.version is not None else 1,
         currency=cur,
     )
     db.set_receipt_items(rid, items_raw)
 
-    # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比）
-    if body.receipt_id is not None and row is not None:
+    # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
+    if not is_auto and body.receipt_id is not None and row is not None:
         for old_it, new_it in zip(old_items, items_raw):
             if old_it.get("unit_price") != new_it.get("unit_price"):
                 db.append_audit_log(rid, who, "save_edited", "unit_price",
@@ -585,8 +610,14 @@ def save_edited(body: SaveEditedBody, request: Request):
     _track_event(account, getattr(request.state, "session_id", "batch"),
                  "upload", receipt_id=rid,
                  properties={"mode": "batch"})
-    # C6 ai_decision_log：save_edited 回填 user_value（per-field diff）
-    if body.receipt_id is not None:
+    # C6 ai_decision_log：auto_save 记录自动入库决策；save_edited 回填 user_value（per-field diff）
+    if is_auto:
+        _track_ai_decision(account, rid, row=row,
+            decision_type="auto_save",
+            field_path="overall",
+            ai_value={"status": "parsed", "total_amount": float(body.total_amount or 0)},
+            engine="pipeline")
+    elif body.receipt_id is not None:
         ai_row = db.get_receipt_row(rid)
         if ai_row:
             try:
@@ -625,10 +656,10 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
-    if row.status != "edited":
+    if row.status not in ("parsed", "edited"):
         return JSONResponse(
             content={"status": "error", "code": "INVALID_STATUS",
-                     "msg": f"仅 status='edited' 的单据可 approve，当前 status='{row.status}'"},
+                     "msg": f"仅 status='parsed' 或 'edited' 的单据可 approve，当前 status='{row.status}'"},
             status_code=409)
     ver_err = _version_error(body.version, row, "审核")
     if ver_err is not None:
@@ -684,11 +715,11 @@ def flag_receipt(receipt_id: int, request: Request):
     if old_status == "flagged":
         return {"status": "success",
                 "msg": f"单据 #{receipt_id} 已处于 flagged 状态，幂等跳过。"}
-    # 对齐完整版：uploaded/parsed/edited → flagged；approved 409
-    if old_status not in ("uploaded", "parsed", "edited"):
+    # 对齐完整版：uploaded/parsing/parsed/edited → flagged；approved 409
+    if old_status not in ("uploaded", "parsing", "parsed", "edited"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"非法状态转移 [{old_status}] → [flagged]：仅 uploaded/parsed/edited 单据可标记异常"
+                     "msg": f"非法状态转移 [{old_status}] → [flagged]：仅 uploaded/parsing/parsed/edited 单据可标记异常"
                             f"（已审核单据的问题修正必须走冲销路径）。"},
             status_code=409)
     db.update_receipt(receipt_id, status="flagged")
@@ -704,10 +735,10 @@ def retry_receipt(receipt_id: int, request: Request):
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
     old_status = row.status
-    if old_status not in ("uploaded", "error"):
+    if old_status not in ("uploaded", "parsed", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许重试：仅 uploaded/error 单据可重跑识别。"},
+                     "msg": f"当前状态 [{old_status}] 不允许重试：仅 uploaded/parsed/error 单据可重跑识别。"},
             status_code=409)
     if not row.image_path or not os.path.exists(row.image_path):
         return JSONResponse(

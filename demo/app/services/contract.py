@@ -8,6 +8,7 @@ from __future__ import annotations
 - 校验失败返回结构化错误，打回重试，绝不静默放行
 """
 
+import functools
 import re
 from typing import Any, Optional, Tuple
 
@@ -27,6 +28,7 @@ _RED_B_MAX = 100
 _RED_DOMINANCE = 50
 
 
+@functools.lru_cache(maxsize=2048)
 def detect_red_stamp(image_path: str) -> bool:
     """红章 OCR 辅助：检测图片中是否存在红色印章区域。
 

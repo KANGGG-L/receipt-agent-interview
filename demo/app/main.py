@@ -9,6 +9,12 @@
 import sys
 import time
 from pathlib import Path
+_ROOT = str(Path(__file__).resolve().parent.parent.parent)
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+_DEMO_DIR = str(Path(__file__).resolve().parent.parent)
+if _DEMO_DIR not in sys.path:
+    sys.path.insert(0, _DEMO_DIR)
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse

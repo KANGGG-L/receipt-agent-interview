@@ -53,6 +53,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
             result = supervisor.run_pipeline(
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
+                receipt_id=receipt_id,  # U-2: 透传 receipt_id，AI 决策履历落库关联单据
             )
             data = result.get("data")
             if data is None:
@@ -334,6 +335,8 @@ def build_detail(row):
         "confidence": row.confidence or 0.0,
         "currency": getattr(row, "currency", None) or "HKD",
         "rag_context": getattr(row, "rag_context_json", None) or "",
+        # U-2: AI 决策履历（extract 各轮 + audit），单表索引查询，detail 频次可接受
+        "ai_decisions": db.list_ai_decisions(row.id),
     }
 
 

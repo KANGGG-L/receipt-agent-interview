@@ -32,7 +32,8 @@ def _supplier_dict(s):
 
 @router.get("/api/suppliers")
 def list_suppliers(request: Request, q: str = "", include_inactive: int = 0):
-    require_role("owner")(request)
+    # 只读列表对店员开放（收据页供应商联想下拉需要）；增删改仍限 owner
+    require_role("staff")(request)
     suppliers = db.list_suppliers(include_inactive=bool(include_inactive))
     out = []
     for s in suppliers:

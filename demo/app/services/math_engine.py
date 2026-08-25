@@ -22,9 +22,16 @@ def validate_and_report(data: ReceiptData) -> list[str]:
             # 划线作废/拒收行，不计入有效实付小计
             continue
 
+        name = str(getattr(it, "name", "") or "")
         effective_qty = it.actual_qty if (getattr(it, "actual_qty", None) is not None and it.actual_qty > 0) else it.qty
-        expected = round(effective_qty * it.unit_price, 2)
-        effective_amount = it.amount if getattr(it, "actual_qty", None) is None else expected
+        effective_amount = it.amount if getattr(it, "actual_qty", None) is None else round(effective_qty * it.unit_price, 2)
+
+        # $0 赠品 / 免费项目容错：amount 为 0 或 unit_price 为 0 或品名含“赠/送/free/gift”等，不触发单价乘积矛盾
+        is_gift = (effective_amount == 0.0) or (it.unit_price == 0.0) or any(kw in name for kw in ["赠", "送", "free", "gift", "免费", "附送", "赠品", "贈品", "贈送"])
+        if is_gift and effective_amount == 0.0:
+            expected = 0.0
+        else:
+            expected = round(effective_qty * it.unit_price, 2)
 
         if abs(expected - effective_amount) > 0.01:
             problems.append(

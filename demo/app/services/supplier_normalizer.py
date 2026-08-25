@@ -24,8 +24,15 @@ _TRAD_TO_SIMP = str.maketrans({
 _PAREN_EN = re.compile(r"[（(][^（）()]*[A-Za-z]+[^（）()]*[)]")
 _SEP = re.compile(r"[\s·、，,\.．\-—_/]+")
 
-# OCR 常见异形对（繁简转换后仍不一致的核心词），统一到左侧写法
-_ALIAS_PAIRS = [("鸿兴", "协兴")]
+# 常见高频供应商标准简称映射 (U-14)
+_COMMON_SUPPLIER_RULES = [
+    ("德利行", ["德利行", "takleehong", "tak lee hong", "taklee"]),
+    ("祥兴", ["祥兴", "祥興", "cheunghing", "cheung hing", "xiangxing"]),
+    ("金百加", ["金百加", "kampery", "kamperky", "金百家"]),
+    ("联丰", ["联丰", "聯豐", "luen fung", "luenfung", "lian feng", "lianfeng"]),
+    ("大生", ["大生", "tai sang", "taisang", "da sheng", "dasheng"]),
+    ("鸿兴", ["鸿兴", "鴻興", "协兴", "協興", "hip hing", "hiphing"]),
+]
 
 
 def canonical_supplier_key(name: str) -> str:
@@ -36,6 +43,15 @@ def canonical_supplier_key(name: str) -> str:
     text = _PAREN_EN.sub("", text)
     text = _SEP.sub("", text)
     text = text.translate(_TRAD_TO_SIMP)
-    for std, alias in _ALIAS_PAIRS:
-        text = text.replace(alias, std)
+
+    clean_lower = text.lower().strip()
+    clean_no_space = clean_lower.replace(" ", "")
+
+    for std_name, aliases in _COMMON_SUPPLIER_RULES:
+        for a in aliases:
+            a_clean = a.lower().replace(" ", "").translate(_TRAD_TO_SIMP)
+            if clean_no_space == a_clean or clean_no_space.startswith(a_clean) or a_clean in clean_no_space:
+                return std_name
+
     return text
+
