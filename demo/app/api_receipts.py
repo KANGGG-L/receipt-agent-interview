@@ -225,7 +225,7 @@ async def upload_receipt(
             content={
                 "status": "error",
                 "code": "IMAGE_QUALITY_ERROR",
-                "msg": "上传图片损坏、模糊或为空（文件体积过小），请重新拍摄清晰单据",
+                "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
                 "quality_warnings": ["image_empty_or_corrupted"]
             }
         )
@@ -249,7 +249,7 @@ async def upload_receipt(
                 content={
                     "status": "error",
                     "code": "IMAGE_QUALITY_ERROR",
-                    "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                    "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
                     "quality_warnings": ["image_blur"],
                     "blur_score": round(float(blur_score), 2),
                     "confidence": 0.35,
@@ -337,7 +337,7 @@ async def upload_batch(
                 results.append({
                     "status": "error",
                     "code": "IMAGE_QUALITY_ERROR",
-                    "msg": "图像模糊度过高，请重新拍摄清晰单据",
+                    "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
                     "quality_warnings": ["image_blur"],
                     "blur_score": round(float(blur_score), 2),
                     "confidence": 0.35,

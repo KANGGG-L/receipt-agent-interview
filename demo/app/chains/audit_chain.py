@@ -102,15 +102,30 @@ def run_audit(image_path: str, data: ReceiptData,
         prompt = build_audit_prompt(image_path, data)
         result = model.invoke(prompt)
         raw = result.content if not isinstance(result, str) else result
+        # 提取 audit VLM token（DashScope 同理，本地 0）
+        try:
+            rm = getattr(result, "response_metadata", {}) or {}
+            tu = rm.get("token_usage") or rm.get("usage") or {}
+            from app.llm import _normalize_token_usage as _ntu
+            audit_tu = _ntu(tu) if isinstance(tu, dict) and tu else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            # 兼容 usage_metadata
+            if not audit_tu.get("total_tokens"):
+                um = getattr(result, "usage_metadata", None)
+                if isinstance(um, dict):
+                    audit_tu = _ntu({"prompt_tokens": um.get("input_tokens", 0), "completion_tokens": um.get("output_tokens", 0), "total_tokens": um.get("total_tokens", 0)})
+        except Exception:
+            audit_tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         parsed = _parse_audit(raw)
         parsed["engine"] = engine
         parsed["mode"] = AUDIT_MODE_VLM
         parsed["audit_ms"] = round((time.time() - start) * 1000, 1)
+        parsed["token_usage"] = audit_tu
         return parsed
     except Exception as e:
         return {"skipped": True, "reason": f"audit_error: {e}",
                 "mode": AUDIT_MODE_VLM,
-                "audit_ms": round((time.time() - start) * 1000, 1)}
+                "audit_ms": round((time.time() - start) * 1000, 1),
+                "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
 
 
 def run_text_audit(data: ReceiptData) -> dict:

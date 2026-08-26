@@ -15,8 +15,8 @@ from typing import Optional
 
 # 当前各组件生效的生产默认版本
 ACTIVE_VERSIONS = {
-    "extract": "v1_1_0_hk",
-    "parse": "v2_0_0_hk_units",
+    "extract": "v1_2_8_anti_injection",
+    "parse": "v2_1_0_sku_clean",
     "audit": "v2_0_0_reason",
     "review": "v2_0_0_cards",
     "query": "v1_0_0",
@@ -25,8 +25,8 @@ ACTIVE_VERSIONS = {
 
 # 各组件全量版本索引
 AVAILABLE_VERSIONS = {
-    "extract": ["v1_0_0", "v1_1_0_hk"],
-    "parse": ["v1_0_0", "v2_0_0_hk_units"],
+    "extract": ["v1_0_0", "v1_1_0_hk", "v1_2_0_sku_clean", "v1_2_1_anti_stamp_pollution", "v1_2_2_anti_disclaimer_pollution", "v1_2_3_anti_fee_confusion", "v1_2_4_multi_pack", "v1_2_5_hk_date", "v1_2_6_strike_notes", "v1_2_7_huama_humility", "v1_2_8_anti_injection"],
+    "parse": ["v1_0_0", "v2_0_0_hk_units", "v2_1_0_sku_clean"],
     "audit": ["v1_0_0", "v2_0_0_reason"],
     "review": ["v1_0_0", "v2_0_0_cards"],
     "query": ["v1_0_0"],

@@ -37,3 +37,60 @@
      ```
    - **一票否决制**：QA 与 Reviewer 阶段凡未操作真实浏览器、未进行阿叔/阿姨视角高压 UX 评估、或存在技术黑话/甩锅画质的，直接判定不及格（FAIL / REJECTED）并重回 Dev 阶段重新返工。
 
+## 解析记忆落盘规范（最严格 · 零 Emoji）
+
+本章节落实“每次解析图片都要记录 token 消耗、耗时、解析是否成功”，同时满足 DB 可查 + 文件可追溯双通道。
+
+### 1. 落盘路径
+
+- **DB 层**：`ai_decision_log` 表（`demo/app/db.py:184 DecisionLogRow` `1845 log_ai_decision`）  
+  `extra` 列（`Text`）存结构化 JSON：`{tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms:{extract,parse,rag,audit,total}, success:true/false, image_path, supplier, doc_form}`  
+  `ai_value` 亦冗余 `tokens_total/cost_hkd/elapsed_ms/success` 便于前端直接读取（`docs/04-AI技术选型与评测/02-L0-L9选型决策档案/L4-多模态VLM直识(定稿冠军).md:21`）。
+- **文件层**：`artifacts/memory/parse_log.jsonl`（JSONL，每行一图，`demo/app/chains/supervisor.py:357 _finalize` 并发安全 `threading.Lock` + `a` 追加）  
+  目录自动创建，Git 忽略需保留（`.gitkeep` 可选）。
+- **日志层**：`RECEIPT_LATENCY` 与 `TOKENS` 双行结构化日志同时打印到 stdout（uvicorn 捕获），便于 `docker logs` / `orca eval` 追踪。
+
+### 2. 字段定义
+
+**DB `extra` / JSONL 单行公共字段：**
+
+| 字段 | 类型 | 来源与说明 |
+|---|---|---|
+| `ts` | string ISO | 写入时间 `YYYY-MM-DDTHH:MM:SS`（`demo/app/db.py:now_iso`） |
+| `receipt_id` | int \| null | 收据主键（`receipts.id`），冒烟无 id 时 null |
+| `image_path` | string | 原图路径（截断 500） |
+| `supplier` | string | 识别供应商（截断 120，`ReceiptData.vendor`） |
+| `doc_form` | string | 单据形态枚举（`DocForm` 7 种，截断 60） |
+| `engine` | string | 真实引擎 kind（`opencode`/`codebuddy`/`openai`/`qwen`，`demo/app/llm.py:build_recognition_model` 透传 `model.kind`） |
+| `model` | string | 模型名（`EngineConfig.recognition_model` / `grey_*`） |
+| `tokens_prompt` | int | 输入 tokens（OpenAI `usage.prompt_tokens` 或 `input_tokens`） |
+| `tokens_completion` | int | 输出 tokens（`completion_tokens` / `output_tokens`） |
+| `tokens_total` | int | 总 tokens（`total_tokens` 或 prompt+completion） |
+| `cost_hkd` | float | 按成本表计费：输入 ¥0.15/1M + 输出 ¥1.50/1M（`L4` qwen3-vl-flash 单张约 ¥0.0022，`docs/03-评测平台/02-163张真实收据成本核算.md:17,40`）；本地 CLI 无 token 记 0 |
+| `elapsed_ms` | object | `{extract, parse, rag, audit, total}`，单位 ms（`demo/app/chains/supervisor.py:202 elapsed_ms` `358 _finalize`） |
+| `success` | bool | 解析是否成功（`data != None` 且门禁通过） |
+| `error_msg` | string | 失败原因（截断 500，`contract_error`/`last_error`） |
+| `use_grey` | int | 灰测标记 0/1 |
+
+### 3. 代码埋点
+
+- `demo/app/llm.py:154 CodeBuddyChatModel._run_cli` / `~260 OpencodeChatModel` / `371 OpenAIChatModel._generate`：返回 `ChatResult` 前提取 `response.json().usage`，存入 `ChatGeneration.message.response_metadata['token_usage']`（归一 `prompt_tokens/completion_tokens/total_tokens`，本地 0）。
+- `demo/app/chains/extract_chain.py:262 vlm_elapsed` `300 elapsed_ms`：捕获 `token_usage` 存 `result["token_usage"]` 并透传 `cost_hkd`。
+- `demo/app/chains/supervisor.py:92 _log_extract_decision`：增加 `tokens_total/cost_hkd/elapsed_ms/success` 入 `ai_value` 与 `extra`；`_finalize:357` 打印 `RECEIPT_LATENCY` 同时追加 `TOKENS` 行；落盘 `artifacts/memory/parse_log.jsonl`（`threading.Lock`）。
+- `demo/app/db.py:1845 log_ai_decision`：`extra` 为 `Text` 已支持长 JSON；`list_ai_decisions` 解析 `extra` 暴露 `tokens_total/cost_hkd`。
+- `demo/app/api_receipts.py:458 GET /api/receipt/{id}`：返回 `ai_decisions` 已含 `tokens_total/cost_hkd/elapsed_ms/success`；`demo/app/api_admin.py GET /api/admin/metrics` 聚合 `avg_tokens, avg_elapsed, success_rate`。
+
+### 4. 验证指令（最严格）
+
+```bash
+# 单图解析后文件落盘含 tokens
+~/.pyenv/versions/3.9.6/bin/python -c "from app.chains import supervisor; ..."
+# DB 可查
+sqlite3 demo/receipt_demo.db "select ai_value, extra from ai_decision_log order by id desc limit 1;" | grep -c tokens_total
+# API 返回
+curl -s http://127.0.0.1:15010/api/receipt/{id} -H X-Role:staff | grep tokens
+curl -s http://127.0.0.1:15010/api/admin/metrics -H X-Role:owner | grep avg_tokens
+```
+
+`orca eval` 可读：本文件新增章节即为可观测记忆规范，`artifacts/memory/parse_log.jsonl` 示例行见同目录。
+

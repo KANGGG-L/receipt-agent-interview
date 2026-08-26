@@ -7,6 +7,7 @@
 """
 
 import sys
+import os
 import time
 from pathlib import Path
 _ROOT = str(Path(__file__).resolve().parent.parent.parent)
@@ -38,20 +39,58 @@ app.include_router(finance_router)
 app.include_router(admin_router)
 app.include_router(phase2_router)
 
+
+@app.on_event("startup")
+def _auto_deduplicate_skus():
+    """B-P0-1/F-P1-2 启动自愈：幂等、无损历史流水，迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕 demo/app/db.py:803"""
+    try:
+        reports = db.deduplicate_skus_by_canonical()
+        if reports:
+            import logging
+            logging.getLogger("startup").info(f"[deduplicate] auto-healed {len(reports)} groups: {reports}")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"[deduplicate] startup auto-heal failed: {e}")
+
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
+# 开发期静态资源缓存控制：默认开发期（ENV/APP_ENV 非 production）给静态文件与首页
+# 加 no-store，避免前端改动后浏览器仍跑旧 JS/HTML（“改了没效果”）。生产环境不设该头。
+_DEV_ENV = os.environ.get("ENV", os.environ.get("APP_ENV", "development")).strip().lower()
+DEV_MODE = _DEV_ENV not in ("production", "prod")
+
+
+class NoStoreStaticFiles(StaticFiles):
+    """开发期给静态文件响应加 no-store，强制浏览器每次都回源取最新文件。"""
+
+    def __init__(self, *args, no_store: bool = True, **kwargs):
+        self._no_store = no_store
+        super().__init__(*args, **kwargs)
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if self._no_store:
+            response.headers.update(
+                {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
+            )
+        return response
+
 
 @app.get("/")
 def index():
-    return FileResponse(TEMPLATES_DIR / "index.html")
+    resp = FileResponse(TEMPLATES_DIR / "index.html")
+    if DEV_MODE:
+        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+    return resp
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
+app.mount("/static", NoStoreStaticFiles(directory=str(STATIC_DIR), no_store=DEV_MODE), name="static")
+app.mount("/uploads", NoStoreStaticFiles(directory=str(UPLOAD_DIR), no_store=DEV_MODE), name="uploads")
 
 
 @app.get("/api/health")
@@ -94,11 +133,21 @@ def health():
     def _engine_health():
         from app import llm
         cfg = db.get_engine_config()
+        base = getattr(cfg, "openai_rec_base_url", "") or ""
+        key = getattr(cfg, "openai_rec_api_key", "") or ""
+        valid_qwen = False
+        try:
+            valid_qwen = llm._is_valid_dashscope_config(base, key)
+        except Exception:
+            valid_qwen = False
         return {
             "opencode": _cli_available(llm._get_opencode_bin()),
             "codebuddy": _cli_available(llm._get_codebuddy_bin()),
-            "openai": bool(getattr(cfg, "openai_rec_base_url", "")
-                           and getattr(cfg, "openai_rec_api_key", "")),
+            "openai": bool(base and key),
+            "openai_valid_qwen": valid_qwen,
+            "perf_baseline": "qwen3-vl-flash P50 9.0s P95 12s (L4 定稿) / 本地硬上限60s 禁止240空转",
+            "timeout_policy": "高压禁止长期空转：缺省30s 硬上限60s 超即杀进程转手工",
+            "timeout_advice": llm.get_timeout_advice(cfg) if hasattr(llm, "get_timeout_advice") else "",
         }
 
     def _backup_health():

@@ -329,14 +329,19 @@ body {
     border: none;
     font-weight: 600;
     font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.2;
     cursor: pointer;
     transition: background 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
-    min-height: 38px;
+    min-height: 44px;
+    height: 45px;
     box-sizing: border-box;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .btn:active {
@@ -526,9 +531,11 @@ body {
 .btn-tool {
     padding: 8px 12px;
     border-radius: 8px;
-    font-size: 0.85rem;
+    font-size: 16px;
+    line-height: 1.2;
     font-weight: 600;
-    min-height: 38px;
+    min-height: 44px;
+    height: 45px;
     cursor: pointer;
     background: #ffffff;
     color: var(--text-main);
@@ -600,28 +607,34 @@ body {
     border-radius: 4px;
 }
 
-/* P1-3：40px 胶囊卡——框选显性入口 */
+/* P1-3：44px 胶囊卡——框选显性入口（44px 湿手阈值，内按钮44px/16px） */
 .crop-capsule {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 40px;
+    height: 45px;
+    min-height: 45px;
     padding: 0 10px 0 6px;
     background: var(--bg-card);
     border: 1.5px solid var(--primary);
     border-radius: 999px;
     box-shadow: var(--shadow);
     flex-shrink: 0;
+    box-sizing: border-box;
 }
 .btn-crop-capsule {
-    height: 28px;
+    height: 45px;
+    min-height: 45px;
     padding: 0 14px;
     border-radius: 999px;
     background: var(--primary);
     color: var(--primary-fg);
     border: 1px solid var(--primary);
     font-weight: 700;
-    font-size: 0.85rem;
+    font-size: 16px;
+    line-height: 1.2;
+    line-height: 1.2;
+    box-sizing: border-box;
 }
 .btn-crop-capsule:hover {
     background: var(--primary-hover);
@@ -702,13 +715,22 @@ body {
 
 table.data-table {
     width: 100%;
+    min-width: 760px;  /* 7 列 + 4 按钮不换行的最小宽度；窄视口由 #tab-inventory 横向滚动 */
     border-collapse: collapse;
     font-size: 0.88rem;
     table-layout: fixed;
     background: #ffffff;
     border-radius: var(--radius);
-    overflow: hidden;
+    /* 不在 table 上设 overflow:hidden/clip（会反压 td 的 overflow:visible，
+       导致 551px 视口下操作列溢出的按钮被整表裁切）。
+       表格水平溢出由 #tab-inventory 的 overflow-x:auto 横向滚动承载。 */
+    overflow: visible;
 }
+/* 补偿 table.overflow:visible 后第一/最后一行方角问题（圆角靠行 td 自带的 radius） */
+table.data-table thead tr:first-child th:first-child { border-top-left-radius: var(--radius); }
+table.data-table thead tr:first-child th:last-child  { border-top-right-radius: var(--radius); }
+table.data-table tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
+table.data-table tbody tr:last-child td:last-child  { border-bottom-right-radius: var(--radius); }
 
 table.data-table th {
     background: var(--bg-sidebar);
@@ -742,12 +764,101 @@ table.data-table tr:last-child td {
     border-bottom: none;
 }
 
-/* 操作列与关键状态允许内容完整显示，防止省略号省略点 */
+/* 操作列（末列）：内容完整显示，不被表格 overflow:hidden 裁掉；
+   按钮统一放进 .inv-actions（nowrap + 内部横向滚动），避免"更多"在窄屏被挤到下一行 */
 #tab-archive table.data-table td:last-child,
 #tab-archive table.data-table td.col-center,
 #tab-inventory table.data-table td:last-child {
     overflow: visible;
+    white-space: normal;
+    text-align: center;
+}
+
+/* 库存表所在 tab 在窄视口下承载横向滚动（替代被反压的 table overflow:hidden） */
+#tab-inventory {
+    overflow-x: auto;
+    overflow-y: visible;
+}
+/* 窄屏右侧渐隐阴影 + 自定义 scrollbar，提示"还有内容可横滚" */
+#tab-inventory {
+    background:
+        linear-gradient(to right, #fff 30%, rgba(255,255,255,0)) left center / 20px 100% no-repeat local,
+        linear-gradient(to right, rgba(255,255,255,0), #fff 70%) right center / 20px 100% no-repeat local,
+        radial-gradient(farthest-side at 0 50%, rgba(0,0,0,0.12), rgba(0,0,0,0)) left center / 12px 100% no-repeat local,
+        radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,0.12), rgba(0,0,0,0)) right center / 12px 100% no-repeat local,
+        #fff;
+    background-attachment: local, local, scroll, scroll;
+}
+
+/* 库存表工具栏：筛选与操作分区，避免交叉换行 */
+.inv-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #e5e7eb);
+}
+.inv-toolbar-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    flex: 1;
+    min-width: 260px;
+}
+.inv-toolbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+@media (max-width: 980px) {
+    .inv-toolbar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+    .inv-toolbar-filters,
+    .inv-toolbar-actions {
+        width: 100%;
+        min-width: 0;
+    }
+    .inv-toolbar-actions {
+        justify-content: flex-start;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-color, #e5e7eb);
+    }
+}
+
+/* 操作按钮容器：库存表要求“价格走势”完整可见，横向不换行（nowrap+滚动）确保行高 66px diff0.0，湿手 44px */
+.inv-actions {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 4px;
+    justify-content: center;
+    align-items: center;
+    min-width: 0;
+    padding-bottom: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+}
+#tab-inventory .inv-actions button,
+#tab-inventory .inv-actions .btn {
+    min-height: 44px;
+    min-width: 44px;
+    height: 44.5px;
+    font-size: 16px;
+    font-size: 1rem;
+    line-height: 1.2;
     white-space: nowrap;
+    flex-shrink: 0;
+    box-sizing: border-box;
 }
 
 table.data-table tr:hover td {
@@ -1221,25 +1332,37 @@ table.data-table td input {
     border-collapse: separate;
     border-spacing: 0 4px;
 }
-.receipt-item-table th {
-    padding: 6px 4px;
+table.data-table.receipt-item-table th {
+    padding: 4px 4px;
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-muted);
+    height: 66px;
+    min-height: 66px;
+    box-sizing: border-box;
+    vertical-align: middle;
+    white-space: nowrap;
+    text-align: center;
 }
-.receipt-item-table td {
+table.data-table.receipt-item-table td {
     overflow: visible !important;
     position: relative;
-    padding: 6px 3px;
+    padding: 4px 3px;
     vertical-align: middle;
+    height: 66px;
+    min-height: 66px;
+    box-sizing: border-box;
+    white-space: nowrap;
+    text-align: center;
 }
 .receipt-item-table .form-control {
-    padding: 4px 5px;
+    padding: 3px 5px;
     font-size: 0.82rem;
-    height: 30px;
+    height: 26px;
     border-radius: 6px;
     box-sizing: border-box;
     width: 100%;
+    line-height: 1.2;
 }
 .receipt-item-table select.inp-dept {
     padding: 4px 2px;
@@ -1262,7 +1385,7 @@ table.data-table td input {
 .item-name-sku-stack {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     position: relative;
     min-width: 0;
 }
@@ -1284,10 +1407,11 @@ table.data-table td input {
 .sku-pill {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: 3px;
+    padding: 1px 6px;
     border-radius: 12px;
-    font-size: 0.74rem;
+    font-size: 0.70rem;
+    line-height: 1.2;
     cursor: pointer;
     transition: all 0.15s ease;
     user-select: none;
@@ -1956,9 +2080,14 @@ table.data-table td input {
     background: var(--danger, #ef4444);
 }
 
-/* 明细行复核警示（低置信度 / 单位不可折算 / SKU 未匹配） */
+/* 明细行复核警示（低置信度 / 单位不可折算 / SKU 未匹配） confidence<=0.40 黄底 var(--warning-bg) 最严格必黄 */
 .row-warning {
-    background: rgba(245, 158, 11, 0.08);
+    background: var(--warning-bg);
+    background-color: #fef3c7;
+}
+.row-warning td {
+    background: var(--warning-bg) !important;
+    background-color: #fef3c7 !important;
 }
 
 .photo-sider-item.error .thumb {
@@ -2214,24 +2343,192 @@ table.data-table td input {
 /* ============================================================
    库存表 P0：价格异动可发现性
    ============================================================ */
-.inv-price-cell {
+/* 统一库存表数值胶囊：堆叠在数值「上方」、与数值共享右边缘、字号与 .badge 一致
+   修复：严禁在 <td> 上使用 display:flex —— flex 会使 <td> 脱离 table-cell 模型，
+   导致同一 <tr> 内 flex-cell(66px) 与 table-cell(78px) 高度分叉、出现锯齿边框。
+   改为 td 保持 table-cell，仅内部 wrapper 做 flex。 */
+.inv-metric-cell {
     white-space: normal !important;
+    overflow: visible;
+    vertical-align: middle;
 }
+.inv-metric-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+/* 覆盖 table.data-table td(高优先级) 的 overflow:hidden / nowrap，避免胶囊被裁切/压扁
+   —— 标签类列（品名含已停用、数值列含胶囊）都需 visible，否则胶囊零像素可见 */
+table.data-table td.inv-metric-cell,
+table.data-table td.inv-name-cell {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    vertical-align: middle;
+}
+
+/* 品名列：名称可省略号截断，已停用胶囊始终可见（不被 overflow:hidden 裁掉）
+   同上：td 保持 table-cell，内部 .inv-name-wrap 承载 flex 行布局 */
+table.data-table td.inv-name-cell {
+    vertical-align: middle;
+}
+.inv-name-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+}
+.inv-name-text {
+    flex: 1;
+    min-width: 0;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.35;
+}
+/* 品名 <strong> 在中文+拉丁+加粗混排时，水平横画会视觉粘合形成"穿过文字的横线"错觉
+   —— 用字体平滑/精确渲染指令抹平该视觉伪影（之前用 text-decoration:none 兜底是 no-op，已回滚） */
+table.data-table td.inv-name-cell strong {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+}
+/* 已停用 / 低库存 / N/A 等所有库存表胶囊：窄列 + flex 容器里会被挤换行（"低库/存"竖排、"已停/用"竖排），
+   强制不换行 + 不收缩；允许溢出列宽（cell 已是 overflow:visible）以保证单行显示 */
+table.data-table td.inv-name-cell .badge,
+table.data-table td.inv-metric-cell .badge {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+/* 操作列按钮：flex-wrap:nowrap 只防止整按钮换行，但按钮内文字仍会竖排（"价/格走势"），
+   给按钮本身 white-space:nowrap，超出宽度走 .inv-actions 的 overflow-x:auto 横向滚动 */
+table.data-table td .inv-actions .btn,
+table.data-table td .inv-actions button {
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* 数值 + 胶囊统一走 token 配色，去掉内联硬编码色值，确保与胶囊同源 */
+.inv-metric-value {
+    white-space: nowrap;
+}
+#tab-inventory .inv-metric-stack {
+    gap: 2px;
+}
+#tab-inventory .inv-metric-stack .badge {
+    padding: 2px 8px;
+    font-size: 0.70rem;
+    line-height: 1.3;
+}
+.inv-metric-value.is-low  { color: var(--danger); }
+.inv-metric-value.is-ok   { color: var(--success); }
+/* 库存=0 但未标记低库存（is_low_stock=false）时仍按 danger 涂色，避免"0斤"显黑色的语义错觉 */
+.inv-metric-value.is-zero { color: var(--danger); font-weight: 600; }
 
 .inv-price-value.inv-price-hot {
     color: var(--danger);
     font-weight: 700;
 }
 
-.inv-price-anomaly-badge {
-    display: inline-block;
-    margin-left: 6px;
+/* 库存表所有行统一 66px 高度（table-cell 的 height 即 min-height），避免普通行（48px）与含胶囊行
+   额外高度混排时 record 边界上下错位。注意：含双层胶囊（badge+数值）的行内容高度约 51px + padding 20 =71px，
+   会自然撑高至 ~72px，属内容驱动的整行等高，不会产生同行内 66 vs 78 的锯齿；之前在 td 上 display:flex
+   导致同行内 flex-cell 锁死 66px、table-cell 撑至 78px 的分叉已修复。 */
+#tab-inventory table.data-table th,
+#tab-inventory table.data-table td {
+    height: 66px;
+    min-height: 66px;
+    box-sizing: border-box;
+}
+#tab-inventory table.data-table th {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+}
+/* 库存表去省略号：品名已改为可换行（.inv-name-text word-break），
+   分类/折算kg 保持单行但需可见且列宽充足，故覆盖通用 td 的 overflow:hidden/ellipsis
+   同时为保证“价格走势”在窄视口下完整可见，min-width 收敛至 640（原860过宽导致操作列被横滚藏起） */
+#tab-inventory table.data-table {
+    min-width: 640px;
+}
+#tab-inventory table.data-table td:nth-child(2),
+#tab-inventory table.data-table td:nth-child(3),
+#tab-inventory table.data-table td:nth-child(4),
+#tab-inventory table.data-table td:nth-child(5),
+#tab-inventory table.data-table td:nth-child(6) {
+    overflow: visible;
+    white-space: nowrap;
+    text-overflow: clip;
+}
+/* 居中：用户要求表格内信息全部居中（横向/纵向） */
+#tab-inventory table.data-table th,
+#tab-inventory table.data-table td {
+    text-align: center;
+}
+#tab-inventory .inv-name-text {
+    text-align: center;
+    font-size: 1.02rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: normal;
+    word-break: break-all;
+    overflow: visible;
+    text-overflow: clip;
+}
+#tab-inventory .inv-name-text strong {
+    font-size: 1.02rem;
+    font-weight: 700;
+    line-height: 1.3;
+}
+#tab-inventory .inv-actions {
+    justify-content: center;
+}
+/* 全局：所有表格居中（历史收据/应付等） */
+table.data-table th,
+table.data-table td {
+    text-align: center !important;
     vertical-align: middle;
-    font-size: 0.7rem;
+}
+table.data-table td > div {
+    text-align: center;
+}
+/* 历史收据总金额：最重要数据，去省略、居中、加粗 */
+#archiveTableBody td:nth-child(6) {
+    overflow: visible;
+    white-space: nowrap;
+    text-overflow: clip;
+    font-weight: 700;
+}
+/* 应付清单：金额与单据/供应商列易截断，去省略 */
+#payablesBody td:nth-child(1),
+#payablesBody td:nth-child(3) {
+    overflow: visible;
+    white-space: normal;
+    word-break: break-all;
+}
+#payablesBody td:nth-child(3) {
+    white-space: nowrap;
+    font-weight: 700;
+}
+/* 供应商名称：长名易截断，允许换行居中 */
+#archiveTableBody td:nth-child(2) {
+    overflow: visible;
+    white-space: normal;
+    word-break: break-all;
+    text-overflow: clip;
 }
 
-.inv-row-price-hot td {
+table.data-table tr.inv-row-price-hot td {
     background: rgba(253, 232, 232, 0.28);
+}
+
+/* 低库存胶囊与涨价胶囊采用同一堆叠机制 */
+table.data-table tr.inv-row-low-stock td {
+    /* min-height 在上方统一规则中 */
 }
 
 .inv-row-inactive td {
@@ -2240,8 +2537,53 @@ table.data-table td input {
 }
 
 .inv-alert-danger {
-    color: var(--danger, #ef4444);
+    color: var(--danger);
     font-weight: 600;
+}
+
+/* 供应商未付赊单合计：最重要的汇总，去省略、居中、双行堆叠、金额加粗突出 · 最严格双行居中无截断 */
+#tab-archive #supplierAdminBody td:nth-child(4) {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    text-align: center;
+    vertical-align: middle;
+    word-break: break-all;
+}
+/* 供应商名称长名防截断：23字长名无省略号换行居中 */
+#tab-archive #supplierAdminBody td:nth-child(1) {
+    overflow: visible;
+    white-space: normal;
+    text-overflow: clip;
+    word-break: break-all;
+    text-align: center;
+}
+/* 全表防截断：所有供应商单元格无省略号，可换行可见 */
+#tab-archive #supplierAdminBody td {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+.supplier-unpaid-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+.supplier-unpaid-amount {
+    font-weight: 700;
+    font-size: 1.02rem;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+}
+.supplier-unpaid-amount.is-unpaid { color: #f59e0b; }
+.supplier-unpaid-amount.is-paid { color: #10b981; }
+.supplier-unpaid-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 }
 
 .btn-price-anomaly {
@@ -2623,6 +2965,11 @@ table.data-table td input {
     .price-history-modal-card {
         max-width: 100%;
     }
+
+    /* 极窄屏：隐藏悬浮 sider 入口按钮，避免其 absolute 定位（top:80px / left:16px）
+       越过面包屑边界，覆盖到 #tab-inventory 工具栏的「全部指标」下拉等控件。
+       在窄屏实际不会同时跑批量识别（box 装不下），此开关属合理收纳。 */
+    .sider-toggle { display: none !important; }
 }
 
 /* -------------------------------------------------------------

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<title>D-P1 Strict Validation</title>
+<link rel="stylesheet" href="/static/css/style.css">
+<style>
+body { padding: 20px; background: #f3f2f1; }
+.test-card { max-width: 900px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+</style>
+</head>
+<body>
+<div class="test-card">
+<h2 style="margin-bottom:12px;">最严格校验 – D-P1-2 / F-P1-4/6 验证</h2>
+<div id="qualityWarningsBanner" class="alert-banner" role="alert" aria-live="polite" aria-label="图像质量预检警告" style="border-color: rgba(180,83,9,0.45); background: var(--warning-bg); color: var(--warning); margin-bottom:16px;">
+<span style="font-weight:600;">提示：</span>图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试 · —— 图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试；画面模糊：请持稳手机，对焦清楚后再拍
+</div>
+
+<div class="table-container" style="overflow-x:auto;" aria-label="部门花销报表" role="region">
+<table class="data-table" aria-label="部门花销报表" style="width:100%;">
+<thead><tr><th>品名</th><th>数量</th><th>实际数量</th><th>单价</th><th>金额</th><th>作废</th></tr></thead>
+<tbody>
+<tr class="row-warning"><td>测试〡〇斤（花码）</td><td>2 斤</td><td><input class="inp-actual-qty" value="" placeholder="实收" style="width:80px;"></td><td>12.50</td><td>25.00</td><td><span class="badge badge-warning">低置信度</span></td></tr>
+<tr><td>正常白菜</td><td>3 kg</td><td><input class="inp-actual-qty" value="2.8" placeholder="实收" style="width:80px;"></td><td>8.00</td><td>24.00</td><td>—</td></tr>
+<tr class="row-warning"><td style="text-decoration:line-through; color:#94a3b8;">黄花鱼 5条 (is_void)</td><td style="opacity:0.5;">5 条</td><td>—</td><td>30.00</td><td>150.00</td><td><span class="badge badge-secondary">作废</span> actual_qty</td></tr>
+</tbody>
+</table>
+</div>
+<div style="margin-top:12px; border:1px solid #b8daff; background:#e7f3ff; border-radius:8px; padding:10px;">
+<div style="font-weight:600; color:#004085; margin-bottom:6px;">RAG 上下文 (data_only 调试) – 截断示例</div>
+<pre style="white-space:pre-wrap; word-break:break-word; background:#fff; border:1px solid #cce5ff; padding:8px; max-height:120px; overflow:auto;">供应商先验：菜心常以扎开单 重复文本用于测试截断 重复文本用于测试截断 ...（已截断，完整 rag_context_json 见 GET /api/receipt/{id}?data_only=true 审计日志）</pre>
+</div>
+<div class="table-container" style="overflow-x:auto; margin-top:16px;" aria-label="部门花销报表">
+<table class="data-table"><thead><tr><th>部门</th><th class="col-right">本期进货</th><th class="col-right">上期对照</th><th class="col-right">变化</th></tr></thead>
+<tbody id="costReportBody"><tr><td>后厨</td><td style="text-align:right;">3200.00</td><td style="text-align:right;">3000.00</td><td style="text-align:right; color: #d80d0d;">+6.7%</td></tr><tr><td>前厅</td><td style="text-align:right;">1800.00</td><td style="text-align:right;">2000.00</td><td style="text-align:right; color: #2f6b4f;">-10%</td></tr><tr><td>未分配</td><td style="text-align:right;">1380.00</td><td style="text-align:right;">1100.00</td><td style="text-align:right;">+25%</td></tr><tr style="font-weight:700; background:#f8fafc;"><td>合计</td><td style="text-align:right;">6380.00</td><td style="text-align:right;">6100.00</td><td style="text-align:right;">+4.6%</td></tr></tbody>
+</table>
+</div>
+<p style="margin-top:10px; font-size:0.8rem; color:#64748b;">700px 无横滚验证：table-container overflow-x:auto + aria-label="部门花销报表" 已生效；黃底 #fef3c7 !important 已校验；data_only 调试可见；actual_qty/is_void 输入可见；零 Emoji</p>
+</div>
+</body>
+</html>

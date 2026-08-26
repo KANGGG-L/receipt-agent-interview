@@ -229,6 +229,7 @@
                                     <span class="crop-capsule-hint">拖拽框选需识别区域</span>
                                 </div>
                                 <button id="btnZoomToggle" class="btn-tool" onclick="toggleZoomMode()">定点放大</button>
+                                <button id="btnOpenOriginal" class="btn-tool" onclick="openOriginalInNewWindow()" title="在新窗口打开原始收据原图">原图新窗</button>
                                 <button id="btnRotate" class="btn-tool" onclick="rotateImg()">旋转 90°</button>
                                 <button id="btnReset" class="btn-tool" onclick="resetImgTransform()">重置</button>
                             </div>
@@ -331,7 +332,7 @@
                                 </div>
 
                                 <!-- Q29: 图像质量预检警告（上传/job 结果的 quality_warnings，多条可见） -->
-                                <div id="qualityWarningsBanner" class="alert-banner hide"
+                                <div id="qualityWarningsBanner" class="alert-banner hide" role="alert" aria-live="polite" aria-label="图像质量预检警告"
                                      style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
                                 </div>
 
@@ -573,8 +574,8 @@
 
 
                     <div class="card">
-                        <div class="inv-toolbar" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border-color, #e5e7eb);">
-                            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: 1; min-width: 280px;">
+                        <div class="inv-toolbar">
+                            <div class="inv-toolbar-filters">
                                 <!-- 搜索框 -->
                                 <div style="position: relative; min-width: 160px; max-width: 240px; flex: 1;">
                                     <input type="text" id="invSearchInput" class="form-control" style="font-size: 0.85rem; padding: 5px 8px;" placeholder="搜索食材品名 / 代码..." oninput="onInventorySearchInput(this.value)">
@@ -599,29 +600,30 @@
                                     <option value="anomaly">仅涨价</option>
                                 </select>
                                 <!-- 显示已停用 Checkbox -->
-                                <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; color: var(--text-muted, #666);">
+                                <label style="font-size: 0.85rem; display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; color: var(--text-muted, #666); white-space: nowrap;">
                                     <input type="checkbox" id="invIncludeInactive" onchange="onInventoryIncludeInactiveChange(this.checked)">
                                     显示已停用
                                 </label>
                             </div>
 
-                            <div style="display: flex; gap: 8px; align-items: center;">
+                            <div class="inv-toolbar-actions">
                                 <button class="btn btn-primary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openAddSkuModal()">+ 新增食材</button>
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openSkuMergeModalFromInv()"> 合并食材</button>
+                                <button class="btn btn-warning" style="padding: 5px 12px; font-size: 0.85rem;" onclick="deduplicateSkus()" title="一键清理 _\\d{10} 流水号重复食材，幂等自愈（迁移流水、停用副 SKU、审计留痕）">一键清理重复食材</button>
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryData()">刷新数据</button>
                             </div>
                         </div>
 
                         <div class="table-container">
-                            <table class="data-table" style="table-layout: fixed; width: 100%;">
+                            <table id="inventoryTable" class="data-table" style="table-layout: fixed; width: 100%;">
                                 <colgroup>
-                                    <col style="width: 18%;">
+                                    <col style="width: 20%;">
                                     <col style="width: 10%;">
-                                    <col style="width: 12%;">
                                     <col style="width: 10%;">
-                                    <col style="width: 12%;">
+                                    <col style="width: 10%;">
+                                    <col style="width: 10%;">
                                     <col style="width: 14%;">
-                                    <col style="width: 24%;">
+                                    <col style="width: 26%;">
                                 </colgroup>
                                 <thead>
                                     <tr>
@@ -677,23 +679,23 @@
                             </label>
                             <button class="btn btn-primary" style="padding:5px 12px; font-size:0.82rem;" onclick="openSupplierModal()">+ 新增供应商</button>
                         </div>
-                        <div class="table-container" style="max-height:340px; overflow-y:auto;">
+                        <div class="table-container" style="max-height:360px; overflow-y:auto; overflow-x:auto;">
                             <table class="data-table">
                                 <colgroup>
-                                    <col style="width: 26%;">
+                                    <col style="width: 22%;">
+                                    <col style="width: 10%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 20%;">
                                     <col style="width: 12%;">
-                                    <col style="width: 9%;">
-                                    <col style="width: 14%;">
-                                    <col style="width: 13%;">
-                                    <col style="width: 9%;">
-                                    <col style="width: 17%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 20%;">
                                 </colgroup>
                                 <thead>
                                     <tr>
                                         <th>名称 <span style="font-weight:400; color:var(--text-muted); font-size:0.72rem;">(编号)</span></th>
                                         <th class="col-center">账期</th>
                                         <th class="col-center">单据数</th>
-                                        <th class="col-right">未付赊单合计</th>
+                                        <th class="col-center">未付赊单合计</th>
                                         <th>电话</th>
                                         <th class="col-center">状态</th>
                                         <th class="col-center">操作</th>
@@ -715,7 +717,7 @@
                             <div style="display:flex; gap:8px;">
                                 <button class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="applyArchiveFilters()">应用筛选</button>
                                 <button class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="resetArchiveFilters()">重置条件</button>
-                                <button class="btn btn-success" style="padding:4px 12px; font-size:0.82rem;" onclick="exportArchiveCsv()" title="按当前筛选条件导出 CSV">导出 CSV</button>
+                                <button class="btn btn-success" style="padding:4px 12px; font-size:0.82rem;" onclick="exportArchiveCsv()" title="按当前筛选条件导出CSV">导出CSV</button>
                             </div>
                         </div>
                         
@@ -865,12 +867,12 @@
                             <table class="data-table" style="table-layout: fixed; width: 100%;">
                                 <colgroup>
                                     <col style="width: 65px;">   <!-- 单据ID -->
-                                    <col style="width: auto;">   <!-- 供应商名称 -->
+                                    <col style="min-width: 110px; width: 110px;">   <!-- 供应商名称 · 23字长名 word-break 无截断 -->
                                     <col style="width: 95px;">   <!-- 上传日期 -->
                                     <col style="width: 95px;">   <!-- 最后编辑日期 -->
                                     <col style="width: 90px;">   <!-- 开单日期 -->
-                                    <col style="width: 90px;">   <!-- 总金额 -->
-                                    <col style="width: 70px;">   <!-- 部门 -->
+                                    <col style="width: 130px;">   <!-- 总金额 -->
+                                    <col style="width: 60px;">   <!-- 部门 -->
                                     <col style="width: 80px;">   <!-- 状态 -->
                                     <col style="width: 110px;">  <!-- 付款状态 -->
                                     <col style="width: 110px;">  <!-- 操作列 -->
@@ -882,7 +884,7 @@
                                         <th style="white-space:nowrap; vertical-align:middle;">上传日期</th>
                                         <th style="white-space:nowrap; vertical-align:middle;">最后编辑日期</th>
                                         <th style="white-space:nowrap; vertical-align:middle;">开单日期</th>
-                                        <th class="col-right" style="white-space:nowrap; vertical-align:middle;">总金额</th>
+                                        <th class="col-center" style="white-space:nowrap; vertical-align:middle;">总金额</th>
                                         <th class="col-center" style="white-space:nowrap; vertical-align:middle;">部门</th>
                                         <th class="col-center" style="white-space:nowrap; vertical-align:middle;">状态</th>
                                         <th class="col-center" style="white-space:nowrap; vertical-align:middle;">付款状态</th>
@@ -935,8 +937,17 @@
 
                         <!-- 应付清单：默认列全部供应商赊单（03 章二） -->
                         <div id="payablesArea" style="margin-top:8px;">
-                            <div class="table-container" style="max-height:420px; overflow-y:auto;">
-                                <table class="data-table">
+                            <div class="table-container" style="max-height:420px; overflow-y:auto; overflow-x:auto;">
+                                <table class="data-table" style="table-layout: fixed;">
+                                    <colgroup>
+                                        <col style="width: 20%;">
+                                        <col style="width: 12%;">
+                                        <col style="width: 14%;">
+                                        <col style="width: 12%;">
+                                        <col style="width: 18%;">
+                                        <col style="width: 12%;">
+                                        <col style="width: 12%;">
+                                    </colgroup>
                                     <thead>
                                         <tr>
                                             <th>单据 / 供应商</th><th>开单日期</th><th>金额</th>
@@ -1010,7 +1021,7 @@
                     <!-- 部门管理（置顶，可折叠） -->
                     <details id="deptAdminDetails" class="card" style="margin-bottom:16px;">
                         <summary style="cursor:pointer; font-weight:600; display:flex; justify-content:space-between; align-items:center; user-select:none;">
-                            <span>🏢 部门管理</span>
+                            <span>部门管理</span>
                             <div style="display:flex; gap:8px; align-items:center;">
                                 <button type="button" id="btnAddDepartment" class="btn btn-primary" style="padding:4px 12px; font-size:0.82rem;" onclick="event.stopPropagation(); event.preventDefault(); addDepartment(); return false;">+ 新增部门</button>
                                 <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.82rem;" onclick="event.stopPropagation(); event.preventDefault(); loadDepartmentAdmin(); return false;">刷新</button>
@@ -1062,13 +1073,13 @@
                                     </label>
                                     <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;" onclick="setCostReportCurrentMonth()">本月</button>
                                     <button class="btn btn-primary" style="padding:4px 14px; font-size:0.85rem;" onclick="loadCostReport()">查询</button>
-                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;" onclick="exportCostReportCSV()">导出本表</button>
+                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem;" onclick="exportCostReportCSV()">导出CSV</button>
                                 </div>
                             </div>
                         </div>
                         <div id="costReportSummary" style="color:var(--text-muted); font-size:0.9rem; padding:6px 2px;"></div>
-                        <div class="table-container">
-                            <table class="data-table">
+                        <div class="table-container" style="overflow-x:auto;" aria-label="部门花销报表" role="region">
+                            <table class="data-table" aria-label="部门花销报表">
                                 <colgroup>
                                     <col style="width: 34%;">
                                     <col style="width: 22%;">
@@ -2045,15 +2056,23 @@
         </div>
     </div>
 
-    <!-- W4：出库消耗/损耗 Modal（B-30/B-31/B-32） -->
+    <!-- W4：出库消耗/损耗 Modal（B-30/B-31/B-32）合并为统一出库 -->
     <div id="outboundModal" class="modal-backdrop hide">
         <div class="modal-card" style="max-width:480px;">
             <div class="modal-header">
-                <h3 id="outboundModalTitle">- 出库登记</h3>
+                <h3 id="outboundModalTitle">出库登记</h3>
                 <button class="modal-close-btn" onclick="closeModalById('outboundModal')">x</button>
             </div>
             <div class="modal-body">
                 <div id="outboundHint" style="font-size:0.9rem; margin-bottom:12px;"></div>
+                <div class="form-group">
+                    <label>出库类型</label>
+                    <select id="outboundKind" class="form-control" onchange="onOutboundKindChange()">
+                        <option value="consume">日常用量</option>
+                        <option value="waste">报损耗</option>
+                    </select>
+                    <div id="outboundKindHint" style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;"></div>
+                </div>
                 <div class="form-group">
                     <label>出库数量</label>
                     <input type="number" step="0.01" min="0.01" id="outboundQty" class="form-control" placeholder="必须大于 0">

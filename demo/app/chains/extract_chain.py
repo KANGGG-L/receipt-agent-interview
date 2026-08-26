@@ -25,6 +25,70 @@ from app.services.rag import retrieve_context
 
 load_dotenv()
 
+# ---- token 提取与成本计算（最严格记忆落盘）----
+def _extract_token_usage(msg) -> dict:
+    """从 AIMessage 提取 token 消耗，兼容 response_metadata['token_usage']、usage_metadata、response_metadata['usage']。
+
+    本地 CLI 无 token 时返回 0 值，OpenAI 兼容（DashScope qwen3-vl-flash）从 response_metadata['token_usage'] 提取。
+    """
+    if msg is None:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    # AIMessage 场景
+    try:
+        # 1) response_metadata.token_usage（llm.py 标准写入）
+        rm = getattr(msg, "response_metadata", None)
+        if isinstance(rm, dict):
+            tu = rm.get("token_usage")
+            if isinstance(tu, dict) and any(k in tu for k in ("prompt_tokens", "completion_tokens", "total_tokens", "input_tokens", "output_tokens")):
+                # 归一
+                from app.llm import _normalize_token_usage
+                return _normalize_token_usage(tu)
+            # 兼容 usage 键
+            usage = rm.get("usage")
+            if isinstance(usage, dict):
+                from app.llm import _normalize_token_usage
+                return _normalize_token_usage(usage)
+        # 2) usage_metadata（langchain 新版 AIMessage 字段：input_tokens/output_tokens/total_tokens）
+        um = getattr(msg, "usage_metadata", None)
+        if isinstance(um, dict):
+            from app.llm import _normalize_token_usage
+            # usage_metadata 使用 input_tokens/output_tokens
+            mapped = {
+                "prompt_tokens": um.get("input_tokens", 0),
+                "completion_tokens": um.get("output_tokens", 0),
+                "total_tokens": um.get("total_tokens", 0),
+            }
+            return _normalize_token_usage(mapped)
+        elif um is not None:
+            # 可能是对象
+            try:
+                mapped = {
+                    "prompt_tokens": getattr(um, "input_tokens", 0) or 0,
+                    "completion_tokens": getattr(um, "output_tokens", 0) or 0,
+                    "total_tokens": getattr(um, "total_tokens", 0) or 0,
+                }
+                from app.llm import _normalize_token_usage
+                return _normalize_token_usage(mapped)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+
+def _cost_from_tokens(tu: dict) -> float:
+    """按成本表计算 HKD 成本：qwen3-vl-flash 输入 0.15/1M 输出 1.50/1M，无 token 记 0。"""
+    try:
+        from app.llm import _calc_cost_hkd
+        return _calc_cost_hkd(tu)
+    except Exception:
+        # 兜底：总 token *0.15/1M
+        try:
+            total = int((tu or {}).get("total_tokens", 0) or 0)
+            return round(total * 0.15 / 1_000_000, 6)
+        except Exception:
+            return 0.0
+
 PARSE_SYSTEM_PROMPT = """你是收据结构化解析助手。下方是视觉模型（VLM）对一张香港进货收据的原始识别输出，
 可能含杂质（解释文字/字段错位/格式不完整）。请把它整理成严格的 JSON 对象。
 
@@ -53,47 +117,38 @@ PARSE_SYSTEM_PROMPT = """你是收据结构化解析助手。下方是视觉模�
 10. 客观转录原则：原始输出写多少就记录多少（包括笔误或计算错误），严禁模型代为纠错或自动配平；任何算术矛盾均保留给系统门禁进行判定。
 """
 
-SYSTEM_PROMPT = """你是香港餐饮进货收据识别助手。请仔细读图，把收据内容转成结构化数据。
-
-硬性要求：
-1. 只输出一个 JSON 对象，不要任何解释文字、markdown 代码块围栏。
-2. 字段严格按契约：doc_form / vendor / date / items / total / payment_marked / confidence。
-3. doc_form 取值枚举：
-   - printed_delivery_note（印刷送货单）
-   - ncr_handwritten（街市 NCR 手写单）
-   - thermal（热敏机打）
-   - weigh_slip（磅单）
-   - correction_note（更正单）
-   - credit_note（Credit Note）
-   - monthly_statement（月结账单）
-4. 供应商 vendor 判定规则：
-   - vendor 必须是开单方/卖方/供货商（通常位于单据顶部的印刷大字抬头、红色/蓝色印章、或发票开单主体，如「德利行 Tak Lee Hong」、「祥興快餐用品」、「金百加發展有限公司」等）。
-   - 严禁误用买方/客户/送货地址：单据上的「客戶名稱」、「送貨地址」、「買方」、「枱號」或餐厅客户名（如「七月餐室」、「新記」）是买家，绝不能作为 vendor 供应商。
-   - 若单据抬头中英文并存（如「德利行 Tak Lee Hong」或「祥興快餐用品」），请完整提取真实供应商名称。
-5. items 明细与长单完整性规范：
-   - 针对长单据（10~20+行多明细长单），必须逐行完整转录所有明细项目，严禁因行数过多而省略、合并、截断任何明细行，严禁使用省略号（...）。
-   - items 每项含 name / qty / unit / unit_price / amount。
-   - 香港常用度量衡与包装单位规范：
-     * 蔬菜生鲜常用：斤（香港司马斤 600g）、两/両（司马两）、扎/紥、箱、包、袋、盘/盤；
-     * 粮油调味副食常用：罐、樽、桶、箱、包、斤、磅（lbs/lb）、打、支；
-     * 耗材包装餐具常用：箱、包、打、套、个/件；
-     * 肉类海鲜冻品常用：斤、磅、公斤（kg）、箱、条/條、只/隻、排、板。
-     * 单位归一：含「斤/港斤/司馬斤」用「斤」；含「两/兩」用「两」；含「磅/lbs」用「磅」；含「扎/紥」用「扎」；含「罐」用「罐」；含「樽」用「樽」；含「桶」用「桶」；含「箱」用「箱」；含「打」用「打」。
-   - 品名纯净性规范：name 必须是纯净食材名，剥离任何混入的流水号、条形码、时间戳或批次号（如 有机菜心_1787140420 剥离为 有机菜心）。
-   - 防误删保护：严禁误删合法等级（M7/A级/一级）、头数规格（3头鲍鱼/60/70白虾）、净重容量（5L/330ml）与品牌数字（7喜/1664/三花淡奶/五花肉）。
-   - 金额与数量严禁自行计算或纠正，必须逐字如实转录收据图面上的实际数字。
-   - 若图面数字相乘不符或总额不符，如实记录图面数字，一致性由系统门禁负责校验。
-6. total 必须如实转录收据图面标注的总金额数字，严禁自行加总替换图面数字；若图面总额与明细合计不符，如实记录并在 confidence 中体现不确定。
-7. payment_marked：是否有「已付款」印章/手写标记（不是金额本身）。
-8. confidence：0~1，你对整体提取的把握（字迹潦草/印章遮挡会降低）。
-9. 日期格式 YYYY-MM-DD（香港常见日/月/年如 24/08/2026 或 26年8月24日 规范化为 2026-08-24）；看不清的字段给合理推断并在 confidence 体现。
-10. items 只放「商品/食材」行。免责条款、地址、电话、备注（如"如有遺失本公司恕不負責"）不是商品，绝不放入 items。
-11. 客观转录原则：图面写多少就记录多少（包括图面本身的笔误或计算错误），严禁模型代为纠错或自动配平；任何算术矛盾均保留给系统门禁进行判定。
-"""
+# 主链路直连 ai_registry 生产版 Prompt（Gap1-8 聚合版 v1_2_8_anti_injection），单一事实源，Orca 可观测
+from ai_registry.prompts.extract.v1_2_8_anti_injection import PROMPT as SYSTEM_PROMPT
+# 备选：通过 Prompt Registry 动态加载（与 ACTIVE_VERSIONS 联动，Orca 可观测）
+# from app.prompts import get_prompt
+# SYSTEM_PROMPT = get_prompt("extract")
 
 
 def _image_data_url(image_path: str) -> str:
-    """图片 → data URL（LangChain 多模态标准格式）。"""
+    """图片 → data URL（LangChain 多模态标准格式）。长单 7-15 行 PIL max_side 1000 已做。"""
+    # 长单优化：超大图限边 1000（与 demo/app/api_receipts.py:112 对齐），减少 base64 体积与 VLM 时延
+    try:
+        from PIL import Image, ImageOps
+        import io
+        with Image.open(image_path) as img:
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+            max_side = max(img.size) if img.size[0] and img.size[1] else 0
+            if max_side > 1000:
+                scale = 1000.0 / max_side
+                new_w = max(1, int(img.size[0] * scale))
+                new_h = max(1, int(img.size[1] * scale))
+                img = img.resize((new_w, new_h), Image.BILINEAR)
+            if img.mode not in ("RGB", "L"):
+                img = img.convert("RGB")
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=85, optimize=True)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+            return "data:image/jpeg;base64," + b64
+    except Exception:
+        pass
     ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpg"
     if ext in ("heic", "heif"):
         ext = "jpg"  # 简化：真实版会转码；demo 直接用 jpg 样本
@@ -234,9 +289,42 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     engine = getattr(model, "kind", "unknown")
 
     start = time.time()
-    result = model.invoke(prompt)
-    raw = result.content if not isinstance(result, str) else result
-    vlm_elapsed = round((time.time() - start) * 1000, 1)
+    try:
+        result = model.invoke(prompt)
+        raw = result.content if not isinstance(result, str) else result
+        vlm_elapsed = round((time.time() - start) * 1000, 1)
+        # 提取 VLM token 消耗（DashScope qwen3-vl-flash 从 response_metadata['token_usage']；本地记 0）
+        vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        vlm_cost = _cost_from_tokens(vlm_token)
+    except Exception as e:
+        vlm_elapsed = round((time.time() - start) * 1000, 1)
+        # VLM 异常仍需记录耗时与 token 0，保证记忆落盘不丢（最严格）
+        vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        vlm_cost = 0.0
+        raw = ""
+        err_msg = f"VLM 调用失败: {e}"
+        # 合计 token 与成本（仅 VLM，解析未执行）
+        total_token = dict(vlm_token)
+        total_cost = float(vlm_cost or 0)
+        return {
+            "data": None,
+            "raw": raw,
+            "error": err_msg,
+            "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
+            "extract_ms": round(vlm_elapsed + rag_ms, 1),
+            "rag_ms": round(rag_ms, 1),
+            "engine": engine,
+            "vendor_context": _merge_priors(priors),
+            "parse_llm": {
+                "enabled": _parse_enabled(config, use_grey),
+                "model": "",
+                "elapsed_ms": 0,
+            },
+            "token_usage": total_token,
+            "vlm_token_usage": vlm_token,
+            "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "cost_hkd": round(total_cost, 6),
+        }
 
     # RAG 先验通道2（parse，真飞轮）：VLM 已识别出供应商 → 补检索注入解析规范化
     parse_prior = ""
@@ -254,6 +342,8 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     # 可选 LLM 解析：VLM 原始输出 → LLM 规范化（纯文本，可开关）
     parse_elapsed = 0
     parse_model_name = ""
+    parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    parse_cost = 0.0
     if _parse_enabled(config, use_grey):
         try:
             parse_model = build_parse_model(cfg=config, use_grey=use_grey)
@@ -264,12 +354,24 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             )
             raw = parse_result.content if not isinstance(parse_result, str) else parse_result
             parse_elapsed = round((time.time() - p_start) * 1000, 1)
+            if not isinstance(parse_result, str):
+                parse_token = _extract_token_usage(parse_result)
+                parse_cost = _cost_from_tokens(parse_token)
         except Exception as e:
             # LLM 解析失败不阻断：沿用 VLM 原始输出（graceful skip）
             parse_elapsed = -1
             parse_model_name = f"error:{e}"
+            parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            parse_cost = 0.0
 
     data, err = _parse_to_receipt(raw)
+    # 合计 token 与成本（VLM + 解析）
+    total_token = {
+        "prompt_tokens": int(vlm_token.get("prompt_tokens", 0) or 0) + int(parse_token.get("prompt_tokens", 0) or 0),
+        "completion_tokens": int(vlm_token.get("completion_tokens", 0) or 0) + int(parse_token.get("completion_tokens", 0) or 0),
+        "total_tokens": int(vlm_token.get("total_tokens", 0) or 0) + int(parse_token.get("total_tokens", 0) or 0),
+    }
+    total_cost = round(float(vlm_cost or 0) + float(parse_cost or 0), 6)
     return {
         "data": data,
         "raw": raw,
@@ -285,6 +387,11 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             "model": parse_model_name,
             "elapsed_ms": parse_elapsed,
         },
+        # token 透传（最严格落盘）
+        "token_usage": total_token,
+        "vlm_token_usage": vlm_token,
+        "parse_token_usage": parse_token,
+        "cost_hkd": total_cost,
     }
 
 
@@ -459,6 +566,42 @@ def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
         except Exception as e:
             import logging
             logging.getLogger("extract_chain").warning(f"[WARN] 后处理管道异常: {e}")
+
+    # 6. 兼容 ai_registry Gap1-8 聚合版 Prompt 的输出 Schema 映射至 demo 契约（supplier_name→vendor 等）
+    try:
+        if "supplier_name" in payload and "vendor" not in payload:
+            payload["vendor"] = payload.pop("supplier_name")
+        if "total_amount" in payload and "total" not in payload:
+            payload["total"] = payload.pop("total_amount")
+        if "is_paid" in payload and "payment_marked" not in payload:
+            payload["payment_marked"] = bool(payload.pop("is_paid"))
+        for _k in ["receipt_no", "payment_method", "contains_huama", "supplier_name", "total_amount", "is_paid"]:
+            payload.pop(_k, None)
+        if "doc_form" not in payload or not payload.get("doc_form"):
+            payload["doc_form"] = "printed_delivery_note"
+        for _it in payload.get("items", []):
+            if isinstance(_it, dict):
+                if "item_name" in _it and "name" not in _it:
+                    _it["name"] = _it.pop("item_name")
+                if "quantity" in _it and "qty" not in _it:
+                    _it["qty"] = _it.pop("quantity")
+                if "item_code" in _it:
+                    _code = _it.pop("item_code")
+                    if _code and not _it.get("raw_name"):
+                        _it["raw_name"] = str(_code)
+                for _ik in ["contains_huama", "confidence", "item_code", "quantity"]:
+                    _it.pop(_ik, None)
+                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty"}
+                for _k in list(_it.keys()):
+                    if _k not in _allowed_item:
+                        _it.pop(_k, None)
+        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence"}
+        for _k in list(payload.keys()):
+            if _k not in _allowed_top:
+                payload.pop(_k, None)
+    except Exception as _e:
+        import logging
+        logging.getLogger("extract_chain").warning(f"[WARN] Schema 归一化异常: {_e}")
 
     from app.services.contract import validate_contract
     data, err = validate_contract(payload)

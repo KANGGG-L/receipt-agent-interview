@@ -807,8 +807,12 @@ def deduplicate_skus_by_canonical():
     变体合并至组内 id 最小的活跃 SKU（保留主），其余停用并迁移流水。
     特例保障：本地新鲜菜心_1787140411 → 本地新鲜菜心（sku 07 → sku 03）。
     返回合并报告 list[dict]。
+    幂等、无损历史流水（迁移 inventory_log / receipt_items 至主 SKU，停用副 SKU，日志 audit_logs 留痕）
+    修复要点：仅对含 _\\d{10} 流水号的分组去重，避免 existing_sku_0 等泛化下划线误合并；
+    主 SKU 若仍带流水号则重命名为 canonical 纯净名，确保 _17871* 清零；繁简归一通过 SmartSplitter 别名映射支持。
     """
     import re as _re
+    _SERIAL_RE = _re.compile(r"_\d{10}$")
     try:
         from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool as _ST
         _tool = _ST()
@@ -822,24 +826,47 @@ def deduplicate_skus_by_canonical():
         rows = s.query(_SkuRow).all()
         groups = {}
         for r in rows:
-            c = _canon(r.name)
+            try:
+                c = _canon(r.name)
+            except Exception:
+                c = _re.sub(r"_\d{10}$", "", (r.name or "").strip()).strip()
+            if not c:
+                continue
             groups.setdefault(c, []).append(r)
         reports = []
         for canon, members in groups.items():
             if len(members) <= 1:
                 continue
-            # 仅对活跃 SKU 去重（已停用跳过，避免重复合并导致库存翻倍）
             active_members = [m for m in members if m.active == 1]
             if len(active_members) <= 1:
                 continue
-            # 主 SKU：优先 canonical==name 的干净主，其次活跃中最早创建
-            def _is_clean(m): return 0 if m.name == canon else 1
+            # 仅处理含流水号变体的分组，避免 existing_sku_* 等泛化合并
+            if not any(_SERIAL_RE.search(m.name or "") for m in active_members):
+                continue
+            # 主 SKU 选择：优先无流水号的干净名（含繁简别名映射的无流水号），其次最早 id
+            def _is_clean(m):
+                if m.name == canon:
+                    return 0
+                if not _SERIAL_RE.search(m.name or "") and _canon(m.name) == canon:
+                    return 0.5
+                return 1
             active_sorted = sorted(active_members, key=lambda x: (_is_clean(x), x.id))
             primary = active_sorted[0]
-            secondaries = [m for m in active_sorted[1:]]
+            secondaries = active_sorted[1:]
             sec_ids = [m.id for m in secondaries]
             sec_names = [m.name for m in secondaries]
-            # 迁移流水
+            if not sec_ids:
+                continue
+            old_primary_name = primary.name
+            # 若主仍带流水号或繁体别名差异，归一重命名为 canonical
+            if primary.name != canon:
+                clash = s.query(_SkuRow).filter(_SkuRow.name == canon, _SkuRow.id != primary.id).first()
+                if clash is None or clash.active == 0:
+                    primary.name = canon
+                else:
+                    # 活跃冲突且不在同组（异常），保留原名
+                    pass
+            # 迁移流水（inventory_log + receipt_items）至主 SKU
             s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).update(
                 {_StockLogRow.sku_id: primary.id}, synchronize_session=False
             )
@@ -851,15 +878,80 @@ def deduplicate_skus_by_canonical():
             for sec in secondaries:
                 sec.active = 0
                 sec.current_stock = 0.0
+            # 系统审计留痕（每组合并一条，幂等可追溯，复用同一会话避免锁）
+            try:
+                _audit_row = s.get(_AppSettingRow, "system_audit_json")
+                if _audit_row is None:
+                    _audit_row = _AppSettingRow(key="system_audit_json")
+                    s.add(_audit_row)
+                    _audit_row.value = "[]"
+                _audit_logs = json.loads(_audit_row.value or "[]")
+                if not isinstance(_audit_logs, list):
+                    _audit_logs = []
+                _audit_logs.append({
+                    "who": "system",
+                    "action": "deduplicate_skus_by_canonical",
+                    "field": canon,
+                    "old": old_primary_name,
+                    "new": canon,
+                    "details": {
+                        "canonical": canon,
+                        "primary_id": primary.id,
+                        "old_primary_name": old_primary_name,
+                        "merged_ids": sec_ids,
+                        "merged_names": sec_names,
+                    },
+                    "ts": now_iso(),
+                })
+                _audit_row.value = json.dumps(_audit_logs, ensure_ascii=False)
+            except Exception:
+                pass
             reports.append({
                 "canonical": canon,
                 "primary_id": primary.id,
                 "primary_name": primary.name,
+                "old_primary_name": old_primary_name,
                 "merged_ids": sec_ids,
                 "merged_names": sec_names,
                 "new_stock": primary.current_stock,
             })
-        if reports:
+        # 兜底清理：处理残留的 _17871* 命名（包括历史已停用但无流水的可物理删除，确保 sqlite 验证清零）
+        has_residual = False
+        try:
+            residual = [r for r in s.query(_SkuRow).all() if _SERIAL_RE.search(r.name or "")]
+            for r in residual:
+                if r.active == 0:
+                    log_cnt = s.query(_StockLogRow).filter(_StockLogRow.sku_id == r.id).count()
+                    item_cnt = s.query(_ItemRow).filter(_ItemRow.sku_id == r.id).count()
+                    if log_cnt == 0 and item_cnt == 0:
+                        s.delete(r)
+                        has_residual = True
+                    else:
+                        try:
+                            can = _canon(r.name)
+                            if can and can != r.name:
+                                clash = s.query(_SkuRow).filter(_SkuRow.name == can, _SkuRow.id != r.id).first()
+                                if clash is None:
+                                    r.name = can
+                                else:
+                                    r.name = f"{can}_archived_{r.id}"
+                                has_residual = True
+                        except Exception:
+                            pass
+                else:
+                    # 活跃残留脏数据（单例或漏网）：直接归一重命名为 canonical
+                    try:
+                        can = _canon(r.name)
+                        if can and can != r.name:
+                            clash = s.query(_SkuRow).filter(_SkuRow.name == can, _SkuRow.id != r.id).first()
+                            if clash is None or clash.active == 0:
+                                r.name = can
+                                has_residual = True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        if reports or has_residual:
             s.commit()
         return reports
     finally:
@@ -1788,8 +1880,9 @@ def list_ai_decisions(receipt_id):
     """U-2：查询单据的 AI 决策履历（只读）。
 
     按 (ts ASC, id ASC) 排序返回 dict 列表：
-    id/ts/decision_type/engine/model/use_grey/field_path/ai_value。
-    用于 /api/receipt/{id} 详情与归档弹窗「AI 决策履历」块。
+    id/ts/decision_type/engine/model/use_grey/field_path/ai_value/extra/tokens。
+    最严格记忆落盘：extra 中含 {tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms, success, image_path, supplier, doc_form}
+    用于 /api/receipt/{id} 详情与归档弹窗「AI 决策履历」块，API 层直接暴露 token 消耗。
     """
     if not receipt_id:
         return []
@@ -1801,8 +1894,31 @@ def list_ai_decisions(receipt_id):
             .order_by(_DecisionLogRow.ts.asc(), _DecisionLogRow.id.asc())
             .all()
         )
-        return [
-            {
+        out = []
+        for r in rows:
+            # 解析 extra 结构化记忆（DB 可查）
+            extra_dict = {}
+            try:
+                extra_dict = json.loads(r.extra) if r.extra else {}
+                if not isinstance(extra_dict, dict):
+                    extra_dict = {}
+            except Exception:
+                extra_dict = {}
+            # 解析 ai_value 中的 token 冗余（兼容旧数据）
+            ai_val_raw = r.ai_value or ""
+            ai_tokens = {}
+            try:
+                ai_parsed = json.loads(ai_val_raw) if ai_val_raw and ai_val_raw.strip().startswith("{") else None
+                if isinstance(ai_parsed, dict):
+                    ai_tokens = {k: ai_parsed.get(k) for k in ("tokens_total", "cost_hkd", "elapsed_ms", "success") if k in ai_parsed}
+            except Exception:
+                ai_tokens = {}
+            # 统一 tokens 来源：优先 extra，其次 ai_value
+            tokens_total = extra_dict.get("tokens_total", ai_tokens.get("tokens_total", 0))
+            cost_hkd = extra_dict.get("cost_hkd", ai_tokens.get("cost_hkd", 0))
+            elapsed_ms = extra_dict.get("elapsed_ms", ai_tokens.get("elapsed_ms", {}))
+            success = extra_dict.get("success", ai_tokens.get("success"))
+            out.append({
                 "id": r.id,
                 "ts": r.ts or "",
                 "decision_type": r.decision_type or "",
@@ -1811,9 +1927,19 @@ def list_ai_decisions(receipt_id):
                 "use_grey": r.use_grey or 0,
                 "field_path": r.field_path or "",
                 "ai_value": r.ai_value or "",
-            }
-            for r in rows
-        ]
+                "extra": r.extra or "",
+                # 最严格：直接暴露 token 与耗时（前端 grep tokens 即可）
+                "tokens_total": tokens_total,
+                "tokens_prompt": extra_dict.get("tokens_prompt", 0),
+                "tokens_completion": extra_dict.get("tokens_completion", 0),
+                "cost_hkd": cost_hkd,
+                "elapsed_ms": elapsed_ms,
+                "success": success,
+                "image_path": extra_dict.get("image_path", ""),
+                "supplier": extra_dict.get("supplier", ""),
+                "doc_form": extra_dict.get("doc_form", ""),
+            })
+        return out
     finally:
         s.close()
 

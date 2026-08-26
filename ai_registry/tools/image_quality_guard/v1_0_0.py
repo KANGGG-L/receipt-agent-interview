@@ -43,9 +43,10 @@ class ImageQualityGuardTool:
             warnings.append(f"图像分辨率过低 ({width}x{height})，低于最低门槛 ({self.MIN_WIDTH}x{self.MIN_HEIGHT})")
             score -= 0.5
 
-        # 3. 检查清晰度/模糊度（P0-1 同步 api_receipts.BLUR_THRESHOLD=30，<30 极模糊直接拦截）
+        # 3. 检查清晰度/模糊度（P0-1 同步 api_receipts.BLUR_THRESHOLD=30，<30 极模糊直接拦截，<1s 快速失败）
+        # 最严格人话：图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试
         if blur_score < 30.0:
-            warnings.append("图像模糊度过高（Laplacian方差过低），可能导致文字识别漂移")
+            warnings.append("图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（Laplacian方差过低）")
             score -= 0.4
 
         score = max(0.0, min(1.0, score))

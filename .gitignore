@@ -31,6 +31,13 @@ batch1/
 .omc/
 .omo/
 .codegraph
+.pi-glla/
+
+# 本地运行/实验/QA 产物（绝不提交）
+artifacts/
+!artifacts/memory/
+!artifacts/memory/**
+work/
 
 # 面试展示脚本（本地便利工具，不提交；含运行时日志）
 /interview-show.sh
@@ -42,3 +49,4 @@ batch1/
 artifacts/module-[a-f]/
 artifacts/e2e/*.png
 artifacts/e2e.tar.gz
+.codebuddy/

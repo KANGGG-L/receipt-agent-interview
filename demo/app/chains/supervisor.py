@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from typing import Optional
@@ -25,6 +26,27 @@ from app.services import math_engine
 from app.services.rag import retrieve_context
 
 MAX_RETRY = 3
+
+# ---- 记忆落盘：文件层并发安全与路径 ----
+_MEMORY_LOCK = threading.Lock()
+_MEMORY_LOG_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../../artifacts/memory/parse_log.jsonl")
+)
+# 备用路径（容器内 demo 相对）
+_MEMORY_LOG_PATH_ALT = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../artifacts/memory/parse_log.jsonl")
+)
+
+def _memory_log_path() -> str:
+    # 优先保证 artifacts/memory 目录存在，取可写路径
+    for p in (_MEMORY_LOG_PATH, _MEMORY_LOG_PATH_ALT):
+        d = os.path.dirname(p)
+        try:
+            os.makedirs(d, exist_ok=True)
+            return p
+        except Exception:
+            continue
+    return _MEMORY_LOG_PATH
 
 
 def _snapshot(log, action, reason, attempt, engine="", note=""):
@@ -89,6 +111,19 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
             _ai_engine = str(getattr(config, "grey_audit_engine", _ai_engine) or _ai_engine)
             _ai_model = str(getattr(config, "grey_audit_model", _ai_model) or _ai_model)
         from app import db as _db
+        # 最严格：audit 亦记录 token 占位（text 审核零 token，VLM 审核可为实际值；当前 text 模式记 0）
+        _audit_tu = audit.get("token_usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        try:
+            from app.llm import _normalize_token_usage
+            _audit_tu = _normalize_token_usage(_audit_tu)
+        except Exception:
+            _audit_tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        try:
+            from app.llm import _calc_cost_hkd
+            _audit_cost = _calc_cost_hkd(_audit_tu)
+        except Exception:
+            _audit_cost = 0.0
+        _audit_elapsed = {"audit": float(audit.get("audit_ms", 0) or 0), "total": float(audit.get("audit_ms", 0) or 0)}
         _db.log_ai_decision(
             receipt_id=int(receipt_id),
             supplier_id=None,
@@ -110,6 +145,12 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
             extra={
                 "discrepancies": audit.get("discrepancies", []) or [],
                 "corrected_suggestions": audit.get("corrected_suggestions", {}) or {},
+                "tokens_prompt": int(_audit_tu.get("prompt_tokens", 0) or 0),
+                "tokens_completion": int(_audit_tu.get("completion_tokens", 0) or 0),
+                "tokens_total": int(_audit_tu.get("total_tokens", 0) or 0),
+                "cost_hkd": float(_audit_cost or 0),
+                "elapsed_ms": _audit_elapsed,
+                "success": bool(audit.get("overall_consistent")) if audit.get("skipped") is False else False,
             },
         )
     except Exception as e:
@@ -117,21 +158,64 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
 
 
 def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                          attempt, engine, status, gate_err=""):
+                          attempt, engine, status, gate_err="",
+                          token_usage=None, cost_hkd=None, elapsed_ms=None,
+                          success=None, image_path="", supplier="", doc_form=""):
     """U-2：每轮 extract 决策落库（AI 决策履历断链修复）。
 
     - receipt_id=None（run_pipeline 直接调用/冒烟场景）→ 跳过写库不抛错
     - 写失败仅记 warning，绝不影响识别主链路（AC-E2）
     - ai_value 紧凑 JSON ≤500 字符，超长截断加 …(truncated) 尾标；
       gate_err 仅拒绝/失败轮携带，≤200 字摘要
+    - 最严格记忆落盘：ai_value 与 extra 均追加 {tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms, success, image_path, supplier, doc_form}
+      token 来自 ChatResult.generations[0].message.response_metadata['token_usage']（DashScope qwen3-vl-flash），本地 opencode/codebuddy 无 token 记 0 且 cost 0；
+      cost 按 docs/04-AI技术选型与评测/02-L0-L9选型决策档案/L4-多模态VLM直识(定稿冠军).md:21 qwen3-vl-flash ¥0.0022/张 或 token 单价 ¥0.15/1M 输入 / ¥1.50/1M 输出 计算。
     """
     if receipt_id is None:
         return
+    # 归一化 token
+    tu = token_usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    if not isinstance(tu, dict):
+        tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    def _to_int(v):
+        try:
+            return int(v or 0)
+        except Exception:
+            try:
+                return int(float(v or 0))
+            except Exception:
+                return 0
+    tokens_prompt = _to_int(tu.get("prompt_tokens", tu.get("input_tokens", 0)))
+    tokens_completion = _to_int(tu.get("completion_tokens", tu.get("output_tokens", 0)))
+    tokens_total = _to_int(tu.get("total_tokens", 0) or (tokens_prompt + tokens_completion))
+    # 成本计算
+    if cost_hkd is None:
+        try:
+            from app.llm import _calc_cost_hkd
+            cost_hkd = _calc_cost_hkd({"prompt_tokens": tokens_prompt, "completion_tokens": tokens_completion, "total_tokens": tokens_total})
+        except Exception:
+            cost_hkd = round(tokens_total * 0.15 / 1_000_000, 6) if tokens_total else 0.0
+    else:
+        try:
+            cost_hkd = round(float(cost_hkd or 0), 6)
+        except Exception:
+            cost_hkd = 0.0
+    # elapsed 归一
+    elapsed = elapsed_ms or {}
+    if not isinstance(elapsed, dict):
+        elapsed = {"total": float(elapsed or 0)}
+    # success 推断
+    if success is None:
+        success = (status in ("extract_ok", "parse_ok"))
     payload = {
         "attempt": attempt,
         "engine": str(engine or "")[:60],
         "status": status,
         "use_grey": 1 if use_grey else 0,
+        "tokens_total": tokens_total,
+        "cost_hkd": cost_hkd,
+        "elapsed_ms": elapsed,
+        "success": bool(success),
     }
     if gate_err:
         payload["gate_err"] = str(gate_err)[:200]
@@ -143,6 +227,18 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                             separators=(",", ":"))[:500] + "…(truncated)"
     else:
         stored = payload
+    # extra 结构化 JSON（DB 可查 + 文件可追溯）
+    extra = {
+        "tokens_prompt": tokens_prompt,
+        "tokens_completion": tokens_completion,
+        "tokens_total": tokens_total,
+        "cost_hkd": cost_hkd,
+        "elapsed_ms": elapsed,
+        "success": bool(success),
+        "image_path": str(image_path or "")[:500],
+        "supplier": str(supplier or "")[:120],
+        "doc_form": str(doc_form or "")[:60],
+    }
     try:
         _model = str(getattr(config, "recognition_model", "") or "")
         if use_grey:
@@ -159,6 +255,7 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
             decision_type="extract",
             field_path="overall",
             ai_value=stored,
+            extra=extra,
         )
     except Exception as e:
         logging.getLogger("supervisor").warning(f"记录 AI 决策失败: {e}")
@@ -209,6 +306,14 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         "audit_ms": 0.0,
         "retry_count": 0,
         "total_ms": 0.0,
+        # token 记忆落盘（最严格）
+        "tokens_prompt": 0,
+        "tokens_completion": 0,
+        "tokens_total": 0,
+        "cost_hkd": 0.0,
+        "success": False,
+        "supplier": "",
+        "doc_form": "",
     }
 
     # ---- 重试阶梯：识别 + 门禁，最多 MAX_RETRY 轮 ----
@@ -229,6 +334,32 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         state["rag_ms"] = round(state["rag_ms"] + result.get("rag_ms", 0) or 0, 1)
         state["parse_ms"] = round(
             state["parse_ms"] + max(0, (result.get("parse_llm") or {}).get("elapsed_ms", 0) or 0), 1)
+        # token 汇总（跨重试轮累加，最严格落盘）
+        _tu = result.get("token_usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        try:
+            from app.llm import _normalize_token_usage
+            _tu = _normalize_token_usage(_tu)
+        except Exception:
+            pass
+        _cost = result.get("cost_hkd", 0.0)
+        try:
+            _cost = float(_cost or 0)
+        except Exception:
+            _cost = 0.0
+        state["engine_name"] = str(result.get("engine") or state.get("engine_name") or "opencode")
+        state["tokens_prompt"] = int(state.get("tokens_prompt", 0) or 0) + int(_tu.get("prompt_tokens", 0) or 0)
+        state["tokens_completion"] = int(state.get("tokens_completion", 0) or 0) + int(_tu.get("completion_tokens", 0) or 0)
+        state["tokens_total"] = int(state.get("tokens_total", 0) or 0) + int(_tu.get("total_tokens", 0) or 0)
+        state["cost_hkd"] = round(float(state.get("cost_hkd", 0) or 0) + float(_cost or 0), 6)
+        # 预取 supplier/doc_form 供记忆落盘（来自本轮识别结果）
+        try:
+            _d = result.get("data")
+            if _d is not None:
+                state["supplier"] = str(getattr(_d, "vendor", "") or "")[:120]
+                _df = getattr(_d, "doc_form", "")
+                state["doc_form"] = str(_df.value if hasattr(_df, "value") else _df or "")[:60]
+        except Exception:
+            pass
         # VendorMemory 先验透传：extract 各通道（hint/parse/retry）合并的先验回写 state（跨轮保留）
         state["vendor_context"] = result.get("vendor_context") or state["vendor_context"]
 
@@ -237,7 +368,11 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                       attempt, engine=result["engine"])
             _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                                   attempt, result["engine"], "extract_fail",
-                                  gate_err=result["error"])
+                                  gate_err=result["error"],
+                                  token_usage=_tu, cost_hkd=_cost,
+                                  elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                  success=False, image_path=image_path,
+                                  supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
             continue  # 识别失败 → 下一轮重试
 
         # 首轮补检索（真飞轮）：无 hint 时 VLM 已识别出供应商 → 读 VendorMemory 补上下文，
@@ -257,6 +392,8 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
             state["contract_error"] = gate_err
             # Layer 2.2：门禁不过先尝试「解析级廉价修正」（纯文本 parse LLM，不重读图）；
             # 修正后通过门禁则直接进入审核，避免整图重识别。仅当修正仍失败时回退到整图重试。
+            # 优化：长单 7-15 行已限边 1000，audit_mode text 已 0.9ms；contract/math 失败快速反馈而非重调 VLM
+            # （当前 math 3060 vs 1650 误读触发 3 次 VLM 重跑各 40s → 应纯文本快速反馈）
             c_start = time.time()
             corrected = extract_chain.correct_receipt_with_feedback(
                 result["raw"], gate_err, config=config, use_grey=use_grey,
@@ -275,32 +412,82 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                               f"解析级修正通过门禁(第{attempt}轮): {gate_err}",
                               attempt, engine=result["engine"])
                     _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                          attempt, result["engine"], "parse_ok")
+                                           attempt, result["engine"], "parse_ok",
+                                           token_usage=_tu, cost_hkd=_cost,
+                                           elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                           success=True, image_path=image_path,
+                                           supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
                     state["data"] = corr_data
                     state["contract_error"] = ""
+                    # parse 修正成功同样视为成功，更新 supplier/doc_form
+                    try:
+                        state["supplier"] = str(getattr(corr_data, "vendor", "") or state.get("supplier", ""))[:120]
+                        _dfc = getattr(corr_data, "doc_form", "")
+                        state["doc_form"] = str(_dfc.value if hasattr(_dfc, "value") else _dfc or state.get("doc_form", ""))[:60]
+                    except Exception:
+                        pass
+                    state["success"] = True
                     break
-            # 修正未通过 → 带反馈进入下一轮整图重识别
+            # 修正未通过 → 快速反馈路径：contract/math 失败不再重调 VLM（避免 3*40s），直接快速反馈
+            is_fast_gate = ("算术门禁" in gate_err or "契约" in gate_err
+                            or "总额" in gate_err or "明细为空" in gate_err
+                            or "契约校验失败" in gate_err)
+            if is_fast_gate:
+                # 快速反馈：记录 gate_reject_fast，随后不再整图重识别（节省 VLM 耗时，满足 P95 ≤12s）
+                # 将 gate_err 保留供前端人工复核转手工或一键修正，而非静默重跑
+                _snapshot(log, "gate_reject_fast",
+                          f"门禁快速反馈(第{attempt}轮): {gate_err}（已尝试 parse 修正，仍不过门禁；不再重调 VLM，交人工快速反馈）",
+                          attempt, engine=result["engine"])
+                _log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                       attempt, result["engine"], "gate_reject_fast",
+                                       gate_err=gate_err,
+                                       token_usage=_tu, cost_hkd=_cost,
+                                       elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                       success=False, image_path=image_path,
+                                       supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+                # 保留 gate_err 供 finalize 错误出口显式提示，退出重试阶梯（避免 3 次 VLM 重跑）
+                break
+            # 非快速门禁类型（如极少数抽取失败）才带反馈进入下一轮整图重识别
             state["retry_feedback"] = gate_err
             _snapshot(log, "gate_reject", f"门禁拒绝(第{attempt}轮): {gate_err}",
                       attempt, engine=result["engine"])
             _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                  attempt, result["engine"], "gate_reject",
-                                  gate_err=gate_err)
-            continue  # 门禁不过 → 带反馈重试
+                                   attempt, result["engine"], "gate_reject",
+                                   gate_err=gate_err,
+                                   token_usage=_tu, cost_hkd=_cost,
+                                   elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                   success=False, image_path=image_path,
+                                   supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+            continue  # 门禁不过 → 带反馈重试（仅非快速类型）
 
         state["data"] = data
         state["contract_error"] = ""
+        # 更新 supplier/doc_form 到 state（成功路径最终落盘）
+        try:
+            state["supplier"] = str(getattr(data, "vendor", "") or state.get("supplier", ""))[:120]
+            _df2 = getattr(data, "doc_form", "")
+            state["doc_form"] = str(_df2.value if hasattr(_df2, "value") else _df2 or state.get("doc_form", ""))[:60]
+        except Exception:
+            pass
+        state["success"] = True
         _snapshot(log, "extract_ok", f"识别成功(第{attempt}轮) engine={result['engine']}",
                   attempt, engine=result["engine"])
         _snapshot(log, "gates_pass", "契约+算术门禁通过（零 token）",
                   attempt, engine=result["engine"])
         _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                              attempt, result["engine"], "extract_ok")
+                              attempt, result["engine"], "extract_ok",
+                              token_usage=_tu, cost_hkd=_cost,
+                              elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                              success=True, image_path=image_path,
+                              supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
         break
 
+    # 透传 receipt_id 到 state 供 _finalize 记忆落盘
+    state["receipt_id"] = receipt_id
     # ---- 结果处理 ----
     if state["data"] is None:
         state["status"] = "error"
+        state["success"] = False
         if state["contract_error"]:
             _snapshot(log, "error_exit", f"重试耗尽: {state['contract_error']}",
                       state["attempt"])
@@ -338,9 +525,23 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
 
 
 def _finalize(state: dict, pipeline_start: float) -> dict:
-    """管线收尾：汇总分段计时并输出结构化 RECEIPT_LATENCY 日志（Layer 1.3）。"""
+    """管线收尾：汇总分段计时并输出结构化 RECEIPT_LATENCY 日志（Layer 1.3）+ TOKENS + 记忆落盘。"""
     state["total_ms"] = round((time.time() - pipeline_start) * 1000, 1)
     state["retry_count"] = max(0, state["attempt"] - 1)
+    # success 兜底（最严格：error 状态强制 false）
+    if state.get("status") == "error":
+        state["success"] = False
+    elif "success" not in state:
+        state["success"] = bool(state.get("data") is not None)
+    # 汇总 elapsed_ms 字典
+    elapsed_dict = {
+        "extract": float(state.get("extract_ms", 0) or 0),
+        "parse": float(state.get("parse_ms", 0) or 0),
+        "rag": float(state.get("rag_ms", 0) or 0),
+        "audit": float(state.get("audit_ms", 0) or 0),
+        "total": float(state.get("total_ms", 0) or 0),
+    }
+    state["elapsed_ms_dict"] = elapsed_dict
     logging.getLogger("supervisor").info(
         "RECEIPT_LATENCY extract_ms=%.1f parse_ms=%.1f rag_ms=%.1f "
         "audit_ms=%.1f retry_count=%d total_ms=%.1f status=%s",
@@ -367,4 +568,60 @@ def _finalize(state: dict, pipeline_start: float) -> dict:
         ),
         flush=True,
     )
+    # ---- TOKENS 结构化日志（与 RECEIPT_LATENCY 同时输出）----
+    tokens_total = int(state.get("tokens_total", 0) or 0)
+    tokens_prompt = int(state.get("tokens_prompt", 0) or 0)
+    tokens_completion = int(state.get("tokens_completion", 0) or 0)
+    cost_hkd = float(state.get("cost_hkd", 0) or 0)
+    success = bool(state.get("success", False))
+    # 尝试取真实 engine/model
+    _cfg = state.get("config")
+    try:
+        _engine = str(state.get("engine_name") or getattr(_cfg, "recognition_engine", "") or "opencode")
+        if hasattr(_engine, "value"):
+            _engine = str(_engine.value)
+    except Exception:
+        _engine = str(state.get("engine_name") or "opencode")
+    try:
+        _model = str(getattr(_cfg, "recognition_model", "") or "")
+        if state.get("use_grey"):
+            _model = str(getattr(_cfg, "grey_recognition_model", _model) or _model)
+    except Exception:
+        _model = ""
+    logging.getLogger("supervisor").info(
+        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f success=%s engine=%s model=%s",
+        tokens_prompt, tokens_completion, tokens_total, cost_hkd, success, _engine, _model,
+    )
+    print(
+        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f success=%s engine=%s model=%s" % (
+            tokens_prompt, tokens_completion, tokens_total, cost_hkd, success, _engine, _model,
+        ),
+        flush=True,
+    )
+    # ---- 文件层记忆落盘：artifacts/memory/parse_log.jsonl（并发安全）----
+    try:
+        with _MEMORY_LOCK:
+            _path = _memory_log_path()
+            os.makedirs(os.path.dirname(_path), exist_ok=True)
+            rec = {
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                "receipt_id": state.get("receipt_id"),
+                "image_path": str(state.get("image_path", "") or "")[:500],
+                "supplier": str(state.get("supplier", "") or "")[:120],
+                "doc_form": str(state.get("doc_form", "") or "")[:60],
+                "engine": str(_engine or "")[:60],
+                "model": str(_model or "")[:120],
+                "tokens_prompt": tokens_prompt,
+                "tokens_completion": tokens_completion,
+                "tokens_total": tokens_total,
+                "cost_hkd": cost_hkd,
+                "elapsed_ms": elapsed_dict,
+                "success": success,
+                "error_msg": str(state.get("contract_error") or state.get("last_error") or "")[:500],
+                "use_grey": 1 if state.get("use_grey") else 0,
+            }
+            with open(_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception as e:
+        logging.getLogger("supervisor").warning(f"记忆落盘失败: {e}")
     return state

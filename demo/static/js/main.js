@@ -1823,16 +1823,20 @@ function collectQualityWarnings(ret) {
 }
 
 // F-P1-4 弱光/模糊重拍引导：按警告类型给出可执行的重拍建议（纯文本，无 Emoji）
+// 最严格人话：含“图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试”
 const RESHOOT_GUIDE = {
     dark: [
+        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
         '光线不足：请在明亮环境下拍摄，单据平放避免阴影遮挡',
         '打开手机闪光灯或移至灯光正下方后重新拍摄',
     ],
     blur: [
+        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
         '画面模糊：请持稳手机，对焦清楚后再拍',
         '尽量让单据充满取景框，避免远距离拍摄',
     ],
     small_or_corrupted: [
+        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
         '图片损坏或体积过小：请用相机重新拍摄原图，勿发送压缩图',
     ],
 };
@@ -1855,13 +1859,14 @@ function buildReshootGuideItems(warnings) {
 
 // Q29：质量预检警告渲染（多条可见；一律 textContent，无插值注入面）
 // P0-1 极模糊置顶：image_blur → 中文"图像模糊度过高"，并保证在错误卡片中也置顶可见
+// 最严格文案：含“图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试” 无 Emoji
 const QUALITY_WARNING_LABELS = {
-    'image_blur': '图像模糊度过高，请重新拍摄清晰单据',
-    'image_empty_or_corrupted': '上传图片损坏、模糊或为空，请重新拍摄清晰单据',
+    'image_blur': '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
+    'image_empty_or_corrupted': '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）',
     'duplicate': '疑似重复上传',
 };
 
-// F-P1-4：命中弱光/模糊时附加重拍引导
+// F-P1-4：命中弱光/模糊时附加重拍引导（最严格人话，无 Emoji）
 function showQualityWarnings(warnings) {
     const banner = document.getElementById('qualityWarningsBanner');
     if (!banner) return;
@@ -1882,7 +1887,14 @@ function showQualityWarnings(warnings) {
         const label = QUALITY_WARNING_LABELS[raw] || raw;
         return (raw === 'image_blur' && !label.includes('模糊')) ? QUALITY_WARNING_LABELS['image_blur'] : label;
     });
-    banner.innerHTML = `<span style="font-weight:600;">⚠️ 提示：</span>${msgs.join(' · ')}`;
+    // 最严格：自动附加重拍引导，确保“重拍/更亮处/框选裁剪”人话必现
+    const guideItems = buildReshootGuideItems(list);
+    // 若原始 warnings 未触发 guide 但包含 blur 语义，强制附加最严格文案
+    const hasStrictPhrase = msgs.some(m => m.includes('重拍')) || guideItems.some(g => g.includes('重拍'));
+    const strictGuide = hasStrictPhrase ? [] : ['图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试'];
+    const extraGuides = guideItems.concat(strictGuide);
+    const allParts = extraGuides.length ? msgs.concat(['—— ' + extraGuides.join('；')]) : msgs;
+    banner.innerHTML = `<span style="font-weight:600;">提示：</span>${allParts.join(' · ')}`;
     banner.classList.remove('hide');
     // P0-1 置顶保证：若 banner 所在 prefillFormCard 隐藏（错误态），克隆一份到 rightPanel 顶部置顶
     const prefill = document.getElementById('prefillFormCard');
@@ -2717,8 +2729,14 @@ function updateToolbarButtonStates() {
     const btnZoom = document.getElementById('btnZoomToggle');
     const btnCrop = document.getElementById('btnCropToggle');
     const btnApply = document.getElementById('btnApplyCrop');
+    const btnOpenOriginal = document.getElementById('btnOpenOriginal');
     const container = document.getElementById('imgViewerContainer');
     const cropOverlay = document.getElementById('cropOverlay');
+
+    // 「原图新窗」：只要有选中的照片就启用；真正无可打开原图时由函数用 toast 提示
+    if (btnOpenOriginal) {
+        btnOpenOriginal.disabled = !photo;
+    }
 
     if (btnCrop) btnCrop.disabled = cropDisabled;
     if (btnApply) btnApply.disabled = cropDisabled;
@@ -2740,6 +2758,8 @@ function updateToolbarButtonStates() {
         btnCrop.classList.add('active-crop');
         if (btnApply) btnApply.classList.remove('hide');
         container.style.cursor = 'crosshair';
+        // A-P1 显性入口：点击框选后立即显示虚线黄半透明 overlay（即使未拖拽，hide 移除以满足可视态验证）
+        if (cropOverlay) cropOverlay.classList.remove('hide');
     } else {
         container.style.cursor = 'default';
         if (cropOverlay) cropOverlay.classList.add('hide');
@@ -2865,6 +2885,62 @@ function toggleZoomMode() {
     }
     applyImgTransform();
     updateToolbarButtonStates();
+}
+
+/**
+ * 解析「原始收据原图」的最佳 URL：
+ * 优先服务端原图 imageUrl > 本地原图 objectUrl（均排除裁剪结果 croppedObjectUrl），
+ * 最后回退到当前预览图 previewImg.src（排除 HEIC 占位 SVG）。
+ */
+function getOriginalReceiptUrl(photo) {
+    if (!photo) return null;
+    if (photo.imageUrl && isBrowserDisplayableImageUrl(photo.imageUrl)) return photo.imageUrl;
+    if (photo.objectUrl) return photo.objectUrl;
+    const pi = document.getElementById('previewImg');
+    if (pi && pi.src && isBrowserDisplayableImageUrl(pi.src) && !pi.src.startsWith('data:image/svg')) {
+        return pi.src;
+    }
+    return null;
+}
+
+/**
+ * 在新窗口打开「原始收据原图」（用户点此按钮前的未裁剪 / 未旋转版本）。
+ * 直接把新标签页导航到图片绝对 URL（浏览器原生展示图片，最稳、不会被当空白弹窗），
+ * 并全程 try/catch —— 任何异常都会以 toast 暴露，不再「静默无效果」。
+ */
+function openOriginalInNewWindow() {
+    try {
+        const photo = getActivePhoto();
+        if (!photo) {
+            showToast('请先选择一张收据照片', 'warning');
+            return;
+        }
+        const originalUrl = getOriginalReceiptUrl(photo);
+
+        if (!originalUrl) {
+            // HEIC 等不可预览原图：解析完成后服务端会转成 JPEG，届时再打开
+            const isNonWeb = photo.file ? isNonWebImageFile(photo.file) : false;
+            showToast(
+                isNonWeb
+                    ? '该原图为 HEIC 等不可预览格式，解析完成并转成 JPEG 后即可在新窗打开'
+                    : '暂无可打开的原始收据原图',
+                'info'
+            );
+            return;
+        }
+
+        // 解析为绝对 URL：相对路径需基于当前页面 origin，而非新窗口的 about:blank
+        const absUrl = new URL(originalUrl, window.location.href).href;
+        const newWin = window.open(absUrl, '_blank');
+        if (!newWin) {
+            showToast('浏览器拦截了新窗口，请允许弹出窗口 / 关闭拦截器后重试', 'warning');
+            return;
+        }
+        newWin.focus();
+    } catch (e) {
+        console.error('openOriginalInNewWindow error:', e);
+        showToast('打开原图失败：' + (e && e.message ? e.message : String(e)), 'error');
+    }
 }
 
 function toggleCropMode() {
@@ -3651,7 +3727,7 @@ function buildSkuDropdownItemsHtml(inputElem, candidates) {
 
     itemsHtml += `
         <div class="unit-dropdown-item" data-sku-id="" data-sku-name="" onmousedown="selectSkuItem(this)" style="border-top:1px solid #f1f5f9; color:var(--text-muted);">
-            <div><span>✕ 设为未关联 (临时消费单)</span></div>
+            <div><span>设为未关联 (临时消费单)</span></div>
         </div>
     `;
     return itemsHtml;
@@ -4141,9 +4217,10 @@ function appendTableRow(item = {}) {
     const amount = Number(item.amount != null ? item.amount : (qty * price));
     const skuId = item.sku_id || '';
     const isAnomaly = item.price_anomaly || false;
+    const actualQtyVal = (item.actual_qty != null && item.actual_qty !== '') ? String(item.actual_qty) : '';
 
     const rowWarnings = [];
-    if (typeof item.confidence === 'number' && item.confidence < 0.5) {
+    if (typeof item.confidence === 'number' && item.confidence <= 0.40) {
         rowWarnings.push('低置信度');
     }
     if (item.unit_conversion_warning) {
@@ -4235,7 +4312,10 @@ function appendTableRow(item = {}) {
             </div>
         </td>
         <td>
-            <input type="number" step="0.01" class="inp-qty form-control text-right" value="${finalQty}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+                <input type="number" step="0.01" class="inp-qty form-control text-right" value="${finalQty}" oninput="recalcRow(this)" title="数量" placeholder="数量" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
+                <input type="number" step="0.01" class="inp-actual-qty form-control text-right" value="${w2Escape(actualQtyVal)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="font-size:0.78rem; padding:4px 6px;" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
+            </div>
         </td>
         <td>
             <div class="unit-combobox-wrap">
@@ -4303,9 +4383,9 @@ function toggleRowVoid(btn) {
         inp.style.textDecoration = newVoid ? 'line-through' : '';
         inp.style.color = newVoid ? '#94a3b8' : '';
     });
-    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount, .inp-dept').forEach(inp => {
+    tr.querySelectorAll('.inp-qty, .inp-actual-qty, .inp-price, .inp-amount, .inp-dept').forEach(inp => {
         inp.disabled = newVoid;
-        if (inp.classList.contains('inp-qty')) {
+        if (inp.classList.contains('inp-qty') || inp.classList.contains('inp-actual-qty')) {
             inp.style.textDecoration = newVoid ? 'line-through' : '';
         }
     });
@@ -4698,12 +4778,15 @@ function collectReviewFormData() {
     const items = [];
     rows.forEach(tr => {
         const deptInput = tr.querySelector('.inp-dept');
+        const actualQtyRaw = tr.querySelector('.inp-actual-qty') ? tr.querySelector('.inp-actual-qty').value.trim() : '';
         const item = {
             name: tr.querySelector('.inp-name').value.trim(),
             quantity: parseFloat(tr.querySelector('.inp-qty').value) || 1.0,
             unit: tr.querySelector('.inp-unit').value.trim(),
             unit_price: parseFloat(tr.querySelector('.inp-price').value) || 0.00,
             amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
+            // Gap 6：手写实收数量（actual_qty），留空则按 quantity 计
+            actual_qty: actualQtyRaw !== '' && !isNaN(parseFloat(actualQtyRaw)) ? parseFloat(actualQtyRaw) : null,
             // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
             cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null,
             // D-P1-4：划线作废状态随行保存（后端算术门禁剔除 is_void 行）
@@ -4767,6 +4850,8 @@ function buildSavePayloadFromData(data, receiptId) {
                 unit: it.unit != null ? it.unit : (it.raw_unit || ''),
                 unit_price: parseFloat(it.unit_price) || 0.00,
                 amount: parseFloat(it.amount) || 0.00,
+                // Gap 6：手写实收数量 actual_qty 可见
+                actual_qty: (it.actual_qty != null && String(it.actual_qty).trim() !== '' && !isNaN(Number(it.actual_qty))) ? Number(it.actual_qty) : null,
                 // Wave 2（契约⑦）：明细行成本中心——行内实际显示值；未打部门 → null
                 cost_center_id: (it.cost_center_id != null && String(it.cost_center_id).trim() !== ''
                     && Number(it.cost_center_id) > 0) ? Number(it.cost_center_id) : null,
@@ -5297,18 +5382,22 @@ function loadInventoryData() {
             const isActive = sku.active !== 0;
             if (!isActive) tr.classList.add('inv-row-inactive');
             if (priceAnomaly) tr.classList.add('inv-row-price-hot');
+            if (sku.is_low_stock) tr.classList.add('inv-row-low-stock');
 
+            // 统一胶囊机制：所有库存表告警胶囊都用 .badge + 颜色修饰符，
+            // 数值类胶囊（涨价 / 低库存）统一堆叠在数值「上方」并与数值右边缘对齐。
             let priceAnomalyBadge = '';
             if (priceAnomaly) {
                 const pctLabel = vsAvgPct != null
                     ? `涨价 +${vsAvgPct.toFixed(1)}%`
                     : '涨价异动';
-                priceAnomalyBadge = `<span class="badge badge-danger inv-price-anomaly-badge" title="相对 30 日均价涨幅超过 10%">${w2Escape(pctLabel)}</span>`;
+                priceAnomalyBadge = `<span class="badge badge-danger" title="相对 30 日均价涨幅超过 10%">${w2Escape(pctLabel)}</span>`;
             }
             const priceBtnCls = priceAnomaly ? 'btn btn-price-anomaly' : 'btn btn-secondary';
 
+            // 已停用 / 分类 等同属标签胶囊，统一走 .badge.badge-secondary（去掉内联自定义样式与间距，间距交由 .inv-name-cell 的 gap 控制）
             const activeBadge = !isActive
-                ? `<span class="badge badge-secondary" style="background:#6b7280; color:#fff; margin-left:6px;">已停用</span>`
+                ? `<span class="badge badge-secondary">已停用</span>`
                 : '';
             // kg 列：仅重量单位显示折算（司马斤 0.6048），计件单位显示 -
             let kgCell = '<span style="color:var(--text-muted);">-</span>';
@@ -5322,33 +5411,56 @@ function loadInventoryData() {
                 kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
             }
             tr.innerHTML = `
-                <td><strong>${w2Escape(sku.name)}</strong>${activeBadge}</td>
+                <td class="inv-name-cell"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${w2Escape(sku.name)}</strong></span>${activeBadge}</div></td>
                 <td><span class="badge badge-secondary">${w2Escape(sku.category || 'N/A')}</span></td>
-                <td class="col-right">
-                    <strong style="color:${sku.is_low_stock ? '#ef4444' : '#10b981'};">${skuStock}</strong> ${w2Escape(sku.base_unit)}
-                    ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
+                <td class="col-right inv-metric-cell">
+                    <div class="inv-metric-stack">
+                        ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
+                        <span class="inv-metric-value ${sku.is_low_stock ? 'is-low' : (skuStock < 1 ? 'is-zero' : 'is-ok')}"><strong>${skuStock}</strong> ${w2Escape(sku.base_unit)}</span>
+                    </div>
                 </td>
                 <td class="col-right">${kgCell}</td>
                 <td class="col-right">
                     <span class="${sku.is_low_stock ? 'inv-alert-danger' : ''}">${alertVal} ${w2Escape(sku.base_unit)}</span>
                 </td>
-                <td class="col-right inv-price-cell">
-                    <span class="inv-price-value${priceAnomaly ? ' inv-price-hot' : ''}">${w2Escape(priceText)}</span>
-                    ${priceAnomalyBadge}
+                <td class="col-right inv-metric-cell">
+                    <div class="inv-metric-stack">
+                        ${priceAnomalyBadge}
+                        <span class="inv-price-value${priceAnomaly ? ' inv-price-hot' : ''}">${w2Escape(priceText)}</span>
+                    </div>
                 </td>
                 <td class="col-center">
-                    <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.8rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;"
-                        onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;"
-                        onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
-                    <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.8rem; margin-left:4px;"
-                        onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>
+                    <div class="inv-actions">
+                        <button class="${priceBtnCls}" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
+                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                            onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
+                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                            onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
+                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>
+                    </div>
                 </td>
             `;
             tbody.appendChild(tr);
         });
     });
+}
+
+function deduplicateSkus() {
+    if (!confirm('确认一键清理重复食材？将按 canonical 归一合并所有 _\\d{10} 流水号变体（幂等、迁移流水、停用副 SKU、审计留痕）。')) return;
+    fetch('/api/admin/maintenance/deduplicate', {
+        method: 'POST',
+        headers: _authHeaders({'Content-Type': 'application/json'})
+    }).then(r => r.json()).then(ret => {
+        if (ret.status === 'success') {
+            const cnt = ret.merged_skus || 0;
+            const groups = ret.merged_groups || 0;
+            showToast(cnt > 0 ? `已清理 ${cnt} 个重复 SKU（${groups} 组）` : '无重复 SKU 需清理', 'success');
+            loadInventoryData();
+        } else {
+            showToast(ret.msg || ret.detail || '清理失败', 'error');
+        }
+    }).catch(e => showToast('清理请求失败: ' + e, 'error'));
 }
 
 function _resolveSkuObject(skuTarget) {
@@ -5401,9 +5513,9 @@ function toggleInventoryMoreMenu(btn, skuTarget) {
 
     const toggleText = isActive ? '停用' : '启用';
 
+    // 产品合并：计用量/报损耗 → 统一出库（内部分类型），停用/删除保留在更多作为快捷，编辑内已含停用开关
     menu.innerHTML = `
-        <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)}, "consume")'>记用量</div>
-        <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)}, "waste")'>报损耗</div>
+        <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>出库</div>
         <div class="unit-dropdown-item" style="color:${isActive ? '#ef4444' : '#10b981'};" onclick='closeInvMoreMenu(); toggleSkuActive(${Number(skuId)})'>${toggleText}</div>
         <div class="unit-dropdown-item" style="color:#ef4444; border-top:1px dashed var(--border-color);" onclick='closeInvMoreMenu(); deleteSkuDirect(${Number(skuId)}, ${jsStr(skuName)})'>删除/清理</div>
     `;
@@ -6105,19 +6217,19 @@ function resetArchiveFilters() {
 
 function renderStatusBadge(st) {
     const _SUB_LABEL = {
-        uploaded: '已上传', parsing: '解析中', parsed: '待核对 (AI自动入库)',
-        edited: '已修改 (店员人工保存)', flagged: '有问题 (已标记)', approved: '已入账 (老板审核通过)', error: '失败',
+        uploaded: '已上传', parsing: '解析中', parsed: '待核对',
+        edited: '已修改', flagged: '有问题', approved: '已入账', error: '失败',
     };
     if (st === 'uploaded' || st === 'parsing') {
         return '<span class="badge badge-warning" title="' + w2Escape(_SUB_LABEL[st] || st) + '">' + w2Escape(_SUB_LABEL[st] || '待处理') + '</span>';
     } else if (st === 'parsed') {
-        return '<span class="badge badge-warning" title="AI自动识别落库">待核对 (AI自动入库)</span>';
+        return '<span class="badge badge-warning" title="AI自动识别落库">待核对</span>';
     } else if (st === 'edited') {
-        return '<span class="badge badge-info" title="店员手工修改保存">已修改 (店员人工保存)</span>';
+        return '<span class="badge badge-info" title="店员手工修改保存">已修改</span>';
     } else if (st === 'approved') {
-        return '<span class="badge badge-success" title="老板审核通过">已入账 (老板审核通过)</span>';
+        return '<span class="badge badge-success" title="老板审核通过">已入账</span>';
     } else if (st === 'flagged') {
-        return '<span class="badge badge-danger" title="已标记">有问题 (已标记)</span>';
+        return '<span class="badge badge-danger" title="已标记">有问题</span>';
     } else if (st === 'error') {
         return '<span class="badge badge-danger" title="失败">失败</span>';
     } else {
@@ -6180,7 +6292,8 @@ function renderArchiveTable(receipts) {
                 '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:#60a5fa;">' + editDate + '</span></td>' +
-                '<td class="col-right" style="vertical-align:middle;"><strong>' + formatCurrency(r.total_amount, r.currency) + '</strong></td>' +
+                '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + recDate + '</span></td>' +
+                '<td style="vertical-align:middle; text-align:center;"><strong style="font-size:1.02rem; font-weight:700;">' + formatCurrency(r.total_amount, r.currency) + '</strong></td>' +
                 // Wave 2（D44）：归档列表展示单据级部门（未打 → 未分配）
                 '<td class="col-center" style="vertical-align:middle;">' + (r.department_name
                     ? '<span class="badge badge-secondary" style="font-size:0.75rem;">' + w2Escape(r.department_name) + '</span>'
@@ -6510,13 +6623,18 @@ function renderArchiveForm(data) {
         }
     }
 
-    // D-P1-3 RAG data_only 调试卡可见性
+    // D-P1-3 RAG data_only 调试卡可见性（截断显示，完整见接口 data_only=true）
     const ragCard = document.getElementById('arcRagContextCard');
     const ragPre = document.getElementById('arcRagContextPre');
     if (ragCard && ragPre) {
         if (isRagDataOnlyEnabled() && (data.rag_context != null)) {
-            const ctx = String(data.rag_context || '').trim();
-            ragPre.textContent = ctx ? ctx : '（空）无 RAG 上下文（冷启动或未检索）';
+            const ctxRaw = String(data.rag_context || '').trim();
+            let display = ctxRaw ? ctxRaw : '（空）无 RAG 上下文（冷启动或未检索）';
+            // 截断：前端调试卡最多显示 800 字符，避免超长撑满弹窗
+            if (display.length > 800) {
+                display = display.slice(0, 800) + '\n...（已截断，完整 rag_context_json 见 GET /api/receipt/{id}?data_only=true 审计日志）';
+            }
+            ragPre.textContent = display;
             ragCard.classList.remove('hide');
         } else {
             ragCard.classList.add('hide');
@@ -6665,6 +6783,7 @@ function appendArcTableRow(item = {}) {
     const arcRowIdx = tbody.children.length;
     // D-P1-4 划线作废：is_void 行置灰 + 删除线 + 作废徽标 + 联动保存
     const isVoid = !!(item.is_void);
+    const actualQtyArc = (item.actual_qty != null && item.actual_qty !== '') ? String(item.actual_qty) : '';
     if (isVoid) tr.style.opacity = '0.55';
     // P0-2：归档弹窗明细行与 Tab1 同口径——品名/单位属性插值过 w2Escape
     tr.innerHTML = `
@@ -6673,7 +6792,7 @@ function appendArcTableRow(item = {}) {
             ${skuId ? `<span class="badge badge-success">已关联</span>` : ''}
             ${isVoid ? `<span class="badge badge-secondary" title="划线作废，不计入总额">作废</span>` : ''}
         </td>
-        <td><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}></td>
+        <td><div style="display:flex; flex-direction:column; gap:4px;"><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)" title="数量" placeholder="数量" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}><input type="number" step="0.01" class="inp-actual-qty" value="${w2Escape(actualQtyArc)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="padding:4px; font-size:0.78rem;" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}></div></td>
         <td>
             <div class="unit-combobox-wrap">
                 <input type="text" class="inp-unit form-control" value="${w2Escape(unit)}" placeholder="单位" style="padding:4px; font-size:0.8rem; ${isVoid ? 'text-decoration:line-through; color:#6c757d;' : ''}" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="markArcDirty(); renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoid ? 'disabled' : ''}>
@@ -6764,9 +6883,9 @@ function toggleArcVoid(cb) {
         if (!cb.checked) inp.style.color = '';
         else inp.style.color = '#6c757d';
     });
-    tr.querySelectorAll('.inp-qty, .inp-price, .inp-amount').forEach(inp => {
+    tr.querySelectorAll('.inp-qty, .inp-actual-qty, .inp-price, .inp-amount').forEach(inp => {
         inp.disabled = cb.checked;
-        if (inp.classList.contains('inp-qty')) {
+        if (inp.classList.contains('inp-qty') || inp.classList.contains('inp-actual-qty')) {
             inp.style.textDecoration = cb.checked ? 'line-through' : '';
         }
     });
@@ -6837,12 +6956,15 @@ function submitSaveArchiveEdited() {
                 if (!rowErr) rowErr = `第 ${rowIndex} 行的单价或数量不是有效数字，请重新输入`;
             }
             const deptInput = tr.querySelector('.inp-dept');
+            const actualInput = tr.querySelector('.inp-actual-qty');
+            const actualRaw = actualInput ? actualInput.value.trim() : '';
             items.push({
                 name: nameVal,
                 quantity: isNaN(qtyVal) ? 1.0 : qtyVal,
                 unit: tr.querySelector('.inp-unit').value.trim(),
                 unit_price: isNaN(priceVal) ? 0.00 : priceVal,
                 amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
+                actual_qty: actualRaw !== '' && !isNaN(parseFloat(actualRaw)) ? parseFloat(actualRaw) : null,
                 // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
                 cost_center_id: (deptInput && deptInput.value) ? Number(deptInput.value) : null,
                 // D-P1-4：划线作废状态随行保存
@@ -9122,7 +9244,7 @@ function renderPayablesTable(rows) {
         const editable = owner && r.settlement_type === 'credit' && !r.payment_id &&
             (r.payment_status === 'unpaid' || r.payment_status === 'overdue');
         if (editable) {
-            dateCell = '<input type="date" class="form-control" style="font-size:0.8rem; padding:3px 6px; width:142px;" ' +
+            dateCell = '<input type="date" class="form-control" style="font-size:0.8rem; padding:3px 6px; width:100%; max-width:140px; box-sizing:border-box;" ' +
                 'value="' + w2Escape(r.expected_pay_date || '') + '" ' +
                 'title="设置预期付款日；清空即取消日期" ' +
                 'onchange="savePayDate(' + rid + ', this.value)">';
@@ -9147,7 +9269,7 @@ function renderPayablesTable(rows) {
         }
 
         tr.innerHTML = `
-            <td style="vertical-align:middle;">#${rid}<br>
+            <td style="vertical-align:middle; word-break:break-all; white-space:normal; text-align:center;">#${rid}<br>
                 <strong>${w2Escape(r.supplier_name || '-')}</strong>${supCode}</td>
             <td style="vertical-align:middle;">${renderDateCell(r.receipt_date)}</td>
             <td style="vertical-align:middle;"><strong>$${fmtMoney(r.total_amount)}</strong></td>
@@ -9656,8 +9778,11 @@ function renderSupplierAdminRows(suppliers) {
             </td>
             <td class="col-center">${w2Escape(termsText)}</td>
             <td class="col-center">${Number(s.receipt_count) || 0}</td>
-            <td class="col-right" style="color:${s.unpaid_credit_total > 0 ? '#f59e0b' : '#10b981'}; font-weight:500;">
-                $${fmtMoney(s.unpaid_credit_total)}（${s.unpaid_credit_count} 张）${overdueBadge}
+            <td>
+                <div class="supplier-unpaid-stack">
+                    <span class="supplier-unpaid-amount ${s.unpaid_credit_total > 0 ? 'is-unpaid' : 'is-paid'}">$${fmtMoney(s.unpaid_credit_total)}</span>
+                    <span class="supplier-unpaid-count">${s.unpaid_credit_count} 张${overdueBadge}</span>
+                </div>
             </td>
             <td>${w2Escape(s.contact_phone || '-')}</td>
             <td class="col-center">${statusBadge}</td>
@@ -10072,35 +10197,52 @@ function submitStocktake() {
         .catch(err => { console.error('盘点异常', err); showToast('盘点失败' + toastFailDetail(err), 'error'); });
 }
 
-// ---- W4 出库：消耗 / 损耗（B-30/B-31/B-32） ----
+// ---- W4 出库：消耗 / 损耗（B-30/B-31/B-32）合并为统一出库 ----
 let outboundSkuId = null;
 let outboundKind = null; // 'consume' | 'waste'
 
 const OUTBOUND_META = {
     consume: {
-        title: '记用量',
+        title: '出库登记 - 日常用量',
         hint: '登记厨房或营业日常使用量，同步扣减账面库存。',
         path: 'consume',
-        btn: '确认记用量',
+        btn: '确认出库（用量）',
     },
     waste: {
-        title: '报损耗',
+        title: '出库登记 - 报损耗',
         hint: '登记食材变质或损坏等损耗，同步扣减账面库存。',
         path: 'waste',
-        btn: '确认报损耗',
+        btn: '确认出库（损耗）',
     },
 };
 
-function openOutboundModal(skuId, skuName, currentStock, baseUnit, kind) {
-    const meta = OUTBOUND_META[kind];
-    if (!meta) { showToast('未知出库类型', 'error'); return; }
-    outboundSkuId = skuId;
+function onOutboundKindChange() {
+    const sel = document.getElementById('outboundKind');
+    if (!sel) return;
+    const kind = sel.value;
     outboundKind = kind;
-    document.getElementById('outboundModalTitle').textContent = meta.title;
+    const meta = OUTBOUND_META[kind];
+    if (!meta) return;
+    const hintEl = document.getElementById('outboundKindHint');
+    if (hintEl) hintEl.textContent = meta.hint;
+    const btn = document.getElementById('outboundSubmitBtn');
+    if (btn) btn.textContent = meta.btn;
+}
+
+function openOutboundModal(skuId, skuName, currentStock, baseUnit, kind) {
+    // kind 可选：未传或非法时默认 consume，后续可通过下拉切换
+    let initKind = kind && OUTBOUND_META[kind] ? kind : 'consume';
+    outboundSkuId = skuId;
+    outboundKind = initKind;
+    const sel = document.getElementById('outboundKind');
+    if (sel) sel.value = initKind;
+    const meta = OUTBOUND_META[initKind];
+    document.getElementById('outboundModalTitle').textContent = '出库登记';
     document.getElementById('outboundHint').innerHTML =
         `食材：<strong>${w2Escape(skuName)}</strong>｜当前账面 ` +
-        `<strong>${Number(currentStock || 0)}</strong> ${w2Escape(baseUnit || '')}` +
-        `<div style="margin-top:6px; font-size:0.8rem; color:var(--text-muted);">${w2Escape(meta.hint)}</div>`;
+        `<strong>${Number(currentStock || 0)}</strong> ${w2Escape(baseUnit || '')}`;
+    const hintEl = document.getElementById('outboundKindHint');
+    if (hintEl) hintEl.textContent = meta.hint;
     document.getElementById('outboundQty').value = '';
     document.getElementById('outboundNote').value = '';
     document.getElementById('outboundSubmitBtn').textContent = meta.btn;
@@ -10108,9 +10250,13 @@ function openOutboundModal(skuId, skuName, currentStock, baseUnit, kind) {
 }
 
 function submitOutbound() {
-    if (!outboundSkuId || !outboundKind) return;
-    const meta = OUTBOUND_META[outboundKind];
-    if (!meta) return;
+    if (!outboundSkuId) return;
+    // 以下拉当前值为准，兼容旧调用仍传 kind 的场景
+    const sel = document.getElementById('outboundKind');
+    const kind = sel ? sel.value : outboundKind;
+    if (!kind || !OUTBOUND_META[kind]) return;
+    outboundKind = kind;
+    const meta = OUTBOUND_META[kind];
     const qtyRaw = document.getElementById('outboundQty').value;
     const qty = parseFloat(qtyRaw);
     if (qtyRaw === '' || isNaN(qty) || qty <= 0) {
