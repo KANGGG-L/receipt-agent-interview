@@ -47,6 +47,20 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
     def _run():
         with JOBS_LOCK:
             JOBS[job_id]["job_status"] = "running"
+
+        def _on_event(ev):
+            # 首选引擎降级回退时实时写入 Job，供前端轮询第一时间弹提示
+            try:
+                if isinstance(ev, dict) and ev.get("type") == "engine_fallback":
+                    with JOBS_LOCK:
+                        JOBS[job_id]["progress_fallback"] = {
+                            "reason": str(ev.get("reason") or "")[:300],
+                            "from": str(ev.get("from") or "")[:60],
+                            "to": str(ev.get("to") or "")[:60],
+                        }
+            except Exception:
+                pass
+
         try:
             cfg = db.get_engine_config()
             from app.chains import supervisor
@@ -54,6 +68,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
                 receipt_id=receipt_id,  # U-2: 透传 receipt_id，AI 决策履历落库关联单据
+                on_event=_on_event,
             )
             data = result.get("data")
             if data is None:
@@ -62,6 +77,10 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
                     JOBS[job_id].update({
                         "job_status": "error",
                         "error_msg": result.get("contract_error") or result.get("last_error") or "识别失败",
+                        "fallback_triggered": result.get("fallback_triggered", False),
+                        "fallback_failed": result.get("fallback_failed", False),
+                        "fallback_from": result.get("fallback_from", ""),
+                        "fallback_engine": result.get("fallback_engine", ""),
                     })
                 return
 
@@ -76,6 +95,10 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
                         "image_url": "/uploads/" + (db.get_receipt_row(receipt_id).image_path.split("/")[-1] if db.get_receipt_row(receipt_id) else ""),
                         "version": db.get_receipt_row(receipt_id).version,
                         "quality_warnings": json.loads(db.get_receipt_row(receipt_id).quality_warnings_json or "[]"),
+                        "fallback_triggered": result.get("fallback_triggered", False),
+                        "fallback_reason": result.get("fallback_reason", ""),
+                        "fallback_from": result.get("fallback_from", ""),
+                        "fallback_engine": result.get("fallback_engine", ""),
                     },
                 })
         except Exception as e:

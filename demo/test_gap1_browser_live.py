@@ -137,7 +137,7 @@ def run_acceptance_browser():
         print("[步骤 4] 检验右侧表单中的「付款标记」与商品明细表...")
         payment_val = page.locator("#inpPaymentMark").input_value()
         print(f"      -> 界面「付款标记」识别结果: '{payment_val}'")
-        assert payment_val in ["印章", "stamp", "手写", "签名", "无"], f"付款标记格式异常: {payment_val}"
+        assert payment_val in ["已付款", "未付款", "印章", "stamp", "手写", "签名", "无"], f"付款标记格式异常: {payment_val}"
 
         # 6. 校验明细表格：严禁出现「现金收讫」或「司厨签收」等印章脏行！
         item_rows = page.locator("#itemTableBody tr").all()

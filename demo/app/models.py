@@ -149,18 +149,35 @@ class EngineKind(str, Enum):
     OPENAI = "openai"            # 自定义 OpenAI 兼容（base_url + api_key + model）
 
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+
 class EngineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # ---- 常规引擎配置 ----
-    # 识别引擎
-    recognition_engine: EngineKind = EngineKind.OPENCODE
-    recognition_model: str = "opencode/mimo-v2.5-free"
+    # 识别引擎（优先从 .env 读取）
+    recognition_engine: EngineKind = Field(
+        default_factory=lambda: EngineKind(os.environ.get("RECOGNITION_ENGINE", "opencode").lower())
+        if os.environ.get("RECOGNITION_ENGINE", "opencode").lower() in [e.value for e in EngineKind]
+        else EngineKind.OPENCODE
+    )
+    recognition_model: str = Field(
+        default_factory=lambda: os.environ.get("OPENCODE_RECOGNITION_MODEL", os.environ.get("RECOGNITION_MODEL", "opencode/mimo-v2.5-free"))
+    )
     # 识别 transport：subprocess(默认，CLI 快路径) | persistent(常驻进程，需显式开启)
     recognition_transport: str = "subprocess"
     # 审核引擎
-    audit_engine: EngineKind = EngineKind.OPENCODE
-    audit_model: str = "opencode/mimo-v2.5-free"
+    audit_engine: EngineKind = Field(
+        default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "opencode").lower())
+        if os.environ.get("AUDIT_ENGINE", "opencode").lower() in [e.value for e in EngineKind]
+        else EngineKind.OPENCODE
+    )
+    audit_model: str = Field(
+        default_factory=lambda: os.environ.get("OPENCODE_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free"))
+    )
     audit_enabled: bool = True
     # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
     #           vlm=原图 + JSON 交叉审核（原行为）
@@ -168,22 +185,40 @@ class EngineConfig(BaseModel):
     audit_mode: str = "text"
     # 审核 transport：subprocess(默认) | persistent
     audit_transport: str = "subprocess"
-    # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数）
-    openai_rec_base_url: str = ""
-    openai_rec_api_key: str = ""
-    openai_rec_model: str = ""
-    openai_aud_base_url: str = ""
-    openai_aud_api_key: str = ""
-    openai_aud_model: str = ""
+    # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数，优先从 .env 读取）
+    openai_rec_base_url: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_REC_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
+    )
+    openai_rec_api_key: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_REC_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
+    )
+    openai_rec_model: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_REC_MODEL", os.environ.get("OPENAI_MODEL", ""))
+    )
+    openai_aud_base_url: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_AUD_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
+    )
+    openai_aud_api_key: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_AUD_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
+    )
+    openai_aud_model: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_AUD_MODEL", os.environ.get("OPENAI_MODEL", ""))
+    )
     # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s
     call_timeout_seconds: int = 90
     # 常规解析 LLM（VLM 识别后 → LLM 规范化解析，可选）
     parse_llm_enabled: bool = False
     parse_llm_engine: EngineKind = EngineKind.OPENCODE
     parse_llm_model: str = "opencode/mimo-v2.5-free"
-    openai_parse_base_url: str = ""
-    openai_parse_api_key: str = ""
-    openai_parse_model: str = ""
+    openai_parse_base_url: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_PARSE_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
+    )
+    openai_parse_api_key: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_PARSE_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
+    )
+    openai_parse_model: str = Field(
+        default_factory=lambda: os.environ.get("OPENAI_PARSE_MODEL", os.environ.get("OPENAI_MODEL", ""))
+    )
     # 解析 LLM transport：subprocess(默认) | persistent
     parse_transport: str = "subprocess"
 

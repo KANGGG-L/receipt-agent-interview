@@ -6,6 +6,7 @@
 - /api/review：AI 复盘（价格异动/供应商洞察，owner 可用）
 """
 
+import os
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
@@ -428,6 +429,46 @@ def diff_regular_vs_grey(request: Request):
     }
 
 
+@router.get("/api/admin/engine-presets")
+def get_engine_presets(request: Request):
+    """返回常用预设网关配置，自动融入 .env 中的真实密钥。"""
+    require_admin(request)
+    dashscope_key = (
+        os.environ.get("DASHSCOPE_API_KEY", "")
+        or os.environ.get("OPENAI_API_KEY", "")
+    )
+    siliconflow_key = (
+        os.environ.get("SILICONFLOW_API_KEY", "")
+        or (os.environ.get("OPENAI_API_KEY", "") if "siliconflow" in os.environ.get("OPENAI_BASE_URL", "").lower() else "")
+        or os.environ.get("OPENAI_REC_API_KEY", "")
+    )
+    
+    presets = {
+        "agnes": {
+            "label": "Agnes AI",
+            "base_url": "https://api.agnes.ai/v1",
+            "api_key": "",
+            "rec_model": "agnes-2.0-flash",
+            "aud_model": "agnes-2.0-flash",
+        },
+        "bailian": {
+            "label": "阿里云百炼 · DashScope",
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "api_key": dashscope_key,
+            "rec_model": "qwen3-vl-flash",
+            "aud_model": "qwen3-vl-plus",
+        },
+        "siliconflow": {
+            "label": "SiliconFlow · 硅基流动",
+            "base_url": "https://api.siliconflow.cn/v1",
+            "api_key": siliconflow_key,
+            "rec_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+            "aud_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+        },
+    }
+    return {"status": "success", "data": presets}
+
+
 @router.get("/api/admin/engine-config")
 def get_engine_config(request: Request):
     require_admin(request)
@@ -466,6 +507,14 @@ def get_engine_config(request: Request):
     return resp
 
 
+def _is_placeholder_api_key(key) -> bool:
+    """空密钥或字面占位符（YOUR_xxx）→ True，保存前拦截。"""
+    k = str(key or "").strip()
+    if not k:
+        return True
+    return "YOUR_" in k.upper()
+
+
 @router.put("/api/admin/engine-config")
 def set_engine_config(body: EngineConfigBody, request: Request):
     require_admin(request)
@@ -498,35 +547,16 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     rec_key = new_dict.get("openai_rec_api_key") or ""
     rec_model = new_dict.get("openai_rec_model") or new_dict.get("recognition_model") or ""
     if rec_engine == "openai":
-        # qwen3-vl-flash 为 P50 9s 主路径：必须有效 DashScope 凭证
-        is_qwen = "qwen" in str(rec_model).lower() or "vl" in str(rec_model).lower()
-        if is_qwen:
-            if not _is_valid_dashscope_url(rec_base):
-                return JSONResponse(status_code=400, content={
-                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": ("热切至 qwen3-vl-flash 失败：openai_rec_base_url 必须为 "
-                            "https://dashscope.aliyuncs.com/compatible-mode/v1 (当前: '%s')；" % (rec_base or "")) +
-                           "显式降级提示：无有效 DashScope 凭证将回退本地 opencode/mimo-v2.5-free 预期 165s done "
-                           "(batch1 IMG_5809 165s，远超 P50 9s P95 12s)，不达标；"
-                           "请提供有效 sk- key 以达成线上 9s 性能 (L4 定稿冠军)。",
-                    "base_url": rec_base, "required": "https://dashscope.aliyuncs.com/compatible-mode/v1"
-                })
-            if not _is_valid_sk(rec_key):
-                return JSONResponse(status_code=400, content={
-                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": ("热切至 qwen3-vl-flash 失败：openai_rec_api_key 必须为有效 sk- 开头 (长度>20)，当前缺失或非法；" +
-                            "显式降级提示：无有效 key 时若静默超时 90s*3 ≠ 9s 达标，已显式阻断；"
-                            "请配置 https://dashscope.aliyuncs.com/compatible-mode/v1 + sk- 后重试，"
-                            "本地 240s 兜底预期 165s 仍不达标 (P95 ≤12s)。"),
-                    "required": "sk-..."
-                })
-        else:
-            # 通用 openai 模型仍需基础校验
-            if not rec_base or not rec_key:
-                return JSONResponse(status_code=400, content={
-                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": "recognition_engine=openai 但 openai_rec_base_url/api_key 缺失，需显式提供有效 OpenAI 兼容凭证"
-                })
+        if not rec_base or not str(rec_base).strip():
+            return JSONResponse(status_code=400, content={
+                "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                "msg": "识别引擎选择 OpenAI 兼容接口时，需提供 Base URL"
+            })
+        if _is_placeholder_api_key(rec_key):
+            return JSONResponse(status_code=400, content={
+                "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                "msg": "识别引擎的 API 密钥为空或仍是占位符（如 YOUR_xxx），保存后每次识别都会鉴权失败。请填入该服务商的真实密钥后再保存。"
+            })
     # 解析 LLM 校验（若启用）
     parse_enabled = bool(new_dict.get("parse_llm_enabled"))
     if parse_enabled:
@@ -536,11 +566,15 @@ def set_engine_config(body: EngineConfigBody, request: Request):
         parse_engine = parse_engine.lower()
         if parse_engine == "openai":
             pb = new_dict.get("openai_parse_base_url") or ""
-            pk = new_dict.get("openai_parse_api_key") or ""
-            if not _is_valid_dashscope_url(pb) or not _is_valid_sk(pk):
+            if not pb or not str(pb).strip():
                 return JSONResponse(status_code=400, content={
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": "parse_llm_engine=openai 但 openai_parse_base_url/api_key 非法，需有效 dashscope compatible-mode/v1 + sk-"
+                    "msg": "解析 LLM 引擎选择 OpenAI 兼容接口时，需提供 Base URL"
+                })
+            if _is_placeholder_api_key(new_dict.get("openai_parse_api_key") or ""):
+                return JSONResponse(status_code=400, content={
+                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                    "msg": "解析 LLM 的 API 密钥为空或仍是占位符，请填入真实密钥后再保存。"
                 })
     # 灰测组识别校验
     if new_dict.get("grey_enabled") and int(new_dict.get("grey_percent") or 0) > 0:
@@ -550,11 +584,15 @@ def set_engine_config(body: EngineConfigBody, request: Request):
         g_rec = g_rec.lower()
         if g_rec == "openai":
             gb = new_dict.get("grey_openai_rec_base_url") or ""
-            gk = new_dict.get("grey_openai_rec_api_key") or ""
-            if not _is_valid_dashscope_url(gb) or not _is_valid_sk(gk):
+            if not gb or not str(gb).strip():
                 return JSONResponse(status_code=400, content={
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": "灰测识别 engine=openai 但凭证非法，需有效 dashscope + sk-"
+                    "msg": "灰测识别引擎选择 OpenAI 兼容接口时，需提供 Base URL"
+                })
+            if _is_placeholder_api_key(new_dict.get("grey_openai_rec_api_key") or ""):
+                return JSONResponse(status_code=400, content={
+                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                    "msg": "灰测识别引擎的 API 密钥为空或仍是占位符，请填入真实密钥后再保存。"
                 })
     # call_timeout 语义：保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底
     # 若切换至 openai/qwen 且超时仍为 240，自动建议 90（或保持但附加 warning）

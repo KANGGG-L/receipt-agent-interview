@@ -84,8 +84,11 @@ def inventory_list(request: Request, q: str = "", category: str = "",
     low_count = 0
     anomaly_count = 0
     for s in skus:
-        if q and q not in s.name:
-            continue
+        if q:
+            q_clean = q.strip().lower()
+            name_clean = (s.name or "").lower()
+            if q_clean not in name_clean and name_clean not in q_clean and not any(ch in name_clean for ch in q_clean if len(ch.strip()) > 0):
+                continue
         if category and category != s.category:
             continue
         is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert

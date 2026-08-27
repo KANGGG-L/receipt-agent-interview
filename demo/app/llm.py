@@ -445,14 +445,9 @@ class OpenAIChatModel(BaseChatModel):
             # Mock token 消耗（演示真实 DashScope 返回结构）：按成本表模拟 2570 tokens 成本约 ¥0.0022
             _mock_usage = {"prompt_tokens": 2100, "completion_tokens": 470, "total_tokens": 2570}
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=mock_json, response_metadata={"token_usage": _mock_usage, "model": self.model, "usage": _mock_usage}))])
-        # 无有效 DashScope 凭证时显式失败而非静默 90s 超时（任务 3a 热切需有效 key）
-        if not _is_valid_dashscope_url(self.base_url) or not _is_valid_sk(self.api_key):
-            # 快失败 0.3s 提示，而非阻塞 call_timeout 秒数
-            raise RuntimeError(
-                "无有效 DashScope 凭证：需 PUT /api/admin/engine-config 配置 "
-                "openai_rec_base_url=https://dashscope.aliyuncs.com/compatible-mode/v1 "
-                "且 openai_rec_api_key=sk-...，否则无法达成 qwen3-vl-flash P50 9s；"
-                "当前本地兜底 240s 预期 165s 不达标 (P95 ≤12s)。")
+        # 校验 OpenAI 兼容接口 Base URL
+        if not self.base_url or not str(self.base_url).strip():
+            raise RuntimeError("OpenAI 兼容接口未配置有效 Base URL")
         payload_messages = [_lc_to_openai(m) for m in messages]
         url = self.base_url.rstrip("/") + "/chat/completions"
         headers = {"Content-Type": "application/json"}
@@ -464,6 +459,11 @@ class OpenAIChatModel(BaseChatModel):
                   "temperature": self.temperature, "max_tokens": 4000},
             timeout=self.call_timeout,
         )
+        if resp.status_code in (401, 403):
+            raise RuntimeError(
+                f"OpenAI 兼容接口鉴权失败（HTTP {resp.status_code}）：API 密钥无效或已过期，"
+                f"请在引擎配置中填入该服务商的真实密钥。原始返回: {resp.text[:200]}"
+            )
         if resp.status_code != 200:
             raise RuntimeError(f"OpenAI 兼容接口失败 {resp.status_code}: {resp.text[:300]}")
         data = resp.json()

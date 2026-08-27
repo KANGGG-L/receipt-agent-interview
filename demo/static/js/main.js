@@ -1229,6 +1229,7 @@ function initDeptAdminDetails() {
     loadDepartmentsAll();        // Wave 2（D44）：部门下拉/管理/报表共用数据源
     loadFinancePanel();         // Wave 1：首屏即拉付款域，供导航红点/顶部横幅提醒
     initDeptAdminDetails();
+    initDishTab();              // Task 4: 餐品与每日消耗管理初始化
     // F-P1-3 多币种：币种切换联动金额符号渲染
     ['inpCurrency', 'arcCurrency'].forEach(id => {
         const sel = document.getElementById(id);
@@ -1258,6 +1259,7 @@ function initTabs() {
             if (bcTitle) bcTitle.innerText = navTitle;
 
             if (targetId === 'tab-inventory') loadInventoryData();
+            if (targetId === 'tab-dishes') initDishTab(); // Task 4: 餐品与消耗管理 Tab 激活加载
             if (targetId === 'tab-archive') {
                 loadSuppliersData();
                 loadReceiptsHistory();
@@ -1730,6 +1732,7 @@ function pollReceiptJob(jobId, onSettled, opts) {
     const timeoutMs = (opts && opts.timeoutMs != null) ? opts.timeoutMs : JOB_POLL_TIMEOUT_MS;
     const intervalMs = (opts && opts.intervalMs != null) ? opts.intervalMs : JOB_POLL_INTERVAL_MS;
     const startTs = Date.now();
+    let fallbackNotified = false;   // 回退即时提示每个任务只弹一次
 
     (function tick() {
         const verdict = jobPollVerdict(token, startTs, Date.now(), timeoutMs);
@@ -1757,12 +1760,20 @@ function pollReceiptJob(jobId, onSettled, opts) {
                         msg: job.error_msg || '识别失败',
                         receipt_id: job.receipt_id,
                         image_url: job.image_url || null,
+                        fallback_triggered: job.fallback_triggered,
+                        fallback_failed: job.fallback_failed,
+                        fallback_reason: job.fallback_reason,
                     });
                 } else if (job && job.status === 'error') {
                     // HTTP 级错误（如 404 任务不存在）
                     onSettled({ status: 'error', msg: job.msg || '查询识别任务失败' });
                 } else {
-                    // queued / running → 若已有转码后的 image_url，提前通知（HEIC 预览）
+                    // queued / running → 首选引擎发生降级回退：立即弹一次提示（不等解析完成）
+                    if (job && job.progress_fallback && !fallbackNotified) {
+                        fallbackNotified = true;
+                        notifyEngineFallbackProgress(job.progress_fallback);
+                    }
+                    // 若已有转码后的 image_url，提前通知（HEIC 预览）
                     if (job && job.image_url && typeof opts?.onProgress === 'function') {
                         opts.onProgress(job);
                     }
@@ -1817,98 +1828,159 @@ function captureResultVersion(ret) {
 // Q29：quality_warnings 收集——优先响应顶层（后端已并入 duplicate_warning），
 // 退回 data 内（ai_prefill 自带）
 function collectQualityWarnings(ret) {
-    if (ret && Array.isArray(ret.quality_warnings)) return ret.quality_warnings;
-    if (ret && ret.data && Array.isArray(ret.data.quality_warnings)) return ret.data.quality_warnings;
-    return [];
+    let list = [];
+    if (ret && Array.isArray(ret.quality_warnings)) list = ret.quality_warnings.slice();
+    else if (ret && ret.data && Array.isArray(ret.data.quality_warnings)) list = ret.data.quality_warnings.slice();
+    
+    // 若触发了引擎降级，将备用模型提示作为警告条目融入提示中
+    const isFallback = ret && (ret.fallback_triggered || (ret.data && ret.data.fallback_triggered));
+    if (isFallback) {
+        list.push('engine_fallback');
+    }
+    return list;
 }
 
-// F-P1-4 弱光/模糊重拍引导：按警告类型给出可执行的重拍建议（纯文本，无 Emoji）
-// 最严格人话：含“图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试”
-const RESHOOT_GUIDE = {
-    dark: [
-        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
-        '光线不足：请在明亮环境下拍摄，单据平放避免阴影遮挡',
-        '打开手机闪光灯或移至灯光正下方后重新拍摄',
-    ],
-    blur: [
-        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
-        '画面模糊：请持稳手机，对焦清楚后再拍',
-        '尽量让单据充满取景框，避免远距离拍摄',
-    ],
-    small_or_corrupted: [
-        '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
-        '图片损坏或体积过小：请用相机重新拍摄原图，勿发送压缩图',
-    ],
+// 回退原因是否指向「首选模型无响应/超时」（供即时与完成两类提示精准措辞）
+function isNoResponseFallbackReason(reason) {
+    return /超时|timeout|timed ?out|无响应|未响应|没有响应|read timed out/i.test(String(reason || ''));
+}
+
+// 解析进行中即时提示：首选引擎刚发生降级回退（轮询到 progress_fallback 即弹，不等解析完成）
+function notifyEngineFallbackProgress(fb) {
+    const reason = (fb && fb.reason) || '';
+    const msg = isNoResponseFallbackReason(reason)
+        ? '首选模型无响应，已自动为您切换备用模型继续解析，请稍候…'
+        : '首选模型服务异常，已自动为您切换备用模型继续解析，请稍候…';
+    showToast(msg, 'warning', 6000);
+}
+window.notifyEngineFallbackProgress = notifyEngineFallbackProgress;
+
+// 自动降级全局弹出通知
+function notifyFallbackIfTriggered(ret) {
+    if (!ret) return;
+    const isFallback = ret.fallback_triggered || (ret.data && ret.data.fallback_triggered);
+    if (!isFallback) return;
+    const msg = isNoResponseFallbackReason(ret.fallback_reason)
+        ? '首选模型无响应，已自动为您切换至备用模型完成解析'
+        : 'AI 模型服务商连接异常，已自动为您切换至备用模型完成解析';
+    showToast(msg, 'warning', 6000);
+}
+
+// 画质预检问题精准映射与人话化引导（一事一词，精准归因，绝无冗余堆砌）
+const QUALITY_PROBLEM_MAP = {
+    'image_blur': {
+        title: '画面模糊',
+        tip: '照片对焦不清晰，请持稳手机对焦重拍，或点「继续 AI 解析」尝试识别'
+    },
+    'image_dark': {
+        title: '光线过暗',
+        tip: '环境光线不足，请移至明亮处平放单据后重新拍摄'
+    },
+    'image_empty_or_corrupted': {
+        title: '图片损坏或过小',
+        tip: '图片无法正常读取，请用相机拍摄原图重新上传'
+    },
+    'duplicate': {
+        title: '疑似重复单据',
+        tip: '该图片疑似与历史单据重复，请核对单号避免重复入账'
+    },
+    'engine_fallback': {
+        title: '备用模型',
+        tip: 'AI 模型服务商响应异常，已自动为您切换至备用模型完成解析'
+    }
 };
 
-// 纯函数：警告文本 → 重拍引导条目（供 node vm 逻辑测断言）
+function formatQualityWarning(w) {
+    if (!w) return null;
+    const raw = String(w).trim();
+    if (!raw) return null;
+    if (QUALITY_PROBLEM_MAP[raw]) {
+        return QUALITY_PROBLEM_MAP[raw];
+    }
+    const lower = raw.toLowerCase();
+    if (lower.includes('降级') || lower.includes('fallback') || lower.includes('回退') || lower.includes('备用')) {
+        return QUALITY_PROBLEM_MAP['engine_fallback'];
+    }
+    if (lower.includes('模糊') || lower.includes('blur')) {
+        return QUALITY_PROBLEM_MAP['image_blur'];
+    }
+    if (lower.includes('暗') || lower.includes('dark') || lower.includes('弱光') || lower.includes('low_light')) {
+        return QUALITY_PROBLEM_MAP['image_dark'];
+    }
+    if (lower.includes('损坏') || lower.includes('corrupt') || lower.includes('empty') || lower.includes('过小')) {
+        return QUALITY_PROBLEM_MAP['image_empty_or_corrupted'];
+    }
+    if (lower.includes('重复') || lower.includes('duplicate')) {
+        return QUALITY_PROBLEM_MAP['duplicate'];
+    }
+    return {
+        title: '系统提示',
+        tip: raw.replace(/^提示[：:]\s*/, '')
+    };
+}
+
+// 辅助纯函数供测试断言
 function buildReshootGuideItems(warnings) {
-    const list = (Array.isArray(warnings) ? warnings : []).map(w => String(w || '').toLowerCase());
-    const items = [];
-    if (list.some(w => w.includes('过暗') || w.includes('dark') || w.includes('low_light') || w.includes('弱光'))) {
-        items.push(...RESHOOT_GUIDE.dark);
-    }
-    if (list.some(w => w.includes('模糊') || w.includes('blur'))) {
-        items.push(...RESHOOT_GUIDE.blur);
-    }
-    if (list.some(w => w.includes('损坏') || w.includes('corrupt') || w.includes('empty') || w.includes('过小'))) {
-        items.push(...RESHOOT_GUIDE.small_or_corrupted);
-    }
-    return Array.from(new Set(items));
+    const list = Array.isArray(warnings) ? warnings : [];
+    return list.map(formatQualityWarning).filter(Boolean).map(item => item.tip);
 }
 
-// Q29：质量预检警告渲染（多条可见；一律 textContent，无插值注入面）
-// P0-1 极模糊置顶：image_blur → 中文"图像模糊度过高"，并保证在错误卡片中也置顶可见
-// 最严格文案：含“图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试” 无 Emoji
-const QUALITY_WARNING_LABELS = {
-    'image_blur': '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试',
-    'image_empty_or_corrupted': '图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）',
-    'duplicate': '疑似重复上传',
-};
-
-// F-P1-4：命中弱光/模糊时附加重拍引导（最严格人话，无 Emoji）
 function showQualityWarnings(warnings) {
     const banner = document.getElementById('qualityWarningsBanner');
     if (!banner) return;
+
     // 清理旧克隆（错误态置顶克隆）
     const oldClone = document.getElementById('qualityWarningsBannerClone');
     if (oldClone && oldClone.parentNode) oldClone.parentNode.removeChild(oldClone);
+
     const list = Array.isArray(warnings)
         ? warnings.filter(w => w != null && String(w).trim() !== '')
         : [];
+
     banner.innerHTML = '';
     if (list.length === 0) {
         banner.classList.add('hide');
-        // 若曾置顶克隆也隐藏
         return;
     }
-    const msgs = list.map(w => {
-        const raw = String(w);
-        const label = QUALITY_WARNING_LABELS[raw] || raw;
-        return (raw === 'image_blur' && !label.includes('模糊')) ? QUALITY_WARNING_LABELS['image_blur'] : label;
-    });
-    // 最严格：自动附加重拍引导，确保“重拍/更亮处/框选裁剪”人话必现
-    const guideItems = buildReshootGuideItems(list);
-    // 若原始 warnings 未触发 guide 但包含 blur 语义，强制附加最严格文案
-    const hasStrictPhrase = msgs.some(m => m.includes('重拍')) || guideItems.some(g => g.includes('重拍'));
-    const strictGuide = hasStrictPhrase ? [] : ['图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试'];
-    const extraGuides = guideItems.concat(strictGuide);
-    const allParts = extraGuides.length ? msgs.concat(['—— ' + extraGuides.join('；')]) : msgs;
-    banner.innerHTML = `<span style="font-weight:600;">提示：</span>${allParts.join(' · ')}`;
+
+    // 逐条精准归因并去重
+    const items = [];
+    const seenTitles = new Set();
+    for (const w of list) {
+        const item = formatQualityWarning(w);
+        if (item && !seenTitles.has(item.title)) {
+            seenTitles.add(item.title);
+            items.push(item);
+        }
+    }
+
+    if (items.length === 0) {
+        banner.classList.add('hide');
+        return;
+    }
+
+    // 单条与多条格式化呈现（按具体碰到的问题精准输出）
+    let contentHtml = '';
+    if (items.length === 1) {
+        contentHtml = `<span style="font-weight:600;">[${items[0].title}] 提示：</span>${items[0].tip}`;
+    } else {
+        const lines = items.map((it, idx) => `<div><strong>${idx + 1}. [${it.title}]</strong> ${it.tip}</div>`).join('');
+        contentHtml = `<div style="font-weight:600; margin-bottom:4px;">画质预检提示：</div>${lines}`;
+    }
+
+    banner.innerHTML = contentHtml;
     banner.classList.remove('hide');
-    // P0-1 置顶保证：若 banner 所在 prefillFormCard 隐藏（错误态），克隆一份到 rightPanel 顶部置顶
+
+    // 错误态且 prefillFormCard 隐藏时，克隆置顶到 rightPanel 顶部
     const prefill = document.getElementById('prefillFormCard');
     const rightPanel = document.getElementById('rightPanel');
     if (prefill && prefill.classList.contains('hide') && rightPanel) {
         const clone = banner.cloneNode(true);
         clone.id = 'qualityWarningsBannerClone';
-        // 保持与原 banner 相同样式，已含 border/background
         clone.classList.remove('hide');
-        // 置顶插入到 rightPanel 首位（最顶部）
         if (rightPanel.firstChild) rightPanel.insertBefore(clone, rightPanel.firstChild);
         else rightPanel.appendChild(clone);
     }
-    // 成功态若 banner 曾被克隆到顶部且当前 prefill 可见，移除克隆避免重复
     if (prefill && !prefill.classList.contains('hide')) {
         const c = document.getElementById('qualityWarningsBannerClone');
         if (c && c.parentNode) c.parentNode.removeChild(c);
@@ -2058,6 +2130,11 @@ function triggerAnalysisNow(forceFlag = false) {
             } else if (isNonWebImageFile(selectedFile)) {
                 setMainPreviewFromFile(selectedFile, null);
             }
+
+            // 门禁/引擎失败绝不阻断在错误卡片：统一分流（门禁/引擎 → 人话化提示 + 自动转手工补录；
+            // 仅画质问题保留可自救的错误卡片）
+            if (routeRecognitionFailure(ret, ret.receipt_id || null)) return;
+
             showErrorCard(ret.msg || '识别失败', ret.receipt_id || null, ret.code);
             // P0-1 极模糊置顶：即使错误态也展示 quality_warnings 并置顶（<1s 快速失败不悬挂）
             const qw = collectQualityWarnings(ret);
@@ -2105,6 +2182,7 @@ function triggerAnalysisNow(forceFlag = false) {
         renderEditForm(ret.data);
         // Q29: 顶层 quality_warnings（含 duplicate_warning）多条可见
         showQualityWarnings(collectQualityWarnings(ret));
+        notifyFallbackIfTriggered(ret);
         // Q34: 同步成功路径的重复关联动作（queued 路径在轮询发起前已提示）
         offerDuplicateAction(ret);
         document.getElementById('prefillFormCard').classList.remove('hide');
@@ -2137,6 +2215,46 @@ function humanizeGateMsg(msg) {
     s = s.replace(/（差(-?[0-9.]+)）/g, '，相差 $1');
     return s.trim();
 }
+
+/**
+ * 失败结果分流（绝不阻断原则）：
+ * - 画质问题 → 返回 false，由调用方展示可自救的错误卡片；
+ * - 门禁/数字疑问 → 人话化 Toast + 自动转手工补录（绝不阻断在错误卡片）；
+ * - 引擎异常 → 按是否真实降级精准措辞 + 自动转手工补录。
+ * 返回 true 表示已转入手工补录，调用方无需再展示错误卡片。
+ */
+function routeRecognitionFailure(ret, receiptId) {
+    const msg = (ret && ret.msg) || '';
+    const code = ret && ret.code;
+    const isQuality = (code === 'IMAGE_QUALITY_ERROR') || /模糊|画质|曝光|分辨率|image_blur|quality/i.test(msg);
+    if (isQuality) return false;
+
+    lastErrorReceiptId = receiptId || (ret && ret.receipt_id) || null;
+
+    const isGate = /算术门禁|契约校验|门禁|明细为空|总额不能|供应商为空|日期格式非法|数量非法|单价非法/.test(msg);
+    if (isGate) {
+        const reason = humanizeGateMsg(msg) || '单据数字存在疑问';
+        showToast('[单据核对提示] ' + reason + '。已为您转入手工补录，请对照左侧原图核对金额', 'warning', 7000);
+        convertManualFromErrorCard();
+        return true;
+    }
+
+    const hadFallback = !!(ret && (ret.fallback_triggered || ret.fallback_failed));
+    const isAuth = /鉴权失败|密钥|Token is invalid|401|403|Unauthorized/i.test(msg);
+    let failMsg;
+    if (isAuth) {
+        failMsg = 'AI 识别服务鉴权失败（API 密钥无效或已过期），已转入手工补录。请到「管理后台 · 引擎配置」填入该服务商的真实密钥';
+    } else if (hadFallback) {
+        failMsg = 'AI 模型与备用模型均调用异常，已自动为您转入手工补录界面';
+    } else {
+        failMsg = 'AI 识别服务暂时不可用，已自动为您转入手工补录界面';
+    }
+    showToast(failMsg, 'warning', 7000);
+    convertManualFromErrorCard();
+    showQualityWarnings(['AI 服务暂时不可用，已为您转入手工补录，请对照左侧原图补录字段']);
+    return true;
+}
+window.routeRecognitionFailure = routeRecognitionFailure;
 
 // -------------------------------------------------------------
 // U-8: 连续画质/识别失败递进引导与计数追踪
@@ -2411,6 +2529,7 @@ function retryReceiptRecognition(receiptId, force = false) {
                 document.getElementById('loadingCard').classList.add('hide');
                 if (jobRet.status === 'cancelled') return;
                 if (jobRet.status !== 'success') {
+                    if (routeRecognitionFailure(jobRet, receiptId)) return;
                     showErrorCard(jobRet.msg || '重试识别失败', receiptId);
                     return;
                 }
@@ -2421,6 +2540,7 @@ function retryReceiptRecognition(receiptId, force = false) {
         stopOcrTimer();
         document.getElementById('loadingCard').classList.add('hide');
         if (ret.status !== 'success') {
+            if (routeRecognitionFailure(ret, receiptId)) return;
             showErrorCard(ret.msg || '重试识别失败', receiptId);
             return;
         }
@@ -2462,6 +2582,7 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     renderEditForm(ret.data || {});
     // Q29: 质量预检警告多条可见
     showQualityWarnings(collectQualityWarnings(ret));
+    notifyFallbackIfTriggered(ret);
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('errorCard').classList.add('hide');
     document.getElementById('prefillFormCard').classList.remove('hide');
@@ -2696,7 +2817,7 @@ function abortLoadingAndSwitchToManual() {
         inpTotal.value = '0.00';
     }
     if (inpPaymentMark && !inpPaymentMark.value) {
-        inpPaymentMark.value = '无';
+        inpPaymentMark.value = '未付款';
     }
     if (inpDept && !inpDept.value) {
         populateDeptSelect(inpDept, null);
@@ -3460,6 +3581,91 @@ function triggerInlineAddSkuFromMenu(itemElem) {
 let isSelectingSku = false;
 let itemNameDebounceTimer = null;
 
+function computeSkuSimilarity(query, skuName) {
+    if (!query || !skuName) return 0;
+    const q = query.trim().toLowerCase();
+    const name = skuName.trim().toLowerCase();
+    if (!q || !name) return 0;
+
+    // 1. 完全一致
+    if (name === q) return 1000;
+
+    // 2. 前缀匹配（如 q="菜", name="菜心"）-> 优先级极高，短名称更精准
+    if (name.startsWith(q)) {
+        return 800 - name.length;
+    }
+
+    // 3. 包含匹配（如 q="菜", name="生菜"、"甜菜心"）
+    if (name.includes(q)) {
+        return 600 - name.length;
+    }
+
+    // 4. 反向包含（如 q="新鲜菜心", name="菜心"）
+    if (q.includes(name)) {
+        return 500 + name.length;
+    }
+
+    // 5. 字符重叠匹配
+    let matchChars = 0;
+    for (const ch of q) {
+        if (name.includes(ch)) matchChars++;
+    }
+    if (matchChars > 0) {
+        return (matchChars / Math.max(q.length, name.length)) * 100;
+    }
+
+    return 0;
+}
+
+function openSkuMenuForNameInput(inputElem) {
+    if (isSelectingSku) return;
+    document.querySelectorAll('.unit-dropdown-menu').forEach(m => m.classList.add('hide'));
+    const tr = inputElem.closest('tr');
+    if (!tr) return;
+    const wrap = tr.querySelector('.sku-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.unit-dropdown-menu');
+    if (!menu) return;
+
+    const inpSku = wrap.querySelector('.inp-sku') || inputElem;
+    const val = (inputElem.value || '').trim();
+    inpSku.__skuSearchQuery = val;
+
+    if (!inpSku.__skuCandidates || inpSku.__skuCandidates.length === 0) {
+        fetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success') return;
+            inpSku.__skuCandidates = (ret.data || []).map(sku => ({
+                sku_id: sku.id,
+                sku_name: sku.name,
+                sku_code: sku.sku_code,
+                score: null,
+            }));
+            renderSkuDropdownHtml(inpSku, menu, inpSku.__skuCandidates);
+        })
+        .catch(e => console.error(e));
+    }
+
+    renderSkuDropdownHtml(inpSku, menu, inpSku.__skuCandidates || []);
+    menu.classList.remove('hide');
+}
+window.openSkuMenuForNameInput = openSkuMenuForNameInput;
+
+function closeSkuMenuDelay(inputElem) {
+    setTimeout(() => {
+        if (isSelectingSku) return;
+        const tr = inputElem.closest('tr');
+        if (!tr) return;
+        const wrap = tr.querySelector('.sku-combobox-wrap');
+        if (wrap) {
+            const menu = wrap.querySelector('.unit-dropdown-menu');
+            if (menu) menu.classList.add('hide');
+        }
+    }, 250);
+}
+window.closeSkuMenuDelay = closeSkuMenuDelay;
+
 function onItemNameInput(inputElem) {
     const tr = inputElem.closest('tr');
     if (!tr) return;
@@ -3469,23 +3675,25 @@ function onItemNameInput(inputElem) {
     if (!wrap) return;
     const skuInput = wrap.querySelector('.inp-sku');
     const idInput = wrap.querySelector('.inp-sku-id');
-    const pill = wrap.querySelector('.sku-pill');
+    const menu = wrap.querySelector('.unit-dropdown-menu');
 
-    if (itemNameDebounceTimer) clearTimeout(itemNameDebounceTimer);
-    if (!val) {
-        if (idInput) idInput.value = '';
-        if (skuInput) skuInput.value = '';
-        if (pill) {
-            pill.className = 'sku-pill sku-pill-unlinked';
-            pill.title = '未关联SKU (点击搜索关联)';
-            const nameSpan = pill.querySelector('.sku-pill-name');
-            if (nameSpan) nameSpan.textContent = '未关联SKU';
-        }
-        return;
+    if (skuInput) {
+        skuInput.__skuSearchQuery = val;
+        skuInput.value = val;
     }
 
+    if (!val) {
+        if (idInput) idInput.value = '';
+    }
+
+    if (menu) {
+        menu.classList.remove('hide');
+        if (skuInput) renderSkuMenuItems(skuInput, menu);
+    }
+
+    if (itemNameDebounceTimer) clearTimeout(itemNameDebounceTimer);
     itemNameDebounceTimer = setTimeout(() => {
-        fetch('/api/inventory?q=' + encodeURIComponent(val))
+        fetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -3497,22 +3705,20 @@ function onItemNameInput(inputElem) {
             }));
             if (skuInput) {
                 skuInput.__skuCandidates = searched;
+                if (menu && !menu.classList.contains('hide')) {
+                    renderSkuDropdownScrollOnly(skuInput, menu, skuInput.__skuCandidates);
+                }
             }
-            // 若完全同名，自动静默关联
-            const exact = searched.find(s => s.sku_name === val);
-            if (exact) {
-                if (idInput) idInput.value = exact.sku_id;
-                if (skuInput) skuInput.value = exact.sku_name;
-                if (pill) {
-                    pill.className = 'sku-pill sku-pill-matched';
-                    pill.title = '已自动匹配: ' + exact.sku_name;
-                    const nameSpan = pill.querySelector('.sku-pill-name');
-                    if (nameSpan) nameSpan.textContent = exact.sku_name;
+            if (val) {
+                const exact = searched.find(s => s.sku_name === val);
+                if (exact) {
+                    if (idInput) idInput.value = exact.sku_id;
+                    if (skuInput) skuInput.value = exact.sku_name;
                 }
             }
         })
         .catch(err => console.error('SKU 联想失败:', err));
-    }, 200);
+    }, 150);
 }
 window.onItemNameInput = onItemNameInput;
 
@@ -3535,7 +3741,7 @@ function mergeSkuCandidates(primary, secondary) {
 }
 
 function toggleSkuMenu(pillElem) {
-    const wrap = pillElem.closest('.sku-combobox-wrap');
+    const wrap = pillElem.closest('.sku-combobox-wrap') || pillElem.closest('tr');
     if (!wrap) return;
     const menu = wrap.querySelector('.unit-dropdown-menu');
     if (!menu) return;
@@ -3545,10 +3751,6 @@ function toggleSkuMenu(pillElem) {
         const inpSku = wrap.querySelector('.inp-sku') || pillElem;
         renderSkuMenuItems(inpSku, menu);
         menu.classList.remove('hide');
-        const searchInput = menu.querySelector('.inp-sku-search');
-        if (searchInput) {
-            setTimeout(() => { searchInput.focus(); searchInput.select(); }, 40);
-        }
     }
 }
 window.toggleSkuMenu = toggleSkuMenu;
@@ -3598,26 +3800,16 @@ function selectSkuItem(itemElem) {
     isSelectingSku = true;
     const skuId = String(itemElem.getAttribute('data-sku-id') || '').trim();
     const skuName = itemElem.getAttribute('data-sku-name') || '';
-    const wrap = itemElem.closest('.sku-combobox-wrap');
+    const wrap = itemElem.closest('.sku-combobox-wrap') || itemElem.closest('tr');
     if (wrap) {
+        const nameInput = wrap.querySelector('.inp-name');
         const skuInput = wrap.querySelector('.inp-sku');
         const idInput = wrap.querySelector('.inp-sku-id');
+        if (skuName && nameInput) {
+            nameInput.value = skuName;
+        }
         if (skuInput) skuInput.value = skuId ? skuName : '';
         if (idInput) idInput.value = skuId;
-        const badge = wrap.querySelector('.sku-badge');
-        if (badge) {
-            badge.textContent = skuId ? '已匹配SKU' : '未关联';
-            badge.className = 'badge ' + (skuId ? 'badge-success' : 'badge-warning') + ' sku-badge hide';
-        }
-        const pill = wrap.querySelector('.sku-pill');
-        if (pill) {
-            pill.className = 'sku-pill ' + (skuId ? 'sku-pill-matched' : 'sku-pill-unlinked');
-            pill.title = skuId ? ('已匹配: ' + skuName) : '未关联SKU (点击搜索关联)';
-            const nameSpan = pill.querySelector('.sku-pill-name');
-            if (nameSpan) {
-                nameSpan.textContent = skuId ? (skuName || '已匹配SKU') : '未关联SKU';
-            }
-        }
         const menu = wrap.querySelector('.unit-dropdown-menu');
         if (menu) menu.classList.add('hide');
     }
@@ -3630,7 +3822,7 @@ function quickCreateAndBindSku(itemElem) {
     const rawName = itemElem.getAttribute('data-prefill-name') || '';
     const cleanName = rawName.trim();
     if (!cleanName) return;
-    const wrap = itemElem.closest('.sku-combobox-wrap');
+    const wrap = itemElem.closest('.sku-combobox-wrap') || itemElem.closest('tr');
     const tr = itemElem.closest('tr');
     const rowUnit = tr ? (tr.querySelector('.inp-unit')?.value || '斤') : '斤';
 
@@ -3649,17 +3841,12 @@ function quickCreateAndBindSku(itemElem) {
         const targetId = ret.id || ret.existing_id;
         if (ret.status === 'success' || targetId) {
             if (wrap) {
+                const nameInput = wrap.querySelector('.inp-name');
                 const skuInput = wrap.querySelector('.inp-sku');
                 const idInput = wrap.querySelector('.inp-sku-id');
+                if (nameInput) nameInput.value = cleanName;
                 if (skuInput) skuInput.value = cleanName;
                 if (idInput) idInput.value = targetId || '';
-                const pill = wrap.querySelector('.sku-pill');
-                if (pill) {
-                    pill.className = 'sku-pill sku-pill-matched';
-                    pill.title = '已建档: ' + cleanName;
-                    const nameSpan = pill.querySelector('.sku-pill-name');
-                    if (nameSpan) nameSpan.textContent = cleanName;
-                }
                 const menu = wrap.querySelector('.unit-dropdown-menu');
                 if (menu) menu.classList.add('hide');
             }
@@ -3680,24 +3867,44 @@ function quickCreateAndBindSku(itemElem) {
 window.quickCreateAndBindSku = quickCreateAndBindSku;
 
 function formatSkuScore(score) {
+    if (score == null) return '';
     const n = Number(score);
-    if (!isFinite(n) || n == null) return '';
-    if (n >= 0 && n <= 1) return ' 匹配' + Math.round(n * 100) + '%';
+    if (!isFinite(n) || n <= 0) return '';
+    if (n <= 1) return ' 匹配' + Math.round(n * 100) + '%';
     return ' 相似度' + Math.round(n) + '%';
 }
 
 function buildSkuDropdownItemsHtml(inputElem, candidates) {
     const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
-    const rows = candidates || [];
+    let rows = (candidates && candidates.length > 0) ? [...candidates] : [];
+
+    if (rows.length === 0 && typeof inventorySkusMap !== 'undefined' && inventorySkusMap.size > 0) {
+        rows = Array.from(inventorySkusMap.values()).map(s => ({
+            sku_id: s.id,
+            sku_name: s.name,
+            sku_code: s.sku_code,
+            score: null
+        }));
+    }
+
     const tr = inputElem.closest('tr');
     const rowName = query || (tr ? (tr.querySelector('.inp-name')?.value || '') : '');
     const cleanRowName = rowName ? rowName.trim() : '';
+
+    // 按照相似率从高往低排列
+    if (cleanRowName && rows.length > 0) {
+        rows.sort((a, b) => {
+            const scoreA = computeSkuSimilarity(cleanRowName, a.sku_name);
+            const scoreB = computeSkuSimilarity(cleanRowName, b.sku_name);
+            return scoreB - scoreA;
+        });
+    }
 
     let itemsHtml = '';
     if (cleanRowName) {
         const safeName = w2Escape(cleanRowName);
         itemsHtml += `
-            <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="quickCreateAndBindSku(this)" style="background:rgba(47,107,79,0.06); border-bottom:1px solid #e2e8f0;">
+            <div class="unit-dropdown-item sku-quick-add-item" data-prefill-name="${safeName}" onmousedown="quickCreateAndBindSku(this)">
                 <div><span style="font-weight:600; color:var(--primary);">＋ 一键为「${safeName}」建档入库</span></div>
                 <span class="badge-matched" style="background:var(--primary); color:#fff; font-size:0.72rem; padding:2px 8px; border-radius:4px;">1秒建档</span>
             </div>
@@ -3709,17 +3916,12 @@ function buildSkuDropdownItemsHtml(inputElem, candidates) {
             const codeSpan = c.sku_code
                 ? `<span style="font-size:0.75rem; color:#94a3b8; font-family:monospace; margin-left:6px;">[${w2Escape(c.sku_code)}]</span>`
                 : '';
-            const scoreSpan = formatSkuScore(c.score)
-                ? `<span style="font-size:0.72rem; color:#2f6b4f; font-weight:600; margin-left:6px;">${w2Escape(formatSkuScore(c.score))}</span>`
-                : '';
             itemsHtml += `
                 <div class="unit-dropdown-item" data-sku-id="${w2Escape(c.sku_id)}" data-sku-name="${w2Escape(c.sku_name || '')}" onmousedown="selectSkuItem(this)">
                     <div>
                         <span style="font-weight:500;">${w2Escape(c.sku_name || '')}</span>
                         ${codeSpan}
-                        ${scoreSpan}
                     </div>
-                    <span class="badge-matched" style="font-size:0.72rem; padding:1px 6px;">选择</span>
                 </div>
             `;
         });
@@ -3734,7 +3936,7 @@ function buildSkuDropdownItemsHtml(inputElem, candidates) {
 }
 
 function renderSkuDropdownScrollOnly(inputElem, menuElem, candidates) {
-    const scrollElem = menuElem.querySelector('.sku-dropdown-scroll');
+    const scrollElem = menuElem.querySelector('.sku-dropdown-scroll') || menuElem;
     if (scrollElem) {
         scrollElem.innerHTML = buildSkuDropdownItemsHtml(inputElem, candidates);
     }
@@ -3743,9 +3945,9 @@ function renderSkuDropdownScrollOnly(inputElem, menuElem, candidates) {
 function renderSkuMenuItems(inputElem, menuElem) {
     const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
 
-    if (query && query !== inputElem.__skuLastFetchedQuery) {
+    if (query !== inputElem.__skuLastFetchedQuery) {
         inputElem.__skuLastFetchedQuery = query;
-        fetch('/api/inventory?q=' + encodeURIComponent(query))
+        fetch('/api/inventory?q=' + (query ? encodeURIComponent(query) : ''))
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -3767,21 +3969,8 @@ function renderSkuMenuItems(inputElem, menuElem) {
 }
 
 function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
-    const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
-    const existingSearch = menuElem.querySelector('.inp-sku-search');
-    if (existingSearch && !menuElem.classList.contains('hide')) {
-        renderSkuDropdownScrollOnly(inputElem, menuElem, candidates);
-        return;
-    }
-
     const itemsHtml = buildSkuDropdownItemsHtml(inputElem, candidates);
     let html = `
-        <div class="sku-search-header" style="padding:6px 8px; border-bottom:1px solid var(--border-color, #e5e7eb);" onclick="event.stopPropagation()">
-            <input type="text" class="form-control inp-sku-search" placeholder="输入名称或回车快速匹配..."
-                   value="${w2Escape(query)}"
-                   oninput="onSkuSearchInput(this)" onkeydown="onSkuSearchKeydown(event, this)" onclick="event.stopPropagation()"
-                   style="font-size:0.82rem; padding:5px 8px; width:100%; box-sizing:border-box; border-radius:6px;">
-        </div>
         <div class="sku-dropdown-scroll" style="max-height:220px; overflow-y:auto;">
             ${itemsHtml}
         </div>
@@ -3828,10 +4017,48 @@ function renderEditForm(data) {
     // Wave 2（D44）：单据级部门下拉
     populateDeptSelect(document.getElementById('inpDepartmentId'), data.department_id);
 
+    // 重置字段告警高亮
+    ['inpSupplier', 'inpDate', 'inpTotal'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.style.borderColor = '';
+            el.style.backgroundColor = '';
+        }
+    });
+
     const alertBanner = document.getElementById('alertBanner');
     if (data.math_warnings && data.math_warnings.length > 0) {
-        alertBanner.innerText = data.math_warnings.join(" | ");
+        const warnText = data.math_warnings.map(humanizeGateMsg).join("；");
+        alertBanner.innerText = '[单据核对提示] 具体问题：' + warnText + '。已为您自动填入已识别信息，请对照左侧原图重点核对或补录。';
         alertBanner.classList.remove('hide');
+        showToast('【单据复核提示】AI 已完成解析，但检测到：' + warnText + '，请核对', 'warning', 7000);
+
+        // 针对具体问题精确定位高亮
+        const warnStr = data.math_warnings.join(' ');
+        if (/明细|商品|项目/.test(warnStr)) {
+            // 明细问题高亮表格
+        }
+        if (/总额|算术|金额|合计/.test(warnStr)) {
+            const el = document.getElementById('inpTotal');
+            if (el) {
+                el.style.borderColor = 'var(--warning)';
+                el.style.backgroundColor = 'rgba(217, 119, 6, 0.08)';
+            }
+        }
+        if (/供应商/.test(warnStr)) {
+            const el = document.getElementById('inpSupplier');
+            if (el) {
+                el.style.borderColor = 'var(--warning)';
+                el.style.backgroundColor = 'rgba(217, 119, 6, 0.08)';
+            }
+        }
+        if (/日期/.test(warnStr)) {
+            const el = document.getElementById('inpDate');
+            if (el) {
+                el.style.borderColor = 'var(--warning)';
+                el.style.backgroundColor = 'rgba(217, 119, 6, 0.08)';
+            }
+        }
     } else {
         alertBanner.classList.add('hide');
     }
@@ -3841,13 +4068,18 @@ function renderEditForm(data) {
 
     const items = (data.items || []).filter(item =>
         String((item && (item.raw_name || item.name)) || '').trim() !== '');
-    items.forEach((item) => {
-        appendTableRow(item);
-    });
+    if (items.length === 0) {
+        tbody.innerHTML = '<tr class="warning-row" style="background: rgba(217, 119, 6, 0.06);"><td colspan="7" style="text-align: center; color: var(--warning); padding: 14px; font-size: 0.9rem;">未检出单据明细项，请对照左侧原图点击「+ 添加一行」补录商品</td></tr>';
+    } else {
+        items.forEach((item) => {
+            appendTableRow(item);
+        });
+    }
 
     showQualityWarnings(data.quality_warnings);
     renderCurrencySymbol();
 }
+window.renderEditForm = renderEditForm;
 
 function toggleFeesDrawer() {
     const drawer = document.getElementById('feesDrawerContent');
@@ -3894,21 +4126,35 @@ function autoFillSheetNameFromDate(dateVal) {
 window.autoFillSheetNameFromDate = autoFillSheetNameFromDate;
 
 // -------------------------------------------------------------
-// 6b. 结算方式与付款标记 (M3/D4)：字段可能暂时缺失，须容错
-// -------------------------------------------------------------
+// 6b. 结算方式与付款标记 (M3/D4)：
+// 系统自动检测商户单据付款标记（印章/手写/签名等），用户仅需确认「已付款」或「未付款」
+function hasMerchantPaymentMark(data) {
+    if (!data) return false;
+    if (data.payment_marked === true || data.payment_marked === 'true' || data.payment_marked === 1) return true;
+    const mark = String(data.payment_mark || '').trim().toLowerCase();
+    if (!mark || mark === '无' || mark === 'none' || mark === '未付款' || mark === 'false' || mark === '0' || mark === 'unpaid') {
+        return false;
+    }
+    return true;
+}
 
-// 付款标记展示映射：兼容后端可能返回的中/英文枚举
-function formatPaymentMark(mark) {
-    if (mark == null || mark === '') return '无';
-    const labelMap = {
-        'stamp': '印章', 'seal': '印章', '印章': '印章',
-        'handwritten': '手写批注', 'handwritten_note': '手写批注', 'annotation': '手写批注', '手写批注': '手写批注',
-        'signature_only': '仅签名', 'signature': '仅签名', '仅签名': '仅签名',
-        'paid': '已付款', '已付款': '已付款',
-        'none': '无', '无': '无'
+function getPaymentMarkDisplayInfo(data) {
+    const isPaid = hasMerchantPaymentMark(data);
+    if (!isPaid) {
+        return { isPaid: false, label: '未付款', badgeText: '未检测到商户付款标记', badgeColor: '#64748b', badgeBg: '#f1f5f9' };
+    }
+    const origMark = String(data.payment_mark || '').trim();
+    let desc = '';
+    if (origMark && origMark !== '已付款' && origMark !== 'paid' && origMark !== 'true') {
+        desc = ` (含${origMark})`;
+    }
+    return {
+        isPaid: true,
+        label: '已付款',
+        badgeText: `已检测到商户付款标记${desc}`,
+        badgeColor: '#2f6b4f',
+        badgeBg: 'rgba(47, 107, 79, 0.1)'
     };
-    const key = String(mark).trim().toLowerCase();
-    return labelMap[key] || String(mark).trim();
 }
 
 // prefix='inp' → Tab1 复核表单；prefix='arc' → 归档弹窗
@@ -3916,19 +4162,21 @@ function applySettlementToForm(prefix, data) {
     const d = data || {};
     const sel = document.getElementById(prefix + 'SettlementType');
     if (sel) {
-        // AI 判定 cash/credit 原样回填，其余（null/缺失/未知枚举）一律显示"未知"
         sel.value = (d.settlement_type === 'cash' || d.settlement_type === 'credit') ? d.settlement_type : '';
     }
     const markInput = document.getElementById(prefix + 'PaymentMark');
+    const badge = document.getElementById(prefix + 'PaymentMarkDetectBadge');
+    const info = getPaymentMarkDisplayInfo(d);
+
     if (markInput) {
-        // U-05：付款标记枚举下拉——后端值映射到最近枚举项，未匹配则追加临时 option 显示原值
-        const mapped = formatPaymentMark(d.payment_mark);
-        if (markInput.options) {
-            if (![...markInput.options].some(o => o.value === mapped)) {
-                markInput.appendChild(new Option(mapped, mapped, true, true));
-            }
-        }
-        markInput.value = mapped;
+        markInput.value = info.isPaid ? '已付款' : '未付款';
+    }
+    if (badge) {
+        badge.textContent = info.badgeText;
+        badge.style.color = info.badgeColor;
+        badge.style.background = info.badgeBg;
+        badge.style.padding = '2px 6px';
+        badge.style.borderRadius = '4px';
     }
 }
 
@@ -4294,21 +4542,13 @@ function appendTableRow(item = {}) {
 
     tr.innerHTML = `
         <td>
-            <div class="item-name-sku-stack">
-                <div class="item-name-top">
-                    <input type="text" class="inp-name form-control" value="${w2Escape(finalRawName)}" placeholder="品名(如走地鸡)" autocomplete="off" oninput="onItemNameInput(this)" ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
-                </div>
-                <div class="sku-capsule-wrapper sku-combobox-wrap">
-                    <div class="sku-pill ${skuId ? 'sku-pill-matched' : 'sku-pill-unlinked'}" onclick="toggleSkuMenu(this)" title="${skuId ? ('已匹配: ' + w2Escape(skuName)) : '未关联SKU (点击搜索关联)'}" ${isVoidMain ? 'style="pointer-events:none; opacity:0.6;"' : ''}>
-                        <span class="sku-pill-dot"></span>
-                        <span class="sku-pill-name">${w2Escape(skuId ? (skuName ? skuName : '已匹配SKU') : '未关联SKU')}</span>
-                        <span class="sku-pill-arrow">▾</span>
-                    </div>
-                    <input type="hidden" class="inp-sku" value="${w2Escape(skuName)}">
-                    <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
-                    <span class="badge ${skuId ? 'badge-success' : 'badge-warning'} sku-badge hide">${skuId ? '已匹配SKU' : '未关联'}</span>
-                    <div class="unit-dropdown-menu sku-dropdown-floating hide"></div>
-                </div>
+            <div class="item-name-sku-stack sku-combobox-wrap" style="position: relative;">
+                <input type="text" class="inp-name form-control" value="${w2Escape(finalRawName)}" placeholder="品名(如走地鸡)" autocomplete="off"
+                       onfocus="openSkuMenuForNameInput(this)" onclick="openSkuMenuForNameInput(this)" oninput="onItemNameInput(this)" onblur="closeSkuMenuDelay(this)"
+                       ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
+                <input type="hidden" class="inp-sku" value="${w2Escape(skuName)}">
+                <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
+                <div class="unit-dropdown-menu sku-dropdown-floating hide"></div>
             </div>
         </td>
         <td>
@@ -5431,12 +5671,12 @@ function loadInventoryData() {
                 </td>
                 <td class="col-center">
                     <div class="inv-actions">
-                        <button class="${priceBtnCls}" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
-                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                        <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.85rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
                             onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
-                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
                             onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
-                        <button class="btn btn-secondary" style="padding:6px 10px; font-size:1rem; min-height:44px; min-width:44px;"
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
                             onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>
                     </div>
                 </td>
@@ -10614,23 +10854,23 @@ const OPENAI_PRESETS = {
     agnes: {
         label: 'Agnes AI',
         base_url: 'https://apihub.agnes-ai.com/v1',
-        api_key: 'sk-KnyyE7tPWC5VnZLnfSaeE5NdN5Mrymm5tjs8cdhSiLZAcoQl',
+        api_key: '',
         rec_model: 'agnes-2.0-flash',
         aud_model: 'agnes-2.0-flash',
     },
     bailian: {
         label: '阿里云百炼 · DashScope',
         base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-        api_key: 'sk-ws-H.EPEIEXY.YOjw.MEYCIQDD9x3fMZAG3kt9zbgY1_6_1cbr-zl7MKOghZiSpS79OgIhANDEX_nkT997LzjEvtPXhNemX3Gtax7zbDZUKf3-_-SI',
+        api_key: '',
         rec_model: 'qwen3-vl-flash',
         aud_model: 'qwen3-vl-plus',
     },
     siliconflow: {
         label: 'SiliconFlow · 硅基流动',
         base_url: 'https://api.siliconflow.cn/v1',
-        api_key: 'YOUR_SILICONFLOW_API_KEY',
-        rec_model: 'Qwen/Qwen3-VL-8B-Instruct',
-        aud_model: 'Qwen/Qwen3-VL-8B-Instruct',
+        api_key: '',
+        rec_model: 'Qwen/Qwen2.5-VL-7B-Instruct',
+        aud_model: 'Qwen/Qwen2.5-VL-7B-Instruct',
     },
 };
 
@@ -10643,8 +10883,40 @@ function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud) {
     const kEl = document.getElementById(apiKeyId);
     const mEl = document.getElementById(modelId);
     if (bEl) bEl.value = p.base_url;
-    if (kEl) kEl.value = p.api_key;
+    if (kEl) {
+        if (p.api_key && !p.api_key.includes('YOUR_')) {
+            kEl.value = p.api_key;
+        } else {
+            // 预置无真实密钥：清除占位符残留，并提示用户必须填入真实密钥
+            const cur = (kEl.value || '').trim();
+            if (!cur || /YOUR_|PLACEHOLDER|REPLACE|XXXX/i.test(cur)) {
+                kEl.value = '';
+            }
+            kEl.placeholder = '请输入 ' + p.label.split(' ·')[0] + ' API 密钥（留空将无法保存）';
+        }
+    }
     if (mEl) mEl.value = isAud ? p.aud_model : p.rec_model;
+
+    // 联动：自动将对应引擎切换为 openai 并展开参数区
+    if (presetSelectId === 'adminOpenaiRecPreset') {
+        const eng = document.getElementById('adminRecognitionEngine');
+        if (eng && eng.value !== 'openai') {
+            eng.value = 'openai';
+            updateOpenaiBoxes();
+        }
+    } else if (presetSelectId === 'adminOpenaiAudPreset') {
+        const eng = document.getElementById('adminAuditEngine');
+        if (eng && eng.value !== 'openai') {
+            eng.value = 'openai';
+            updateOpenaiBoxes();
+        }
+    } else if (presetSelectId === 'adminParseOpenaiPreset') {
+        const eng = document.getElementById('adminParseEngine');
+        if (eng && eng.value !== 'openai') {
+            eng.value = 'openai';
+            updateParseOpenaiBox();
+        }
+    }
     showToast('已填入预设：' + p.label, 'info');
 }
 
@@ -10751,6 +11023,36 @@ function loadAdminEngineConfig() {
             document.getElementById('adminGreyOpenaiAudBaseUrl').value = cfg.grey_openai_aud_base_url || '';
             document.getElementById('adminGreyOpenaiAudApiKey').value = cfg.grey_openai_aud_api_key || '';
             document.getElementById('adminGreyOpenaiAudModel').value = cfg.grey_openai_aud_model || '';
+
+            // 自动检测并设置匹配的预设网关下拉选项
+            function detectPresetKey(baseUrl) {
+                if (!baseUrl) return '';
+                const u = baseUrl.toLowerCase();
+                if (u.includes('siliconflow')) return 'siliconflow';
+                if (u.includes('dashscope') || u.includes('aliyuncs')) return 'bailian';
+                if (u.includes('agnes')) return 'agnes';
+                return '';
+            }
+            const setPresetVal = (presetId, baseUrl) => {
+                const el = document.getElementById(presetId);
+                if (el) el.value = detectPresetKey(baseUrl);
+            };
+            setPresetVal('adminOpenaiRecPreset', cfg.openai_rec_base_url);
+            setPresetVal('adminOpenaiAudPreset', cfg.openai_aud_base_url);
+            setPresetVal('adminParseOpenaiPreset', cfg.openai_parse_base_url);
+            setPresetVal('adminGreyOpenaiRecPreset', cfg.grey_openai_rec_base_url);
+            setPresetVal('adminGreyOpenaiAudPreset', cfg.grey_openai_aud_base_url);
+            setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
+
+            // 动态从后端同步预设配置（自动融入 .env 中的密钥）
+            fetch('/api/admin/engine-presets')
+                .then(r => r.json())
+                .then(pRet => {
+                    if (pRet && pRet.status === 'success' && pRet.data) {
+                        Object.assign(OPENAI_PRESETS, pRet.data);
+                    }
+                })
+                .catch(() => {});
 
             updateAuditDisabledState();
             updateGreyDisabledState();
@@ -11897,6 +12199,1476 @@ function applyCostShare() {
     showToast('已按比例将 ' + rows.length + ' 行明细分摊至各部门，保存后生效', 'success', TOAST_DURATION.long);
 }
 
+// ==========================================================================
+// Task 4: 餐品管理、BOM 配方、每日消耗极速录入与 FIFO 批次成本穿透溯源
+// ==========================================================================
+
+let dishLibraryCache = [];          // 餐品库全量缓存
+let dailyConsumptionCache = [];     // 当日消耗流水缓存
+let dishDailyDishesCache = [];      // 极速录入在售餐品列表缓存
+let dishCostAnalysisData = null;    // 成本大盘分析数据缓存
+let dishViewMode = 'card';          // 'card' 或 'table'
+let dishAnalysisDays = 7;           // 成本分析周期天数
+let dishAvailableSkus = [];         // 用于配方选择的可用 SKU 列表
+
+/**
+ * 前端单位换算器（用于配方弹窗实时理论成本预览与计算）
+ */
+function convertUnitQtyFrontend(qty, fromUnit, toUnit) {
+    if (!fromUnit || !toUnit || fromUnit.trim() === toUnit.trim()) return Number(qty) || 0;
+    const u1 = fromUnit.trim().toLowerCase();
+    const u2 = toUnit.trim().toLowerCase();
+    const q = Number(qty) || 0;
+
+    const weightToKg = {
+        'kg': 1.0, '千克': 1.0, '公斤': 1.0,
+        'g': 0.001, '克': 0.001,
+        '斤': 0.5, '市斤': 0.5,
+        '两': 0.05,
+        '磅': 0.45359237, 'lb': 0.45359237, 'lbs': 0.45359237,
+        'oz': 0.0283495, '盎司': 0.0283495,
+        '吨': 1000.0, 'ton': 1000.0, 't': 1000.0
+    };
+    if (weightToKg[u1] && weightToKg[u2]) {
+        return (q * weightToKg[u1]) / weightToKg[u2];
+    }
+
+    const volToL = {
+        'l': 1.0, '升': 1.0, '公升': 1.0,
+        'ml': 0.001, '毫升': 0.001, 'cc': 0.001,
+        'cl': 0.01
+    };
+    if (volToL[u1] && volToL[u2]) {
+        return (q * volToL[u1]) / volToL[u2];
+    }
+
+    if ((u1 === '打' || u1 === 'dozen') && (u2 === '个' || u2 === '件' || u2 === '只' || u2 === '支' || u2 === '份')) {
+        return q * 12;
+    }
+    if ((u2 === '打' || u2 === 'dozen') && (u1 === '个' || u1 === '件' || u1 === '只' || u1 === '支' || u1 === '份')) {
+        return q / 12;
+    }
+
+    return q;
+}
+
+/**
+ * 拉取系统当前可用食材 SKU 列表（供配方下拉选择）
+ */
+function fetchDishAvailableSkus(callback) {
+    fetch('/api/inventory?include_inactive=0')
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status === 'success' && Array.isArray(ret.data)) {
+                dishAvailableSkus = ret.data;
+            } else if (typeof inventorySkusMap !== 'undefined' && inventorySkusMap.size > 0) {
+                dishAvailableSkus = Array.from(inventorySkusMap.values());
+            }
+            if (typeof callback === 'function') callback(dishAvailableSkus);
+        })
+        .catch(err => {
+            console.error('Failed to fetch SKUs for dish recipe:', err);
+            if (typeof inventorySkusMap !== 'undefined' && inventorySkusMap.size > 0) {
+                dishAvailableSkus = Array.from(inventorySkusMap.values());
+            }
+            if (typeof callback === 'function') callback(dishAvailableSkus);
+        });
+}
+
+/**
+ * 初始化餐品与消耗主 Tab
+ */
+function initDishTab() {
+    initDishConsumptionDate();
+    const activeSubtabBtn = document.querySelector('.dish-subtab-btn.active');
+    const targetSubtab = activeSubtabBtn ? activeSubtabBtn.getAttribute('data-subtab') : 'subtab-dish-daily';
+    switchDishSubtab(targetSubtab);
+    // 异步预加载 SKU 列表
+    fetchDishAvailableSkus();
+}
+
+/**
+ * 切换餐品管理子 Tab (每日消耗录入 / BOM 配方库 / 成本大盘)
+ */
+function switchDishSubtab(subtabId) {
+    const subtabBtns = document.querySelectorAll('.dish-subtab-btn');
+    const panes = document.querySelectorAll('.dish-subtab-pane');
+
+    subtabBtns.forEach(btn => {
+        if (btn.getAttribute('data-subtab') === subtabId || btn.dataset.subtab === subtabId) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+
+    panes.forEach(pane => {
+        if (pane.id === subtabId) {
+            pane.classList.add('active');
+        } else {
+            pane.classList.remove('active');
+        }
+    });
+
+    if (subtabId === 'subtab-dish-daily') {
+        loadDailyConsumption();
+    } else if (subtabId === 'subtab-dish-bom') {
+        loadDishesList();
+    } else if (subtabId === 'subtab-dish-insights') {
+        loadDishCostAnalysis();
+    }
+}
+
+// --------------------------------------------------------------------------
+// 1. 餐品 BOM 配方库管理
+// --------------------------------------------------------------------------
+
+/**
+ * 加载餐品库全量列表
+ */
+function loadDishesList() {
+    fetch('/api/dishes')
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success') {
+                showToast(ret.msg || '加载餐品列表失败', 'error');
+                return;
+            }
+            dishLibraryCache = ret.data || [];
+            updateDishCategoryDatalist(dishLibraryCache);
+            filterDishBomLibrary();
+        })
+        .catch(err => {
+            console.error('loadDishesList error:', err);
+            showToast('网络异常，无法加载餐品列表', 'error');
+        });
+}
+
+/**
+ * 动态更新分类 Datalist
+ */
+function updateDishCategoryDatalist(dishes) {
+    const datalist = document.getElementById('dishModalCategoryList');
+    if (!datalist) return;
+    const defaultCats = ['主食', '热菜', '凉菜', '汤品', '点心', '饮品', '甜品', '小吃', '其他'];
+    const customCats = new Set(defaultCats);
+    dishes.forEach(d => {
+        if (d.category && d.category.trim()) customCats.add(d.category.trim());
+    });
+    datalist.innerHTML = Array.from(customCats).map(cat => '<option value="' + w2Escape(cat) + '"></option>').join('');
+}
+
+/**
+ * 按搜索关键词、分类与在售状态筛选餐品 BOM 库
+ */
+function filterDishBomLibrary() {
+    const qInput = document.getElementById('dishSearchInput');
+    const catSelect = document.getElementById('dishCategoryFilter');
+    const statusSelect = document.getElementById('dishStatusFilter');
+
+    const q = (qInput ? qInput.value : '').trim().toLowerCase();
+    const cat = catSelect ? catSelect.value : '';
+    const status = statusSelect ? statusSelect.value : 'active';
+
+    let filtered = dishLibraryCache.filter(d => {
+        if (status === 'active' && d.status !== 'active') return false;
+        if (status === 'inactive' && d.status !== 'inactive') return false;
+        if (cat && d.category !== cat) return false;
+        if (q) {
+            const nameMatch = (d.name || '').toLowerCase().includes(q);
+            const descMatch = (d.description || '').toLowerCase().includes(q);
+            const catMatch = (d.category || '').toLowerCase().includes(q);
+            if (!nameMatch && !descMatch && !catMatch) return false;
+        }
+        return true;
+    });
+
+    renderDishCards(filtered);
+    renderDishTable(filtered);
+}
+
+/**
+ * 渲染餐品卡片网格
+ */
+function renderDishCards(dishes) {
+    const grid = document.getElementById('dishCardGrid');
+    if (!grid) return;
+
+    if (dishes.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: 8px; border: 1px dashed var(--border-color);">'
+            + '<div style="font-size: 0.95rem; font-weight: 500;">暂无匹配的餐品数据</div>'
+            + '<div style="font-size: 0.8rem; margin-top: 4px;">可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方</div>'
+            + '</div>';
+        return;
+    }
+
+    let html = '';
+    dishes.forEach(d => {
+        const isActive = d.status === 'active';
+        const statusBadge = isActive
+            ? '<span class="badge badge-success" style="font-size:0.72rem;">在售</span>'
+            : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">已停用</span>';
+
+        const categoryTag = d.category
+            ? '<span class="badge badge-info" style="font-size:0.72rem; background: rgba(37,99,235,0.1); color:#2563eb;">' + w2Escape(d.category) + '</span>'
+            : '';
+
+        const marginRate = Number(d.gross_margin_rate || 0);
+        const marginBadgeClass = marginRate >= 60 ? 'badge-success' : (marginRate >= 40 ? 'badge-warning' : 'badge-danger');
+
+        // 配方食材简述标签
+        let ingredientsHtml = '';
+        if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
+            ingredientsHtml = d.ingredients.map(ing => {
+                return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
+                    + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
+                    + ing.consumption_qty + ing.unit
+                    + ' <span style="color:var(--text-muted); font-size:0.7rem;">(¥' + fmtMoney(ing.ingredient_cost) + ')</span>'
+                    + '</span>';
+            }).join('');
+        } else {
+            ingredientsHtml = '<span style="font-size:0.78rem; color:var(--text-muted); font-style:italic;">未配置食材配方</span>';
+        }
+
+        html += '<div class="card dish-card" style="display:flex; flex-direction:column; justify-content:space-between; border-top: 3px solid ' + (isActive ? 'var(--primary, #0f766e)' : 'var(--border-color)') + ';">'
+            + '<div>'
+            + '  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:8px;">'
+            + '    <div>'
+            + '      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">'
+            + categoryTag
+            + statusBadge
+            + '      </div>'
+            + '      <h4 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
+            + '    </div>'
+            + '    <div style="text-align:right;">'
+            + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">¥' + fmtMoney(d.price) + '</div>'
+            + '      <div style="font-size:0.72rem; color:var(--text-muted);">建议售价</div>'
+            + '    </div>'
+            + '  </div>'
+            + (d.description ? ('<div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">' + w2Escape(d.description) + '</div>') : '')
+            + '  <div class="dish-metrics-box" style="background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">'
+            + '    <div>'
+            + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论单份成本</div>'
+            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.theoretical_cost) + '</div>'
+            + '    </div>'
+            + '    <div>'
+            + '      <div style="font-size:0.72rem; color:var(--text-muted);">单份理论毛利</div>'
+            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">¥' + fmtMoney(d.gross_profit) + '</div>'
+            + '    </div>'
+            + '    <div>'
+            + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论毛利率</div>'
+            + '      <div><span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span></div>'
+            + '    </div>'
+            + '  </div>'
+            + '  <div style="margin-bottom:12px;">'
+            + '    <div style="font-size:0.78rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">BOM 食材清单 (' + (d.ingredients ? d.ingredients.length : 0) + ' 种):</div>'
+            + '    <div style="display:flex; flex-wrap:wrap;">' + ingredientsHtml + '</div>'
+            + '  </div>'
+            + '</div>'
+            + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
+            + '  <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
+            + '  <button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick="deleteDish(' + d.id + ', \'' + w2Escape(d.name) + '\')">' + (isActive ? '停用' : '删除') + '</button>'
+            + '</div>'
+            + '</div>';
+    });
+
+    grid.innerHTML = html;
+}
+
+/**
+ * 渲染餐品表格视图
+ */
+function renderDishTable(dishes) {
+    const tbody = document.getElementById('dishTableBody');
+    if (!tbody) return;
+
+    if (dishes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-muted);">暂无匹配餐品数据</td></tr>';
+        return;
+    }
+
+    let html = '';
+    dishes.forEach(d => {
+        const isActive = d.status === 'active';
+        const marginRate = Number(d.gross_margin_rate || 0);
+        const marginBadgeClass = marginRate >= 60 ? 'badge-success' : (marginRate >= 40 ? 'badge-warning' : 'badge-danger');
+
+        const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
+
+        html += '<tr>'
+            + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
+            + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
+            + '<td class="col-right" style="font-weight:600;">¥' + fmtMoney(d.price) + '</td>'
+            + '<td style="font-size:0.82rem; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">' + w2Escape(ingSummary) + '</td>'
+            + '<td class="col-right">¥' + fmtMoney(d.theoretical_cost) + '</td>'
+            + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
+            + '<td class="col-center">'
+            + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
+            + '  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="deleteDish(' + d.id + ', \'' + w2Escape(d.name) + '\')">' + (isActive ? '停用' : '删除') + '</button>'
+            + '</td>'
+            + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+}
+
+/**
+ * 切换餐品 BOM 库卡片/表格视图
+ */
+function toggleDishViewMode() {
+    const cardGrid = document.getElementById('dishCardGrid');
+    const tableView = document.getElementById('dishTableView');
+    const toggleBtn = document.getElementById('btnToggleDishView');
+
+    if (dishViewMode === 'card') {
+        dishViewMode = 'table';
+        if (cardGrid) cardGrid.classList.add('hide');
+        if (tableView) tableView.classList.remove('hide');
+        if (toggleBtn) toggleBtn.innerText = '切换卡片视图';
+    } else {
+        dishViewMode = 'card';
+        if (cardGrid) cardGrid.classList.remove('hide');
+        if (tableView) tableView.classList.add('hide');
+        if (toggleBtn) toggleBtn.innerText = '切换列表视图';
+    }
+}
+
+/**
+ * 打开餐品建档 / 编辑配方 Modal
+ */
+function openDishModal(dishId) {
+    const modal = document.getElementById('dishEditModal');
+    const titleEl = document.getElementById('dishEditModalTitle');
+    const errEl = document.getElementById('dishModalError');
+    if (errEl) { errEl.innerText = ''; errEl.classList.add('hide'); }
+
+    const idInput = document.getElementById('dishModalId');
+    const nameInput = document.getElementById('dishModalName');
+    const catInput = document.getElementById('dishModalCategory');
+    const priceInput = document.getElementById('dishModalPrice');
+    const descInput = document.getElementById('dishModalDescription');
+    const statusInput = document.getElementById('dishModalStatus');
+    const rowsBody = document.getElementById('dishIngredientRowsBody');
+
+    if (rowsBody) rowsBody.innerHTML = '';
+
+    const prepareModal = () => {
+        if (dishId) {
+            if (titleEl) titleEl.innerText = '编辑餐品与配方';
+            const dish = dishLibraryCache.find(d => d.id === Number(dishId));
+            if (dish) {
+                if (idInput) idInput.value = dish.id;
+                if (nameInput) nameInput.value = dish.name || '';
+                if (catInput) catInput.value = dish.category || '';
+                if (priceInput) priceInput.value = dish.price != null ? dish.price : '';
+                if (descInput) descInput.value = dish.description || '';
+                if (statusInput) statusInput.value = dish.status || 'active';
+
+                if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
+                    dish.ingredients.forEach(ing => {
+                        addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes);
+                    });
+                } else {
+                    addDishIngredientRow();
+                }
+                calcDishModalTheoryCost();
+                openModalById('dishEditModal');
+            } else {
+                fetch('/api/dishes/' + dishId)
+                    .then(res => res.json())
+                    .then(ret => {
+                        if (ret.status !== 'success') {
+                            showToast(ret.msg || '获取餐品详情失败', 'error');
+                            return;
+                        }
+                        const d = ret.data;
+                        if (idInput) idInput.value = d.id;
+                        if (nameInput) nameInput.value = d.name || '';
+                        if (catInput) catInput.value = d.category || '';
+                        if (priceInput) priceInput.value = d.price != null ? d.price : '';
+                        if (descInput) descInput.value = d.description || '';
+                        if (statusInput) statusInput.value = d.status || 'active';
+
+                        if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
+                            d.ingredients.forEach(ing => {
+                                addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes);
+                            });
+                        } else {
+                            addDishIngredientRow();
+                        }
+                        calcDishModalTheoryCost();
+                        openModalById('dishEditModal');
+                    });
+            }
+        } else {
+            if (titleEl) titleEl.innerText = '新建餐品与配方';
+            if (idInput) idInput.value = '';
+            if (nameInput) nameInput.value = '';
+            if (catInput) catInput.value = '';
+            if (priceInput) priceInput.value = '';
+            if (descInput) descInput.value = '';
+            if (statusInput) statusInput.value = 'active';
+
+            addDishIngredientRow();
+            calcDishModalTheoryCost();
+            openModalById('dishEditModal');
+        }
+    };
+
+    if (!dishAvailableSkus || dishAvailableSkus.length === 0) {
+        fetchDishAvailableSkus(() => prepareModal());
+    } else {
+        prepareModal();
+    }
+}
+
+/**
+ * 动态向配方表格添加一行食材
+ */
+function addDishIngredientRow(skuId, qty, unit, notes) {
+    const tbody = document.getElementById('dishIngredientRowsBody');
+    if (!tbody) return;
+
+    const tr = document.createElement('tr');
+    tr.className = 'dish-ing-row';
+
+    // 构建 SKU 下拉框选项
+    let optionsHtml = '<option value="">-- 请选择食材 SKU --</option>';
+    let selectedSku = null;
+
+    dishAvailableSkus.forEach(s => {
+        const isSel = (skuId != null && Number(s.id) === Number(skuId));
+        if (isSel) selectedSku = s;
+        optionsHtml += '<option value="' + s.id + '"'
+            + (isSel ? ' selected' : '')
+            + ' data-unit="' + w2Escape(s.base_unit || '') + '"'
+            + ' data-price="' + (s.last_unit_price || 0) + '"'
+            + ' data-stock="' + (s.current_stock || 0) + '"'
+            + ' data-category="' + w2Escape(s.category || '') + '">'
+            + w2Escape(s.name) + ' (' + (s.category || '通用') + ' ｜ 库存: ' + (s.current_stock || 0) + (s.base_unit || '') + ' ｜ ¥' + fmtMoney(s.last_unit_price) + '/' + (s.base_unit || '') + ')'
+            + '</option>';
+    });
+
+    const initQty = qty != null ? qty : '';
+    const initUnit = unit != null ? unit : (selectedSku ? selectedSku.base_unit : '');
+    const initNotes = notes != null ? notes : '';
+    const refPriceText = selectedSku ? ('¥' + fmtMoney(selectedSku.last_unit_price) + '/' + (selectedSku.base_unit || '')) : '-';
+
+    tr.innerHTML = '<td>'
+        + '  <select class="form-control ing-sku-select" onchange="onDishIngredientSkuChange(this)">'
+        + optionsHtml
+        + '  </select>'
+        + '</td>'
+        + '<td>'
+        + '  <input type="number" step="0.0001" min="0.0001" class="form-control ing-qty-input col-right" placeholder="0.00" value="' + initQty + '" oninput="calcDishModalTheoryCost()">'
+        + '</td>'
+        + '<td>'
+        + '  <input type="text" class="form-control ing-unit-input col-center" placeholder="单位" value="' + w2Escape(initUnit) + '" oninput="calcDishModalTheoryCost()">'
+        + '</td>'
+        + '<td class="col-right">'
+        + '  <span class="ing-ref-price" style="font-size:0.85rem; color:var(--text-muted);">' + refPriceText + '</span>'
+        + '</td>'
+        + '<td class="col-right">'
+        + '  <span class="ing-item-cost" style="font-weight:600; color:var(--primary, #0f766e);">¥0.00</span>'
+        + '</td>'
+        + '<td class="col-center">'
+        + '  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="removeDishIngredientRow(this)">删除</button>'
+        + '</td>';
+
+    tbody.appendChild(tr);
+    calcDishModalTheoryCost();
+}
+
+/**
+ * 删除一行配方食材
+ */
+function removeDishIngredientRow(btn) {
+    const tr = btn.closest('tr');
+    if (tr && tr.parentNode) {
+        tr.parentNode.removeChild(tr);
+        calcDishModalTheoryCost();
+    }
+}
+
+/**
+ * 监听配方行 SKU 切换
+ */
+function onDishIngredientSkuChange(selectEl) {
+    const tr = selectEl.closest('tr');
+    if (!tr) return;
+
+    const opt = selectEl.selectedOptions[0];
+    const unitInput = tr.querySelector('.ing-unit-input');
+    const refPriceSpan = tr.querySelector('.ing-ref-price');
+
+    if (opt && opt.value) {
+        const baseUnit = opt.getAttribute('data-unit') || '';
+        const lastPrice = parseFloat(opt.getAttribute('data-price')) || 0;
+        if (unitInput && !unitInput.value.trim()) {
+            unitInput.value = baseUnit;
+        }
+        if (refPriceSpan) {
+            refPriceSpan.innerText = '¥' + fmtMoney(lastPrice) + '/' + (baseUnit || '');
+        }
+    } else {
+        if (refPriceSpan) refPriceSpan.innerText = '-';
+    }
+
+    calcDishModalTheoryCost();
+}
+
+/**
+ * 计算建档/编辑弹窗内的理论成本与毛利率
+ */
+function calcDishModalTheoryCost() {
+    const rows = document.querySelectorAll('#dishIngredientRowsBody tr.dish-ing-row');
+    let totalTheoreticalCost = 0.0;
+
+    rows.forEach(tr => {
+        const sel = tr.querySelector('.ing-sku-select');
+        const qtyInp = tr.querySelector('.ing-qty-input');
+        const unitInp = tr.querySelector('.ing-unit-input');
+        const costSpan = tr.querySelector('.ing-item-cost');
+        const refPriceSpan = tr.querySelector('.ing-ref-price');
+
+        if (!sel || !qtyInp) return;
+        const opt = sel.selectedOptions[0];
+        const rawQty = parseFloat(qtyInp.value) || 0;
+        const ingUnit = (unitInp ? unitInp.value : '').trim();
+
+        if (opt && opt.value && rawQty > 0) {
+            const skuBaseUnit = opt.getAttribute('data-unit') || '';
+            const skuPrice = parseFloat(opt.getAttribute('data-price')) || 0;
+
+            if (refPriceSpan) {
+                refPriceSpan.innerText = '¥' + fmtMoney(skuPrice) + '/' + (skuBaseUnit || '');
+            }
+
+            const convertedQty = convertUnitQtyFrontend(rawQty, ingUnit || skuBaseUnit, skuBaseUnit);
+            const rowCost = Math.round(convertedQty * skuPrice * 100) / 100;
+            totalTheoreticalCost += rowCost;
+
+            if (costSpan) costSpan.innerText = '¥' + fmtMoney(rowCost);
+        } else {
+            if (costSpan) costSpan.innerText = '¥0.00';
+        }
+    });
+
+    totalTheoreticalCost = Math.round(totalTheoreticalCost * 100) / 100;
+    const priceInput = document.getElementById('dishModalPrice');
+    const dishPrice = parseFloat(priceInput ? priceInput.value : 0) || 0;
+
+    const grossProfit = Math.round((dishPrice - totalTheoreticalCost) * 100) / 100;
+    const grossMarginRate = dishPrice > 0 ? Math.round((grossProfit / dishPrice) * 1000) / 10 : 0.0;
+
+    const costEl = document.getElementById('dishModalTheoryCost');
+    const profitEl = document.getElementById('dishModalTheoryProfit');
+    const marginEl = document.getElementById('dishModalTheoryMargin');
+
+    if (costEl) costEl.innerText = '¥' + fmtMoney(totalTheoreticalCost);
+    if (profitEl) {
+        profitEl.innerText = '¥' + fmtMoney(grossProfit);
+        profitEl.style.color = grossProfit >= 0 ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)';
+    }
+    if (marginEl) {
+        marginEl.innerText = grossMarginRate.toFixed(1) + '%';
+        marginEl.className = 'badge ' + (grossMarginRate >= 60 ? 'badge-success' : (grossMarginRate >= 40 ? 'badge-warning' : 'badge-danger'));
+    }
+}
+
+/**
+ * 提交保存餐品及其 BOM 配方
+ */
+function saveDishModal() {
+    const idInput = document.getElementById('dishModalId');
+    const nameInput = document.getElementById('dishModalName');
+    const catInput = document.getElementById('dishModalCategory');
+    const priceInput = document.getElementById('dishModalPrice');
+    const descInput = document.getElementById('dishModalDescription');
+    const statusInput = document.getElementById('dishModalStatus');
+    const errEl = document.getElementById('dishModalError');
+    const saveBtn = document.getElementById('btnSaveDishModal');
+
+    if (errEl) { errEl.innerText = ''; errEl.classList.add('hide'); }
+
+    const dishId = (idInput ? idInput.value : '').trim();
+    const name = (nameInput ? nameInput.value : '').trim();
+    const category = (catInput ? catInput.value : '').trim();
+    const priceVal = priceInput ? priceInput.value : '';
+    const description = (descInput ? descInput.value : '').trim();
+    const status = statusInput ? statusInput.value : 'active';
+
+    if (!name) {
+        if (errEl) { errEl.innerText = '餐品名称不能为空'; errEl.classList.remove('hide'); }
+        if (nameInput) nameInput.focus();
+        return;
+    }
+
+    if (priceVal === '' || isNaN(parseFloat(priceVal)) || parseFloat(priceVal) < 0) {
+        if (errEl) { errEl.innerText = '请输入有效的餐品销售单价（不能为负数）'; errEl.classList.remove('hide'); }
+        if (priceInput) priceInput.focus();
+        return;
+    }
+    const price = parseFloat(priceVal);
+
+    // 收集配方行
+    const rows = document.querySelectorAll('#dishIngredientRowsBody tr.dish-ing-row');
+    const ingredients = [];
+    const seenSkus = new Set();
+
+    for (let i = 0; i < rows.length; i++) {
+        const tr = rows[i];
+        const sel = tr.querySelector('.ing-sku-select');
+        const qtyInp = tr.querySelector('.ing-qty-input');
+        const unitInp = tr.querySelector('.ing-unit-input');
+
+        const skuVal = sel ? sel.value : '';
+        const qtyVal = qtyInp ? parseFloat(qtyInp.value) : 0;
+        const unitVal = (unitInp ? unitInp.value : '').trim();
+
+        if (!skuVal && qtyVal <= 0) continue; // 跳过完全为空的行
+
+        if (!skuVal) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材配方未选择 SKU'; errEl.classList.remove('hide'); }
+            return;
+        }
+        const skuId = parseInt(skuVal);
+        if (seenSkus.has(skuId)) {
+            if (errEl) { errEl.innerText = '配方中存在重复的食材 SKU，请合并为一行'; errEl.classList.remove('hide'); }
+            return;
+        }
+        seenSkus.add(skuId);
+
+        if (qtyVal <= 0 || isNaN(qtyVal)) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材单份用量必须大于 0'; errEl.classList.remove('hide'); }
+            return;
+        }
+
+        if (!unitVal) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材单位不能为空'; errEl.classList.remove('hide'); }
+            return;
+        }
+
+        ingredients.push({
+            sku_id: skuId,
+            consumption_qty: qtyVal,
+            unit: unitVal,
+            notes: ''
+        });
+    }
+
+    const payload = {
+        name: name,
+        category: category,
+        price: price,
+        description: description,
+        status: status,
+        ingredients: ingredients
+    };
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerText = '保存中...';
+    }
+
+    const isEdit = !!dishId;
+    const url = isEdit ? ('/api/dishes/' + dishId) : '/api/dishes';
+    const method = isEdit ? 'PUT' : 'POST';
+
+    fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(ret => {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = '保存餐品配方'; }
+        if (ret.status !== 'success') {
+            if (errEl) { errEl.innerText = ret.msg || '保存失败'; errEl.classList.remove('hide'); }
+            showToast(ret.msg || '保存失败', 'error');
+            return;
+        }
+
+        showToast(isEdit ? '餐品与配方已成功更新' : '新建餐品成功', 'success');
+        closeModalById('dishEditModal');
+        loadDishesList();
+        // 若停留在每日消耗录入 Tab，同步刷新录入列表
+        const activeSubtab = document.querySelector('.dish-subtab-pane.active');
+        if (activeSubtab && activeSubtab.id === 'subtab-dish-daily') {
+            loadDailyConsumption();
+        }
+    })
+    .catch(err => {
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = '保存餐品配方'; }
+        console.error('saveDishModal error:', err);
+        if (errEl) { errEl.innerText = '网络请求异常，请稍后重试'; errEl.classList.remove('hide'); }
+        showToast('网络请求异常', 'error');
+    });
+}
+
+/**
+ * 停用或删除餐品
+ */
+function deleteDish(dishId, dishName) {
+    showCustomConfirmModal({
+        title: '停用/删除餐品确认',
+        message: '确定要停用或删除餐品「' + (dishName || ('#' + dishId)) + '」吗？\n停用后该餐品将不会在每日消耗录入界面出现，历史消耗与成本核算数据将完整保留。',
+        confirmText: '确认操作',
+        cancelText: '取消',
+        onConfirm: () => {
+            fetch('/api/dishes/' + dishId + '?hard=0', { method: 'DELETE' })
+                .then(res => res.json())
+                .then(ret => {
+                    if (ret.status !== 'success') {
+                        showToast(ret.msg || '操作失败', 'error');
+                        return;
+                    }
+                    showToast(ret.msg || '餐品已停用', 'success');
+                    loadDishesList();
+                    loadDailyConsumption();
+                })
+                .catch(err => {
+                    console.error('deleteDish error:', err);
+                    showToast('网络异常，无法停用餐品', 'error');
+                });
+        }
+    });
+}
+
+// --------------------------------------------------------------------------
+// 2. 每日消耗极速录入与扣减
+// --------------------------------------------------------------------------
+
+/**
+ * 初始化日期输入框为今天
+ */
+function initDishConsumptionDate() {
+    const dateInput = document.getElementById('dishConsumptionDate');
+    if (dateInput && !dateInput.value) {
+        const today = new Date().toISOString().slice(0, 10);
+        dateInput.value = today;
+    }
+}
+
+/**
+ * 快捷设置核算日期为「今天」
+ */
+function setDishConsumptionToday() {
+    const today = new Date().toISOString().slice(0, 10);
+    const dateInput = document.getElementById('dishConsumptionDate');
+    if (dateInput) dateInput.value = today;
+    loadDailyConsumption(today);
+}
+
+/**
+ * 快捷设置核算日期为「昨天」
+ */
+function setDishConsumptionYesterday() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const yest = d.toISOString().slice(0, 10);
+    const dateInput = document.getElementById('dishConsumptionDate');
+    if (dateInput) dateInput.value = yest;
+    loadDailyConsumption(yest);
+}
+
+/**
+ * 日期改变触发重载
+ */
+function onDishConsumptionDateChange(val) {
+    loadDailyConsumption(val);
+}
+
+/**
+ * 加载指定日期的餐品消耗记录与当日在售餐品录入列表
+ */
+function loadDailyConsumption(targetDate) {
+    const dateInput = document.getElementById('dishConsumptionDate');
+    const curDate = (targetDate || (dateInput ? dateInput.value : '') || new Date().toISOString().slice(0, 10)).trim();
+    if (dateInput && dateInput.value !== curDate) dateInput.value = curDate;
+
+    // 并行获取当日已提交流水与当前在售餐品列表
+    Promise.all([
+        fetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(curDate)).then(r => r.json()),
+        fetch('/api/dishes?status=active').then(r => r.json())
+    ])
+    .then(([dailyRes, dishesRes]) => {
+        if (dailyRes.status === 'success') {
+            const data = dailyRes.data || {};
+            dailyConsumptionCache = data.consumptions || [];
+            renderDailyKPI(data.summary || {});
+            renderDailyHistoryTable(dailyConsumptionCache);
+        } else {
+            showToast(dailyRes.msg || '加载当日消耗流水失败', 'error');
+        }
+
+        if (dishesRes.status === 'success') {
+            dishDailyDishesCache = dishesRes.data || [];
+            renderDishConsumeEntryTable(dishDailyDishesCache);
+        }
+    })
+    .catch(err => {
+        console.error('loadDailyConsumption error:', err);
+        showToast('网络请求异常，无法加载每日消耗数据', 'error');
+    });
+}
+
+/**
+ * 渲染当日 KPI 统计面板
+ */
+function renderDailyKPI(summary) {
+    const costEl = document.getElementById('kpiDishCost');
+    const revEl = document.getElementById('kpiDishRevenue');
+    const marginEl = document.getElementById('kpiDishGrossMargin');
+    const countEl = document.getElementById('kpiDishCount');
+
+    if (costEl) costEl.innerText = '¥' + fmtMoney(summary.total_cost || 0);
+    if (revEl) revEl.innerText = '¥' + fmtMoney(summary.total_revenue || 0);
+    if (marginEl) {
+        const gm = Number(summary.gross_margin_rate || 0);
+        marginEl.innerText = gm.toFixed(1) + '%';
+        marginEl.style.color = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+    }
+    if (countEl) countEl.innerText = (summary.records_count || 0) + ' 笔流水';
+}
+
+/**
+ * 渲染今日在售餐品极速录入表格
+ */
+function renderDishConsumeEntryTable(dishes) {
+    const tbody = document.getElementById('dishConsumeEntryTableBody');
+    const countBadge = document.getElementById('dishConsumeActiveCount');
+    if (!tbody) return;
+
+    if (countBadge) countBadge.innerText = dishes.length + ' 种在售餐品';
+
+    if (dishes.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:30px; color:var(--text-muted);">'
+            + '暂无在售餐品，请先前往「餐品 BOM 配方库」创建并上架餐品'
+            + '</td></tr>';
+        updateDishConsumeSummary();
+        return;
+    }
+
+    let html = '';
+    dishes.forEach(d => {
+        const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '未配置配方';
+
+        html += '<tr class="dish-consume-row" data-dish-id="' + d.id + '" data-dish-name="' + w2Escape(d.name) + '" data-dish-price="' + (d.price || 0) + '">'
+            + '<td>'
+            + '  <div style="font-weight:600; color:var(--text-main); font-size:0.95rem;">' + w2Escape(d.name) + '</div>'
+            + (d.description ? ('<div style="font-size:0.75rem; color:var(--text-muted);">' + w2Escape(d.description) + '</div>') : '')
+            + '</td>'
+            + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
+            + '<td class="col-right" style="font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.price) + '</td>'
+            + '<td style="font-size:0.8rem; color:var(--text-secondary); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">'
+            + w2Escape(ingSummary)
+            + '</td>'
+            + '<td style="text-align:center;">'
+            + '  <div class="dish-qty-control" style="display:inline-flex; align-items:center; gap:4px;">'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:28px; padding:0; line-height:26px;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
+            + '    <input type="number" min="0" step="1" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:70px; text-align:center; font-weight:700; height:28px; padding:2px 4px;" value="0" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:28px; padding:0; line-height:26px;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:28px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:28px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
+            + '  </div>'
+            + '</td>'
+            + '<td class="col-right" style="font-weight:700; color:var(--primary, #0f766e); font-size:0.95rem;" id="dishSubtotal_' + d.id + '">'
+            + '¥0.00'
+            + '</td>'
+            + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+    updateDishConsumeSummary();
+}
+
+/**
+ * 过滤在售餐品极速录入表格
+ */
+function filterDishConsumeEntryTable(query) {
+    const q = (query || '').trim().toLowerCase();
+    const rows = document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row');
+    rows.forEach(tr => {
+        const name = (tr.getAttribute('data-dish-name') || '').toLowerCase();
+        if (!q || name.includes(q)) {
+            tr.style.display = '';
+        } else {
+            tr.style.display = 'none';
+        }
+    });
+}
+
+/**
+ * 步进调整餐品售出份数
+ */
+function adjustDishConsumeQty(dishId, delta) {
+    const input = document.getElementById('dishConsumeQty_' + dishId);
+    if (!input) return;
+    let current = parseInt(input.value) || 0;
+    current = Math.max(0, current + delta);
+    input.value = current;
+    onDishConsumeQtyInput(dishId, current);
+}
+
+/**
+ * 份数输入框监听
+ */
+function onDishConsumeQtyInput(dishId, val) {
+    const row = document.querySelector('#dishConsumeEntryTableBody tr[data-dish-id="' + dishId + '"]');
+    if (!row) return;
+
+    const price = parseFloat(row.getAttribute('data-dish-price')) || 0;
+    const qty = Math.max(0, parseInt(val) || 0);
+    const subtotal = Math.round(qty * price * 100) / 100;
+
+    const subtotalEl = document.getElementById('dishSubtotal_' + dishId);
+    if (subtotalEl) subtotalEl.innerText = '¥' + fmtMoney(subtotal);
+
+    updateDishConsumeSummary();
+}
+
+/**
+ * 更新极速录入底部汇总栏
+ */
+function updateDishConsumeSummary() {
+    const rows = document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row');
+    let totalItems = 0;
+    let totalQty = 0;
+
+    rows.forEach(tr => {
+        const dishId = tr.getAttribute('data-dish-id');
+        const input = document.getElementById('dishConsumeQty_' + dishId);
+        const qty = input ? (parseInt(input.value) || 0) : 0;
+        if (qty > 0) {
+            totalItems++;
+            totalQty += qty;
+        }
+    });
+
+    const countText = document.getElementById('dishSubmitCountText');
+    const qtyText = document.getElementById('dishSubmitTotalQty');
+
+    if (countText) countText.innerText = totalItems;
+    if (qtyText) qtyText.innerText = totalQty;
+}
+
+/**
+ * 清空所有已输入份数
+ */
+function resetDishConsumeInputs() {
+    const inputs = document.querySelectorAll('.dish-consume-qty-input');
+    inputs.forEach(inp => { inp.value = 0; });
+    const subtotals = document.querySelectorAll('[id^="dishSubtotal_"]');
+    subtotals.forEach(st => { st.innerText = '¥0.00'; });
+    updateDishConsumeSummary();
+}
+
+/**
+ * 批量提交每日餐品消耗并触发 FIFO 扣减
+ */
+function submitDailyConsumptionBatch() {
+    const dateInput = document.getElementById('dishConsumptionDate');
+    const dateStr = (dateInput ? dateInput.value : '').trim() || new Date().toISOString().slice(0, 10);
+
+    const rows = document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row');
+    const items = [];
+
+    rows.forEach(tr => {
+        const dishId = parseInt(tr.getAttribute('data-dish-id'));
+        const input = document.getElementById('dishConsumeQty_' + dishId);
+        const qty = input ? (parseInt(input.value) || 0) : 0;
+        if (dishId && qty > 0) {
+            items.push({
+                dish_id: dishId,
+                quantity: qty,
+                notes: ''
+            });
+        }
+    });
+
+    if (items.length === 0) {
+        showToast('请至少输入一种餐品的消耗份数（份数大于 0）', 'warning');
+        return;
+    }
+
+    const btnSubmit = document.getElementById('btnSubmitDailyConsumeBatch');
+    if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = '扣减核算中...';
+    }
+
+    const payload = {
+        date: dateStr,
+        notes: '前台批量录入',
+        items: items
+    };
+
+    fetch('/api/dishes/daily_consumption/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(ret => {
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = '一键扣减库存并核算真实成本';
+        }
+
+        if (ret.status !== 'success') {
+            showToast(ret.msg || '消耗扣减失败', 'error');
+            return;
+        }
+
+        showToast(ret.msg || '消耗扣减成功！已完成 FIFO 批次精确计价', 'success');
+        resetDishConsumeInputs();
+
+        // 1. 刷新当日流水与 KPI
+        loadDailyConsumption(dateStr);
+
+        // 2. 即时刷新全局「实时库存与价格」Tab 数据（库存已扣减）
+        loadInventoryData();
+
+        // 3. 自动展示第一条记录的 FIFO 批次穿透溯源报告
+        if (ret.data && Array.isArray(ret.data.consumption_ids) && ret.data.consumption_ids.length > 0) {
+            showCostTraceModal(ret.data.consumption_ids[0]);
+        }
+    })
+    .catch(err => {
+        if (btnSubmit) {
+            btnSubmit.disabled = false;
+            btnSubmit.innerText = '一键扣减库存并核算真实成本';
+        }
+        console.error('submitDailyConsumptionBatch error:', err);
+        showToast('网络请求异常，消耗扣减失败', 'error');
+    });
+}
+
+/**
+ * 渲染当日消耗历史流水表格
+ */
+function renderDailyHistoryTable(consumptions) {
+    const tbody = document.getElementById('dishDailyHistoryTableBody');
+    if (!tbody) return;
+
+    if (consumptions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px; color:var(--text-muted);">'
+            + '当日暂无已提交的消耗流水记录'
+            + '</td></tr>';
+        return;
+    }
+
+    let html = '';
+    consumptions.forEach(r => {
+        const isVoid = r.is_void === 1;
+        const statusBadge = isVoid
+            ? '<span class="badge badge-danger" style="font-size:0.75rem;">已冲销作废</span>'
+            : '<span class="badge badge-success" style="font-size:0.75rem;">正常</span>';
+
+        const gm = Number(r.gross_margin_rate || 0);
+        const gmBadgeClass = gm >= 60 ? 'badge-success' : (gm >= 40 ? 'badge-warning' : 'badge-danger');
+
+        html += '<tr style="' + (isVoid ? 'opacity:0.55; text-decoration:line-through;' : '') + '">'
+            + '<td style="font-family:monospace; font-weight:600;">#' + r.id + '</td>'
+            + '<td>'
+            + '  <strong>' + w2Escape(r.dish_name) + '</strong>'
+            + (r.dish_category ? (' <span class="badge badge-info" style="font-size:0.7rem;">' + w2Escape(r.dish_category) + '</span>') : '')
+            + '</td>'
+            + '<td class="col-right" style="font-weight:600;">' + r.quantity + ' 份</td>'
+            + '<td class="col-right" style="font-weight:600; color:var(--primary, #0f766e);">'
+            + '  ¥' + fmtMoney(r.total_cost)
+            + '  <div style="font-size:0.72rem; color:var(--text-muted); font-weight:400;">单份 ¥' + fmtMoney(r.unit_cost) + '</div>'
+            + '</td>'
+            + '<td class="col-right">¥' + fmtMoney(r.revenue) + '</td>'
+            + '<td class="col-right"><span class="badge ' + gmBadgeClass + '">' + gm.toFixed(1) + '%</span></td>'
+            + '<td class="col-center">' + statusBadge + '</td>'
+            + '<td class="col-center">'
+            + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="showCostTraceModal(' + r.id + ')">批次溯源</button>'
+            + (!isVoid ? ('<button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="voidDailyConsumption(' + r.id + ')">冲销作废</button>') : '')
+            + '</td>'
+            + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+}
+
+// --------------------------------------------------------------------------
+// 3. FIFO 批次穿透溯源与冲销
+// --------------------------------------------------------------------------
+
+/**
+ * 打开 FIFO 批次成本穿透溯源报告弹窗
+ */
+function showCostTraceModal(consumptionId) {
+    const traceRecord = dailyConsumptionCache.find(c => c.id === Number(consumptionId));
+    if (!traceRecord) {
+        // 若本地缓存中没有，则请求单日接口刷新
+        const dateInput = document.getElementById('dishConsumptionDate');
+        const dStr = dateInput ? dateInput.value : '';
+        fetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(dStr))
+            .then(res => res.json())
+            .then(ret => {
+                if (ret.status === 'success') {
+                    const list = (ret.data || {}).consumptions || [];
+                    const found = list.find(c => c.id === Number(consumptionId));
+                    if (found) renderCostTraceModalContent(found);
+                    else showToast('未找到对应流水记录 #' + consumptionId, 'warning');
+                }
+            });
+        return;
+    }
+
+    renderCostTraceModalContent(traceRecord);
+}
+
+/**
+ * 渲染穿透溯源报告内容并打开 Modal
+ */
+function renderCostTraceModalContent(c) {
+    const nameEl = document.getElementById('traceDishName');
+    const qtyEl = document.getElementById('traceDishQty');
+    const totalEl = document.getElementById('traceTotalCost');
+    const diffEl = document.getElementById('traceUnitCostDiff');
+    const treeContainer = document.getElementById('costTraceDetailsContainer');
+
+    if (nameEl) nameEl.innerText = c.dish_name || ('餐品#' + c.dish_id);
+    if (qtyEl) qtyEl.innerText = (c.date || '-') + ' / 售出 ' + c.quantity + ' 份';
+    if (totalEl) totalEl.innerText = '¥' + fmtMoney(c.total_cost);
+
+    const unitCost = Number(c.unit_cost || 0);
+    if (diffEl) {
+        diffEl.innerHTML = '<span style="font-weight:600;">¥' + fmtMoney(unitCost) + '/份</span>'
+            + ' <span style="font-size:0.75rem; color:var(--text-muted);">(基于入库批次 FIFO 实际加权计价)</span>';
+    }
+
+    if (!treeContainer) return;
+
+    const details = c.details || [];
+    if (details.length === 0) {
+        treeContainer.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无批次扣减明细（未配置配方食材或用量为 0）</div>';
+        openModalById('costTraceModal');
+        return;
+    }
+
+    // 按食材 SKU 分组展示扣减批次
+    const skuMap = new Map();
+    details.forEach(dt => {
+        if (!skuMap.has(dt.sku_id)) {
+            skuMap.set(dt.sku_id, {
+                sku_id: dt.sku_id,
+                sku_name: dt.sku_name,
+                unit: dt.unit,
+                total_qty: 0,
+                total_cost: 0,
+                batches: []
+            });
+        }
+        const group = skuMap.get(dt.sku_id);
+        group.total_qty = Math.round((group.total_qty + dt.qty_consumed) * 10000) / 10000;
+        group.total_cost = Math.round((group.total_cost + dt.total_cost) * 100) / 100;
+        group.batches.push(dt);
+    });
+
+    let html = '';
+    skuMap.forEach(group => {
+        let batchesHtml = '';
+        group.batches.forEach(b => {
+            const isEst = (!b.batch_id || b.batch_id <= 0);
+            if (isEst) {
+                batchesHtml += '<div class="cost-trace-batch-item" style="padding:8px 12px; margin:4px 0 4px 16px; background:rgba(239,68,68,0.08); border-left:3px solid var(--danger, #dc2626); border-radius:4px; font-size:0.84rem;">'
+                    + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+                    + '  <div>'
+                    + '    <span class="badge badge-danger" style="font-size:0.7rem; margin-right:6px;">超卖暂估批次</span>'
+                    + '    <span>扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ 暂估基准单价 ¥' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
+                    + '  </div>'
+                    + '  <div style="font-weight:700; color:var(--danger, #dc2626);">¥' + fmtMoney(b.total_cost) + '</div>'
+                    + '</div>'
+                    + '<div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">无可用历史入库批次，已生成暂估对冲批次，待新入库后自动核销差异</div>'
+                    + '</div>';
+            } else {
+                batchesHtml += '<div class="cost-trace-batch-item" style="padding:8px 12px; margin:4px 0 4px 16px; background:var(--bg-subtle, #f8fafc); border-left:3px solid var(--primary, #0f766e); border-radius:4px; font-size:0.84rem;">'
+                    + '<div style="display:flex; justify-content:space-between; align-items:center;">'
+                    + '  <div>'
+                    + '    <span class="badge badge-info" style="font-size:0.7rem; margin-right:6px;">批次 #' + b.batch_id + '</span>'
+                    + '    <span>入库日期: <strong>' + (b.batch_date || '未知') + '</strong> ｜ 扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ ¥' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
+                    + '  </div>'
+                    + '  <div style="font-weight:700; color:var(--primary, #0f766e);">¥' + fmtMoney(b.total_cost) + '</div>'
+                    + '</div>'
+                    + '</div>';
+            }
+        });
+
+        html += '<div class="cost-trace-sku-group" style="margin-bottom:14px; border:1px solid var(--border-color); border-radius:8px; padding:10px 14px; background:var(--bg-card);">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; border-bottom:1px solid var(--border-color); padding-bottom:6px;">'
+            + '  <div style="font-weight:600; font-size:0.92rem; color:var(--text-main);">'
+            + '    ' + w2Escape(group.sku_name)
+            + '    <span style="font-size:0.8rem; color:var(--text-muted); font-weight:400; margin-left:8px;">合计耗用: <strong>' + group.total_qty + ' ' + w2Escape(group.unit) + '</strong></span>'
+            + '  </div>'
+            + '  <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">'
+            + '    食材总计: ¥' + fmtMoney(group.total_cost)
+            + '  </div>'
+            + '</div>'
+            + '<div class="cost-trace-batches-tree">'
+            + batchesHtml
+            + '</div>'
+            + '</div>';
+    });
+
+    treeContainer.innerHTML = html;
+    openModalById('costTraceModal');
+}
+
+/**
+ * 冲销/作废指定消耗流水记录并回滚批次与库存
+ */
+function voidDailyConsumption(consumptionId) {
+    showCustomConfirmModal({
+        title: '冲销作废消耗流水',
+        message: '确定要冲销作废流水记录 #' + consumptionId + ' 吗？\n冲销后系统将自动把消耗扣减的批次剩余量（remaining_qty）完全原路回滚，并即时恢复对应食材 SKU 的实时库存。',
+        confirmText: '确认冲销',
+        cancelText: '取消',
+        onConfirm: () => {
+            fetch('/api/dishes/daily_consumption/' + consumptionId + '/void', { method: 'POST' })
+                .then(res => res.json())
+                .then(ret => {
+                    if (ret.status !== 'success') {
+                        showToast(ret.msg || '冲销失败', 'error');
+                        return;
+                    }
+                    showToast(ret.msg || '已成功冲销作废该消耗流水并恢复库存', 'success');
+
+                    // 1. 刷新当日流水
+                    loadDailyConsumption();
+
+                    // 2. 刷新实时库存 Tab
+                    loadInventoryData();
+                })
+                .catch(err => {
+                    console.error('voidDailyConsumption error:', err);
+                    showToast('网络异常，冲销失败', 'error');
+                });
+        }
+    });
+}
+
+// --------------------------------------------------------------------------
+// 4. 成本波动与毛利大盘分析
+// --------------------------------------------------------------------------
+
+/**
+ * 切换成本大盘分析周期（7天 / 30天）
+ */
+function setCostAnalysisDays(days) {
+    dishAnalysisDays = parseInt(days) || 7;
+    const chips = document.querySelectorAll('.dish-period-selector .chip');
+    chips.forEach(c => {
+        if (parseInt(c.getAttribute('data-days')) === dishAnalysisDays) {
+            c.classList.add('active');
+        } else {
+            c.classList.remove('active');
+        }
+    });
+    loadDishCostAnalysis(dishAnalysisDays);
+}
+
+/**
+ * 加载成本波动与毛利大盘数据
+ */
+function loadDishCostAnalysis(days) {
+    const periodDays = days || dishAnalysisDays || 7;
+    fetch('/api/dishes/cost_analysis?days=' + periodDays)
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success') {
+                showToast(ret.msg || '加载成本趋势分析失败', 'error');
+                return;
+            }
+            dishCostAnalysisData = ret.data || {};
+            renderDishCostAnalysisDashboard(dishCostAnalysisData);
+        })
+        .catch(err => {
+            console.error('loadDishCostAnalysis error:', err);
+            showToast('网络异常，无法加载成本分析大盘', 'error');
+        });
+}
+
+/**
+ * 渲染成本大盘 KPI、对比网格、排行榜与预警面板
+ */
+function renderDishCostAnalysisDashboard(data) {
+    const summary = data.summary || {};
+    const dishes = data.dishes || [];
+
+    // 1. 顶部 KPI
+    const avgMarginEl = document.getElementById('insightAvgMargin');
+    const totalCostEl = document.getElementById('insightTotalCost');
+    const costUpEl = document.getElementById('insightCostUpCount');
+    const alertsEl = document.getElementById('insightIngredientAlerts');
+
+    const overallMargin = Number(summary.overall_gross_margin_rate || 0);
+    if (avgMarginEl) {
+        avgMarginEl.innerText = overallMargin.toFixed(1) + '%';
+        avgMarginEl.style.color = overallMargin >= 60 ? 'var(--success, #16a34a)' : (overallMargin >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+    }
+    if (totalCostEl) totalCostEl.innerText = '¥' + fmtMoney(summary.total_cost || 0);
+
+    const costUpDishes = dishes.filter(d => (d.avg_unit_cost > d.theoretical_cost) && d.total_sold_quantity > 0);
+    if (costUpEl) costUpEl.innerText = costUpDishes.length;
+
+    // 食材进价异常预警数
+    let anomalyCount = 0;
+    dishes.forEach(d => {
+        if (d.cost_variance > 0 && d.total_sold_quantity > 0) anomalyCount++;
+    });
+    if (alertsEl) alertsEl.innerText = anomalyCount;
+
+    // 2. 各餐品真实加权成本 vs 理论基准成本对比卡片网格
+    renderDishCostComparisonGrid(dishes);
+
+    // 3. 毛利率排行榜
+    renderDishMarginRanking(dishes);
+
+    // 4. 食材涨价穿透预警面板
+    renderDishPriceAnomalyImpact(dishes, costUpDishes);
+}
+
+/**
+ * 渲染真实成本 vs 理论基准成本对比网格
+ */
+function renderDishCostComparisonGrid(dishes) {
+    const grid = document.getElementById('dishCostComparisonGrid');
+    if (!grid) return;
+
+    if (dishes.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: 8px; border: 1px dashed var(--border-color);">'
+            + '分析周期内暂无餐品售出消耗记录'
+            + '</div>';
+        return;
+    }
+
+    let html = '';
+    dishes.forEach(d => {
+        const hasSales = d.total_sold_quantity > 0;
+        const variance = Number(d.cost_variance || 0);
+        let varianceTag = '';
+
+        if (!hasSales) {
+            varianceTag = '<span class="badge badge-neutral" style="font-size:0.72rem;">周期内无售出</span>';
+        } else if (variance > 0.05) {
+            varianceTag = '<span class="badge badge-danger" style="font-size:0.72rem;">真实成本 +¥' + fmtMoney(variance) + ' (上涨)</span>';
+        } else if (variance < -0.05) {
+            varianceTag = '<span class="badge badge-success" style="font-size:0.72rem;">真实成本 -¥' + fmtMoney(Math.abs(variance)) + ' (下降)</span>';
+        } else {
+            varianceTag = '<span class="badge badge-neutral" style="font-size:0.72rem;">与理论持平</span>';
+        }
+
+        const marginRate = hasSales ? Number(d.avg_gross_margin_rate || 0) : 0;
+        const marginColor = marginRate >= 60 ? 'var(--success, #16a34a)' : (marginRate >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+
+        html += '<div class="card dish-cost-compare-card" style="border-left:4px solid ' + (variance > 0.05 ? 'var(--danger, #dc2626)' : 'var(--primary, #0f766e)') + ';">'
+            + '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">'
+            + '  <div>'
+            + '    <h4 style="margin:0 0 4px 0; font-size:1rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
+            + '    <div style="font-size:0.75rem; color:var(--text-muted);">' + (d.category ? ('<span class="badge badge-info" style="font-size:0.68rem;">' + w2Escape(d.category) + '</span> ') : '') + '售价: ¥' + fmtMoney(d.price) + '</div>'
+            + '  </div>'
+            + '  <div>' + varianceTag + '</div>'
+            + '</div>'
+            + '<div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:10px; background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px;">'
+            + '  <div>'
+            + '    <div style="font-size:0.72rem; color:var(--text-muted);">真实加权单份成本</div>'
+            + '    <div style="font-size:0.95rem; font-weight:700; color:' + (variance > 0.05 ? 'var(--danger, #dc2626)' : 'var(--primary, #0f766e)') + ';">¥' + fmtMoney(d.avg_unit_cost) + '</div>'
+            + '  </div>'
+            + '  <div>'
+            + '    <div style="font-size:0.72rem; color:var(--text-muted);">理论基准单份成本</div>'
+            + '    <div style="font-size:0.95rem; font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.theoretical_cost) + '</div>'
+            + '  </div>'
+            + '</div>'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; color:var(--text-secondary); margin-bottom:4px;">'
+            + '  <span>累计售出: <strong>' + d.total_sold_quantity + ' 份</strong> (营收 ¥' + fmtMoney(d.total_revenue) + ')</span>'
+            + '  <span>实际毛利率: <strong style="color:' + marginColor + ';">' + marginRate.toFixed(1) + '%</strong></span>'
+            + '</div>'
+            + '<div style="height:6px; background:var(--border-color); border-radius:3px; overflow:hidden;">'
+            + '  <div style="width:' + Math.min(100, Math.max(0, marginRate)) + '%; height:100%; background:' + marginColor + '; border-radius:3px;"></div>'
+            + '</div>'
+            + '</div>';
+    });
+
+    grid.innerHTML = html;
+}
+
+/**
+ * 渲染毛利率排行榜
+ */
+function renderDishMarginRanking(dishes) {
+    const container = document.getElementById('dishMarginRanking');
+    if (!container) return;
+
+    const validDishes = dishes.filter(d => d.total_sold_quantity > 0);
+    if (validDishes.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">周期内暂无售出数据</div>';
+        return;
+    }
+
+    const sorted = [...validDishes].sort((a, b) => b.avg_gross_margin_rate - a.avg_gross_margin_rate);
+
+    let html = '<div class="ranking-list">';
+    sorted.forEach((d, idx) => {
+        const gm = Number(d.avg_gross_margin_rate || 0);
+        const gmColor = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        const rankMedal = '#' + (idx + 1);
+
+        html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border-color);">'
+            + '<div style="display:flex; align-items:center; gap:8px;">'
+            + '  <span style="font-size:0.9rem; font-weight:700; width:24px; text-align:center;">' + rankMedal + '</span>'
+            + '  <div>'
+            + '    <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">' + w2Escape(d.name) + '</div>'
+            + '    <div style="font-size:0.72rem; color:var(--text-muted);">售出 ' + d.total_sold_quantity + ' 份 ｜ 营业额 ¥' + fmtMoney(d.total_revenue) + '</div>'
+            + '  </div>'
+            + '</div>'
+            + '<div style="text-align:right;">'
+            + '  <div style="font-weight:700; font-size:0.92rem; color:' + gmColor + ';">' + gm.toFixed(1) + '%</div>'
+            + '  <div style="font-size:0.72rem; color:var(--text-muted);">毛利 ¥' + fmtMoney(d.total_gross_profit) + '</div>'
+            + '</div>'
+            + '</div>';
+    });
+    html += '</div>';
+
+    container.innerHTML = html;
+}
+
+/**
+ * 渲染食材涨价穿透预警面板
+ */
+function renderDishPriceAnomalyImpact(dishes, costUpDishes) {
+    const container = document.getElementById('dishPriceAnomalyImpact');
+    if (!container) return;
+
+    if (costUpDishes.length === 0) {
+        container.innerHTML = '<div style="padding:20px; text-align:center; color:var(--success, #16a34a); background:rgba(22,163,74,0.06); border-radius:8px;">'
+            + '<div style="font-size:0.88rem; font-weight:600;">大盘成本稳健，无进价上涨挤压毛利异常</div>'
+            + '<div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">所有餐品的 FIFO 实际消耗成本均未超出理论基准成本</div>'
+            + '</div>';
+        return;
+    }
+
+    let html = '';
+    costUpDishes.forEach(d => {
+        const variance = Number(d.cost_variance || 0);
+        html += '<div style="padding:10px 12px; margin-bottom:8px; border-left:4px solid var(--danger, #dc2626); background:rgba(239,68,68,0.05); border-radius:4px;">'
+            + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
+            + '  <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">' + w2Escape(d.name) + '</div>'
+            + '  <span class="badge badge-danger" style="font-size:0.7rem;">单份成本上涨 ¥' + fmtMoney(variance) + '</span>'
+            + '</div>'
+            + '<div style="font-size:0.78rem; color:var(--text-secondary); line-height:1.4;">'
+            + '由于进货食材单价上涨，实际 FIFO 单份成本达到 <strong>¥' + fmtMoney(d.avg_unit_cost) + '</strong> (理论基准 ¥' + fmtMoney(d.theoretical_cost) + ')，导致实际毛利率下滑至 <strong style="color:var(--danger, #dc2626);">' + (d.avg_gross_margin_rate || 0).toFixed(1) + '%</strong>。'
+            + '</div>'
+            + '</div>';
+    });
+
+    container.innerHTML = html;
+}
+
 // U-12：全局挂载辅助函数与并发锁
 if (typeof window !== 'undefined') {
     window.handleFileSelect = handleFileSelect;
@@ -11904,5 +13676,35 @@ if (typeof window !== 'undefined') {
     window.handleFilesSelect = handleFilesSelect;
     window.showImagePrepIndicator = showImagePrepIndicator;
     window.queueFilesSelect = queueFilesSelect;
+
+    // Task 4: 餐品与消耗管理全局挂载
+    window.initDishTab = initDishTab;
+    window.switchDishSubtab = switchDishSubtab;
+    window.loadDishesList = loadDishesList;
+    window.filterDishBomLibrary = filterDishBomLibrary;
+    window.toggleDishViewMode = toggleDishViewMode;
+    window.openDishModal = openDishModal;
+    window.addDishIngredientRow = addDishIngredientRow;
+    window.removeDishIngredientRow = removeDishIngredientRow;
+    window.onDishIngredientSkuChange = onDishIngredientSkuChange;
+    window.calcDishModalTheoryCost = calcDishModalTheoryCost;
+    window.saveDishModal = saveDishModal;
+    window.deleteDish = deleteDish;
+    window.initDishConsumptionDate = initDishConsumptionDate;
+    window.setDishConsumptionToday = setDishConsumptionToday;
+    window.setDishConsumptionYesterday = setDishConsumptionYesterday;
+    window.onDishConsumptionDateChange = onDishConsumptionDateChange;
+    window.loadDailyConsumption = loadDailyConsumption;
+    window.filterDishConsumeEntryTable = filterDishConsumeEntryTable;
+    window.adjustDishConsumeQty = adjustDishConsumeQty;
+    window.onDishConsumeQtyInput = onDishConsumeQtyInput;
+    window.updateDishConsumeSummary = updateDishConsumeSummary;
+    window.resetDishConsumeInputs = resetDishConsumeInputs;
+    window.submitDailyConsumptionBatch = submitDailyConsumptionBatch;
+    window.showCostTraceModal = showCostTraceModal;
+    window.voidDailyConsumption = voidDailyConsumption;
+    window.setCostAnalysisDays = setCostAnalysisDays;
+    window.loadDishCostAnalysis = loadDishCostAnalysis;
 }
+
 

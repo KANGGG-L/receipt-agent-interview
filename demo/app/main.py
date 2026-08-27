@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from app import db
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
+from app.api_dishes import router as dishes_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
 from app.api_phase2 import router as phase2_router
@@ -36,6 +37,7 @@ app.include_router(receipts_router)
 app.include_router(inventory_router)
 app.include_router(suppliers_router)
 app.include_router(finance_router)
+app.include_router(dishes_router)
 app.include_router(admin_router)
 app.include_router(phase2_router)
 
@@ -51,6 +53,12 @@ def _auto_deduplicate_skus():
     except Exception as e:
         import logging
         logging.getLogger("startup").warning(f"[deduplicate] startup auto-heal failed: {e}")
+
+
+@app.on_event("startup")
+def _hydrate_engine_key_from_env():
+    """启动自愈：识别密钥为空/占位符时，从 .env 自动读取真实密钥装配识别引擎（重启无需手填）。"""
+    db.hydrate_engine_config_from_env()
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

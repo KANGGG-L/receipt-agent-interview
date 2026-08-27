@@ -1,0 +1,743 @@
+# -*- coding: utf-8 -*-
+"""餐品管理与每日批量消耗扣减/冲销/成本走势端点。
+
+接口列表：
+1. GET /api/dishes: 餐品列表（含 BOM 配方、基准理论成本、当前毛利率）
+2. GET /api/dishes/{id}: 单个餐品详情（含配方食材列表与关联 SKU 实时库存）
+3. POST /api/dishes: 新建餐品及 BOM 配方
+4. PUT /api/dishes/{id}: 更新餐品信息及配方
+5. DELETE /api/dishes/{id}: 停用/删除餐品
+6. GET /api/dishes/daily_consumption: 查询指定日期的餐品消耗记录、扣减明细与当日成本汇总
+7. POST /api/dishes/daily_consumption/batch: 批量提交当日餐品消耗（原子 FIFO 扣减 + 生成流水）
+8. POST /api/dishes/daily_consumption/{id}/void: 冲销/作废指定消耗记录（回滚批次剩余量与 SKU 库存）
+9. GET /api/dishes/cost_analysis: 成本趋势分析（近 7/30 天真实成本变化曲线、总售出份数、总毛利）
+"""
+
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional
+from collections import defaultdict
+
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+from app import db
+from app.auth import require_role
+from app.services.costing_service import CostingService, convert_unit_quantity
+
+router = APIRouter()
+
+
+# -------------------------------------------------------------
+# Pydantic 模型
+# -------------------------------------------------------------
+class DishIngredientItem(BaseModel):
+    sku_id: int
+    consumption_qty: float
+    unit: str
+    notes: Optional[str] = ""
+
+
+class DishCreate(BaseModel):
+    name: str
+    category: Optional[str] = ""
+    price: float = 0.0
+    description: Optional[str] = ""
+    status: Optional[str] = "active"
+    ingredients: Optional[List[DishIngredientItem]] = []
+
+
+class DishUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    price: Optional[float] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    ingredients: Optional[List[DishIngredientItem]] = None
+
+
+class DailyConsumptionItem(BaseModel):
+    dish_id: int
+    quantity: float
+    notes: Optional[str] = ""
+
+
+class DailyConsumptionBatchCreate(BaseModel):
+    date: Optional[str] = None
+    notes: Optional[str] = ""
+    items: List[DailyConsumptionItem]
+
+
+# -------------------------------------------------------------
+# 辅助函数
+# -------------------------------------------------------------
+def _dish_to_dict(session, dish_row) -> Dict:
+    """序列化餐品对象并计算理论成本与毛利率。"""
+    ing_rows = (
+        session.query(db._DishIngredientRow)
+        .filter(db._DishIngredientRow.dish_id == dish_row.id)
+        .all()
+    )
+
+    ingredients = []
+    theoretical_cost = 0.0
+
+    for ing in ing_rows:
+        sku = session.get(db._SkuRow, ing.sku_id)
+        sku_name = sku.name if sku else ""
+        sku_category = sku.category if sku else ""
+        sku_base_unit = sku.base_unit if sku else ""
+        sku_current_stock = sku.current_stock if sku else 0.0
+        sku_last_unit_price = sku.last_unit_price if sku else 0.0
+
+        converted_qty = convert_unit_quantity(ing.consumption_qty, ing.unit, sku_base_unit) if sku else ing.consumption_qty
+        ing_cost = round(converted_qty * sku_last_unit_price, 2)
+        theoretical_cost += ing_cost
+
+        ingredients.append({
+            "id": ing.id,
+            "sku_id": ing.sku_id,
+            "sku_name": sku_name,
+            "sku_category": sku_category,
+            "sku_base_unit": sku_base_unit,
+            "sku_current_stock": sku_current_stock,
+            "sku_last_unit_price": sku_last_unit_price,
+            "consumption_qty": ing.consumption_qty,
+            "unit": ing.unit,
+            "notes": ing.notes or "",
+            "ingredient_cost": ing_cost,
+        })
+
+    theoretical_cost = round(theoretical_cost, 2)
+    price = round(dish_row.price or 0.0, 2)
+    gross_profit = round(price - theoretical_cost, 2)
+    gross_margin_rate = round((price - theoretical_cost) / price * 100, 2) if price > 0 else 0.0
+
+    return {
+        "id": dish_row.id,
+        "name": dish_row.name,
+        "category": dish_row.category or "",
+        "price": price,
+        "description": dish_row.description or "",
+        "status": dish_row.status or "active",
+        "created_at": dish_row.created_at or "",
+        "updated_at": dish_row.updated_at or "",
+        "ingredients": ingredients,
+        "theoretical_cost": theoretical_cost,
+        "gross_profit": gross_profit,
+        "gross_margin_rate": gross_margin_rate,
+    }
+
+
+# -------------------------------------------------------------
+# 餐品 CRUD 路由
+# -------------------------------------------------------------
+@router.get("/api/dishes")
+def list_dishes(
+    request: Request,
+    q: str = "",
+    category: str = "",
+    status: str = "all",
+):
+    """查询餐品列表（含关联的 SKU BOM 配方、基准理论成本、当前毛利率）。"""
+    require_role("staff")(request)
+    session = db.get_session()
+    try:
+        query = session.query(db._DishRow)
+        if status and status != "all":
+            query = query.filter(db._DishRow.status == status)
+        if category:
+            query = query.filter(db._DishRow.category == category)
+
+        rows = query.order_by(db._DishRow.id.desc()).all()
+        out = []
+        q_clean = (q or "").strip().lower()
+
+        for r in rows:
+            if q_clean:
+                name_clean = (r.name or "").lower()
+                cat_clean = (r.category or "").lower()
+                if q_clean not in name_clean and q_clean not in cat_clean:
+                    continue
+            out.append(_dish_to_dict(session, r))
+
+        return {"status": "success", "data": out}
+    finally:
+        session.close()
+
+
+@router.get("/api/dishes/cost_analysis")
+def get_cost_analysis(
+    request: Request,
+    days: int = 30,
+    dish_id: Optional[int] = None,
+):
+    """成本趋势分析（查看近 7/30 天各餐品由于食材价格波动引起的真实成本变化曲线、总售出份数、总毛利）。"""
+    require_role("staff")(request)
+    session = db.get_session()
+    try:
+        now_dt = datetime.now()
+        start_dt = now_dt - timedelta(days=max(1, int(days)) - 1)
+        start_date_str = start_dt.strftime("%Y-%m-%d")
+        end_date_str = now_dt.strftime("%Y-%m-%d")
+
+        query = (
+            session.query(db._DailyConsumptionRow)
+            .filter(
+                db._DailyConsumptionRow.date >= start_date_str,
+                db._DailyConsumptionRow.date <= end_date_str,
+                db._DailyConsumptionRow.is_void == 0,
+            )
+        )
+        if dish_id is not None:
+            query = query.filter(db._DailyConsumptionRow.dish_id == int(dish_id))
+
+        consumptions = query.order_by(db._DailyConsumptionRow.date.asc(), db._DailyConsumptionRow.id.asc()).all()
+
+        # 按 dish_id 聚合
+        dish_map = {}
+        # 预查所有相关的 dish
+        dish_ids = list({c.dish_id for c in consumptions})
+        all_dishes = session.query(db._DishRow).filter(db._DishRow.id.in_(dish_ids)).all() if dish_ids else []
+        dish_obj_map = {d.id: d for d in all_dishes}
+
+        # 统计每个餐品的数据
+        dish_stats = {}
+        for d_id, d_obj in dish_obj_map.items():
+            dish_dict = _dish_to_dict(session, d_obj)
+            dish_stats[d_id] = {
+                "id": d_id,
+                "name": d_obj.name,
+                "category": d_obj.category,
+                "price": d_obj.price,
+                "theoretical_cost": dish_dict["theoretical_cost"],
+                "total_sold_quantity": 0.0,
+                "total_cost": 0.0,
+                "total_revenue": 0.0,
+                "total_gross_profit": 0.0,
+                "avg_unit_cost": 0.0,
+                "avg_gross_margin_rate": 0.0,
+                "cost_variance": 0.0,
+                "history": [],
+            }
+
+        # 每日聚合记录
+        dish_daily_map = defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
+
+        for c in consumptions:
+            if c.dish_id not in dish_stats:
+                continue
+            st = dish_stats[c.dish_id]
+            st["total_sold_quantity"] = round(st["total_sold_quantity"] + c.quantity, 4)
+            st["total_cost"] = round(st["total_cost"] + c.total_cost, 2)
+            dish_price = st["price"]
+            rev = round(c.quantity * dish_price, 2)
+            st["total_revenue"] = round(st["total_revenue"] + rev, 2)
+
+            key = (c.dish_id, c.date)
+            dish_daily_map[key]["quantity"] = round(dish_daily_map[key]["quantity"] + c.quantity, 4)
+            dish_daily_map[key]["total_cost"] = round(dish_daily_map[key]["total_cost"] + c.total_cost, 2)
+
+        # 填充 history
+        for (d_id, dt), vals in sorted(dish_daily_map.items(), key=lambda x: x[0][1]):
+            st = dish_stats[d_id]
+            qty = vals["quantity"]
+            cost = vals["total_cost"]
+            unit_cost = round(cost / qty, 2) if qty > 0 else 0.0
+            rev = round(qty * st["price"], 2)
+            gp = round(rev - cost, 2)
+            gm = round(gp / rev * 100, 2) if rev > 0 else 0.0
+            st["history"].append({
+                "date": dt,
+                "quantity": qty,
+                "total_cost": cost,
+                "unit_cost": unit_cost,
+                "revenue": rev,
+                "gross_profit": gp,
+                "gross_margin_rate": gm,
+            })
+
+        # 计算综合平均指标
+        total_sold = 0.0
+        total_cost_all = 0.0
+        total_rev_all = 0.0
+
+        for st in dish_stats.values():
+            if st["total_sold_quantity"] > 0:
+                st["avg_unit_cost"] = round(st["total_cost"] / st["total_sold_quantity"], 2)
+            st["total_gross_profit"] = round(st["total_revenue"] - st["total_cost"], 2)
+            if st["total_revenue"] > 0:
+                st["avg_gross_margin_rate"] = round(st["total_gross_profit"] / st["total_revenue"] * 100, 2)
+            st["cost_variance"] = round(st["avg_unit_cost"] - st["theoretical_cost"], 2)
+
+            total_sold = round(total_sold + st["total_sold_quantity"], 4)
+            total_cost_all = round(total_cost_all + st["total_cost"], 2)
+            total_rev_all = round(total_rev_all + st["total_revenue"], 2)
+
+        total_gp_all = round(total_rev_all - total_cost_all, 2)
+        overall_gm = round(total_gp_all / total_rev_all * 100, 2) if total_rev_all > 0 else 0.0
+
+        summary = {
+            "total_sold_quantity": total_sold,
+            "total_cost": total_cost_all,
+            "total_revenue": total_rev_all,
+            "total_gross_profit": total_gp_all,
+            "overall_gross_margin_rate": overall_gm,
+            "active_dishes_count": len(dish_stats),
+        }
+
+        return {
+            "status": "success",
+            "data": {
+                "days": int(days),
+                "start_date": start_date_str,
+                "end_date": end_date_str,
+                "summary": summary,
+                "dishes": list(dish_stats.values()),
+            },
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/dishes/daily_consumption")
+def get_daily_consumption(
+    request: Request,
+    date: Optional[str] = None,
+):
+    """查询指定日期的餐品消耗记录、扣减详情与当日成本汇总。"""
+    require_role("staff")(request)
+    target_date = (date or "").strip() or db.now_iso()[:10]
+    session = db.get_session()
+    try:
+        rows = (
+            session.query(db._DailyConsumptionRow)
+            .filter(db._DailyConsumptionRow.date == target_date)
+            .order_by(db._DailyConsumptionRow.id.desc())
+            .all()
+        )
+
+        consumptions = []
+        total_quantity = 0.0
+        total_cost = 0.0
+        total_revenue = 0.0
+
+        for r in rows:
+            dish = session.get(db._DishRow, r.dish_id)
+            dish_name = dish.name if dish else f"未知餐品#{r.dish_id}"
+            dish_price = dish.price if dish else 0.0
+            dish_category = dish.category if dish else ""
+
+            # 查询关联的扣减明细
+            details_rows = (
+                session.query(db._DailyConsumptionDetailRow)
+                .filter(db._DailyConsumptionDetailRow.consumption_id == r.id)
+                .all()
+            )
+            details = []
+            for dt in details_rows:
+                sku = session.get(db._SkuRow, dt.sku_id)
+                details.append({
+                    "id": dt.id,
+                    "sku_id": dt.sku_id,
+                    "sku_name": sku.name if sku else f"SKU#{dt.sku_id}",
+                    "qty_consumed": dt.qty_consumed,
+                    "unit": dt.unit,
+                    "unit_cost": dt.unit_cost,
+                    "total_cost": dt.total_cost,
+                    "batch_id": dt.batch_id,
+                    "batch_date": dt.batch_date,
+                })
+
+            item_rev = round(r.quantity * dish_price, 2)
+            item_gp = round(item_rev - r.total_cost, 2)
+            item_gm = round(item_gp / item_rev * 100, 2) if item_rev > 0 else 0.0
+
+            consumptions.append({
+                "id": r.id,
+                "date": r.date,
+                "dish_id": r.dish_id,
+                "dish_name": dish_name,
+                "dish_category": dish_category,
+                "dish_price": dish_price,
+                "quantity": r.quantity,
+                "unit_cost": r.unit_cost,
+                "total_cost": r.total_cost,
+                "revenue": item_rev,
+                "gross_profit": item_gp,
+                "gross_margin_rate": item_gm,
+                "notes": r.notes or "",
+                "is_void": r.is_void,
+                "created_at": r.created_at,
+                "details": details,
+            })
+
+            if r.is_void == 0:
+                total_quantity = round(total_quantity + r.quantity, 4)
+                total_cost = round(total_cost + r.total_cost, 2)
+                total_revenue = round(total_revenue + item_rev, 2)
+
+        gross_profit = round(total_revenue - total_cost, 2)
+        gross_margin_rate = round(gross_profit / total_revenue * 100, 2) if total_revenue > 0 else 0.0
+
+        summary = {
+            "total_quantity": total_quantity,
+            "total_cost": total_cost,
+            "total_revenue": total_revenue,
+            "gross_profit": gross_profit,
+            "gross_margin_rate": gross_margin_rate,
+            "records_count": len(rows),
+            "void_count": sum(1 for r in rows if r.is_void == 1),
+        }
+
+        return {
+            "status": "success",
+            "data": {
+                "date": target_date,
+                "consumptions": consumptions,
+                "summary": summary,
+            },
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/dishes/{dish_id}")
+def get_dish(dish_id: int, request: Request):
+    """查询单个餐品详情（含配方食材列表与关联 SKU 实时库存）。"""
+    require_role("staff")(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+        return {"status": "success", "data": _dish_to_dict(session, dish)}
+    finally:
+        session.close()
+
+
+@router.post("/api/dishes")
+def create_dish(body: DishCreate, request: Request):
+    """新建餐品及其 BOM 配方。"""
+    require_role("owner")(request)
+    name = (body.name or "").strip()
+    if not name:
+        return {"status": "error", "msg": "餐品名称不能为空"}
+
+    if body.price < 0:
+        return {"status": "error", "msg": "餐品售价不能为负数"}
+
+    session = db.get_session()
+    try:
+        # 查重
+        existing = session.query(db._DishRow).filter(db._DishRow.name == name).first()
+        if existing:
+            return {"status": "error", "msg": f"餐品「{name}」已存在"}
+
+        # 校验 ingredients
+        sku_ids = set()
+        for ing in (body.ingredients or []):
+            if ing.sku_id in sku_ids:
+                return {"status": "error", "msg": "配方中存在重复的食材 SKU"}
+            sku_ids.add(ing.sku_id)
+            sku = session.get(db._SkuRow, ing.sku_id)
+            if not sku:
+                return {"status": "error", "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在"}
+            if ing.consumption_qty <= 0:
+                return {"status": "error", "msg": "食材单份消耗量必须大于 0"}
+
+        now_str = db.now_iso()
+        dish = db._DishRow(
+            name=name,
+            category=(body.category or "").strip(),
+            price=round(float(body.price), 2),
+            description=(body.description or "").strip(),
+            status=body.status or "active",
+            created_at=now_str,
+            updated_at=now_str,
+        )
+        session.add(dish)
+        session.flush()
+
+        for ing in (body.ingredients or []):
+            ing_row = db._DishIngredientRow(
+                dish_id=dish.id,
+                sku_id=ing.sku_id,
+                consumption_qty=round(float(ing.consumption_qty), 4),
+                unit=(ing.unit or "").strip(),
+                notes=(ing.notes or "").strip(),
+            )
+            session.add(ing_row)
+
+        session.commit()
+        session.refresh(dish)
+        return {"status": "success", "data": _dish_to_dict(session, dish)}
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"创建餐品失败: {str(e)}"}
+    finally:
+        session.close()
+
+
+@router.put("/api/dishes/{dish_id}")
+def update_dish(dish_id: int, body: DishUpdate, request: Request):
+    """更新餐品基本信息及其 BOM 配方。"""
+    require_role("owner")(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+
+        if body.name is not None:
+            new_name = body.name.strip()
+            if not new_name:
+                return {"status": "error", "msg": "餐品名称不能为空"}
+            existing = session.query(db._DishRow).filter(db._DishRow.name == new_name, db._DishRow.id != dish.id).first()
+            if existing:
+                return {"status": "error", "msg": f"餐品「{new_name}」已存在"}
+            dish.name = new_name
+
+        if body.category is not None:
+            dish.category = body.category.strip()
+
+        if body.price is not None:
+            if body.price < 0:
+                return {"status": "error", "msg": "餐品售价不能为负数"}
+            dish.price = round(float(body.price), 2)
+
+        if body.description is not None:
+            dish.description = body.description.strip()
+
+        if body.status is not None:
+            dish.status = body.status
+
+        # 更新配方
+        if body.ingredients is not None:
+            sku_ids = set()
+            for ing in body.ingredients:
+                if ing.sku_id in sku_ids:
+                    return {"status": "error", "msg": "配方中存在重复的食材 SKU"}
+                sku_ids.add(ing.sku_id)
+                sku = session.get(db._SkuRow, ing.sku_id)
+                if not sku:
+                    return {"status": "error", "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在"}
+                if ing.consumption_qty <= 0:
+                    return {"status": "error", "msg": "食材单份消耗量必须大于 0"}
+
+            # 删除旧配方
+            session.query(db._DishIngredientRow).filter(db._DishIngredientRow.dish_id == dish.id).delete()
+            # 插入新配方
+            for ing in body.ingredients:
+                ing_row = db._DishIngredientRow(
+                    dish_id=dish.id,
+                    sku_id=ing.sku_id,
+                    consumption_qty=round(float(ing.consumption_qty), 4),
+                    unit=(ing.unit or "").strip(),
+                    notes=(ing.notes or "").strip(),
+                )
+                session.add(ing_row)
+
+        dish.updated_at = db.now_iso()
+        session.commit()
+        session.refresh(dish)
+        return {"status": "success", "data": _dish_to_dict(session, dish)}
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"更新餐品失败: {str(e)}"}
+    finally:
+        session.close()
+
+
+@router.delete("/api/dishes/{dish_id}")
+def delete_dish(dish_id: int, request: Request, hard: int = 0):
+    """停用或彻底删除餐品。"""
+    require_role("owner")(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+
+        if hard == 1:
+            session.query(db._DishIngredientRow).filter(db._DishIngredientRow.dish_id == dish.id).delete()
+            session.delete(dish)
+            session.commit()
+            return {"status": "success", "action": "DELETED", "msg": "餐品已彻底删除"}
+        else:
+            dish.status = "inactive"
+            dish.updated_at = db.now_iso()
+            session.commit()
+            return {"status": "success", "action": "DEACTIVATED", "msg": "餐品已停用"}
+    finally:
+        session.close()
+
+
+# -------------------------------------------------------------
+# 每日消耗批量扣减与冲销
+# -------------------------------------------------------------
+@router.post("/api/dishes/daily_consumption/batch")
+def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: Request):
+    """批量提交当日餐品消耗（原子 FIFO 批次扣减、生成流水、扣减库存）。"""
+    require_role("staff")(request)
+    if not body.items:
+        return {"status": "error", "msg": "消耗餐品列表不能为空"}
+
+    date_str = (body.date or "").strip() or db.now_iso()[:10]
+    session = db.get_session()
+    try:
+        created_records = []
+        for item in body.items:
+            if item.quantity <= 0:
+                continue
+
+            dish = session.get(db._DishRow, int(item.dish_id))
+            if not dish:
+                raise ValueError(f"餐品 #{item.dish_id} 不存在")
+
+            ing_rows = (
+                session.query(db._DishIngredientRow)
+                .filter(db._DishIngredientRow.dish_id == dish.id)
+                .all()
+            )
+
+            dish_total_cost = 0.0
+            dish_details = []
+
+            for ing in ing_rows:
+                total_qty_needed = round(ing.consumption_qty * item.quantity, 4)
+                sku = session.get(db._SkuRow, ing.sku_id)
+                if not sku:
+                    continue
+
+                cost, details_list = CostingService.deduct_consumption_fifo(
+                    session=session,
+                    sku_id=ing.sku_id,
+                    qty_needed=total_qty_needed,
+                    unit_needed=ing.unit,
+                    date=date_str,
+                )
+                dish_total_cost += cost
+                dish_details.extend(details_list)
+
+                # 扣减 SKU 当前库存
+                qty_in_sku_unit = convert_unit_quantity(total_qty_needed, ing.unit, sku.base_unit)
+                sku.current_stock = round(sku.current_stock - qty_in_sku_unit, 4)
+
+                # 写入 inventory_log
+                stock_log = db._StockLogRow(
+                    sku_id=sku.id,
+                    name=sku.name,
+                    qty=qty_in_sku_unit,
+                    unit=sku.base_unit,
+                    amount=round(cost, 2),
+                    vendor="",
+                    date=date_str,
+                    receipt_id=None,
+                    kind="consume",
+                    note=f"餐品消耗: {dish.name} x {item.quantity}份",
+                    created_at=db.now_iso(),
+                )
+                session.add(stock_log)
+
+            dish_total_cost = round(dish_total_cost, 2)
+            unit_cost = round(dish_total_cost / item.quantity, 4) if item.quantity > 0 else 0.0
+
+            cons_row = db._DailyConsumptionRow(
+                date=date_str,
+                dish_id=dish.id,
+                quantity=round(float(item.quantity), 4),
+                total_cost=dish_total_cost,
+                unit_cost=unit_cost,
+                notes=(item.notes or body.notes or "").strip(),
+                is_void=0,
+                created_at=db.now_iso(),
+            )
+            session.add(cons_row)
+            session.flush()
+
+            for dt in dish_details:
+                dt_row = db._DailyConsumptionDetailRow(
+                    consumption_id=cons_row.id,
+                    sku_id=dt["sku_id"],
+                    qty_consumed=dt["qty_consumed"],
+                    unit=dt["unit"],
+                    unit_cost=dt["unit_cost"],
+                    total_cost=dt["total_cost"],
+                    batch_id=dt["batch_id"],
+                    batch_date=dt["batch_date"],
+                )
+                session.add(dt_row)
+
+            created_records.append(cons_row.id)
+
+        session.commit()
+        return {
+            "status": "success",
+            "msg": f"成功记录 {len(created_records)} 项餐品消耗",
+            "data": {
+                "date": date_str,
+                "consumption_ids": created_records,
+            },
+        }
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"消耗扣减失败: {str(e)}"}
+    finally:
+        session.close()
+
+
+@router.post("/api/dishes/daily_consumption/{consumption_id}/void")
+def void_daily_consumption(consumption_id: int, request: Request):
+    """冲销/作废指定消耗记录，自动回滚批次剩余量与 SKU 库存。"""
+    require_role("owner")(request)
+    session = db.get_session()
+    try:
+        cons = session.get(db._DailyConsumptionRow, int(consumption_id))
+        if not cons:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "消耗记录不存在"})
+
+        if cons.is_void == 1:
+            return {"status": "error", "msg": "该消耗记录此前已冲销作废，请勿重复操作"}
+
+        details = (
+            session.query(db._DailyConsumptionDetailRow)
+            .filter(db._DailyConsumptionDetailRow.consumption_id == cons.id)
+            .all()
+        )
+
+        # 调用 CostingService 回滚批次与 SKU 库存
+        ok = CostingService.void_consumption_fifo(session, cons.id)
+        if not ok:
+            return {"status": "error", "msg": "冲销回滚失败"}
+
+        # 写入库存调整日志
+        dish = session.get(db._DishRow, cons.dish_id)
+        dish_name = dish.name if dish else f"餐品#{cons.dish_id}"
+
+        for dt in details:
+            sku = session.get(db._SkuRow, dt.sku_id)
+            if sku:
+                qty_in_sku_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, sku.base_unit)
+                stock_log = db._StockLogRow(
+                    sku_id=sku.id,
+                    name=sku.name,
+                    qty=qty_in_sku_unit,
+                    unit=sku.base_unit,
+                    amount=round(dt.total_cost, 2),
+                    vendor="",
+                    date=db.now_iso()[:10],
+                    receipt_id=None,
+                    kind="adjust",
+                    note=f"冲销作废餐品消耗 #{cons.id} ({dish_name}) 恢复库存",
+                    created_at=db.now_iso(),
+                )
+                session.add(stock_log)
+
+        session.commit()
+        return {"status": "success", "msg": "已成功冲销作废该消耗记录并回滚批次与库存"}
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"冲销失败: {str(e)}"}
+    finally:
+        session.close()

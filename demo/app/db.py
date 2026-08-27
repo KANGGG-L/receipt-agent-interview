@@ -32,6 +32,7 @@ _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
 _ReceiptFeedbackRow = None
+_DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 
 
 def _make_engine():
@@ -40,8 +41,9 @@ def _make_engine():
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
     global _ReceiptFeedbackRow
+    global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
 
-    from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime
+    from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
     from sqlalchemy.sql import func
 
@@ -294,6 +296,74 @@ def _make_engine():
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
 
+    # -------------------------------------------------------------
+    # 餐品管理与 FIFO 批次库存
+    # -------------------------------------------------------------
+    class DishRow(Base):
+        """餐品主表：名称、品类、售价、状态。"""
+        __tablename__ = "dishes"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        name = Column(String, index=True, default="")
+        category = Column(String, default="")
+        price = Column(Float, default=0.0)
+        description = Column(String, default="")
+        status = Column(String, default="active")          # active/inactive
+        created_at = Column(String, default="")
+        updated_at = Column(String, default="")
+
+    class DishIngredientRow(Base):
+        """餐品 BOM 配方明细表（带 dish_id, sku_id 唯一约束）。"""
+        __tablename__ = "dish_ingredients"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        dish_id = Column(Integer, index=True, nullable=False)
+        sku_id = Column(Integer, index=True, nullable=False)
+        consumption_qty = Column(Float, default=0.0)
+        unit = Column(String, default="")
+        notes = Column(String, default="")
+        __table_args__ = (UniqueConstraint("dish_id", "sku_id"),)
+
+    class InventoryBatchRow(Base):
+        """库存批次池（FIFO 成本溯源）。"""
+        __tablename__ = "inventory_batches"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        sku_id = Column(Integer, index=True, nullable=False)
+        receipt_id = Column(Integer, nullable=True)
+        inbound_date = Column(String, default="")
+        unit_cost = Column(Float, default=0.0)
+        initial_qty = Column(Float, default=0.0)
+        remaining_qty = Column(Float, default=0.0)
+        unit = Column(String, default="")
+        is_closed = Column(Integer, default=0)             # 0=open, 1=closed/exhausted
+        is_estimated = Column(Integer, default=0)          # 0=actual, 1=estimated
+        created_at = Column(String, default="")
+        __table_args__ = (Index("idx_sku_batch", "sku_id", "is_closed", "inbound_date", "id"),)
+
+    class DailyConsumptionRow(Base):
+        """每日餐品消耗主表。"""
+        __tablename__ = "daily_dish_consumptions"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        date = Column(String, index=True, default="")
+        dish_id = Column(Integer, index=True, nullable=False)
+        quantity = Column(Float, default=0.0)
+        total_cost = Column(Float, default=0.0)
+        unit_cost = Column(Float, default=0.0)
+        notes = Column(String, default="")
+        is_void = Column(Integer, default=0)               # 0=normal, 1=voided
+        created_at = Column(String, default="")
+
+    class DailyConsumptionDetailRow(Base):
+        """每日餐品消耗食材 FIFO 批次扣减穿透溯源明细。"""
+        __tablename__ = "daily_consumption_details"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        consumption_id = Column(Integer, index=True, nullable=False)
+        sku_id = Column(Integer, index=True, nullable=False)
+        qty_consumed = Column(Float, default=0.0)
+        unit = Column(String, default="")
+        unit_cost = Column(Float, default=0.0)
+        total_cost = Column(Float, default=0.0)
+        batch_id = Column(Integer, nullable=True)
+        batch_date = Column(String, default="")
+
     Base.metadata.create_all(_engine)
 
     # SQLite 迁移：给 receipts 表补 use_grey 列（阶段 1：AI 可见性与信任）
@@ -330,6 +400,9 @@ def _make_engine():
     _ExperimentRow = ExperimentRow
     _ExperimentAssignRow = ExperimentAssignRow
     _ReceiptFeedbackRow = ReceiptFeedbackRow
+    _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
+    _InventoryBatchRow = InventoryBatchRow
+    _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
     return Base
 
 
@@ -689,7 +762,7 @@ def find_sku_by_name(name):
 
 def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     kind, note=""):
-    """写库存流水 + 更新 SKU 当前库存。"""
+    """写库存流水 + 更新 SKU 当前库存 + 挂载入库批次生成钩子。"""
     s = get_session()
     try:
         s.add(_StockLogRow(sku_id=sku_id, name=name, qty=qty, unit=unit, amount=amount,
@@ -704,6 +777,19 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                         sku.last_unit_price = amount / qty if qty else sku.last_unit_price
                 elif kind in ("consume", "waste"):
                     sku.current_stock -= qty
+            # 批次入库钩子：kind == 'in' 时自动记录入库批次
+            if kind == "in" and qty > 0:
+                unit_price = (amount / qty) if qty > 0 else (sku.last_unit_price if sku else 0.0)
+                from app.services.costing_service import CostingService
+                CostingService.record_inbound_batch(
+                    session=s,
+                    sku_id=int(sku_id),
+                    qty=qty,
+                    unit_price=unit_price,
+                    unit=unit or (sku.base_unit if sku else ""),
+                    date=date or now_iso()[:10],
+                    receipt_id=receipt_id,
+                )
         s.commit()
     finally:
         s.close()
@@ -1253,6 +1339,56 @@ def set_engine_config(cfg):
         s.commit()
     finally:
         s.close()
+
+
+def _is_placeholder_key(key) -> bool:
+    k = str(key or "").strip()
+    if not k:
+        return True
+    return "YOUR_" in k.upper()
+
+
+def hydrate_engine_config_from_env():
+    """启动自愈：识别密钥为空/占位符时，自动从 .env 读取真实密钥并装配识别引擎。
+
+    密钥来源优先级：SILICONFLOW_API_KEY（或 OPENAI_API_KEY）> DASHSCOPE_API_KEY。
+    已存在真实密钥的配置一律不覆盖。幂等，可每次启动安全执行。
+    """
+    import logging
+    log = logging.getLogger("startup")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        cfg = get_engine_config()
+        if not _is_placeholder_key(cfg.openai_rec_api_key):
+            return
+        sf_key = (os.environ.get("SILICONFLOW_API_KEY")
+                  or os.environ.get("OPENAI_REC_API_KEY")
+                  or os.environ.get("OPENAI_API_KEY") or "").strip()
+        ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+        if sf_key and not _is_placeholder_key(sf_key):
+            cfg.recognition_engine = "openai"
+            cfg.openai_rec_base_url = (os.environ.get("SILICONFLOW_BASE_URL")
+                                       or "https://api.siliconflow.cn/v1")
+            cfg.openai_rec_api_key = sf_key
+            cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
+                                    or cfg.openai_rec_model or "Qwen/Qwen2.5-VL-7B-Instruct")
+            source = "SILICONFLOW_API_KEY"
+        elif ds_key and not _is_placeholder_key(ds_key):
+            cfg.recognition_engine = "openai"
+            cfg.openai_rec_base_url = (os.environ.get("DASHSCOPE_BASE_URL")
+                                       or "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            cfg.openai_rec_api_key = ds_key
+            cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
+                                    or cfg.openai_rec_model or "qwen3-vl-flash")
+            source = "DASHSCOPE_API_KEY"
+        else:
+            log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），保持现有引擎配置")
+            return
+        set_engine_config(cfg)
+        log.info(f"[engine-env] 已从 .env {source} 自动装配识别引擎: {cfg.openai_rec_base_url} / {cfg.openai_rec_model}")
+    except Exception as e:
+        log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
 
 
 # -------------------------------------------------------------

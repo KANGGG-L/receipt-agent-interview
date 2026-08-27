@@ -62,7 +62,7 @@ def _snapshot(log, action, reason, attempt, engine="", note=""):
 
 
 def _run_extract(image_path, vendor_hint, config, use_grey, retry_feedback, attempt,
-                 vendor_prior: str = ""):
+                 vendor_prior: str = "", on_event=None):
     """单轮识别：VLM 读图 → 结构化（含可选解析 LLM）。vendor_prior 为重试轮注入的历史先验。"""
     model = build_recognition_model(
         config.recognition_model if config else None,
@@ -74,6 +74,7 @@ def _run_extract(image_path, vendor_hint, config, use_grey, retry_feedback, atte
         retry_feedback=retry_feedback,
         use_grey=use_grey,
         vendor_prior=vendor_prior,
+        on_event=on_event,
     )
 
 
@@ -266,10 +267,13 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                  supplier_name: str = "",
                  receipt_id: Optional[int] = None,
                  experiment_id: Optional[int] = None,
+                 on_event=None,
                  ) -> dict:
     """完整识别管线入口（线性编排 + 重试阶梯）。
 
     supplier_name 供灰测按供应商分配（同供应商一致命中）。
+    on_event（可选）：实时事件回调，如首选引擎降级回退时立即通知调用方
+    （异步 Job 层借此把回退状态透传给前端轮询，第一时间弹出提示）。
     返回 dict 含 data / raw / log / contract_error 等（与旧接口兼容）。
     """
     from app.models import should_use_grey
@@ -325,6 +329,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
             image_path, vendor_hint, config, use_grey,
             state["retry_feedback"], attempt,
             vendor_prior=state["vendor_context"],
+            on_event=on_event,
         )
         state["raw"] = result["raw"]
         state["elapsed_ms"] = result["elapsed_ms"]
@@ -363,6 +368,24 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         # VendorMemory 先验透传：extract 各通道（hint/parse/retry）合并的先验回写 state（跨轮保留）
         state["vendor_context"] = result.get("vendor_context") or state["vendor_context"]
 
+        if result.get("fallback_triggered"):
+            state["fallback_triggered"] = True
+            state["fallback_reason"] = result.get("fallback_reason", "")
+            state["fallback_from"] = result.get("fallback_from", "")
+            state["fallback_engine"] = result.get("fallback_engine", "codebuddy")
+            _snapshot(log, "engine_fallback", state["fallback_reason"], attempt, engine="codebuddy")
+            if on_event is not None:
+                try:
+                    on_event({
+                        "type": "engine_fallback",
+                        "attempt": attempt,
+                        "reason": state["fallback_reason"],
+                        "from": state["fallback_from"],
+                        "to": state["fallback_engine"],
+                    })
+                except Exception:
+                    pass
+
         if result["error"]:
             _snapshot(log, "extract_fail", f"识别失败(第{attempt}轮): {result['error']}",
                       attempt, engine=result["engine"])
@@ -373,6 +396,11 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                                   elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
                                   success=False, image_path=image_path,
                                   supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+            if result.get("fallback_failed") or result.get("fallback_triggered") or "fallback" in str(result.get("engine", "")):
+                # 主模型与备用模型均失败时，不再盲目重试 3 轮，立即快速返回供前端自动切入手工输入界面
+                state["fallback_failed"] = True
+                state["fallback_triggered"] = True
+                break
             continue  # 识别失败 → 下一轮重试
 
         # 首轮补检索（真飞轮）：无 hint 时 VLM 已识别出供应商 → 读 VendorMemory 补上下文，
@@ -433,19 +461,29 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                             or "总额" in gate_err or "明细为空" in gate_err
                             or "契约校验失败" in gate_err)
             if is_fast_gate:
-                # 快速反馈：记录 gate_reject_fast，随后不再整图重识别（节省 VLM 耗时，满足 P95 ≤12s）
-                # 将 gate_err 保留供前端人工复核转手工或一键修正，而非静默重跑
+                # 快速反馈：记录 gate_reject_fast，保留已解析结构交人工快速复核（不阻断、不整图重识别）
                 _snapshot(log, "gate_reject_fast",
-                          f"门禁快速反馈(第{attempt}轮): {gate_err}（已尝试 parse 修正，仍不过门禁；不再重调 VLM，交人工快速反馈）",
+                          f"门禁快速反馈(第{attempt}轮): {gate_err}（已尝试 parse 修正；保留已解析结构交人工快速复核）",
                           attempt, engine=result["engine"])
                 _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                                        attempt, result["engine"], "gate_reject_fast",
                                        gate_err=gate_err,
                                        token_usage=_tu, cost_hkd=_cost,
                                        elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                                       success=False, image_path=image_path,
+                                       success=True, image_path=image_path,
                                        supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
-                # 保留 gate_err 供 finalize 错误出口显式提示，退出重试阶梯（避免 3 次 VLM 重跑）
+                # 关键：保留已解析结构供前端渲染与标红复核，不阻断流程
+                fallback_data = corr_data if (corrected and 'corr_data' in locals() and corr_data is not None) else result.get("data")
+                if fallback_data is not None:
+                    state["data"] = fallback_data
+                    state["math_problems"] = [gate_err]
+                    state["success"] = True
+                    try:
+                        state["supplier"] = str(getattr(fallback_data, "vendor", "") or state.get("supplier", ""))[:120]
+                        _df2 = getattr(fallback_data, "doc_form", "")
+                        state["doc_form"] = str(_df2.value if hasattr(_df2, "value") else _df2 or state.get("doc_form", ""))[:60]
+                    except Exception:
+                        pass
                 break
             # 非快速门禁类型（如极少数抽取失败）才带反馈进入下一轮整图重识别
             state["retry_feedback"] = gate_err

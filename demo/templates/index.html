@@ -87,6 +87,10 @@
                     <span class="icon"></span>
                     <span>实时库存与价格</span>
                 </button>
+                <button class="sidebar-btn" data-target="tab-dishes" data-title="餐品与消耗">
+                    <span class="icon"></span>
+                    <span>餐品与消耗</span>
+                </button>
                 <button class="sidebar-btn" data-target="tab-archive" data-title="供应商与归档">
                     <span class="icon"></span>
                     <span>供应商与归档</span>
@@ -403,12 +407,12 @@
                                         </div>
                                     </div>
                                     <div class="form-group">
-                                        <label>付款标记</label>
-                                        <select id="inpPaymentMark" class="form-control" title="AI 对原图付款痕迹的判定，可人工修正">
-                                            <option value="无">无</option>
-                                            <option value="印章">印章</option>
-                                            <option value="手写批注">手写批注</option>
-                                            <option value="仅签名">仅签名</option>
+                                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                            <label style="margin-bottom:0;">付款标记</label>
+                                            <span id="inpPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.72rem; color:#64748b;">未检测到商户付款标记</span>
+                                        </div>
+                                        <select id="inpPaymentMark" class="form-control" title="系统自动检测商户单据付款标记，用户仅需确认已付款或未付款">
+                                            <option value="未付款">未付款</option>
                                             <option value="已付款">已付款</option>
                                         </select>
                                     </div>
@@ -615,15 +619,15 @@
                         </div>
 
                         <div class="table-container">
-                            <table id="inventoryTable" class="data-table" style="table-layout: fixed; width: 100%;">
+                            <table id="inventoryTable" class="data-table" style="width: 100%;">
                                 <colgroup>
-                                    <col style="width: 20%;">
-                                    <col style="width: 10%;">
-                                    <col style="width: 10%;">
-                                    <col style="width: 10%;">
-                                    <col style="width: 10%;">
                                     <col style="width: 14%;">
-                                    <col style="width: 26%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 10%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 12%;">
+                                    <col style="width: 40%;">
                                 </colgroup>
                                 <thead>
                                     <tr>
@@ -640,6 +644,288 @@
                                     <!-- 动态渲染库存 -->
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB: 餐品与消耗管理 -->
+                <section id="tab-dishes" class="tab-content">
+                    <!-- 子 Tab 切换导航 -->
+                    <div class="dish-tabs-header">
+                        <button type="button" class="dish-subtab-btn active" data-subtab="subtab-dish-daily" onclick="switchDishSubtab('subtab-dish-daily')">
+                            <span>每日消耗录入</span>
+                        </button>
+                        <button type="button" class="dish-subtab-btn" data-subtab="subtab-dish-bom" onclick="switchDishSubtab('subtab-dish-bom')">
+                            <span>餐品 BOM 配方库</span>
+                        </button>
+                        <button type="button" class="dish-subtab-btn" data-subtab="subtab-dish-insights" onclick="switchDishSubtab('subtab-dish-insights')">
+                            <span>成本波动与毛利大盘</span>
+                        </button>
+                    </div>
+
+                    <!-- 子 Tab 1: 每日餐品消耗录入 (Daily Consumption & Stock Deduction) -->
+                    <div id="subtab-dish-daily" class="dish-subtab-pane active">
+                        <!-- 顶部控制栏 -->
+                        <div class="card" style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <label for="dishConsumptionDate" style="font-size: 0.9rem; font-weight: 600; color: var(--text-main);">消耗核算日期：</label>
+                                    <input type="date" id="dishConsumptionDate" class="form-control" style="width: 140px; font-weight: 600;" onchange="onDishConsumptionDateChange(this.value)">
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="setDishConsumptionToday()">今天</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="setDishConsumptionYesterday()">昨天</button>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                                    <div style="position: relative; min-width: 200px;">
+                                        <input type="text" id="dishConsumeSearchInput" class="form-control" placeholder="搜索在售餐品..." oninput="filterDishConsumeEntryTable(this.value)">
+                                    </div>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="resetDishConsumeInputs()">清空份数</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 快捷概览 KPI 卡片 -->
+                        <div class="metrics-grid dish-kpi-grid">
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center;">
+                                    <span>当日预估总成本 (BOM)</span>
+                                    <span class="badge badge-warning" id="kpiDishCostBadge">基准理论</span>
+                                </div>
+                                <div id="kpiDishCost" class="metric-value" style="color: var(--primary);">¥0.00</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日预计营业额</div>
+                                <div id="kpiDishRevenue" class="metric-value" style="color: #2563eb;">¥0.00</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日预估毛利率</div>
+                                <div id="kpiDishGrossMargin" class="metric-value" style="color: var(--success);">0.0%</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">已录入消耗餐品</div>
+                                <div id="kpiDishCount" class="metric-value">0 种</div>
+                            </div>
+                        </div>
+
+                        <!-- 极速消耗录入表格卡片 -->
+                        <div class="card" style="margin-bottom: 24px;">
+                            <div class="card-title">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span>今日在售餐品消耗录入</span>
+                                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 400;">(输入今日各餐品售出份数，提交后按 BOM 配方自动 FIFO 扣减库存)</span>
+                                </div>
+                                <span class="badge badge-neutral" id="dishConsumeActiveCount">0 种在售餐品</span>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table dish-consume-table">
+                                    <colgroup>
+                                        <col style="width: 22%;">
+                                        <col style="width: 10%;">
+                                        <col style="width: 12%;">
+                                        <col style="width: 24%;">
+                                        <col style="width: 18%;">
+                                        <col style="width: 14%;">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>餐品名称</th>
+                                            <th>分类</th>
+                                            <th class="col-right">售价 ($)</th>
+                                            <th>配方食材简述</th>
+                                            <th style="text-align: center;">当日消耗份数</th>
+                                            <th class="col-right">单品小计 ($)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dishConsumeEntryTableBody">
+                                        <!-- 动态渲染在售餐品极速录入行 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="dish-submit-bar">
+                                <div class="dish-submit-info">
+                                    <span>已选 <strong id="dishSubmitCountText">0</strong> 种餐品，合计消耗 <strong id="dishSubmitTotalQty">0</strong> 份</span>
+                                </div>
+                                <button type="button" id="btnSubmitDailyConsumeBatch" class="btn btn-primary btn-submit-consume" onclick="submitDailyConsumptionBatch()">
+                                    一键扣减库存并核算真实成本
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 当日消耗历史流水表格卡片 -->
+                        <div class="card">
+                            <div class="card-title">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span>当日已提交消耗流水与 FIFO 成本核算记录</span>
+                                </div>
+                                <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新流水</button>
+                            </div>
+                            <div class="table-container">
+                                <table class="data-table">
+                                    <colgroup>
+                                        <col style="width: 8%;">
+                                        <col style="width: 20%;">
+                                        <col style="width: 10%;">
+                                        <col style="width: 14%;">
+                                        <col style="width: 14%;">
+                                        <col style="width: 10%;">
+                                        <col style="width: 10%;">
+                                        <col style="width: 14%;">
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th>流水号</th>
+                                            <th>餐品名称</th>
+                                            <th class="col-right">消耗份数</th>
+                                            <th class="col-right">实际食材成本</th>
+                                            <th class="col-right">售出金额</th>
+                                            <th class="col-right">实际毛利率</th>
+                                            <th class="col-center">状态</th>
+                                            <th class="col-center">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="dishDailyHistoryTableBody">
+                                        <!-- 动态渲染当日消耗流水 -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 子 Tab 2: 餐品 BOM 配方库 (Dish BOM Library) -->
+                    <div id="subtab-dish-bom" class="dish-subtab-pane">
+                        <!-- 顶部操作栏 -->
+                        <div class="card" style="margin-bottom: 16px;">
+                            <div class="inv-toolbar" style="margin-bottom: 0;">
+                                <div class="inv-toolbar-filters">
+                                    <div style="position: relative; min-width: 180px; max-width: 260px; flex: 1;">
+                                        <input type="text" id="dishSearchInput" class="form-control" placeholder="搜索餐品名称 / 描述..." oninput="filterDishBomLibrary()">
+                                    </div>
+                                    <select id="dishCategoryFilter" class="form-control" style="width: 120px;" onchange="filterDishBomLibrary()">
+                                        <option value="">全部分类</option>
+                                        <option value="主食">主食</option>
+                                        <option value="热菜">热菜</option>
+                                        <option value="凉菜">凉菜</option>
+                                        <option value="汤品">汤品</option>
+                                        <option value="点心">点心</option>
+                                        <option value="饮品">饮品</option>
+                                        <option value="甜品">甜品</option>
+                                        <option value="小吃">小吃</option>
+                                        <option value="其他">其他</option>
+                                    </select>
+                                    <select id="dishStatusFilter" class="form-control" style="width: 110px;" onchange="filterDishBomLibrary()">
+                                        <option value="active" selected>仅在售</option>
+                                        <option value="all">全部状态</option>
+                                        <option value="inactive">仅已停用</option>
+                                    </select>
+                                </div>
+                                <div class="inv-toolbar-actions">
+                                    <button type="button" class="btn btn-secondary" id="btnToggleDishView" onclick="toggleDishViewMode()">切换列表视图</button>
+                                    <button type="button" id="btnOpenAddDishModal" class="btn btn-primary" onclick="openDishModal()">+ 新建餐品</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 餐品卡片网格视图 -->
+                        <div id="dishCardGrid" class="dish-card-grid">
+                            <!-- 动态渲染餐品卡片 -->
+                        </div>
+
+                        <!-- 餐品列表视图（备用切换） -->
+                        <div id="dishTableView" class="table-container hide">
+                            <table class="data-table">
+                                <colgroup>
+                                    <col style="width: 20%;">
+                                    <col style="width: 10%;">
+                                    <col style="width: 12%;">
+                                    <col style="width: 28%;">
+                                    <col style="width: 12%;">
+                                    <col style="width: 8%;">
+                                    <col style="width: 10%;">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>餐品名称</th>
+                                        <th>分类</th>
+                                        <th class="col-right">售价 ($)</th>
+                                        <th>BOM 配方食材</th>
+                                        <th class="col-right">理论基准成本</th>
+                                        <th class="col-right">理论毛利率</th>
+                                        <th class="col-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dishTableBody">
+                                    <!-- 动态渲染餐品列表行 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 子 Tab 3: 成本波动与毛利大盘 (Cost Fluctuations & Insights) -->
+                    <div id="subtab-dish-insights" class="dish-subtab-pane">
+                        <!-- 顶部控制栏 -->
+                        <div class="card" style="margin-bottom: 16px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <span style="font-size: 0.9rem; font-weight: 600; color: var(--text-main);">成本趋势分析周期：</span>
+                                    <div class="dish-period-selector">
+                                        <button type="button" class="chip active" data-days="7" onclick="setCostAnalysisDays(7)">近 7 天</button>
+                                        <button type="button" class="chip" data-days="30" onclick="setCostAnalysisDays(30)">近 30 天</button>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="loadDishCostAnalysis()">刷新大盘</button>
+                            </div>
+                        </div>
+
+                        <!-- 成本分析 KPI 概览 -->
+                        <div class="metrics-grid">
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">实际综合毛利率</div>
+                                <div id="insightAvgMargin" class="metric-value" style="color: var(--success);">0.0%</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">食材真实总消耗成本</div>
+                                <div id="insightTotalCost" class="metric-value">¥0.00</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">成本上涨餐品数</div>
+                                <div id="insightCostUpCount" class="metric-value" style="color: var(--danger);">0</div>
+                            </div>
+                            <div class="metric-card">
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">关联食材上涨预警</div>
+                                <div id="insightIngredientAlerts" class="metric-value" style="color: #f59e0b;">0</div>
+                            </div>
+                        </div>
+
+                        <!-- 各餐品真实加权成本 vs 理论基准成本对比卡片网格 -->
+                        <div class="card" style="margin-bottom: 20px;">
+                            <div class="card-title">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span>各餐品真实 FIFO 加权成本 vs 理论基准成本对比</span>
+                                </div>
+                            </div>
+                            <div id="dishCostComparisonGrid" class="dish-cost-comparison-grid">
+                                <!-- 动态渲染对比卡片 -->
+                            </div>
+                        </div>
+
+                        <!-- 左右分栏：毛利率排行榜 & 食材进价上涨预警 -->
+                        <div class="split-view">
+                            <div class="card">
+                                <div class="card-title">
+                                    <span>餐品毛利率表现排行</span>
+                                </div>
+                                <div id="dishMarginRanking" class="dish-ranking-container">
+                                    <!-- 动态渲染毛利排行榜 -->
+                                </div>
+                            </div>
+                            <div class="card">
+                                <div class="card-title">
+                                    <span>进货食材价格上涨对餐品毛利穿透预警</span>
+                                </div>
+                                <div id="dishPriceAnomalyImpact" class="dish-anomaly-alerts">
+                                    <!-- 动态渲染涨价预警 -->
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -1686,12 +1972,12 @@
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>付款标记</label>
-                                <select id="arcPaymentMark" class="form-control" title="AI 对原图付款痕迹的判定，可人工修正">
-                                    <option value="无">无</option>
-                                    <option value="印章">印章</option>
-                                    <option value="手写批注">手写批注</option>
-                                    <option value="仅签名">仅签名</option>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                    <label style="margin-bottom:0;">付款标记</label>
+                                    <span id="arcPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.72rem; color:#64748b;">未检测到商户付款标记</span>
+                                </div>
+                                <select id="arcPaymentMark" class="form-control" title="系统自动检测商户单据付款标记，用户仅需确认已付款或未付款">
+                                    <option value="未付款">未付款</option>
                                     <option value="已付款">已付款</option>
                                 </select>
                             </div>
@@ -2301,9 +2587,167 @@
         </div>
     </div>
 
+    <!-- 餐品建档 / 编辑配方 Modal (dishEditModal) -->
+    <div id="dishEditModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:880px;">
+            <div class="modal-header">
+                <h3 id="dishEditModalTitle">新建餐品与配方</h3>
+                <button type="button" class="modal-close-btn" onclick="closeModalById('dishEditModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="dishModalId" value="">
+                
+                <!-- 基本信息网格 -->
+                <div class="form-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 16px;">
+                    <div class="form-group">
+                        <label>餐品名称 <span style="color:var(--danger);">*</span></label>
+                        <input type="text" id="dishModalName" class="form-control" placeholder="如：港式柱侯萝卜牛腩煲">
+                    </div>
+                    <div class="form-group">
+                        <label>餐品分类 <span style="color:var(--danger);">*</span></label>
+                        <input type="text" id="dishModalCategory" list="dishModalCategoryList" class="form-control" placeholder="如：热菜、主食">
+                        <datalist id="dishModalCategoryList">
+                            <option value="主食"></option>
+                            <option value="热菜"></option>
+                            <option value="凉菜"></option>
+                            <option value="汤品"></option>
+                            <option value="点心"></option>
+                            <option value="饮品"></option>
+                            <option value="甜品"></option>
+                            <option value="小吃"></option>
+                            <option value="其他"></option>
+                        </datalist>
+                    </div>
+                    <div class="form-group">
+                        <label>销售单价 ($) <span style="color:var(--danger);">*</span></label>
+                        <input type="number" step="0.01" min="0" id="dishModalPrice" class="form-control" placeholder="如：88.00" oninput="calcDishModalTheoryCost()">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>餐品描述</label>
+                        <input type="text" id="dishModalDescription" class="form-control" placeholder="选填，如口感、规格、主要食材说明">
+                    </div>
+                    <div class="form-group">
+                        <label>在售状态</label>
+                        <select id="dishModalStatus" class="form-control">
+                            <option value="active">在售</option>
+                            <option value="inactive">停用</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- BOM 食材配方配置 -->
+                <div style="margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">
+                            BOM 食材配方清单
+                            <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 400; margin-left: 6px;">(每份餐品消耗的食材 SKU 与用量)</span>
+                        </div>
+                        <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.82rem;" onclick="addDishIngredientRow()">+ 添加食材配方行</button>
+                    </div>
+
+                    <div class="table-container" style="max-height: 280px; overflow-y: auto; margin-bottom: 12px;">
+                        <table class="data-table" id="dishModalIngredientTable">
+                            <colgroup>
+                                <col style="width: 32%;">
+                                <col style="width: 16%;">
+                                <col style="width: 14%;">
+                                <col style="width: 16%;">
+                                <col style="width: 14%;">
+                                <col style="width: 8%;">
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th>食材 SKU <span style="color:var(--danger);">*</span></th>
+                                    <th class="col-right">单份用量 <span style="color:var(--danger);">*</span></th>
+                                    <th class="col-center">单位</th>
+                                    <th class="col-right">参考基准单价</th>
+                                    <th class="col-right">单项理论成本</th>
+                                    <th class="col-center">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dishIngredientRowsBody">
+                                <!-- 动态配方行 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 实时理论成本与毛利率计算预览条 -->
+                <div class="dish-calc-preview-bar">
+                    <div class="dish-calc-item">
+                        <span class="dish-calc-lbl">理论单份成本:</span>
+                        <span id="dishModalTheoryCost" class="dish-calc-val">¥0.00</span>
+                    </div>
+                    <div class="dish-calc-item">
+                        <span class="dish-calc-lbl">预估单份毛利:</span>
+                        <span id="dishModalTheoryProfit" class="dish-calc-val" style="color: var(--success);">¥0.00</span>
+                    </div>
+                    <div class="dish-calc-item">
+                        <span class="dish-calc-lbl">预估毛利率:</span>
+                        <span id="dishModalTheoryMargin" class="badge badge-success">0.0%</span>
+                    </div>
+                </div>
+
+                <div id="dishModalError" class="form-error hide" style="margin-top: 10px;"></div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px; border-top:1px solid var(--border-color); padding-top:14px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModalById('dishEditModal')">取消</button>
+                    <button type="button" class="btn btn-primary" id="btnSaveDishModal" onclick="saveDishModal()">保存餐品配方</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- FIFO 批次穿透溯源弹窗 (costTraceModal) -->
+    <div id="costTraceModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:840px;">
+            <div class="modal-header">
+                <h3 id="costTraceModalTitle">FIFO 批次成本穿透溯源报告</h3>
+                <button type="button" class="modal-close-btn" onclick="closeModalById('costTraceModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <!-- 消耗记录概要卡片 -->
+                <div id="costTraceSummaryCard" class="cost-trace-summary-card">
+                    <div class="cost-trace-header-grid">
+                        <div>
+                            <div class="cost-trace-meta-lbl">餐品名称</div>
+                            <div id="traceDishName" class="cost-trace-meta-val">-</div>
+                        </div>
+                        <div>
+                            <div class="cost-trace-meta-lbl">核算日期 / 份数</div>
+                            <div id="traceDishQty" class="cost-trace-meta-val">-</div>
+                        </div>
+                        <div>
+                            <div class="cost-trace-meta-lbl">真实加权总成本</div>
+                            <div id="traceTotalCost" class="cost-trace-meta-val" style="color:var(--primary); font-weight:700;">-</div>
+                        </div>
+                        <div>
+                            <div class="cost-trace-meta-lbl">单份实际成本 vs 理论基准</div>
+                            <div id="traceUnitCostDiff" class="cost-trace-meta-val">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 树形扣减批次明细 -->
+                <div style="margin-top: 16px;">
+                    <div style="font-weight: 600; font-size: 0.92rem; color: var(--text-main); margin-bottom: 8px;">
+                        配方食材扣减与入库批次穿透链路
+                    </div>
+                    <div id="costTraceDetailsContainer" class="cost-trace-tree">
+                        <!-- 动态渲染树形批次明细 -->
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:20px; border-top:1px solid var(--border-color); padding-top:14px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeModalById('costTraceModal')">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260824a"></script>
+    <script src="/static/js/main.js?v=20260828f"></script>
 </body>
 </html>

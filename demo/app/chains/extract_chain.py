@@ -226,11 +226,14 @@ def build_prompt(image_path: str, vendor_context: str = "") -> list:
 
 def extract_receipt(image_path: str, vendor_hint: str = "",
                     model=None, config=None, retry_feedback: str = "",
-                    use_grey: bool = False, vendor_prior: str = "") -> dict:
+                    use_grey: bool = False, vendor_prior: str = "",
+                    on_event=None) -> dict:
     """识别链路入口。返回结构化 dict + 元数据。
 
     流程：VLM 读图 → 原始输出 →（可选）LLM 解析规范化 → 契约校验。
     vendor_prior：supervisor 传入的历史先验（gate_reject 重试轮注入，与 retry_feedback 并行）。
+    on_event（可选）：首选引擎失败触发降级回退时立即回调（在备用引擎尝试之前），
+    供上层第一时间把「已切换备用模型」提示透传给前端。
     返回：{"data": ReceiptData | None, "raw": str, "error": str | None,
            "elapsed_ms": int, "engine": str, "vendor_context": str}
     vendor_context 为三通道（hint/parse/retry）带来源标注的先验合并（去重 + 截断 4000），
@@ -288,79 +291,147 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     # 透传真实引擎 kind（opencode/codebuddy/openai/qwen），修正此前硬编码 "codebuddy" 的误导标签
     engine = getattr(model, "kind", "unknown")
 
+    def _extract_text(obj):
+        if obj is None:
+            return ""
+        if isinstance(obj, str):
+            return obj
+        if hasattr(obj, "content"):
+            return obj.content
+        if hasattr(obj, "generations") and obj.generations:
+            msg = getattr(obj.generations[0], "message", None)
+            return getattr(msg, "content", "") if msg else ""
+        return str(obj)
+
     start = time.time()
+    fallback_triggered = False
+    fallback_reason = ""
+    fallback_from = ""
+    fallback_engine = ""
     try:
         result = model.invoke(prompt)
-        raw = result.content if not isinstance(result, str) else result
+        raw = _extract_text(result)
         vlm_elapsed = round((time.time() - start) * 1000, 1)
         # 提取 VLM token 消耗（DashScope qwen3-vl-flash 从 response_metadata['token_usage']；本地记 0）
         vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         vlm_cost = _cost_from_tokens(vlm_token)
     except Exception as e:
-        vlm_elapsed = round((time.time() - start) * 1000, 1)
-        # VLM 异常仍需记录耗时与 token 0，保证记忆落盘不丢（最严格）
-        vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        vlm_cost = 0.0
-        raw = ""
-        err_msg = f"VLM 调用失败: {e}"
-        # 合计 token 与成本（仅 VLM，解析未执行）
-        total_token = dict(vlm_token)
-        total_cost = float(vlm_cost or 0)
-        return {
-            "data": None,
-            "raw": raw,
-            "error": err_msg,
-            "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
-            "extract_ms": round(vlm_elapsed + rag_ms, 1),
-            "rag_ms": round(rag_ms, 1),
-            "engine": engine,
-            "vendor_context": _merge_priors(priors),
-            "parse_llm": {
-                "enabled": _parse_enabled(config, use_grey),
-                "model": "",
-                "elapsed_ms": 0,
-            },
-            "token_usage": total_token,
-            "vlm_token_usage": vlm_token,
-            "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-            "cost_hkd": round(total_cost, 6),
-        }
+        # 自动降级回退机制：当首选引擎（如 OpenAI 兼容接口 / 远程 API / opencode）调用异常时，自动回退到 CodeBuddy 本地引擎重试
+        if engine != "codebuddy":
+            fallback_triggered = True
+            fallback_from = engine
+            fallback_engine = "codebuddy"
+            fallback_reason = f"识别引擎 [{fallback_from}] 调用异常 ({str(e)[:150]})，已自动降级回退至 CodeBuddy 本地引擎完成识别"
+            logging.getLogger("extract_chain").warning(
+                f"[FALLBACK] {fallback_reason}..."
+            )
+            print(f"[FALLBACK] {fallback_reason}...", flush=True)
+            # 回退触发即时事件：首选引擎失败的当下即通知上层（不等备用引擎结果）
+            if on_event is not None:
+                try:
+                    on_event({
+                        "type": "engine_fallback",
+                        "reason": fallback_reason,
+                        "from": fallback_from,
+                        "to": fallback_engine,
+                        "stage": "primary_failed",
+                    })
+                except Exception:
+                    pass
+            try:
+                from app.llm import _build
+                fallback_model = _build("codebuddy", os.environ.get("CODEBUDDY_MODEL", "opencode/mimo-v2.5-free"), cfg=config, side="rec", use_grey=use_grey)
+                fb_start = time.time()
+                result = fallback_model.invoke(prompt)
+                raw = _extract_text(result)
+                vlm_elapsed = round((time.time() - fb_start) * 1000, 1)
+                vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                vlm_cost = _cost_from_tokens(vlm_token)
+                engine = "codebuddy"
+                model = fallback_model
+            except Exception as fb_err:
+                logging.getLogger("extract_chain").error(f"[FALLBACK_FAIL] 回退至 CodeBuddy 仍然失败: {fb_err}")
+                vlm_elapsed = round((time.time() - start) * 1000, 1)
+                vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                vlm_cost = 0.0
+                raw = ""
+                err_msg = f"VLM 调用失败 (首选引擎 [{engine}]: {e}; 降级 CodeBuddy: {fb_err})"
+                total_token = dict(vlm_token)
+                total_cost = float(vlm_cost or 0)
+                return {
+                    "data": None,
+                    "raw": raw,
+                    "error": err_msg,
+                    "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
+                    "extract_ms": round(vlm_elapsed + rag_ms, 1),
+                    "rag_ms": round(rag_ms, 1),
+                    "engine": "codebuddy (fallback failed)",
+                    "vendor_context": _merge_priors(priors),
+                    "fallback_triggered": True,
+                    "fallback_reason": fallback_reason,
+                    "fallback_from": fallback_from,
+                    "fallback_engine": fallback_engine,
+                    "parse_llm": {
+                        "enabled": _parse_enabled(config, use_grey),
+                        "model": "",
+                        "elapsed_ms": 0,
+                    },
+                    "token_usage": total_token,
+                    "vlm_token_usage": vlm_token,
+                    "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "cost_hkd": round(total_cost, 6),
+                }
+        else:
+            vlm_elapsed = round((time.time() - start) * 1000, 1)
+            vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            vlm_cost = 0.0
+            raw = ""
+            err_msg = f"VLM 调用失败: {e}"
+            total_token = dict(vlm_token)
+            total_cost = float(vlm_cost or 0)
+            return {
+                "data": None,
+                "raw": raw,
+                "error": err_msg,
+                "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
+                "extract_ms": round(vlm_elapsed + rag_ms, 1),
+                "rag_ms": round(rag_ms, 1),
+                "engine": engine,
+                "vendor_context": _merge_priors(priors),
+                "fallback_triggered": False,
+                "fallback_reason": "",
+                "fallback_from": "",
+                "fallback_engine": "",
+                "parse_llm": {
+                    "enabled": _parse_enabled(config, use_grey),
+                    "model": "",
+                    "elapsed_ms": 0,
+                },
+                "token_usage": total_token,
+                "vlm_token_usage": vlm_token,
+                "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "cost_hkd": round(total_cost, 6),
+            }
 
-    # RAG 先验通道2（parse，真飞轮）：VLM 已识别出供应商 → 补检索注入解析规范化
-    parse_prior = ""
-    vendor_name = _extract_vendor_from_raw(raw)
-    if vendor_name:
-        try:
-            r_start = time.time()
-            parse_prior = retrieve_context(vendor_name) or ""
-            rag_ms += round((time.time() - r_start) * 1000, 1)
-        except Exception:
-            parse_prior = ""
-    if parse_prior:
-        priors.append(("parse", parse_prior))
-
-    # 可选 LLM 解析：VLM 原始输出 → LLM 规范化（纯文本，可开关）
+    # 阶段 4：解析 LLM 规范化解析（可选，默认关闭；开启时纯文本任务）
     parse_elapsed = 0
     parse_model_name = ""
     parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     parse_cost = 0.0
-    if _parse_enabled(config, use_grey):
+    if _parse_enabled(config, use_grey) and raw:
         try:
             parse_model = build_parse_model(cfg=config, use_grey=use_grey)
-            parse_model_name = getattr(parse_model, "model", "")
+            parse_model_name = getattr(parse_model, "model", "") or ""
             p_start = time.time()
-            parse_result = parse_model.invoke(
-                _build_parse_prompt(raw, _prior_block("parse", parse_prior) if parse_prior else "")
-            )
-            raw = parse_result.content if not isinstance(parse_result, str) else parse_result
+            p_prior = _strip_prior_tags(vendor_prior)
+            parse_msgs = _build_parse_prompt(raw, _prior_block("parse", p_prior) if p_prior else "")
+            p_result = parse_model.invoke(parse_msgs)
+            raw = _extract_text(p_result)
             parse_elapsed = round((time.time() - p_start) * 1000, 1)
-            if not isinstance(parse_result, str):
-                parse_token = _extract_token_usage(parse_result)
-                parse_cost = _cost_from_tokens(parse_token)
-        except Exception as e:
-            # LLM 解析失败不阻断：沿用 VLM 原始输出（graceful skip）
-            parse_elapsed = -1
-            parse_model_name = f"error:{e}"
+            parse_token = _extract_token_usage(p_result) if not isinstance(p_result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            parse_cost = _cost_from_tokens(parse_token)
+        except Exception:
+            parse_elapsed = 0
             parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             parse_cost = 0.0
 
@@ -382,6 +453,10 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         "rag_ms": round(rag_ms, 1),
         "engine": engine,
         "vendor_context": _merge_priors(priors),
+        "fallback_triggered": fallback_triggered,
+        "fallback_reason": fallback_reason,
+        "fallback_from": fallback_from,
+        "fallback_engine": fallback_engine,
         "parse_llm": {
             "enabled": _parse_enabled(config, use_grey),
             "model": parse_model_name,
@@ -479,6 +554,43 @@ def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
         except json.JSONDecodeError:
             return None, "JSON 解析失败"
 
+    # 6. 兼容 ai_registry Gap1-8 聚合版 Prompt 的输出 Schema 映射至 demo 契约（supplier_name→vendor 等）
+    # 必须先于清洗管道执行：清洗工具按 name/qty 契约字段识别明细，未映射的 item_name/quantity 会被整行丢弃
+    try:
+        if "supplier_name" in payload and "vendor" not in payload:
+            payload["vendor"] = payload.pop("supplier_name")
+        if "total_amount" in payload and "total" not in payload:
+            payload["total"] = payload.pop("total_amount")
+        if "is_paid" in payload and "payment_marked" not in payload:
+            payload["payment_marked"] = bool(payload.pop("is_paid"))
+        for _k in ["receipt_no", "payment_method", "contains_huama", "supplier_name", "total_amount", "is_paid"]:
+            payload.pop(_k, None)
+        if "doc_form" not in payload or not payload.get("doc_form"):
+            payload["doc_form"] = "printed_delivery_note"
+        for _it in payload.get("items", []):
+            if isinstance(_it, dict):
+                if "item_name" in _it and "name" not in _it:
+                    _it["name"] = _it.pop("item_name")
+                if "quantity" in _it and "qty" not in _it:
+                    _it["qty"] = _it.pop("quantity")
+                if "item_code" in _it:
+                    _code = _it.pop("item_code")
+                    if _code and not _it.get("raw_name"):
+                        _it["raw_name"] = str(_code)
+                for _ik in ["contains_huama", "confidence", "item_code", "quantity"]:
+                    _it.pop(_ik, None)
+                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty"}
+                for _k in list(_it.keys()):
+                    if _k not in _allowed_item:
+                        _it.pop(_k, None)
+        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence"}
+        for _k in list(payload.keys()):
+            if _k not in _allowed_top:
+                payload.pop(_k, None)
+    except Exception as _e:
+        import logging
+        logging.getLogger("extract_chain").warning(f"[WARN] Schema 归一化异常: {_e}")
+
     if isinstance(payload, dict) and "items" in payload and isinstance(payload["items"], list):
         try:
             from ai_registry.tools.item_sanitizer.v1_3_0_notes_clean import ItemSanitizerTool
@@ -566,42 +678,6 @@ def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
         except Exception as e:
             import logging
             logging.getLogger("extract_chain").warning(f"[WARN] 后处理管道异常: {e}")
-
-    # 6. 兼容 ai_registry Gap1-8 聚合版 Prompt 的输出 Schema 映射至 demo 契约（supplier_name→vendor 等）
-    try:
-        if "supplier_name" in payload and "vendor" not in payload:
-            payload["vendor"] = payload.pop("supplier_name")
-        if "total_amount" in payload and "total" not in payload:
-            payload["total"] = payload.pop("total_amount")
-        if "is_paid" in payload and "payment_marked" not in payload:
-            payload["payment_marked"] = bool(payload.pop("is_paid"))
-        for _k in ["receipt_no", "payment_method", "contains_huama", "supplier_name", "total_amount", "is_paid"]:
-            payload.pop(_k, None)
-        if "doc_form" not in payload or not payload.get("doc_form"):
-            payload["doc_form"] = "printed_delivery_note"
-        for _it in payload.get("items", []):
-            if isinstance(_it, dict):
-                if "item_name" in _it and "name" not in _it:
-                    _it["name"] = _it.pop("item_name")
-                if "quantity" in _it and "qty" not in _it:
-                    _it["qty"] = _it.pop("quantity")
-                if "item_code" in _it:
-                    _code = _it.pop("item_code")
-                    if _code and not _it.get("raw_name"):
-                        _it["raw_name"] = str(_code)
-                for _ik in ["contains_huama", "confidence", "item_code", "quantity"]:
-                    _it.pop(_ik, None)
-                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty"}
-                for _k in list(_it.keys()):
-                    if _k not in _allowed_item:
-                        _it.pop(_k, None)
-        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence"}
-        for _k in list(payload.keys()):
-            if _k not in _allowed_top:
-                payload.pop(_k, None)
-    except Exception as _e:
-        import logging
-        logging.getLogger("extract_chain").warning(f"[WARN] Schema 归一化异常: {_e}")
 
     from app.services.contract import validate_contract
     data, err = validate_contract(payload)
