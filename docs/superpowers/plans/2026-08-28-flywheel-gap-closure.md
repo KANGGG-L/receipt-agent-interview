@@ -24,6 +24,7 @@
 | A | T1 | A1 + A5a | 评测集三分法 + 去标识 manifest + 可复现 eval harness |
 | A | T2 | E2 | `tenant_id` 贯穿业务主表（含 `vendor_memory`） |
 | A | T3 | B1 + B4 | 记忆治理元数据 + 读取预算控制 |
+| B | T12 | 治理 | ai_registry 唯一来源收敛（prompt/tools/mcp 收口，SSOT 规范落地；Wave B 首位执行）|
 | B | T4 | A2 | GT 异构模型生成 + 人工抽检台 |
 | B | T5 | A3 + A4 | 评估器与生成器强制异构 + 元评测集 |
 | B | T6 | A5 | 线上低置信样本自动回流为评测候选 |
@@ -175,6 +176,44 @@ retrieve_context(vendor, top_k=3, tenant_id="default",
 ---
 
 ### Wave B：评测可信度（飞轮第一原则）
+
+#### Task 12: ai_registry 唯一来源收敛（治理规范落地，本 Wave 首位执行）
+
+> 来源：2026-08-29 SSOT 专项审计（判定 NON_COMPLIANT）。`agent_memory.md` 已写入「AI 资产工程化治理」规范，本 Task 把存量资产收敛到规范。
+> **排位理由**：T4 的 GT 生成与 T5 的元评测都要产出/消费 registry 资产，必须先修好唯一来源，避免在失真的 registry 上继续盖楼。
+
+**Files:**
+- Modify: `demo/app/chains/extract_chain.py`（硬编码 v1_2_8 import 改走 `registry.get_prompt`；PARSE_SYSTEM_PROMPT / CORRECT_SYSTEM_PROMPT 两段内联提示词登记进 registry 后改加载）
+- Modify: `demo/app/chains/review_chain.py`（REVIEW_SYSTEM 内联提示词登记进 registry 对齐 v2_0_0_cards 后改加载）
+- Modify: `demo/app/chains/audit_chain.py`、`demo/app/api_admin.py`、`demo/scripts/run_eval.py`（`app.prompts` 镜像库引用改读 ai_registry）
+- Delete/收敛: `demo/app/prompts/` 镜像目录（保留已验证的 re-export 模式，删除平行 ACTIVE_VERSIONS 注册表）
+- Modify: `ai_registry/prompts/extract/metadata.json`（补登 v1_2_1~v1_2_8，active 置 v1_2_8）、`review/metadata.json` 与 `tools/math_engine/metadata.json`（删除指向不存在文件的悬空条目）
+- Modify: `ai_registry/tools/math_engine/`（以 demo/app/services/math_engine.py 的字段覆盖为准回灌 v2_1_0，业务侧改 import registry 版）
+- Modify: `ai_registry/mcp/configs/mcp_settings.json`（3 个未接入 server 置 active: false，删除 version_registry.json 虚构的 healthy/延迟指标）
+- Modify: `ai_registry/tools/pii_masker/`（修复 `from typing import str` 语法错误）、6 个孤儿工具标注 experimental 状态
+- Create: `tests/test_registry_ssot.py`
+
+**Interfaces:**
+```python
+# 生产链路唯一合法的资产取得方式
+from ai_registry import registry
+registry.get_prompt("extract")            # active 版本
+registry.get_prompt("parse", "v2_1_0")    # 显式版本
+registry.get_tool("math_engine")          # active 工具
+# 禁止: 业务代码内硬编码版本号 import / 内联系统提示词 / 镜像库二级加载
+```
+
+- [ ] **Step 1:** 写 `tests/test_registry_ssot.py`（TDD 先行）：生产链路消费的每个 prompt/tool 均经 registry 取得；`demo/app/prompts` 无平行注册表；metadata 登记与目录实体一致（无漏登/无悬空）；内联提示词零残留（扫描 chains 目录三引号长指令串）
+- [ ] **Step 2:** 运行确认失败
+- [ ] **Step 3:** extract_chain / review_chain / audit_chain 改走 registry 加载，三段内联提示词先登记为新版本再切换
+- [ ] **Step 4:** `demo/app/prompts/` 镜像退役（推广 re-export 模式），run_eval / api_admin / audit_chain 改读 ai_registry
+- [ ] **Step 5:** math_engine 收敛回灌 + metadata 修复（补登/active 置位/删悬空）+ mcp 状态如实化 + pii_masker 语法修复与孤儿工具标注
+- [ ] **Step 6:** 全量回归 + 识别链路冒烟（registry 加载的 prompt 跑一次真实识别，确认与改造前行为一致、准确率无回归）
+- [ ] **Step 7:** 测试通过
+
+**验收：** 全仓生产代码无绕过 registry 的资产加载；metadata 与目录实体完全自洽；`demo/app/prompts` 不再是平行事实源；两套测试零回归（不低于 200 passed 基线）；识别链路冒烟行为一致。
+
+---
 
 #### Task 4: GT 异构生成 + 人工抽检台（A2）
 
@@ -452,7 +491,7 @@ assess(image) -> {sharpness, is_blurry, skew_angle}
 
 ```
 Wave A (T1-T3) → 产品 → 开发 → QA → 审核 ─┐
-Wave B (T4-T6) → 产品 → 开发 → QA → 审核 ─┤  审核不通过则走
+Wave B (T12→T4-T6) → 产品 → 开发 → QA → 审核 ─┤  审核不通过则走
 Wave C (T7-T8) → 产品 → 开发 → QA → 审核 ─┤  聚焦 3-role 修复
 Wave D (T9-T10)→ 产品 → 开发 → QA → 审核 ─┤  （dev→QA→审核）
 Wave E (T11)   → 开发 → 审核            ─┘
@@ -461,7 +500,7 @@ Wave E (T11)   → 开发 → 审核            ─┘
 **给各角色的硬约束（写进 prompt）：**
 
 - **产品**：每个 Task 输出结构化验收标准（可断言、有阈值），并明确「哪些既有测试需要同步修改」（例：T8 会改 `test_feedback_flywheel.py` 的语义）
-- **开发**：**串行执行**——T2/T3/T7 都会改 `db.py`，并行会冲突；T4/T6 都会动 `api_evalset.py`，T6 必须等 T4 完成
+- **开发**：**串行执行**——T2/T3/T7 都会改 `db.py`，并行会冲突；T4/T6 都会动 `api_evalset.py`，T6 必须等 T4 完成；T12 必须在 T4 之前完成（GT 生成与元评测依赖干净的 registry）
 - **QA**：每 Wave 结束跑全量回归（587 用例）+ 新增用例 + 关键链路冒烟；**必须给出实测数字**，不接受「应该没问题」
 - **审核**：重点查四类历史高频缺口 —— ① 改了 `EngineConfig` 忘了同步 `api_admin.EngineConfigBody`；② `extra=forbid` 模型漏声明新字段；③ 新增列没写幂等迁移；④ 新阈值硬编码没走 `app_settings`
 

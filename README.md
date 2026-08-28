@@ -83,6 +83,18 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 - **黄金样本**：57 张真实香港收据 + 人工标注，可导入平台做回归
 - **实测数据**：导入黄金样本后形成 55 SKU / 5 供应商 / 成本 5.9 万 的完整环境
 
+### 3.5 AI 资产工程化治理（ai_registry 唯一来源）
+
+所有 AI 资产——**Prompt / Skills / Tools / MCP**——统一收口在 [`ai_registry/`](ai_registry/README.md)（AI 工程化能力资产库与评测中心）进行工程化管理，它是本项目 AI 资产的**唯一来源（Single Source of Truth）**：
+
+- **版本化**：Prompt 按 SemVer 独立成文件（如 `prompts/extract/v1_2_8_sku_clean.py`）+ `metadata.json` 记录评测指标与准入状态，经 `registry.py` 加载激活版本，迭代不覆盖旧版
+- **确定性工具**：算术门禁/品名剥离/日期归一/花码识别等 12 个 Tools 收口在 `ai_registry/tools/`，业务代码经包导入复用，不在链路里内联复制逻辑
+- **Skills 能力矩阵**：收据审核/供应商对账/自然语言查价等 Skills 带独立 `eval.json`，效果可对比
+- **MCP 收口**：MCP servers 与 configs 统一放 `ai_registry/mcp/`
+- **评测中心**：`benchmarks/` 存放全量资产评测矩阵与版本对比，改动可回溯；生产准入走 SemVer + 准入规则（准确率/拦截率门槛）
+
+工程纪律：新增或修改任何 Prompt/Skill/Tool/MCP 必须先检索 ai_registry（有则复用，无则按规范新建版本并评测），禁止在业务代码里散落硬编码提示词或内联工具逻辑。
+
 ## 四、达到什么效果
 
 ### 实际跑通的核心链路（免费模型，可复现）
@@ -251,6 +263,13 @@ pip install -r requirements.txt
 receipt-agent-interview/
 ├── README.md              # 本文件（系统说明）
 ├── .gitignore             # 忽略密钥/运行时数据
+├── ai_registry/           # AI 资产唯一来源：prompts/skills/tools/mcp + 版本化 + 评测中心
+│   ├── prompts/           # 各域 Prompt（SemVer 独立文件 + metadata）
+│   ├── skills/            # Skills（带 eval.json 能力矩阵）
+│   ├── tools/             # 确定性工具（算术门禁/品名剥离等 12 个）
+│   ├── mcp/               # MCP servers 与 configs
+│   ├── canary/            # 灰度路由与 A/B 评估
+│   └── benchmarks/        # 资产评测矩阵与历史记录
 └── demo/                  # 单店落地实现
     ├── app/               # FastAPI + LangChain 后端
     │   ├── chains/        # 识别/审核/复盘链

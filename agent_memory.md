@@ -94,3 +94,16 @@ curl -s http://127.0.0.1:15010/api/admin/metrics -H X-Role:owner | grep avg_toke
 
 `orca eval` 可读：本文件新增章节即为可观测记忆规范，`artifacts/memory/parse_log.jsonl` 示例行见同目录。
 
+## AI 资产工程化治理（ai_registry 唯一来源 · 最严格）
+
+**所有 Agent（无论主代理或任何角色的 Subagent）必须通过 `ai_registry/` 工程化管理 Prompt、Skills、Tools、MCP，禁止绕行。**
+
+1. **唯一来源原则**：
+   - Prompt 一律放 `ai_registry/prompts/<domain>/`（SemVer 独立文件 + `metadata.json`），通过 `ai_registry/registry.py` 加载激活版本，禁止在 `demo/app/` 内散落硬编码系统提示词
+   - Skills 一律放 `ai_registry/skills/<name>/`（含 `eval.json` 能力矩阵），调用经 registry 检索
+   - Tools（确定性工具）一律放 `ai_registry/tools/<name>/<semver>/`，经 `ai_registry/tools` 包导入，禁止在业务代码里内联复制工具逻辑
+   - MCP（servers/configs）一律放 `ai_registry/mcp/`，配置文件不得在仓库其他位置另存副本
+2. **新增/修改资产的强制动作**：新版本 = 新 SemVer 文件 + 更新 `metadata.json`（含评测指标与生产准入状态）；生产准入须满足 `ai_registry/README.md:92-98` 的准入规则；禁止覆盖旧版本文件
+3. **评测纪律**：资产改动必须可回溯到 `ai_registry/benchmarks/` 的评测记录；Prompt 迭代须落 Playbook（Wave E T11）
+4. **审计义务**：任何 Agent 在新增 Prompt/Skill/Tool/MCP 相关代码前，必须先检索 ai_registry 是否已有同类资产，有则复用、无则按上述规范新建；Review 角色须把「绕过 ai_registry 的硬编码资产」列为必查项
+
