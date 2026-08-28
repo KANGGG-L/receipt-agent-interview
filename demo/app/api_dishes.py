@@ -28,6 +28,12 @@ from app.services.costing_service import CostingService, convert_unit_quantity
 router = APIRouter()
 
 
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+
+
 # -------------------------------------------------------------
 # Pydantic 模型
 # -------------------------------------------------------------
@@ -143,7 +149,8 @@ def list_dishes(
     require_role("staff")(request)
     session = db.get_session()
     try:
-        query = session.query(db._DishRow)
+        query = db.scoped(session.query(db._DishRow), db._DishRow,
+                          _tenant_id(request))
         if status and status != "all":
             query = query.filter(db._DishRow.status == status)
         if category:
@@ -300,6 +307,35 @@ def get_cost_analysis(
         session.close()
 
 
+def _consumption_tenant_ok(session, cons, tenant_id) -> bool:
+    """Gap E2 收尾（Wave A F3）：daily_dish_consumptions 行级租户归属校验。
+
+    该表无 tenant_id 列（不新建列/不改 schema），归属经 join 关联数据判定：
+    1. 首选关联 dish 的 tenant_id（消耗提交时 dish 已按租户校验，为权威归属）；
+    2. dish 行缺失（被彻底删除）时，退回扣减明细关联 SKU 的 tenant_id；
+    3. 两者皆无法归属时视为不匹配（宁可漏见，不跨租户泄漏）。
+    tenant_id 为 None/空 不过滤（向后兼容）。
+    """
+    if tenant_id is None or not str(tenant_id).strip():
+        return True
+    dish = session.get(db._DishRow, cons.dish_id)
+    if dish is not None:
+        return db._tenant_ok(dish, tenant_id)
+    detail_rows = (
+        session.query(db._DailyConsumptionDetailRow)
+        .filter(db._DailyConsumptionDetailRow.consumption_id == cons.id)
+        .all()
+    )
+    if not detail_rows:
+        return False
+    sku_rows = (
+        session.query(db._SkuRow)
+        .filter(db._SkuRow.id.in_({d.sku_id for d in detail_rows}))
+        .all()
+    )
+    return any(db._tenant_ok(sku, tenant_id) for sku in sku_rows)
+
+
 @router.get("/api/dishes/daily_consumption")
 def get_daily_consumption(
     request: Request,
@@ -308,6 +344,7 @@ def get_daily_consumption(
     """查询指定日期的餐品消耗记录、扣减详情与当日成本汇总。"""
     require_role("staff")(request)
     target_date = (date or "").strip() or db.now_iso()[:10]
+    tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
         rows = (
@@ -316,6 +353,8 @@ def get_daily_consumption(
             .order_by(db._DailyConsumptionRow.id.desc())
             .all()
         )
+        # Gap E2 收尾：按行归属租户过滤（经关联 dish / SKU 判定，无租户列）
+        rows = [r for r in rows if _consumption_tenant_ok(session, r, tenant_id)]
 
         consumptions = []
         total_quantity = 0.0
@@ -409,7 +448,7 @@ def get_dish(dish_id: int, request: Request):
     session = db.get_session()
     try:
         dish = session.get(db._DishRow, int(dish_id))
-        if not dish:
+        if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
         return {"status": "success", "data": _dish_to_dict(session, dish)}
     finally:
@@ -429,8 +468,11 @@ def create_dish(body: DishCreate, request: Request):
 
     session = db.get_session()
     try:
-        # 查重
-        existing = session.query(db._DishRow).filter(db._DishRow.name == name).first()
+        tenant_id = _tenant_id(request)
+        # 查重（按租户隔离：不同租户可各自建同名餐品）
+        existing = db.scoped(
+            session.query(db._DishRow).filter(db._DishRow.name == name),
+            db._DishRow, tenant_id).first()
         if existing:
             return {"status": "error", "msg": f"餐品「{name}」已存在"}
 
@@ -455,6 +497,7 @@ def create_dish(body: DishCreate, request: Request):
             status=body.status or "active",
             created_at=now_str,
             updated_at=now_str,
+            tenant_id=tenant_id,
         )
         session.add(dish)
         session.flush()
@@ -486,14 +529,18 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
     session = db.get_session()
     try:
         dish = session.get(db._DishRow, int(dish_id))
-        if not dish:
+        if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
 
         if body.name is not None:
             new_name = body.name.strip()
             if not new_name:
                 return {"status": "error", "msg": "餐品名称不能为空"}
-            existing = session.query(db._DishRow).filter(db._DishRow.name == new_name, db._DishRow.id != dish.id).first()
+            existing = db.scoped(
+                session.query(db._DishRow).filter(
+                    db._DishRow.name == new_name,
+                    db._DishRow.id != dish.id),
+                db._DishRow, _tenant_id(request)).first()
             if existing:
                 return {"status": "error", "msg": f"餐品「{new_name}」已存在"}
             dish.name = new_name
@@ -556,7 +603,7 @@ def delete_dish(dish_id: int, request: Request, hard: int = 0):
     session = db.get_session()
     try:
         dish = session.get(db._DishRow, int(dish_id))
-        if not dish:
+        if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
 
         if hard == 1:
@@ -584,6 +631,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
         return {"status": "error", "msg": "消耗餐品列表不能为空"}
 
     date_str = (body.date or "").strip() or db.now_iso()[:10]
+    tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
         created_records = []
@@ -592,7 +640,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 continue
 
             dish = session.get(db._DishRow, int(item.dish_id))
-            if not dish:
+            if not dish or not db._tenant_ok(dish, tenant_id):
                 raise ValueError(f"餐品 #{item.dish_id} 不存在")
 
             ing_rows = (
@@ -637,6 +685,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                     kind="consume",
                     note=f"餐品消耗: {dish.name} x {item.quantity}份",
                     created_at=db.now_iso(),
+                    tenant_id=tenant_id,
                 )
                 session.add(stock_log)
 
@@ -691,10 +740,11 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
 def void_daily_consumption(consumption_id: int, request: Request):
     """冲销/作废指定消耗记录，自动回滚批次剩余量与 SKU 库存。"""
     require_role("owner")(request)
+    tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
         cons = session.get(db._DailyConsumptionRow, int(consumption_id))
-        if not cons:
+        if not cons or not _consumption_tenant_ok(session, cons, tenant_id):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "消耗记录不存在"})
 
         if cons.is_void == 1:
@@ -731,6 +781,7 @@ def void_daily_consumption(consumption_id: int, request: Request):
                     kind="adjust",
                     note=f"冲销作废餐品消耗 #{cons.id} ({dish_name}) 恢复库存",
                     created_at=db.now_iso(),
+                    tenant_id=getattr(cons, "tenant_id", None) or _tenant_id(request),
                 )
                 session.add(stock_log)
 

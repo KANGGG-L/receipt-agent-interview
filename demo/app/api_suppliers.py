@@ -11,11 +11,17 @@ from app.auth import require_role
 router = APIRouter()
 
 
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+
+
 # -------------------------------------------------------------
 # 供应商
 # -------------------------------------------------------------
-def _supplier_dict(s):
-    stats = db.supplier_stats(s.id)
+def _supplier_dict(s, tenant_id=None):
+    stats = db.supplier_stats(s.id, tenant_id=tenant_id)
     return {
         "id": s.id, "name": s.name, "supplier_code": s.supplier_code or "",
         "active": s.active,
@@ -34,12 +40,14 @@ def _supplier_dict(s):
 def list_suppliers(request: Request, q: str = "", include_inactive: int = 0):
     # 只读列表对店员开放（收据页供应商联想下拉需要）；增删改仍限 owner
     require_role("staff")(request)
-    suppliers = db.list_suppliers(include_inactive=bool(include_inactive))
+    tenant_id = _tenant_id(request)
+    suppliers = db.list_suppliers(include_inactive=bool(include_inactive),
+                                  tenant_id=tenant_id)
     out = []
     for s in suppliers:
         if q and q not in s.name and q not in (s.supplier_code or ""):
             continue
-        out.append(_supplier_dict(s))
+        out.append(_supplier_dict(s, tenant_id=tenant_id))
     return {"status": "success", "data": out}
 
 
@@ -58,7 +66,7 @@ def create_supplier(body: SupplierBody, request: Request):
     if not body.name:
         return {"status": "error", "msg": "供应商名称不能为空"}
     fields = {k: v for k, v in body.model_dump().items() if k != "name" and v is not None}
-    sup_id, err = db.create_supplier(body.name, **fields)
+    sup_id, err = db.create_supplier(body.name, tenant_id=_tenant_id(request), **fields)
     if err:
         from fastapi.responses import JSONResponse
         return JSONResponse({"status": "error", "msg": err}, status_code=409)
@@ -68,6 +76,8 @@ def create_supplier(body: SupplierBody, request: Request):
 @router.patch("/api/suppliers/{supplier_id}")
 def patch_supplier(supplier_id: int, body: SupplierBody, request: Request):
     require_role("owner")(request)
+    if db.get_supplier(supplier_id, tenant_id=_tenant_id(request)) is None:
+        return {"status": "error", "msg": "供应商不存在"}
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     row, err = db.update_supplier(supplier_id, **fields)
     if row is None:
@@ -83,12 +93,13 @@ class MergeBody(BaseModel):
 @router.post("/api/suppliers/merge")
 def merge_suppliers(body: MergeBody, request: Request):
     require_role("owner")(request)
-    keep = db.get_supplier(body.keep_id)
-    drop = db.get_supplier(body.drop_id)
+    tenant_id = _tenant_id(request)
+    keep = db.get_supplier(body.keep_id, tenant_id=tenant_id)
+    drop = db.get_supplier(body.drop_id, tenant_id=tenant_id)
     if keep is None or drop is None:
         return {"status": "error", "msg": "供应商不存在"}
-    # 收据供应商名合并
-    for r in db.list_receipt_rows():
+    # 收据供应商名合并（仅限当前租户的单据）
+    for r in db.list_receipt_rows(tenant_id=tenant_id):
         if r.supplier_name == drop.name:
             db.update_receipt(r.id, supplier_name=keep.name)
     db.update_supplier(body.drop_id, active=0)
@@ -103,12 +114,12 @@ def get_supplier_receipts(supplier_id: int, request: Request, desensitized: str 
     from collections import defaultdict
     from app.api_receipts import _mask_sensitive
 
-    sup = db.get_supplier(supplier_id)
+    sup = db.get_supplier(supplier_id, tenant_id=_tenant_id(request))
     if sup is None:
         return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
 
     is_desens = desensitized.lower() == "true"
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     # 匹配当前供应商的单据（按名字匹配）
     matched = [r for r in rows if r.supplier_name == sup.name]
 
@@ -116,7 +127,7 @@ def get_supplier_receipts(supplier_id: int, request: Request, desensitized: str 
     monthly_trend = defaultdict(float)
 
     for r in matched:
-        items = db.get_receipt_items(r.id)
+        items = db.get_receipt_items(r.id, tenant_id=_tenant_id(request))
         supplier_display = _mask_sensitive(r.supplier_name or "") if is_desens else (r.supplier_name or "")
         receipts_data.append({
             "id": r.id,
@@ -257,7 +268,7 @@ def cost_report(request: Request, month: str = "", start_date: str = "",
                 end_date: str = "", include_non_approved: int = 0):
     require_role("owner")(request)
     depts = db.list_departments()
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     if include_non_approved == 0:
         rows = [r for r in rows if r.status == "approved"]
 
@@ -277,7 +288,7 @@ def cost_report(request: Request, month: str = "", start_date: str = "",
         is_prev = _in_period(r.receipt_date or "", prev_month, prev_start, prev_end) if (prev_month or prev_start) else False
 
         # 部门分摊：优先按明细行 cost_center_id 拆分，回退到单据 department_id，最后进未分配
-        items = db.get_receipt_items(r.id)
+        items = db.get_receipt_items(r.id, tenant_id=_tenant_id(request))
         if items:
             for it in items:
                 dept_id = it.get("cost_center_id")
@@ -393,7 +404,7 @@ def cost_report_items(request: Request, department_id: int = None,
                       month: str = "", start_date: str = "", end_date: str = "",
                       include_non_approved: int = 0):
     require_role("owner")(request)
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     if include_non_approved == 0:
         rows = [r for r in rows if r.status == "approved"]
     out = []
@@ -402,7 +413,7 @@ def cost_report_items(request: Request, department_id: int = None,
         if month or (start_date and end_date):
             if not _in_period(r.receipt_date or "", month, start_date, end_date):
                 continue
-        for it in db.get_receipt_items(r.id):
+        for it in db.get_receipt_items(r.id, tenant_id=_tenant_id(request)):
             # 部门分摊口径：优先明细 cost_center_id，回退单据 department_id
             item_dept = it.get("cost_center_id")
             if item_dept is None:

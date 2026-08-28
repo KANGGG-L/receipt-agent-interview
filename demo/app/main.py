@@ -44,9 +44,15 @@ app.include_router(phase2_router)
 
 @app.on_event("startup")
 def _auto_deduplicate_skus():
-    """B-P0-1/F-P1-2 启动自愈：幂等、无损历史流水，迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕 demo/app/db.py:803"""
+    """B-P0-1/F-P1-2 启动自愈：幂等、无损历史流水，迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕 demo/app/db.py:803
+
+    租户口径：逐租户 scoped 去重，避免 None 路径全局分组导致跨租户误合并。
+    """
     try:
-        reports = db.deduplicate_skus_by_canonical()
+        tenant_ids = db.list_sku_tenant_ids()
+        reports = []
+        for t in tenant_ids:
+            reports.extend(db.deduplicate_skus_by_canonical(tenant_id=t) or [])
         if reports:
             import logging
             logging.getLogger("startup").info(f"[deduplicate] auto-healed {len(reports)} groups: {reports}")

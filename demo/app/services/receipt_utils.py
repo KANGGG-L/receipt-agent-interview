@@ -9,6 +9,7 @@
 import json
 import re
 import threading
+import time
 
 from app import db
 from app.models import EngineConfig
@@ -28,21 +29,61 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 
 
+def _track_internal(event_type, receipt_id=None, properties=None):
+    """埋点内部封装：Job 线程内无 request context，直写 user_event，失败静默。"""
+    try:
+        db.log_user_event(
+            account_id="system",
+            session_id="",
+            event_type=str(event_type),
+            receipt_id=int(receipt_id) if receipt_id else None,
+            properties=properties or {},
+        )
+    except Exception:
+        pass
+
+
+def _job_elapsed_ms(job_id):
+    with JOBS_LOCK:
+        started = JOBS.get(job_id, {}).get("started_ts")
+    if not started:
+        return None
+    return int((time.time() - started) * 1000)
+
+
+def _log_max_attempt(result):
+    log = result.get("log") or []
+    attempts = [int(e.get("attempt", 0)) for e in log if isinstance(e, dict)]
+    return max(attempts) if attempts else 1
+
+
+def _log_gate_rejects(result):
+    log = result.get("log") or []
+    return sum(1 for e in log if isinstance(e, dict)
+               and e.get("action") in ("gate_reject", "gate_reject_fast"))
+
+
 # -------------------------------------------------------------
 # AI 管线：异步 Job
 # -------------------------------------------------------------
-def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
+def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
+                          tenant_id=None):
     """启动后台识别 Job。返回 job_id。
 
     线程执行识别管线；完成后写回收据行并更新 JOBS。
+    P0-1 写入链路租户透传：tenant_id 为上传入口的租户键，缺省 "default"
+    向后兼容；必须在派发后台线程前捕获为局部变量，Job 线程内不得读 request。
     """
     job_id = db.new_id()
+    _tenant = str(tenant_id or "default").strip() or "default"
     if receipt_id is None:
-        receipt_id = db.create_receipt(status="uploaded")
+        receipt_id = db.create_receipt(status="uploaded", tenant_id=_tenant)
     db.update_receipt(receipt_id, status="parsing", image_path=image_path)
 
     with JOBS_LOCK:
-        JOBS[job_id] = {"job_id": job_id, "job_status": "queued", "receipt_id": receipt_id}
+        JOBS[job_id] = {"job_id": job_id, "job_status": "queued",
+                        "receipt_id": receipt_id, "started_ts": time.time()}
+    _track_internal("ocr_parse_started", receipt_id, {"job_id": job_id})
 
     def _run():
         with JOBS_LOCK:
@@ -82,6 +123,13 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
                         "fallback_from": result.get("fallback_from", ""),
                         "fallback_engine": result.get("fallback_engine", ""),
                     })
+                _track_internal("ocr_error", receipt_id, {
+                    "job_id": job_id, "status": "error",
+                    "elapsed_ms": _job_elapsed_ms(job_id),
+                    "reason": str(result.get("contract_error") or result.get("last_error") or "识别失败")[:300],
+                    "attempts": _log_max_attempt(result),
+                    "gate_rejects": _log_gate_rejects(result),
+                })
                 return
 
             detail = save_parsed_data(receipt_id, data, result)
@@ -101,10 +149,22 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None):
                         "fallback_engine": result.get("fallback_engine", ""),
                     },
                 })
+            _track_internal("ocr_parsed", receipt_id, {
+                "job_id": job_id, "status": "done",
+                "elapsed_ms": _job_elapsed_ms(job_id),
+                "attempts": _log_max_attempt(result),
+                "gate_rejects": _log_gate_rejects(result),
+                "use_grey": int(bool(result.get("use_grey"))),
+            })
         except Exception as e:
             db.update_receipt(receipt_id, status="error")
             with JOBS_LOCK:
                 JOBS[job_id].update({"job_status": "error", "error_msg": str(e)})
+            _track_internal("ocr_error", receipt_id, {
+                "job_id": job_id, "status": "error",
+                "elapsed_ms": _job_elapsed_ms(job_id),
+                "reason": str(e)[:300],
+            })
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id, receipt_id
@@ -136,6 +196,10 @@ def sweep_parsing_timeout(timeout_seconds=300):
             ids.append(r.id)
         if ids:
             s.commit()
+        for rid in ids:
+            _track_internal("ocr_error", rid, {
+                "status": "timeout", "reason": "parsing_timeout",
+            })
         return ids
     finally:
         s.close()
@@ -179,6 +243,13 @@ def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
     from app.services.contract import sanitize_nan
 
+    # P2-2：租户上下文从单据行派生（Job 线程内无 request 可读），
+    # SKU 匹配限定本租户，避免跨租户 SKU 误匹配；行缺失时不过滤（向后兼容）
+    _ctx_row = db.get_receipt_row(receipt_id)
+    _tenant_ctx = None
+    if _ctx_row is not None:
+        _tenant_ctx = (getattr(_ctx_row, "tenant_id", "") or "").strip() or None
+
     # 使用模块顶层单例，避免每次实例化
     _sanitizer = _sanitizer_singleton
 
@@ -203,7 +274,15 @@ def save_parsed_data(receipt_id, data, result):
             "is_void": int(bool(getattr(it, "is_void", False))),
             "actual_qty": getattr(it, "actual_qty", None),
         })
-        _match_sku(items_raw[-1])
+        _match_sku(items_raw[-1], tenant_id=_tenant_ctx)
+
+    anomaly_items = [it for it in items_raw if it.get("price_anomaly")]
+    if anomaly_items:
+        _track_internal("price_anomaly_flagged", receipt_id, {
+            "anomaly_count": len(anomaly_items),
+            "max_surge_pct": max(abs(float(it.get("price_diff_percent") or 0))
+                                 for it in anomaly_items),
+        })
 
     use_grey = int(bool(result.get("use_grey"))) if result.get("use_grey") is not None else 0
     # Gate-3：交叉审核分歧 → review_priority_score（Top10%标重点复核）
@@ -280,20 +359,22 @@ def _normalize_sku_name(name):
     return text
 
 
-def _match_sku(item):
+def _match_sku(item, tenant_id=None):
     """按商品名匹配 SKU（精确 → 核心词匹配）。
 
     匹配到则回填 sku_id / last_price。匹配规则收紧：
     - 优先精确匹配
     - 模糊匹配要求：核心词长度 ≥2，且 SKU 名包含商品核心词（双向包含）
     - 避免"茶"这类单字误配（核心词最短 2 字符）
+    P2-2：tenant_id 从所属单据行派生传入，SKU 检索限定本租户；
+    缺省 None 时不过滤（既有调用向后兼容）。
     """
     name = item["name"] or ""
-    sku = db.find_sku_by_name(name)
+    sku = db.find_sku_by_name(name, tenant_id=tenant_id)
     if sku is None:
         core = _normalize_sku_name(name)
         if len(core) >= 2:
-            for s in db.list_skus():
+            for s in db.list_skus(tenant_id=tenant_id):
                 s_core = _normalize_sku_name(s.name)
                 # 双向匹配都要求核心词 ≥2（避免"茶"这类单字 SKU 误配到任何含该字的长商品）
                 if s_core and len(s_core) >= 2 and (s_core in core or core in s_core):
@@ -447,4 +528,59 @@ def build_row(row):
         "quality_warnings": quality_warnings,
         "review_priority_score": review_priority,
         "currency": getattr(row, "currency", None) or "HKD",
+    }
+
+
+# -------------------------------------------------------------
+# 埋点：人工复核 diff（AI 原版 vs 用户最终提交）
+# -------------------------------------------------------------
+_DIFF_FIELDS = ("name", "quantity", "unit", "unit_price", "amount")
+
+
+def compute_review_diff(ai_items, final_items):
+    """行级三类 diff + SKU 更改计数（纯函数，无 DB 依赖）。
+
+    对齐算法：按位置 zip 到 min 长度逐行比关键字段；final 多出计 added，
+    ai 多出计 deleted。ai_items 为空（手工单无 AI 原版）→ 全部计 added。
+    """
+    ai_items = ai_items or []
+    final_items = final_items or []
+    rows_added = rows_modified = rows_deleted = sku_changed = 0
+    field_mod_counts = {f: 0 for f in _DIFF_FIELDS}
+
+    for ai_it, fin_it in zip(ai_items, final_items):
+        ai_it = ai_it if isinstance(ai_it, dict) else {}
+        fin_it = fin_it if isinstance(fin_it, dict) else {}
+        changed = False
+        for f in _DIFF_FIELDS:
+            av, fv = ai_it.get(f), fin_it.get(f)
+            if f in ("quantity", "unit_price", "amount"):
+                av = float(av or 0)
+                fv = float(fv or 0)
+            elif f == "name":
+                av = canonical_sku_name(av or "")
+                fv = canonical_sku_name(fv or "")
+            if av != fv:
+                field_mod_counts[f] += 1
+                changed = True
+        ai_sku = ai_it.get("sku_id")
+        if ai_sku != fin_it.get("sku_id"):
+            changed = True
+        if ai_sku and (ai_sku != fin_it.get("sku_id")
+                       or canonical_sku_name(ai_it.get("name") or "")
+                       != canonical_sku_name(fin_it.get("name") or "")):
+            sku_changed += 1
+        if changed:
+            rows_modified += 1
+
+    rows_added = len(final_items) - min(len(ai_items), len(final_items))
+    rows_deleted = len(ai_items) - min(len(ai_items), len(final_items))
+    return {
+        "rows_added": rows_added,
+        "rows_modified": rows_modified,
+        "rows_deleted": rows_deleted,
+        "sku_changed": sku_changed,
+        "field_mod_counts": field_mod_counts,
+        "total_ai": len(ai_items),
+        "total_final": len(final_items),
     }

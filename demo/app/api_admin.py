@@ -17,6 +17,12 @@ from app.auth import require_admin, require_role
 router = APIRouter()
 
 
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+
+
 class EngineConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # 常规
@@ -852,7 +858,7 @@ def ai_review(request: Request):
     require_role("owner")(request)
     from app.services.inventory import cost_summary
     from app.chains import review_chain
-    cost = cost_summary()
+    cost = cost_summary(tenant_id=_tenant_id(request))
     cfg = db.get_engine_config()
     result = review_chain.run_review(cost.get("items", {}), config=cfg)
     return {"status": "success", "data": result}
@@ -862,7 +868,7 @@ def ai_review(request: Request):
 def cost_summary(request: Request):
     require_role("owner")(request)
     from app.services.inventory import cost_summary as get_cost
-    return {"status": "success", "data": get_cost()}
+    return {"status": "success", "data": get_cost(tenant_id=_tenant_id(request))}
 
 
 # -------------------------------------------------------------
@@ -873,7 +879,7 @@ def ai_insights(request: Request):
     require_role("owner")(request)
     from app.services.inventory import cost_summary as get_cost
     from app.chains import review_chain
-    cost = get_cost()
+    cost = get_cost(tenant_id=_tenant_id(request))
     data = review_chain.weekly_insights(cost)
     return {"status": "success", "data": data}
 
@@ -890,7 +896,7 @@ def chat_query(body: ChatQueryBody, request: Request):
     """对话式查询 Agent：自然语言查询库存、价格走势与未付账单。"""
     require_role("staff")(request)
     from app.chains.query_chain import run_query
-    res = run_query(body.question)
+    res = run_query(body.question, tenant_id=_tenant_id(request))
     return {"status": "success", "data": res}
 
 
@@ -900,7 +906,7 @@ def get_insight_cards(request: Request):
     require_role("owner")(request)
     from app.services.inventory import cost_summary as get_cost
     from app.chains.review_chain import generate_insight_cards
-    cost = get_cost()
+    cost = get_cost(tenant_id=_tenant_id(request))
     cards = generate_insight_cards(cost)
     return {"status": "success", "cards": cards}
 
@@ -947,12 +953,12 @@ def get_grey_test_samples(request: Request):
             return f"HK$ {s[0]}**.*{s[-1]}"
         return f"HK$ **.{s[-1]}"
 
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     samples = []
-    
+
     for r in rows:
         # 获取该单据脱敏后的信息
-        items = db.get_receipt_items(r.id) if hasattr(db, "get_receipt_items") else []
+        items = db.get_receipt_items(r.id, tenant_id=_tenant_id(request)) if hasattr(db, "get_receipt_items") else []
         masked_items = []
         for it in items:
             masked_items.append({
@@ -1115,7 +1121,7 @@ def get_grey_test_samples(request: Request):
 def golden_samples(request: Request):
     """黄金样本看板：57 张构成与当前库内覆盖率（按形态/币种/灰测维度）。"""
     require_admin(request)
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     # 黄金形态目标分布
     target = {"printed_delivery_note": 15, "ncr_handwritten": 22, "thermal": 6, "weigh_slip": 4, "correction_note": 6, "monthly_statement": 4}
     # 实际覆盖按 doc_form 统计
@@ -1172,7 +1178,8 @@ def maintenance_deduplicate(request: Request):
     require_role("owner")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    reports = db.deduplicate_skus_by_canonical()
+    # P3-5 租户口径：按请求租户 scope 去重自愈（不跨租户合并）
+    reports = db.deduplicate_skus_by_canonical(tenant_id=_tenant_id(request))
     # 追加手动触发审计（系统级）
     try:
         db.append_system_audit_log(who, "manual_deduplicate", "deduplicate_skus_by_canonical", "", str(reports))
@@ -1229,3 +1236,123 @@ def experiment_pvalue_card(exp_id: int, request: Request):
             note += "｜样本不足，置信度低"
         cards.append({"metric": metric, "p_value": p, "z": t.get("z"), "effect_size_pp": t.get("effect_size_pp"), "significant": sig, "note": note})
     return {"status": "success", "experiment_id": exp_id, "low_confidence": metrics.get("low_confidence"), "cards": cards, "control": metrics.get("control"), "treatment": metrics.get("treatment")}
+
+
+# -------------------------------------------------------------
+# 识别全链路埋点聚合（11-组件Spec-全链路埋点与体验反馈体系 §6/§7）
+# -------------------------------------------------------------
+def _pct(vals, q):
+    vals = sorted(v for v in vals if v is not None)
+    if not vals:
+        return None
+    k = (len(vals) - 1) * q
+    f = int(k)
+    c = min(f + 1, len(vals) - 1)
+    return round(vals[f] + (vals[c] - vals[f]) * (k - f))
+
+
+@router.get("/api/analytics/recognition-summary")
+def recognition_summary(request: Request):
+    require_admin(request)
+    from datetime import datetime, timedelta
+    import json as _j
+
+    period_days = int(request.query_params.get("period_days", "7") or 7)
+    end_ts = db.now_iso()
+    start_ts = (datetime.fromisoformat(end_ts) - timedelta(days=period_days)).isoformat()
+
+    s = db.get_session()
+    try:
+        rows = s.query(db._UserEventRow).filter(
+            db._UserEventRow.ts >= start_ts).all()
+        events = [(e.event_type, e.properties or "{}", e.grp or "") for e in rows]
+    finally:
+        s.close()
+
+    def _props(p):
+        try:
+            return _j.loads(p) if isinstance(p, str) else (p or {})
+        except Exception:
+            return {}
+
+    started = [e for e in events if e[0] == "ocr_parse_started"]
+    parsed = [(e[2], _props(e[1])) for e in events if e[0] == "ocr_parsed"]
+    errors = [(e[2], _props(e[1])) for e in events if e[0] == "ocr_error"]
+    guards = [(e[0], _props(e[1])) for e in events
+              if e[0] in ("math_guard_checked", "contract_guard_checked")]
+    reviews = [_props(e[1]) for e in events if e[0] == "receipt_review_submitted"]
+    approves = [_props(e[1]) for e in events if e[0] == "receipt_approved"]
+    abandons = [e for e in events if e[0] == "parse_abandoned_for_manual"]
+    rag_hits = [e for e in events if e[0] == "rag_hit"]
+    global_fb = [_props(e[1]) for e in events if e[0] == "feedback_received"]
+
+    parse_total = len(started)
+    parse_success = len(parsed)
+    parse_fail = len(errors)
+    elapsed = [p.get("elapsed_ms") for _, p in parsed + errors
+               if isinstance(p.get("elapsed_ms"), (int, float))]
+    gate_reject_reasons = {"math": 0, "contract": 0}
+    for name, p in guards:
+        if p.get("is_valid") is False:
+            gate_reject_reasons["math" if name == "math_guard_checked"
+                                else "contract"] += 1
+    retry_distribution = {}
+    for _, p in parsed:
+        a = str(p.get("attempts") or 1)
+        retry_distribution[a] = retry_distribution.get(a, 0) + 1
+
+    rows_added = sum(int(p.get("rows_added") or 0) for p in reviews)
+    rows_modified = sum(int(p.get("rows_modified") or 0) for p in reviews)
+    rows_deleted = sum(int(p.get("rows_deleted") or 0) for p in reviews)
+    sku_changed = sum(int(p.get("sku_changed") or 0) for p in reviews)
+    fer_vals = [float(p.get("fer_rate")) for p in reviews
+                if isinstance(p.get("fer_rate"), (int, float))]
+    e2e_vals = [int(p.get("e2e_ms")) for p in approves
+                if isinstance(p.get("e2e_ms"), (int, float))]
+
+    fbs = db.list_receipt_feedbacks()
+    fb_up = sum(1 for f in fbs if f.get("like") == 1)
+    fb_down = sum(1 for f in fbs if f.get("like") == -1)
+
+    def _grp_block(grp):
+        g_parsed = [p for g, p in parsed if g == grp]
+        g_reviews = [_props(e[1]) for e in events
+                     if e[0] == "receipt_review_submitted" and (e[2] or "") == grp]
+        g_fer = [float(p.get("fer_rate")) for p in g_reviews
+                 if isinstance(p.get("fer_rate"), (int, float))]
+        return {
+            "parse_success": len(g_parsed),
+            "fer_rate": round(sum(g_fer) / len(g_fer), 4) if g_fer else None,
+        }
+
+    data = {
+        "parse_total": parse_total,
+        "parse_success": parse_success,
+        "parse_fail": parse_fail,
+        "parse_fail_rate": round(parse_fail / parse_total, 4) if parse_total else 0.0,
+        "elapsed_p50_ms": _pct(elapsed, 0.5),
+        "elapsed_p95_ms": _pct(elapsed, 0.95),
+        "gate_reject_count": sum(gate_reject_reasons.values()),
+        "gate_reject_reasons": gate_reject_reasons,
+        "retry_distribution": retry_distribution,
+        "rows_added": rows_added,
+        "rows_modified": rows_modified,
+        "rows_deleted": rows_deleted,
+        "sku_changed": sku_changed,
+        "sku_changed_rate": round(
+            sum(1 for p in reviews if (p.get("sku_changed") or 0) > 0) / len(reviews), 4
+        ) if reviews else 0.0,
+        "fer_rate": round(sum(fer_vals) / len(fer_vals), 4) if fer_vals else None,
+        "abandon_count": len(abandons),
+        "abandon_rate": round(len(abandons) / parse_total, 4) if parse_total else 0.0,
+        "e2e_avg_ms": round(sum(e2e_vals) / len(e2e_vals)) if e2e_vals else None,
+        "rag_hit_count": len(rag_hits),
+        "feedback": {
+            "up": fb_up, "down": fb_down,
+            "global_up": sum(1 for p in global_fb if p.get("like") == 1),
+            "global_down": sum(1 for p in global_fb if p.get("like") == -1),
+        },
+        "grey_split": {"control": _grp_block("control"),
+                       "treatment": _grp_block("treatment")},
+    }
+    return {"status": "success", "period_days": period_days, "data": data}

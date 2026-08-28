@@ -15,6 +15,12 @@ from app.auth import require_role
 
 router = APIRouter()
 
+
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 VOUCHER_DIR = BASE_DIR / "uploads" / "vouchers"
 VOUCHER_DIR.mkdir(parents=True, exist_ok=True)
@@ -28,8 +34,8 @@ def list_payments(request: Request, supplier_id: int = None):
     require_role("owner")(request)
     data = db.list_payments()
     if supplier_id:
-        # 需要按供应商过滤（简化：查该供应商名匹配）
-        sup = db.get_supplier(supplier_id)
+        # 需要按供应商过滤（简化：查该供应商名匹配）；供应商按租户校验
+        sup = db.get_supplier(supplier_id, tenant_id=_tenant_id(request))
         if sup:
             data = [p for p in data if p["supplier_name"] == sup.name]
     return {"status": "success", "data": data}
@@ -72,7 +78,7 @@ def list_reconciliation(request: Request, supplier_id: int = None):
     require_role("owner")(request)
     out = []
     for t in RECON_TASKS.values():
-        supplier = db.get_supplier(t["supplier_id"])
+        supplier = db.get_supplier(t["supplier_id"], tenant_id=_tenant_id(request))
         lines = t.get("lines", [])
         out.append({
             "id": t["id"], "supplier_name": supplier.name if supplier else "—",
@@ -97,13 +103,13 @@ class ReconCreateBody(BaseModel):
 @router.post("/api/reconciliation")
 def create_reconciliation(body: ReconCreateBody, request: Request):
     require_role("owner")(request)
-    supplier = db.get_supplier(body.supplier_id)
+    supplier = db.get_supplier(body.supplier_id, tenant_id=_tenant_id(request))
     if supplier is None:
         return {"status": "error", "msg": "供应商不存在"}
     task_id = db.new_id()
-    # 生成对账行：该供应商已 approve 收据
+    # 生成对账行：该供应商已 approve 收据（仅当前租户）
     lines = []
-    for r in db.list_receipt_rows():
+    for r in db.list_receipt_rows(tenant_id=_tenant_id(request)):
         if r.supplier_name == supplier.name and r.status == "approved":
             lines.append({
                 "id": r.id, "side": "restaurant",
@@ -129,7 +135,7 @@ def get_reconciliation(task_id: str, request: Request):
     t = RECON_TASKS.get(task_id)
     if t is None:
         return {"status": "error", "msg": "任务不存在"}
-    supplier = db.get_supplier(t["supplier_id"])
+    supplier = db.get_supplier(t["supplier_id"], tenant_id=_tenant_id(request))
     lines = t["lines"]
     return {
         "status": "success",
@@ -145,7 +151,7 @@ def get_reconciliation(task_id: str, request: Request):
         "restaurant_receipts": [{"id": r.id, "receipt_date": r.receipt_date or "",
                                  "total_amount": r.total_amount or 0.0,
                                  "matched": r.payment_id is not None}
-                                for r in db.list_receipt_rows()
+                                for r in db.list_receipt_rows(tenant_id=_tenant_id(request))
                                 if r.supplier_name == supplier.name],
     }
 
@@ -191,14 +197,14 @@ def import_supplier_statement(body: ImportStatementBody, request: Request):
     require_role("owner")(request)
     from fastapi.responses import JSONResponse
 
-    supplier = db.get_supplier(body.supplier_id)
+    supplier = db.get_supplier(body.supplier_id, tenant_id=_tenant_id(request))
     if supplier is None:
         return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
 
     task_id = db.new_id()
-    # 系统内该供应商 approved/edited 的收据
+    # 系统内该供应商 approved/edited 的收据（仅当前租户）
     system_receipts = [
-        r for r in db.list_receipt_rows()
+        r for r in db.list_receipt_rows(tenant_id=_tenant_id(request))
         if r.supplier_name == supplier.name and r.status in ("approved", "edited")
     ]
 

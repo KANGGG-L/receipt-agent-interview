@@ -8,6 +8,10 @@
   python scripts/import_golden.py --limit 10          # 导入前 10 张（按文件名排序）
   python scripts/import_golden.py --limit 10 --vendor 祥興   # 只导指定供应商
   python scripts/import_golden.py --dry-run           # 预览不写入
+  python scripts/import_golden.py --tenant-id demo2   # 导入到指定租户（P3-5 租户化）
+
+P3-5 租户口径：所有写入（收据/明细/SKU/库存流水/供应商）与去重读取
+统一携带 --tenant-id（默认 default），不污染其他租户数据。
 """
 
 import argparse
@@ -51,17 +55,22 @@ def main():
     ap.add_argument("--limit", type=int, default=10, help="导入张数（默认 10）")
     ap.add_argument("--vendor", default="", help="只导指定供应商（模糊匹配）")
     ap.add_argument("--dry-run", action="store_true", help="预览不写入")
+    ap.add_argument("--tenant-id", default="default",
+                    help="目标租户（P3-5 租户化，默认 default）")
     args = ap.parse_args()
+    tenant_id = (args.tenant_id or "default").strip() or "default"
 
     meta = load_manifest()
     expected_files = sorted(f for f in os.listdir(EXPECTED_DIR) if f.endswith(".json"))
     if args.limit:
         expected_files = expected_files[: args.limit]
 
-    # 供应商 → 收据计数（用已导入数据避免重复）
-    existing_suppliers = {s.name for s in db.list_suppliers(include_inactive=True)}
-    existing_receipts = {r.supplier_name for r in db.list_receipt_rows()}
-    dedup_keys = {(r.supplier_name, r.receipt_date) for r in db.list_receipt_rows()}
+    # 供应商 → 收据计数（用已导入数据避免重复；去重口径限定目标租户）
+    existing_suppliers = {s.name for s in db.list_suppliers(include_inactive=True,
+                                                            tenant_id=tenant_id)}
+    existing_receipts = {r.supplier_name for r in db.list_receipt_rows(tenant_id=tenant_id)}
+    dedup_keys = {(r.supplier_name, r.receipt_date)
+                  for r in db.list_receipt_rows(tenant_id=tenant_id)}
 
     imported = 0
     skipped = 0
@@ -100,8 +109,9 @@ def main():
         dst = os.path.join(UPLOAD_DIR, img_name)
         shutil.copy2(os.path.join(RECEIPTS_DIR, img), dst)
 
-        # 建收据（edited）
-        rid = db.create_receipt(supplier_name=supplier, status="edited")
+        # 建收据（edited；P3-5：携带目标租户）
+        rid = db.create_receipt(supplier_name=supplier, status="edited",
+                                tenant_id=tenant_id)
         manifest_row = meta.get(img, {})
         doc_form = DOC_FORM_MAP.get(manifest_row.get("doc_form", ""), "printed_delivery_note")
         layout = manifest_row.get("layout_type", "")
@@ -132,15 +142,16 @@ def main():
                 "price_diff_percent": 0.0, "unit_conversion_warning": "",
                 "fuzzy_candidates": [], "entity_candidates": [],
             }
-            sku = db.find_sku_by_name(row["name"])
+            sku = db.find_sku_by_name(row["name"], tenant_id=tenant_id)
             if sku is None:
-                sku_id, _ = db.create_sku(row["name"], base_unit=row["unit"] or "")
-                sku = db.get_sku(sku_id)
+                sku_id, _ = db.create_sku(row["name"], base_unit=row["unit"] or "",
+                                          tenant_id=tenant_id)
+                sku = db.get_sku(sku_id, tenant_id=tenant_id)
             if sku:
                 row["sku_id"] = sku.id
                 row["matched"] = 1
             item_rows.append(row)
-        db.set_receipt_items(rid, item_rows)
+        db.set_receipt_items(rid, item_rows, tenant_id=tenant_id)
 
         # 库存累计（edited 不真正入账，但建 SKU 时记录价格）
         for it in item_rows:
@@ -149,12 +160,12 @@ def main():
                     sku_id=it["sku_id"], name=it["name"],
                     qty=it["quantity"], unit=it["unit"], amount=it["amount"],
                     vendor=supplier, date=date, receipt_id=rid, kind="in",
-                    note="golden import",
+                    note="golden import", tenant_id=tenant_id,
                 )
 
         # 供应商建档
         if supplier not in existing_suppliers:
-            db.create_supplier(supplier)
+            db.create_supplier(supplier, tenant_id=tenant_id)
             existing_suppliers.add(supplier)
         dedup_keys.add((supplier, date))
         imported += 1

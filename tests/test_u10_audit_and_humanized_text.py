@@ -11,7 +11,18 @@ Issue U-10: 交叉审核开关启用与文案去技术化测试集
 import os
 import sys
 import json
+import atexit
+import shutil
+import tempfile
+import importlib
 import pytest
+
+# 隔离环境：独立 DB（必须在首次 import app.* 之前设置），
+# 避免本文件裸跑时写仓库根 receipt_demo.db（同 test_legacy_db_migration.py 模式）
+_TMP = tempfile.mkdtemp(prefix="u10_audit_test_")
+os.environ["DB_PATH"] = os.path.join(_TMP, "init_u10.db")
+os.environ["RAG_DIR"] = os.path.join(_TMP, "rag_chroma")
+atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "demo"))
 
@@ -21,6 +32,10 @@ from app.main import app
 from app import db as _db
 from app.models import EngineConfig, ReceiptData, ReceiptItem, DocForm
 from app.chains.supervisor import _run_audit, _log_audit_decision, run_pipeline
+
+# 全量回归时 app.db 可能已被更早的测试模块以其他 DB_PATH 导入，
+# reload 使引擎绑定到本文件的隔离库（行为断言不变）
+importlib.reload(_db)
 
 client = TestClient(app)
 

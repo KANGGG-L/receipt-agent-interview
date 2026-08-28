@@ -6,7 +6,11 @@
 - 对齐完整版 D36：案例 RAG + 实体 RAG；写时只认正向信号（人工 approve 后回写）
 """
 
+import json
+import logging
 import os
+import uuid
+from datetime import datetime
 from typing import Optional
 
 from langchain_community.vectorstores import Chroma
@@ -15,7 +19,34 @@ from langchain_core.documents import Document
 
 from app import db
 
+logger = logging.getLogger(__name__)
+
 PERSIST_DIR = os.environ.get("RAG_DIR", "./.rag_chroma")
+
+
+class MemoryBudget:
+    """Gap B4 读取预算（Facts 层）：控制注入识别 prompt 的记忆体积。
+
+    token 口径：无 tokenizer 依赖（禁新增依赖），_approx_tokens(text) = len(text)，
+    即 1 字符按 1 token 保守计（对 CJK 偏保守、对英文偏宽松，整体取安全侧）。
+
+    TODO(T10)：三个阈值迁移到 app_settings 配置化（settings_service 在 Wave D
+    T10 建立），本 Wave 允许模块级常量 DEFAULT_MEMORY_BUDGET。
+    """
+
+    def __init__(self, facts_tokens: int = 800, per_item_tokens: int = 200,
+                 max_items: int = 6):
+        self.facts_tokens = int(facts_tokens)      # 注入总量上限
+        self.per_item_tokens = int(per_item_tokens)  # 单条记忆截断上限
+        self.max_items = int(max_items)            # 最多注入条数
+
+
+DEFAULT_MEMORY_BUDGET = MemoryBudget()  # TODO(T10): 阈值走 app_settings 配置化
+
+
+def _approx_tokens(text: str) -> int:
+    """保守 token 代理：1 字符 = 1 token（无 tokenizer 依赖，口径见 MemoryBudget）。"""
+    return len(text or "")
 
 
 class _CharNGramEmbeddings(Embeddings):
@@ -94,28 +125,55 @@ def _store(tenant_id: Optional[str] = None):
     return _vs_tenant[tid]
 
 
-def ingest_memory(vendor: str, items_text: str, notes: str = "", tenant_id: str = "default"):
+def ingest_memory(vendor: str, items_text: str, notes: str = "",
+                  tenant_id: str = "default", receipt_id=None,
+                  source_kind: Optional[str] = None):
     """人工 approve 后回写 VendorMemory（只认正向信号）。
 
     语料结构：供应商 + 单位/别称线索 + 已确认明细（few-shot 来源）。
     tenant_id 用于 Chroma 租户隔离（FR-9）。
+    Gap B1：每条记忆独立成行并带治理元数据 —— memory_id / source_kind /
+    source_ref（触发 receipt_id）/ created_at；Chroma metadata 同步携带，
+    便于按 memory_id 回溯删除。
+    source_kind 缺省推断：带 receipt_id 的调用视作 approve 路径，
+    否则视作 manual（如 SKU 别名合并学习）。
     """
+    tid = str(tenant_id or "default").strip() or "default"
+    kind = str(source_kind or ("approve" if receipt_id is not None else "manual"))
+    ref = json.dumps([str(receipt_id)]) if receipt_id is not None else "[]"
+    mid = uuid.uuid4().hex
+    ts = datetime.now().isoformat()
+    # 先落库拿治理主键；同 (vendor, tenant) 内容完全相同的 active 行已存在时
+    # 复用既有 memory_id 并跳过 Chroma 重复写入（幂等）。落库失败不阻断 Chroma。
+    stored_new = True
+    try:
+        mid, stored_new = db.upsert_vendor_memory(
+            vendor, notes or "", items_text or "", tenant_id=tid,
+            source_kind=kind, source_ref=ref, memory_id=mid, created_at=ts)
+    except Exception:
+        stored_new = True
+    if not stored_new:
+        return vendor
     docs = [
         Document(
             page_content=notes or "",
-            metadata={"vendor": vendor, "kind": "notes", "tenant_id": tenant_id or "default"},
+            metadata={"vendor": vendor, "kind": "notes", "tenant_id": tid,
+                      "memory_id": mid, "source_kind": kind, "created_at": ts},
         ),
         Document(
             page_content=f"供应商 {vendor} 的已确认进货明细：\n{items_text}",
-            metadata={"vendor": vendor, "kind": "sample", "tenant_id": tenant_id or "default"},
+            metadata={"vendor": vendor, "kind": "sample", "tenant_id": tid,
+                      "memory_id": mid, "source_kind": kind, "created_at": ts},
         ),
     ]
-    _store(tenant_id).add_documents(docs)
-    # 同时落库 vendor_memory 表（精确匹配用）
+    # P3-2：对齐 ingest_feedback_memory 写法 —— DB 行已落库成功时，Chroma 故障
+    # 只告警降级（向量缺失），不得向上抛错导致 approve 端点在单据已批准后 500。
     try:
-        db.upsert_vendor_memory(vendor, notes or "", items_text or "")
-    except Exception:
-        pass
+        _store(tid).add_documents(docs)
+    except Exception as e:
+        logger.warning(
+            "[rag] ingest_memory add_documents degraded (DB row kept, "
+            "vector missing) vendor=%s memory_id=%s: %s", vendor, mid, e)
     return vendor
 
 
@@ -200,32 +258,38 @@ def _vendor_related(query_vendor: str, doc_vendor: str) -> bool:
     return False
 
 
-def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default") -> str:
+def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
+                     budget: Optional[MemoryBudget] = None) -> str:
     """识别前检索 vendor_context：先精确匹配该供应商，再按相似度兜底。
 
-    tenant_id 用作 Chroma 租户硬隔离过滤。
+    tenant_id 用作 Chroma 租户硬隔离过滤；DB 侧按 tenant_id 过滤同口径。
+    Gap B1：只注入 status='active' 的记忆（列语义闭环，淘汰动作本身归 T8）。
+    Gap B4：注入前按 MemoryBudget 预算控制 —— 单条截断 per_item_tokens、
+    最多 max_items 条、累计不超 facts_tokens；实际注入的记忆行回写命中
+    记账（hit_count / last_hit_at）。
     冷启动供应商（无记忆且无同名 fuzzy 命中）返回空串，绝不携带他商记忆。
     """
     if not vendor or not str(vendor).strip():
         return ""
-    # 1) 精确匹配：该供应商自己的历史记忆最可信（异常不阻断识别链路）
-    exact = ""
+    b = budget or DEFAULT_MEMORY_BUDGET
+
+    # 候选条目：(展示文本, 可回溯的 memory_id 或 None)
+    candidates = []
+
+    # 1) 精确/别名匹配：该供应商自己的历史记忆最可信（active 行，最新在前）
     try:
-        mem = db.get_vendor_memory(vendor)
-        if mem:
-            # db.get_vendor_memory 返回 dict（vendor, notes, sample）
-            matched_vendor = (mem.get("vendor") if isinstance(mem, dict) else getattr(mem, "vendor", "")) or vendor
-            notes = mem.get("notes") if isinstance(mem, dict) else getattr(mem, "notes", "")
-            sample = mem.get("sample") if isinstance(mem, dict) else getattr(mem, "sample", "")
-            exact_parts = []
-            if notes:
-                exact_parts.append(notes)
-            if sample:
-                exact_parts.append(sample)
-            if exact_parts:
-                exact = f"[{matched_vendor}]\n" + "\n".join(exact_parts)
+        for row in db.list_vendor_memory(vendor, tenant_id=tenant_id):
+            parts = []
+            if row.get("notes"):
+                parts.append(row["notes"])
+            if row.get("sample"):
+                parts.append(row["sample"])
+            if not parts:
+                continue
+            text = f"[{row.get('vendor') or vendor}]\n" + "\n".join(parts)
+            candidates.append((text, row.get("memory_id")))
     except Exception:
-        exact = ""
+        pass
 
     # 2) 相似度兜底：其他供应商的近似单据（冷启动/名字微变），按租户隔离
     #    相关性门：fuzzy 结果按来源供应商名与查询名归一匹配，不匹配的丢弃
@@ -233,43 +297,87 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default") ->
         results = _store(tenant_id).similarity_search(
             f"供应商 {vendor} 的收据版式与单位习惯", k=top_k
         )
-        fuzzy = "\n\n".join(
-            f"[{d.metadata.get('vendor')}] {d.page_content}" for d in results
-            if d.page_content.strip() and _vendor_related(vendor, d.metadata.get("vendor"))
-        )
+        for d in results:
+            if not d.page_content.strip():
+                continue
+            if not _vendor_related(vendor, d.metadata.get("vendor")):
+                continue
+            candidates.append(
+                (f"[{d.metadata.get('vendor')}] {d.page_content}",
+                 d.metadata.get("memory_id")))
     except Exception:
-        fuzzy = ""
+        pass
 
-    ctx = exact
-    if fuzzy and fuzzy not in ctx:
-        ctx = (ctx + "\n\n" + fuzzy).strip() if ctx else fuzzy
-    return ctx or ""
+    # 3) 预算装配：单条截断 + 条数上限 + 总量上限；命中行回写记账
+    used_texts = []
+    used_tokens = 0
+    seen_mids = set()
+    hit_ids = []
+    sep = "\n\n"
+    for text, mid in candidates:
+        if len(used_texts) >= b.max_items:
+            break
+        if not text or not text.strip():
+            continue
+        if mid and mid in seen_mids:
+            continue  # 同一记忆不重复注入（精确 + fuzzy 双通道去重）
+        # 单条截断：_approx_tokens 口径下字符数即 token 数
+        item = text[:b.per_item_tokens]
+        extra = _approx_tokens(sep) if used_texts else 0  # 分隔符开销计入预算
+        if used_tokens + extra + _approx_tokens(item) > b.facts_tokens:
+            continue  # 本条超预算：跳过，尝试更短的后续条目
+        used_texts.append(item)
+        used_tokens += extra + _approx_tokens(item)
+        if mid:
+            seen_mids.add(mid)
+            hit_ids.append(mid)
+
+    ctx = sep.join(used_texts)
+    if hit_ids:
+        try:
+            db.bump_vendor_memory_hit(hit_ids)
+        except Exception:
+            pass  # 命中记账失败不阻断识别链路
+    return ctx
 
 
-def ingest_feedback_memory(vendor: str, comment: str, quality_warnings=None, tenant_id: str = "default"):
+def ingest_feedback_memory(vendor: str, comment: str, quality_warnings=None,
+                           tenant_id: str = "default", source_receipt_ids=None):
     """FR-9 三次连续点踩提炼：把连续纠偏的反馈沉淀为供应商记忆。
 
     仅当同供应商同租户最近 3 次反馈均为点踩时调用，写入 Chroma 租户隔离集合，
     避免错误记忆自我强化（单次点踩不沉淀）。
+    Gap B1：source_kind='feedback_distilled'，source_ref 记录触发点踩的
+    receipt_id 列表 JSON（可回溯）。
+    Gap B4：替换旧 notes[-4000:] 累积拼接 —— 每次沉淀独立成行（追加式），
+    体积由读取侧 MemoryBudget 控制取条数与长度，不再无限累积。
     """
+    tid = str(tenant_id or "default").strip() or "default"
     qw = quality_warnings or []
     content = f"供应商 {vendor} 反馈纠偏：{comment}".strip()
     if qw:
         content += f"\n关联质量告警：{'; '.join(qw)}"
+    ref = json.dumps([str(r) for r in (source_receipt_ids or [])])
+    mid = uuid.uuid4().hex
+    ts = datetime.now().isoformat()
+    stored_new = True
+    try:
+        mid, stored_new = db.upsert_vendor_memory(
+            vendor, content, "", tenant_id=tid,
+            source_kind="feedback_distilled", source_ref=ref,
+            memory_id=mid, created_at=ts)
+    except Exception:
+        stored_new = True
+    if not stored_new:
+        return content  # 内容完全相同的沉淀已存在（幂等），不重复入向量库
     doc = Document(
         page_content=content,
-        metadata={"vendor": vendor, "kind": "feedback_distilled", "tenant_id": tenant_id or "default"},
+        metadata={"vendor": vendor, "kind": "feedback_distilled", "tenant_id": tid,
+                  "memory_id": mid, "source_kind": "feedback_distilled",
+                  "created_at": ts},
     )
     try:
-        _store(tenant_id).add_documents([doc])
-    except Exception:
-        pass
-    # 同时更新 vendor_memory 备注（累积提炼），用于精确检索
-    try:
-        existing = db.get_vendor_memory(vendor)
-        prev_notes = (existing.get("notes") if existing else "") or ""
-        merged = (prev_notes + "\n" + content).strip()[-4000:]
-        db.upsert_vendor_memory(vendor, merged, "")
+        _store(tid).add_documents([doc])
     except Exception:
         pass
     return content

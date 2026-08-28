@@ -16,8 +16,14 @@ from app import db
 from app.auth import require_role
 from app.services.contract import payment_mark_from_image
 from app.services.receipt_utils import (
-    build_detail, build_row, get_job, start_recognition_job,
+    build_detail, build_row, compute_review_diff, get_job, start_recognition_job,
 )
+
+
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
 
 
 def _supplement_payment_mark(receipt_row) -> str:
@@ -257,7 +263,8 @@ async def upload_receipt(
             )
 
     job_id, receipt_id = start_recognition_job(
-        image_path, vendor_hint=vendor_hint or "")
+        image_path, vendor_hint=vendor_hint or "",
+        tenant_id=_tenant_id(request))  # P0-1: 上传链路租户透传
 
     image_url = "/uploads/" + os.path.basename(image_path)
     _track_event(account, getattr(request.state, "session_id", job_id),
@@ -276,17 +283,11 @@ async def upload_receipt(
     for _ in range(600):
         job = get_job(job_id)
         if job["job_status"] == "done":
-            _track_event(account, job_id, "parse_done", receipt_id=receipt_id,
-                         properties={"job_id": job_id, "status": "done"})
             return job["result"]
         if job["job_status"] == "error":
-            _track_event(account, job_id, "parse_done", receipt_id=receipt_id,
-                         properties={"job_id": job_id, "status": "error"})
             return {"status": "error", "msg": job.get("error_msg", "识别失败"),
                     "receipt_id": receipt_id, "image_url": image_url}
         time.sleep(1)
-    _track_event(account, job_id, "parse_done", receipt_id=receipt_id,
-                 properties={"job_id": job_id, "status": "timeout"})
     return {"status": "error", "msg": "识别超时", "receipt_id": receipt_id}
 
 
@@ -356,7 +357,9 @@ async def upload_batch(
             })
             continue
         seen_hashes.add(file_hash)
-        job_id, receipt_id = start_recognition_job(image_path)
+        # P0-1: 批量上传链路租户透传（在派发 Job 线程前捕获，线程内不读 request）
+        job_id, receipt_id = start_recognition_job(
+            image_path, tenant_id=_tenant_id(request))
         row = db.get_receipt_row(receipt_id)
         queue_pos += 1
         results.append({
@@ -405,7 +408,7 @@ def list_receipts(request: Request):
     # 列表查看对店员开放（上传/复核需要看到列表）；导出仍限 owner
     require_role("staff")(request)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     # 印章判定补红章：列表视图在 build_row 前补充，避免 LLM 漏检导致 payment_mark 空
     for r in rows:
         if not (r.payment_mark or "").strip():
@@ -432,7 +435,7 @@ def export_receipts(request: Request, desensitized: str = "false"):
     """导出收据 CSV。支持 ?desensitized=true 脱敏导出。"""
     require_role("owner")(request)
     is_desens = desensitized.lower() == "true"
-    rows = db.list_receipt_rows()
+    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
     data = [
         {
             "id": r.id,
@@ -458,7 +461,7 @@ def export_receipts(request: Request, desensitized: str = "false"):
 @router.get("/api/receipt/{receipt_id}")
 def get_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -516,6 +519,7 @@ def save_edited(body: SaveEditedBody, request: Request):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
+    tenant_id = _tenant_id(request)
 
     # 初始化，新建手工单路径不会有历史数据
     row = None
@@ -528,11 +532,11 @@ def save_edited(body: SaveEditedBody, request: Request):
     if body.receipt_id is None:
         # 新建手工单
         rid = db.create_receipt(supplier_name=body.supplier_name or "通用供应商",
-                                status=target_status)
+                                status=target_status, tenant_id=tenant_id)
         db.append_audit_log(rid, who, action_type, "receipt", None, rid, details=action_details)
     else:
         rid = body.receipt_id
-        row = db.get_receipt_row(rid)
+        row = db.get_receipt_row(rid, tenant_id=tenant_id)
         if row is None:
             return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                                 status_code=404)
@@ -540,7 +544,7 @@ def save_edited(body: SaveEditedBody, request: Request):
         if ver_err is not None:
             return ver_err
         old_status = row.status
-        old_items = db.get_receipt_items(rid)
+        old_items = db.get_receipt_items(rid, tenant_id=tenant_id)
         db.append_audit_log(rid, who, action_type, "status", old_status, target_status, details=action_details)
 
     if body.settlement_type is None and body.receipt_id is not None:
@@ -588,7 +592,7 @@ def save_edited(body: SaveEditedBody, request: Request):
         version=body.version + 1 if body.version is not None else 1,
         currency=cur,
     )
-    db.set_receipt_items(rid, items_raw)
+    db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 
     # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
     if not is_auto and body.receipt_id is not None and row is not None:
@@ -606,7 +610,24 @@ def save_edited(body: SaveEditedBody, request: Request):
             db.append_audit_log(rid, who, "save_edited", "total_amount",
                                 row.total_amount, body.total_amount)
 
-    row = db.get_receipt_row(rid)
+    # 埋点（规范事件 #7 receipt_review_submitted）：行级三类 diff + FER，分析用途
+    if not is_auto and body.receipt_id is not None and row is not None:
+        try:
+            import json as _jdiff
+            _ai_prefill = _jdiff.loads(row.ai_prefill_json or "{}")
+            _diff = compute_review_diff(_ai_prefill.get("items", []), items_raw)
+            _edited = sum(_diff["field_mod_counts"].values()) + _diff["sku_changed"]
+            _diff["fer_rate"] = round(
+                _edited / max(1, _diff["total_final"] * 6), 4)
+            _track_event(account, getattr(request.state, "session_id", ""),
+                         "receipt_review_submitted", receipt_id=rid,
+                         properties=_diff,
+                         grp="treatment" if (row.use_grey or 0) else "control")
+        except Exception as e:
+            import logging
+            logging.getLogger("api_receipts").warning(f"[WARN] review diff 埋点失败: {e}")
+
+    row = db.get_receipt_row(rid, tenant_id=tenant_id)
     _track_event(account, getattr(request.state, "session_id", "batch"),
                  "upload", receipt_id=rid,
                  properties={"mode": "batch"})
@@ -618,7 +639,7 @@ def save_edited(body: SaveEditedBody, request: Request):
             ai_value={"status": "parsed", "total_amount": float(body.total_amount or 0)},
             engine="pipeline")
     elif body.receipt_id is not None:
-        ai_row = db.get_receipt_row(rid)
+        ai_row = db.get_receipt_row(rid, tenant_id=tenant_id)
         if ai_row:
             try:
                 import json as _j
@@ -652,7 +673,7 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     require_role("owner")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -666,26 +687,28 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
         return ver_err
 
     old_status = row.status
-    # 幂等入账：写 SKU 库存流水 + 累计
+    # 幂等入账：写 SKU 库存流水 + 累计（P1-1: 入库链路租户透传，SKU 匹配/建档/流水限定本租户）
     from app.services.inventory import apply_receipt_to_inventory
-    apply_receipt_to_inventory(row)
+    apply_receipt_to_inventory(row, tenant_id=_tenant_id(request))
     db.update_receipt(receipt_id, status="approved", version=row.version + 1)
     db.append_audit_log(receipt_id, who, "approve_receipt", "status", old_status, "approved")
-    row = db.get_receipt_row(receipt_id)
-    # 供应商自动建档（approve 后成为正式供应商）
-    if row.supplier_name and db.find_supplier_by_name(row.supplier_name) is None:
-        db.create_supplier(row.supplier_name)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
+    # 供应商自动建档（approve 后成为正式供应商，归入当前租户）
+    if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=_tenant_id(request)) is None:
+        db.create_supplier(row.supplier_name, tenant_id=_tenant_id(request))
     # 回写 VendorMemory（只认正向信号：老板批准）
+    # T3 Gap B1：透传 tenant_id 与触发 receipt_id（source_ref 可回溯）
     from app.services.rag import ingest_memory
     items_text = "\n".join(f"- {i['name']} {i['quantity']}{i['unit']} @{i['unit_price']} = {i['amount']}"
-                           for i in db.get_receipt_items(receipt_id))
-    ingest_memory(row.supplier_name, items_text, notes=f"版式：{row.doc_form}")
+                           for i in db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request)))
+    ingest_memory(row.supplier_name, items_text, notes=f"版式：{row.doc_form}",
+                  tenant_id=_tenant_id(request), receipt_id=receipt_id)
     # C6 ai_decision_log：approve 回填最终确认 + 幻觉判定
     try:
         import json as _j
         ai_prefill = _j.loads(row.ai_prefill_json or "{}")
         ai_items = ai_prefill.get("items", [])
-        final_items = db.get_receipt_items(receipt_id)
+        final_items = db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request))
         for i, fi in enumerate(final_items):
             if i < len(ai_items):
                 ai_val = ai_items[i].get("unit_price", "")
@@ -699,6 +722,19 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     except Exception as e:
         import logging
         logging.getLogger("api_receipts").warning(f"[WARN] 记录审批 AI 决策失败: {e}")
+    # 埋点（规范事件 #8 receipt_approved，北极星终态）：e2e 耗时
+    try:
+        from datetime import datetime as _dt
+        _e2e = None
+        if row.created_at:
+            _c = _dt.fromisoformat(str(row.created_at).replace("Z", "+00:00"))
+            _n = _dt.fromisoformat(db.now_iso().replace("Z", "+00:00"))
+            _e2e = int((_n - _c).total_seconds() * 1000)
+        _track_event(account, getattr(request.state, "session_id", ""),
+                     "receipt_approved", receipt_id=receipt_id,
+                     properties={"e2e_ms": _e2e, "total_amount": row.total_amount or 0.0})
+    except Exception:
+        pass
     return {"status": "success", "version": row.version}
 
 
@@ -707,7 +743,7 @@ def flag_receipt(receipt_id: int, request: Request):
     require_role("owner")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -724,13 +760,16 @@ def flag_receipt(receipt_id: int, request: Request):
             status_code=409)
     db.update_receipt(receipt_id, status="flagged")
     db.append_audit_log(receipt_id, who, "flag_receipt", "status", old_status, "flagged")
+    _track_event(account, getattr(request.state, "session_id", ""),
+                 "receipt_flagged", receipt_id=receipt_id,
+                 properties={"old_status": old_status})
     return {"status": "success", "msg": f"单据 #{receipt_id} 已标记为异常"}
 
 
 @router.post("/api/receipt/{receipt_id}/retry")
 def retry_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -745,7 +784,9 @@ def retry_receipt(receipt_id: int, request: Request):
             content={"status": "error",
                      "msg": f"原图缺失（{row.image_path}），无法重试；请重新上传或转手工录入。"},
             status_code=400)
-    job_id, _ = start_recognition_job(row.image_path, receipt_id=receipt_id)
+    # P0-1: 重试链路租户透传（row 已按租户校验归属）
+    job_id, _ = start_recognition_job(row.image_path, receipt_id=receipt_id,
+                                      tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version}
 
@@ -754,7 +795,7 @@ def retry_receipt(receipt_id: int, request: Request):
 def convert_manual(receipt_id: int, request: Request):
     # 对齐完整版：转手工录入改写单据形态与状态，需 owner
     require_role("owner")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -778,7 +819,7 @@ def discard_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND",
                                      "msg": "单据不存在或已被删除"}, status_code=404)
@@ -801,7 +842,7 @@ class PayDateBody(BaseModel):
 @router.post("/api/receipt/{receipt_id}/pay_date")
 def set_pay_date(receipt_id: int, body: PayDateBody, request: Request):
     require_role("owner")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -852,7 +893,7 @@ class AdoptAIBody(BaseModel):
 @router.post("/api/receipt/{receipt_id}/adopt-ai")
 def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -872,7 +913,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
             status_code=400)
     idx = int(m.group(1))
     # 越界下标：items[N] 必须在 0..len(row.items)-1 范围内
-    items = db.get_receipt_items(receipt_id)
+    items = db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request))
     if idx < 0 or idx >= len(items):
         return JSONResponse(
             content={"status": "error",
@@ -909,17 +950,23 @@ class FeedbackBody(BaseModel):
 @router.post("/api/receipt/{receipt_id}/feedback")
 def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id)
+    # 租户口径（P3-4 收敛）：服务端 header X-Tenant-Id 优先，body.tenant_id 仅在
+    # 无 header 时兜底兼容（老客户端/脚本）。归属校验与 receipt_feedback 落库
+    # 必须使用同一解析值，且客户端 body 不得覆盖服务端 header 用于归属判定。
+    # 前端（demo/static/js/main.js）目前对两处传同值（localStorage demo_tenant_id），
+    # 本口径变更对其无行为影响。
+    tenant_id = (request.headers.get("X-Tenant-Id")
+                 or request.headers.get("x-tenant-id")
+                 or body.tenant_id or "default")
+    tenant_id = str(tenant_id).strip() or "default"
+    # 单据归属校验：跨租户单据视为不存在（Gap E2）
+    row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
     # like 归一：前端传 like=true/false 或 1/-1 或 "like"/"dislike"
     like_raw = body.like
     comment_raw = body.comment if body.comment is not None else ""
-    # 租户隔离键：优先 body.tenant_id > header X-Tenant-Id > 默认
-    tenant_id = (body.tenant_id or request.headers.get("X-Tenant-Id")
-                 or request.headers.get("x-tenant-id") or "default")
-    tenant_id = str(tenant_id).strip() or "default"
     # item_index 校验：若传了则必须在明细范围内
     item_idx = body.item_index
     if item_idx is not None:
@@ -928,14 +975,14 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
         except Exception:
             return JSONResponse(content={"status": "error", "msg": "item_index 必须为整数"},
                                 status_code=400)
-        items = db.get_receipt_items(receipt_id)
+        items = db.get_receipt_items(receipt_id, tenant_id=tenant_id)
         if item_idx < 0 or item_idx >= len(items):
             return JSONResponse(
                 content={"status": "error",
                          "msg": f"item_index 越界：{item_idx}，当前仅 {len(items)} 行"},
                 status_code=400)
     # like 至少需提供一项反馈（点赞/点踩 或 文本非空）
-    from app.models import FEEDBACK_COMMENT_MAXLEN
+    from app.models import FEEDBACK_COMMENT_MAXLEN, FEEDBACK_DISTILL_THRESHOLD
     comment_str = str(comment_raw or "").strip()
     if like_raw is None and not comment_str:
         return JSONResponse(content={"status": "error", "msg": "请提供点赞/点踩或文本反馈"},
@@ -981,7 +1028,16 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
         try:
             if db.should_distill_vendor_memory(vendor_name, tenant_id):
                 from app.services.rag import ingest_feedback_memory
-                content = ingest_feedback_memory(vendor_name, comment_str, qw, tenant_id)
+                # T3 Gap B1：source_ref 记录触发点踩的 receipt_id 列表（可回溯）
+                _src_ids = []
+                try:
+                    _recent = db.list_receipt_feedbacks(vendor=vendor_name, tenant_id=tenant_id)
+                    _src_ids = [str(f.get("receipt_id")) for f in _recent[:FEEDBACK_DISTILL_THRESHOLD]
+                                if f.get("like") == -1 and f.get("receipt_id") is not None]
+                except Exception:
+                    _src_ids = []
+                content = ingest_feedback_memory(vendor_name, comment_str, qw, tenant_id,
+                                                 source_receipt_ids=_src_ids)
                 distilled = True
                 distill_info = content[:200]
                 db.append_audit_log(receipt_id, "system", "feedback_distilled", vendor_name, "", distill_info)
@@ -996,7 +1052,7 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
 @router.get("/api/receipt/{receipt_id}/feedback")
 def list_feedback(receipt_id: int, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id)
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
@@ -1006,4 +1062,24 @@ def list_feedback(receipt_id: int, request: Request):
     if tenant_id:
         fbs = [f for f in fbs if f.get("tenant_id") == tenant_id]
     return {"status": "success", "receipt_id": receipt_id, "feedbacks": fbs}
+
+
+# -------------------------------------------------------------
+# 前端通用埋点入口（11-组件Spec-全链路埋点与体验反馈体系 §6）
+# -------------------------------------------------------------
+class TrackBody(BaseModel):
+    event_type: str
+    receipt_id: Optional[int] = None
+    properties: Optional[dict] = None
+
+
+@router.post("/api/track")
+def track_event(body: TrackBody, request: Request):
+    """前端行为埋点统一入口：失败静默，始终 200，不阻塞业务。"""
+    require_role("staff")(request)
+    account = getattr(request.state, "account", {})
+    _track_event(account, getattr(request.state, "session_id", ""),
+                 body.event_type, receipt_id=body.receipt_id,
+                 properties=body.properties or {})
+    return {"status": "ok"}
 

@@ -27,6 +27,12 @@ def _canonical_name(raw: str) -> str:
 
 router = APIRouter()
 
+
+def _tenant_id(request: Request) -> str:
+    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
+    return (request.headers.get("X-Tenant-Id")
+            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+
 # 复用 currency_unit_converter 标准换算（司马斤 0.6048 kg）
 try:
     from ai_registry.tools.currency_unit_converter.v1_0_0 import CurrencyUnitConverterTool
@@ -79,7 +85,8 @@ def inventory_list(request: Request, q: str = "", category: str = "",
                    include_inactive: int = 0):
     # 只读列表对店员开放（收据页 SKU/单位数据源需要）；入库/调整等写操作仍按各自权限
     require_role("staff")(request)
-    skus = db.list_skus(include_inactive=bool(include_inactive))
+    skus = db.list_skus(include_inactive=bool(include_inactive),
+                        tenant_id=_tenant_id(request))
     out = []
     low_count = 0
     anomaly_count = 0
@@ -134,16 +141,17 @@ class SkuCreateBody(BaseModel):
 @router.post("/api/inventory/skus")
 def create_sku(body: SkuCreateBody, request: Request):
     require_role("staff")(request)
+    tenant_id = _tenant_id(request)
     # B-P0-1: 创建前强制归一，阻止 _\d{10} 流水号污染 SKU 库导致库存爆炸
     canonical = _canonical_name(body.name)
     # 若归一后与存量 canonical 重名，视为冲突（幂等去重）
-    existing = db.find_sku_by_name(canonical)
+    existing = db.find_sku_by_name(canonical, tenant_id=tenant_id)
     if existing:
         # 若原始名与归一后不同，说明是流水号变体，直接返回已存在的主 SKU
         if canonical != body.name.strip():
             return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在（归一后冲突）", "canonical_name": canonical, "existing_id": existing.id}
     sku_id, err = db.create_sku(canonical, body.category, body.base_unit,
-                                body.min_stock_alert)
+                                body.min_stock_alert, tenant_id=tenant_id)
     if err:
         return {"status": "error", "code": err, "message": "同名 SKU 已存在"}
     return {"status": "success", "id": sku_id, "canonical_name": canonical}
@@ -160,11 +168,14 @@ class SkuPatchBody(BaseModel):
 @router.patch("/api/inventory/skus/{sku_id}")
 def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
     require_role("owner")(request)
+    if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
+        return {"status": "error", "msg": "SKU 不存在"}
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if "name" in fields and fields["name"]:
         # B-P0-1: 重命名时同样归一，防止通过改名注入流水号
         fields["name"] = _canonical_name(fields["name"])
-    row, err = db.update_sku(sku_id, **fields)
+    # P2-1: 重命名重名检查按租户 scope（上方已校验 SKU 归属本租户，口径一致）
+    row, err = db.update_sku(sku_id, tenant_id=_tenant_id(request), **fields)
     if err == "SKU_NAME_CONFLICT":
         return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在"}
     if err == "UNIT_CHANGE_BLOCKED":
@@ -178,7 +189,9 @@ def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
 def delete_sku_endpoint(sku_id: int, request: Request):
     """删除或停用 SKU：无流水则彻底删除，有流水则安全停用。"""
     require_role("owner")(request)
-    ok, action = db.delete_sku(sku_id)
+    if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
+        return {"status": "error", "code": "NOT_FOUND", "msg": "SKU 不存在"}
+    ok, action = db.delete_sku(sku_id, tenant_id=_tenant_id(request))
     if not ok:
         return {"status": "error", "code": "NOT_FOUND", "msg": "SKU 不存在"}
     msg = "SKU 已安全停用（因存在历史进货流水，保留历史记录）" if action == "DEACTIVATED" else "SKU 已彻底删除"
@@ -195,7 +208,16 @@ class SkuMergeBody(BaseModel):
 def merge_skus_endpoint(body: SkuMergeBody, request: Request):
     """合并 SKU：迁移历史流水至主 SKU，停用副 SKU，并自动反哺供应商别名记忆。"""
     require_role("owner")(request)
-    result, err = db.merge_skus(body.primary_sku_id, body.secondary_sku_ids)
+    tenant_id = _tenant_id(request)
+    primary_sku = db.get_sku(body.primary_sku_id, tenant_id=tenant_id)
+    if primary_sku is None:
+        return {"status": "error", "code": "PRIMARY_NOT_FOUND", "msg": "主 SKU 不存在"}
+    for sid in body.secondary_sku_ids:
+        if db.get_sku(sid, tenant_id=tenant_id) is None:
+            return {"status": "error", "code": "SECONDARY_NOT_FOUND",
+                    "msg": f"副 SKU #{sid} 不存在"}
+    result, err = db.merge_skus(body.primary_sku_id, body.secondary_sku_ids,
+                                tenant_id=tenant_id)
     if err:
         return {"status": "error", "code": err, "msg": f"合并失败：{err}"}
 
@@ -219,7 +241,10 @@ class StocktakeBody(BaseModel):
 @router.post("/api/inventory/{sku_id}/stocktake")
 def stocktake(sku_id: int, body: StocktakeBody, request: Request):
     require_role("owner")(request)
-    db.stocktake_sku(sku_id, body.actual_qty, body.note)
+    if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
+        return {"status": "error", "msg": "SKU 不存在"}
+    db.stocktake_sku(sku_id, body.actual_qty, body.note,
+                     tenant_id=_tenant_id(request))
     return {"status": "success", "msg": "盘点已记录"}
 
 
@@ -231,34 +256,37 @@ class ConsumeBody(BaseModel):
 @router.post("/api/inventory/{sku_id}/consume")
 def consume(sku_id: int, body: ConsumeBody, request: Request):
     require_role("owner")(request)
-    sku = db.get_sku(sku_id)
+    sku = db.get_sku(sku_id, tenant_id=_tenant_id(request))
     if sku is None:
         return {"status": "error", "msg": "SKU 不存在"}
     db.apply_stock_log(sku_id=sku.id, name=sku.name, qty=body.quantity,
                        unit=sku.base_unit, amount=0, vendor="", date="",
-                       receipt_id=None, kind="consume", note=body.notes)
+                       receipt_id=None, kind="consume", note=body.notes,
+                       tenant_id=_tenant_id(request))
     return {"status": "success", "msg": "已消耗"}
 
 
 @router.post("/api/inventory/{sku_id}/waste")
 def waste(sku_id: int, body: ConsumeBody, request: Request):
     require_role("owner")(request)
-    sku = db.get_sku(sku_id)
+    sku = db.get_sku(sku_id, tenant_id=_tenant_id(request))
     if sku is None:
         return {"status": "error", "msg": "SKU 不存在"}
     db.apply_stock_log(sku_id=sku.id, name=sku.name, qty=body.quantity,
                        unit=sku.base_unit, amount=0, vendor="", date="",
-                       receipt_id=None, kind="waste", note=body.notes)
+                       receipt_id=None, kind="waste", note=body.notes,
+                       tenant_id=_tenant_id(request))
     return {"status": "success", "msg": "已损耗"}
 
 
 @router.get("/api/price_history/{sku_id}")
 def price_history(sku_id: int, request: Request):
     require_role("owner")(request)
-    sku = db.get_sku(sku_id)
+    tenant_id = _tenant_id(request)
+    sku = db.get_sku(sku_id, tenant_id=tenant_id)
     if sku is None:
         return {"status": "error", "msg": "SKU 不存在"}
-    rows = db.price_history(sku_id)
+    rows = db.price_history(sku_id, tenant_id=tenant_id)
     data = [{"date": r.date, "unit_price": r.unit_price, "qty": r.qty,
              "supplier_name": r.vendor, "receipt_id": r.receipt_id,
              "source": "receipt"} for r in rows]

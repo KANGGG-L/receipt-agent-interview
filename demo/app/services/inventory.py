@@ -8,24 +8,32 @@
 from app import db
 
 
-def apply_receipt_to_inventory(row):
+def apply_receipt_to_inventory(row, tenant_id=None):
     """approve 入账：把收据明细写入 SKU 库存（幂等，仅 approved 状态）。
 
     - 匹配到 SKU → 累加 current_stock + 记录价格历史
     - 未匹配/错配 → 重新匹配或自动建 SKU（完整版走 SKU 匹配/人工确认）
     - B-P0-1：入库前强制对 name 做 FR-7 核心词归一（剥离 _\\d{10} 流水号），防止 SKU 爆炸
+    - P1-1 租户口径：tenant_id 显式传入优先；缺省从 row.tenant_id 兜底
+      （单据行已有租户）；两者皆空时不过滤（旧调用向后兼容）。
+      SKU 匹配/建档/库存流水写入全部限定该租户。
     """
     from app.services.receipt_utils import _normalize_sku_name, canonical_sku_name
 
+    _tenant = tenant_id or getattr(row, "tenant_id", None) or None
+
     items = db.get_receipt_items(row.id)
     for it in items:
+        # 口径对齐门禁/总额：票面划线作废行（拒收/退货）不入库、不进成本
+        if it.get("is_void"):
+            continue
         # B-P0-1 归一：确保流水号变体入库时落在同一 SKU
         name = canonical_sku_name(it["name"])
         sku_id = it.get("sku_id")
 
         # 校验已匹配 SKU 是否合理：SKU 核心词与商品核心词不一致 → 视为错配，重新匹配
         if sku_id:
-            sku = db.get_sku(sku_id)
+            sku = db.get_sku(sku_id, tenant_id=_tenant)
             item_core = _normalize_sku_name(name)
             sku_core = _normalize_sku_name(sku.name) if sku else ""
             # 单字核心词（如"茶"）不参与互含判断，视为错配 → 重新匹配/建
@@ -34,18 +42,19 @@ def apply_receipt_to_inventory(row):
                 sku_id = None  # 错配 → 重新匹配
 
         if not sku_id:
-            sku = db.find_sku_by_name(name)
+            sku = db.find_sku_by_name(name, tenant_id=_tenant)
             if sku is None:
                 # 尝试核心词匹配现有 SKU（避免为近似商品建重复 SKU）
                 item_core = _normalize_sku_name(name)
                 if item_core and len(item_core) >= 2:
-                    for cand in db.list_skus(include_inactive=True):
+                    for cand in db.list_skus(include_inactive=True, tenant_id=_tenant):
                         cand_core = _normalize_sku_name(cand.name)
                         if cand_core and len(cand_core) >= 2 and cand_core == item_core:
                             sku = cand
                             break
                 if sku is None:
-                    sku_id, _ = db.create_sku(canonical_sku_name(name), base_unit=it.get("unit") or "")
+                    sku_id, _ = db.create_sku(canonical_sku_name(name), base_unit=it.get("unit") or "",
+                                              tenant_id=_tenant)
                 else:
                     sku_id = sku.id
             else:
@@ -58,13 +67,19 @@ def apply_receipt_to_inventory(row):
             qty=it.get("quantity", 0), unit=it.get("unit") or "",
             amount=it.get("amount", 0), vendor=row.supplier_name,
             date=row.receipt_date or "", receipt_id=row.id, kind="in",
+            tenant_id=_tenant,
         )
 
 
-def cost_summary() -> dict:
-    """成本核算：按商品累计 + 总成本；计算加权平均单价（weighted_avg_price）并附加 prices 历史。"""
+def cost_summary(tenant_id=None) -> dict:
+    """成本核算：按商品累计 + 总成本；计算加权平均单价（weighted_avg_price）并附加 prices 历史。
+
+    租户口径（P3-5）：tenant_id 非空时仅聚合该租户的 SKU 与价格流水；
+    None 不过滤（内部脚本与存量调用向后兼容）。存量数据经迁移归入
+    default 租户，传 "default" 与旧行为结果一致。
+    """
     from app.chains.review_chain import _INSIGHTS_CACHE  # noqa: F401 触发 weekly_insights 时同步重算
-    skus = db.list_skus(include_inactive=True)
+    skus = db.list_skus(include_inactive=True, tenant_id=tenant_id)
     items = {}
     weighted_total = 0.0
 
@@ -73,7 +88,7 @@ def cost_summary() -> dict:
         weighted_avg = s.last_unit_price or 0.0
         if s.id:
             try:
-                history = db.price_history(s.id)
+                history = db.price_history(s.id, tenant_id=tenant_id)
                 if history:
                     prices = [round(float(r.unit_price), 4) for r in history if getattr(r, "unit_price", 0) > 0]
                     # 计算加权平均：sum(qty * unit_price) / sum(qty)

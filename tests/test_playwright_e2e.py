@@ -1,13 +1,50 @@
 import os
+import socket
 import time
 import json
+from urllib.parse import urlparse
+
 import pytest
-from playwright.sync_api import sync_playwright, expect
-from PIL import Image, ImageDraw, ImageFilter
+
+try:
+    from PIL import Image, ImageDraw, ImageFilter
+    _PIL_OK = True
+except Exception:  # pragma: no cover
+    _PIL_OK = False
+
+# 环境守卫（离线干净 skip）：
+# 本用例依赖 127.0.0.1:15010 活体服务（页面壳）+ playwright 浏览器（API 均已 route mock）。
+# 两种不满足情况分别给出 skip 理由，任一不满足即用例级 skip：
+#   1) 服务不可达（socket 探测，超时约 1s）；
+#   2) 服务可达但浏览器不可用（playwright 未安装或 chromium 启动失败）。
+try:
+    from playwright.sync_api import sync_playwright, expect
+    _PLAYWRIGHT_IMPORT_OK = True
+except Exception:  # pragma: no cover - 离线/未装 playwright 时走 skip 分支
+    _PLAYWRIGHT_IMPORT_OK = False
 
 BASE_URL = "http://127.0.0.1:15010"
 SCREENSHOT_DIR = "/Users/ethan/Documents/GitHub/receipt-agent-interview/artifacts/e2e-refactor"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+
+def _service_reachable(timeout=1.0):
+    parsed = urlparse(BASE_URL)
+    try:
+        with socket.create_connection((parsed.hostname, parsed.port or 80), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _browser_available():
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            browser.close()
+        return True
+    except Exception:
+        return False
 
 
 def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
@@ -56,6 +93,18 @@ def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
 
     img.save(path, "JPEG", quality=80)
     return path
+
+
+_SKIP_REASON = None if (_PLAYWRIGHT_IMPORT_OK and _PIL_OK) else "需要 playwright 与 Pillow"
+if _SKIP_REASON is None:
+    if not _service_reachable():
+        _SKIP_REASON = "需要活体服务与浏览器: 服务 %s 不可达" % BASE_URL
+    elif not _browser_available():
+        _SKIP_REASON = "需要活体服务与浏览器: playwright 浏览器启动失败"
+pytestmark = pytest.mark.skipif(
+    _SKIP_REASON is not None,
+    reason=_SKIP_REASON or "需要活体服务与浏览器",
+)
 
 
 MOCK_PARSED_RESULT = {
@@ -116,7 +165,9 @@ MOCK_PARSED_RESULT = {
                 "sku_id": 2,
                 "sku_name": "嘉顿幼麥方包",
                 "price_anomaly": 0,
-                "is_void": 0,
+                # 作废态改为只读展示：仅来自票面划线的 AI 提取（is_void），
+                # 手动作废按钮已按产品决策移除（main.js appendTableRow 上方注释）。
+                "is_void": 1,
                 "confidence": 0.96
             }
         ],
@@ -196,6 +247,20 @@ def test_e2e_clerk_flow_all_scenarios():
                 body=json.dumps({"status": "success", "msg": "收据复核并保存成功", "version": 2})
             )
 
+        def handle_inventory_route(route):
+            # SKU 组合框聚焦时会拉取 /api/inventory 候选；mock 之保持用例确定性
+            route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps({
+                    "status": "success",
+                    "data": [
+                        {"id": 1, "name": "本地新鮮菜心", "sku_code": "SKU-001"},
+                        {"id": 2, "name": "嘉顿幼麥方包", "sku_code": "SKU-002"}
+                    ]
+                })
+            )
+
         page.on("console", lambda msg: print(f"[CONSOLE {msg.type}] {msg.text}"))
         page.on("pageerror", lambda err: print(f"[PAGE ERROR] {err}"))
         page.on("request", lambda req: print(f"[REQUEST] {req.method} {req.url}"))
@@ -204,6 +269,7 @@ def test_e2e_clerk_flow_all_scenarios():
         page.route("**/api/upload*", handle_upload_route)
         page.route("**/api/job/*", handle_job_route)
         page.route("**/api/save_edited", handle_save_route)
+        page.route("**/api/inventory*", handle_inventory_route)
 
         # -------------------------------------------------------------
         # Scenario 1: Upload & Gentle Quality Warning
@@ -230,13 +296,24 @@ def test_e2e_clerk_flow_all_scenarios():
         page.screenshot(path=s1_path)
         print(f"Scenario 1 screenshot saved to {s1_path}")
 
-        # Click green button 「开始 AI 智能解析」 -> gets 400 error card (U-7 default blocking)
+        # Click green button 「开始 AI 智能解析」 -> 服务端对未带 force 的模糊图返回
+        # 400 IMAGE_QUALITY_ERROR（U-7 方案：默认不强制进管线，由用户显式确认）
         btn_start = page.locator("#preConfirmCard button.btn-success")
         expect(btn_start).to_be_visible()
         btn_start.click()
 
-        # U-7: Verify errorCard is shown with gentle guidance, then click btnForceRetry (继续 AI 解析)
+        # U-7 期望修正说明（依据 HEAD 8e90066 与当前 main.js 实际行为，经活体服务实测）：
+        # 8e90066 的「门禁不阻断/回退即时通知」适用于算术/契约/明细为空等门禁矛盾与引擎异常
+        # （routeRecognitionFailure 对 gate/engine 返回 true：人话 Toast + 自动转手工补录，
+        # 不出错误卡；引擎降级经 notifyFallbackIfTriggered 即时提示）。而画质类
+        # （IMAGE_QUALITY_ERROR）在 routeRecognitionFailure 中显式返回 false ——
+        # 「仅画质问题保留可自救的错误卡片」：错误卡仍展示（画质归因三分类文案，
+        # 不再误导归因），并保留「继续 AI 解析」(btnForceRetry) 供用户显式确认后
+        # 以 force=true 重发。故此处仍断言 errorCard 可见 + 画质警告横幅可见，
+        # 而非「无任何卡片」。
         expect(page.locator("#errorCard")).to_be_visible()
+        # 画质警告横幅（showQualityWarnings('image_blur')）应包含「继续 AI 解析」逃生指引
+        expect(page.locator("#qualityWarningsBanner")).to_contain_text("继续 AI 解析")
         page.locator("#btnForceRetry").click()
 
         # -------------------------------------------------------------
@@ -280,23 +357,28 @@ def test_e2e_clerk_flow_all_scenarios():
         headers = page.locator(".receipt-item-table thead th")
         expect(headers).to_have_count(7)
 
-        # Verify column 1 micro-layout: upper inp-name, lower sku-pill
+        # Verify column 1 micro-layout（期望修正，依据当前 appendTableRow 实现）：
+        # SKU 徽标（.sku-pill / .sku-pill-matched / .sku-pill-unlinked）已演进为
+        # 「品名输入框 + 隐藏 SKU 字段」组合框（sku-combobox-wrap）：
+        #   - 匹配态：inp-name 可见 + 隐藏 .inp-sku-id 携带 sku_id；
+        #   - 未匹配态：.inp-sku-id 为空 + 单价格子区渲染 .anomaly-pill 价格偏离徽标。
         rows = page.locator("#itemTableBody tr")
         expect(rows).to_have_count(3)
 
         first_row = rows.nth(0)
         expect(first_row.locator(".inp-name")).to_have_value("本地新鮮菜心")
-        expect(first_row.locator(".sku-pill")).to_be_visible()
-        expect(first_row.locator(".sku-pill-matched")).to_be_visible()
+        expect(first_row.locator(".inp-sku-id")).to_have_value("1")
+        expect(first_row.locator(".inp-sku")).to_have_value("本地新鮮菜心")
 
         second_row = rows.nth(1)
         expect(second_row.locator(".inp-name")).to_have_value("澳洲冰鮮牛肉眼")
-        expect(second_row.locator(".sku-pill-unlinked")).to_be_visible()
+        expect(second_row.locator(".inp-sku-id")).to_have_value("")
         expect(second_row.locator(".anomaly-pill")).to_contain_text("15.0%")
 
-        # Test clicking SKU pill opens floating dropdown
-        second_sku_pill = second_row.locator(".sku-pill")
-        second_sku_pill.click()
+        # Test focusing name input opens floating SKU dropdown（原 .sku-pill 点击入口
+        # 改为 inp-name 聚焦/点击触发 openSkuMenuForNameInput）
+        second_name_input = second_row.locator(".inp-name")
+        second_name_input.click()
         expect(second_row.locator(".sku-dropdown-floating")).to_be_visible()
 
         s3_path = os.path.join(SCREENSHOT_DIR, "03_scenario3_step2_review_form_table.png")
@@ -307,7 +389,7 @@ def test_e2e_clerk_flow_all_scenarios():
         page.locator("#inpSupplier").click()
 
         # -------------------------------------------------------------
-        # Scenario 4: Fees Drawer, Void Row & Math Recalculation & Save
+        # Scenario 4: Fees Drawer, Void (read-only) Row & Math Recalculation & Save
         # -------------------------------------------------------------
         # Toggle fees drawer
         fees_toggle = page.locator(".fees-drawer-toggle")
@@ -323,24 +405,17 @@ def test_e2e_clerk_flow_all_scenarios():
         # Trigger input event on rounding
         page.locator("#inpRounding").dispatch_event("input")
 
-        # Net fee adjustment = +15 + 20 - 10 - 1 = +24.00
-        # Total should now be 1080.00 + 24.00 = 1104.00
-        expect(page.locator("#inpTotal")).to_have_value("1104.00")
+        # 期望修正（依据 recalcTotalSum 当前口径）：作废行金额不计入 itemsSum，
+        # 明细有效合计 = 120 + 900 = 1020；净费用 = 15 + 20 - 10 - 1 = +24.00；
+        # 总额 = 1020 + 24 = 1044.00（作废行 60.00 自始即被排除）。
+        expect(page.locator("#inpTotal")).to_have_value("1044.00")
         expect(page.locator("#feesSummaryBadge")).to_be_visible()
         expect(page.locator("#feesSummaryBadge")).to_contain_text("24.00")
 
-        # Test Voiding the 3rd row (amount 60.00)
+        # Verify read-only void state on 3rd row（票面划线行：不计入总额与入库）
         third_row = rows.nth(2)
-        void_btn = third_row.locator(".btn-action-void")
-        expect(void_btn).to_be_visible()
-        void_btn.click()
-
-        # Verify void state on row
         expect(third_row).to_have_attribute("data-is-void", "1")
-        expect(void_btn).to_have_text("恢复")
-
-        # New total should exclude 60.00 -> (1080 - 60) + 24 = 1044.00
-        expect(page.locator("#inpTotal")).to_have_value("1044.00")
+        expect(third_row.locator(".badge-secondary")).to_contain_text("作废")
 
         # Select settlement type (required)
         page.locator("#inpSettlementType").select_option("cash")

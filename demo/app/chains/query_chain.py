@@ -31,8 +31,12 @@ def _check_prompt_injection(text: str) -> Optional[str]:
     return None
 
 
-def run_query(question: str) -> dict:
-    """执行自然语言查询，返回回答文本 + 结构化支撑数据。"""
+def run_query(question: str, tenant_id=None) -> dict:
+    """执行自然语言查询，返回回答文本 + 结构化支撑数据。
+
+    tenant_id 为空时不过滤（兼容内部/非 FastAPI 调用）；
+    Web 端点必须传入当前租户，避免跨租户数据泄漏。
+    """
     raw_q = (question or "").strip()
     if not raw_q:
         return {
@@ -54,7 +58,7 @@ def run_query(question: str) -> dict:
 
     # 1. 价格最高/单价最贵 供应商查询
     if any(k in q for k in ["最高", "最贵", "单价高", "价格高"]) and any(k in q for k in ["供应商", "商户", "单价", "菜心", "商品"]):
-        skus = db.list_skus(include_inactive=True)
+        skus = db.list_skus(include_inactive=True, tenant_id=tenant_id)
         # 寻找提到的具体商品名
         target_sku = None
         for s in skus:
@@ -66,7 +70,7 @@ def run_query(question: str) -> dict:
 
         top_vendors = []
         if target_sku:
-            history = db.price_history(target_sku.id)
+            history = db.price_history(target_sku.id, tenant_id=tenant_id)
             # 按 vendor 聚合最高单价
             vendor_prices = {}
             for h in history:
@@ -96,11 +100,11 @@ def run_query(question: str) -> dict:
 
     # 2. 未付账单 / 赊单查询
     if any(k in q for k in ["未付", "应付", "赊单", "欠款", "账单"]):
-        suppliers = db.list_suppliers(include_inactive=False)
+        suppliers = db.list_suppliers(include_inactive=False, tenant_id=tenant_id)
         unpaid = []
         total_unpaid = 0.0
         for s in suppliers:
-            stats = db.supplier_stats(s.id)
+            stats = db.supplier_stats(s.id, tenant_id=tenant_id)
             if stats["unpaid_credit_total"] > 0:
                 unpaid.append({
                     "supplier_name": s.name,
@@ -123,7 +127,7 @@ def run_query(question: str) -> dict:
 
     # 3. 价格波动 / 趋势查询
     if any(k in q for k in ["趋势", "走势", "波动", "涨价", "历史价"]):
-        cost = cost_summary()
+        cost = cost_summary(tenant_id=tenant_id)
         items = cost.get("items", {})
         risers = []
         for name, info in items.items():
@@ -153,7 +157,7 @@ def run_query(question: str) -> dict:
         }
 
     # 4. 默认通用库存与成本摘要
-    cost = cost_summary()
+    cost = cost_summary(tenant_id=tenant_id)
     tot = cost.get("total_cost", 0.0)
     sku_cnt = len(cost.get("items", {}))
     ans = f"系统当前管理 {sku_cnt} 种食材/物料，库存加权总成本为 HK${tot:.2f}。您可以询问例如：\n- '上月单价最高的三家供应商'\n- '目前有哪些未付账单'\n- '哪些商品最近涨价明显'"
