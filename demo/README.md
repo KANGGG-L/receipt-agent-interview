@@ -28,7 +28,7 @@ AI 只预填、人工背书 —— 这是「可信库存」的底线。
 | `owner` 老板 | approve / flag / 盘点 / 看成本 / 部门管理 | 职责分离：录入的人 ≠ 批准的人 |
 | `staff` 店员 | 上传 / 复核 / 提交 | 管理安全底线 |
 
-切到 staff 后：新建手工单按钮隐藏、approve 操作被后端拒绝（403）；切到 admin 才能调引擎配置/灰测接口。无需密码——下拉切换即时生效。
+切到 staff 后：新建手工单入口仍可见（staff 可建单/保存，入账仍需 owner 审批），approve 操作被后端拒绝（403）；切到 admin 才能调引擎配置/灰测接口。无需密码——下拉切换即时生效。
 
 ### 分组测试（灰测）配置（admin）
 
@@ -200,7 +200,7 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 确定性逻辑（契约门禁/算术门禁/RBAC/入库/乐观锁）有 pytest 覆盖，不依赖 LLM、秒级：
 
 ```bash
-./demo.sh test                     # 15 passed
+./demo.sh test                     # 30 passed
 ```
 
 识别/审核/复盘链用真实免费模型验证（耗时，不走单测）；完整业务流用 `./demo.sh workflow`。
@@ -213,4 +213,28 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
   这也是为什么契约门禁 + Side-by-Side 复核缺一不可
 - **LangChain 版本兼容**：langchain-dashscope 0.1.8 在 pydantic v2 下 root_validator
   失效，llm.py 里手动补 `client`
+- **手动作废入口移除**（D-2026-08-28-1）：「作废」与「删除」操作级重叠、用户需理解
+  留痕差异，故作废态改为只读（仅来自票面划线 AI 提取），用户剔除行唯一操作为删除；
+  作废行不计总额/门禁/入库。决策记录见
+  `docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md` §11
+
+## 十、埋点与反馈
+
+全链路埋点对齐 `step7-指标体系` 的 11 个规范事件并补齐缺口（完整设计见
+[`docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md`](../docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md)）：
+
+- **解析生命周期**（Job 状态机单点写入）：`ocr_parse_started` / `ocr_parsed`（含耗时、重试轮数、门禁拒绝数）/ `ocr_error`（error/timeout）
+- **门禁**：`math_guard_checked` / `contract_guard_checked`（轻量摘要）；**RAG**：`rag_hit`
+- **人工复核 diff**：`receipt_review_submitted` —— 行级三类（修改/增加/删除）+ SKU 更改 + 逐字段计数 + FER，
+  由 `compute_review_diff` 纯函数对比 `ai_prefill_json` 与提交版（品名归一后比较）
+- **终态**：`receipt_approved`（含 upload→approve 端到端耗时）/ `receipt_flagged` / `price_anomaly_flagged`
+- **前端行为**（`POST /api/track`，静默不阻塞）：`parse_abandoned_for_manual`（没等解析转手工单）、
+  `manual_entry_start`、`field_edited`（增/删行、SKU 绑定）、`reupload_after_fail`（失败态重新上传、回到标准上传流程）
+- **聚合消费**：`GET /api/analytics/recognition-summary`（admin）—— 解析成功率、耗时 P50/P95、门禁拦截、
+  行 diff 分布、放弃率、FER、👍/ 分布、灰测组对比；漏斗 `/api/admin/funnel` 已扩展规范步骤
+- **👍/ 反馈按钮**：内联于复核操作行「确认上传单据」右侧，只评价识别结果——仅「收据识别」Tab
+  且已有识别结果时出现（hover：满意/不满意当前解析结果），反馈绑定当前单据走
+  `/api/receipt/{id}/feedback`（喂 VendorMemory 飞轮）
+
+事件存 `user_event` 表（append-only），与 `audit_logs_json`（合规审计）、`ai_decision_log`（AI 引擎视角）职责分离。
 

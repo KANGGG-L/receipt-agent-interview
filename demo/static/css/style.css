@@ -3495,6 +3495,38 @@ table.data-table tr.inv-row-low-stock td {
     margin-bottom: 4px;
 }
 
+/* ==========================================================================
+   复核操作行内联反馈按钮（11-组件Spec-全链路埋点与体验反馈体系 §5）
+   位于「确认上传单据」右侧，仅识别结果可见时显示
+   ========================================================================== */
+.feedback-inline {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: 4px;
+}
+
+.feedback-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-btn);
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    box-shadow: var(--shadow);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.feedback-btn:hover { transform: scale(1.1); background: var(--bg-hover); }
+.feedback-btn:active { transform: scale(0.95); }
+.feedback-btn-up:hover { background: var(--success-bg); }
+.feedback-btn-down:hover { background: var(--danger-bg); }
+
 
 
 

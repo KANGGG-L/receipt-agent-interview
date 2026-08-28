@@ -484,6 +484,12 @@
                                     <div style="display:flex; gap:12px; align-items:center;">
                                         <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果并彻底删除单据">放弃上传</button>
                                         <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
+                                        <span id="feedbackInline" class="feedback-inline" style="display:none;">
+                                            <button type="button" class="feedback-btn feedback-btn-up"
+                                                    onclick="onFeedbackClick(1)" title="满意当前解析结果" aria-label="点赞">👍</button>
+                                            <button type="button" class="feedback-btn feedback-btn-down"
+                                                    onclick="onFeedbackClick(-1)" title="不满意当前解析结果" aria-label="点踩">👎</button>
+                                        </span>
                                     </div>
                                 </div>
 
@@ -498,9 +504,12 @@
                                 <div style="padding: 20px 16px; text-align: center;">
                                     <h4 id="errorCardHeading" style="font-weight: 600; color: var(--text-main); margin-bottom: 8px;">收据画质偏低或未识别成功</h4>
                                     <p id="errorMsgText" style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 20px; max-width: 480px; margin-left: auto; margin-right: auto;">
-                                        原图已在左侧保留。您可以强制继续解析或直接转手工录入。
+                                        原图已在左侧保留。您可以重新上传一张更清晰的照片，或强制继续解析 / 转手工录入。
                                     </p>
                                     <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+                                        <button class="btn btn-primary" id="btnReupload" onclick="reuploadFromErrorCard()" title="换一张更清晰的收据照片，自动重新识别">
+                                            重新上传
+                                        </button>
                                         <button class="btn btn-success" id="btnForceRetry" onclick="retryFromErrorCard(true)" title="忽略画质警告，继续 AI 智能解析">
                                             继续 AI 解析
                                         </button>
@@ -2748,6 +2757,6 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260828f"></script>
+    <script src="/static/js/main.js?v=20260828g"></script>
 </body>
 </html>

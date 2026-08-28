@@ -24,6 +24,7 @@ from app.llm import build_recognition_model
 from app.models import ReceiptData, EngineConfig
 from app.services import math_engine
 from app.services.rag import retrieve_context
+from app import db
 
 MAX_RETRY = 3
 
@@ -78,15 +79,33 @@ def _run_extract(image_path, vendor_hint, config, use_grey, retry_feedback, atte
     )
 
 
-def _run_gates(data: ReceiptData):
+def _track_guard(event_type, err, receipt_id, attempt):
+    """门禁轻量埋点（规范事件 #5/#14）：只记摘要，不重复存 token/cost。"""
+    try:
+        db.log_user_event(
+            account_id="system", session_id="",
+            event_type=event_type,
+            receipt_id=int(receipt_id) if receipt_id else None,
+            properties={"is_valid": err is None,
+                        "reject_reason": (err or "")[:200],
+                        "attempt": int(attempt or 1)},
+        )
+    except Exception:
+        pass
+
+
+def _run_gates(data: ReceiptData, receipt_id=None, attempt=1):
     """契约门禁 + 算术门禁（确定性代码，零 token）。"""
     from app.services.contract import validate_contract
     data, err = validate_contract(data.model_dump())
+    _track_guard("contract_guard_checked", err, receipt_id, attempt)
     if err:
         return None, err
     problems = math_engine.validate_and_report(data)
+    math_err = ("算术门禁: " + "; ".join(problems)) if problems else None
+    _track_guard("math_guard_checked", math_err, receipt_id, attempt)
     if problems:
-        return None, "算术门禁: " + "; ".join(problems)
+        return None, math_err
     return data, None
 
 
@@ -412,10 +431,19 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                     getattr(result["data"], "vendor", "") or "") or ""
                 state["rag_ms"] = round(state["rag_ms"] + (time.time() - r_start) * 1000, 1)
                 state["vendor_context"] = ctx
+                if ctx:
+                    try:
+                        db.log_user_event(
+                            account_id="system", session_id="",
+                            event_type="rag_hit",
+                            receipt_id=int(receipt_id) if receipt_id else None,
+                            properties={"context_len": len(str(ctx))})
+                    except Exception:
+                        pass
             except Exception:
                 state["vendor_context"] = ""
 
-        data, gate_err = _run_gates(result["data"])
+        data, gate_err = _run_gates(result["data"], receipt_id, attempt)
         if gate_err:
             state["contract_error"] = gate_err
             # Layer 2.2：门禁不过先尝试「解析级廉价修正」（纯文本 parse LLM，不重读图）；
@@ -432,7 +460,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                 corr_data, corr_err = extract_chain._parse_to_receipt(corrected)
                 corr_gate = corr_err
                 if corr_data is not None and not corr_err:
-                    corr_data, corr_gate = _run_gates(corr_data)
+                    corr_data, corr_gate = _run_gates(corr_data, receipt_id, attempt)
                 if corr_gate is None:
                     # 修正成功 → 直接采用，进入审核，不再整图重识别
                     state["raw"] = corrected

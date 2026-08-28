@@ -149,7 +149,12 @@ def grey_compare(request: Request):
 # 2.3 使用漏斗
 # -------------------------------------------------------------
 FUNNEL_DEFAULT = [
-    "upload", "parse_done", "edit", "approve", "inventory_in",
+    ("upload", ("upload", "receipt_uploaded")),
+    ("ocr_parse_started", ("ocr_parse_started",)),
+    ("ocr_parsed", ("parse_done", "ocr_parsed")),
+    ("edit", ("save_edited", "receipt_review_submitted")),
+    ("approve", ("approve", "receipt_approved")),
+    ("inventory_in", ("inventory_in",)),
 ]
 
 @router.get("/api/admin/funnel")
@@ -166,14 +171,13 @@ def funnel(request: Request):
     counts = {}
     for r in rows:
         counts[r.event_type] = counts.get(r.event_type, 0) + 1
-    first = counts.get(steps[0], 0) if steps else 0
+    first = sum(counts.get(k, 0) for k in steps[0][1]) if steps else 0
     out = []
-    cum = first
-    for st in steps:
-        c = counts.get(st, 0)
+    for step_name, event_keys in steps:
+        c = sum(counts.get(k, 0) for k in event_keys)
         step_rate = round(c / first, 4) if first else None
         cum_rate = round(c / first, 4) if first else None
-        out.append({"step": st, "count": c, "step_rate": step_rate, "cumulative_rate": cum_rate})
+        out.append({"step": step_name, "count": c, "step_rate": step_rate, "cumulative_rate": cum_rate})
     return {"status": "success", "data": {"steps": out, "period": period,
             "low_confidence": first < 30}}
 

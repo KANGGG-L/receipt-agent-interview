@@ -389,6 +389,138 @@ def test_u2_build_detail_includes_ai_decisions():
         assert key in detail, f"build_detail 旧字段丢失: {key}"
 
 
+# -------------------------------------------------------------
+# 埋点：compute_review_diff（11-组件Spec-全链路埋点与体验反馈体系 §4）
+# -------------------------------------------------------------
+def _ritem(**kw):
+    base = {"name": "牛腩", "quantity": 1.0, "unit": "kg",
+            "unit_price": 40.0, "amount": 40.0, "sku_id": None}
+    base.update(kw)
+    return base
+
+
+def test_review_diff_identical():
+    from app.services.receipt_utils import compute_review_diff
+    ai = [_ritem(), _ritem(name="菜心", unit_price=8.0, amount=8.0)]
+    d = compute_review_diff(ai, [dict(ai[0]), dict(ai[1])])
+    assert (d["rows_added"], d["rows_modified"], d["rows_deleted"]) == (0, 0, 0)
+    assert d["sku_changed"] == 0
+    assert sum(d["field_mod_counts"].values()) == 0
+
+
+def test_review_diff_modified():
+    from app.services.receipt_utils import compute_review_diff
+    ai = [_ritem(), _ritem(name="菜心", unit_price=8.0, amount=8.0)]
+    fin = [dict(ai[0]), dict(ai[1], unit_price=10.0, amount=10.0)]
+    d = compute_review_diff(ai, fin)
+    assert d["rows_modified"] == 1
+    assert d["field_mod_counts"]["unit_price"] == 1
+    assert d["field_mod_counts"]["amount"] == 1
+
+
+def test_review_diff_added_deleted():
+    from app.services.receipt_utils import compute_review_diff
+    ai = [_ritem(), _ritem(name="菜心"), _ritem(name="豆芽")]
+    fin = [dict(ai[0]), dict(ai[1]), dict(ai[2]), _ritem(name="新增行")]
+    d = compute_review_diff(ai, fin)
+    assert d["rows_added"] == 1 and d["rows_deleted"] == 0
+    d2 = compute_review_diff(ai, [dict(ai[0])])
+    assert d2["rows_deleted"] == 2 and d2["rows_added"] == 0
+
+
+def test_review_diff_sku_changed():
+    from app.services.receipt_utils import compute_review_diff
+    ai = [_ritem(sku_id=5), _ritem(name="菜心"), _ritem(name="豆芽", sku_id=7)]
+    fin = [_ritem(sku_id=8), dict(ai[1]), _ritem(name="豆芽改名", sku_id=7)]
+    d = compute_review_diff(ai, fin)
+    # 行1 sku 变更 + 行3 name 变更（sku 非空）→ 2；行2 AI 未匹配不计
+    assert d["sku_changed"] == 2
+    assert d["rows_modified"] == 2
+
+
+def test_review_diff_no_ai_prefill():
+    from app.services.receipt_utils import compute_review_diff
+    d = compute_review_diff([], [_ritem(), _ritem(name="菜心")])
+    assert d["rows_added"] == 2
+    assert (d["rows_modified"], d["rows_deleted"], d["sku_changed"]) == (0, 0, 0)
+
+
+def test_review_diff_empty_both():
+    from app.services.receipt_utils import compute_review_diff
+    d = compute_review_diff([], [])
+    assert (d["rows_added"], d["rows_modified"], d["rows_deleted"]) == (0, 0, 0)
+    assert d["total_ai"] == 0 and d["total_final"] == 0
+
+
+# -------------------------------------------------------------
+# 埋点端点（/api/track + recognition-summary + funnel）
+# -------------------------------------------------------------
+@pytest.fixture()
+def client():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    with TestClient(app) as c:
+        yield c
+
+
+def test_track_endpoint_writes_user_event(client):
+    r = client.post("/api/track",
+                    json={"event_type": "parse_abandoned_for_manual",
+                          "properties": {"waited_ms": 3200}},
+                    headers={"X-Role": "staff"})
+    assert r.status_code == 200 and r.json()["status"] == "ok"
+    s = db.get_session()
+    try:
+        rows = s.query(db._UserEventRow).filter_by(
+            event_type="parse_abandoned_for_manual").all()
+    finally:
+        s.close()
+    assert len(rows) == 1
+
+
+def test_recognition_summary_rbac(client):
+    assert client.get("/api/analytics/recognition-summary",
+                      headers={"X-Role": "staff"}).status_code == 403
+    assert client.get("/api/analytics/recognition-summary",
+                      headers={"X-Role": "admin"}).status_code == 200
+
+
+def test_recognition_summary_aggregation(client):
+    for _ in range(2):
+        db.log_user_event(event_type="ocr_parse_started")
+    db.log_user_event(event_type="ocr_parsed",
+                      properties={"elapsed_ms": 1000, "attempts": 1})
+    db.log_user_event(event_type="ocr_error",
+                      properties={"elapsed_ms": 3000, "status": "error"})
+    db.log_user_event(event_type="math_guard_checked",
+                      properties={"is_valid": False, "reject_reason": "算术门禁: x"})
+    db.log_user_event(event_type="receipt_review_submitted",
+                      properties={"rows_added": 1, "rows_modified": 2,
+                                  "rows_deleted": 0, "sku_changed": 1,
+                                  "fer_rate": 0.2})
+    db.log_user_event(event_type="parse_abandoned_for_manual",
+                      properties={"waited_ms": 5000})
+    body = client.get("/api/analytics/recognition-summary",
+                      headers={"X-Role": "admin"}).json()
+    d = body["data"]
+    assert d["parse_total"] == 2 and d["parse_success"] == 1 and d["parse_fail"] == 1
+    assert d["gate_reject_count"] == 1
+    assert d["gate_reject_reasons"]["math"] == 1
+    assert d["rows_modified"] == 2 and d["rows_added"] == 1 and d["sku_changed"] == 1
+    assert d["abandon_count"] == 1 and d["abandon_rate"] == 0.5
+    assert d["elapsed_p50_ms"] is not None
+
+
+def test_funnel_includes_canonical_steps(client):
+    db.log_user_event(event_type="upload")
+    db.log_user_event(event_type="ocr_parse_started")
+    body = client.get("/api/admin/funnel", headers={"X-Role": "owner"}).json()
+    steps = [s["step"] for s in body["data"]["steps"]]
+    assert "ocr_parse_started" in steps and "ocr_parsed" in steps
+    counts = {s["step"]: s["count"] for s in body["data"]["steps"]}
+    assert counts["upload"] == 1 and counts["ocr_parse_started"] == 1
+
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

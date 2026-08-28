@@ -431,6 +431,25 @@ function createAuthFetchWrapper(originalFetch, opts) {
     });
 })();
 
+// ---- 埋点（11-组件Spec-全链路埋点与体验反馈体系）----
+// fire-and-forget：走包装 fetch 自动带 X-Role；keepalive 允许卸载期发送；失败静默
+let parseStartTs = 0;
+function track(eventType, receiptId, properties) {
+    try {
+        fetch('/api/track', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                event_type: eventType,
+                receipt_id: receiptId || null,
+                properties: properties || {},
+            }),
+            keepalive: true,
+        }).catch(() => {});
+    } catch (e) { /* 埋点永不阻塞业务 */ }
+}
+window.track = track;
+
 // 纯函数：/api/auth/me 探测结果的进入决策
 function decideAuthProbe(httpStatus, _body) {
     if (httpStatus === 401) return 'login';
@@ -1277,6 +1296,7 @@ function initTabs() {
                 loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
                 loadPValueCards();       // E-P1-3 p-value 显著性卡片
             }
+            syncFeedbackVisibility();
         });
     });
 }
@@ -2042,6 +2062,7 @@ function triggerAnalysisNow(forceFlag = false) {
     document.getElementById('loadingCard').classList.remove('hide');
     document.getElementById('prefillFormCard').classList.add('hide');
     startOcrTimer();
+    parseStartTs = Date.now();
 
     // Q28: 代际标记 + 轮询令牌——被新上传替换后旧轮询作废、旧结果丢弃
     const gen = ++singleUploadGen;
@@ -2454,6 +2475,7 @@ function showErrorCard(msg, receiptId, code) {
     if (convertBtn) convertBtn.style.display = '';
 
     document.getElementById('errorCard').classList.remove('hide');
+    syncFeedbackVisibility();
 }
 
 function retryFromErrorCard(force = true) {
@@ -2469,6 +2491,30 @@ function retryFromErrorCard(force = true) {
         triggerAnalysisNow(force);
     }
 }
+
+// 失败态「重新上传」：移除坏图并回到标准上传入口流程
+function reuploadFromErrorCard() {
+    track('reupload_after_fail', lastErrorReceiptId, {});
+    const failIdx = (typeof BatchUploader !== 'undefined' && BatchUploader.photos)
+        ? BatchUploader.photos.findIndex(p => p.receiptId === lastErrorReceiptId)
+        : -1;
+    if (failIdx >= 0) removePhotoFromSider(failIdx);
+    currentReceiptId = null;
+    currentReceiptData = null;
+    isManualEntry = false;
+    ['errorCard', 'loadingCard', 'prefillFormCard', 'preConfirmCard'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('hide');
+    });
+    if (typeof renderSider === 'function') renderSider();
+    syncFeedbackVisibility();
+    const ua = document.getElementById('uploadArea');
+    if (ua) ua.scrollIntoView({ block: 'center' });
+    // 真实浏览器直接弹文件选择；内置环境也可走「选择收据图片」/拖拽入口
+    const fi = document.getElementById('receiptFile');
+    if (fi) fi.click();
+}
+window.reuploadFromErrorCard = reuploadFromErrorCard;
 
 function convertManualFromErrorCard() {
     if (lastErrorReceiptId) {
@@ -2701,6 +2747,10 @@ function syncManualEntryVisibility() {
 
 // 进入新建手工单空态：无原图（左栏占位）、表单清空、明细可加行
 function startManualEntry() {
+    const _loading = document.getElementById('loadingCard');
+    track('manual_entry_start', null, {
+        source: (_loading && !_loading.classList.contains('hide')) ? 'abort' : 'new',
+    });
     isManualEntry = true;
     currentReceiptId = null;
     currentReceiptData = null;
@@ -2735,7 +2785,7 @@ function startManualEntry() {
     populateDeptSelect(document.getElementById('inpDepartmentId'), null);
     showQualityWarnings([]);
     document.getElementById('itemTableBody').innerHTML = '';
-    addEmptyRow();
+    addEmptyRow({ silent: true });
 
     // 卡片切换：显示复核表单空态
     document.getElementById('preConfirmCard').classList.add('hide');
@@ -2745,10 +2795,16 @@ function startManualEntry() {
     document.getElementById('splitViewArea').classList.remove('hide');
 
     showToast('已进入新建手工单：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
+    syncFeedbackVisibility();
 }
 
 // U-11: 识别过程随时转手工逃生通道（保留原图，中止识别，直接切入复核/手工表单）
 function abortLoadingAndSwitchToManual() {
+    track('parse_abandoned_for_manual', currentReceiptId, {
+        waited_ms: parseStartTs ? Date.now() - parseStartTs : null,
+        pending_photos: (typeof BatchUploader !== 'undefined' && BatchUploader.photos)
+            ? BatchUploader.photos.filter(p => p.status === 'uploading').length : 0,
+    });
     // 1. 停止识别计时器与进度
     stopOcrTimer();
     stopBatchTimer();
@@ -2826,7 +2882,7 @@ function abortLoadingAndSwitchToManual() {
 
     const tbody = document.getElementById('itemTableBody');
     if (tbody && tbody.children.length === 0) {
-        addEmptyRow();
+        addEmptyRow({ silent: true });
     }
 
     renderCurrencySymbol();
@@ -2841,8 +2897,8 @@ let activeTool = null;
 function updateToolbarButtonStates() {
     const photo = getActivePhoto();
     const cropDisabled = !isPhotoSelectable(photo);  // 已解析/已保存不可裁剪
-    // 删除图片 / 更改图片：解析开始（非 pending）后隐藏，避免解析中改动原图
-    const allowImageEdit = !!photo && photo.status === 'pending';
+    // 删除图片 / 更改图片：pending 与失败态可见（失败态提供换图重传出口），解析开始后隐藏避免改动原图
+    const allowImageEdit = !!photo && (photo.status === 'pending' || photo.status === 'error');
     const btnDelete = document.getElementById('btnDeleteImage');
     const btnReload = document.getElementById('btnReloadImage');
     if (btnDelete) btnDelete.style.display = allowImageEdit ? '' : 'none';
@@ -3813,6 +3869,8 @@ function selectSkuItem(itemElem) {
         const menu = wrap.querySelector('.unit-dropdown-menu');
         if (menu) menu.classList.add('hide');
     }
+    track('field_edited', currentReceiptId,
+          { field_name: 'sku_binding', sku_id: skuId, sku_name: skuName });
     setTimeout(() => { isSelectingSku = false; }, 200);
 }
 
@@ -3983,6 +4041,7 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
 // -------------------------------------------------------------
 function renderEditForm(data) {
     if (!data) data = {};
+    syncFeedbackVisibility(data);
     document.getElementById('inpSupplier').value = data.supplier_name || '';
     document.getElementById('inpDate').value = data.date || '';
     document.getElementById('inpSheet').value = data.sheet_name || (data.date ? data.date.slice(0, 7) : '');
@@ -4579,7 +4638,7 @@ function appendTableRow(item = {}) {
         </td>
         <td style="text-align:center;">
             <div class="row-actions">
-                <button type="button" class="btn-action-void ${isVoidMain ? 'is-void' : ''}" onclick="toggleRowVoid(this)" title="${isVoidMain ? '恢复此行' : '作废此行 (划线不计入总额)'}">${isVoidMain ? '恢复' : '作废'}</button>
+                ${isVoidMain ? '<span class="badge badge-secondary" title="票面划线行：不计入总额与入库" style="margin-right:4px;">作废</span>' : ''}
                 <button type="button" class="btn-action-delete" onclick="removeRow(this)" title="删除此明细行">删除</button>
             </div>
         </td>
@@ -4593,73 +4652,41 @@ function appendTableRow(item = {}) {
     tr.addEventListener('change', () => { tr.dataset.manual = '1'; });
 }
 
-function addEmptyRow() {
+function addEmptyRow(opts) {
     appendTableRow({ raw_name: '', quantity: 1.0, raw_unit: 'kg', unit_price: 0.0, amount: 0.0 });
     const container = document.querySelector('#prefillFormCard .table-container');
     if (container) {
         container.scrollTop = container.scrollHeight;
     }
+    if (!(opts && opts.silent)) {
+        track('field_edited', currentReceiptId, { field_name: 'row_add' });
+    }
 }
 
 function removeRow(btn) {
     const tr = btn.closest('tr');
-    if (tr) tr.remove();
+    if (tr) {
+        const idx = [...(tr.parentElement ? tr.parentElement.children : [])].indexOf(tr);
+        track('field_edited', currentReceiptId, { field_name: 'row_remove', row_index: idx });
+        tr.remove();
+    }
     recalcTotalSum();
 }
 
-function toggleRowVoid(btn) {
-    const tr = btn.closest('tr');
-    if (!tr) return;
-    const isVoid = tr.dataset && tr.dataset.isVoid === '1';
-    const newVoid = !isVoid;
-    tr.dataset.isVoid = newVoid ? '1' : '0';
-    tr.style.opacity = newVoid ? '0.5' : '';
-
-    btn.classList.toggle('is-void', newVoid);
-    btn.textContent = newVoid ? '恢复' : '作废';
-    btn.title = newVoid ? '恢复此行' : '作废此行 (划线不计入总额)';
-
-    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
-        inp.style.textDecoration = newVoid ? 'line-through' : '';
-        inp.style.color = newVoid ? '#94a3b8' : '';
-    });
-    tr.querySelectorAll('.inp-qty, .inp-actual-qty, .inp-price, .inp-amount, .inp-dept').forEach(inp => {
-        inp.disabled = newVoid;
-        if (inp.classList.contains('inp-qty') || inp.classList.contains('inp-actual-qty')) {
-            inp.style.textDecoration = newVoid ? 'line-through' : '';
-        }
-    });
-    const pill = tr.querySelector('.sku-pill');
-    if (pill) {
-        pill.style.pointerEvents = newVoid ? 'none' : '';
-        pill.style.opacity = newVoid ? '0.6' : '';
-    }
-
-    recalcTotalSum();
-}
-window.toggleRowVoid = toggleRowVoid;
-
-function toggleMainVoid(cb) {
-    const tr = cb.closest('tr');
-    if (!tr) return;
-    const voidBtn = tr.querySelector('.btn-action-void');
-    if (voidBtn) {
-        toggleRowVoid(voidBtn);
-    } else {
-        const isVoid = cb.checked;
-        tr.dataset.isVoid = isVoid ? '1' : '0';
-        tr.style.opacity = isVoid ? '0.55' : '';
-        recalcTotalSum();
-    }
-}
+// 产品决策（见 docs 决策记录）：手动作废入口已移除——作废态仅来自票面划线的 AI 提取，只读展示；
+// 用户剔除行的唯一操作是「删除」。is_void 行的置灰/划线/禁用样式在 appendTableRow 渲染时完成。
 
 function recalcRow(inputElem) {
     const tr = inputElem.closest('tr');
     const qty = parseFloat(tr.querySelector('.inp-qty').value) || 0;
     const price = parseFloat(tr.querySelector('.inp-price').value) || 0;
+    // 与算术门禁同口径：实收>0 时按实收计金额（math_engine effective_qty）
+    const actualInput = tr.querySelector('.inp-actual-qty');
+    const actual = actualInput ? parseFloat(actualInput.value) : NaN;
+    const effQty = !isNaN(actual) && actual > 0 ? actual : qty;
 
     const amtInput = tr.querySelector('.inp-amount');
-    amtInput.value = (qty * price).toFixed(2);
+    amtInput.value = (effQty * price).toFixed(2);
 
     recalcTotalSum();
 }
@@ -7047,7 +7074,6 @@ function appendArcTableRow(item = {}) {
             </select>
         </td>
         <td style="text-align:center; white-space:nowrap;">
-            <label style="font-size:0.72rem; display:inline-flex; align-items:center; gap:3px; cursor:pointer; margin-right:4px;"><input type="checkbox" class="inp-void" ${isVoid ? 'checked' : ''} onchange="toggleArcVoid(this)">作废</label>
             <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
         </td>
         <td style="text-align:center; white-space:nowrap;">
@@ -7092,9 +7118,13 @@ function recalcArcRow(inputElem) {
     const tr = inputElem.closest('tr');
     const qty = parseFloat(tr.querySelector('.inp-qty').value) || 0;
     const price = parseFloat(tr.querySelector('.inp-price').value) || 0;
+    // 与算术门禁同口径：实收>0 时按实收计金额
+    const actualInput = tr.querySelector('.inp-actual-qty');
+    const actual = actualInput ? parseFloat(actualInput.value) : NaN;
+    const effQty = !isNaN(actual) && actual > 0 ? actual : qty;
 
     const amtInput = tr.querySelector('.inp-amount');
-    amtInput.value = (qty * price).toFixed(2);
+    amtInput.value = (effQty * price).toFixed(2);
 
     recalcArcTotalSum();
 }
@@ -7110,38 +7140,6 @@ function recalcArcTotalSum() {
         sum += amt;
     });
     document.getElementById('arcTotal').value = sum.toFixed(2);
-}
-
-// D-P1-4：归档明细行作废勾选联动（置灰 + 总额重算）
-function toggleArcVoid(cb) {
-    const tr = cb.closest('tr');
-    if (!tr) return;
-    tr.dataset.isVoid = cb.checked ? '1' : '0';
-    tr.style.opacity = cb.checked ? '0.55' : '';
-    tr.querySelectorAll('.inp-name, .inp-unit').forEach(inp => {
-        inp.style.textDecoration = cb.checked ? 'line-through' : '';
-        if (!cb.checked) inp.style.color = '';
-        else inp.style.color = '#6c757d';
-    });
-    tr.querySelectorAll('.inp-qty, .inp-actual-qty, .inp-price, .inp-amount').forEach(inp => {
-        inp.disabled = cb.checked;
-        if (inp.classList.contains('inp-qty') || inp.classList.contains('inp-actual-qty')) {
-            inp.style.textDecoration = cb.checked ? 'line-through' : '';
-        }
-    });
-    const voidBadge = tr.querySelector('.void-badge-arc');
-    if (cb.checked && !voidBadge) {
-        const span = document.createElement('span');
-        span.className = 'badge badge-secondary void-badge-arc';
-        span.textContent = '作废';
-        span.title = '划线作废，不计入总额';
-        const nameTd = tr.querySelector('td');
-        if (nameTd) nameTd.appendChild(span);
-    } else if (!cb.checked && voidBadge) {
-        voidBadge.remove();
-    }
-    markArcDirty();
-    recalcArcTotalSum();
 }
 
 // Q32: 归档弹窗保存互斥旗标——保存中禁止再次触发（防双击重复提交）
@@ -13706,5 +13704,52 @@ if (typeof window !== 'undefined') {
     window.setCostAnalysisDays = setCostAnalysisDays;
     window.loadDishCostAnalysis = loadDishCostAnalysis;
 }
+
+// ---- 点赞/点踩反馈显隐：只评价识别结果——仅「收据识别」Tab 且已有识别结果时出现 ----
+function syncFeedbackVisibility(data) {
+    const box = document.getElementById('feedbackInline');
+    if (!box) return;
+    const d = data || currentReceiptData || null;
+    const aiItems = ((d && d.ai_prefill) || {}).items || [];
+    const scanActive = !!document.querySelector('.sidebar-btn[data-target="tab-scan"].active');
+    const loading = document.getElementById('loadingCard');
+    const preConfirm = document.getElementById('preConfirmCard');
+    const idle = (!loading || loading.classList.contains('hide'))
+        && (!preConfirm || preConfirm.classList.contains('hide'));
+    const recognized = !!(currentReceiptId && !isManualEntry && idle && aiItems.length > 0);
+    box.style.display = (scanActive && recognized) ? 'inline-flex' : 'none';
+}
+window.syncFeedbackVisibility = syncFeedbackVisibility;
+
+// ---- 点赞/点踩反馈按钮（内联于「确认上传单据」右侧，11-组件Spec §5 智能归属）----
+function onFeedbackClick(like) {
+    const rid = (typeof currentReceiptId === 'number' && currentReceiptId > 0)
+        ? currentReceiptId : null;
+    const okMsg = like === 1 ? '感谢点赞！' : '已收到反馈，我们会改进';
+    if (rid) {
+        // 租户标识与 _postFeedback（FR-8 行反馈发送器）同源：localStorage demo_tenant_id，
+        // 缺省 default；否则非 default 租户下内联反馈会因租户不匹配恒 404
+        const tenantId = _feedbackTenantId();
+        fetch(`/api/receipt/${rid}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
+            body: JSON.stringify({ like: like, tenant_id: tenantId }),
+        })
+            .then(r => r.json())
+            .then(ret => {
+                if (ret && ret.status === 'success') showToast(okMsg, like === 1 ? 'success' : 'info');
+                else showToast('反馈提交失败', 'error');
+            })
+            .catch(() => showToast('反馈提交失败', 'error'));
+    } else {
+        track('feedback_received', null, {
+            like: like,
+            tab: (document.querySelector('.sidebar-btn.active') || {}).textContent || '',
+            role: localStorage.getItem('demo_role') || 'owner',
+        });
+        showToast(okMsg, like === 1 ? 'success' : 'info');
+    }
+}
+window.onFeedbackClick = onFeedbackClick;
 
 
