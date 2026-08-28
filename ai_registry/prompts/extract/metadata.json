@@ -1,6 +1,6 @@
 {
   "scene": "extract",
-  "active_version": "v1_2_0_sku_clean",
+  "active_version": "v1_2_8_anti_injection",
   "description": "多模态 VLM 收据视觉抽取提示词",
   "versions": {
     "v1_0_0": {
@@ -38,7 +38,7 @@
     },
     "v1_2_0_sku_clean": {
       "release_date": "2026-08-21",
-      "status": "production",
+      "status": "archived",
       "description": "品名纯净性规范与流水号/条形码智能剥离版",
       "metrics": {
         "accuracy": 98.2,
@@ -53,6 +53,77 @@
         "新增食材品名纯净性提取规范，剥离下划线流水号、井号编码、前缀货号与条形码",
         "增加正反例 Few-Shot 对照，强化防误删保护（保留 M7/A级/头数/净重/品牌数字）",
         "支持品名与追溯号/条形码独立结构化提取"
+      ]
+    },
+    "v1_2_1_anti_stamp_pollution": {
+      "release_date": "2026-08-22",
+      "status": "archived",
+      "description": "印章/签名/手写批注污染明细行专项语义隔离 (Gap 1)",
+      "changelog": [
+        "印章/签名仅代表付款状态，严禁进入 items 明细",
+        "Few-Shot 强化印章污染明细行的隔离"
+      ]
+    },
+    "v1_2_2_anti_disclaimer_pollution": {
+      "release_date": "2026-08-22",
+      "status": "archived",
+      "description": "免责条款/联系电话/地址/银行账户等非商品杂质专项隔离 (Gap 2)",
+      "changelog": [
+        "表头表尾免责声明与联系方式严禁进入 items 明细"
+      ]
+    },
+    "v1_2_3_anti_fee_confusion": {
+      "release_date": "2026-08-23",
+      "status": "archived",
+      "description": "整单折让/押金/运费服务费专项解耦与结构化字段提取 (Gap 3)",
+      "changelog": [
+        "整单折让提取至 discount_amount，押金提取至 deposit_amount",
+        "运费/服务费从明细行解耦为独立结构化字段"
+      ]
+    },
+    "v1_2_4_multi_pack": {
+      "release_date": "2026-08-23",
+      "status": "archived",
+      "description": "复合包装规格乘数与计件单位解耦 (Gap 4)",
+      "changelog": [
+        "「大豆油 5L*2樽」解耦为 item_name/quantity/unit 标准结构化输出"
+      ]
+    },
+    "v1_2_5_hk_date": {
+      "release_date": "2026-08-24",
+      "status": "archived",
+      "description": "香港本地化日期格式 (DD/MM/YYYY) 规则强化与 YYYY-MM-DD 归一化 (Gap 5)",
+      "changelog": [
+        "香港单据默认日/月/年惯例，输出归一化为 YYYY-MM-DD"
+      ]
+    },
+    "v1_2_6_strike_notes": {
+      "release_date": "2026-08-24",
+      "status": "archived",
+      "description": "验货划线作废判定与手写拒收/短装/退货注记抽取 (Gap 6)",
+      "changelog": [
+        "划线删除商品标记 is_void，不计入实付有效小计",
+        "手写验货批注提取至 adjustment_notes"
+      ]
+    },
+    "v1_2_7_huama_humility": {
+      "release_date": "2026-08-25",
+      "status": "archived",
+      "description": "街市花码（苏州码子）与草书连笔置信度校准与如实标注 (Gap 7)",
+      "changelog": [
+        "花码明细置信度硬性校准压降，含糊字段留空并降低 confidence"
+      ]
+    },
+    "v1_2_8_anti_injection": {
+      "release_date": "2026-08-25",
+      "status": "production",
+      "description": "供应商记忆 RAG 间接提示词注入防御 XML 数据沙箱 (Gap 8)",
+      "metrics": {
+        "injection_defense_rate": 100.0
+      },
+      "changelog": [
+        "Gap 1-8 聚合版：供应商记忆先验一律经 XML 数据沙箱包裹，严禁作为指令执行",
+        "此前该版本文件已存在但未登记 metadata，本条为补登记（文本零改动）"
       ]
     }
   }

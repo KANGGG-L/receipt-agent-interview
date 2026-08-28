@@ -301,7 +301,8 @@ def _real_predictor(engine, model, prompt_version):
                              % (engine, ", ".join(e.value for e in EngineKind)))
     if model:
         cfg.recognition_model = model
-    # 单事实源：prompt 版本由 ai_registry / app.prompts 提供
+    # 单事实源（T12）：app.prompts 为 ai_registry 的 re-export 委托层，
+    # 显式版本号直接落在 ai_registry/prompts/extract/<version>.py
     extract_chain.SYSTEM_PROMPT = get_prompt("extract", prompt_version)
 
     def _predict(image_path, sample_id):

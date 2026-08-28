@@ -40,6 +40,15 @@
         "增加食材品名纯净化与流水号/条形码/批次号剥离规则",
         "内建合法等级规格（M7/A级/头数/净重/品牌数字）防误删保护"
       ]
+    },
+    "v2_2_0_structured_json": {
+      "release_date": "2026-08-29",
+      "status": "archived",
+      "description": "VLM 原始输出规范化为契约 JSON 的解析提示词（extract_chain 解析通道）",
+      "changelog": [
+        "T12 登记：继承自内联前身的生产行为，字节等价豁免评测（与 extract_chain 内联 PARSE_SYSTEM_PROMPT 逐字节一致，不跑新评测）",
+        "显式版本加载（get_prompt(\"parse\", \"v2_2_0_structured_json\")），场景 active 保持 v2_1_0_sku_clean 不变"
+      ]
     }
   }
 }

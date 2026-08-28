@@ -1,0 +1,15 @@
+{
+  "scene": "correct",
+  "active_version": "v1_0_0",
+  "description": "门禁反馈驱动的解析级修正提示词（extract_chain 修正通道）",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-29",
+      "status": "production",
+      "description": "契约/算术门禁打回后的最小修正提示词",
+      "changelog": [
+        "T12 登记：继承自内联前身的生产行为，字节等价豁免评测（与 extract_chain 内联 CORRECT_SYSTEM_PROMPT 逐字节一致，不跑新评测）"
+      ]
+    }
+  }
+}

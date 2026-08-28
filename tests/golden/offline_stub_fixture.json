@@ -1,0 +1,60 @@
+{
+  "samples": [
+    {
+      "audit_trail": null,
+      "data": null,
+      "err": "契约校验失败: date: Field required; confidence: Field required",
+      "math_problems": null,
+      "name": "sample_ok",
+      "raw": "```json\n{\"supplier_name\": \"德利行 Tak Lee Hong\", \"total_amount\": 197.0, \"is_paid\": true, \"items\": [{\"item_name\": \"有机菜心_1787140420\", \"quantity\": 2.0, \"unit\": \"斤\", \"unit_price\": 8.5, \"amount\": 17.0}, {\"item_name\": \"五花肉\", \"quantity\": 1.0, \"unit\": \"盒\", \"unit_price\": 180.0, \"amount\": 180.0}]}\n```"
+    },
+    {
+      "audit_trail": {
+        "declared_total": 105.0,
+        "engine": "code_engine",
+        "items_sum": 20.0,
+        "problems": [
+          "第1行 菜心: 数量3.0×单价5.0=15.0，但小计=20.0（差-5.0）",
+          "明细合计=20.0 - 折扣=20.0 预期总额=0.0，但总额=105.0（差-105.0）"
+        ],
+        "tokens": 0
+      },
+      "data": {
+        "adjustment_notes": [],
+        "confidence": 0.8,
+        "currency": "HKD",
+        "date": "2026-08-06",
+        "delivery_fee": 0.0,
+        "deposit_amount": 0.0,
+        "discount_amount": 20.0,
+        "doc_form": "printed_delivery_note",
+        "fees_detail": {},
+        "items": [
+          {
+            "actual_qty": null,
+            "amount": 20.0,
+            "is_void": false,
+            "name": "菜心",
+            "qty": 3.0,
+            "raw_name": "菜心 [SKU:882910]",
+            "unit": "斤",
+            "unit_price": 5.0
+          }
+        ],
+        "payment_marked": false,
+        "rounding_adjustment": 0.0,
+        "service_fee": 0.0,
+        "tax_amount": 0.0,
+        "total": 105.0,
+        "vendor": "祥興"
+      },
+      "err": null,
+      "math_problems": [
+        "第1行 菜心: 数量3.0×单价5.0=15.0，但小计=20.0（差-5.0）",
+        "明细合计=20.0 - 折扣=20.0 预期总额=0.0，但总额=105.0（差-105.0）"
+      ],
+      "name": "sample_math_err",
+      "raw": "{\"vendor\": \"祥興\", \"date\": \"2026/08/06\", \"total\": \"HK$ 105.00\", \"discount_amount\": 20.0, \"payment_marked\": false, \"confidence\": 0.8, \"items\": [{\"name\": \"菜心 [SKU:882910]\", \"qty\": 3.0, \"unit\": \"斤\", \"unit_price\": 5.0, \"amount\": 20.0}]}"
+    }
+  ]
+}

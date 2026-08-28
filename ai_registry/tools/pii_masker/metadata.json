@@ -5,7 +5,8 @@
   "versions": {
     "v1_0_0": {
       "release_date": "2026-08-01",
-      "status": "production",
+      "status": "experimental",
+      "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具；生产 PII 脱敏由 app/api_receipts._mask_sensitive 承担）",
       "interception_rate": 100.0,
       "latency_ms": 0.8
     }

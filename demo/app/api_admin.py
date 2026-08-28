@@ -918,6 +918,7 @@ def get_insight_cards(request: Request):
 def get_prompt_registry(request: Request):
     """获取全项目 6 大组件的 Prompt 版本演进与多维效果评测基准数据。"""
     require_admin(request)
+    # T12 SSOT：app.prompts 已改为 ai_registry 的 re-export 委托层，版本清单动态派生自 metadata
     from app.prompts import list_prompt_versions, get_benchmark_report
     return {
         "status": "success",

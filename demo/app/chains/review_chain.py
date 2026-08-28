@@ -11,20 +11,11 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.llm import build_audit_model
 
-REVIEW_SYSTEM = """你是香港餐饮的采购复盘助手。基于进货台账与供应商历史数据，给出复盘建议。
+# T12 SSOT：REVIEW_SYSTEM 上收 ai_registry，显式版本加载（登记自原内联文本，字节等价迁移）；
+# review 场景 active 保持 v2_0_0_cards 不变，复盘通道固定使用 v2_0_1_inline_parity。
+from ai_registry.registry import ai_registry
 
-输出严格 JSON（只输出 JSON）：
-{
-  "price_alerts": [
-    {"name": "菜心", "current_price": 5.0, "previous_price": 4.2,
-     "change_pct": 19.0, "note": "价格异动超过 10%"}
-  ],
-  "supplier_insights": [
-    {"vendor": "祥興", "observation": "...", "suggestion": "..."}
-  ],
-  "summary": "一句话总结"
-}
-"""
+REVIEW_SYSTEM = ai_registry.get_prompt("review", "v2_0_1_inline_parity")
 
 
 def run_review(inventory: dict, current_receipt: dict = None,

@@ -4,7 +4,6 @@ PII Masker Tool v1.0.0 (Production Active)
 """
 
 import re
-from typing import str
 
 class PIIMaskerTool:
     def __init__(self):

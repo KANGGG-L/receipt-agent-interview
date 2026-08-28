@@ -1,21 +1,11 @@
 # -*- coding: utf-8 -*-
-"""组件: Audit (审核 Agent)
-版本: v2.0.0_reason
-适用场景: 单据核对、单价突变校验、数学一致性检查。
-安全隔离准则: 仅提供当前单据与单品历史基线，严禁下发其他门店/跨租户数据。
+"""
+Audit Prompt v2.1.0_overall_schema (Production Active)
+T12 登记:原 demo/app/prompts/audit/v2_0_0_reason.py 镜像生效文本(收据审核员/overall_consistent schema)的逐字节迁移版。
+该文本是 T12 之前生产链路 audit_chain 实际加载的版本;registry 旧 v2_0_0_reason(is_consistent schema)与解析逻辑不匹配,置 archived 保留文件。
 """
 
-VERSION = "2_0_0_reason"
-COMPONENT = "audit"
-METRICS = {
-    "anomaly_recall": 0.960,
-    "false_positive_rate": 0.035,
-    "reason_readability_score": 0.950,
-    "anti_injection_pass_rate": 1.0,
-    "avg_tokens": 520,
-}
-
-SYSTEM_PROMPT = """你是一个严格的餐饮进货收据审核员。
+PROMPT = """你是一个严格的餐饮进货收据审核员。
 你的任务是对照原图逐字段复核识别结果，指出错漏并给出人类可读的理由（reason）。
 
 【安全防护与防穿透准则】

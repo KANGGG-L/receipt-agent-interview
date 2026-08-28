@@ -1,6 +1,6 @@
 {
   "scene": "audit",
-  "active_version": "v2_0_0_reason",
+  "active_version": "v2_1_0_overall_schema",
   "description": "交叉审核与差异归因提示词",
   "versions": {
     "v1_0_0": {
@@ -14,7 +14,7 @@
     },
     "v2_0_0_reason": {
       "release_date": "2026-08-12",
-      "status": "production",
+      "status": "archived",
       "metrics": {
         "recall": 96.0,
         "false_alarm_rate": 3.5,
@@ -24,7 +24,17 @@
       "changelog": [
         "输出人类可读的差异原因 Reason",
         "增加对原图手写涂改争议点的聚焦审核",
-        "集成防间接提示词注入隔离机制"
+        "集成防间接提示词注入隔离机制",
+        "T12 归档：其输出 schema（is_consistent/confidence_score/audit_summary）与 audit_chain._parse_audit 解析逻辑（overall_consistent/trust/reason）不匹配，生产实际生效的镜像文本已登记为 v2_1_0_overall_schema；本版本文件保留不删"
+      ]
+    },
+    "v2_1_0_overall_schema": {
+      "release_date": "2026-08-29",
+      "status": "production",
+      "description": "收据审核员逐字段复核（overall_consistent schema，与 audit_chain 解析逻辑匹配）",
+      "changelog": [
+        "T12 登记：继承自内联前身的生产行为，字节等价豁免评测（与 T12 前生产实际生效的 demo/app/prompts 镜像文本逐字节一致，不跑新评测）",
+        "镜像 v2_0_0_reason.py 已从 demo/app/prompts 删除，本版本为唯一事实源"
       ]
     }
   }

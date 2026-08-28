@@ -89,39 +89,14 @@ def _cost_from_tokens(tu: dict) -> float:
         except Exception:
             return 0.0
 
-PARSE_SYSTEM_PROMPT = """你是收据结构化解析助手。下方是视觉模型（VLM）对一张香港进货收据的原始识别输出，
-可能含杂质（解释文字/字段错位/格式不完整）。请把它整理成严格的 JSON 对象。
+# ---- Prompt 唯一事实源：一律经 ai_registry 加载（T12 SSOT 收敛）----
+# 1) 主链路 VLM 识别：active 版本（v1_2_8_anti_injection，Gap1-8 聚合版）
+# 2) 解析通道 / 修正通道：显式版本加载（登记自原内联文本，字节等价迁移，active 不受影响）
+from ai_registry.registry import ai_registry
 
-硬性要求：
-1. 只输出一个 JSON 对象，不要任何解释文字、markdown 代码块围栏。
-2. 字段严格按契约：doc_form / vendor / date / items / total / payment_marked / confidence。
-3. doc_form 取值枚举：
-   - printed_delivery_note（印刷送货单）
-   - ncr_handwritten（街市 NCR 手写单）
-   - thermal（热敏机打）
-   - weigh_slip（磅单）
-   - correction_note（更正单）
-   - credit_note（Credit Note）
-   - monthly_statement（月结账单）
-4. vendor 必须准确保留供货商名称（如「德利行 Tak Lee Hong」、「祥興快餐用品」等），切勿将买方/客户（如「七月餐室」）当成 vendor。
-5. items 长单完整性与单位规范：
-   - 必须逐行完整保留所有明细行（包括10~20+行长单），严禁因行数较多而截断、合并或省略任何明细项。
-   - items 每项含 name / qty / unit / unit_price / amount。
-   - 香港常用单位（斤/两/磅/箱/罐/扎/樽/桶/条/盒/只/支/筒/听/排/板/打/公斤等）规范化。
-   - 金额与数量严禁自行计算或纠正，必须逐字如实转录原始输出中的实际数字。
-   - 若原始输出数字相乘不符或总额不符，如实记录原始数字，一致性由系统门禁负责校验。
-6. total 必须逐字如实转录原始输出中的实际总额数字，严禁自行加总替换；数值一致性由系统门禁负责校验。若与明细合计不一致，如实保留并在 confidence 中体现不确定。
-7. 无法从原始输出确定的内容不要编造；含糊的留空并降低 confidence。
-8. confidence：0~1，你对整理后结构的把握。
-9. 日期格式 YYYY-MM-DD。
-10. 客观转录原则：原始输出写多少就记录多少（包括笔误或计算错误），严禁模型代为纠错或自动配平；任何算术矛盾均保留给系统门禁进行判定。
-"""
-
-# 主链路直连 ai_registry 生产版 Prompt（Gap1-8 聚合版 v1_2_8_anti_injection），单一事实源，Orca 可观测
-from ai_registry.prompts.extract.v1_2_8_anti_injection import PROMPT as SYSTEM_PROMPT
-# 备选：通过 Prompt Registry 动态加载（与 ACTIVE_VERSIONS 联动，Orca 可观测）
-# from app.prompts import get_prompt
-# SYSTEM_PROMPT = get_prompt("extract")
+SYSTEM_PROMPT = ai_registry.get_prompt("extract")
+PARSE_SYSTEM_PROMPT = ai_registry.get_prompt("parse", "v2_2_0_structured_json")
+CORRECT_SYSTEM_PROMPT = ai_registry.get_prompt("correct", "v1_0_0")
 
 
 def _image_data_url(image_path: str) -> str:
@@ -490,16 +465,7 @@ def _build_parse_prompt(raw_vlm: str, prior_block: str = "") -> list:
     ]
 
 
-CORRECT_SYSTEM_PROMPT = """你是收据结构化修正助手。下方是视觉模型对一张香港进货收据的识别输出 JSON，
-但它未通过系统的契约/算术门禁校验。请在不重读原图的前提下，仅根据下方【门禁反馈】对现有 JSON 做最小修正后重新输出。
-
-修正原则：
-1. 只输出一个 JSON 对象，不要任何解释文字、markdown 代码块围栏。
-2. 字段严格按契约：doc_form / vendor / date / items / total / payment_marked / confidence。
-3. 仅修正门禁反馈明确指出的问题（如字段缺失/格式错误/明显转录错位）。对门禁未指出的部分保持原样，严禁自行改动或重算金额。
-4. 客观转录原则：金额与数量必须来自原识别输出中的真实数字，严禁自动配平或重算；若门禁反馈涉及的矛盾需要权衡，优先忠实保留原图数字并在 confidence 体现不确定。
-5. 完整保留所有 items 行，严禁省略、合并或截断。
-"""
+# CORRECT_SYSTEM_PROMPT 已上收 ai_registry（correct/v1_0_0），见文件头部 SSOT 加载块
 
 
 def _build_correction_prompt(raw_vlm: str, feedback: str) -> list:

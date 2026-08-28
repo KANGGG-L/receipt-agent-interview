@@ -1,0 +1,12 @@
+{
+  "tool_name": "image_quality_guard",
+  "active_version": "v1_0_0",
+  "description": "收据图像质量前置守卫（模糊/过暗检测）",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-08-01",
+      "status": "experimental",
+      "note": "无生产消费者（T12 如实登记：生产画质门禁由 app/api_receipts._laplacian_variance 承担）"
+    }
+  }
+}

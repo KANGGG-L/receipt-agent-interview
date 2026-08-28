@@ -19,11 +19,15 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.llm import build_audit_model
 from app.models import ReceiptData
-from app.prompts import get_prompt
 from app.services import math_engine
 from app.services.contract import validate_contract
 
-AUDIT_SYSTEM = get_prompt("audit")
+# T12 SSOT：AUDIT_SYSTEM 改经 ai_registry 加载（active 版本）。
+# active=v2_1_0_overall_schema（overall_consistent schema，与 _parse_audit 解析逻辑匹配）；
+# 旧 v2_0_0_reason（is_consistent schema）已归档保留。
+from ai_registry.registry import ai_registry
+
+AUDIT_SYSTEM = ai_registry.get_prompt("audit")
 
 AUDIT_MODE_TEXT = "text"
 AUDIT_MODE_VLM = "vlm"

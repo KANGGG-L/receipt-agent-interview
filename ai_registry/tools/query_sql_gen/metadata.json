@@ -5,9 +5,10 @@
   "versions": {
     "v1_0_0": {
       "release_date": "2026-08-01",
-      "status": "production",
+      "status": "experimental",
       "interception_rate": 100.0,
-      "latency_ms": 5.4
+      "latency_ms": 5.4,
+      "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具）"
     }
   }
 }

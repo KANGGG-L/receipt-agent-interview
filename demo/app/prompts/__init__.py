@@ -1,75 +1,55 @@
 # -*- coding: utf-8 -*-
-"""提示词工程化资产库与评测中心（Prompt Registry & Evaluation Manager）。
+"""提示词工程化资产库与评测中心（T12 SSOT 收敛后的 ai_registry re-export 委托层）。
 
-统一管理全项目中 6 大核心 LLM / Agent 场景的提示词版本与评测基准：
-1. extract: VLM 视觉识别提取
-2. parse: 文本规范化清洗与单位对齐
-3. audit: 交叉审核 Agent（带 Reason 与防注入）
-4. review: 采购复盘与 4 步谈判策略推理
-5. query: 问 AI 对话式查询与比价
-6. memory: 供应商知识沉淀与别名提炼
+唯一事实源已上收至 ai_registry/prompts/（metadata.json + 版本 .py 文件），
+本模块仅保留原函数名与返回形状，全部委托 ai_registry.registry.ai_registry 实现，
+保证 /api/admin/prompts 与 run_eval 的既有调用方零改动。
+
+原 ACTIVE_VERSIONS / AVAILABLE_VERSIONS 常量与 app.prompts 下各组件版本副本文件
+已删除（版本清单改为从 ai_registry metadata 动态派生，杜绝双源漂移）。
 """
 
-import importlib
 from typing import Optional
 
-# 当前各组件生效的生产默认版本
-ACTIVE_VERSIONS = {
-    "extract": "v1_2_8_anti_injection",
-    "parse": "v2_1_0_sku_clean",
-    "audit": "v2_0_0_reason",
-    "review": "v2_0_0_cards",
-    "query": "v1_0_0",
-    "memory": "v1_0_0",
-}
-
-# 各组件全量版本索引
-AVAILABLE_VERSIONS = {
-    "extract": ["v1_0_0", "v1_1_0_hk", "v1_2_0_sku_clean", "v1_2_1_anti_stamp_pollution", "v1_2_2_anti_disclaimer_pollution", "v1_2_3_anti_fee_confusion", "v1_2_4_multi_pack", "v1_2_5_hk_date", "v1_2_6_strike_notes", "v1_2_7_huama_humility", "v1_2_8_anti_injection"],
-    "parse": ["v1_0_0", "v2_0_0_hk_units", "v2_1_0_sku_clean"],
-    "audit": ["v1_0_0", "v2_0_0_reason"],
-    "review": ["v1_0_0", "v2_0_0_cards"],
-    "query": ["v1_0_0"],
-    "memory": ["v1_0_0"],
-}
+from ai_registry.registry import ai_registry
 
 
 def get_prompt(component: str, version: Optional[str] = None) -> str:
-    """获取指定组件指定版本的提示词文本。"""
-    v = version or ACTIVE_VERSIONS.get(component)
-    if not v:
-        raise ValueError(f"未知的组件类型: {component}")
-    mod_path = f"app.prompts.{component}.{v}"
-    try:
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, "SYSTEM_PROMPT", "")
-    except Exception as e:
-        raise ImportError(f"加载提示词失败: {mod_path}，原因: {e}")
+    """获取指定组件指定版本的提示词文本（缺省取该场景 active 版本）。"""
+    return ai_registry.get_prompt(component, version)
 
 
 def get_metrics(component: str, version: Optional[str] = None) -> dict:
-    """获取指定组件版本的评测效果基准指标（准确率、Token数、召回率等）。"""
-    v = version or ACTIVE_VERSIONS.get(component)
-    mod_path = f"app.prompts.{component}.{v}"
+    """获取指定组件版本的评测效果基准指标（来自 ai_registry metadata 的 metrics 字段）。"""
     try:
-        mod = importlib.import_module(mod_path)
-        return getattr(mod, "METRICS", {})
+        _, meta = ai_registry.get_prompt(component, version, with_metadata=True)
     except Exception:
         return {}
+    return meta.get("metrics", {}) if isinstance(meta, dict) else {}
 
 
 def list_prompt_versions() -> dict:
     """列出当前各组件激活的提示词版本与全量可用版本。"""
+    available: dict = {}
+    for scene in ai_registry.list_prompt_scenes():
+        meta = ai_registry.get_prompt_metadata(scene)
+        available[scene] = sorted(meta.get("versions", {}).keys())
+    active = {}
+    for scene in available:
+        meta = ai_registry.get_prompt_metadata(scene)
+        av = meta.get("active_version")
+        if av:
+            active[scene] = av
     return {
-        "active": dict(ACTIVE_VERSIONS),
-        "available": dict(AVAILABLE_VERSIONS),
+        "active": active,
+        "available": available,
     }
 
 
 def get_benchmark_report() -> dict:
     """获取全组件全版本的多维评测效果排行榜与演进对比。"""
     report = {}
-    for comp, vers in AVAILABLE_VERSIONS.items():
+    for comp, vers in list_prompt_versions()["available"].items():
         report[comp] = {}
         for v in vers:
             report[comp][v] = get_metrics(comp, v)

@@ -79,11 +79,17 @@ BENCHMARK_DATASET = [
 
 def test_registry_asset_loading():
     """验证 Prompt 与 Tool 是否正确注册且动态加载成功。"""
-    # 1. 验证 Extract Prompt v1.2.0
-    prompt_text, meta = ai_registry.get_prompt("extract", with_metadata=True)
+    # 1. 验证 Extract Prompt v1.2.0（T12: active 已切至 v1_2_8_anti_injection，
+    #    内容断言改为显式按版本加载 v1_2_0_sku_clean）
+    prompt_text, meta = ai_registry.get_prompt("extract", "v1_2_0_sku_clean", with_metadata=True)
     assert "品名纯净性要求" in prompt_text
     assert "有机菜心_1787140420" in prompt_text
-    assert meta.get("status") == "production"
+    assert meta.get("status") == "archived"
+
+    # 1b. active 版本（v1_2_8_anti_injection）加载成功且状态为 production
+    active_text, active_meta = ai_registry.get_prompt("extract", with_metadata=True)
+    assert active_text  # 非空即加载成功
+    assert active_meta.get("status") == "production"
 
     # 2. 验证 Parse Prompt v2.1.0
     parse_prompt, parse_meta = ai_registry.get_prompt("parse", with_metadata=True)

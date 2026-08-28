@@ -1,20 +1,32 @@
 {
   "tool_name": "math_engine",
-  "active_version": "v2_0_0",
-  "description": "确定性算术守恒与差额校验工具",
+  "active_version": "v2_1_0",
+  "description": "确定性算术守恒与差额校验工具（零 token，可审计）",
   "versions": {
-    "v1_0_0": {
-      "release_date": "2026-06-01",
-      "status": "archived",
-      "interception_rate": 95.0,
-      "latency_ms": 1.2
-    },
     "v2_0_0": {
       "release_date": "2026-08-10",
-      "status": "production",
+      "status": "archived",
       "interception_rate": 100.0,
       "latency_ms": 2.1,
-      "features": ["行内乘法校验", "整单求和校验", "非静默建议生成"]
+      "features": ["行内乘法校验", "整单求和校验", "非静默建议生成"],
+      "changelog": [
+        "T12 归档：v2_0_0 为早期 dict 接口实现（execute/tolerance 0.05），生产从未经该路径生效；生产实际生效的 demo/app/services/math_engine.py 实现登记为 v2_1_0。文件保留不删"
+      ]
+    },
+    "v2_1_0": {
+      "release_date": "2026-08-29",
+      "status": "production",
+      "features": [
+        "行内乘法校验（容差 0.01）",
+        "整单守恒校验：明细合计 - 折让 - 抹零 + 押金 + 运费 + 服务费 + 税额",
+        "is_void 划线作废行剔除",
+        "actual_qty 生效数量与赠品/免费项目容错",
+        "validate_and_report + audit_trail 双导出"
+      ],
+      "changelog": [
+        "T12 登记：以 demo/app/services/math_engine.py 生产实现为唯一蓝本逐字节迁入，demo 侧改为 re-export facade（9 个消费测试 import 路径零改动）",
+        "v1_0_0 悬空 metadata 条目（无对应版本文件）已删除"
+      ]
     }
   }
 }
