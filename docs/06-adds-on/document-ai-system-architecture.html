@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>单据识别与系统管控平台架构设计</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #f7f5f0;
+      --panel: #ffffff;
+      --line: #e9e3d6;
+      --line-soft: #f0ebdf;
+      --text: #1f2533;
+      --text-2: #3a4256;
+      --muted: #7c7a72;
+      --ink: #14171e;
+      --primary: #2f6f5e;
+      --primary-soft: rgba(47,111,94,.10);
+      --accent: #c97b3f;
+      --accent-soft: rgba(201,123,63,.11);
+      --risk: #b06367;
+      --risk-soft: rgba(176,99,103,.12);
+      --blue: #486581;
+      --blue-soft: rgba(72,101,129,.11);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.58;
+      -webkit-font-smoothing: antialiased;
+      background-image:
+        radial-gradient(at 0% 0%, rgba(47,111,94,.055) 0%, transparent 42%),
+        radial-gradient(at 100% 0%, rgba(201,123,63,.055) 0%, transparent 42%);
+      background-attachment: fixed;
+    }
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 44px 28px 72px; }
+    * { text-wrap: pretty; }
+    .hero {
+      padding: 38px 40px;
+      border-radius: 24px;
+      background: linear-gradient(135deg, #fbf8f0, #efebe2);
+      border: 1px solid var(--line);
+      margin-bottom: 42px;
+      box-shadow: 0 1px 0 rgba(255,255,255,.75) inset, 0 8px 30px -20px rgba(20,23,30,.16);
+      display: grid;
+      grid-template-columns: 1.3fr .7fr;
+      gap: 28px;
+      align-items: end;
+    }
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+      color: var(--primary); font-weight: 700;
+      background: var(--primary-soft); border: 1px solid rgba(47,111,94,.14);
+      padding: 7px 10px; border-radius: 999px;
+    }
+    h1 {
+      font-family: 'DM Serif Display', 'Songti SC', serif;
+      font-size: 39px; font-weight: 400; line-height: 1.14;
+      margin: 14px 0 12px; color: var(--ink);
+      letter-spacing: -.01em;
+    }
+    .hero p { margin: 0; color: var(--text-2); max-width: 740px; }
+    .hero-side {
+      background: rgba(255,255,255,.58);
+      border: 1px solid rgba(233,227,214,.78);
+      border-radius: 18px;
+      padding: 18px;
+    }
+    .hero-side strong { display: block; color: var(--ink); font-size: 16px; margin-bottom: 8px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .chip { padding: 6px 9px; border-radius: 999px; background: #fff; border: 1px solid var(--line); color: var(--text-2); font-size: 12px; }
+    h2 {
+      font-family: 'DM Serif Display', serif;
+      font-size: 27px; font-weight: 400;
+      margin: 46px 0 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+      color: var(--ink);
+      display: flex; align-items: center; gap: 12px;
+    }
+    h2 .sec-num {
+      width: 36px; height: 36px; border-radius: 10px; font-size: 13px;
+      font-family: 'Outfit', sans-serif; font-weight: 700;
+      background: linear-gradient(135deg, var(--primary), #214e43); color: #fff;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex: 0 0 auto;
+    }
+    h3 { margin: 0 0 9px; color: var(--ink); font-size: 17px; line-height: 1.35; }
+    p { margin: 0 0 10px; }
+    .muted { color: var(--muted); }
+    .grid { display: grid; gap: 16px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      background: var(--panel); border: 1px solid var(--line);
+      border-radius: 16px; padding: 19px;
+      box-shadow: 0 4px 14px -12px rgba(20,23,30,.10);
+      transition: transform .16s ease, box-shadow .16s ease;
+    }
+    .card:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -22px rgba(20,23,30,.24); }
+    .card.compact { padding: 16px; }
+    .tag {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 700; color: var(--primary);
+      background: var(--primary-soft); border: 1px solid rgba(47,111,94,.14);
+      padding: 5px 8px; border-radius: 999px; margin-bottom: 10px;
+    }
+    .tag.orange { color: var(--accent); background: var(--accent-soft); border-color: rgba(201,123,63,.18); }
+    .tag.risk { color: var(--risk); background: var(--risk-soft); border-color: rgba(176,99,103,.18); }
+    .tag.blue { color: var(--blue); background: var(--blue-soft); border-color: rgba(72,101,129,.16); }
+    ul { margin: 8px 0 0; padding-left: 18px; }
+    li { margin: 5px 0; }
+    .arch {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 8px 26px -22px rgba(20,23,30,.18);
+    }
+    .arch-row {
+      display: grid;
+      grid-template-columns: 138px 1fr;
+      border-bottom: 1px solid var(--line-soft);
+      min-height: 66px;
+    }
+    .arch-row:last-child { border-bottom: 0; }
+    .arch-tier {
+      padding: 16px 14px;
+      background: #fbfaf7;
+      border-right: 1px solid var(--line-soft);
+      color: var(--ink);
+      font-weight: 700;
+      display: flex; align-items: center;
+    }
+    .arch-blocks {
+      padding: 12px;
+      display: flex; flex-wrap: wrap; gap: 10px;
+      align-items: center;
+    }
+    .arch-block {
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, #fff, #fcfbf8);
+      min-width: 144px;
+      flex: 1 1 150px;
+      color: var(--ink);
+      font-weight: 650;
+    }
+    .desc-mini { display: block; color: var(--muted); font-size: 12px; font-weight: 500; margin-top: 2px; line-height: 1.35; }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+    }
+    .flow-node {
+      position: relative;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px 12px;
+      min-height: 112px;
+    }
+    .flow-node::after {
+      content: "";
+      position: absolute; right: -9px; top: 50%; transform: translateY(-50%);
+      width: 16px; height: 16px;
+      background: var(--bg);
+      clip-path: polygon(0 0, 100% 50%, 0 100%);
+      border-left: 1px solid var(--line);
+      z-index: 1;
+    }
+    .flow-node:last-child::after { display: none; }
+    .flow-num { font-family: 'JetBrains Mono', monospace; color: var(--primary); font-size: 12px; font-weight: 700; }
+    .flow-node strong { display: block; margin: 5px 0 5px; color: var(--ink); }
+    .flow-node span { display: block; color: var(--muted); font-size: 12px; line-height: 1.42; }
+    .kv { display: grid; grid-template-columns: 132px 1fr; gap: 0; }
+    .kv div { padding: 10px 0; border-bottom: 1px dashed var(--line); }
+    .kv div:nth-last-child(-n+2) { border-bottom: 0; }
+    .kv .key { color: var(--muted); font-weight: 650; }
+    .kv .val { color: var(--text-2); }
+    .callout {
+      border-radius: 18px;
+      padding: 19px;
+      border: 1px solid rgba(201,123,63,.24);
+      background: linear-gradient(135deg, rgba(201,123,63,.10), rgba(47,111,94,.06));
+    }
+    .callout strong { color: var(--ink); }
+    .matrix { width: 100%; border-collapse: separate; border-spacing: 0; overflow: hidden; border-radius: 16px; border: 1px solid var(--line); background: #fff; }
+    .matrix th, .matrix td { text-align: left; vertical-align: top; padding: 13px 14px; border-bottom: 1px solid var(--line-soft); }
+    .matrix th { background: #fbfaf7; color: var(--ink); font-size: 13px; }
+    .matrix tr:last-child td { border-bottom: 0; }
+    .matrix td { color: var(--text-2); font-size: 14px; }
+    .pill { display: inline-block; padding: 4px 8px; border-radius: 999px; background: var(--line-soft); color: var(--text-2); font-size: 12px; font-weight: 650; margin: 2px 4px 2px 0; }
+    .risk-list { counter-reset: risk; display: grid; gap: 10px; }
+    .risk-item { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; }
+    .risk-item::before {
+      counter-increment: risk; content: counter(risk);
+      width: 28px; height: 28px; border-radius: 9px;
+      background: var(--risk-soft); color: var(--risk); font-weight: 800;
+      display: inline-flex; align-items: center; justify-content: center;
+    }
+    .roadmap { position: relative; }
+    .roadmap::before { content: ""; position: absolute; left: 22px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(180deg, var(--primary), var(--accent)); }
+    .step { position: relative; padding-left: 60px; margin-bottom: 22px; }
+    .step:last-child { margin-bottom: 0; }
+    .step-icon { position: absolute; left: 5px; top: 0; width: 36px; height: 36px; border-radius: 50%; background: #fff; border: 2px solid var(--primary); display: inline-flex; align-items: center; justify-content: center; color: var(--primary); font-weight: 800; }
+    .step h3 { margin-bottom: 4px; }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-2); }
+    @media (max-width: 900px) {
+      .hero, .grid.two, .grid.three { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .flow-node::after { display: none; }
+      .arch-row { grid-template-columns: 1fr; }
+      .arch-tier { border-right: 0; border-bottom: 1px solid var(--line-soft); }
+    }
+    @media (max-width: 620px) {
+      .wrap { padding: 24px 16px 56px; }
+      .hero { padding: 24px; }
+      h1 { font-size: 31px; }
+      h2 { font-size: 24px; }
+      .flow { grid-template-columns: 1fr; }
+      .kv { grid-template-columns: 1fr; }
+      .kv .key { padding-bottom: 0; border-bottom: 0; }
+      .matrix { font-size: 13px; }
+      .matrix th, .matrix td { padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <div class="eyebrow">Document AI Platform Blueprint</div>
+        <h1>单据识别 + 系统管控平台架构设计</h1>
+        <p>建议把它设计成「业务应用层 + 文档智能 PaaS + 模型服务层 + 数据治理层 + 云原生 Infra」五层结构。核心不是只把 OCR 跑起来，而是让识别结果可配置、可审核、可追溯、可迭代。</p>
+      </div>
+      <aside class="hero-side">
+        <strong>一句话判断</strong>
+        <p class="muted">如果未来会接多个业务线、多类票据/合同/表单，不要做成单点 OCR 工具；要从 Day 1 按平台化建设。</p>
+        <div class="chips">
+          <span class="chip">多租户</span><span class="chip">Human-in-the-loop</span><span class="chip">模型路由</span><span class="chip">审计追踪</span><span class="chip">私有化/混合云</span>
+        </div>
+      </aside>
+    </section>
+
+    <h2><span class="sec-num">01</span>目标系统边界</h2>
+    <div class="grid three">
+      <div class="card">
+        <span class="tag">业务目标</span>
+        <h3>把非结构化单据变成可信数据</h3>
+        <p class="muted">支持发票、采购单、报销单、合同、物流单、银行流水、身份证明等输入，输出标准字段、置信度、版面证据和可追溯处理记录。</p>
+      </div>
+      <div class="card">
+        <span class="tag orange">管理目标</span>
+        <h3>让业务团队自己配置规则</h3>
+        <p class="muted">字段模板、校验规则、审批流、异常队列、权限、租户策略都应可配置，避免每加一种单据都改代码。</p>
+      </div>
+      <div class="card">
+        <span class="tag blue">平台目标</span>
+        <h3>模型、任务、数据、成本都可管</h3>
+        <p class="muted">后续模型会不断换代，架构要允许 OCR、VLM、LLM、规则引擎和人工审核共同协作，而不是绑定单一模型。</p>
+      </div>
+    </div>
+
+    <h2><span class="sec-num">02</span>推荐总体架构</h2>
+    <div class="arch">
+      <div class="arch-row">
+        <span class="arch-tier">入口与渠道</span>
+        <div class="arch-blocks">
+          <span class="arch-block">Web 管理台<span class="desc-mini">上传、查询、审核、配置、报表</span></span>
+          <span class="arch-block">OpenAPI / SDK<span class="desc-mini">业务系统、ERP、OA、财务系统集成</span></span>
+          <span class="arch-block">批量导入<span class="desc-mini">SFTP、对象存储、邮件附件、消息队列</span></span>
+        </div>
+      </div>
+      <div class="arch-row">
+        <span class="arch-tier">应用服务</span>
+        <div class="arch-blocks">
+          <span class="arch-block">单据中心<span class="desc-mini">文件、任务、状态机、版本</span></span>
+          <span class="arch-block">审核工作台<span class="desc-mini">人工校验、标注、异常处理</span></span>
+          <span class="arch-block">管控后台<span class="desc-mini">租户、用户、角色、模板、规则</span></span>
+          <span class="arch-block">报表与监控<span class="desc-mini">吞吐、准确率、SLA、成本</span></span>
+        </div>
+      </div>
+      <div class="arch-row">
+        <span class="arch-tier">Document PaaS</span>
+        <div class="arch-blocks">
+          <span class="arch-block">任务编排<span class="desc-mini">异步队列、重试、优先级、超时</span></span>
+          <span class="arch-block">预处理 Pipeline<span class="desc-mini">去噪、旋转、切页、表格检测</span></span>
+          <span class="arch-block">字段抽取引擎<span class="desc-mini">模板、规则、模型融合、后处理</span></span>
+          <span class="arch-block">质量评估<span class="desc-mini">置信度、异常检测、抽检策略</span></span>
+        </div>
+      </div>
+      <div class="arch-row">
+        <span class="arch-tier">模型服务</span>
+        <div class="arch-blocks">
+          <span class="arch-block">OCR / Layout<span class="desc-mini">文字、坐标、表格、版面结构</span></span>
+          <span class="arch-block">VLM<span class="desc-mini">复杂版式理解、跨区域字段关联</span></span>
+          <span class="arch-block">LLM<span class="desc-mini">语义校验、归一化、推理补全</span></span>
+          <span class="arch-block">模型路由<span class="desc-mini">按单据类型、成本、延迟、置信度切换</span></span>
+        </div>
+      </div>
+      <div class="arch-row">
+        <span class="arch-tier">数据与 Infra</span>
+        <div class="arch-blocks">
+          <span class="arch-block">对象存储<span class="desc-mini">原图、PDF、切片、渲染图</span></span>
+          <span class="arch-block">关系数据库<span class="desc-mini">租户、任务、字段、审核记录</span></span>
+          <span class="arch-block">搜索 / 向量库<span class="desc-mini">全文检索、相似模板、知识召回</span></span>
+          <span class="arch-block">K8s / GPU / MQ<span class="desc-mini">弹性、异步、隔离、可观测</span></span>
+        </div>
+      </div>
+    </div>
+
+    <h2><span class="sec-num">03</span>单据识别核心链路</h2>
+    <div class="flow">
+      <div class="flow-node"><div class="flow-num">01</div><strong>上传/接入</strong><span>文件验签、格式识别、病毒扫描、租户隔离、任务入库</span></div>
+      <div class="flow-node"><div class="flow-num">02</div><strong>预处理</strong><span>PDF 渲染、图片增强、方向纠正、分页、去重、质量评分</span></div>
+      <div class="flow-node"><div class="flow-num">03</div><strong>分类与路由</strong><span>判断单据类型、语言、版式复杂度，选择模板/模型组合</span></div>
+      <div class="flow-node"><div class="flow-num">04</div><strong>抽取</strong><span>OCR + Layout + VLM/LLM + 规则融合，输出字段与证据框</span></div>
+      <div class="flow-node"><div class="flow-num">05</div><strong>校验/审核</strong><span>业务规则、主数据核验、置信度阈值、人工复核闭环</span></div>
+      <div class="flow-node"><div class="flow-num">06</div><strong>交付/沉淀</strong><span>结构化 JSON、回调、导出、标注数据回流、模型评估</span></div>
+    </div>
+
+    <h2><span class="sec-num">04</span>PaaS 层应该怎么设计</h2>
+    <div class="grid two">
+      <div class="card">
+        <span class="tag">平台能力</span>
+        <h3>把识别能力产品化，而不是 API 拼装</h3>
+        <div class="kv">
+          <div class="key">模板中心</div><div class="val">定义单据类型、字段 schema、字段别名、必填项、正则/枚举/范围校验。</div>
+          <div class="key">规则引擎</div><div class="val">支持字段级规则、跨字段规则、外部主数据核验、低代码配置。</div>
+          <div class="key">流程编排</div><div class="val">不同单据走不同 Pipeline，可插拔 OCR、VLM、LLM、人工审核节点。</div>
+          <div class="key">租户治理</div><div class="val">资源配额、QPS、数据隔离、模型白名单、成本中心、审计日志。</div>
+          <div class="key">结果版本</div><div class="val">原始识别、规则修正、人工修正、最终提交要留版本，不要只存最终值。</div>
+        </div>
+      </div>
+      <div class="card">
+        <span class="tag orange">关键取舍</span>
+        <h3>先做配置化，再考虑“全自动”</h3>
+        <p class="muted">单据系统最容易踩的坑是过早承诺 100% 自动化。更稳的路线是：高置信自动通过，低置信进入人工队列，人工修正反哺模板和评测集。</p>
+        <ul>
+          <li>模板不是固定坐标，而是字段 schema + 规则 + 示例 + 证据区域。</li>
+          <li>Pipeline 要异步化，上传接口只返回 task_id，结果通过轮询/回调拿。</li>
+          <li>所有模型输出必须带置信度和 evidence，不然审核无法提效。</li>
+          <li>管控后台要能改阈值、灰度模型、回滚版本。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2><span class="sec-num">05</span>Infra 与部署建议</h2>
+    <table class="matrix">
+      <thead>
+        <tr><th>层级</th><th>建议组件</th><th>注意点</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>计算</strong></td>
+          <td><span class="pill">Kubernetes</span><span class="pill">HPA/KEDA</span><span class="pill">GPU Node Pool</span></td>
+          <td>CPU 服务和 GPU 推理服务分池；异步任务用队列削峰；不要让 Web 请求直接等待大模型推理。</td>
+        </tr>
+        <tr>
+          <td><strong>存储</strong></td>
+          <td><span class="pill">S3/OSS/COS</span><span class="pill">PostgreSQL</span><span class="pill">Redis</span></td>
+          <td>原始文件、渲染图、切页图进对象存储；元数据和结果进 DB；短期状态、锁、限流进 Redis。</td>
+        </tr>
+        <tr>
+          <td><strong>消息</strong></td>
+          <td><span class="pill">Kafka</span><span class="pill">RabbitMQ</span><span class="pill">SQS/PubSub</span></td>
+          <td>按任务类型拆队列：快速 OCR、重模型抽取、审核回调、训练数据回流，避免互相阻塞。</td>
+        </tr>
+        <tr>
+          <td><strong>可观测</strong></td>
+          <td><span class="pill">Prometheus</span><span class="pill">Grafana</span><span class="pill">OpenTelemetry</span><span class="pill">ELK</span></td>
+          <td>必须记录端到端耗时、模型耗时、失败率、置信度分布、人工审核率、字段级准确率。</td>
+        </tr>
+        <tr>
+          <td><strong>安全</strong></td>
+          <td><span class="pill">IAM</span><span class="pill">KMS</span><span class="pill">WAF</span><span class="pill">VPC</span></td>
+          <td>单据通常包含 PII/财务数据：传输加密、静态加密、字段脱敏、访问审计、数据保留策略都要前置设计。</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2><span class="sec-num">06</span>模型层设计</h2>
+    <div class="grid two">
+      <div class="card">
+        <span class="tag blue">推荐组合</span>
+        <h3>不要押单一模型，做模型编排</h3>
+        <ul>
+          <li><strong>OCR 模型：</strong>负责文字识别、坐标、行块、表格基础结构。</li>
+          <li><strong>Layout 模型：</strong>识别标题、表格、键值对、印章、签名、复选框。</li>
+          <li><strong>VLM：</strong>处理复杂版式、跨页字段、多语言、低模板化单据。</li>
+          <li><strong>LLM：</strong>做字段归一化、语义校验、业务解释、异常原因生成。</li>
+          <li><strong>规则/知识库：</strong>做确定性校验，比如税号、金额合计、供应商主数据。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <span class="tag risk">模型治理</span>
+        <h3>上线模型前要有评测闭环</h3>
+        <ul>
+          <li>建立 Golden Set：按单据类型、语言、质量、版式、渠道分层采样。</li>
+          <li>字段级指标：Exact Match、归一化后准确率、漏抽率、误抽率。</li>
+          <li>业务级指标：自动通过率、人工修改率、平均处理时长、返工率。</li>
+          <li>灰度发布：按租户/单据类型/比例切流，支持模型版本回滚。</li>
+          <li>成本控制：简单票据走轻模型，复杂单据才触发 VLM/LLM。</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2><span class="sec-num">07</span>系统管控模块清单</h2>
+    <div class="grid three">
+      <div class="card compact"><span class="tag">租户与权限</span><p class="muted">租户、组织、角色、用户、API Key、IP 白名单、资源配额、账单归属。</p></div>
+      <div class="card compact"><span class="tag">单据配置</span><p class="muted">单据类型、字段定义、模板样例、校验规则、置信度阈值、审核策略。</p></div>
+      <div class="card compact"><span class="tag">任务运营</span><p class="muted">任务列表、状态追踪、失败重试、优先级、人工队列、批量导出。</p></div>
+      <div class="card compact"><span class="tag orange">模型管理</span><p class="muted">模型版本、路由规则、灰度策略、Prompt/Schema 版本、评测报告。</p></div>
+      <div class="card compact"><span class="tag orange">数据治理</span><p class="muted">数据保留、脱敏、标注样本、回流训练、审计日志、删除证明。</p></div>
+      <div class="card compact"><span class="tag orange">监控报表</span><p class="muted">吞吐、SLA、错误率、字段准确率、审核效率、成本、客户用量。</p></div>
+    </div>
+
+    <h2><span class="sec-num">08</span>重点风险与注意点</h2>
+    <div class="card">
+      <div class="risk-list">
+        <div class="risk-item"><div><strong>不要只存抽取结果，要存证据。</strong><br><span class="muted">每个字段应记录来源页码、坐标、原始文本、模型版本、置信度、修正记录。否则后续无法审计，也无法提升人工审核效率。</span></div></div>
+        <div class="risk-item"><div><strong>低置信结果必须进人工闭环。</strong><br><span class="muted">单据识别是业务系统，不是 Demo。真实环境一定有模糊扫描件、手写、盖章遮挡、错页、重复上传。</span></div></div>
+        <div class="risk-item"><div><strong>字段 schema 要稳定，模型输出要受约束。</strong><br><span class="muted">LLM/VLM 输出必须走 JSON Schema 校验和后处理，不要直接信自然语言输出。</span></div></div>
+        <div class="risk-item"><div><strong>多租户隔离从第一天做。</strong><br><span class="muted">文件、任务、配置、模型权限、日志查询都要带 tenant_id；对象存储路径和加密 Key 也要隔离。</span></div></div>
+        <div class="risk-item"><div><strong>把成本看成架构约束。</strong><br><span class="muted">VLM/LLM 很强，但不应每张单都跑。用分类器和置信度路由，把重模型用在真正复杂或低置信场景。</span></div></div>
+      </div>
+    </div>
+
+    <h2><span class="sec-num">09</span>MVP 到规模化路线</h2>
+    <div class="grid two">
+      <div class="card">
+        <div class="roadmap">
+          <div class="step"><span class="step-icon">1</span><h3>MVP：跑通 2-3 类高价值单据</h3><p class="muted">上传、异步任务、OCR/VLM 抽取、人工审核、结构化导出、基础后台。</p></div>
+          <div class="step"><span class="step-icon">2</span><h3>平台化：模板与规则配置</h3><p class="muted">把字段 schema、阈值、规则、审核流程放进后台，减少新增单据类型的开发成本。</p></div>
+          <div class="step"><span class="step-icon">3</span><h3>规模化：多租户与模型治理</h3><p class="muted">租户隔离、计费、模型灰度、评测集、自动监控、SLA 和成本治理。</p></div>
+          <div class="step"><span class="step-icon">4</span><h3>智能化：反馈闭环与主动质检</h3><p class="muted">人工修正数据回流，字段级 drift 监控，自动发现模板失效和异常供应商。</p></div>
+        </div>
+      </div>
+      <div class="callout">
+        <strong>我建议的落地优先级</strong>
+        <p class="muted" style="margin-top:8px;">先选一个业务闭环最清晰的场景，比如报销发票/采购单/物流单。不要一开始覆盖所有单据类型；先把“上传 → 抽取 → 审核 → 回写业务系统 → 指标看板”闭环做扎实。</p>
+        <p class="muted">技术栈上，前端可用 React/Vue + 管理台组件库；后端推荐 Java/Spring Boot 或 Python/FastAPI 按团队能力选；任务编排和模型服务建议独立服务化，避免和业务后台耦合。</p>
+        <p class="mono">North Star Metrics: 字段级准确率 / 自动通过率 / 平均处理时长 / 人工修改率 / 单据处理成本</p>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
