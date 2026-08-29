@@ -389,21 +389,41 @@ def test_e2e_clerk_flow_all_scenarios():
         page.locator("#inpSupplier").click()
 
         # -------------------------------------------------------------
-        # Scenario 4: Fees Drawer, Void (read-only) Row & Math Recalculation & Save
+        # Scenario 4: Dynamic Fee Rows, Void (read-only) Row & Math Recalculation & Save
         # -------------------------------------------------------------
         # Toggle fees drawer（手写注记抽屉复用同款 toggle 样式，取第一个=附加费用）
         fees_toggle = page.locator(".fees-drawer-toggle").first
         fees_toggle.click()
         expect(page.locator("#feesDrawerContent")).to_be_visible()
 
-        # Set fees: discount=10, delivery=15, deposit=20, rounding=1
-        page.locator("#inpDiscount").fill("10.00")
-        page.locator("#inpDeliveryFee").fill("15.00")
-        page.locator("#inpDeposit").fill("20.00")
-        page.locator("#inpRounding").fill("1.00")
+        # 动态费用行模式：默认无费用 → 显示占位提示，不铺固定输入框
+        expect(page.locator("#feesRowsEmpty")).to_be_visible()
+        expect(page.locator("#feesRowsEmpty")).to_contain_text("无附加费用")
+        expect(page.locator("#feesRowsContainer .fee-row")).to_have_count(0)
 
-        # Trigger input event on rounding
-        page.locator("#inpRounding").dispatch_event("input")
+        # 按行添加费用：discount=10, delivery=15, deposit=20, rounding=1
+        fee_rows_spec = [
+            ("discount_amount", "10.00"),
+            ("delivery_fee", "15.00"),
+            ("deposit_amount", "20.00"),
+            ("rounding_adjustment", "1.00"),
+        ]
+        for fee_key, fee_value in fee_rows_spec:
+            page.locator("#btnAddFeeRow").click()
+            new_fee_row = page.locator("#feesRowsContainer .fee-row").last
+            new_fee_row.locator(".fee-type-select").select_option(fee_key)
+            new_fee_row.locator(".fee-amount-input").fill(fee_value)
+        expect(page.locator("#feesRowsContainer .fee-row")).to_have_count(4)
+
+        # 类型去重：再选已存在的「整单折扣/折让」→ 人话提示 + 不产生第二行
+        page.locator("#btnAddFeeRow").click()
+        dup_row = page.locator("#feesRowsContainer .fee-row").last
+        dup_row.locator(".fee-type-select").select_option("discount_amount")
+        expect(page.locator(".app-toast").last).to_contain_text("该项已添加")
+        expect(dup_row.locator(".fee-type-select")).to_have_value("")
+        # 删除该行（删除 = 该项归 0，总额不变）
+        dup_row.locator(".fee-remove-btn").click()
+        expect(page.locator("#feesRowsContainer .fee-row")).to_have_count(4)
 
         # 期望修正（依据 recalcTotalSum 当前口径）：作废行金额不计入 itemsSum，
         # 明细有效合计 = 120 + 900 = 1020；净费用 = 15 + 20 - 10 - 1 = +24.00；

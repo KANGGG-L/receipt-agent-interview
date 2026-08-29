@@ -4058,21 +4058,8 @@ function renderEditForm(data) {
         curElem.value = data.currency || 'HKD';
     }
 
-    // 附加费用
-    const discElem = document.getElementById('inpDiscount');
-    if (discElem) discElem.value = (data.discount_amount != null && data.discount_amount > 0) ? Number(data.discount_amount).toFixed(2) : '0.00';
-    const delivElem = document.getElementById('inpDeliveryFee');
-    if (delivElem) delivElem.value = (data.delivery_fee != null && data.delivery_fee > 0) ? Number(data.delivery_fee).toFixed(2) : '0.00';
-    const depElem = document.getElementById('inpDeposit');
-    if (depElem) depElem.value = (data.deposit_amount != null && data.deposit_amount > 0) ? Number(data.deposit_amount).toFixed(2) : '0.00';
-    const roundElem = document.getElementById('inpRounding');
-    if (roundElem) roundElem.value = (data.rounding_adjustment != null && data.rounding_adjustment > 0) ? Number(data.rounding_adjustment).toFixed(2) : '0.00';
-    // Gap 9：服务费(加一) 与 税额/VAT——识别直出值灌入，店员可修正
-    const svcElem = document.getElementById('inpServiceFee');
-    if (svcElem) svcElem.value = (data.service_fee != null && data.service_fee > 0) ? Number(data.service_fee).toFixed(2) : '0.00';
-    const taxElem = document.getElementById('inpTaxAmount');
-    if (taxElem) taxElem.value = (data.tax_amount != null && data.tax_amount > 0) ? Number(data.tax_amount).toFixed(2) : '0.00';
-
+    // 附加费用：动态行模式——非零契约字段渲染为费用行，全零/缺省显示占位提示
+    renderFeeRowsFromData(data);
     updateFeesSummaryBadge();
 
     // Gap 6：手写注记（拒收/短装/调整）——有注记时灌入原文并展开，无注记保持折叠零负担
@@ -4214,19 +4201,219 @@ function toggleNotesDrawer() {
 }
 window.toggleNotesDrawer = toggleNotesDrawer;
 
+// -------------------------------------------------------------
+// 附加费用动态行（用户实测反馈：固定六宫格观感差，改为像明细一样按需添加）
+// 契约字段不变：discount_amount/delivery_fee/service_fee/tax_amount/
+// deposit_amount/rounding_adjustment——仅换视图，落库链路零改动。
+// -------------------------------------------------------------
+const FEE_TYPES = [
+    { key: 'discount_amount',     sign: '-', label: '整单折扣/折让 (-)' },
+    { key: 'delivery_fee',        sign: '+', label: '送货运费 (+)' },
+    { key: 'service_fee',         sign: '+', label: '服务费 (加一) (+)' },
+    { key: 'tax_amount',          sign: '+', label: '税额/VAT (+)' },
+    { key: 'deposit_amount',      sign: '+', label: '胶筐押金 (+)' },
+    { key: 'rounding_adjustment', sign: '-', label: '尾数抹零 (-)' }
+];
+
+function feeTypeMeta(key) {
+    for (let i = 0; i < FEE_TYPES.length; i++) {
+        if (FEE_TYPES[i].key === key) return FEE_TYPES[i];
+    }
+    return null;
+}
+
+// 单据数据 → 费用行：仅非零字段成行；类型顺序与 FEE_TYPES 一致
+function renderFeeRowsFromData(data) {
+    const container = document.getElementById('feesRowsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    const d = data || {};
+    FEE_TYPES.forEach(t => {
+        const v = d[t.key];
+        if (v != null && Number(v) !== 0 && !isNaN(Number(v))) {
+            appendFeeRow(t.key, Number(v));
+        }
+    });
+    updateFeesEmptyState();
+    // 有费用时自动展开抽屉（与手写注记抽屉同策略），无费用保持折叠零负担
+    const drawer = document.getElementById('feesDrawerContent');
+    const icon = document.getElementById('feesToggleIcon');
+    if (drawer) {
+        if (container.children.length > 0) {
+            drawer.classList.remove('hide');
+            if (icon) icon.textContent = '▲';
+        } else {
+            drawer.classList.add('hide');
+            if (icon) icon.textContent = '▾';
+        }
+    }
+}
+
+// 追加一行费用 = [原因下拉] + [符号提示 + 金额输入] + [删除按钮]
+function appendFeeRow(feeKey, amountValue) {
+    const container = document.getElementById('feesRowsContainer');
+    if (!container) return null;
+
+    const row = document.createElement('div');
+    row.className = 'fee-row';
+    row.dataset.feeKey = feeKey || '';
+
+    const sel = document.createElement('select');
+    sel.className = 'fee-type-select form-control form-control-sm';
+    const blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = '请选择费用原因';
+    sel.appendChild(blankOpt);
+    FEE_TYPES.forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.key;
+        opt.textContent = t.label;
+        sel.appendChild(opt);
+    });
+    sel.value = feeKey || '';
+    sel.addEventListener('change', function () { onFeeTypeChange(sel, row); });
+
+    const signHint = document.createElement('span');
+    signHint.className = 'fee-sign-hint';
+
+    const amountInput = document.createElement('input');
+    amountInput.type = 'number';
+    amountInput.step = '0.01';
+    amountInput.min = '0';
+    amountInput.className = 'fee-amount-input form-control form-control-sm';
+    amountInput.placeholder = '0.00';
+    amountInput.title = '填写该项费用金额；折扣 / 抹零会从总额中扣减';
+    if (amountValue != null && !isNaN(Number(amountValue))) {
+        amountInput.value = Number(amountValue).toFixed(2);
+    }
+    amountInput.addEventListener('input', function () {
+        row.dataset.feeKey = sel.value || '';
+        recalcTotalSum();
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'fee-remove-btn btn btn-secondary btn-sm';
+    removeBtn.textContent = '删除';
+    removeBtn.title = '删除该费用行（该项按 0 计入单据）';
+    removeBtn.addEventListener('click', function () { removeFeeRow(removeBtn); });
+
+    row.appendChild(sel);
+    row.appendChild(signHint);
+    row.appendChild(amountInput);
+    row.appendChild(removeBtn);
+    updateRowSignHint(row);
+    container.appendChild(row);
+    updateFeesEmptyState();
+    return row;
+}
+
+// 「+ 添加费用」入口：追加空行并自动聚焦原因下拉
+function addFeeRow() {
+    const row = appendFeeRow('', null);
+    if (row) {
+        const sel = row.querySelector('.fee-type-select');
+        if (sel) sel.focus();
+    }
+}
+window.addFeeRow = addFeeRow;
+
+// 类型互斥：同一费用原因只能有一行。重复选择时人话提示并聚焦已有行。
+function onFeeTypeChange(sel, row) {
+    const val = sel.value || '';
+    updateRowSignHint(row);
+    if (!val) {
+        row.dataset.feeKey = '';
+        recalcTotalSum();
+        return;
+    }
+    const dup = findFeeRowByType(val, row);
+    if (dup) {
+        showToast('该项已添加，已在上方标出', 'warning');
+        sel.value = '';
+        updateRowSignHint(row);
+        dup.classList.add('fee-row-flash');
+        dup.scrollIntoView({ block: 'center' });
+        const dupAmount = dup.querySelector('.fee-amount-input');
+        if (dupAmount) dupAmount.focus();
+        setTimeout(function () { dup.classList.remove('fee-row-flash'); }, 1600);
+        return;
+    }
+    row.dataset.feeKey = val;
+    recalcTotalSum();
+}
+
+function findFeeRowByType(typeKey, excludeRow) {
+    const container = document.getElementById('feesRowsContainer');
+    if (!container) return null;
+    const rows = container.querySelectorAll('.fee-row');
+    for (let i = 0; i < rows.length; i++) {
+        if (rows[i] === excludeRow) continue;
+        const sel = rows[i].querySelector('.fee-type-select');
+        if (sel && sel.value === typeKey) return rows[i];
+    }
+    return null;
+}
+
+function updateRowSignHint(row) {
+    if (!row) return;
+    const sel = row.querySelector('.fee-type-select');
+    const hint = row.querySelector('.fee-sign-hint');
+    if (!sel || !hint) return;
+    const meta = feeTypeMeta(sel.value);
+    hint.textContent = meta ? meta.sign : '+/-';
+}
+
+// 删除行 = 该项归 0（collectFeeMap 不再产出该字段，等价 0 提交）
+function removeFeeRow(btn) {
+    const row = btn.closest('.fee-row');
+    if (row) row.remove();
+    updateFeesEmptyState();
+    recalcTotalSum();
+}
+
+function updateFeesEmptyState() {
+    const container = document.getElementById('feesRowsContainer');
+    const emptyTip = document.getElementById('feesRowsEmpty');
+    if (!container || !emptyTip) return;
+    if (container.children.length > 0) {
+        emptyTip.classList.add('hide');
+    } else {
+        emptyTip.classList.remove('hide');
+    }
+}
+
+// 费用行 → 六契约字段映射（未出现的类型 = 0；类型互斥由下拉去重保证）
+function collectFeeMap() {
+    const feeMap = {
+        discount_amount: 0.00,
+        delivery_fee: 0.00,
+        service_fee: 0.00,
+        tax_amount: 0.00,
+        deposit_amount: 0.00,
+        rounding_adjustment: 0.00
+    };
+    const container = document.getElementById('feesRowsContainer');
+    if (!container) return feeMap;
+    container.querySelectorAll('.fee-row').forEach(row => {
+        const typeSel = row.querySelector('.fee-type-select');
+        if (!typeSel || !typeSel.value) return;
+        const amt = parseFloat(row.querySelector('.fee-amount-input')?.value);
+        if (isNaN(amt)) return;
+        feeMap[typeSel.value] = amt;
+    });
+    return feeMap;
+}
+
 function updateFeesSummaryBadge() {
-    const disc = parseFloat(document.getElementById('inpDiscount')?.value) || 0;
-    const deliv = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
-    const dep = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
-    const round = parseFloat(document.getElementById('inpRounding')?.value) || 0;
-    // Gap 9：服务费/税额计入差额汇总（与后端算术门禁口径一致）
-    const svc = parseFloat(document.getElementById('inpServiceFee')?.value) || 0;
-    const tax = parseFloat(document.getElementById('inpTaxAmount')?.value) || 0;
+    const fees = collectFeeMap();
     const badge = document.getElementById('feesSummaryBadge');
     if (!badge) return;
-    const hasFees = (disc > 0 || deliv > 0 || dep > 0 || round > 0 || svc > 0 || tax > 0);
+    const hasFees = (fees.discount_amount > 0 || fees.delivery_fee > 0 || fees.deposit_amount > 0
+        || fees.rounding_adjustment > 0 || fees.service_fee > 0 || fees.tax_amount > 0);
     if (hasFees) {
-        const netFee = (deliv + dep + svc + tax - disc - round);
+        const netFee = (fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount
+            - fees.discount_amount - fees.rounding_adjustment);
         const sign = netFee >= 0 ? '+' : '';
         badge.textContent = `差额: ${sign}${netFee.toFixed(2)}`;
         badge.classList.remove('hide');
@@ -4763,15 +4950,12 @@ function recalcTotalSum() {
         itemsSum += amt;
     });
 
-    const discount = parseFloat(document.getElementById('inpDiscount')?.value) || 0;
-    const delivery = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
-    const deposit = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
-    const rounding = parseFloat(document.getElementById('inpRounding')?.value) || 0;
-    // Gap 9：服务费/税额联动总额（与后端算术门禁 expected_total 口径一致）
-    const serviceFee = parseFloat(document.getElementById('inpServiceFee')?.value) || 0;
-    const taxAmount = parseFloat(document.getElementById('inpTaxAmount')?.value) || 0;
+    // 附加费用：从动态费用行收集（与后端算术门禁 expected_total 同口径：
+    // +delivery+deposit+serviceFee+tax-discount-rounding）
+    const fees = collectFeeMap();
 
-    const netTotal = Math.max(0, itemsSum - discount - rounding + delivery + deposit + serviceFee + taxAmount);
+    const netTotal = Math.max(0, itemsSum - fees.discount_amount - fees.rounding_adjustment
+        + fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount);
     document.getElementById('inpTotal').value = netTotal.toFixed(2);
     updateFeesSummaryBadge();
     renderCurrencySymbol();
@@ -5139,6 +5323,8 @@ function collectReviewFormData() {
     // F-P1-3 多币种
     const curSel = document.getElementById('inpCurrency');
     const docFormSel = document.getElementById('inpDocForm');
+    // 附加费用：动态费用行 → 六契约字段（删除行/未出现的类型 = 0，落库契约不变）
+    const feeFields = collectFeeMap();
 
     const data = {
         supplier_name: supplierName || '通用供应商',
@@ -5150,13 +5336,13 @@ function collectReviewFormData() {
         department_id: departmentId,
         doc_form: (docFormSel && docFormSel.value ? docFormSel.value : (src.doc_form || 'printed_delivery_note')),
         currency: (curSel && curSel.value ? curSel.value : (src.currency || 'HKD')),
-        discount_amount: parseFloat(document.getElementById('inpDiscount')?.value) || 0.00,
-        delivery_fee: parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0.00,
-        deposit_amount: parseFloat(document.getElementById('inpDeposit')?.value) || 0.00,
-        rounding_adjustment: parseFloat(document.getElementById('inpRounding')?.value) || 0.00,
+        discount_amount: feeFields.discount_amount,
+        delivery_fee: feeFields.delivery_fee,
+        deposit_amount: feeFields.deposit_amount,
+        rounding_adjustment: feeFields.rounding_adjustment,
         // Gap 9：服务费(加一)/税额——店员可修正，随 save_edited 提交
-        service_fee: parseFloat(document.getElementById('inpServiceFee')?.value) || 0.00,
-        tax_amount: parseFloat(document.getElementById('inpTaxAmount')?.value) || 0.00,
+        service_fee: feeFields.service_fee,
+        tax_amount: feeFields.tax_amount,
         // Gap 6：手写注记（一行一条）
         adjustment_notes: (function () {
             const raw = (document.getElementById('inpAdjustmentNotes')?.value || '');

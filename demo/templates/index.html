@@ -437,31 +437,10 @@
                                         <span id="feesToggleIcon" class="fees-toggle-icon">▾</span>
                                     </div>
                                     <div id="feesDrawerContent" class="fees-drawer-content hide">
-                                        <div class="fees-grid">
-                                            <div class="form-group">
-                                                <label>整单折扣/折让 (-)</label>
-                                                <input type="number" step="0.01" id="inpDiscount" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>送货运费 (+)</label>
-                                                <input type="number" step="0.01" id="inpDeliveryFee" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>服务费 (加一) (+)</label>
-                                                <input type="number" step="0.01" id="inpServiceFee" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>税额/VAT (+)</label>
-                                                <input type="number" step="0.01" id="inpTaxAmount" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>胶筐押金 (+)</label>
-                                                <input type="number" step="0.01" id="inpDeposit" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
-                                            <div class="form-group">
-                                                <label>尾数抹零 (-)</label>
-                                                <input type="number" step="0.01" id="inpRounding" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
-                                            </div>
+                                        <div id="feesRowsEmpty" class="fees-empty-row">无附加费用。单据上有折扣 / 运费 / 服务费等需要调节时，点下方按钮按行添加。</div>
+                                        <div id="feesRowsContainer" class="fees-rows-container"></div>
+                                        <div class="fees-actions-row">
+                                            <button type="button" id="btnAddFeeRow" class="btn btn-secondary btn-sm" style="min-height:38px; padding:7px 14px; font-size:0.85rem;" onclick="addFeeRow()">+ 添加费用</button>
                                         </div>
                                     </div>
                                 </div>

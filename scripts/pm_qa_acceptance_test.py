@@ -386,16 +386,18 @@ def run_pm_acceptance_qa():
         fees_toggle.click()
         expect(page.locator("#feesDrawerContent")).to_be_visible()
 
-        # Fill fees: discount=10.00, delivery=15.00, deposit=20.00, rounding=1.00
-        # Net adjustment = +15 + 20 - 10 - 1 = +24.00
-        page.locator("#inpDiscount").fill("10.00")
-        page.locator("#inpDiscount").dispatch_event("input")
-        page.locator("#inpDeliveryFee").fill("15.00")
-        page.locator("#inpDeliveryFee").dispatch_event("input")
-        page.locator("#inpDeposit").fill("20.00")
-        page.locator("#inpDeposit").dispatch_event("input")
-        page.locator("#inpRounding").fill("1.00")
-        page.locator("#inpRounding").dispatch_event("input")
+        # Fill fees via dynamic fee rows: discount=10.00, delivery=15.00,
+        # deposit=20.00, rounding=1.00; Net adjustment = +15 + 20 - 10 - 1 = +24.00
+        for fee_key, fee_value in [
+            ("discount_amount", "10.00"),
+            ("delivery_fee", "15.00"),
+            ("deposit_amount", "20.00"),
+            ("rounding_adjustment", "1.00"),
+        ]:
+            page.locator("#btnAddFeeRow").click()
+            fee_row = page.locator("#feesRowsContainer .fee-row").last
+            fee_row.locator(".fee-type-select").select_option(fee_key)
+            fee_row.locator(".fee-amount-input").fill(fee_value)
         time.sleep(0.1)
 
         # Total should now be 1104.00 + 24.00 = 1128.00

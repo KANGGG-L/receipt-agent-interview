@@ -194,8 +194,9 @@
             }
         }
 
-        // GT v2 全集：UI 可编辑字段一律取表单实际值（店员/抽检员修正优先生效）；
-        // 表单缺字段时回落候选值，保证历史候选不丢失。
+        // GT v2 全集：UI 可编辑字段一律取表单实际值（店员/抽检员修正优先生效）。
+        // 附加费用走动态费用行（collectReviewFormData 已映射回六契约字段，
+        // 删除费用行 = 该项归 0，不再回落候选值）。
         var gt = {
             supplier_name: supplier,
             date: dateStr,
@@ -208,10 +209,8 @@
             discount_amount: Number(data.discount_amount) || 0,
             deposit_amount: Number(data.deposit_amount) || 0,
             delivery_fee: Number(data.delivery_fee) || 0,
-            service_fee: (data.service_fee != null && Number(data.service_fee) !== 0)
-                ? Number(data.service_fee) : (Number(cand.service_fee) || 0),
-            tax_amount: (data.tax_amount != null && Number(data.tax_amount) !== 0)
-                ? Number(data.tax_amount) : (Number(cand.tax_amount) || 0),
+            service_fee: Number(data.service_fee) || 0,
+            tax_amount: Number(data.tax_amount) || 0,
             rounding_adjustment: Number(data.rounding_adjustment) || 0,
             adjustment_notes: (Array.isArray(data.adjustment_notes) && data.adjustment_notes.length)
                 ? data.adjustment_notes

@@ -7,7 +7,8 @@
 3. G3 payment_evidence：契约 ReceiptData Optional 默认 ""；save_edited 提交落库回读
 4. 缺省路径：不传新字段不 422，默认值落库不炸
 5. F5 门禁联动：save_edited 后算术门禁用店员提交值（service_fee/tax_amount）重算
-6. 前端静态断言：四个新控件 id 存在且位于复核区（Side-by-Side 表单卡内）
+6. 前端静态断言：附加费用「动态费用行」视图（添加按钮/行容器/占位文案/类型六项/
+   删除归 0/类型去重提示），service_fee / tax_amount 经 collectFeeMap 采集
 
 全部离线：零外部调用。
 """
@@ -192,7 +193,7 @@ def test_math_gate_flags_mismatch_with_user_values(client):
 
 
 # -------------------------------------------------------------
-# 前端静态断言：四个新控件 id 存在且在复核区
+# 前端静态断言：附加费用改为「动态费用行」模式（按需添加，不再默认铺六宫格）
 # -------------------------------------------------------------
 def _index_html():
     path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -201,35 +202,116 @@ def _index_html():
         return f.read()
 
 
-def test_four_new_controls_exist_in_review_area():
+def _main_js_src():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "static", "js", "main.js")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_dynamic_fee_rows_ui_mode():
+    """动态费用行视图：添加按钮/行容器/占位提示存在且位于复核区，固定六宫格已移除。"""
     html = _index_html()
-    for ctrl_id in ("inpServiceFee", "inpTaxAmount",
-                    "inpAdjustmentNotes", "inpPaymentEvidence"):
-        assert 'id="%s"' % ctrl_id in html, "复核区缺少新控件 #%s" % ctrl_id
-    # 位置：全部位于 Side-by-Side 复核表单卡内（供应商输入之后、明细表之前）
+    # 动态模式三要素：占位提示、行容器、添加按钮
+    assert 'id="feesRowsEmpty"' in html, "缺少费用占位提示 #feesRowsEmpty"
+    assert 'id="feesRowsContainer"' in html, "缺少动态费用行容器 #feesRowsContainer"
+    assert 'id="btnAddFeeRow"' in html, "缺少「+ 添加费用」按钮 #btnAddFeeRow"
+    assert "无附加费用" in html, "占位提示必须是人话文案「无附加费用」"
+    assert "+ 添加费用" in html
+    # 位置：费用抽屉仍在 Side-by-Side 复核表单卡内（供应商输入之后、明细表之前）
     anchor_supplier = html.index('id="inpSupplier"')
     anchor_table = html.index('id="itemTableBody"')
-    for ctrl_id in ("inpServiceFee", "inpTaxAmount",
-                    "inpAdjustmentNotes", "inpPaymentEvidence"):
-        pos = html.index('id="%s"' % ctrl_id)
+    for mark in ('id="feesRowsEmpty"', 'id="feesRowsContainer"', 'id="btnAddFeeRow"'):
+        pos = html.index(mark)
         assert anchor_supplier < pos < anchor_table, \
-            "#%s 不在复核区（供应商与明细表之间）" % ctrl_id
-    # 标签人话
-    assert "服务费 (加一)" in html
-    assert "税额/VAT" in html
+            "%s 不在复核区（供应商与明细表之间）" % mark
+    # 旧固定六宫格输入框不复存在（默认不再铺 6 个空输入框）
+    for legacy_id in ("inpDiscount", "inpDeliveryFee", "inpServiceFee",
+                      "inpTaxAmount", "inpDeposit", "inpRounding"):
+        assert 'id="%s"' % legacy_id not in html, \
+            "固定六宫格输入 #%s 应由动态费用行取代" % legacy_id
+    # 仍保留的手写注记 / 付款证据控件
+    for ctrl_id in ("inpAdjustmentNotes", "inpPaymentEvidence"):
+        assert 'id="%s"' % ctrl_id in html, "复核区缺少控件 #%s" % ctrl_id
     assert "手写注记" in html
     assert "付款证据" in html
 
 
+def test_fee_type_options_match_contract_fields():
+    """原因下拉六项与六个契约字段一一对应，带既有正负号 label。"""
+    src = _main_js_src()
+    start = src.index("const FEE_TYPES")
+    end = src.index("];", start)
+    fee_types_src = src[start:end]
+    expectations = [
+        ("discount_amount", "整单折扣/折让 (-)"),
+        ("delivery_fee", "送货运费 (+)"),
+        ("service_fee", "服务费 (加一) (+)"),
+        ("tax_amount", "税额/VAT (+)"),
+        ("deposit_amount", "胶筐押金 (+)"),
+        ("rounding_adjustment", "尾数抹零 (-)"),
+    ]
+    for key, label in expectations:
+        assert "key: '%s'" % key in fee_types_src, "FEE_TYPES 缺少契约字段 %s" % key
+        assert "'%s'" % label in fee_types_src, "FEE_TYPES 缺少费用原因 label「%s」" % label
+
+
 def test_main_js_collects_new_fields():
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "static", "js", "main.js")
-    with open(path, encoding="utf-8") as f:
-        src = f.read()
+    src = _main_js_src()
     collect_start = src.index("function collectReviewFormData")
     collect_end = src.index("function buildSavePayloadFromData")
     collect_src = src[collect_start:collect_end]
     for key in ("service_fee", "tax_amount", "adjustment_notes", "payment_evidence",
-                "inpServiceFee", "inpTaxAmount", "inpAdjustmentNotes",
-                "inpPaymentEvidence"):
+                "collectFeeMap"):
         assert key in collect_src, "collectReviewFormData 未采集 %s" % key
+    # collectFeeMap 必须映射回全部六个契约字段（未出现的类型 = 0）
+    map_start = src.index("function collectFeeMap")
+    map_end = src.index("function updateFeesSummaryBadge")
+    map_src = src[map_start:map_end]
+    for key in ("discount_amount", "delivery_fee", "service_fee",
+                "tax_amount", "deposit_amount", "rounding_adjustment"):
+        assert key in map_src, "collectFeeMap 未映射契约字段 %s" % key
+
+
+def test_fee_row_delete_means_zero_semantics():
+    """行删除 = 该项归 0：removeFeeRow 只做 remove + 重算，
+    collectFeeMap 仅遍历现存行（未出现的类型缺省 0）——契约字段不会残留旧值。"""
+    src = _main_js_src()
+    rm_start = src.index("function removeFeeRow")
+    rm_end = src.index("function updateFeesEmptyState")
+    rm_src = src[rm_start:rm_end]
+    assert "row.remove()" in rm_src, "删除费用行必须移除该行 DOM"
+    assert "recalcTotalSum()" in rm_src, "删除费用行后必须联动重算总额"
+    # 归 0 语义的关键：collectFeeMap 从零值起步，仅统计现存的费用行
+    map_start = src.index("function collectFeeMap")
+    map_end = src.index("function updateFeesSummaryBadge")
+    map_src = src[map_start:map_end]
+    assert "querySelectorAll('.fee-row')" in map_src, "collectFeeMap 必须遍历现存费用行"
+    assert "discount_amount: 0.00" in map_src, "未出现的类型必须缺省归 0"
+
+
+def test_fee_type_dedup_with_humanized_hint():
+    """同一类型不可重复：重复选择时人话提示「该项已添加，已在上方标出」并聚焦已有行。"""
+    src = _main_js_src()
+    start = src.index("function onFeeTypeChange")
+    end = src.index("function findFeeRowByType")
+    dup_src = src[start:end]
+    assert "该项已添加，已在上方标出" in dup_src, "重复选择费用类型必须有人话提示"
+    assert "showToast" in dup_src, "提示必须经 toast 呈现"
+    assert "focus()" in dup_src, "重复选择时必须聚焦已有行"
+
+
+def test_fee_rows_render_and_autofocus():
+    """打开单据：非零费用字段渲染为行（renderFeeRowsFromData）；
+    点「+ 添加费用」新行自动聚焦原因下拉（addFeeRow）。"""
+    src = _main_js_src()
+    render_start = src.index("function renderFeeRowsFromData")
+    render_end = src.index("function appendFeeRow")
+    render_src = src[render_start:render_end]
+    assert "container.innerHTML = ''" in render_src, "渲染前必须清空旧费用行"
+    assert "appendFeeRow(" in render_src, "非零费用字段必须渲染为费用行"
+    assert "updateFeesEmptyState()" in render_src, "渲染后必须刷新占位提示状态"
+    add_start = src.index("function addFeeRow")
+    add_end = src.index("function onFeeTypeChange")
+    add_src = src[add_start:add_end]
+    assert "focus()" in add_src, "「+ 添加费用」新增行必须自动聚焦原因下拉"
