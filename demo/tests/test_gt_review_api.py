@@ -12,6 +12,10 @@
 8. 批量确认按钮风险显式化（前端静态断言）
 9. sample 详情返回缩略图（长边 <=1400px 的 JPEG，不再返回原图 base64）
 10. confirm 提交 quantity 键时自动归一为 qty 落盘
+11. GT schema v2（合并反馈①）：payment_marked 必填且必须布尔；缺 v2 字段 400；
+    confirmed 允许再次 confirm（覆盖更新 + 刷新 reviewed_at）
+12. 工作台路由 /evalset/workbench/<sid>（合并反馈②）：200 且复用 index.html
+    同源复核 DOM（同一关键容器 id），并注入 eval_workbench.js 适配器
 
 全部离线：样例图片用 PIL 生成的小图，零外部调用。
 """
@@ -88,6 +92,16 @@ _CANDIDATE_GT = {
     "supplier_name": "Alpha Trading Co",
     "date": "2026-08-01",
     "total_amount": 120.0,
+    "payment_marked": False,
+    "payment_evidence": "",
+    "currency": "HKD",
+    "discount_amount": 0.0,
+    "deposit_amount": 0.0,
+    "delivery_fee": 0.0,
+    "service_fee": 0.0,
+    "tax_amount": 0.0,
+    "rounding_adjustment": 0.0,
+    "adjustment_notes": [],
     "items": [
         {"name": "白菜", "quantity": 2.0, "unit": "斤", "unit_price": 10.0, "amount": 20.0},
     ],
@@ -494,17 +508,24 @@ def test_explicit_paging_buttons_use_wrapper_functions():
 
 # ------------------------------------------------------------------
 # 10. gen_gt_candidates 落盘归一：quantity -> qty（模型再返回 quantity 也转 qty）
+#     v2：payment_marked 宽容转布尔、费用缺省 0、币种缺省 HKD
 # ------------------------------------------------------------------
 def test_gen_gt_normalize_and_validate():
     import gen_gt_candidates
 
     gt = {"supplier_name": "X", "date": "2026-08-01", "total_amount": 20.0,
-          "items": [{"name": "白菜", "quantity": 2.0, "unit": "斤",
-                     "unit_price": 10.0, "amount": 20.0}]}
+          "payment_marked": "true", "items": [{"name": "白菜", "quantity": 2.0,
+                                               "unit": "斤", "unit_price": 10.0,
+                                               "amount": 20.0}]}
     gt = gen_gt_candidates.normalize_gt_items(gt)
     assert gen_gt_candidates.validate_gt(gt) is None
     assert gt["items"][0]["qty"] == 2.0
     assert "quantity" not in gt["items"][0]
+    # v2 归一：payment_marked 转布尔、缺省字段补齐
+    assert gt["payment_marked"] is True
+    assert gt["currency"] == "HKD"
+    assert gt["delivery_fee"] == 0.0
+    assert gt["adjustment_notes"] == []
 
     # 已带 qty 时 quantity 冗余键被丢弃，且不覆盖 qty
     gt2 = {"items": [{"name": "a", "qty": 5, "quantity": 9}]}
@@ -513,12 +534,164 @@ def test_gen_gt_normalize_and_validate():
 
     # 缺 qty/quantity 的明细校验失败
     bad = {"supplier_name": "X", "date": "", "total_amount": 0,
-           "items": [{"name": "a", "unit": "斤"}]}
+           "payment_marked": False, "items": [{"name": "a", "unit": "斤"}]}
     err = gen_gt_candidates.validate_gt(bad)
     assert err is not None and "qty" in err
 
     # 兼容旧 prompt 输出 quantity：normalize 后再校验可通过
     old_gt = {"supplier_name": "X", "date": "", "total_amount": 0,
+              "payment_marked": False,
               "items": [{"name": "a", "quantity": 3}]}
     assert gen_gt_candidates.validate_gt(
         gen_gt_candidates.normalize_gt_items(old_gt)) is None
+
+
+def test_gen_gt_validate_requires_bool_payment_marked():
+    """v2：payment_marked 缺失/非布尔在 validate_gt 拦截（生成侧质量门）。"""
+    import gen_gt_candidates
+
+    base = {"supplier_name": "X", "date": "", "total_amount": 0,
+            "items": [{"name": "a", "qty": 1, "unit": "斤", "unit_price": 1, "amount": 1}]}
+    no_mark = dict(base)
+    assert "payment_marked" in gen_gt_candidates.validate_gt(no_mark)
+    str_mark = dict(base, payment_marked="true")
+    assert "布尔" in gen_gt_candidates.validate_gt(str_mark)
+    int_mark = dict(base, payment_marked=1)
+    assert "布尔" in gen_gt_candidates.validate_gt(int_mark)
+
+
+# ------------------------------------------------------------------
+# 11. GT schema v2 confirm 校验（合并反馈①）：
+#     payment_marked 必填且必须布尔；缺 v2 字段 400；再确认覆盖更新
+# ------------------------------------------------------------------
+def test_confirm_missing_payment_marked_400(evalset_env, client):
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+
+    gt = json.loads(json.dumps(_CANDIDATE_GT))
+    del gt["payment_marked"]
+    resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                       json={"gt": gt}, headers=_admin_headers())
+    assert resp.status_code == 400
+    assert "payment_marked" in resp.json()["msg"], "400 提示必须点名缺失字段"
+
+
+def test_confirm_payment_marked_must_be_bool(evalset_env, client):
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    for bad in ("true", 1, None, "已付款"):
+        gt = json.loads(json.dumps(_CANDIDATE_GT))
+        gt["payment_marked"] = bad
+        resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                           json={"gt": gt}, headers=_admin_headers())
+        assert resp.status_code == 400, "payment_marked=%r 必须被拒绝" % bad
+        assert "布尔" in resp.json()["msg"], "400 提示必须为人话（说明需要 true/false）"
+
+    # manifest 状态不得被 400 请求改动
+    rows2 = {r["sample_id"]: r for r in _read_manifest(os.path.join(evalset_dir, "manifest.csv"))}
+    assert rows2[sid]["gt_status"] == "draft"
+
+
+def test_confirm_missing_v2_field_400(evalset_env, client):
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    gt = json.loads(json.dumps(_CANDIDATE_GT))
+    del gt["adjustment_notes"]
+    resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                       json={"gt": gt}, headers=_admin_headers())
+    assert resp.status_code == 400
+    assert "adjustment_notes" in resp.json()["msg"]
+
+
+def test_confirm_v2_fields_saved_verbatim(evalset_env, client):
+    """v2 全集落盘：payment_marked/currency/费用/注记原样保留（不静默改写）。"""
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    gt = json.loads(json.dumps(_CANDIDATE_GT))
+    gt["payment_marked"] = True
+    gt["payment_evidence"] = "右上角红色 PAID 印章"
+    gt["currency"] = "CNY"
+    gt["delivery_fee"] = 25.0
+    gt["adjustment_notes"] = ["短裝一斤"]
+    resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                       json={"gt": gt}, headers=_admin_headers())
+    assert resp.status_code == 200, resp.text
+    with open(os.path.join(evalset_dir, "expected", sid + ".json"), encoding="utf-8") as f:
+        saved = json.load(f)
+    assert saved["payment_marked"] is True
+    assert saved["payment_evidence"] == "右上角红色 PAID 印章"
+    assert saved["currency"] == "CNY"
+    assert saved["delivery_fee"] == 25.0
+    assert saved["adjustment_notes"] == ["短裝一斤"]
+
+
+def test_confirm_none_v2_optional_fields_fill_defaults(evalset_env, client):
+    """v2 可选字段显式传 None 时补中性默认（费用 0/币种 HKD/证据空串/注记空数组）。"""
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    gt = json.loads(json.dumps(_CANDIDATE_GT))
+    for k in ("payment_evidence", "currency", "delivery_fee", "adjustment_notes"):
+        gt[k] = None
+    resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                       json={"gt": gt}, headers=_admin_headers())
+    assert resp.status_code == 200, resp.text
+    with open(os.path.join(evalset_dir, "expected", sid + ".json"), encoding="utf-8") as f:
+        saved = json.load(f)
+    assert saved["currency"] == "HKD"
+    assert saved["delivery_fee"] == 0.0
+    assert saved["payment_evidence"] == ""
+    assert saved["adjustment_notes"] == []
+
+
+def test_reconfirm_overwrites_and_refreshes_reviewed_at(evalset_env, client):
+    """confirmed 允许再次 confirm：覆盖更新内容并刷新 reviewed_at（迁移期重抽）。"""
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+
+    first = json.loads(json.dumps(_CANDIDATE_GT))
+    resp1 = client.post("/api/evalset/sample/%s/confirm" % sid,
+                        json={"gt": first}, headers=_admin_headers())
+    assert resp1.status_code == 200, resp1.text
+    reviewed_at_1 = resp1.json()["data"]["gt_reviewed_at"]
+    assert reviewed_at_1
+
+    second = json.loads(json.dumps(_CANDIDATE_GT))
+    second["total_amount"] = 131.0
+    second["payment_marked"] = True
+    resp2 = client.post("/api/evalset/sample/%s/confirm" % sid,
+                        json={"gt": second}, headers=_admin_headers())
+    assert resp2.status_code == 200, "已 confirmed 样本必须允许再次 confirm 覆盖更新"
+    data2 = resp2.json()["data"]
+    assert data2["gt_reviewed_at"] >= reviewed_at_1, "再次确认必须刷新 reviewed_at"
+
+    with open(os.path.join(evalset_dir, "expected", sid + ".json"), encoding="utf-8") as f:
+        saved = json.load(f)
+    assert saved["total_amount"] == 131.0
+    assert saved["payment_marked"] is True
+    assert saved["gt_status"] == "confirmed"
+
+
+# ------------------------------------------------------------------
+# 12. 工作台路由 /evalset/workbench/<sid>（合并反馈②）：
+#     与店员复核界面同源（同一 index.html 模板 + 关键容器 id）+ 适配器注入
+# ------------------------------------------------------------------
+def test_workbench_route_reuses_review_dom(evalset_env, client):
+    resp = client.get("/evalset/workbench/S005")
+    assert resp.status_code == 200
+    html = resp.text
+    # 注入了 eval 标志位与适配器
+    assert "__EVAL_WORKBENCH__" in html and "S005" in html
+    assert "eval_workbench.js" in html
+    # 与真实收据识别 Tab 同源的关键复核容器 id（同一套 DOM，禁止平行表单）
+    for dom_id in ("splitViewArea", "prefillFormCard", "previewImg", "inpSupplier",
+                   "inpDate", "inpTotal", "inpPaymentMark", "inpCurrency",
+                   "itemTableBody", "btnSaveReview"):
+        assert 'id="%s"' % dom_id in html, "工作台必须复用 index.html 的 #%s" % dom_id
+    # main.js 同源加载（渲染与字段组装函数来自同一份代码）
+    assert "main.js" in html

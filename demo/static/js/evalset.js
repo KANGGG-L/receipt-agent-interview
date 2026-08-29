@@ -227,9 +227,34 @@
         return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
     }
 
+    // GT v2 字段（对齐 ReceiptData 契约）：队列页表单只渲染核心字段，
+    // 付款标记/币种/费用/注记等从 AI 候选原样透传（完整编辑走工作台
+    // /evalset/workbench/<sid>，那里复用店员复核界面含付款标记控件）。
+    var GT_V2_KEYS = ['payment_marked', 'payment_evidence', 'currency',
+        'discount_amount', 'deposit_amount', 'delivery_fee', 'service_fee',
+        'tax_amount', 'rounding_adjustment', 'adjustment_notes'];
+    var GT_V2_FEE_KEYS = ['discount_amount', 'deposit_amount', 'delivery_fee',
+        'service_fee', 'tax_amount', 'rounding_adjustment'];
+
+    function mergeGtV2(gt) {
+        var src = (current && current.gt) || {};
+        GT_V2_KEYS.forEach(function (k) {
+            if (gt[k] === undefined && src[k] !== undefined) { gt[k] = src[k]; }
+        });
+        // 类型兜底（旧候选缺 v2 字段时给中性默认，满足 confirm v2 校验）
+        if (typeof gt.payment_marked !== 'boolean') {
+            gt.payment_marked = src.payment_marked === true || src.payment_mark === '已付款';
+        }
+        if (typeof gt.payment_evidence !== 'string') { gt.payment_evidence = ''; }
+        if (typeof gt.currency !== 'string' || !gt.currency) { gt.currency = 'HKD'; }
+        GT_V2_FEE_KEYS.forEach(function (k) { gt[k] = Number(gt[k]) || 0; });
+        if (!Array.isArray(gt.adjustment_notes)) { gt.adjustment_notes = []; }
+        return gt;
+    }
+
     function confirmCurrent(advance) {
         if (!current) { toast('当前没有可确认的样本', true); return; }
-        var gt = collectGt();
+        var gt = mergeGtV2(collectGt());
         if (!gt.supplier_name) { toast('供应商名称为空，请先核对图面填写', true); return; }
         if (!gt.date) { toast('开单日期为空：图面确实无日期时可填 1970-01-01 并在明细备注', true); return; }
         var blankTotal = isBlankTotal(gt.total_amount);
@@ -315,6 +340,11 @@
                         doc_form: gt.doc_form || 'printed_delivery_note',
                         items: items
                     };
+                    // v2 字段（付款标记/币种/费用/注记）从候选原样透传
+                    GT_V2_KEYS.forEach(function (k) {
+                        if (gt[k] !== undefined) { body[k] = gt[k]; }
+                    });
+                    body = mergeGtV2(body);
                     var payload = { gt: body };
                     // 候选总额为空时显式确认留空（与服务端空总额守卫对齐）
                     if (isBlankTotal(body.total_amount)) { payload.confirm_blank_total = true; }
@@ -408,6 +438,13 @@
     function nextSample() { gotoSample(pos + 1); }
     function prevSample() { gotoSample(pos - 1); }
 
+    // 跳转工作台：在店员日常使用的同一套 Side-by-Side 复核界面中完成校正
+    // （合并反馈②：eval 工作台复用用户界面，控制变量；本队列页保留导航/进度/过滤/批量）。
+    function openWorkbench() {
+        if (!current || !current.sample_id) { toast('当前没有样本，无法进入工作台', true); return; }
+        window.location.href = '/evalset/workbench/' + encodeURIComponent(current.sample_id);
+    }
+
     function showEmpty(msg) {
         var note = document.getElementById('emptyNote');
         note.textContent = msg;
@@ -452,6 +489,7 @@
     window.prevSample = prevSample;
     window.confirmCurrent = confirmCurrent;
     window.addItemRow = addItemRow;
+    window.openWorkbench = openWorkbench;
     window.batchConfirmUntouched = batchConfirmUntouched;
     window.promoteCandidate = promoteCandidate;
     window.rejectCandidate = rejectCandidate;

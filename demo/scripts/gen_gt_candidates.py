@@ -11,10 +11,17 @@ manifest 同步状态。
     备选 PaddlePaddle/PaddleOCR-VL-1.5（百度家族）
     禁止回落 Qwen 家族。
 
-输出 JSON schema 与 run_eval 的 expected 消费格式（compare/normalize）对齐：
+输出 JSON schema（v2）与 run_eval 的 expected 消费格式（compare/normalize）对齐，
+并与识别契约 ReceiptData（demo/app/models.py）字段一一对应：
     {
       "supplier_name": str, "date": "YYYY-MM-DD", "total_amount": float,
       "doc_form": str,
+      "payment_marked": bool,          # 图面是否有已付款印章/手写标记（判不准则 false）
+      "payment_evidence": str,         # 付款标记证据描述（无则空串）
+      "currency": "HKD",               # 币种（HKD/CNY/USD…，图面无则 HKD）
+      "discount_amount": 0.0, "deposit_amount": 0.0, "delivery_fee": 0.0,
+      "service_fee": 0.0, "tax_amount": 0.0, "rounding_adjustment": 0.0,
+      "adjustment_notes": [],          # 手写调整/拒收/短装注记数组
       "items": [{"name": str, "qty": float, "unit": str,
                  "unit_price": float, "amount": float}],
       "gt_status": "draft", "gt_source_model": "<实际模型名>",
@@ -77,12 +84,23 @@ GT_PROMPT = """你是收据/送货单数字化专家。请逐字转录这张单�
   "date": "开单日期 YYYY-MM-DD（无法辨认则空字符串）",
   "total_amount": 总额数字（图面原文，禁止自行重算修正）,
   "doc_form": "printed_delivery_note|ncr_handwritten|thermal|weigh_slip|correction_note|monthly_statement 之一",
+  "payment_marked": 图面是否带有「已付款」标记（印章/手写 PAID/已收讫/签名确认等）：true 或 false,
+  "payment_evidence": "付款标记的证据描述（如『右上角红色 PAID 印章』）；无标记则空字符串",
+  "currency": "币种代码（HKD/CNY/USD 等，图面无明确币种则 HKD）",
+  "discount_amount": 整单折扣/折让金额（图面无则 0）,
+  "deposit_amount": 押金金额（如胶筐押金，图面无则 0）,
+  "delivery_fee": 运费/送货费（图面无则 0）,
+  "service_fee": 加一服务费/服务费（图面无则 0）,
+  "tax_amount": 税额/VAT/GST（图面无则 0）,
+  "rounding_adjustment": 尾数抹零/舍入调整（图面无则 0）,
+  "adjustment_notes": ["图面上的手写调整/拒收/短装注记，逐条原文；无则空数组"],
   "items": [{"name": "品名原文", "qty": 数字, "unit": "单位（斤/磅/扎/箱等）", "unit_price": 数字, "amount": 数字}]
 }
 要求：
-1. 金额与数量必须逐字转录图面所见，严禁自行重算修正；
-2. 明细行按图面顺序全部列出，不要遗漏，也不要把页脚/编号/合计行当作商品；
-3. 只输出 JSON。"""
+1. 金额与数量必须逐字转录图面所见，严禁自行重算修正（含各项费用与总额）；
+2. payment_marked 必须依据图面证据判断：看到已付款印章/手写标记才为 true，判不准则 false；
+3. 明细行按图面顺序全部列出，不要遗漏，也不要把页脚/编号/合计行当作商品；
+4. 只输出 JSON。"""
 
 
 # ------------------------------------------------------------------
@@ -241,10 +259,29 @@ def parse_gt_json(content):
         raise RuntimeError("JSON 解析失败：%s | 原文：%s" % (e, text[:200]))
 
 
-def normalize_gt_items(gt):
-    """items 内 quantity → qty 键归一（存储/表单层统一用 qty，与 run_eval 消费口径对齐）。
+# v2 费用字段（与 ReceiptData 契约一一对应，无则 0）
+GT_FEE_FIELDS = ("discount_amount", "deposit_amount", "delivery_fee",
+                 "service_fee", "tax_amount", "rounding_adjustment")
 
-    模型即使仍返回 quantity 也会在落盘前被转换；已有 qty 时 quantity（若同时存在）丢弃。
+
+def _coerce_bool(v):
+    """宽容布尔归一（仅用于生成侧容忍模型输出）：bool 原样；常见字面量映射；其余 None。"""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return bool(v)
+    s = str(v or "").strip().lower()
+    if s in ("true", "1", "yes", "y", "已付款", "paid"):
+        return True
+    if s in ("false", "0", "no", "n", "未付款", "unpaid", "none", ""):
+        return False
+    return None
+
+
+def normalize_gt_items(gt):
+    """items 内 quantity → qty 键归一（存储/表单层统一用 qty，与 run_eval 消费口径对齐）；
+    v2 字段同步归一：payment_marked 宽容转布尔、费用缺省 0、币种缺省 HKD、
+    注记/证据缺省空。模型即使仍返回 quantity 也会在落盘前被转换。
     """
     if isinstance(gt, dict) and isinstance(gt.get("items"), list):
         normalized = []
@@ -257,16 +294,35 @@ def normalize_gt_items(gt):
                     it.pop("quantity", None)
             normalized.append(it)
         gt["items"] = normalized
+    if isinstance(gt, dict):
+        if "payment_marked" in gt:
+            coerced = _coerce_bool(gt.get("payment_marked"))
+            gt["payment_marked"] = coerced if coerced is not None else False
+        for key in GT_FEE_FIELDS:
+            v = gt.get(key)
+            try:
+                gt[key] = round(float(v), 2) if v is not None and str(v).strip() != "" else 0.0
+            except (TypeError, ValueError):
+                gt[key] = 0.0
+        if not isinstance(gt.get("adjustment_notes"), list):
+            gt["adjustment_notes"] = []
+        if gt.get("payment_evidence") is None:
+            gt["payment_evidence"] = ""
+        if not str(gt.get("currency") or "").strip():
+            gt["currency"] = "HKD"
     return gt
 
 
 def validate_gt(gt):
-    """最小校验：必要字段齐全且 items 是列表（明细行统一用 qty 键）。返回错误文案或 None。"""
+    """v2 校验：必要字段齐全、payment_marked 为布尔、items 是列表（明细行统一用 qty 键）。
+    返回错误文案或 None。"""
     if not isinstance(gt, dict):
         return "GT 不是 dict"
-    for key in ("supplier_name", "date", "total_amount", "items"):
+    for key in ("supplier_name", "date", "total_amount", "items", "payment_marked"):
         if key not in gt:
             return "缺字段 %s" % key
+    if not isinstance(gt.get("payment_marked"), bool):
+        return "payment_marked 必须是布尔值（true/false）"
     items = gt.get("items")
     if not isinstance(items, list):
         return "items 不是列表"
@@ -397,12 +453,22 @@ def generate(split, gt_model=DEFAULT_GT_MODEL, limit=None, evalset_dir=None,
                 summary["failures"].append({"sample_id": sid, "error": (err or "")[:300]})
                 continue
 
-            # 落盘：与 run_eval expected 消费格式对齐 + 抽检元数据
+            # 落盘：与 run_eval expected 消费格式对齐（v2 全集）+ 抽检元数据
             body = {
                 "supplier_name": gt.get("supplier_name", ""),
                 "date": gt.get("date", ""),
                 "total_amount": gt.get("total_amount"),
                 "doc_form": gt.get("doc_form", ""),
+                "payment_marked": gt.get("payment_marked", False),
+                "payment_evidence": gt.get("payment_evidence", ""),
+                "currency": gt.get("currency", "HKD"),
+                "discount_amount": gt.get("discount_amount", 0.0),
+                "deposit_amount": gt.get("deposit_amount", 0.0),
+                "delivery_fee": gt.get("delivery_fee", 0.0),
+                "service_fee": gt.get("service_fee", 0.0),
+                "tax_amount": gt.get("tax_amount", 0.0),
+                "rounding_adjustment": gt.get("rounding_adjustment", 0.0),
+                "adjustment_notes": gt.get("adjustment_notes", []),
                 "items": gt.get("items", []),
             }
             body["gt_status"] = "draft"
@@ -416,9 +482,9 @@ def generate(split, gt_model=DEFAULT_GT_MODEL, limit=None, evalset_dir=None,
             row["gt_source_model"] = used_model
             summary["ok"] += 1
             summary["tokens_total"] += int(usage.get("total_tokens") or 0)
-            print("  [OK] %s | %s | 总额 %s | 明细 %d 行 | tokens %s" %
+            print("  [OK] %s | %s | 总额 %s | 明细 %d 行 | 已付款标记 %s | tokens %s" %
                   (body["supplier_name"], body["date"], body["total_amount"],
-                   len(body["items"]), usage.get("total_tokens")))
+                   len(body["items"]), body["payment_marked"], usage.get("total_tokens")))
 
             time.sleep(REQUEST_GAP_SECONDS)   # 温和限速
 

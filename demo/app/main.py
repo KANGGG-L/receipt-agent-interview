@@ -114,6 +114,35 @@ def evalset_review_page():
     return resp
 
 
+@app.get("/evalset/workbench/{sample_id}")
+def evalset_workbench_page(sample_id: str):
+    """评测 GT 核对工作台（合并反馈①②）：与店员日常复核完全同源的 Side-by-Side 界面。
+
+    直接复用 index.html 同一模板（同一套复核 DOM / main.js 渲染与提交函数），
+    仅在服务端注入两个标志位：
+      - window.__EVAL_WORKBENCH__.sampleId：待核对样本 ID
+      - /static/js/eval_workbench.js 适配器（数据源换成评测集样本 + AI 候选 GT 预填，
+        提交改走 /api/evalset/sample/<sid>/confirm）
+    不复制、不改写任何复核表单 DOM（禁止平行表单）。
+    """
+    import json as _json
+
+    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
+    inject = (
+        '<script>window.__EVAL_WORKBENCH__ = { sampleId: %s, autoNext: %s };</script>\n'
+        '<script src="/static/js/eval_workbench.js?v=20260829"></script>\n</body>'
+        % (_json.dumps(sample_id), "true")
+    )
+    if "</body>" not in html:
+        resp = FileResponse(TEMPLATES_DIR / "index.html")
+    else:
+        from fastapi.responses import HTMLResponse
+        resp = HTMLResponse(content=html.replace("</body>", inject, 1))
+    if DEV_MODE:
+        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+    return resp
+
+
 app.mount("/static", NoStoreStaticFiles(directory=str(STATIC_DIR), no_store=DEV_MODE), name="static")
 app.mount("/uploads", NoStoreStaticFiles(directory=str(UPLOAD_DIR), no_store=DEV_MODE), name="uploads")
 

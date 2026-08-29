@@ -85,6 +85,17 @@ _GT_PAYLOAD = {
     "supplier_name": "Alpha Trading Co",
     "date": "2026-08-01",
     "total_amount": 120.0,
+    "doc_form": "printed_delivery_note",
+    "payment_marked": False,
+    "payment_evidence": "",
+    "currency": "HKD",
+    "discount_amount": 0.0,
+    "deposit_amount": 0.0,
+    "delivery_fee": 0.0,
+    "service_fee": 0.0,
+    "tax_amount": 0.0,
+    "rounding_adjustment": 0.0,
+    "adjustment_notes": [],
     "items": [
         {"name": "白菜", "quantity": 2.0, "unit": "斤", "unit_price": 10.0, "amount": 20.0},
         {"name": "蘿蔔", "quantity": 5.0, "unit": "斤", "unit_price": 20.0, "amount": 100.0},
@@ -224,6 +235,74 @@ def test_compare_perfect_match():
     assert res["ok"] is True
     assert res["mismatched_fields"] == []
     assert res["cer"] == 0.0
+
+
+# ------------------------------------------------------------------
+# GT schema v2 比对口径（合并反馈①）
+# ------------------------------------------------------------------
+def test_compare_payment_marked_is_scored():
+    """payment_marked 必须：GT 有该字段时必须比对（已付款印章漏识别直接计错）。"""
+    exp = json.loads(json.dumps(_GT_PAYLOAD))
+    exp["payment_marked"] = True
+    pred = json.loads(json.dumps(_GT_PAYLOAD))
+    pred["payment_marked"] = False
+    res = run_eval.compare(exp, pred)
+    assert res["ok"] is False
+    assert "payment_marked" in res["mismatched_fields"]
+
+    # 一致时计入 field_stats 且通过
+    pred2 = json.loads(json.dumps(_GT_PAYLOAD))
+    pred2["payment_marked"] = True
+    res2 = run_eval.compare(exp, pred2)
+    assert "payment_marked" in res2["field_stats"]
+    assert res2["field_stats"]["payment_marked"] == [1, 1]
+    assert res2["ok"] is True
+
+
+def test_compare_payment_marked_skipped_when_gt_lacks():
+    """旧 GT 无 payment_marked 键时不比对（向后兼容，不稀释旧分数）。"""
+    exp = {"supplier_name": "A", "date": "2026-08-01", "total_amount": 10.0, "items": []}
+    pred = dict(exp, payment_marked=True)
+    res = run_eval.compare(exp, pred)
+    assert res["ok"] is True
+    assert "payment_marked" not in res["field_stats"]
+
+
+def test_compare_fees_and_notes_conditional():
+    """费用/注记按「GT 与识别双有」原则：GT 非零/非空才比对。"""
+    exp = json.loads(json.dumps(_GT_PAYLOAD))
+    exp["delivery_fee"] = 25.0
+    exp["adjustment_notes"] = ["短裝一斤"]
+
+    # 预测漏掉运费与注记 → 计错
+    pred = json.loads(json.dumps(_GT_PAYLOAD))
+    res = run_eval.compare(exp, pred)
+    assert "delivery_fee" in res["mismatched_fields"]
+    assert "adjustment_notes" in res["mismatched_fields"]
+
+    # GT 全零费用：预测费用乱填也不计错（恒 0 字段不提供区分度）
+    exp2 = json.loads(json.dumps(_GT_PAYLOAD))
+    pred2 = json.loads(json.dumps(_GT_PAYLOAD))
+    pred2["delivery_fee"] = 99.0
+    res2 = run_eval.compare(exp2, pred2)
+    assert "delivery_fee" not in res2["mismatched_fields"]
+    assert res2["ok"] is True
+
+    # GT 非零费用且预测一致 → 通过
+    pred3 = json.loads(json.dumps(_GT_PAYLOAD))
+    pred3["delivery_fee"] = 25.0
+    pred3["adjustment_notes"] = ["短裝一斤"]
+    res3 = run_eval.compare(exp, pred3)
+    assert res3["ok"] is True
+    assert res3["field_stats"]["delivery_fee"] == [1, 1]
+
+
+def test_compare_currency_scored_when_gt_declares():
+    exp = json.loads(json.dumps(_GT_PAYLOAD))
+    exp["currency"] = "CNY"
+    pred = json.loads(json.dumps(_GT_PAYLOAD))   # 默认 HKD
+    res = run_eval.compare(exp, pred)
+    assert "currency" in res["mismatched_fields"]
 
 
 def test_cer_counts_character_errors():

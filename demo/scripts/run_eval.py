@@ -42,6 +42,10 @@ DEFAULT_PROMPT_VERSION = "v1_2_0_sku_clean"
 # 比对字段：整单 4 项 + 明细行 5 项；item_count 单独统计（漏行/多行的关键信号）
 TOP_FIELDS = ("vendor", "date", "total", "doc_form")
 ITEM_FIELDS = ("name", "qty", "unit", "unit_price", "amount")
+# GT schema v2（对齐 ReceiptData 契约，合并反馈①）：付款标记必须比对；费用/币种/注记
+# 按「GT 与识别双有」原则条件比对（见 compare），避免恒 0 字段稀释分数。
+GT_V2_FEE_FIELDS = ("discount_amount", "deposit_amount", "delivery_fee",
+                    "service_fee", "tax_amount", "rounding_adjustment")
 
 
 # ------------------------------------------------------------------
@@ -85,15 +89,35 @@ def _norm_num(v, ndigits=2):
         return None
 
 
+def _norm_payment_marked(v):
+    """付款标记归一：bool/常见字面量 → bool；缺失或不可判 → None（不参与比对）。"""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return bool(v)
+    s = str(v or "").strip().lower()
+    if s in ("true", "1", "yes", "已付款", "paid"):
+        return True
+    if s in ("false", "0", "no", "未付款", "unpaid", "none"):
+        return False
+    return None
+
+
 def normalize(payload):
-    """把 GT / 预测统一成比对用的结构（兼容 supplier_name / total_amount / quantity 等别名）。"""
+    """把 GT / 预测统一成比对用的结构（兼容 supplier_name / total_amount / quantity 等别名）。
+
+    v2 字段（对齐 ReceiptData 契约）：payment_marked / currency / 各项费用 /
+    adjustment_notes 一并归一；旧 GT 缺这些键时为 None/空，compare 按「双有」跳过。
+    """
+    _EMPTY = {"doc_form": "", "vendor": "", "date": "", "total": None, "items": [],
+              "payment_marked": None, "currency": "", "fees": {}, "adjustment_notes": []}
     if payload is None:
-        return {"doc_form": "", "vendor": "", "date": "", "total": None, "items": []}
+        return dict(_EMPTY)
     if not isinstance(payload, dict):
         try:
             payload = dict(payload)
         except Exception:
-            return {"doc_form": "", "vendor": "", "date": "", "total": None, "items": []}
+            return dict(_EMPTY)
 
     items = []
     for it in (payload.get("items") or []):
@@ -110,12 +134,25 @@ def normalize(payload):
             "evidence": it.get("evidence"),
         })
     total = payload.get("total", payload.get("total_amount"))
+
+    fees = {}
+    for key in GT_V2_FEE_FIELDS:
+        fees[key] = _norm_num(payload.get(key))
+    notes = payload.get("adjustment_notes")
+    if isinstance(notes, list):
+        norm_notes = sorted(_norm_text(n) for n in notes if str(n or "").strip())
+    else:
+        norm_notes = []
     return {
         "doc_form": _norm_text(payload.get("doc_form", "")),
         "vendor": _norm_text(payload.get("vendor", payload.get("supplier_name", ""))),
         "date": _norm_date(payload.get("date", "")),
         "total": _norm_num(total),
         "items": items,
+        "payment_marked": _norm_payment_marked(payload.get("payment_marked")),
+        "currency": _norm_text(payload.get("currency", "")),
+        "fees": fees,
+        "adjustment_notes": norm_notes,
     }
 
 
@@ -209,6 +246,24 @@ def compare(expected, predicted):
 
     for field in TOP_FIELDS:
         _cmp(field, exp.get(field), pred.get(field))
+
+    # v2（合并反馈①）：payment_marked 必须——GT 有该字段即比对（识别契约必含，
+    # 缺失即「已付款印章漏识别/多识别」，直接计错）
+    if exp.get("payment_marked") is not None:
+        _cmp("payment_marked", exp.get("payment_marked"), pred.get("payment_marked"))
+    # 币种：GT 声明了币种才比对（识别侧恒有，默认 HKD）
+    if exp.get("currency"):
+        _cmp("currency", exp.get("currency"), pred.get("currency"))
+    # 费用与注记按「GT 与识别双有」原则：GT 非零/非空才比对——
+    # 恒 0 字段双边天然相等，计入只稀释分数，不提供区分度
+    exp_fees = exp.get("fees") or {}
+    pred_fees = pred.get("fees") or {}
+    for key in GT_V2_FEE_FIELDS:
+        ev = exp_fees.get(key)
+        if ev is not None and ev != 0:
+            _cmp(key, ev, pred_fees.get(key))
+    if exp.get("adjustment_notes"):
+        _cmp("adjustment_notes", exp.get("adjustment_notes"), pred.get("adjustment_notes"))
 
     exp_items = exp["items"]
     pred_items = pred["items"]

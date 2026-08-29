@@ -9,8 +9,9 @@
 - POST /api/evalset/sample/{sample_id}/confirm           人工校正后的 GT → confirmed
 - GET  /api/evalset/stats                                各 split 的 draft/confirmed/missing 计数
 
-GT 落盘：demo/evalsets/expected/<sample_id>.json（schema 与 run_eval 的 expected
-消费格式对齐：supplier_name/date/total_amount/items[...]），manifest.csv 同步
+GT 落盘：demo/evalsets/expected/<sample_id>.json（schema v2 与识别契约 ReceiptData
+对齐：supplier_name/date/total_amount/doc_form/payment_marked/payment_evidence/
+currency/各项费用/adjustment_notes/items[...]），manifest.csv 同步
 gt_status / gt_source_model。
 """
 
@@ -43,8 +44,18 @@ MANIFEST_COLUMNS = [
     "gt_status", "gt_source_model", "src_sha1", "short_side",
 ]
 
-# 人工确认后的 GT 必须携带的最小字段（与 run_eval.compare 消费口径对齐）
-GT_REQUIRED_KEYS = ("supplier_name", "date", "total_amount", "items")
+# 人工确认后的 GT 必须携带的最小字段（GT schema v2，与识别契约 ReceiptData
+# 一一对应：合并反馈①——付款标记/币种/费用/注记纳入评测口径）。
+# 落盘前 _fill_gt_v2_defaults 会为缺省的 v2 可选字段补中性默认，确保
+# expected/<sid>.json 恒为 v2 全集（run_eval.compare 消费口径对齐）。
+GT_REQUIRED_KEYS = (
+    "supplier_name", "date", "total_amount", "items", "payment_marked",
+    "payment_evidence", "currency", "discount_amount", "deposit_amount",
+    "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment",
+    "adjustment_notes",
+)
+GT_V2_FEE_KEYS = ("discount_amount", "deposit_amount", "delivery_fee",
+                  "service_fee", "tax_amount", "rounding_adjustment")
 
 logger = logging.getLogger("api_evalset")
 
@@ -261,9 +272,32 @@ def _is_blank_total(value) -> bool:
     return False
 
 
+def _fill_gt_v2_defaults(gt):
+    """为缺省的 v2 可选字段补中性默认（required 校验之后调用）。
+
+    保证落盘的 expected/<sid>.json 恒为 v2 全集：费用无则 0、币种默认 HKD、
+    证据空串、注记空数组。payment_marked 不在此兜底（布尔校验单独拦截）。
+    """
+    for key in GT_V2_FEE_KEYS:
+        if gt.get(key) is None:
+            gt[key] = 0.0
+    if not str(gt.get("currency") or "").strip():
+        gt["currency"] = "HKD"
+    if gt.get("payment_evidence") is None:
+        gt["payment_evidence"] = ""
+    if not isinstance(gt.get("adjustment_notes"), list):
+        gt["adjustment_notes"] = []
+    return gt
+
+
 @router.post("/api/evalset/sample/{sample_id}/confirm")
 def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
-    """人工确认：写回校正后的 GT（confirmed + reviewed_by/at），manifest 同步。仅 admin。"""
+    """人工确认：写回校正后的 GT（confirmed + reviewed_by/at），manifest 同步。仅 admin。
+
+    GT schema v2：GT_REQUIRED_KEYS 全集必填，payment_marked 必须布尔（印章/手写
+    已付款标记是识别契约必含字段，评测必须考核——合并反馈①）。
+    confirmed 允许再次 confirm：覆盖更新并刷新 reviewed_at（支撑 schema 迁移期重抽）。
+    """
     account = require_admin(request)
     evalset_dir = get_evalset_dir()
     rows = _load_manifest(evalset_dir)
@@ -280,8 +314,18 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
     if missing:
         return JSONResponse(status_code=400, content={
             "status": "error",
-            "msg": "提交的 GT 缺少必要字段：%s（需与识别输出同构：商户/日期/总额/明细行）"
-                   % ", ".join(missing)})
+            "msg": "提交的 GT 缺少必要字段：%s（需与识别输出 ReceiptData 同构："
+                   "商户/日期/总额/明细/已付款标记/币种/费用/注记）" % ", ".join(missing)})
+
+    # payment_marked 必须布尔：印章/手写付款标记是判断「是否已付款」的核心契约字段，
+    # 字符串/数字一律拒绝（与 ReceiptData 契约门禁同口径）
+    if not isinstance(gt.get("payment_marked"), bool):
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "msg": "payment_marked 必须是布尔值 true/false（图面是否带已付款印章或手写标记），"
+                   "当前收到的是 %s" % type(gt.get("payment_marked")).__name__})
+
+    gt = _fill_gt_v2_defaults(gt)
 
     # 空总额守卫：留空合法（如 S049 类月结单），但必须显式确认，防止漏抄图面金额
     if _is_blank_total(gt.get("total_amount")) and not body.confirm_blank_total:
@@ -349,8 +393,10 @@ REASON_LABELS = {
 # promote 允许的目标 split（train 不允许：训练集随 build_evalset 分层产出）
 PROMOTE_SPLITS = ("val", "test")
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
-# AI 候选 GT 必须携带的最小字段（与 run_eval.compare 消费口径对齐）
-_CANDIDATE_GT_REQUIRED = ("supplier_name", "date", "total_amount", "items")
+# AI 候选 GT 必须携带的最小字段（v2：与 run_eval.compare 消费口径对齐；缺 v2
+# 字段的旧候选仍可回流，confirm 时由默认值兜底）
+_CANDIDATE_GT_REQUIRED = ("supplier_name", "date", "total_amount", "items",
+                          "payment_marked", "currency")
 
 
 def _next_sample_id(rows):
