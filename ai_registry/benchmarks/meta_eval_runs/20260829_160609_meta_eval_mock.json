@@ -1,0 +1,238 @@
+{
+  "evaluator_trustworthy": true,
+  "total": 25,
+  "n_absolutely_correct": 13,
+  "n_absolutely_wrong": 12,
+  "correct_rate": 1.0,
+  "wrong_rate": 1.0,
+  "miss_count": 0,
+  "per_item": [
+    {
+      "id": "ME-001",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 数量10×单价5=50 但小计写 55（差5），行内算术不自洽，算术门禁必须拦截",
+      "why_judged": "第1行 菜心: 数量10.0×单价5.0=50.0，但小计=55.0（差-5.0）"
+    },
+    {
+      "id": "ME-002",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 3×80=240 但小计写 230（差10），错读数量型幻觉，必须判错",
+      "why_judged": "第1行 牛肉: 数量3.0×单价80.0=240.0，但小计=230.0（差10.0）"
+    },
+    {
+      "id": "ME-003",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 5×45=225 但小计写 235（差10），行内算术不自洽",
+      "why_judged": "第1行 猪肉: 数量5.0×单价45.0=225.0，但小计=235.0（差-10.0）"
+    },
+    {
+      "id": "ME-004",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 8×12=96 但小计写 90（差6），必须判错",
+      "why_judged": "第1行 鱼: 数量8.0×单价12.0=96.0，但小计=90.0（差6.0）"
+    },
+    {
+      "id": "ME-005",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 2×55=110 但小计写 100（差10），错读数量型幻觉",
+      "why_judged": "第1行 虾: 数量2.0×单价55.0=110.0，但小计=100.0（差10.0）"
+    },
+    {
+      "id": "ME-006",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 4×60=240 但小计写 245（差5），行内算术不自洽",
+      "why_judged": "第1行 蟹: 数量4.0×单价60.0=240.0，但小计=245.0（差-5.0）"
+    },
+    {
+      "id": "ME-007",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 6×8=48 但小计写 55（差7），必须判错",
+      "why_judged": "第1行 豆腐: 数量6.0×单价8.0=48.0，但小计=55.0（差-7.0）"
+    },
+    {
+      "id": "ME-008",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 10×3=30 但小计写 35（差5），错读数量型幻觉",
+      "why_judged": "第1行 鸡蛋: 数量10.0×单价3.0=30.0，但小计=35.0（差-5.0）"
+    },
+    {
+      "id": "ME-009",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 1×50=50 但小计写 45（差5），行内算术不自洽",
+      "why_judged": "第1行 米: 数量1.0×单价50.0=50.0，但小计=45.0（差5.0）"
+    },
+    {
+      "id": "ME-010",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 2×30=60 但小计写 55（差5），必须判错",
+      "why_judged": "第1行 油: 数量2.0×单价30.0=60.0，但小计=55.0（差5.0）"
+    },
+    {
+      "id": "ME-011",
+      "source": "tests/test_gap3_discount_deposit_math.py::test_math_engine_detects_real_error",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "Σitems(265)-折让20+押金40+运费30=预期总额315.0，但票面总额写 350.0（差35），总额不守恒必须判错",
+      "why_judged": "明细合计=265.0 - 折扣=20.0 + 押金=40.0 + 运费=30.0 预期总额=315.0，但总额=350.0（差-35.0）"
+    },
+    {
+      "id": "ME-012",
+      "source": "tests/test_gap6_strikethrough_notes.py::test_math_engine_detects_mismatch_with_void",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "划线作废行不计入实付，预期总额=265.0，但总额写成含作废行的 415.0，总额不守恒必须判错",
+      "why_judged": "明细合计=265.0 预期总额=265.0，但总额=415.0（差-150.0）"
+    },
+    {
+      "id": "ME-013",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「印章印油」是含印章字眼的合法商品（Gap1 白名单保护用例），行内算术与总额均自洽，必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-014",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「送货单收据本」是合法商品（Gap1 白名单用例），不得因含「收据」字眼被误判，算术自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-015",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「优质原子印油」是合法商品（Gap1 白名单用例），行内算术与总额自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-016",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "普通食材行（Gap1 白名单用例），10×5.5=55 与总额一致，必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-017",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「鲜鸡蛋 30只」是复合规格合法商品（Gap1 白名单用例），2×45=90 与总额一致必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-018",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「九龙酱油 500ml」是含地名字眼的合法商品（Gap2 白名单用例），不得误判，算术自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-019",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「电话线干菜」是含「电话」字眼的合法食材（Gap2 白名单用例），算术自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-020",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「地址标签纸」是含「地址」字眼的合法商品（Gap2 白名单用例），不得误杀，算术自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-021",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "普通食材行（Gap2 白名单用例），10×8=80 与总额一致，必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-022",
+      "source": "tests/test_gap3_discount_deposit_math.py::test_math_engine_with_discount_and_deposit",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "Σitems(265)-折让20+押金40+运费30=315.0 与总额一致（Gap3 结构化解耦正确用例），必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-023",
+      "source": "tests/test_gap6_strikethrough_notes.py::test_math_engine_with_void_strikethrough",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "作废行被算术门禁正确剔除，85+180=265.0 与总额守恒（Gap6 正确用例），必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-024",
+      "source": "tests/test_gap4_multi_pack_units.py::test_multi_pack_decoupling",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "复合包装「大豆油 5L*2樽」经拆解后品名/数量/单位正确（Gap4 拆解断言），金额自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    },
+    {
+      "id": "ME-025",
+      "source": "tests/test_gap4_multi_pack_units.py::test_protected_single_items_not_broken",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「澳洲和牛M7」是含数字品牌的受保护品名（Gap4 保护断言），不得被破坏，算术自洽必须判对",
+      "why_judged": "确定性校验通过（契约/算术/完整性均无异常）"
+    }
+  ],
+  "judge": "mock",
+  "generated_at": "2026-08-29T16:06:09"
+}

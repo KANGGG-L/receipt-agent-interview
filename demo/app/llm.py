@@ -786,8 +786,12 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
     """按 kind 构建模型对象，并透传真实引擎 kind（供日志/AI 决策履历反映真实引擎）。
 
     用 object.__setattr__ 挂载 kind，不修改任何模型类定义（OpenAIChatModel 完全不动）。
-    模型对象按 (kind, model, base_url, api_key, call_timeout) 缓存复用，避免每次构造的重复开销。
+    模型对象按 (kind, model, base_url, api_key, call_timeout, side) 缓存复用，避免每次构造的重复开销。
     transport 透传给 Opencode/CodeBuddy（subprocess 默认；persistent 走常驻进程）。
+
+    Gap A3/A4 约定：side="aud"（审核腿/评估器）时 temperature 强制为 0.0——
+    评估必须确定性可复现，与识别腿（0.01）区分。缓存 key 含 side，避免同一模型
+    以识别/审核两种身份复用同一实例时 temperature 互相污染。
     """
     call_timeout = _resolve_timeout(cfg)
     base_url, api_key = "", ""
@@ -806,12 +810,14 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
             base_url = cfg.openai_aud_base_url
             api_key = cfg.openai_aud_api_key
 
-    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout)
+    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout) + (side,)
     m = _MODEL_CACHE.get(key)
     if m is not None:
         object.__setattr__(m, "kind", kind)
         object.__setattr__(m, "transport", transport)
         object.__setattr__(m, "call_timeout", call_timeout)
+        if side == "aud":
+            object.__setattr__(m, "temperature", 0.0)
         return m
 
     if kind == "opencode":
@@ -826,4 +832,7 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
     _MODEL_CACHE[key] = m
     object.__setattr__(m, "kind", kind)
     object.__setattr__(m, "transport", transport)
+    if side == "aud":
+        # 审核腿（评估器）temperature 必须 0：评估确定性、可复现（Gap A3/A4）
+        object.__setattr__(m, "temperature", 0.0)
     return m

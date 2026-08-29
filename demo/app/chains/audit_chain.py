@@ -4,6 +4,13 @@
 对齐完整版 S2.5 生成器-审核器：识别用 recognition_model，审核用 audit_model
 （不同模型家族盲点互补）。输入原图 + 识别结果 JSON → 逐字段一致性判定 + 分歧清单。
 
+生成器-评估器强制异构（Gap A3）：审核腿（评估器）必须与识别腿跨厂商异构，
+禁止同引擎同家族（识别=Qwen/GLM 系时审核走 opencode 系；识别=opencode 系时
+审核必须换 Qwen/GLM 系）。评估确定性约定（Gap A4）：审核腿调用 temperature
+必须为 0（由 app/llm.py `_build(side="aud")` 强制注入，勿在调用侧覆盖）。
+上线前必须跑元评测集自检：`python scripts/run_meta_eval.py` 且
+evaluator_trustworthy=true（见 ai_registry/README.md 生产准入规则）。
+
 审核模式（EngineConfig.audit_mode）：
 - text（默认）：纯文本确定性校验，复用契约/算术门禁 + 字段完整性 + 供应商名合理性，
   不重读原图、零 token、毫秒级。

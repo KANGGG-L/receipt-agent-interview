@@ -165,18 +165,24 @@ class EngineConfig(BaseModel):
         else EngineKind.OPENCODE
     )
     recognition_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENCODE_RECOGNITION_MODEL", os.environ.get("RECOGNITION_MODEL", "opencode/mimo-v2.5-free"))
+        default_factory=lambda: os.environ.get("OPENCODE_RECOGNITION_MODEL", os.environ.get("RECOGNITION_MODEL", "opencode/mimo-v2.5-free")),
+        description="识别腿模型（生成器）。生产基线为 SiliconFlow Qwen/Qwen3-VL-32B-Thinking（openai 引擎）。",
     )
     # 识别 transport：subprocess(默认，CLI 快路径) | persistent(常驻进程，需显式开启)
     recognition_transport: str = "subprocess"
     # 审核引擎
+    # 生成器-评估器强制异构（Gap A3）：审核腿必须与识别腿跨厂商异构，禁止同源。
+    # 默认 opencode/mimo-v2.5-free 与识别基线（SiliconFlow Qwen 系）即跨厂商；
+    # 若识别腿改为 opencode 系，审核腿必须换 Qwen/GLM 系。
     audit_engine: EngineKind = Field(
         default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "opencode").lower())
         if os.environ.get("AUDIT_ENGINE", "opencode").lower() in [e.value for e in EngineKind]
-        else EngineKind.OPENCODE
+        else EngineKind.OPENCODE,
+        description="审核引擎（评估器）。强制与识别腿跨厂商异构（Gap A3），禁止与识别腿同引擎同家族。",
     )
     audit_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENCODE_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free"))
+        default_factory=lambda: os.environ.get("OPENCODE_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free")),
+        description="审核腿模型（评估器）。必须与识别腿跨厂商异构：识别=Qwen/GLM 系时审核走 opencode 系；识别=opencode 系时审核必须换 Qwen/GLM 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
     )
     audit_enabled: bool = True
     # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
