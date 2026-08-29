@@ -203,13 +203,13 @@ registry.get_tool("math_engine")          # active 工具
 # 禁止: 业务代码内硬编码版本号 import / 内联系统提示词 / 镜像库二级加载
 ```
 
-- [ ] **Step 1:** 写 `tests/test_registry_ssot.py`（TDD 先行）：生产链路消费的每个 prompt/tool 均经 registry 取得；`demo/app/prompts` 无平行注册表；metadata 登记与目录实体一致（无漏登/无悬空）；内联提示词零残留（扫描 chains 目录三引号长指令串）
-- [ ] **Step 2:** 运行确认失败
-- [ ] **Step 3:** extract_chain / review_chain / audit_chain 改走 registry 加载，三段内联提示词先登记为新版本再切换
-- [ ] **Step 4:** `demo/app/prompts/` 镜像退役（推广 re-export 模式），run_eval / api_admin / audit_chain 改读 ai_registry
-- [ ] **Step 5:** math_engine 收敛回灌 + metadata 修复（补登/active 置位/删悬空）+ mcp 状态如实化 + pii_masker 语法修复与孤儿工具标注
-- [ ] **Step 6:** 全量回归 + 识别链路冒烟（registry 加载的 prompt 跑一次真实识别，确认与改造前行为一致、准确率无回归）
-- [ ] **Step 7:** 测试通过
+- [x] **Step 1:** 写 `tests/test_registry_ssot.py`（TDD 先行）：生产链路消费的每个 prompt/tool 均经 registry 取得；`demo/app/prompts` 无平行注册表；metadata 登记与目录实体一致（无漏登/无悬空）；内联提示词零残留（扫描 chains 目录三引号长指令串）
+- [x] **Step 2:** 运行确认失败
+- [x] **Step 3:** extract_chain / review_chain / audit_chain 改走 registry 加载，三段内联提示词先登记为新版本再切换
+- [x] **Step 4:** `demo/app/prompts/` 镜像退役（推广 re-export 模式），run_eval / api_admin / audit_chain 改读 ai_registry
+- [x] **Step 5:** math_engine 收敛回灌 + metadata 修复（补登/active 置位/删悬空）+ mcp 状态如实化 + pii_masker 语法修复与孤儿工具标注
+- [x] **Step 6:** 全量回归 + 识别链路冒烟（registry 加载的 prompt 跑一次真实识别，确认与改造前行为一致、准确率无回归）
+- [x] **Step 7:** 测试通过
 
 **验收：** 全仓生产代码无绕过 registry 的资产加载；metadata 与目录实体完全自洽；`demo/app/prompts` 不再是平行事实源；两套测试零回归（不低于 200 passed 基线）；识别链路冒烟行为一致。
 
@@ -240,13 +240,13 @@ POST /api/evalset/sample/{sample_id}/confirm  # body: 人工校正后的 GT
 GET  /api/evalset/stats                      # 各 split 的 draft/confirmed 计数
 ```
 
-- [ ] **Step 1:** 写 `test_gt_review_api.py`：confirm 后状态流转正确；test 集未全量 confirmed 时 `run_eval` 拒绝出分（或出分但标记 `gt_status=partial`）；抽检接口需 admin 权限
-- [ ] **Step 2:** 运行确认失败
-- [ ] **Step 3:** `gen_gt_candidates.py`：HEIC→PNG（短边 ≥1000px）→ 调用**异构模型**生成候选 GT → 落 `expected/*.json`（`gt_status=draft`，记录 `gt_source_model`）
-- [ ] **Step 4:** 按 T1 的三分法生成候选，**test 集优先生成**（人工覆核工作量最小、收益最大）
-- [ ] **Step 5:** 抽检台前端：左图右表单，逐字段对照校正，支持快捷键批量确认
-- [ ] **Step 6:** `run_eval.py` 增加 GT 状态门槛：`--require-confirmed` 开关
-- [ ] **Step 7:** 测试通过
+- [x] **Step 1:** 写 `test_gt_review_api.py`：confirm 后状态流转正确；test 集未全量 confirmed 时 `run_eval` 拒绝出分（或出分但标记 `gt_status=partial`）；抽检接口需 admin 权限
+- [x] **Step 2:** 运行确认失败
+- [x] **Step 3:** `gen_gt_candidates.py`：HEIC→PNG（短边 ≥1000px）→ 调用**异构模型**生成候选 GT → 落 `expected/*.json`（`gt_status=draft`，记录 `gt_source_model`）
+- [x] **Step 4:** 按 T1 的三分法生成候选，**test 集优先生成**（人工覆核工作量最小、收益最大）
+- [x] **Step 5:** 抽检台前端：左图右表单，逐字段对照校正，支持快捷键批量确认
+- [x] **Step 6:** `run_eval.py` 增加 GT 状态门槛：`--require-confirmed` 开关
+- [x] **Step 7:** 测试通过
 
 **人工动作（需用户执行）：** 抽检台上线后，逐张确认 test 集（约 33 张，按 20% 切分；若嫌多可缩到 20 张）。train/val 允许保留 draft，但出分时必须标注。
 
@@ -263,12 +263,12 @@ GET  /api/evalset/stats                      # 各 split 的 draft/confirmed 计
 - Create: `demo/scripts/run_meta_eval.py`
 - Create: `demo/tests/test_meta_eval.py`
 
-- [ ] **Step 1:** 写 `test_meta_eval.py`：载入元评测集，断言评估器对「绝对正确」样本判对率 100%、对「绝对错误」样本判错率 100%；任一不达标即返回 `evaluator_trustworthy=False`
-- [ ] **Step 2:** 从 `tests/test_hallucination_adversarial.py`、`tests/test_gap1..8` 抽 20-30 条已确证样本，固化为 `meta_eval_set.json`（含 `expected_verdict` 与 `why`）
-- [ ] **Step 3:** 实现 `run_meta_eval.py`，输出评估器可信度报告
-- [ ] **Step 4:** 把 `audit_engine` / `audit_model` 默认值改为异构厂商；`temperature=0` 约定写进代码注释与 README
-- [ ] **Step 5:** README 生产准入规则增加三条：评估器必须异构、temperature=0、上线前必跑元评测集
-- [ ] **Step 6:** 测试通过
+- [x] **Step 1:** 写 `test_meta_eval.py`：载入元评测集，断言评估器对「绝对正确」样本判对率 100%、对「绝对错误」样本判错率 100%；任一不达标即返回 `evaluator_trustworthy=False`
+- [x] **Step 2:** 从 `tests/test_hallucination_adversarial.py`、`tests/test_gap1..8` 抽 20-30 条已确证样本，固化为 `meta_eval_set.json`（含 `expected_verdict` 与 `why`）
+- [x] **Step 3:** 实现 `run_meta_eval.py`，输出评估器可信度报告
+- [x] **Step 4:** 把 `audit_engine` / `audit_model` 默认值改为异构厂商；`temperature=0` 约定写进代码注释与 README
+- [x] **Step 5:** README 生产准入规则增加三条：评估器必须异构、temperature=0、上线前必跑元评测集
+- [x] **Step 6:** 测试通过
 
 **验收：** 元评测集 ≥20 条；`run_meta_eval.py` 可独立运行并给出可信度结论；默认配置下审核腿与识别腿不再同源。
 
@@ -293,11 +293,11 @@ class EvalCandidateRow:
 POST /api/evalset/candidates/{id}/promote?split=val|test
 ```
 
-- [ ] **Step 1:** 写 `test_eval_reflow.py`：低置信/门禁拒绝/用户修改/审核分歧四类均产生候选；promote 后进入对应 split 且 manifest 同步更新
-- [ ] **Step 2:** 运行确认失败
-- [ ] **Step 3:** 建表 + supervisor 四条入库钩子（复用已有 `confidence`、`gate_err`、`audit.discrepancies`）
-- [ ] **Step 4:** promote API：把该样本图片与 AI 候选 GT 复制进 `demo/evalsets/`，manifest 追加行
-- [ ] **Step 5:** 测试通过
+- [x] **Step 1:** 写 `test_eval_reflow.py`：低置信/门禁拒绝/用户修改/审核分歧四类均产生候选；promote 后进入对应 split 且 manifest 同步更新
+- [x] **Step 2:** 运行确认失败
+- [x] **Step 3:** 建表 + supervisor 四条入库钩子（复用已有 `confidence`、`gate_err`、`audit.discrepancies`）
+- [x] **Step 4:** promote API：把该样本图片与 AI 候选 GT 复制进 `demo/evalsets/`，manifest 追加行
+- [x] **Step 5:** 测试通过
 
 **验收：** 四类失败信号均能产生候选；promote 后可直接被 `run_eval` 消费；形成「线上失败 → 评测集 → 下一轮改进」的**通路四**。
 
