@@ -107,7 +107,7 @@
     <div class="main">
         <div class="pane">
             <div class="pane-title">
-                <span>原图</span>
+                <span>单据预览（缩略图）</span>
                 <span id="imgMeta" class="kbd-hint"></span>
             </div>
             <div class="img-box" id="imgBox">
@@ -152,8 +152,8 @@
                 <div class="actions">
                     <button class="btn-success" id="confirmBtn" onclick="confirmCurrent(false)">
                         确认本张（A）并跳下一张</button>
-                    <button class="btn-secondary" onclick="gotoSample(pos + 1)">下一张（J）</button>
-                    <button class="btn-secondary" onclick="gotoSample(pos - 1)">上一张（K）</button>
+                    <button class="btn-secondary" onclick="nextSample()">下一张（J）</button>
+                    <button class="btn-secondary" onclick="prevSample()">上一张（K）</button>
                     <span class="kbd-hint">快捷键：<kbd>J</kbd> 下一张　<kbd>K</kbd> 上一张　<kbd>A</kbd> 确认并下一张</span>
                 </div>
             </div>

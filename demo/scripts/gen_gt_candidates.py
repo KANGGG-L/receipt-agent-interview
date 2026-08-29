@@ -15,7 +15,7 @@ manifest 同步状态。
     {
       "supplier_name": str, "date": "YYYY-MM-DD", "total_amount": float,
       "doc_form": str,
-      "items": [{"name": str, "quantity": float, "unit": str,
+      "items": [{"name": str, "qty": float, "unit": str,
                  "unit_price": float, "amount": float}],
       "gt_status": "draft", "gt_source_model": "<实际模型名>",
       "gt_reviewed_by": null, "gt_reviewed_at": null
@@ -77,7 +77,7 @@ GT_PROMPT = """你是收据/送货单数字化专家。请逐字转录这张单�
   "date": "开单日期 YYYY-MM-DD（无法辨认则空字符串）",
   "total_amount": 总额数字（图面原文，禁止自行重算修正）,
   "doc_form": "printed_delivery_note|ncr_handwritten|thermal|weigh_slip|correction_note|monthly_statement 之一",
-  "items": [{"name": "品名原文", "quantity": 数字, "unit": "单位（斤/磅/扎/箱等）", "unit_price": 数字, "amount": 数字}]
+  "items": [{"name": "品名原文", "qty": 数字, "unit": "单位（斤/磅/扎/箱等）", "unit_price": 数字, "amount": 数字}]
 }
 要求：
 1. 金额与数量必须逐字转录图面所见，严禁自行重算修正；
@@ -241,15 +241,40 @@ def parse_gt_json(content):
         raise RuntimeError("JSON 解析失败：%s | 原文：%s" % (e, text[:200]))
 
 
+def normalize_gt_items(gt):
+    """items 内 quantity → qty 键归一（存储/表单层统一用 qty，与 run_eval 消费口径对齐）。
+
+    模型即使仍返回 quantity 也会在落盘前被转换；已有 qty 时 quantity（若同时存在）丢弃。
+    """
+    if isinstance(gt, dict) and isinstance(gt.get("items"), list):
+        normalized = []
+        for it in gt["items"]:
+            if isinstance(it, dict):
+                it = dict(it)
+                if "qty" not in it and "quantity" in it:
+                    it["qty"] = it.pop("quantity")
+                else:
+                    it.pop("quantity", None)
+            normalized.append(it)
+        gt["items"] = normalized
+    return gt
+
+
 def validate_gt(gt):
-    """最小校验：必要字段齐全且 items 是列表。返回错误文案或 None。"""
+    """最小校验：必要字段齐全且 items 是列表（明细行统一用 qty 键）。返回错误文案或 None。"""
     if not isinstance(gt, dict):
         return "GT 不是 dict"
     for key in ("supplier_name", "date", "total_amount", "items"):
         if key not in gt:
             return "缺字段 %s" % key
-    if not isinstance(gt.get("items"), list):
+    items = gt.get("items")
+    if not isinstance(items, list):
         return "items 不是列表"
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            return "items[%d] 不是对象" % i
+        if "qty" not in it:
+            return "items[%d] 缺 qty 字段（quantity 也不允许，需为 qty）" % i
     return None
 
 
@@ -342,6 +367,7 @@ def generate(split, gt_model=DEFAULT_GT_MODEL, limit=None, evalset_dir=None,
                 for attempt in range(1, MAX_ATTEMPTS + 1):
                     try:
                         gt, usage = call_vision_model(url, key, model_name, image_b64, mime)
+                        gt = normalize_gt_items(gt)   # quantity → qty 归一后再校验/落盘
                         err = validate_gt(gt)
                         if err is None:
                             used_model = model_name

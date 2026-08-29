@@ -131,8 +131,8 @@
         }
         box.innerHTML = '';
         var img = document.createElement('img');
-        img.alt = '样本原图 ' + current.sample_id;
-        img.src = 'data:image/png;base64,' + current.image_base64;
+        img.alt = '样本预览 ' + current.sample_id;
+        img.src = 'data:' + (current.image_mime || 'image/jpeg') + ';base64,' + current.image_base64;
         box.appendChild(img);
         document.getElementById('imgMeta').textContent =
             current.sample_id + '｜' + (current.doc_form || '') + '｜候选来源：' +
@@ -170,6 +170,8 @@
 
     function addItemRow(it) {
         it = it || {};
+        // 纵深防御：候选 GT 可能仍带 quantity 键（旧数据/服务端兜底前），渲染层统一读 qty
+        if (it.qty === undefined || it.qty === null) { it.qty = it.quantity; }
         var tr = document.createElement('tr');
         ['name', 'qty', 'unit', 'unit_price', 'amount'].forEach(function (key) {
             var td = document.createElement('td');
@@ -298,12 +300,20 @@
                 .then(function (detail) {
                     var gt = detail.data.gt;
                     if (!gt) { throw new Error('无候选 GT'); }
+                    // 纵深防御：候选可能带 quantity 键，提交前统一为 qty
+                    var items = (gt.items || []).map(function (it) {
+                        var n = {};
+                        for (var k in it) { n[k] = it[k]; }
+                        if (n.qty === undefined || n.qty === null) { n.qty = n.quantity; }
+                        delete n.quantity;
+                        return n;
+                    });
                     var body = {
                         supplier_name: gt.supplier_name,
                         date: gt.date,
                         total_amount: gt.total_amount,
                         doc_form: gt.doc_form || 'printed_delivery_note',
-                        items: gt.items || []
+                        items: items
                     };
                     var payload = { gt: body };
                     // 候选总额为空时显式确认留空（与服务端空总额守卫对齐）
@@ -393,6 +403,11 @@
     }
 
     // ---------------- 空态 / 错误 ----------------
+    // 显式翻页入口（按钮用）：pos 是 IIFE 内部变量，inline onclick 拿不到，
+    // 必须通过这里的包装函数转发。
+    function nextSample() { gotoSample(pos + 1); }
+    function prevSample() { gotoSample(pos - 1); }
+
     function showEmpty(msg) {
         var note = document.getElementById('emptyNote');
         note.textContent = msg;
@@ -433,6 +448,8 @@
     window.onFilterChange = onFilterChange;
     window.reloadAll = reloadAll;
     window.gotoSample = gotoSample;
+    window.nextSample = nextSample;
+    window.prevSample = prevSample;
     window.confirmCurrent = confirmCurrent;
     window.addItemRow = addItemRow;
     window.batchConfirmUntouched = batchConfirmUntouched;

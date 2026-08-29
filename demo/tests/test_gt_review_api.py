@@ -10,6 +10,8 @@
 6. 路径穿越变体（../../ 与 ..\..\）被 manifest 白名单拒绝（404）
 7. 空总额 confirm 需显式 confirm_blank_total=true（月结单场景）
 8. 批量确认按钮风险显式化（前端静态断言）
+9. sample 详情返回缩略图（长边 <=1400px 的 JPEG，不再返回原图 base64）
+10. confirm 提交 quantity 键时自动归一为 qty 落盘
 
 全部离线：样例图片用 PIL 生成的小图，零外部调用。
 """
@@ -282,9 +284,74 @@ def test_sample_detail_returns_image_and_gt(evalset_env, client):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["sample_id"] == sid
-    assert data["image_base64"].startswith("iVBOR"), "必须返回图片 base64（PNG 头）"
+    assert data["image_base64"].startswith("/9j/"), "必须返回图片 base64（JPEG 缩略图头）"
+    assert data["image_mime"] == "image/jpeg"
     assert data["gt"]["gt_status"] == "draft"
     assert data["gt"]["gt_source_model"] == GT_MODEL
+
+
+def test_sample_detail_returns_thumbnail_not_original(evalset_env, client):
+    """详情返回压缩缩略图：长边 <=1400px、JPEG；payload 远小于原图。"""
+    import base64 as _b64
+    import io
+
+    from PIL import Image
+
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    # 用大图（3024x4032 噪点，接近真实 iPhone 原图）替换 receipts 里的样本图
+    rel = None
+    for r in rows:
+        if r["sample_id"] == sid:
+            rel = r["image"]
+    big_path = os.path.join(evalset_dir, rel)
+    Image.effect_noise((3024, 4032), 32).convert("RGB").save(big_path, "PNG")
+
+    resp = client.get("/api/evalset/sample/%s" % sid, headers=_admin_headers())
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["image_base64"].startswith("/9j/"), "缩略图必须是 JPEG"
+    raw = _b64.b64decode(data["image_base64"])
+    assert len(raw) < 1_500_000, "缩略图 base64 必须控制在约 1.5MB 内（原图约 14MB）"
+    with Image.open(io.BytesIO(raw)) as im:
+        assert max(im.size) <= 1400, "缩略图长边必须 <=1400px"
+    # 原图文件本身不动
+    with Image.open(big_path) as orig:
+        assert max(orig.size) == 4032, "原图文件不得被缩略逻辑改写"
+
+
+def test_confirm_normalizes_quantity_to_qty(evalset_env, client):
+    """用户/候选提交 quantity 键时，confirm 落盘统一归一为 qty。"""
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+
+    gt = json.loads(json.dumps(_CANDIDATE_GT))   # _CANDIDATE_GT.items 用的是 quantity 键
+    resp = client.post("/api/evalset/sample/%s/confirm" % sid,
+                       json={"gt": gt}, headers=_admin_headers())
+    assert resp.status_code == 200, resp.text
+
+    with open(os.path.join(evalset_dir, "expected", sid + ".json"), encoding="utf-8") as f:
+        saved = json.load(f)
+    assert saved["items"], "明细行不得丢失"
+    for it in saved["items"]:
+        assert "qty" in it, "落盘明细必须统一为 qty 键"
+        assert "quantity" not in it, "落盘明细不得残留 quantity 键"
+    assert saved["items"][0]["qty"] == _CANDIDATE_GT["items"][0]["quantity"], "qty 数值必须保留"
+
+
+def test_sample_detail_gt_normalizes_quantity_to_qty(evalset_env, client):
+    """详情接口返回的 gt 同样归一 quantity -> qty（前端表单读 qty 键）。"""
+    evalset_dir, rows = evalset_env
+    test_rows = [r for r in rows if r["split"] == "test"]
+    sid = test_rows[0]["sample_id"]
+    # 直接落一份带 quantity 键的 draft 候选（模拟旧生成脚本产物）
+    _write_draft(evalset_dir, sid)
+    resp = client.get("/api/evalset/sample/%s" % sid, headers=_admin_headers())
+    assert resp.status_code == 200
+    for it in resp.json()["data"]["gt"]["items"]:
+        assert "qty" in it and "quantity" not in it
 
 
 # ------------------------------------------------------------------
@@ -405,3 +472,53 @@ def test_batch_confirm_ui_discloses_unreviewed_risk():
 
     # 空总额确认链路：前端需携带 confirm_blank_total
     assert "confirm_blank_total" in js
+
+
+# ------------------------------------------------------------------
+# 9. 显式翻页按钮：必须走 IIFE 内的包装函数（inline onclick 拿不到局部 pos）
+# ------------------------------------------------------------------
+def test_explicit_paging_buttons_use_wrapper_functions():
+    demo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    with open(os.path.join(demo_dir, "templates", "evalset.html"), encoding="utf-8") as f:
+        html = f.read()
+    with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
+        js = f.read()
+
+    assert 'onclick="nextSample()"' in html, "下一张按钮必须调用 nextSample 包装函数"
+    assert 'onclick="prevSample()"' in html, "上一张按钮必须调用 prevSample 包装函数"
+    assert 'gotoSample(pos' not in html, "inline onclick 引用局部 pos 会 ReferenceError，禁止"
+    assert "window.nextSample = nextSample" in js and "window.prevSample = prevSample" in js
+    # 快捷键逻辑保留
+    assert "e.key === 'j'" in js and "e.key === 'k'" in js and "e.key === 'a'" in js
+
+
+# ------------------------------------------------------------------
+# 10. gen_gt_candidates 落盘归一：quantity -> qty（模型再返回 quantity 也转 qty）
+# ------------------------------------------------------------------
+def test_gen_gt_normalize_and_validate():
+    import gen_gt_candidates
+
+    gt = {"supplier_name": "X", "date": "2026-08-01", "total_amount": 20.0,
+          "items": [{"name": "白菜", "quantity": 2.0, "unit": "斤",
+                     "unit_price": 10.0, "amount": 20.0}]}
+    gt = gen_gt_candidates.normalize_gt_items(gt)
+    assert gen_gt_candidates.validate_gt(gt) is None
+    assert gt["items"][0]["qty"] == 2.0
+    assert "quantity" not in gt["items"][0]
+
+    # 已带 qty 时 quantity 冗余键被丢弃，且不覆盖 qty
+    gt2 = {"items": [{"name": "a", "qty": 5, "quantity": 9}]}
+    gt2 = gen_gt_candidates.normalize_gt_items(gt2)
+    assert gt2["items"][0]["qty"] == 5 and "quantity" not in gt2["items"][0]
+
+    # 缺 qty/quantity 的明细校验失败
+    bad = {"supplier_name": "X", "date": "", "total_amount": 0,
+           "items": [{"name": "a", "unit": "斤"}]}
+    err = gen_gt_candidates.validate_gt(bad)
+    assert err is not None and "qty" in err
+
+    # 兼容旧 prompt 输出 quantity：normalize 后再校验可通过
+    old_gt = {"supplier_name": "X", "date": "", "total_amount": 0,
+              "items": [{"name": "a", "quantity": 3}]}
+    assert gen_gt_candidates.validate_gt(
+        gen_gt_candidates.normalize_gt_items(old_gt)) is None

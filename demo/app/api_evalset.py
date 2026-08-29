@@ -5,7 +5,7 @@
 但鉴权与现有 X-Role 模式一致：抽检接口仅限 admin。
 
 - GET  /api/evalset/samples?split=test&gt_status=draft   样本列表（按 split/状态过滤）
-- GET  /api/evalset/sample/{sample_id}                   图片 base64 + AI 候选 GT 全文
+- GET  /api/evalset/sample/{sample_id}                   缩略图 base64 + AI 候选 GT 全文
 - POST /api/evalset/sample/{sample_id}/confirm           人工校正后的 GT → confirmed
 - GET  /api/evalset/stats                                各 split 的 draft/confirmed/missing 计数
 
@@ -17,10 +17,13 @@ gt_status / gt_source_model。
 import base64
 import csv
 import hashlib
+import io
 import json
+import logging
 import os
 import re
 import shutil
+import time
 from datetime import datetime
 
 from fastapi import APIRouter, Request
@@ -42,6 +45,15 @@ MANIFEST_COLUMNS = [
 
 # 人工确认后的 GT 必须携带的最小字段（与 run_eval.compare 消费口径对齐）
 GT_REQUIRED_KEYS = ("supplier_name", "date", "total_amount", "items")
+
+logger = logging.getLogger("api_evalset")
+
+# 抽检台展示用缩略图参数：长边压到 <=1400px、JPEG 质量 85（原图文件不动）
+THUMB_LONG_SIDE = 1400
+THUMB_JPEG_QUALITY = 85
+# 压缩后 base64 超过该字符数则继续降质量（前端单次 payload 控制在约 1.5MB 内）
+THUMB_MAX_B64_CHARS = 1_500_000
+THUMB_MIN_QUALITY = 30
 
 
 def get_evalset_dir():
@@ -100,6 +112,41 @@ def _load_gt(evalset_dir, sample_id):
         return None
 
 
+def _thumbnail_b64(image_path):
+    """生成展示用缩略图 base64（JPEG）：长边 <=1400px、质量 85，仍超 1.5MB 则降质量。
+
+    原图文件不动（promote/评测仍用原图）；PIL 失败时回退原图 base64 保证可用。
+    返回 (base64, mime)。
+    """
+    t0 = time.time()
+    try:
+        from PIL import Image
+        with Image.open(image_path) as src:
+            im = src.convert("RGB")
+        orig_w, orig_h = im.width, im.height
+        im.thumbnail((THUMB_LONG_SIDE, THUMB_LONG_SIDE), Image.LANCZOS)
+        quality = THUMB_JPEG_QUALITY
+        while True:
+            buf = io.BytesIO()
+            im.save(buf, "JPEG", quality=quality)
+            data = buf.getvalue()
+            if len(base64.b64encode(data)) <= THUMB_MAX_B64_CHARS or quality <= THUMB_MIN_QUALITY:
+                break
+            quality = max(THUMB_MIN_QUALITY, quality - 15)
+        b64 = base64.b64encode(data).decode("ascii")
+        logger.info("[evalset] thumbnail %s: %dx%d -> %dx%d, quality=%d, b64=%d chars, %.0fms",
+                    os.path.basename(image_path), orig_w, orig_h, im.width, im.height,
+                    quality, len(b64), (time.time() - t0) * 1000)
+        return b64, "image/jpeg"
+    except Exception as e:
+        logger.warning("[evalset] thumbnail 生成失败（回退原图 base64）：%s: %s",
+                       os.path.basename(image_path), e)
+        with open(image_path, "rb") as f:
+            raw = f.read()
+        mime = "image/png" if image_path.lower().endswith(".png") else "image/jpeg"
+        return base64.b64encode(raw).decode("ascii"), mime
+
+
 # ------------------------------------------------------------------
 # 端点
 # ------------------------------------------------------------------
@@ -138,7 +185,11 @@ def list_samples(request: Request, split: str = None, gt_status: str = None):
 
 @router.get("/api/evalset/sample/{sample_id}")
 def get_sample(sample_id: str, request: Request):
-    """单样本详情：原图 base64 + AI 候选 GT 全文。仅 admin。"""
+    """单样本详情：缩略图 base64 + AI 候选 GT 全文。仅 admin。
+
+    图片返回 PIL 压缩的 JPEG 缩略图（长边 <=1400px，质量 85，仍超 1.5MB 则降质量），
+    字段名保留 image_base64；原图文件不动（评测/promote 仍用原图）。
+    """
     require_admin(request)
     evalset_dir = get_evalset_dir()
     rows = _load_manifest(evalset_dir)
@@ -152,10 +203,10 @@ def get_sample(sample_id: str, request: Request):
 
     image_path = os.path.join(evalset_dir, row.get("image", ""))
     image_b64 = ""
+    image_mime = "image/jpeg"
     image_missing = None
     if os.path.exists(image_path):
-        with open(image_path, "rb") as f:
-            image_b64 = base64.b64encode(f.read()).decode("ascii")
+        image_b64, image_mime = _thumbnail_b64(image_path)
     else:
         image_missing = "图片文件缺失：%s" % row.get("image", "")
 
@@ -168,8 +219,9 @@ def get_sample(sample_id: str, request: Request):
         "gt_status": row.get("gt_status") or "missing",
         "gt_source_model": row.get("gt_source_model", ""),
         "image_base64": image_b64,
+        "image_mime": image_mime,
         "image_missing": image_missing,
-        "gt": _load_gt(evalset_dir, sample_id),
+        "gt": _normalize_gt_items(_load_gt(evalset_dir, sample_id)),
     }}
 
 
@@ -178,6 +230,26 @@ class ConfirmBody(BaseModel):
     gt: dict
     # 空总额（月结单等场景合法留空）必须显式确认，防止漏抄图面金额
     confirm_blank_total: bool = False
+
+
+def _normalize_gt_items(gt):
+    """items 内 quantity → qty 键归一（存储层统一用 qty；已带 qty 时丢弃冗余 quantity）。
+
+    对 None / 结构异常的 gt 安全跳过；除 items 外的字段一律不动。
+    """
+    if not isinstance(gt, dict) or not isinstance(gt.get("items"), list):
+        return gt
+    normalized = []
+    for it in gt["items"]:
+        if isinstance(it, dict):
+            it = dict(it)
+            if "qty" not in it and "quantity" in it:
+                it["qty"] = it.pop("quantity")
+            else:
+                it.pop("quantity", None)
+        normalized.append(it)
+    gt["items"] = normalized
+    return gt
 
 
 def _is_blank_total(value) -> bool:
@@ -203,7 +275,7 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
         return JSONResponse(status_code=404, content={
             "status": "error", "msg": "样本 %s 不在评测集 manifest 中" % sample_id})
 
-    gt = body.gt or {}
+    gt = _normalize_gt_items(body.gt or {})
     missing = [k for k in GT_REQUIRED_KEYS if k not in gt]
     if missing:
         return JSONResponse(status_code=400, content={
