@@ -52,6 +52,7 @@ _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
 _ReceiptFeedbackRow = None
+_EvalCandidateRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 
 
@@ -61,6 +62,7 @@ def _make_engine():
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
     global _ReceiptFeedbackRow
+    global _EvalCandidateRow
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
@@ -377,6 +379,28 @@ def _make_engine():
         notes = Column(String, default="")
         __table_args__ = (UniqueConstraint("dish_id", "sku_id"),)
 
+    class EvalCandidateRow(Base):
+        """线上低置信样本回流候选（Gap A5 / T6）。
+
+        四类触发：low_confidence（置信度低于阈值）/ gate_reject（门禁拒绝）/
+        user_edit（人工保存与 AI 预填差异）/ audit_discrepancy（交叉审核分歧）。
+        每单每 reason 幂等（create_eval_candidate 查重）；status 流转：
+        pending -> promoted_to_val | promoted_to_test | rejected。
+        ai_candidate_json 存 AI 候选 GT（供 promote 复制进评测集）。
+        """
+        __tablename__ = "eval_candidate"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        receipt_id = Column(Integer, index=True)
+        tenant_id = Column(String(64), default="default", index=True)
+        doc_form = Column(String, default="")
+        confidence = Column(Float, nullable=True)
+        reason = Column(String(32), default="")   # low_confidence|gate_reject|user_edit|audit_discrepancy
+        status = Column(String(24), default="pending")  # pending|promoted_to_val|promoted_to_test|rejected
+        created_at = Column(String, default="")
+        promoted_at = Column(String, nullable=True)
+        ai_candidate_json = Column(Text, default="{}")
+        note = Column(Text, default="")
+
     class InventoryBatchRow(Base):
         """库存批次池（FIFO 成本溯源）。"""
         __tablename__ = "inventory_batches"
@@ -475,6 +499,34 @@ def _make_engine():
     ):
         _apply_migration_ddl(_engine, _ddl)
 
+    # SQLite 迁移（Gap A5 线上样本回流，T6）：eval_candidate 新表。
+    # 幂等 CREATE TABLE IF NOT EXISTS 走既有迁移块（create_all 对新表同样幂等，
+    # 此处显式 DDL 兜底覆盖裸库场景）；仅新建表/索引，禁重建表。
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS eval_candidate ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " receipt_id INTEGER,"
+        " tenant_id VARCHAR(64) DEFAULT 'default',"
+        " doc_form VARCHAR DEFAULT '',"
+        " confidence FLOAT,"
+        " reason VARCHAR(32) DEFAULT '',"
+        " status VARCHAR(24) DEFAULT 'pending',"
+        " created_at TEXT DEFAULT '',"
+        " promoted_at TEXT,"
+        " ai_candidate_json TEXT DEFAULT '{}',"
+        " note TEXT DEFAULT '')",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_eval_candidate_receipt_reason"
+        " ON eval_candidate (receipt_id, reason)",
+        "CREATE INDEX IF NOT EXISTS idx_eval_candidate_status_reason"
+        " ON eval_candidate (status, reason)",
+        "CREATE INDEX IF NOT EXISTS idx_eval_candidate_tenant_id"
+        " ON eval_candidate (tenant_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
     # memory_id 回填：存量行补 UUID（SQLite ADD COLUMN 无法使用非常量默认值）
     try:
         from sqlalchemy import text as _sa_text5
@@ -517,6 +569,7 @@ def _make_engine():
     _ExperimentRow = ExperimentRow
     _ExperimentAssignRow = ExperimentAssignRow
     _ReceiptFeedbackRow = ReceiptFeedbackRow
+    _EvalCandidateRow = EvalCandidateRow
     _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
     _InventoryBatchRow = InventoryBatchRow
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
@@ -3412,5 +3465,116 @@ def should_distill_vendor_memory(vendor, tenant_id="default", threshold=None):
             if r.like != -1:
                 return False
         return True
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# Gap A5（T6）：线上低置信样本回流为评测候选
+# -------------------------------------------------------------
+EVAL_CANDIDATE_REASONS = ("low_confidence", "gate_reject", "user_edit", "audit_discrepancy")
+EVAL_CANDIDATE_STATUSES = ("pending", "promoted_to_val", "promoted_to_test", "rejected")
+
+
+def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
+                          confidence=None, ai_candidate=None, note=""):
+    """创建评测候选（每单每 reason 幂等）。
+
+    同 receipt_id 同 reason 已存在（任意状态）时返回 (既有 id, False)，不重复建。
+    tenant_id 缺省时回读单据归属；均无则落 'default'。
+    返回 (candidate_id, created)。
+    """
+    if receipt_id is None or _EvalCandidateRow is None:
+        return None, False
+    if reason not in EVAL_CANDIDATE_REASONS:
+        raise ValueError("非法候选 reason: %r（合法枚举: %s）"
+                         % (reason, ", ".join(EVAL_CANDIDATE_REASONS)))
+    s = get_session()
+    try:
+        existing = s.query(_EvalCandidateRow).filter(
+            _EvalCandidateRow.receipt_id == int(receipt_id),
+            _EvalCandidateRow.reason == str(reason),
+        ).first()
+        if existing is not None:
+            return existing.id, False
+        if tenant_id is None or not str(tenant_id).strip():
+            rc = s.get(_ReceiptRow, int(receipt_id))
+            tenant_id = getattr(rc, "tenant_id", None) if rc is not None else None
+        conf = None
+        if confidence is not None:
+            try:
+                conf = float(confidence)
+            except (TypeError, ValueError):
+                conf = None
+        row = _EvalCandidateRow(
+            receipt_id=int(receipt_id),
+            reason=str(reason),
+            tenant_id=str(tenant_id or "default"),
+            doc_form=str(doc_form or "")[:60],
+            confidence=conf,
+            ai_candidate_json=json.dumps(ai_candidate or {}, ensure_ascii=False),
+            note=str(note or "")[:500],
+            status="pending",
+            created_at=now_iso(),
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return row.id, True
+    finally:
+        s.close()
+
+
+def get_eval_candidate(candidate_id, tenant_id=None):
+    """按 id 取候选。tenant_id 非空时校验归属，跨租户视为不存在（返回 None）。"""
+    if _EvalCandidateRow is None:
+        return None
+    s = get_session()
+    try:
+        row = s.get(_EvalCandidateRow, int(candidate_id))
+        if row is not None and not _tenant_ok(row, tenant_id):
+            return None
+        return row
+    finally:
+        s.close()
+
+
+def list_eval_candidates(status=None, reason=None, tenant_id=None, limit=500):
+    """候选列表（可按 status / reason / 租户过滤），id 倒序（新的在前）。"""
+    if _EvalCandidateRow is None:
+        return []
+    s = get_session()
+    try:
+        q = scoped(s.query(_EvalCandidateRow), _EvalCandidateRow, tenant_id)
+        if status:
+            q = q.filter(_EvalCandidateRow.status == str(status))
+        if reason:
+            q = q.filter(_EvalCandidateRow.reason == str(reason))
+        return q.order_by(_EvalCandidateRow.id.desc()).limit(int(limit or 500)).all()
+    finally:
+        s.close()
+
+
+def set_eval_candidate_status(candidate_id, status, tenant_id=None):
+    """候选状态流转（仅 pending -> 目标状态，防重复处理）。
+
+    返回 (row, err)；err in (None, 'NOT_FOUND', 'INVALID_STATUS', 'CONFLICT')。
+    promote_to_* 写 promoted_at；rejected 不写。
+    """
+    if status not in EVAL_CANDIDATE_STATUSES:
+        return None, "INVALID_STATUS"
+    s = get_session()
+    try:
+        row = s.get(_EvalCandidateRow, int(candidate_id))
+        if row is None or not _tenant_ok(row, tenant_id):
+            return None, "NOT_FOUND"
+        if row.status != "pending":
+            return row, "CONFLICT"
+        row.status = str(status)
+        if status in ("promoted_to_val", "promoted_to_test"):
+            row.promoted_at = now_iso()
+        s.commit()
+        s.refresh(row)
+        return row, None
     finally:
         s.close()

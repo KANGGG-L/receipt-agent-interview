@@ -17,6 +17,7 @@
     python run_meta_eval.py --judge mock --set /path/to/meta_eval_set.json
 
 契约：run_meta_eval(judge, items) -> report dict
+    judge 只收 item["input"]（防偷看：收不到 expected_verdict）。
     report = {evaluator_trustworthy, total, n_correct, n_wrong,
               correct_rate, wrong_rate, per_item: [{id, expected, judged, hit, why_judged}]}
 """
@@ -92,15 +93,17 @@ def validate_meta_eval_set(items):
 
 
 # -------------------------------------------------------------
-# Judge 实现（可注入；judge(item) -> {"verdict": ..., "why": ...}）
+# Judge 实现（可注入；judge(receipt_input) -> {"verdict": ..., "why": ...}）
+# 签名约定（防偷看）：judge 只收 item["input"]（{"receipt": ...}），
+# 收不到 expected_verdict / why 等答案字段，元评测不可能自证。
 # -------------------------------------------------------------
-def mock_judge(item):
+def mock_judge(receipt_input):
     """离线规则式 judge（默认）：确定性评估器，只依据 receipt 内容判定。
 
     复用生产审核腿 text 模式的同一套确定性规则（契约门禁 + 算术门禁 +
     字段完整性 + 供应商名合理性）：契约非法或存在 discrepancy → 判错。
     """
-    payload = item["input"]["receipt"]
+    payload = receipt_input["receipt"]
     data, err = validate_contract(payload)
     if err:
         return {"verdict": VERDICT_WRONG, "why": f"契约门禁拒绝: {err}"}
@@ -111,7 +114,7 @@ def mock_judge(item):
     return {"verdict": VERDICT_WRONG, "why": issues or "存在 discrepancy"}
 
 
-def audit_judge(item, cfg=None):
+def audit_judge(receipt_input, cfg=None):
     """真实审核模型 judge（--judge audit 时显式触发，属运维动作）。
 
     用 build_audit_model(cfg) 构建审核腿模型（必须与识别腿异构，temperature=0），
@@ -122,7 +125,7 @@ def audit_judge(item, cfg=None):
     from app.llm import build_audit_model
     from app.chains.audit_chain import AUDIT_SYSTEM, _parse_audit
 
-    payload = item["input"]["receipt"]
+    payload = receipt_input["receipt"]
     try:
         model = build_audit_model(cfg=cfg)
     except Exception as e:  # 模型不可用 → 本条判 skip（计为未命中）
@@ -152,7 +155,8 @@ def audit_judge(item, cfg=None):
 def run_meta_eval(judge, items):
     """用注入的 judge 跑元评测，返回可信度报告。
 
-    judge: callable(item) -> {"verdict": VERDICT_*|None, "why": str}
+    judge: callable(receipt_input) -> {"verdict": VERDICT_*|None, "why": str}
+    防偷看约定：只传 item["input"]，judge 收不到 expected_verdict/why 等答案字段。
     """
     per_item = []
     n_correct_total = 0
@@ -161,7 +165,7 @@ def run_meta_eval(judge, items):
     n_wrong_hit = 0
     for item in items:
         expected = item["expected_verdict"]
-        judged = judge(item)
+        judged = judge(item["input"])
         verdict = judged.get("verdict")
         hit = verdict == expected
         if expected == VERDICT_CORRECT:

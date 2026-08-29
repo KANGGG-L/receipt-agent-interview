@@ -16,8 +16,11 @@ gt_status / gt_source_model。
 
 import base64
 import csv
+import hashlib
 import json
 import os
+import re
+import shutil
 from datetime import datetime
 
 from fastapi import APIRouter, Request
@@ -25,6 +28,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth import require_admin
+from app import db
 
 router = APIRouter()
 
@@ -259,3 +263,187 @@ def evalset_stats(request: Request):
         bucket[status] = bucket.get(status, 0) + 1
         bucket["total"] += 1
     return {"status": "success", "data": {"splits": splits, "evalset_dir": evalset_dir}}
+
+
+# ------------------------------------------------------------------
+# T6 Gap A5：线上低置信样本回流候选（eval_candidate）
+# ------------------------------------------------------------------
+REASON_LABELS = {
+    "low_confidence": "识别置信度低",
+    "gate_reject": "门禁拒绝（单据数字对不上）",
+    "user_edit": "店员修改过 AI 识别结果",
+    "audit_discrepancy": "交叉审核发现分歧",
+}
+# promote 允许的目标 split（train 不允许：训练集随 build_evalset 分层产出）
+PROMOTE_SPLITS = ("val", "test")
+_IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".bmp")
+# AI 候选 GT 必须携带的最小字段（与 run_eval.compare 消费口径对齐）
+_CANDIDATE_GT_REQUIRED = ("supplier_name", "date", "total_amount", "items")
+
+
+def _next_sample_id(rows):
+    """顺延现有最大 S 编号（S001 形态）；无既有编号从 S001 起，冲突自动递增。"""
+    max_n = 0
+    for r in rows:
+        m = re.match(r"^S(\d+)$", str(r.get("sample_id", "")))
+        if m:
+            max_n = max(max_n, int(m.group(1)))
+    while True:
+        max_n += 1
+        candidate = "S%03d" % max_n
+        if _find_row(rows, candidate) is None:
+            return candidate
+
+
+@router.get("/api/evalset/candidates")
+def list_candidates(request: Request, status: str = None, reason: str = None):
+    """回流候选列表（可按 status / reason 过滤）。仅 admin。"""
+    require_admin(request)
+    rows = db.list_eval_candidates(status=status, reason=reason)
+    candidates = []
+    for c in rows:
+        try:
+            ai_cand = json.loads(c.ai_candidate_json or "{}")
+        except Exception:
+            ai_cand = {}
+        candidates.append({
+            "id": c.id,
+            "receipt_id": c.receipt_id,
+            "tenant_id": c.tenant_id,
+            "doc_form": c.doc_form or "",
+            "confidence": c.confidence,
+            "reason": c.reason or "",
+            "reason_label": REASON_LABELS.get(c.reason, c.reason),
+            "status": c.status or "pending",
+            "created_at": c.created_at or "",
+            "promoted_at": c.promoted_at or "",
+            "note": c.note or "",
+            "has_ai_candidate": bool(ai_cand.get("items")),
+        })
+    return {"status": "success", "data": {"candidates": candidates, "total": len(candidates)}}
+
+
+@router.post("/api/evalset/candidates/{candidate_id}/promote")
+def promote_candidate(candidate_id: int, request: Request, split: str = "val"):
+    """候选晋升为评测样本：原图 + AI 候选 GT 复制进评测集，manifest 追加行。仅 admin。
+
+    - split=val|test（缺省 val；train 不允许，训练集随 build_evalset 分层产出）
+    - sample_id 顺延现有最大编号；gt_status=draft，gt_source_model 记录 AI 引擎名
+    - 仅 pending 可 promote，重复处理返回 409
+    """
+    account = require_admin(request)
+    if split not in PROMOTE_SPLITS:
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "msg": "split 只支持 val 或 test（当前：%s）。train 由 build_evalset 分层产出，不接收回流。" % split})
+
+    cand = db.get_eval_candidate(candidate_id)
+    if cand is None:
+        return JSONResponse(status_code=404, content={
+            "status": "error", "msg": "未找到评测候选 #%s" % candidate_id})
+    if cand.status != "pending":
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "msg": "该候选已被处理（当前状态：%s），不能重复回流" % cand.status})
+
+    try:
+        ai_cand = json.loads(cand.ai_candidate_json or "{}")
+    except Exception:
+        ai_cand = {}
+    gt = {k: ai_cand[k] for k in _CANDIDATE_GT_REQUIRED if k in ai_cand}
+    if not gt.get("items"):
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "msg": "该候选缺少 AI 候选 GT（识别未产出结构化结果），无法回流；请改用人工在抽检台补录"})
+
+    receipt = db.get_receipt_row(cand.receipt_id)
+    src_image = str(getattr(receipt, "image_path", "") or "")
+    if not src_image or not os.path.exists(src_image):
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "msg": "该单据原图文件缺失（%s），无法回流；请人工补录或 reject 该候选" % (src_image or "无路径")})
+
+    evalset_dir = get_evalset_dir()
+    rows = _load_manifest(evalset_dir)
+    if rows is None:
+        return JSONResponse(status_code=404, content={
+            "status": "error",
+            "msg": "评测集 manifest 不存在（%s）。请先运行 build_evalset.py 构建。" % _manifest_path(evalset_dir)})
+
+    new_sid = _next_sample_id(rows)
+    ext = os.path.splitext(src_image)[1].lower()
+    if ext not in _IMAGE_EXTS:
+        ext = ".png"
+    image_rel = "receipts/%s%s" % (new_sid, ext)
+    dest_image = os.path.join(evalset_dir, image_rel)
+    os.makedirs(os.path.dirname(dest_image), exist_ok=True)
+    shutil.copyfile(src_image, dest_image)
+    with open(dest_image, "rb") as f:
+        src_sha1 = hashlib.sha1(f.read()).hexdigest()
+
+    gt_source_model = str(ai_cand.get("gt_source_model") or "unknown")
+    saved_gt = dict(gt)
+    saved_gt["gt_status"] = "draft"
+    saved_gt["gt_source_model"] = gt_source_model
+    saved_gt["gt_reviewed_by"] = None
+    saved_gt["gt_reviewed_at"] = None
+    saved_gt["source_candidate_id"] = cand.id
+    saved_gt["source_receipt_id"] = cand.receipt_id
+    exp_path = _expected_path(evalset_dir, new_sid)
+    os.makedirs(os.path.dirname(exp_path), exist_ok=True)
+    with open(exp_path, "w", encoding="utf-8") as f:
+        json.dump(saved_gt, f, ensure_ascii=False, indent=2)
+
+    rows.append({
+        "sample_id": new_sid,
+        "image": image_rel,
+        "split": split,
+        "doc_form": cand.doc_form or str(gt.get("doc_form", "") or ""),
+        "layout_type": "",
+        "supplier_id": "",
+        "gt_status": "draft",
+        "gt_source_model": gt_source_model,
+        "src_sha1": src_sha1,
+        "short_side": "",
+    })
+    _save_manifest(evalset_dir, rows)
+
+    new_status = "promoted_to_val" if split == "val" else "promoted_to_test"
+    row, err = db.set_eval_candidate_status(candidate_id, new_status)
+    if err == "CONFLICT":
+        return JSONResponse(status_code=409, content={
+            "status": "error", "msg": "该候选已被处理，不能重复回流"})
+    if err is not None:
+        return JSONResponse(status_code=500, content={
+            "status": "error", "msg": "候选状态更新失败：%s" % err})
+
+    return {"status": "success", "data": {
+        "candidate_id": cand.id,
+        "sample_id": new_sid,
+        "split": split,
+        "candidate_status": new_status,
+        "gt_status": "draft",
+        "gt_source_model": gt_source_model,
+        "promoted_by": account.get("email", "admin@demo.hk"),
+        "promoted_at": getattr(row, "promoted_at", "") or "",
+    }}
+
+
+@router.post("/api/evalset/candidates/{candidate_id}/reject")
+def reject_candidate(candidate_id: int, request: Request):
+    """驳回候选（不进入评测集）。仅 admin。仅 pending 可驳回，重复处理返回 409。"""
+    require_admin(request)
+    cand = db.get_eval_candidate(candidate_id)
+    if cand is None:
+        return JSONResponse(status_code=404, content={
+            "status": "error", "msg": "未找到评测候选 #%s" % candidate_id})
+    row, err = db.set_eval_candidate_status(candidate_id, "rejected")
+    if err == "NOT_FOUND":
+        return JSONResponse(status_code=404, content={
+            "status": "error", "msg": "未找到评测候选 #%s" % candidate_id})
+    if err == "CONFLICT":
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "msg": "该候选已被处理（当前状态：%s），不能重复驳回" % cand.status})
+    return {"status": "success", "data": {
+        "candidate_id": cand.id, "candidate_status": "rejected"}}

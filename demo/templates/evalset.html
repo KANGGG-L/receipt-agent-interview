@@ -65,6 +65,13 @@
              font-size: 0.88rem; display: none; z-index: 99; max-width: 80vw; }
     .toast.err { background: #b91c1c; }
     .loading-note { color: #64748b; padding: 24px; text-align: center; }
+    .reflow-wrap { padding: 0 20px 24px 20px; }
+    .reflow-pane { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
+    table.reflow { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    table.reflow th { background: #f1f5f9; text-align: left; padding: 6px 8px;
+                      border-bottom: 1px solid #e2e8f0; font-weight: 600; }
+    table.reflow td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    .reflow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     @media (max-width: 900px) { .main { grid-template-columns: 1fr; }
         .img-box { height: 46vh; } }
 </style>
@@ -151,6 +158,25 @@
                 </div>
             </div>
             <div id="emptyNote" class="loading-note hide"></div>
+        </div>
+    </div>
+
+    <div class="reflow-wrap">
+        <div class="reflow-pane">
+            <div class="pane-title">
+                <span>回流候选（线上识别失败/低置信样本，确认后进入评测集）</span>
+                <span class="kbd-hint">晋升后 GT 为 AI 候选（draft），仍需在上方逐张核对确认</span>
+            </div>
+            <div style="overflow:auto; max-height: 40vh;">
+                <table class="reflow">
+                    <thead><tr><th>候选</th><th>单据</th><th>触发原因</th><th>置信度</th>
+                        <th>说明</th><th style="width:230px;">操作</th></tr></thead>
+                    <tbody id="reflowBody">
+                        <tr><td colspan="6" class="loading-note">加载中…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="reflowEmpty" class="loading-note hide"></div>
         </div>
     </div>
 

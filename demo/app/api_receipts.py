@@ -619,6 +619,35 @@ def save_edited(body: SaveEditedBody, request: Request):
             _edited = sum(_diff["field_mod_counts"].values()) + _diff["sku_changed"]
             _diff["fer_rate"] = round(
                 _edited / max(1, _diff["total_final"] * 6), 4)
+            # T6 Gap A5：人工保存与 AI 预填存在差异 -> 回流为评测候选（user_edit）。
+            # ai_candidate 取 AI 预填原版（GT 供 promote 复制）；幂等去重在 db 层；
+            # 任何失败不阻断保存主链路。
+            if _edited > 0:
+                try:
+                    from app.chains.supervisor import maybe_create_eval_candidate
+                    _gt = {
+                        "supplier_name": _ai_prefill.get("vendor", ""),
+                        "date": _ai_prefill.get("date", ""),
+                        "total_amount": _ai_prefill.get("total", 0) or 0,
+                        "items": [
+                            {"name": it.get("name", ""),
+                             "quantity": it.get("qty", 0) or 0,
+                             "unit": it.get("unit", ""),
+                             "unit_price": it.get("unit_price", 0) or 0,
+                             "amount": it.get("amount", 0) or 0}
+                            for it in (_ai_prefill.get("items", []) or [])
+                            if isinstance(it, dict)
+                        ],
+                    }
+                    maybe_create_eval_candidate(
+                        rid, "user_edit", doc_form=str(row.doc_form or ""),
+                        ai_candidate=_gt,
+                        note="save_edited diff: %s" % _jdiff.dumps(
+                            _diff.get("field_mod_counts", {}), ensure_ascii=False)[:300])
+                except Exception as _e:
+                    import logging as _logging
+                    _logging.getLogger("api_receipts").warning(
+                        f"[WARN] user_edit 评测候选回流失败: {_e}")
             _track_event(account, getattr(request.state, "session_id", ""),
                          "receipt_review_submitted", receipt_id=rid,
                          properties=_diff,

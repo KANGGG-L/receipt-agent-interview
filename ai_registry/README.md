@@ -100,4 +100,4 @@ python -m ai_registry.eval_reporter --diff --type prompt --name extract --v1 v1_
    - 技能 Skill：需具备标准 `SKILL.md`，并通过结构化自愈用例回归。
 3. **生成器-评估器强制异构（Gap A3）**：审核腿（评估器，`audit_engine`/`audit_model`）必须与识别腿（生成器，`recognition_engine`/`recognition_model`）**跨厂商异构**，禁止同引擎同家族——识别腿为 Qwen/GLM 系时审核腿必须走 opencode 等异构系；识别腿为 opencode 系时审核腿必须换 Qwen/GLM 系。灰测组 `grey_audit_model` 同此约束。
 4. **评估调用 temperature=0（Gap A4）**：审核/评估调用必须以 temperature=0 执行（`demo/app/llm.py` 的 `_build(side="aud")` 已强制注入），保证评估结论确定性、可复现；禁止在调用侧覆盖为非零采样。
-5. **上线前必跑元评测集（Gap A4）**：任何引擎/模型/Prompt 变更上线前，必须运行 `python demo/scripts/run_meta_eval.py`（真实模型用 `--judge audit` 显式触发），且报告结论 `evaluator_trustworthy=true`（对「绝对正确」样本判对率 100% 且对「绝对错误」样本判错率 100%）方可准入；报告落盘 `benchmarks/meta_eval_runs/` 留档。
+5. **上线前必跑元评测集（Gap A4）**：任何引擎/模型/Prompt 变更上线前，必须运行 `python demo/scripts/run_meta_eval.py`（真实模型用 `--judge audit` 显式触发），且报告结论 `evaluator_trustworthy=true`（对「绝对正确」样本判对率 100% 且对「绝对错误」样本判错率 100%）方可准入；报告落盘 `benchmarks/meta_eval_runs/` 留档。注意：mock judge 仅用于离线自检 harness 本身，**生产准入必须跑 `--judge audit` 模式（真实异构审核模型）并以该模式的报告为准**。

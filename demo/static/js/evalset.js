@@ -90,6 +90,7 @@
 
     function reloadAll() {
         loadStats().then(loadSamples).catch(showErr);
+        loadCandidates().catch(function () {});
     }
 
     function onFilterChange() {
@@ -318,6 +319,79 @@
         next(0);
     }
 
+    // ---------------- 回流候选（T6 Gap A5）----------------
+    // 简化列表实现：线上失败样本（低置信/门禁拒绝/店员修改/审核分歧）在此人工取舍。
+    // 晋升仅把「原图 + AI 候选 GT」带进评测集（draft），仍需在上方抽检台逐张核对确认。
+    function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = s === null || s === undefined ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function loadCandidates() {
+        return api('/api/evalset/candidates?status=pending').then(function (data) {
+            var list = (data.data && data.data.candidates) || [];
+            var body = document.getElementById('reflowBody');
+            var empty = document.getElementById('reflowEmpty');
+            body.innerHTML = '';
+            if (!list.length) {
+                empty.textContent = '暂无待处理的回流候选。线上识别失败/低置信的单据会自动出现在这里。';
+                empty.className = 'loading-note';
+                return;
+            }
+            empty.className = 'loading-note hide';
+            list.forEach(function (c) {
+                var tr = document.createElement('tr');
+                var conf = (c.confidence === null || c.confidence === undefined) ?
+                    '-' : c.confidence;
+                tr.innerHTML =
+                    '<td>#' + c.id + '</td>' +
+                    '<td>单据 #' + esc(c.receipt_id) + '</td>' +
+                    '<td>' + esc(c.reason_label || c.reason) + '</td>' +
+                    '<td>' + esc(conf) + '</td>' +
+                    '<td>' + esc(c.note || '') + '</td>' +
+                    '<td><div class="reflow-actions">' +
+                    '<button class="btn-success">晋升到 val</button>' +
+                    '<button class="btn-secondary">晋升到 test</button>' +
+                    '<button class="btn-danger">不收录</button>' +
+                    '</div></td>';
+                var btns = tr.querySelectorAll('button');
+                btns[0].onclick = function () { promoteCandidate(c.id, 'val'); };
+                btns[1].onclick = function () { promoteCandidate(c.id, 'test'); };
+                btns[2].onclick = function () { rejectCandidate(c.id); };
+                body.appendChild(tr);
+            });
+        });
+    }
+
+    function promoteCandidate(id, split) {
+        if (!window.confirm('把候选 #' + id + ' 晋升到 ' + split + ' 集？\n' +
+                '将复制原图与 AI 候选 GT（未经人工核对，状态为 draft），' +
+                '晋升后请在上方抽检台逐张核对确认。')) {
+            return;
+        }
+        api('/api/evalset/candidates/' + id + '/promote?split=' + encodeURIComponent(split), {
+            method: 'POST'
+        }).then(function (data) {
+            toast('已晋升为评测样本 ' + (data.data && data.data.sample_id || '') +
+                '（' + split + ' 集，GT 为 AI 候选 draft，请记得抽检确认）');
+            loadCandidates().catch(function () {});
+            loadStats().catch(function () {});
+        }).catch(showErr);
+    }
+
+    function rejectCandidate(id) {
+        if (!window.confirm('不收录候选 #' + id + '？该样本将不进入评测集。')) {
+            return;
+        }
+        api('/api/evalset/candidates/' + id + '/reject', { method: 'POST' })
+            .then(function () {
+                toast('已驳回候选 #' + id);
+                loadCandidates().catch(function () {});
+            })
+            .catch(showErr);
+    }
+
     // ---------------- 空态 / 错误 ----------------
     function showEmpty(msg) {
         var note = document.getElementById('emptyNote');
@@ -362,4 +436,6 @@
     window.confirmCurrent = confirmCurrent;
     window.addItemRow = addItemRow;
     window.batchConfirmUntouched = batchConfirmUntouched;
+    window.promoteCandidate = promoteCandidate;
+    window.rejectCandidate = rejectCandidate;
 })();

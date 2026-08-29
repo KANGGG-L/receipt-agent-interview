@@ -28,6 +28,10 @@ from app import db
 
 MAX_RETRY = 3
 
+# T6 Gap A5：低置信回流阈值（低于该值的识别结果回流为评测候选）。
+# TODO(T10): 迁移至 app_settings 配置化（阈值规则统一治理），当前为模块常量。
+EVAL_CANDIDATE_LOW_CONFIDENCE = 0.6
+
 # ---- 记忆落盘：文件层并发安全与路径 ----
 _MEMORY_LOCK = threading.Lock()
 _MEMORY_LOG_PATH = os.path.abspath(
@@ -107,6 +111,114 @@ def _run_gates(data: ReceiptData, receipt_id=None, attempt=1):
     if problems:
         return None, math_err
     return data, None
+
+
+# -----------------------------------------------------------------
+# T6 Gap A5：线上失败信号 -> 评测候选（回流钩子，不阻断主链路）
+# -----------------------------------------------------------------
+def _candidate_gt_from_data(data):
+    """从识别结果提取 AI 候选 GT（run_eval compare 可消费的别名形态）。
+
+    鸭子类型兼容 ReceiptData 与测试替身；任何异常返回 {}（不阻断）。
+    gt_source_model 由调用方补登（记录产出该候选的 AI 引擎名）。
+    """
+    if data is None:
+        return {}
+    try:
+        items = []
+        for it in (getattr(data, "items", None) or []):
+            items.append({
+                "name": str(getattr(it, "name", "") or ""),
+                "quantity": float(getattr(it, "qty", 0) or 0),
+                "unit": str(getattr(it, "unit", "") or ""),
+                "unit_price": float(getattr(it, "unit_price", 0) or 0),
+                "amount": float(getattr(it, "amount", 0) or 0),
+            })
+        doc_form = getattr(data, "doc_form", "")
+        doc_form = doc_form.value if hasattr(doc_form, "value") else str(doc_form or "")
+        return {
+            "supplier_name": str(getattr(data, "vendor", "") or ""),
+            "date": str(getattr(data, "date", "") or ""),
+            "total_amount": float(getattr(data, "total", 0) or 0),
+            "items": items,
+            "doc_form": doc_form,
+        }
+    except Exception:
+        return {}
+
+
+def maybe_create_eval_candidate(receipt_id, reason, doc_form="", confidence=None,
+                                ai_candidate=None, note="", tenant_id=None):
+    """单条回流钩子：失败仅 logger.warning，绝不抛出（AC：不阻断识别主链路）。
+
+    receipt_id=None（run_pipeline 直接调用/冒烟场景）跳过；
+    幂等由 db.create_eval_candidate 保证（同单同 reason 不重复建）。
+    返回 (candidate_id, created)；任何异常返回 (None, False)。
+    """
+    if receipt_id is None:
+        return None, False
+    try:
+        from app import db as _db
+        if tenant_id is None:
+            rc = _db.get_receipt_row(int(receipt_id))
+            tenant_id = getattr(rc, "tenant_id", None) if rc is not None else None
+        cid, created = _db.create_eval_candidate(
+            receipt_id=int(receipt_id), reason=reason, tenant_id=tenant_id,
+            doc_form=doc_form, confidence=confidence,
+            ai_candidate=ai_candidate, note=note)
+        if created:
+            logging.getLogger("supervisor").info(
+                "EVAL_CANDIDATE created id=%s receipt=%s reason=%s",
+                cid, receipt_id, reason)
+        return cid, created
+    except Exception as e:
+        logging.getLogger("supervisor").warning(
+            f"评测候选回流失败(不阻断主链路): reason={reason} receipt={receipt_id}: {e}")
+        return None, False
+
+
+def _reflow_from_state(state: dict):
+    """管线收尾回流判定（T6 Gap A5）：三类信号各查一次，幂等去重交给 db 层。
+
+    - low_confidence: data.confidence 非空且 < EVAL_CANDIDATE_LOW_CONFIDENCE
+    - gate_reject:    state.contract_error 非空（门禁拒绝/快速反馈最终态）
+    - audit_discrepancy: audit.discrepancies 非空
+    user_edit（人工保存差异）在 api_receipts.save_edited 路径挂钩。
+    """
+    rid = state.get("receipt_id")
+    if rid is None:
+        return
+    data = state.get("data")
+    gt = _candidate_gt_from_data(data)
+    engine = str(state.get("engine_name") or "")
+    doc_form = str(state.get("doc_form") or "")
+    if gt:
+        gt["gt_source_model"] = engine
+    conf = getattr(data, "confidence", None) if data is not None else None
+    # 1) 低置信
+    if conf is not None:
+        try:
+            if float(conf) < EVAL_CANDIDATE_LOW_CONFIDENCE:
+                maybe_create_eval_candidate(
+                    rid, "low_confidence", doc_form=doc_form, confidence=conf,
+                    ai_candidate=gt,
+                    note="confidence=%s < %s" % (conf, EVAL_CANDIDATE_LOW_CONFIDENCE))
+        except (TypeError, ValueError):
+            pass
+    # 2) 门禁拒绝（contract_error 保留最终门禁错误摘要）
+    gate_err = str(state.get("contract_error") or "")
+    if gate_err:
+        maybe_create_eval_candidate(
+            rid, "gate_reject", doc_form=doc_form, confidence=conf,
+            ai_candidate=gt, note=gate_err[:200])
+    # 3) 审核分歧
+    audit = state.get("audit_result") or {}
+    discrepancies = audit.get("discrepancies") if isinstance(audit, dict) else None
+    if isinstance(discrepancies, list) and discrepancies:
+        maybe_create_eval_candidate(
+            rid, "audit_discrepancy", doc_form=doc_form, confidence=conf,
+            ai_candidate=gt,
+            note="discrepancies=%d" % len(discrepancies))
 
 
 def _run_audit(image_path: str, data: ReceiptData, config, use_grey: bool) -> dict:
@@ -690,4 +802,10 @@ def _finalize(state: dict, pipeline_start: float) -> dict:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     except Exception as e:
         logging.getLogger("supervisor").warning(f"记忆落盘失败: {e}")
+    # ---- T6 Gap A5：线上失败信号回流为评测候选（低置信/门禁拒绝/审核分歧，
+    # 幂等去重在 db 层；user_edit 在 api_receipts.save_edited 挂钩。不阻断主链路）----
+    try:
+        _reflow_from_state(state)
+    except Exception as e:
+        logging.getLogger("supervisor").warning(f"评测候选回流判定失败(不阻断): {e}")
     return state
