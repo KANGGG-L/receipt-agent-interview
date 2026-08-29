@@ -10576,15 +10576,16 @@ function applyDemoRoleColor(role) {
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
-    ['adminEngineBtn', 'goldenBoardBtn'].forEach(id => {
+    ['adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = isAdmin ? '' : 'none';
     });
     const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
     if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
     // 当前停留在已隐藏的页签时回落到收据识别（admin 不受影响）
-    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-report']
-                     : (role === 'owner') ? ['tab-engine', 'tab-golden'] : [];
+    // T4：GT 抽检台（tab-evalset）为 admin 专属入口（接口 403 兜底）
+    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-report']
+                     : (role === 'owner') ? ['tab-engine', 'tab-golden', 'tab-evalset'] : [];
     const active = document.querySelector('.tab-content.active');
     if (active && hiddenTabs.indexOf(active.id) !== -1) {
         const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');

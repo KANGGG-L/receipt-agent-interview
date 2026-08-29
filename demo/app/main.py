@@ -25,6 +25,7 @@ from app import db
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
 from app.api_dishes import router as dishes_router
+from app.api_evalset import router as evalset_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
 from app.api_phase2 import router as phase2_router
@@ -40,6 +41,7 @@ app.include_router(finance_router)
 app.include_router(dishes_router)
 app.include_router(admin_router)
 app.include_router(phase2_router)
+app.include_router(evalset_router)
 
 
 @app.on_event("startup")
@@ -98,6 +100,15 @@ class NoStoreStaticFiles(StaticFiles):
 @app.get("/")
 def index():
     resp = FileResponse(TEMPLATES_DIR / "index.html")
+    if DEV_MODE:
+        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+    return resp
+
+
+@app.get("/evalset")
+def evalset_review_page():
+    """GT 人工抽检台（T4 Gap A2）：左图右表单逐字段校正 + 快捷键确认。"""
+    resp = FileResponse(TEMPLATES_DIR / "evalset.html")
     if DEV_MODE:
         resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
     return resp

@@ -111,6 +111,11 @@
                     <span>黄金样本</span>
                     <span style="color:var(--primary); font-size:0.65rem; margin-left:auto; border:1px solid var(--primary); border-radius:4px; padding:0 4px;">57</span>
                 </button>
+                <button class="sidebar-btn" id="evalsetReviewBtn" data-target="tab-evalset" data-title="GT 人工抽检台（评测集确认）">
+                    <span class="icon"></span>
+                    <span>GT 抽检</span>
+                    <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
+                </button>
             </nav>
         </aside>
 
@@ -1822,6 +1827,12 @@
                             <div id="pvalueCardsContainer" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px;"></div>
                         </div>
                     </div>
+                </section>
+
+                <!-- TAB 8: GT 人工抽检台（T4 Gap A2，独立页面内嵌，仅 admin） -->
+                <section id="tab-evalset" class="tab-content">
+                    <iframe src="/evalset" title="GT 人工抽检台"
+                            style="width:100%; height:calc(100vh - 140px); min-height:560px; border:1px solid var(--border-color); border-radius:10px; background:#fff;"></iframe>
                 </section>
 
             </main>

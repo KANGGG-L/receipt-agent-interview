@@ -321,11 +321,16 @@ def _real_predictor(engine, model, prompt_version):
 # 主流程
 # ------------------------------------------------------------------
 def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="opencode", model=None,
-             limit=None, evalset_dir=None, report_dir=None, predictor=None):
+             limit=None, evalset_dir=None, report_dir=None, predictor=None,
+             require_confirmed=False):
     """跑一个 split 的评测，返回 EvalReport（dict）。
 
     predictor（可选）：自定义预测器 `(image_path, sample_id) -> (payload|None, meta)`，
     供测试注入故障或离线自检；不传则按 engine 构建真实识别链路。
+
+    require_confirmed（T4，默认关，向后兼容）：为 True 时，该 split 存在任何
+    未 confirmed 的 GT（missing/draft）即拒绝出分（SystemExit），保证报告只由
+    人工抽检确认过的 GT 产生。
     """
     evalset_dir = os.path.abspath(evalset_dir or DEFAULT_EVALSET_DIR)
     report_dir = os.path.abspath(report_dir or DEFAULT_REPORT_DIR)
@@ -335,6 +340,22 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="opencode", mo
         raise SystemExit("manifest 中没有 split=%s 的样本" % split)
     if limit:
         rows = rows[:int(limit)]
+
+    if require_confirmed:
+        unconfirmed = [r for r in rows
+                       if (r.get("gt_status") or "missing") != "confirmed"
+                       or _load_expected(evalset_dir, r["sample_id"]) is None]
+        if unconfirmed:
+            by_status = {}
+            for r in unconfirmed:
+                s = r.get("gt_status") or "missing"
+                by_status[s] = by_status.get(s, 0) + 1
+            raise SystemExit(
+                "GT 未全部人工确认，--require-confirmed 拒绝出分：split=%s 共 %d 张未确认"
+                "（%s），例如 %s。请先在 GT 抽检台（/evalset）逐张确认后再出分。"
+                % (split, len(unconfirmed),
+                   ", ".join("%s=%d" % kv for kv in sorted(by_status.items())),
+                   ", ".join(r["sample_id"] for r in unconfirmed[:5])))
 
     if predictor is None:
         predictor = (_stub_predictor(evalset_dir) if engine == "stub"
@@ -480,11 +501,14 @@ def main():
     ap.add_argument("--evalset-dir", default=None, help="评测集目录（默认 demo/evalsets）")
     ap.add_argument("--report-dir", default=None,
                     help="报告落盘目录（默认 ai_registry/benchmarks/eval_runs）")
+    ap.add_argument("--require-confirmed", action="store_true", default=False,
+                    help="GT 门禁：split 内存在未人工确认（missing/draft）的 GT 时拒绝出分")
     args = ap.parse_args()
 
     report = run_eval(split=args.split, prompt_version=args.prompt, engine=args.engine,
                       model=args.model, limit=args.limit,
-                      evalset_dir=args.evalset_dir, report_dir=args.report_dir)
+                      evalset_dir=args.evalset_dir, report_dir=args.report_dir,
+                      require_confirmed=args.require_confirmed)
     _print_summary(report)
     return 0
 
