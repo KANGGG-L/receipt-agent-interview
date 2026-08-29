@@ -88,8 +88,8 @@
             tax_amount: gt.tax_amount || 0,
             adjustment_notes: Array.isArray(gt.adjustment_notes) ? gt.adjustment_notes : [],
             payment_evidence: gt.payment_evidence || '',
-            // 付款标记走店员界面既有通道：payment_marked 驱动已付款/未付款下拉，
-            // payment_evidence 经 getPaymentMarkDisplayInfo 在检测徽章中展示证据
+            // 付款标记走店员界面既有通道：payment_marked 驱动已付款/未付款切换徽章
+            // （applySettlementToForm 灌 state），payment_evidence 自动带出到只读证据展示区
             payment_marked: gt.payment_marked === true,
             payment_mark: gt.payment_marked === true ? (gt.payment_evidence || '已付款') : '',
             // 明细行键名对齐 appendTableRow 读取口径（quantity）
@@ -202,7 +202,10 @@
             date: dateStr,
             total_amount: blankTotal ? null : Number(data.total_amount),
             doc_form: data.doc_form || 'printed_delivery_note',
-            payment_marked: data.payment_mark === '已付款',
+            // 用户反馈：付款标记改点击切换徽章——GT payment_marked 从徽章 state 取
+            //（不再读已移除的下拉枚举值）；payment_evidence 取自动带出值（无手输入口），
+            // 表单从未渲染时仍回落候选值
+            payment_marked: getPaymentMarkBadgeState(),
             payment_evidence: String(data.payment_evidence != null && data.payment_evidence !== ''
                 ? data.payment_evidence : (cand.payment_evidence || '')),
             currency: data.currency || 'HKD',

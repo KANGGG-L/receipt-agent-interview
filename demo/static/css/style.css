@@ -3590,3 +3590,45 @@ table.data-table tr.inv-row-low-stock td {
 
 
 
+
+/* ==========================================================================
+   付款标记切换徽章（用户实测反馈：付款标记改为点击切换「已付款/未付款」，
+   绿=已付款、红=未付款；禁止要求店员手输付款证据——证据由系统自动带出只读展示）
+   状态差异除颜色外文字本身变化（已付款/未付款），色盲友好；
+   白字对比度：#2f6b4f 6.3:1、#b91c1c 6.5:1，均满足 WCAG AA (>= 4.5:1)
+   ========================================================================== */
+.payment-mark-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    min-width: 132px;
+    padding: 8px 22px;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    color: #ffffff;
+    transition: background-color 0.15s ease, transform 0.1s ease;
+}
+.payment-mark-toggle:active { transform: scale(0.98); }
+.payment-mark-toggle:focus-visible { outline: 3px solid rgba(3, 36, 37, 0.35); outline-offset: 2px; }
+.payment-mark-toggle.payment-mark-paid { background: #2f6b4f; }
+.payment-mark-toggle.payment-mark-paid:hover { background: #1e4d37; }
+.payment-mark-toggle.payment-mark-unpaid { background: #b91c1c; }
+.payment-mark-toggle.payment-mark-unpaid:hover { background: #991b1b; }
+
+/* 付款证据只读展示区（自动带出，无输入框） */
+.payment-evidence-auto {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 10px;
+    background: var(--bg-muted);
+    color: var(--text-subtle);
+    font-size: 0.85rem;
+}

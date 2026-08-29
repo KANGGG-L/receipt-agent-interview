@@ -416,14 +416,11 @@
                                             <label style="margin-bottom:0;">付款标记</label>
                                             <span id="inpPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.72rem; color:#64748b;">未检测到商户付款标记</span>
                                         </div>
-                                        <select id="inpPaymentMark" class="form-control" title="系统自动检测商户单据付款标记，用户仅需确认已付款或未付款">
-                                            <option value="未付款">未付款</option>
-                                            <option value="已付款">已付款</option>
-                                        </select>
+                                        <button type="button" id="inpPaymentMark" class="payment-mark-toggle payment-mark-unpaid" data-marked="false" aria-pressed="false" title="点击在「已付款 / 未付款」之间切换" onclick="togglePaymentMarkBadge()">未付款</button>
                                     </div>
                                     <div class="form-group" style="grid-column: span 2;">
-                                        <label>付款证据</label>
-                                        <input type="text" id="inpPaymentEvidence" class="form-control" title="已付款标记的图面证据描述（印章/手写等），识别到时自动填入，店员可修正" placeholder="如：红色印章 / 手写「已付款」（识别到时自动填入，可修正）">
+                                        <label>付款证据（系统自动识别，无需填写）</label>
+                                        <div id="inpPaymentEvidenceAuto" class="payment-evidence-auto">未识别到付款证据描述</div>
                                     </div>
                                 </div>
 

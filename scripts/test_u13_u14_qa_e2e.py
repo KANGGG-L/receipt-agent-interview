@@ -187,7 +187,9 @@ def run_qa_suite():
         page.fill("#inpSheet", "NO.20260824001")
 
         page.select_option("#inpSettlementType", "cash")
-        page.select_option("#inpPaymentMark", "已付款")
+        # 付款标记已改为点击切换徽章（默认未付款，点击切「已付款」）
+        page.click("#inpPaymentMark")
+        assert page.locator("#inpPaymentMark").get_attribute("data-marked") == "true"
         page.select_option("#inpCurrency", "HKD")
 
         # 添加明细行 (使用 appendTableRow)

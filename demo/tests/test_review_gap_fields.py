@@ -230,7 +230,7 @@ def test_dynamic_fee_rows_ui_mode():
                       "inpTaxAmount", "inpDeposit", "inpRounding"):
         assert 'id="%s"' % legacy_id not in html, \
             "固定六宫格输入 #%s 应由动态费用行取代" % legacy_id
-    # 仍保留的手写注记（已改动态行模式）/ 付款证据控件
+    # 仍保留的手写注记（已改动态行模式）/ 付款证据只读展示区
     for mark in ('id="notesRowsEmpty"', 'id="notesRowsContainer"', 'id="btnAddNoteRow"'):
         assert mark in html, "复核区缺少手写注记动态行要素 %s" % mark
     assert "手写注记" in html
@@ -269,13 +269,115 @@ def test_main_js_collects_new_fields():
     for key in ("service_fee", "tax_amount", "adjustment_notes", "payment_evidence",
                 "collectFeeMap"):
         assert key in collect_src, "collectReviewFormData 未采集 %s" % key
-    # collectFeeMap 必须映射回全部六个契约字段（未出现的类型 = 0）
+    # collectFeeMap 必须映射回全部六个契约字段（未出现的类型缺省归 0）
     map_start = src.index("function collectFeeMap")
     map_end = src.index("function updateFeesSummaryBadge")
     map_src = src[map_start:map_end]
     for key in ("discount_amount", "delivery_fee", "service_fee",
                 "tax_amount", "deposit_amount", "rounding_adjustment"):
         assert key in map_src, "collectFeeMap 未映射契约字段 %s" % key
+
+
+# -------------------------------------------------------------
+# 付款标记切换徽章（用户实测反馈重构，纯视图+采集层，契约字段不变）：
+#   - 下拉 #inpPaymentMark(select) 与证据输入框 #inpPaymentEvidence 移除（无双入口）
+#   - 改为大号点击切换徽章：绿=已付款、红=未付款，文字随态变化（色盲友好）
+#   - 付款证据由系统自动带出到只读展示区，无手输入口
+#   - collectReviewFormData 读徽章 state 与自动证据（非输入框）
+# -------------------------------------------------------------
+def _style_css_src():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "static", "css", "style.css")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_payment_mark_badge_ui_mode():
+    """切换徽章在位（button + data-marked 初始未付款 + 点击切换 + aria 状态）；
+    旧下拉与旧证据输入框移除；检测信息只读提示与只读证据展示区保留。"""
+    html = _index_html()
+    # 旧控件必须移除（无双入口）
+    assert '<select id="inpPaymentMark"' not in html, "付款标记下拉必须由切换徽章取代"
+    assert 'id="inpPaymentEvidence"' not in html, "付款证据输入框必须移除（禁止手输）"
+    assert 'type="text" id="inpPaymentEvidence"' not in html
+    # 切换徽章：button + 初始未付款 + 点击切换 + 无障碍状态
+    pos = html.index('id="inpPaymentMark"')
+    tag_start = html.rindex('<button', 0, pos)
+    tag = html[tag_start:html.index('</button>', pos)]
+    assert 'type="button"' in tag, "徽章必须是 button（不随表单提交）"
+    assert 'data-marked="false"' in tag, "徽章初始必须为未付款"
+    assert 'togglePaymentMarkBadge()' in tag, "徽章必须绑定点击切换"
+    assert 'aria-pressed="false"' in tag, "徽章必须带 aria 状态（无障碍）"
+    assert 'payment-mark-unpaid' in tag, "徽章初始必须带未付款（红）样式类"
+    assert 'payment-mark-toggle' in tag, "徽章必须带切换徽章样式类"
+    # 触控标准：高度 >= 38px、宽度舒适（样式表定义）
+    css = _style_css_src()
+    toggle_pos = css.index(".payment-mark-toggle {")
+    toggle_css = css[toggle_pos:toggle_pos + 400]
+    assert "min-height: 38px" in toggle_css, "徽章高度必须 >= 38px"
+    assert "min-width" in toggle_css, "徽章必须有舒适宽度"
+    # WCAG AA：绿/红底白字（#2f6b4f 6.3:1、#b91c1c 6.5:1，均 >= 4.5:1）
+    assert ".payment-mark-toggle.payment-mark-paid { background: #2f6b4f; }" in css
+    assert ".payment-mark-toggle.payment-mark-unpaid { background: #b91c1c; }" in css
+    # 检测信息只读提示保留（「未检测到商户付款标记」等信息载体）
+    assert 'id="inpPaymentMarkDetectBadge"' in html, "检测信息只读提示必须保留"
+    # 付款证据只读展示区（非输入框）
+    assert 'id="inpPaymentEvidenceAuto"' in html, "缺少只读证据展示区 #inpPaymentEvidenceAuto"
+    assert '付款证据' in html and '无需填写' in html, "证据区必须明示「系统自动识别，无需填写」"
+
+
+def test_main_js_payment_badge_state_and_collect():
+    """main.js：徽章 state 读写/切换函数齐备；applySettlementToForm 灌 state；
+    renderEditForm 证据自动带出（不再写输入框）；collectReviewFormData 读徽章
+    state 与自动证据值（非输入框）。"""
+    src = _main_js_src()
+    for fn in ("function getPaymentMarkBadgeState", "function setPaymentMarkBadge",
+               "function togglePaymentMarkBadge",
+               "function setAutoPaymentEvidence", "function getAutoPaymentEvidence",
+               "function updatePaymentEvidenceAutoDisplay"):
+        assert fn in src, "main.js 缺少付款徽章函数 %s" % fn
+    # 灌入链路：applySettlementToForm 对按钮形元素灌 state（归档弹窗下拉按形态分流）
+    settle_start = src.index("function applySettlementToForm")
+    settle_src = src[settle_start:settle_start + 2000]
+    assert "markInput.tagName === 'BUTTON'" in settle_src, \
+        "applySettlementToForm 必须按元素形态分流（徽章灌 state，归档下拉保留）"
+    assert "setPaymentMarkBadge(info.isPaid)" in settle_src, \
+        "applySettlementToForm 必须把检测结果灌入徽章 state"
+    # renderEditForm：证据自动带出，不再写证据输入框
+    edit_start = src.index("function renderEditForm")
+    edit_end = src.index("window.renderEditForm")
+    edit_src = src[edit_start:edit_end]
+    assert "setAutoPaymentEvidence(" in edit_src, "renderEditForm 必须写入自动证据状态"
+    assert "updatePaymentEvidenceAutoDisplay()" in edit_src, "renderEditForm 必须刷新只读证据展示区"
+    # 采集层：payment_marked 走徽章 state；payment_evidence 走自动证据值
+    collect_start = src.index("function collectReviewFormData")
+    collect_end = src.index("function buildSavePayloadFromData")
+    collect_src = src[collect_start:collect_end]
+    assert "payment_evidence: getAutoPaymentEvidence()" in collect_src, \
+        "collectReviewFormData 的 payment_evidence 必须读自动证据值（非输入框）"
+    assert "getPaymentMarkBadgeState() ? '已付款' : '未付款'" in collect_src, \
+        "collectReviewFormData 的付款标记必须读徽章 state"
+    # 全文件不再读写已移除的证据输入框（只读展示区 id 含 Auto 后缀，不受影响）
+    assert "inpPaymentEvidence')" not in src, "main.js 不应残留旧证据输入框引用"
+
+
+def test_eval_workbench_payment_badge_roundtrip():
+    """评测工作台：候选 payment_marked/payment_evidence 灌徽章与只读证据区；
+    buildGtFromForm 从徽章 state 取 payment_marked（不再从下拉枚举值推断）。"""
+    src = _eval_js_src()
+    gt_start = src.index("function gtToFormData")
+    gt_end = src.index("function loadSample")
+    gt_src = src[gt_start:gt_end]
+    assert "payment_marked: gt.payment_marked === true" in gt_src, \
+        "gtToFormData 必须把候选 payment_marked 灌给复核渲染（驱动徽章 state）"
+    assert "payment_evidence: gt.payment_evidence || ''" in gt_src, \
+        "gtToFormData 必须把候选证据灌给复核渲染（自动带出到只读证据区）"
+    build_start = src.index("function buildGtFromForm")
+    build_end = src.index("return { gt: gt, blankTotal: blankTotal }")
+    build_src = src[build_start:build_end]
+    assert "payment_marked: getPaymentMarkBadgeState()" in build_src, \
+        "buildGtFromForm 必须从徽章 state 取 payment_marked"
+    assert "'已付款'" not in build_src, "buildGtFromForm 不得再从下拉枚举值推断付款标记"
 
 
 def test_fee_row_delete_means_zero_semantics():

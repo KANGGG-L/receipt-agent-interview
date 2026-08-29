@@ -2781,7 +2781,8 @@ function startManualEntry() {
     const settlement = document.getElementById('inpSettlementType');
     if (settlement) settlement.value = '';
     const markInput = document.getElementById('inpPaymentMark');
-    if (markInput) markInput.value = '无';
+    // 新建手工单空态：付款标记徽章复位为「未付款」
+    if (markInput && markInput.tagName === 'BUTTON') setPaymentMarkBadge(false);
     populateDeptSelect(document.getElementById('inpDepartmentId'), null);
     showQualityWarnings([]);
     document.getElementById('itemTableBody').innerHTML = '';
@@ -2861,7 +2862,6 @@ function abortLoadingAndSwitchToManual() {
     const inpSettlement = document.getElementById('inpSettlementType');
     const inpPaymentMark = document.getElementById('inpPaymentMark');
     const inpDept = document.getElementById('inpDepartmentId');
-
     if (inpDate && !inpDate.value) {
         const todayStr = new Date().toISOString().slice(0, 10);
         inpDate.value = todayStr;
@@ -2872,9 +2872,10 @@ function abortLoadingAndSwitchToManual() {
     if (inpTotal && (!inpTotal.value || inpTotal.value === '0.00')) {
         inpTotal.value = '0.00';
     }
-    if (inpPaymentMark && !inpPaymentMark.value) {
+    if (inpPaymentMark && inpPaymentMark.tagName !== 'BUTTON' && !inpPaymentMark.value) {
         inpPaymentMark.value = '未付款';
     }
+    // 付款标记切换徽章恒有确定 state（HTML 默认「未付款」；识别已渲染的 state 保留不动）
     if (inpDept && !inpDept.value) {
         populateDeptSelect(inpDept, null);
     }
@@ -4069,18 +4070,15 @@ function renderEditForm(data) {
     // M3/D4: 从 prefill 数据初始化结算方式与付款标记
     applySettlementToForm('inp', data);
 
-    // G3：付款证据——识别/审计检出的证据描述预填，店员可修正；
+    // G3/U2：付款证据由系统自动带出（用户反馈：禁止要求店员手输证据）。
+    // 识别/审计检出的证据描述写入自动证据状态并只读展示；无则空串。
     // 契约无 payment_evidence 时回落描述性 payment_mark（非「已付款/未付款」枚举值）
-    const evidenceElem = document.getElementById('inpPaymentEvidence');
-    if (evidenceElem) {
-        const rawEvidence = String(data.payment_evidence || '').trim();
-        if (rawEvidence) {
-            evidenceElem.value = rawEvidence;
-        } else {
-            const origMark = String(data.payment_mark || '').trim();
-            evidenceElem.value = (origMark && origMark !== '已付款' && origMark !== '未付款') ? origMark : '';
-        }
-    }
+    const rawEvidence = String(data.payment_evidence || '').trim();
+    const origMark = String(data.payment_mark || '').trim();
+    const autoEvidence = rawEvidence
+        || ((origMark && origMark !== '已付款' && origMark !== '未付款') ? origMark : '');
+    setAutoPaymentEvidence(autoEvidence);
+    updatePaymentEvidenceAutoDisplay();
 
     // Wave 2（D44）：单据级部门下拉
     populateDeptSelect(document.getElementById('inpDepartmentId'), data.department_id);
@@ -4564,6 +4562,49 @@ function getPaymentMarkDisplayInfo(data) {
     };
 }
 
+// 付款标记点击切换徽章（用户实测反馈：付款标记改为「已付款/未付款」点击切换，
+// 绿=已付款、红=未付款；禁止要求店员手输付款证据）。state 存于按钮 data-marked，
+// 文案随态变化（色盲友好），颜色仅作辅助。
+function getPaymentMarkBadgeState() {
+    const btn = document.getElementById('inpPaymentMark');
+    return !!(btn && btn.dataset && btn.dataset.marked === 'true');
+}
+
+function setPaymentMarkBadge(marked) {
+    const btn = document.getElementById('inpPaymentMark');
+    if (!btn) return;
+    const isPaid = (marked === true || marked === 'true');
+    btn.dataset.marked = isPaid ? 'true' : 'false';
+    btn.textContent = isPaid ? '已付款' : '未付款';
+    btn.classList.toggle('payment-mark-paid', isPaid);
+    btn.classList.toggle('payment-mark-unpaid', !isPaid);
+    btn.setAttribute('aria-pressed', isPaid ? 'true' : 'false');
+}
+
+function togglePaymentMarkBadge() {
+    setPaymentMarkBadge(!getPaymentMarkBadgeState());
+}
+window.setPaymentMarkBadge = setPaymentMarkBadge;
+window.getPaymentMarkBadgeState = getPaymentMarkBadgeState;
+window.togglePaymentMarkBadge = togglePaymentMarkBadge;
+
+// G3/U2 付款证据自动带出：识别/检测信息里的证据描述由系统写入（无手输入口），
+// 只读展示于 #inpPaymentEvidenceAuto；切换徽章不改动证据（图面事实描述，与判定独立）
+let autoPaymentEvidence = '';
+function setAutoPaymentEvidence(value) {
+    autoPaymentEvidence = String(value == null ? '' : value).trim();
+}
+function getAutoPaymentEvidence() {
+    return autoPaymentEvidence;
+}
+function updatePaymentEvidenceAutoDisplay() {
+    const el = document.getElementById('inpPaymentEvidenceAuto');
+    if (!el) return;
+    el.textContent = autoPaymentEvidence || '未识别到付款证据描述';
+}
+window.setAutoPaymentEvidence = setAutoPaymentEvidence;
+window.getAutoPaymentEvidence = getAutoPaymentEvidence;
+
 // prefix='inp' → Tab1 复核表单；prefix='arc' → 归档弹窗
 function applySettlementToForm(prefix, data) {
     const d = data || {};
@@ -4575,7 +4616,10 @@ function applySettlementToForm(prefix, data) {
     const badge = document.getElementById(prefix + 'PaymentMarkDetectBadge');
     const info = getPaymentMarkDisplayInfo(d);
 
-    if (markInput) {
+    // 复核表单(#inp)付款标记为点击切换徽章（灌 state）；归档弹窗(#arc)仍为下拉，按元素形态分流
+    if (markInput && markInput.tagName === 'BUTTON') {
+        setPaymentMarkBadge(info.isPaid);
+    } else if (markInput) {
         markInput.value = info.isPaid ? '已付款' : '未付款';
     }
     if (badge) {
@@ -5444,13 +5488,14 @@ function collectReviewFormData() {
         tax_amount: feeFields.tax_amount,
         // Gap 6：手写注记——动态注记行 → list[str]（空行剔除，一行一条）
         adjustment_notes: collectNoteRows(),
-        // G3：付款证据描述（识别检出预填，店员可修正）
-        payment_evidence: (document.getElementById('inpPaymentEvidence')?.value || '').trim(),
+        // G3/U2：付款证据由系统自动带出（无手输入口），采集读自动证据状态
+        payment_evidence: getAutoPaymentEvidence(),
     };
-    // U-05：付款标记改为枚举下拉，保存以用户选择为准；表单缺失时回落 AI 原值
-    const inpMarkSel = document.getElementById('inpPaymentMark');
-    if (inpMarkSel && inpMarkSel.value) data.payment_mark = inpMarkSel.value;
-    else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
+    // U-05/用户反馈：付款标记为点击切换徽章，保存以徽章 state 为准；表单缺失时回落 AI 原值
+    const inpMarkBadge = document.getElementById('inpPaymentMark');
+    if (inpMarkBadge && inpMarkBadge.tagName === 'BUTTON') {
+        data.payment_mark = getPaymentMarkBadgeState() ? '已付款' : '未付款';
+    } else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
     if (src.layout_type != null) data.layout_type = src.layout_type;
     // D17: 乐观锁版本号（加载/保存成功后记录）
     if (src.version != null) data.version = src.version;

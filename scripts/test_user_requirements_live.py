@@ -137,12 +137,11 @@ def run_acceptance_tests():
         assert page.locator("#itemTableBody tr .sku-pill:visible").count() == 0, "选择后出现了残留胶囊！"
         results["select_candidate"] = f"PASS (成功填入「{filled_val}」并收起菜单，无胶囊残留)"
 
-        # 10. 验证付款标记选项：仅有「已付款」和「未付款」，系统自动检测商户标记
-        print("[Step 10] 验证付款标记选项与商户标记自动检测...")
-        payment_select = page.locator("#inpPaymentMark")
-        options = payment_select.locator("option").all_inner_texts()
-        print(f"      -> 付款标记选项列表: {options}")
-        assert options == ["未付款", "已付款"] or options == ["已付款", "未付款"], f"付款标记选项不符合「仅已付款/未付款」规范: {options}"
+        # 10. 验证付款标记切换徽章：绿=已付款、红=未付款，点击切换；系统自动检测商户标记
+        print("[Step 10] 验证付款标记切换徽章与商户标记自动检测...")
+        payment_badge = page.locator("#inpPaymentMark")
+        assert payment_badge.evaluate("el => el.tagName === 'BUTTON'"), "付款标记应为点击切换徽章按钮"
+        assert page.locator("#inpPaymentEvidence").count() == 0, "付款证据输入框应已移除（禁止手输）"
 
         # 模拟系统检测到商户红章/印章
         page.evaluate("""
@@ -153,7 +152,9 @@ def run_acceptance_tests():
             });
         """)
         time.sleep(0.3)
-        assert payment_select.input_value() == "已付款", "检测到商户付款标记时未能自动预选「已付款」"
+        assert payment_badge.get_attribute("data-marked") == "true", "检测到商户付款标记时徽章应为「已付款」态"
+        assert payment_badge.inner_text() == "已付款"
+        assert "payment-mark-paid" in (payment_badge.get_attribute("class") or ""), "已付款态应为绿底样式"
         badge_text = page.locator("#inpPaymentMarkDetectBadge").inner_text()
         print(f"      -> 检测到商户标记时状态徽章: {badge_text}")
         assert "检测到" in badge_text, "未展示商户付款标记识别状态"
@@ -167,12 +168,21 @@ def run_acceptance_tests():
             });
         """)
         time.sleep(0.3)
-        assert payment_select.input_value() == "未付款", "未检测到付款标记时未能自动预选「未付款」"
+        assert payment_badge.get_attribute("data-marked") == "false", "未检测到付款标记时徽章应为「未付款」态"
+        assert payment_badge.inner_text() == "未付款"
+        assert "payment-mark-unpaid" in (payment_badge.get_attribute("class") or ""), "未付款态应为红底样式"
+        # 点击切换：未付款 → 已付款 → 未付款
+        payment_badge.click()
+        time.sleep(0.2)
+        assert payment_badge.get_attribute("data-marked") == "true", "点击徽章应切换为「已付款」"
+        payment_badge.click()
+        time.sleep(0.2)
+        assert payment_badge.get_attribute("data-marked") == "false", "再次点击应切回「未付款」"
         badge_text_unpaid = page.locator("#inpPaymentMarkDetectBadge").inner_text()
         print(f"      -> 未检测到商户标记时状态徽章: {badge_text_unpaid}")
         assert "未检测到" in badge_text_unpaid, "未展示未检测到状态"
 
-        results["payment_mark_binary_and_auto_detect"] = "PASS (选项仅'已付款'/'未付款'，系统根据商户印章/标记自动识别预选)"
+        results["payment_mark_binary_and_auto_detect"] = "PASS (点击徽章切换'已付款'/'未付款'，系统根据商户印章/标记自动识别预选)"
 
         browser.close()
 
