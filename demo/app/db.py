@@ -108,6 +108,11 @@ def _make_engine():
         use_grey = Column(Integer, default=0)              # 灰测组标记（阶段 1 持久化）
         rag_context_json = Column(Text, default="")        # RAG 检索上下文（data_only 调试开关可见）
         currency = Column(String, default="HKD")           # 多币种（F-P1-3）
+        # Gap 9 / Gap 6 店员可修正字段（识别直出 + save_edited 覆写，双写同列）
+        service_fee = Column(Float, default=0.0)           # 加一服务费
+        tax_amount = Column(Float, default=0.0)            # 税额/VAT/GST
+        adjustment_notes_json = Column(Text, default="[]") # 手写注记（拒收/短装/调整）list[str]
+        payment_evidence = Column(Text, default="")        # 付款标记图面证据描述
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
         deleted_at = Column(String, nullable=True)  # 软删除时间戳
@@ -456,6 +461,10 @@ def _make_engine():
     for _ddl in (
         "ALTER TABLE receipts ADD COLUMN rag_context_json TEXT DEFAULT ''",
         "ALTER TABLE receipts ADD COLUMN currency VARCHAR(8) DEFAULT 'HKD'",
+        "ALTER TABLE receipts ADD COLUMN service_fee REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN tax_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN adjustment_notes_json TEXT DEFAULT '[]'",
+        "ALTER TABLE receipts ADD COLUMN payment_evidence TEXT DEFAULT ''",
         "ALTER TABLE receipt_items ADD COLUMN is_void INTEGER DEFAULT 0",
         "ALTER TABLE receipt_items ADD COLUMN actual_qty REAL",
     ):

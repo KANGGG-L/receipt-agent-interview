@@ -2,6 +2,7 @@
 """收据端点：上传(异步Job)/轮询/列表/详情/保存(乐观锁)/approve/flag/retry/导出。"""
 
 import io
+import json
 import os
 import re
 from pathlib import Path
@@ -511,7 +512,65 @@ class SaveEditedBody(BaseModel):
     delivery_fee: float = 0.0
     deposit_amount: float = 0.0
     rounding_adjustment: float = 0.0
+    # Gap 9 / Gap 6：店员可修正的附加费用与注记（缺省不传 → 默认值，不 422）
+    service_fee: float = 0.0
+    tax_amount: float = 0.0
+    adjustment_notes: list = []
+    payment_evidence: str = ""
     source: Optional[str] = "manual"
+
+
+def _recompute_math_warnings(body: "SaveEditedBody", currency: str) -> list:
+    """F5 门禁联动：save_edited 用店员提交值（而非仅识别值）重算算术门禁。
+
+    用提交的费用字段（service_fee/tax_amount 等）构造契约对象喂 math_engine，
+    结果落 math_warnings_json 供复核界面提示；纯建议性，不阻断保存主链路。
+    任何构造失败（如手工单字段不全）返回 []，不影响保存。
+    """
+    try:
+        from app.models import DocForm, ReceiptData, ReceiptItem
+        from app.services import math_engine
+        try:
+            doc = DocForm(body.doc_form) if body.doc_form else DocForm.PRINTED
+        except ValueError:
+            doc = DocForm.PRINTED
+        items = []
+        for it in body.items or []:
+            if not isinstance(it, dict):
+                continue
+            actual_qty = it.get("actual_qty")
+            items.append(ReceiptItem(
+                name=str(it.get("name", "") or ""),
+                qty=float(it.get("quantity", 0) or 0),
+                unit=str(it.get("unit", "") or ""),
+                unit_price=float(it.get("unit_price", 0) or 0),
+                amount=float(it.get("amount", 0) or 0),
+                is_void=bool(it.get("is_void", 0) or 0),
+                actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None),
+            ))
+        data = ReceiptData(
+            doc_form=doc,
+            vendor=body.supplier_name or "通用供应商",
+            date=body.date or "",
+            items=items,
+            total=float(body.total_amount or 0),
+            discount_amount=float(body.discount_amount or 0),
+            deposit_amount=float(body.deposit_amount or 0),
+            delivery_fee=float(body.delivery_fee or 0),
+            service_fee=float(body.service_fee or 0),
+            tax_amount=float(body.tax_amount or 0),
+            rounding_adjustment=float(body.rounding_adjustment or 0),
+            adjustment_notes=[str(n) for n in (body.adjustment_notes or [])],
+            payment_marked=(body.payment_mark or "").strip() == "已付款",
+            payment_evidence=str(body.payment_evidence or ""),
+            currency=currency,
+            confidence=1.0,
+        )
+        return math_engine.validate_and_report(data)
+    except Exception as e:  # noqa: BLE001 门禁联动失败不阻断保存
+        import logging
+        logging.getLogger("api_receipts").warning(f"[WARN] save_edited 算术门禁重算失败: {e}")
+        return []
 
 
 @router.post("/api/save_edited")
@@ -577,6 +636,9 @@ def save_edited(body: SaveEditedBody, request: Request):
     cur = (body.currency or "HKD").strip().upper()
     if cur not in _allowed_currencies:
         cur = "HKD"
+    # Gap 6：手写注记归一（list[str]，空行/空白剔除）
+    _notes = [str(n).strip() for n in (body.adjustment_notes or [])
+              if str(n).strip()]
     db.update_receipt(
         rid,
         supplier_name=body.supplier_name or "通用供应商",
@@ -591,6 +653,14 @@ def save_edited(body: SaveEditedBody, request: Request):
         status=target_status,
         version=body.version + 1 if body.version is not None else 1,
         currency=cur,
+        # Gap 9 / Gap 6：店员修正的费用/注记/付款证据落库（回读经 build_detail）
+        service_fee=float(body.service_fee or 0),
+        tax_amount=float(body.tax_amount or 0),
+        adjustment_notes_json=json.dumps(_notes, ensure_ascii=False),
+        payment_evidence=str(body.payment_evidence or "").strip(),
+        # F5 门禁联动：以店员提交值重算算术门禁（建议性，不阻断）
+        math_warnings_json=json.dumps(
+            _recompute_math_warnings(body, cur), ensure_ascii=False),
     )
     db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 

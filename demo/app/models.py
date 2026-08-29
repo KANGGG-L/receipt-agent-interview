@@ -55,6 +55,7 @@ class ReceiptData(BaseModel):
     fees_detail: dict[str, float] = Field(default_factory=dict, description="费用明细字典 (Gap 9)")
     adjustment_notes: list[str] = Field(default_factory=list, description="手写调整、拒收或短装注记 (Gap 6)")
     payment_marked: bool = Field(description="是否有已付款标记（印章/手写）")
+    payment_evidence: str = Field(default="", description="已付款标记的图面证据描述（印章/手写「已付款」等）")
     currency: str = Field(default="HKD", description="币种 (HKD/CNY/USD)")
     confidence: float = Field(ge=0.0, le=1.0, description="整体置信度")
 

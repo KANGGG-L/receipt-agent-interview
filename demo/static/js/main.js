@@ -4067,11 +4067,54 @@ function renderEditForm(data) {
     if (depElem) depElem.value = (data.deposit_amount != null && data.deposit_amount > 0) ? Number(data.deposit_amount).toFixed(2) : '0.00';
     const roundElem = document.getElementById('inpRounding');
     if (roundElem) roundElem.value = (data.rounding_adjustment != null && data.rounding_adjustment > 0) ? Number(data.rounding_adjustment).toFixed(2) : '0.00';
+    // Gap 9：服务费(加一) 与 税额/VAT——识别直出值灌入，店员可修正
+    const svcElem = document.getElementById('inpServiceFee');
+    if (svcElem) svcElem.value = (data.service_fee != null && data.service_fee > 0) ? Number(data.service_fee).toFixed(2) : '0.00';
+    const taxElem = document.getElementById('inpTaxAmount');
+    if (taxElem) taxElem.value = (data.tax_amount != null && data.tax_amount > 0) ? Number(data.tax_amount).toFixed(2) : '0.00';
 
     updateFeesSummaryBadge();
 
+    // Gap 6：手写注记（拒收/短装/调整）——有注记时灌入原文并展开，无注记保持折叠零负担
+    const notesElem = document.getElementById('inpAdjustmentNotes');
+    const notesList = Array.isArray(data.adjustment_notes) ? data.adjustment_notes : [];
+    if (notesElem) notesElem.value = notesList.join('\n');
+    const notesBadge = document.getElementById('notesSummaryBadge');
+    if (notesBadge) {
+        if (notesList.length > 0) {
+            notesBadge.textContent = notesList.length + ' 条注记';
+            notesBadge.classList.remove('hide');
+        } else {
+            notesBadge.classList.add('hide');
+        }
+    }
+    const notesContent = document.getElementById('notesDrawerContent');
+    const notesIcon = document.getElementById('notesToggleIcon');
+    if (notesContent) {
+        if (notesList.length > 0) {
+            notesContent.classList.remove('hide');
+            if (notesIcon) notesIcon.textContent = '▲';
+        } else {
+            notesContent.classList.add('hide');
+            if (notesIcon) notesIcon.textContent = '▾';
+        }
+    }
+
     // M3/D4: 从 prefill 数据初始化结算方式与付款标记
     applySettlementToForm('inp', data);
+
+    // G3：付款证据——识别/审计检出的证据描述预填，店员可修正；
+    // 契约无 payment_evidence 时回落描述性 payment_mark（非「已付款/未付款」枚举值）
+    const evidenceElem = document.getElementById('inpPaymentEvidence');
+    if (evidenceElem) {
+        const rawEvidence = String(data.payment_evidence || '').trim();
+        if (rawEvidence) {
+            evidenceElem.value = rawEvidence;
+        } else {
+            const origMark = String(data.payment_mark || '').trim();
+            evidenceElem.value = (origMark && origMark !== '已付款' && origMark !== '未付款') ? origMark : '';
+        }
+    }
 
     // Wave 2（D44）：单据级部门下拉
     populateDeptSelect(document.getElementById('inpDepartmentId'), data.department_id);
@@ -4155,16 +4198,35 @@ function toggleFeesDrawer() {
 }
 window.toggleFeesDrawer = toggleFeesDrawer;
 
+// Gap 6：手写注记抽屉展开/收起（与附加费用抽屉同交互）
+function toggleNotesDrawer() {
+    const drawer = document.getElementById('notesDrawerContent');
+    const icon = document.getElementById('notesToggleIcon');
+    if (!drawer) return;
+    const isHidden = drawer.classList.contains('hide');
+    if (isHidden) {
+        drawer.classList.remove('hide');
+        if (icon) icon.textContent = '▲';
+    } else {
+        drawer.classList.add('hide');
+        if (icon) icon.textContent = '▾';
+    }
+}
+window.toggleNotesDrawer = toggleNotesDrawer;
+
 function updateFeesSummaryBadge() {
     const disc = parseFloat(document.getElementById('inpDiscount')?.value) || 0;
     const deliv = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
     const dep = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
     const round = parseFloat(document.getElementById('inpRounding')?.value) || 0;
+    // Gap 9：服务费/税额计入差额汇总（与后端算术门禁口径一致）
+    const svc = parseFloat(document.getElementById('inpServiceFee')?.value) || 0;
+    const tax = parseFloat(document.getElementById('inpTaxAmount')?.value) || 0;
     const badge = document.getElementById('feesSummaryBadge');
     if (!badge) return;
-    const hasFees = (disc > 0 || deliv > 0 || dep > 0 || round > 0);
+    const hasFees = (disc > 0 || deliv > 0 || dep > 0 || round > 0 || svc > 0 || tax > 0);
     if (hasFees) {
-        const netFee = (deliv + dep - disc - round);
+        const netFee = (deliv + dep + svc + tax - disc - round);
         const sign = netFee >= 0 ? '+' : '';
         badge.textContent = `差额: ${sign}${netFee.toFixed(2)}`;
         badge.classList.remove('hide');
@@ -4705,8 +4767,11 @@ function recalcTotalSum() {
     const delivery = parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0;
     const deposit = parseFloat(document.getElementById('inpDeposit')?.value) || 0;
     const rounding = parseFloat(document.getElementById('inpRounding')?.value) || 0;
+    // Gap 9：服务费/税额联动总额（与后端算术门禁 expected_total 口径一致）
+    const serviceFee = parseFloat(document.getElementById('inpServiceFee')?.value) || 0;
+    const taxAmount = parseFloat(document.getElementById('inpTaxAmount')?.value) || 0;
 
-    const netTotal = Math.max(0, itemsSum - discount - rounding + delivery + deposit);
+    const netTotal = Math.max(0, itemsSum - discount - rounding + delivery + deposit + serviceFee + taxAmount);
     document.getElementById('inpTotal').value = netTotal.toFixed(2);
     updateFeesSummaryBadge();
     renderCurrencySymbol();
@@ -5089,6 +5154,16 @@ function collectReviewFormData() {
         delivery_fee: parseFloat(document.getElementById('inpDeliveryFee')?.value) || 0.00,
         deposit_amount: parseFloat(document.getElementById('inpDeposit')?.value) || 0.00,
         rounding_adjustment: parseFloat(document.getElementById('inpRounding')?.value) || 0.00,
+        // Gap 9：服务费(加一)/税额——店员可修正，随 save_edited 提交
+        service_fee: parseFloat(document.getElementById('inpServiceFee')?.value) || 0.00,
+        tax_amount: parseFloat(document.getElementById('inpTaxAmount')?.value) || 0.00,
+        // Gap 6：手写注记（一行一条）
+        adjustment_notes: (function () {
+            const raw = (document.getElementById('inpAdjustmentNotes')?.value || '');
+            return raw.split('\n').map(s => s.trim()).filter(s => s !== '');
+        })(),
+        // G3：付款证据描述（识别检出预填，店员可修正）
+        payment_evidence: (document.getElementById('inpPaymentEvidence')?.value || '').trim(),
     };
     // U-05：付款标记改为枚举下拉，保存以用户选择为准；表单缺失时回落 AI 原值
     const inpMarkSel = document.getElementById('inpPaymentMark');
@@ -5141,6 +5216,13 @@ function buildSavePayloadFromData(data, receiptId) {
         delivery_fee: parseFloat(d.delivery_fee) || 0.00,
         deposit_amount: parseFloat(d.deposit_amount) || 0.00,
         rounding_adjustment: parseFloat(d.rounding_adjustment) || 0.00,
+        // Gap 9 / Gap 6 / G3：新字段随 save_edited payload 透传（缺省取默认值，后端不 422）
+        service_fee: parseFloat(d.service_fee) || 0.00,
+        tax_amount: parseFloat(d.tax_amount) || 0.00,
+        adjustment_notes: Array.isArray(d.adjustment_notes)
+            ? d.adjustment_notes.map(s => String(s || '').trim()).filter(s => s !== '')
+            : [],
+        payment_evidence: String(d.payment_evidence || '').trim(),
     };
     // Wave 2（契约⑦）：单据级部门归属——未打部门可空保存（null 不覆盖旧值语义）
     if (d.department_id != null && String(d.department_id).trim() !== ''

@@ -391,8 +391,8 @@ def test_e2e_clerk_flow_all_scenarios():
         # -------------------------------------------------------------
         # Scenario 4: Fees Drawer, Void (read-only) Row & Math Recalculation & Save
         # -------------------------------------------------------------
-        # Toggle fees drawer
-        fees_toggle = page.locator(".fees-drawer-toggle")
+        # Toggle fees drawer（手写注记抽屉复用同款 toggle 样式，取第一个=附加费用）
+        fees_toggle = page.locator(".fees-drawer-toggle").first
         fees_toggle.click()
         expect(page.locator("#feesDrawerContent")).to_be_visible()
 

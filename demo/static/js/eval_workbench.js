@@ -83,6 +83,11 @@
             delivery_fee: gt.delivery_fee || 0,
             deposit_amount: gt.deposit_amount || 0,
             rounding_adjustment: gt.rounding_adjustment || 0,
+            // Gap 9 / Gap 6：UI 已暴露可修正字段，预填进复核界面（与店员界面同源）
+            service_fee: gt.service_fee || 0,
+            tax_amount: gt.tax_amount || 0,
+            adjustment_notes: Array.isArray(gt.adjustment_notes) ? gt.adjustment_notes : [],
+            payment_evidence: gt.payment_evidence || '',
             // 付款标记走店员界面既有通道：payment_marked 驱动已付款/未付款下拉，
             // payment_evidence 经 getPaymentMarkDisplayInfo 在检测徽章中展示证据
             payment_marked: gt.payment_marked === true,
@@ -189,23 +194,28 @@
             }
         }
 
-        // GT v2 全集：UI 可编辑字段取表单实际值；真实 UI 未暴露的字段
-        // （service_fee/tax_amount/adjustment_notes/payment_evidence）保留候选值不丢失。
+        // GT v2 全集：UI 可编辑字段一律取表单实际值（店员/抽检员修正优先生效）；
+        // 表单缺字段时回落候选值，保证历史候选不丢失。
         var gt = {
             supplier_name: supplier,
             date: dateStr,
             total_amount: blankTotal ? null : Number(data.total_amount),
             doc_form: data.doc_form || 'printed_delivery_note',
             payment_marked: data.payment_mark === '已付款',
-            payment_evidence: cand.payment_evidence || '',
+            payment_evidence: String(data.payment_evidence != null && data.payment_evidence !== ''
+                ? data.payment_evidence : (cand.payment_evidence || '')),
             currency: data.currency || 'HKD',
             discount_amount: Number(data.discount_amount) || 0,
             deposit_amount: Number(data.deposit_amount) || 0,
             delivery_fee: Number(data.delivery_fee) || 0,
-            service_fee: Number(cand.service_fee) || 0,
-            tax_amount: Number(cand.tax_amount) || 0,
+            service_fee: (data.service_fee != null && Number(data.service_fee) !== 0)
+                ? Number(data.service_fee) : (Number(cand.service_fee) || 0),
+            tax_amount: (data.tax_amount != null && Number(data.tax_amount) !== 0)
+                ? Number(data.tax_amount) : (Number(cand.tax_amount) || 0),
             rounding_adjustment: Number(data.rounding_adjustment) || 0,
-            adjustment_notes: Array.isArray(cand.adjustment_notes) ? cand.adjustment_notes : [],
+            adjustment_notes: (Array.isArray(data.adjustment_notes) && data.adjustment_notes.length)
+                ? data.adjustment_notes
+                : (Array.isArray(cand.adjustment_notes) ? cand.adjustment_notes : []),
             items: items.map(function (it) {
                 return {
                     name: String(it.name || '').trim(),

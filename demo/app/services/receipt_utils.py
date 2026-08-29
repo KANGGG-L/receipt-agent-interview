@@ -329,6 +329,13 @@ def save_parsed_data(receipt_id, data, result):
         review_priority_score=review_priority_score,
         rag_context_json=rag_ctx_str,
         currency=getattr(data, "currency", None) or "HKD",
+        # Gap 9 / Gap 6：识别直出费用与注记落列（店员可在 save_edited 修正覆写）
+        service_fee=sanitize_nan(getattr(data, "service_fee", 0.0)),
+        tax_amount=sanitize_nan(getattr(data, "tax_amount", 0.0)),
+        adjustment_notes_json=json.dumps(
+            [str(n) for n in (getattr(data, "adjustment_notes", None) or [])],
+            ensure_ascii=False),
+        payment_evidence=str(getattr(data, "payment_evidence", "") or ""),
     )
     db.set_receipt_items(receipt_id, items_raw)
     return build_detail(db.get_receipt_row(receipt_id))
@@ -394,6 +401,15 @@ def _match_sku(item, tenant_id=None):
 # -------------------------------------------------------------
 # 序列化
 # -------------------------------------------------------------
+def _load_json_list(raw):
+    """JSON list 列安全解析（非 list/空/坏 JSON → []）。"""
+    try:
+        val = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return val if isinstance(val, list) else []
+
+
 def build_detail(row):
     """收据行 → ReceiptDetail（/api/receipt/{id} 与 upload data 结构）。"""
     if row is None:
@@ -439,6 +455,11 @@ def build_detail(row):
         "confidence": row.confidence or 0.0,
         "currency": getattr(row, "currency", None) or "HKD",
         "rag_context": getattr(row, "rag_context_json", None) or "",
+        # Gap 9 / Gap 6：店员可修正字段回读（复核界面与识别 prefill 同名直灌）
+        "service_fee": float(getattr(row, "service_fee", 0.0) or 0.0),
+        "tax_amount": float(getattr(row, "tax_amount", 0.0) or 0.0),
+        "adjustment_notes": _load_json_list(getattr(row, "adjustment_notes_json", None)),
+        "payment_evidence": str(getattr(row, "payment_evidence", "") or ""),
         # U-2: AI 决策履历（extract 各轮 + audit），单表索引查询，detail 频次可接受
         "ai_decisions": db.list_ai_decisions(row.id),
     }

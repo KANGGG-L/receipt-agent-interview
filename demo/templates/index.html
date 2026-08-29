@@ -421,13 +421,17 @@
                                             <option value="已付款">已付款</option>
                                         </select>
                                     </div>
+                                    <div class="form-group" style="grid-column: span 2;">
+                                        <label>付款证据</label>
+                                        <input type="text" id="inpPaymentEvidence" class="form-control" title="已付款标记的图面证据描述（印章/手写等），识别到时自动填入，店员可修正" placeholder="如：红色印章 / 手写「已付款」（识别到时自动填入，可修正）">
+                                    </div>
                                 </div>
 
                                 <!-- 附加费用可折叠小抽屉 -->
                                 <div class="fees-drawer-container">
                                     <div class="fees-drawer-toggle" onclick="toggleFeesDrawer()" title="点击展开/收起附加费用调节">
                                         <div style="display:flex; align-items:center; gap:8px;">
-                                            <span class="fees-drawer-title">附加费用调节 (折扣 / 运费 / 押金 / 抹零)</span>
+                                            <span class="fees-drawer-title">附加费用调节 (折扣 / 运费 / 服务费 / 税额 / 押金 / 抹零)</span>
                                             <span id="feesSummaryBadge" class="fees-summary-badge hide">¥0.00</span>
                                         </div>
                                         <span id="feesToggleIcon" class="fees-toggle-icon">▾</span>
@@ -443,6 +447,14 @@
                                                 <input type="number" step="0.01" id="inpDeliveryFee" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
                                             </div>
                                             <div class="form-group">
+                                                <label>服务费 (加一) (+)</label>
+                                                <input type="number" step="0.01" id="inpServiceFee" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                            <div class="form-group">
+                                                <label>税额/VAT (+)</label>
+                                                <input type="number" step="0.01" id="inpTaxAmount" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
+                                            </div>
+                                            <div class="form-group">
                                                 <label>胶筐押金 (+)</label>
                                                 <input type="number" step="0.01" id="inpDeposit" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
                                             </div>
@@ -450,6 +462,23 @@
                                                 <label>尾数抹零 (-)</label>
                                                 <input type="number" step="0.01" id="inpRounding" class="form-control form-control-sm" placeholder="0.00" value="0.00" oninput="recalcTotalSum()">
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 手写注记可折叠小抽屉 (Gap 6: 拒收/短装/调整) -->
+                                <div class="fees-drawer-container">
+                                    <div class="fees-drawer-toggle" onclick="toggleNotesDrawer()" title="点击展开/收起手写注记">
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <span class="fees-drawer-title">手写注记 (拒收 / 短装 / 调整)</span>
+                                            <span id="notesSummaryBadge" class="fees-summary-badge hide">无</span>
+                                        </div>
+                                        <span id="notesToggleIcon" class="fees-toggle-icon">▾</span>
+                                    </div>
+                                    <div id="notesDrawerContent" class="fees-drawer-content hide">
+                                        <div class="form-group">
+                                            <label>手写注记——对照原图一行一条</label>
+                                            <textarea id="inpAdjustmentNotes" class="form-control form-control-sm" rows="3" style="min-height:38px;" placeholder="无。如单据上有拒收 / 短装 / 手工调整字样，请一行一条抄录，例如：拒收 2 包"></textarea>
                                         </div>
                                     </div>
                                 </div>
