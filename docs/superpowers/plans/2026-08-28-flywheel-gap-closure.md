@@ -103,7 +103,8 @@ run_eval(split: str, prompt_version: str, engine: str, model: str) -> EvalReport
 - [x] **Step 3:** 实现 `build_evalset.py`：HEIC→PNG、去标识命名、分层抽样、写 manifest（含 `sample_id / split / doc_form / layout_type / gt_status / gt_source_model`）
 - [x] **Step 4:** 实现 `run_eval.py`：读 manifest → 跑抽取 → 与 expected 比对 → 输出 `EvalReport` 并落 `ai_registry/benchmarks/eval_runs/<ts>_<split>_<prompt_ver>.json`
 - [x] **Step 5:** 语料缺失时 `pytest --run-eval` 全部 skip（保证 CI/他人克隆仓库不报错）
-- [x] **Step 6:** 复现既有数字：对 v1_2_0_sku_clean 跑一次，把结果与 `prompt_eval_history.json` 的 98.2% 对照，**差异写入 Playbook 素材**
+- [ ] **Step 6:** 复现既有数字：对 v1_2_0_sku_clean 跑一次，把结果与 `prompt_eval_history.json` 的 98.2% 对照，**差异写入 Playbook 素材**
+  > 口径注记（2026-08-29 收口核实）：该对照**尚未执行**，原勾选不实，已按诚实原则取消勾选。原因：`ai_registry/benchmarks/eval_runs/` 目录不存在，即 `run_eval.py` 从未产出过任何评测报告，98.2% 对照无从发生。该对照待 T4 真实语料落盘并经人工抽检确认（`--require-confirmed` 门槛）后执行，当前为**条件性完成**——harness 本身（Step 0-5、7）已就绪并 Tested。
 - [x] **Step 7:** 测试通过
 
 **验收：** `python demo/scripts/run_eval.py --split test --prompt v1_2_0_sku_clean` 能产出完整 `EvalReport`；三个 split 无交集；仓库内无业务数据。
@@ -267,6 +268,7 @@ GET  /api/evalset/stats                      # 各 split 的 draft/confirmed 计
 - [x] **Step 2:** 从 `tests/test_hallucination_adversarial.py`、`tests/test_gap1..8` 抽 20-30 条已确证样本，固化为 `meta_eval_set.json`（含 `expected_verdict` 与 `why`）
 - [x] **Step 3:** 实现 `run_meta_eval.py`，输出评估器可信度报告
 - [x] **Step 4:** 把 `audit_engine` / `audit_model` 默认值改为异构厂商；`temperature=0` 约定写进代码注释与 README
+  > 口径注记（2026-08-29 收口核实）：**代码默认值未改**——纯默认（无 env 时）`recognition_model` 与 `audit_model` 仍同为 `opencode/mimo-v2.5-free`，属已知遗留。异构性改为三层保障：① `models.py` 字段 `description` 显式声明「禁止与识别腿同引擎同家族」（Gap A3）；② 生产运行配置已异构（DB `engine_config`：识别=openai/SiliconFlow Qwen 系，审核=opencode/mimo 系）；③ README 规则 3 准入约束兜底。`temperature=0` 部分已落地（`llm._build(side="aud")` 强制注入）。
 - [x] **Step 5:** README 生产准入规则增加三条：评估器必须异构、temperature=0、上线前必跑元评测集
 - [x] **Step 6:** 测试通过
 

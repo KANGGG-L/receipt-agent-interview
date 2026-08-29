@@ -1,0 +1,31 @@
+{
+  "scene": "review",
+  "active_version": "v2_0_0_cards",
+  "description": "采购异动复盘与议价卡片生成提示词",
+  "versions": {
+    "v2_0_0_cards": {
+      "release_date": "2026-08-14",
+      "status": "production",
+      "metrics": {
+        "recall": 94.5,
+        "actionability": 93.0,
+        "reasoning_completeness": 97.5,
+        "avg_tokens": 650
+      },
+      "changelog": [
+        "引入 4 步推理链条 (检测->对比->对标->行动)",
+        "生成直接面向供应商的粤语议价话术"
+      ]
+    },
+    "v2_0_1_inline_parity": {
+      "release_date": "2026-08-29",
+      "status": "archived",
+      "description": "结构化复盘 JSON 提示词（review_chain 复盘通道，与生产内联版逐字节一致）",
+      "changelog": [
+        "与 v2_0_0_cards 的分歧：v2_0_0_cards 面向复盘卡片与粤语议价话术生成；本版面向结构化复盘 JSON（price_alerts/supplier_insights/summary），输出 schema 不同",
+        "T12 登记：继承自内联前身的生产行为，字节等价豁免评测（与 review_chain 内联 REVIEW_SYSTEM 逐字节一致，不跑新评测）",
+        "显式版本加载（get_prompt(\"review\", \"v2_0_1_inline_parity\")），场景 active 保持 v2_0_0_cards 不变"
+      ]
+    }
+  }
+}

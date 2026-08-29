@@ -1,7 +1,7 @@
 # 面试准备文档（个人复盘/实习背景/面试策略，绝不提交）
 prep/
 phases/
-review/
+/review/
 interview/prep/
 interview/phases/
 interview/review/
@@ -42,6 +42,9 @@ artifacts/
 !artifacts/memory/
 !artifacts/memory/**
 work/
+# 根目录测试/调试产物（合成收据图与解析 JSON，人工抽检/调试写入，绝不提交）
+/receipt*.jpg
+/receipt*.json
 
 # 面试展示脚本（本地便利工具，不提交；含运行时日志）
 /interview-show.sh

@@ -78,22 +78,34 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 ### 3.4 测试体系
 
-- **确定性单测**：契约门禁/算术门禁/RBAC/乐观锁/幂等入库 —— 15 passed，秒级
+- **确定性单测**：契约门禁/算术门禁/RBAC/乐观锁/幂等入库/租户隔离/记忆治理 —— 全量回归 **307 passed + 1 条件 skip**（根 `tests/` 163 + `demo/tests/` 144+1），确定性部分秒级；另含 1 个活体 E2E 用例（需本地服务与 playwright，已实测通过）
 - **完整业务流**：上传→识别→复核→审批→库存→成本→复盘→对账→支付 全链路
-- **黄金样本**：57 张真实香港收据 + 人工标注，可导入平台做回归
-- **实测数据**：导入黄金样本后形成 55 SKU / 5 供应商 / 成本 5.9 万 的完整环境
+- **黄金样本（历史导入口径）**：57 张真实香港收据 + 人工标注，可导入平台做回归（该批为早期导入口径；后续评测语料已升级为下述评测集三分法）
+- **实测数据（历史导入口径）**：导入黄金样本后形成 55 SKU / 5 供应商 / 成本 5.9 万 的完整环境（为导入批次快照，非实时数据）
+- **评测集三分法（Wave A 落地）**：163 张真实语料评测集（HEIC→PNG 去标识落 `demo/evalsets/`，train/val/test 分层抽样；其中 test 33 张，语料仅存本地、不入库）
 
 ### 3.5 AI 资产工程化治理（ai_registry 唯一来源）
 
 所有 AI 资产——**Prompt / Skills / Tools / MCP**——统一收口在 [`ai_registry/`](ai_registry/README.md)（AI 工程化能力资产库与评测中心）进行工程化管理，它是本项目 AI 资产的**唯一来源（Single Source of Truth）**：
 
-- **版本化**：Prompt 按 SemVer 独立成文件（如 `prompts/extract/v1_2_8_sku_clean.py`）+ `metadata.json` 记录评测指标与准入状态，经 `registry.py` 加载激活版本，迭代不覆盖旧版
+- **版本化**：Prompt 按 SemVer 独立成文件（如 `prompts/extract/v1_2_8_anti_injection.py`）+ `metadata.json` 记录评测指标与准入状态，经 `registry.py` 加载激活版本，迭代不覆盖旧版
 - **确定性工具**：算术门禁/品名剥离/日期归一/花码识别等 12 个 Tools 收口在 `ai_registry/tools/`，业务代码经包导入复用，不在链路里内联复制逻辑
 - **Skills 能力矩阵**：收据审核/供应商对账/自然语言查价等 Skills 带独立 `eval.json`，效果可对比
 - **MCP 收口**：MCP servers 与 configs 统一放 `ai_registry/mcp/`
 - **评测中心**：`benchmarks/` 存放全量资产评测矩阵与版本对比，改动可回溯；生产准入走 SemVer + 准入规则（准确率/拦截率门槛）
 
 工程纪律：新增或修改任何 Prompt/Skill/Tool/MCP 必须先检索 ai_registry（有则复用，无则按规范新建版本并评测），禁止在业务代码里散落硬编码提示词或内联工具逻辑。
+
+### 3.6 平台化与治理交付（Wave A/B）
+
+在单店闭环之上，平台层已完成两轮治理交付（口径：**飞轮骨架与门控已打通，改进方案的生成与最终确认仍由人工把关，这是当前阶段的主动设计**）：
+
+- **多租户隔离**：`tenant_id` 贯穿 7 张业务主表 + `vendor_memory`（幂等迁移 + 索引），`db.scoped()` 统一过滤，跨租户查询返回空（有专项单测）
+- **记忆治理与预算**：每条 VendorMemory 带 `memory_id / version / source_kind / source_ref / decay_score / status`，读取侧 `MemoryBudget`（条数/token 双预算）控制注入，命中可回溯到触发单据
+- **registry SSOT 收敛**：生产链路所有 Prompt/Tool 一律经 `ai_registry.registry` 加载，镜像注册表退役，metadata 与目录实体自洽（有 SSOT 专项单测）
+- **评测集三分法与抽检台**：真实语料去标识落 `demo/evalsets/`（train/val/test 分层，语料不入库）；GT 由异构模型生成候选，抽检工作台（复用店员复核界面）人工逐张确认，`run_eval --require-confirmed` 保证对外数字只出自人工确认过的 test 集
+- **元评测（评估器可信度自检）**：25 条已确证二元样本固化 `meta_eval_set.json`，`run_meta_eval.py` 在引擎/模型/Prompt 变更上线前自检评估器（判对 100% / 判错 100% 才可信）
+- **低置信自动回流**：低置信/门禁拒绝/用户修改/审核分歧四类线上信号自动入队为评测候选，promote 后进入评测集——「线上失败 → 评测集 → 下一轮评测」通路打通，候选采纳仍需人工确认
 
 ## 四、达到什么效果
 
@@ -111,7 +123,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 - **识别链路**：40s~4min 走通全流程（免费模型），多引擎可切换
 - **可信度**：三层门禁（契约/算术/人工）拦截错误，AI 只预填、人工背书
-- **可测性**：15 个确定性单测 + 完整业务流 + 57 张黄金样本回归
+- **可测性**：全量回归 307 passed + 1 条件 skip（根 `tests/` 163 + `demo/tests/` 144+1）+ 163 张真实语料评测集三分法回归（test 33 张，本地不入库）
 
 ## 五、Workflow 详解与实现
 
@@ -229,9 +241,9 @@ demo/app/
 │   ├── rag.py             # VendorMemory RAG（Chroma，按供应商记忆）
 │   ├── inventory.py       # approve 幂等入账 + SKU 匹配/建档
 │   └── receipt_utils.py   # AI 结果 ↔ 前端契约桥接 + 异步 Job
-├── api_*.py               # 44 个 API 端点（匹配完整版前端契约）
+├── api_*.py               # 98 个 API 端点（匹配完整版前端契约）
 ├── auth.py                # 三层 RBAC + HMAC token（admin/owner/staff）
-└── db.py                  # SQLite + SQLAlchemy（无迁移）
+└── db.py                  # SQLite + SQLAlchemy（轻量幂等迁移：租户/治理/评测资产）
 ```
 
 ## 六、快速开始
@@ -242,7 +254,7 @@ cp .env.example .env        # 默认 opencode 免费模型，零配置可跑
 pip install -r requirements.txt
 
 ./demo.sh run               # 启动 http://127.0.0.1:15010
-./demo.sh test              # 确定性单测（15 passed）
+./demo.sh test              # 快速单测子集（test_demo.py，30 passed；全量 307 passed+1 条件 skip，见「测试体系」）
 ./demo.sh workflow          # 完整业务流测试
 ./demo.sh smoke <图路径>     # 单图冒烟
 ```
@@ -252,7 +264,7 @@ pip install -r requirements.txt
 ## 七、技术栈
 
 - **LangChain**：模型层抽象（多模态封装/可插拔引擎/Chroma 向量检索）+ 确定性编排
-- **FastAPI + SQLite**：~40 个 API 端点匹配完整版前端契约
+- **FastAPI + SQLite**：98 个 API 端点匹配完整版前端契约
 - **多模型通道**：opencode（MiMo-V2.5 Free 免费）、CodeBuddy、OpenAI 兼容（SiliconFlow Qwen3-VL 等）
 - **Pydantic**：输出契约门禁（拒绝 schema 外字段）
 - **前端**：完整版产品 UI（纯静态，4 Tab）
@@ -262,7 +274,9 @@ pip install -r requirements.txt
 ```
 receipt-agent-interview/
 ├── README.md              # 本文件（系统说明）
+├── agent_memory.md        # 项目记忆（AI 资产工程化治理规范等，可提交）
 ├── .gitignore             # 忽略密钥/运行时数据
+├── tests/                 # 根级测试（租户隔离/记忆治理/SSOT/门禁/E2E）
 ├── ai_registry/           # AI 资产唯一来源：prompts/skills/tools/mcp + 版本化 + 评测中心
 │   ├── prompts/           # 各域 Prompt（SemVer 独立文件 + metadata）
 │   ├── skills/            # Skills（带 eval.json 能力矩阵）
@@ -274,10 +288,11 @@ receipt-agent-interview/
     ├── app/               # FastAPI + LangChain 后端
     │   ├── chains/        # 识别/审核/复盘链
     │   ├── services/      # 契约门禁/算术门禁/RAG/入账
-    │   └── api_*.py       # 各业务域 API
+    │   └── api_*.py       # 各业务域 API（含 api_evalset.py 评测集/抽检台）
     ├── templates/         # 前端 HTML
     ├── static/            # 前端 CSS/JS/图片
-    ├── scripts/           # 黄金样本导入
+    ├── scripts/           # 黄金样本导入 + 评测脚本（build_evalset/run_eval/
+    │                      #   run_meta_eval/gen_gt_candidates）
     ├── tests/             # 单测 + workflow 测试
     └── demo.sh            # 一键命令
 ```

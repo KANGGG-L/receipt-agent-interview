@@ -87,16 +87,18 @@ upload ──► [识别管线]（后台 Job）
 **前端 = 完整版界面**（`templates/index.html` + `static/`，纯静态无服务端渲染），
 4 个 Tab（收据识别 / 实时库存 / 供应商归档+对账 / 部门花销报表）全部可用。
 
-**后端 = LangChain 实现**：~40 个 API 端点匹配完整版前端契约，核心 AI 链路用
-LangChain 模型封装 + 确定性线性编排，工程化部分（多租户/迁移/评测台）全部去掉。
+**后端 = LangChain 实现**：98 个 API 端点匹配完整版前端契约，核心 AI 链路用
+LangChain 模型封装 + 确定性线性编排；平台化部分（多租户隔离 / 幂等迁移 / 评测台与
+GT 抽检台 / 记忆治理与预算）均已落地（详见根 [README](../README.md) 3.6 节）。
 
 ### 目录
 
 ```
 demo/
+├── conftest.py              # 顶层夹具：注册 --run-eval 开关（语料缺失时评测用例自动 skip）
 ├── app/
 │   ├── main.py              # FastAPI 入口（聚合路由 + 静态文件）
-│   ├── db.py                # SQLite + SQLAlchemy（无迁移）
+│   ├── db.py                # SQLite + SQLAlchemy（轻量幂等迁移：租户/治理/评测资产）
 │   ├── models.py            # Pydantic 领域模型
 │   ├── auth.py              # 三层 RBAC + HMAC token
 │   ├── llm.py               # LangChain 模型封装（opencode/CodeBuddy/Qwen 备选）
@@ -111,16 +113,22 @@ demo/
 │   ├── api_suppliers.py     # 供应商/部门/成本报表
 │   ├── api_finance.py       # 支付/对账
 │   ├── api_admin.py         # 引擎配置/灰测/AI 复盘
+│   ├── api_evalset.py       # 评测集 manifest/样本/GT 候选确认/低置信回流 promote
 │   └── services/
 │       ├── contract.py      # 契约门禁
 │       ├── math_engine.py   # 算术门禁
 │       ├── inventory.py     # SKU 入账 + 成本
-│       ├── rag.py           # VendorMemory RAG（Chroma）
+│       ├── rag.py           # VendorMemory RAG（Chroma，带治理元数据与预算）
 │       └── receipt_utils.py # AI 结果 ↔ 前端契约桥接
+├── scripts/
+│   ├── import_golden.py     # 黄金样本导入（历史口径）
+│   ├── build_evalset.py     # 评测集三分法构建（去标识 + 分层抽样）
+│   ├── run_eval.py          # 可复现评测（--require-confirmed 门槛）
+│   ├── run_meta_eval.py     # 元评测（评估器可信度自检）
+│   └── gen_gt_candidates.py # GT 异构模型候选生成
 ├── templates/index.html     # 完整版前端（纯静态）
 ├── static/                  # 完整版 CSS/JS/图片
-├── scripts/                 # 黄金样本导入
-└── tests/                   # 确定性单测 + workflow 测试
+└── tests/                   # 确定性单测 + workflow/评测/租户隔离/记忆治理测试
 ```
 
 ## 四、运行
@@ -139,7 +147,7 @@ pip install -r requirements.txt
 本目录承载系统的「收据识别 → 库存 → 成本」核心闭环，采用**单店落地**形态：
 - **产品前端**：完整可用，4 个 Tab（收据识别 / 实时库存 / 供应商归档 / 部门花销报表）
 - **后端**：LangChain 模型封装 + 确定性编排（识别 → 契约门禁 → 算术门禁 → 交叉审核 → RAG 注入）
-- 面向单店的最小闭环，后续可平滑扩展多租户/ERP 集成
+- 面向单店的最小闭环（多租户隔离已落地，`tenant_id` 贯穿业务主表）；后续可平滑扩展 ERP 集成
 
 ## 六、现场演示脚本
 
@@ -167,9 +175,10 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 
 ## 七、测试与数据
 
-### 7.1 一键导入黄金样本（历史测试数据）
+### 7.1 一键导入黄金样本（历史导入口径）
 
-把人工标注/复核的 **57 张真实收据图 + expected 标注** 导入平台：
+把人工标注/复核的 **57 张真实收据图 + expected 标注**（早期导入口径；现行评测语料为
+163 张去标识评测集，见 7.5 节）导入平台：
 
 ```bash
 ./demo.sh import 8           # 导入 8 张（图+人工标注 → edited 收据 + SKU + 供应商）
@@ -191,19 +200,32 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 
 ### 7.4 测试口径
 
-- **确定性逻辑**：契约门禁 / 算术门禁 / RBAC / 乐观锁 / 幂等入库 —— pytest，秒级
+- **确定性逻辑**：契约门禁 / 算术门禁 / RBAC / 乐观锁 / 幂等入库 / 租户隔离 / 记忆治理 —— pytest，秒级
 - **AI 链路**：免费模型（opencode/mimo-v2.5-free）真实跑，40s~4min
-- **黄金样本**：57 张真实单据 + 人工标注，导入平台做回归
+- **黄金样本（历史导入口径）**：57 张真实单据 + 人工标注，导入平台做回归；现行评测走 7.5 节评测集三分法
 
 ## 八、测试
 
-确定性逻辑（契约门禁/算术门禁/RBAC/入库/乐观锁）有 pytest 覆盖，不依赖 LLM、秒级：
+确定性逻辑（契约门禁/算术门禁/RBAC/入库/乐观锁/租户隔离/记忆治理）有 pytest 覆盖，不依赖 LLM、秒级：
 
 ```bash
-./demo.sh test                     # 30 passed
+python -m pytest tests/            # 全量：144 passed + 1 条件 skip（评测用例，需 --run-eval 且语料存在）
+./demo.sh test                     # 快速子集（test_demo.py，30 passed）
 ```
 
 识别/审核/复盘链用真实免费模型验证（耗时，不走单测）；完整业务流用 `./demo.sh workflow`。
+
+### 7.5 评测集与 GT 抽检台（Wave B 落地）
+
+- **构建**：`python scripts/build_evalset.py` 把真实语料（仅存本地 `evalsets/`，不入库）去标识、分层抽样为 train/val/test 三 split；`python -m pytest tests/ --run-eval` 在有语料的机器上追加评测用例
+- **GT 候选**：`python scripts/gen_gt_candidates.py` 用异构模型（百炼 Qwen 系）生成候选 GT（`gt_status=draft`，`gt_source_model` 照实记录），人工在抽检台逐张确认（`gt_status=confirmed`）；`run_eval.py --require-confirmed` 保证出分只依赖人工确认过的 GT
+- **元评测**：`python scripts/run_meta_eval.py` 在引擎/模型/Prompt 变更上线前自检评估器可信度（报告落 `ai_registry/benchmarks/meta_eval_runs/`）
+
+抽检台经三轮迭代收敛（决策记录见 git log：`697e379` / `b00a568` / `d4a25ce`）：
+
+1. **缩略图性能**：原图 3024x4032 直出导致翻页卡顿，样本接口改返回约 67 倍压缩的缩略图（base64 内嵌，质量自适应降级），翻页失灵与数量空白同步修复
+2. **GT schema v2 + 工作台复用**：候选 GT 从自由表单改为对齐 `ReceiptData` 契约，抽检台复用店员真实复核界面（Side-by-Side 组件），确认路径与生产复核一致
+3. **动态费用与手写注记**：费用区（服务费/税额/杂费）与手写注记行改按需动态添加行，对齐复核界面同款标准
 
 ## 九、已知取舍
 
