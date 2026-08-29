@@ -28,7 +28,9 @@ from app import db as _db  # noqa: E402
 from app.models import ReceiptData, ReceiptItem, DocForm  # noqa: E402
 from app.services.receipt_utils import save_parsed_data  # noqa: E402
 
-client = TestClient(app)
+# 默认带 owner 角色头：后端不再把匿名静默降级成 owner（改为 401 未认证）。
+# 权限相关用例各自显式传 headers，会覆盖这份默认值。
+client = TestClient(app, headers={"X-Role": "owner"})
 
 
 # -------------------------------------------------------------

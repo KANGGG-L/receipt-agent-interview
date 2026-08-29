@@ -8,7 +8,8 @@
 //     （渲染直接调用 main.js 的 renderEditForm / applySettlementToForm，不重写渲染）
 //   - 提交动作：save_edited       =>  /api/evalset/sample/<sid>/confirm
 //     （字段组装复用 main.js 的 collectReviewFormData，与 save_edited 同一来源）
-// 仅隐藏与单次核对无关的区块（上传区/本批照片抽屉/放弃上传/行反馈），其余不动。
+// 仅隐藏与单次核对无关的区块（上传区/本批照片抽屉/放弃上传/行反馈），
+// 并剥掉复用来的应用外壳（侧边栏/面包屑）——工作台是内嵌视图，不重复画一套导航。
 //
 // 页面路由：GET /evalset/workbench/<sample_id>（demo/app/main.py 注入
 // window.__EVAL_WORKBENCH__.sampleId 与本脚本）。
@@ -47,6 +48,13 @@
     }
 
     function adaptDomForEval() {
+        // 应用外壳：工作台始终内嵌在主界面的 tab-evalset iframe 里，
+        // 复用 index.html 会把侧边栏与面包屑再画一遍（两个 sider、两个角色下拉）。
+        // .app-wrapper 是 flex，隐藏 .sidebar 后 .main-wrapper 自动占满。
+        var sidebar = document.querySelector('.app-wrapper > .sidebar');
+        if (sidebar) { sidebar.classList.add('hide'); }
+        var crumb = document.querySelector('.breadcrumb-bar');
+        if (crumb) { crumb.classList.add('hide'); }
         // 上传区与批量照片抽屉：与单次核对无关
         hideById('uploadArea');
         hideById('photoSider');
@@ -99,7 +107,9 @@
                     quantity: (it.qty != null) ? it.qty : it.quantity,
                     unit: it.unit || '',
                     unit_price: it.unit_price,
-                    amount: it.amount
+                    amount: it.amount,
+                    // T7（Gap E1）：字段级证据透传给同源复核界面（可选，缺失不影响渲染）
+                    evidence: (it.evidence && typeof it.evidence === 'object') ? it.evidence : undefined
                 };
             })
         };
@@ -233,7 +243,9 @@
                     qty: Number(it.quantity) || 0,
                     unit: String(it.unit || '').trim(),
                     unit_price: Number(it.unit_price) || 0,
-                    amount: Number(it.amount) || 0
+                    amount: Number(it.amount) || 0,
+                    // T7（Gap E1）：确认 GT 时保留行级证据（缺失不带键）
+                    evidence: (it.evidence && typeof it.evidence === 'object') ? it.evidence : undefined
                 };
             })
         };

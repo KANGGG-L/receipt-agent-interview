@@ -135,3 +135,44 @@ def sanitize_nan(value: Any, default: float = 0.0) -> float:
     if fv != fv or fv in (float("inf"), float("-inf")):
         return default
     return fv
+
+
+def normalize_evidence(raw: Any) -> Optional[dict]:
+    """字段级证据归一（Gap E1 / T7）：容错清洗，任何非法输入不阻断主链路。
+
+    规则：
+    - 非 dict（含 None/字符串/数字）→ 整体 None
+    - bbox 非四元组 / 非数字 / NaN / 越界（不在 0-1）→ 仅 bbox 置 None
+    - raw_text 空白 → None；page 非法回落 1
+    - bbox 与 raw_text 双缺失 → 整体 None（不留空壳证据）
+    返回 {"page": int, "bbox": list[float] | None, "raw_text": str | None} 或 None。
+    """
+    if not isinstance(raw, dict):
+        return None
+    try:
+        page = int(raw.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    if page < 1:
+        page = 1
+
+    bbox = raw.get("bbox")
+    norm_bbox = None
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        try:
+            vals = [float(v) for v in bbox]
+            if all(v == v and v not in (float("inf"), float("-inf"))
+                   and 0.0 <= v <= 1.0 for v in vals):
+                norm_bbox = vals
+        except (TypeError, ValueError):
+            norm_bbox = None
+
+    raw_text = raw.get("raw_text")
+    if raw_text is not None:
+        raw_text = str(raw_text)
+        if not raw_text.strip():
+            raw_text = None
+
+    if norm_bbox is None and raw_text is None:
+        return None
+    return {"page": page, "bbox": norm_bbox, "raw_text": raw_text}

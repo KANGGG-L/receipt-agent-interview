@@ -629,6 +629,8 @@ def save_edited(body: SaveEditedBody, request: Request):
             "entity_candidates": it.get("entity_candidates", []),
             "is_void": int(bool(it.get("is_void", 0) or 0)),
             "actual_qty": it.get("actual_qty"),
+            # Gap E1 / T7：字段级证据透传（前端未提交时为 None；落库层再归一兜底）
+            "evidence": it.get("evidence"),
         })
 
     # 币种白名单校验

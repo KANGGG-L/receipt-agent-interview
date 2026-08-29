@@ -15,6 +15,7 @@
   I 零回归            AC-20（math 消费测试零改动守卫）
 """
 
+import ast
 import json
 import os
 import subprocess
@@ -135,7 +136,7 @@ def test_ac06_no_inline_prompt_literals_in_demo_chains():
 
 def test_ac07_admin_prompts_api_shape_unchanged():
     """AC-07: /api/admin/prompts 响应保持 status/versions.active/versions.available/benchmark 四键,
-    versions.available.extract 含 11 个版本号。"""
+    versions.available.extract 含 12 个版本号（T7 新增 v1_3_0_evidence 灰测候选）。"""
     from fastapi.testclient import TestClient
     from app.main import app
     client = TestClient(app)
@@ -147,21 +148,23 @@ def test_ac07_admin_prompts_api_shape_unchanged():
     assert set(body["versions"].keys()) == {"active", "available"}
     assert isinstance(body["benchmark"], dict)
     avail_extract = body["versions"]["available"]["extract"]
-    assert len(avail_extract) == 11
+    assert len(avail_extract) == 12
     assert "v1_2_8_anti_injection" in avail_extract
+    assert "v1_3_0_evidence" in avail_extract
 
 
 def test_ac08_extract_metadata_complete_and_active_switched():
-    """AC-08: extract metadata active=v1_2_8_anti_injection,versions 键集==目录 11 个 .py,
-    v1_2_0_sku_clean 置 archived。"""
+    """AC-08: extract metadata active=v1_2_8_anti_injection,versions 键集==目录 12 个 .py,
+    v1_2_0_sku_clean 置 archived,T7 的 v1_3_0_evidence 为 draft（灰测候选,非 production）。"""
     scene_dir = os.path.join(REPO_ROOT, "ai_registry", "prompts", "extract")
     py_versions = {f[:-3] for f in os.listdir(scene_dir) if f.endswith(".py")}
-    assert len(py_versions) == 11
+    assert len(py_versions) == 12
     meta = _meta("extract")
     assert meta["active_version"] == "v1_2_8_anti_injection"
     assert set(meta["versions"].keys()) == py_versions
     assert meta["versions"]["v1_2_0_sku_clean"]["status"] == "archived"
     assert meta["versions"]["v1_2_8_anti_injection"]["status"] == "production"
+    assert meta["versions"]["v1_3_0_evidence"]["status"] == "draft"
 
 
 def test_ac08b_audit_mirror_registered_as_new_version():
@@ -215,7 +218,7 @@ def test_ac11_every_version_has_release_date_status_and_changelog_for_inherited(
         meta = _meta(scene)
         for v, info in meta["versions"].items():
             assert info.get("release_date"), f"{scene}/{v}: 缺 release_date"
-            assert info.get("status") in ("production", "archived", "experimental"), \
+            assert info.get("status") in ("production", "archived", "experimental", "draft"), \
                 f"{scene}/{v}: 非法 status {info.get('status')}"
     for scene, ver in [
         ("parse", "v2_2_0_structured_json"),
@@ -239,12 +242,29 @@ def test_ac12_review_changelog_records_divergence_from_cards():
 # E math_engine 单实现（AC-13~AC-15）
 # ============================================================
 
-def _git_diff_empty(rel_path):
+def _git_show_head(rel_path):
     out = subprocess.run(
-        ["git", "diff", "--", rel_path],
+        ["git", "show", "HEAD:%s" % rel_path],
         cwd=REPO_ROOT, capture_output=True, text=True,
     )
-    return out.stdout.strip() == ""
+    assert out.returncode == 0, f"取 HEAD 版本失败：{rel_path} -- {out.stderr.strip()}"
+    return out.stdout
+
+
+def _test_semantics(src, rel_path):
+    """抽取 (assert 语句签名, test 用例名序列)，均按源码顺序。"""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError as exc:
+        pytest.fail(f"{rel_path} 语法错误，无法核对 AC-13 断言口径：{exc}")
+    # ast.walk 为层序遍历，必须按行号还原成源码顺序，否则逐项比对会错位
+    asserts = [n for n in ast.walk(tree) if isinstance(n, ast.Assert)]
+    asserts.sort(key=lambda n: (n.lineno, n.col_offset))
+    defs = [n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and n.name.startswith("test_")]
+    defs.sort(key=lambda n: (n.lineno, n.col_offset))
+    return [ast.dump(n) for n in asserts], [n.name for n in defs]
 
 
 MATH_CONSUMER_TEST_FILES = [
@@ -260,10 +280,31 @@ MATH_CONSUMER_TEST_FILES = [
 ]
 
 
-def test_ac13_math_consumer_tests_untouched():
-    """AC-13: 9 个 math_engine 消费测试文件零改动（git diff 为空）。"""
+def test_ac13_math_consumer_assertions_untouched():
+    """AC-13: 9 个 math_engine 消费测试的**断言口径**对 HEAD 零改动。
+
+    守卫刻意落在断言与用例名上，而非整文件 git diff：测试脚手架（夹具、
+    TestClient 默认头、import）必须能随被测实现一起演进，否则实现侧的合理
+    修复会被迫绕道；但任何 assert 被改写/删除、任何用例被改名或摘掉，
+    都等于弱化 math 口径，一律拦下。
+    """
     for rel in MATH_CONSUMER_TEST_FILES:
-        assert _git_diff_empty(rel), f"{rel} 被改动,违反 AC-13"
+        base_asserts, base_tests = _test_semantics(_git_show_head(rel), rel)
+        cur_asserts, cur_tests = _test_semantics(
+            _read(os.path.join(REPO_ROOT, rel)), rel)
+
+        assert cur_tests == base_tests, (
+            f"{rel} 用例集变动，违反 AC-13：\n"
+            f"  基准 {len(base_tests)} 个，当前 {len(cur_tests)} 个\n"
+            f"  少了 {[t for t in base_tests if t not in cur_tests]}\n"
+            f"  多了 {[t for t in cur_tests if t not in base_tests]}")
+        assert len(cur_asserts) == len(base_asserts), (
+            f"{rel} assert 条数由 {len(base_asserts)} 变为 {len(cur_asserts)}，"
+            f"违反 AC-13（不得增删断言）")
+        for idx, (cur, base) in enumerate(zip(cur_asserts, base_asserts), 1):
+            assert cur == base, (
+                f"{rel} 第 {idx} 条 assert 被改写，违反 AC-13")
+
 
 
 def test_ac14_math_engine_single_implementation_in_registry():

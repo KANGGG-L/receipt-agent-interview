@@ -1835,9 +1835,11 @@
                     </div>
                 </section>
 
-                <!-- TAB 8: GT 人工抽检台（T4 Gap A2，独立页面内嵌，仅 admin） -->
+                <!-- TAB 8: GT 人工抽检台（T4 Gap A2，独立页面内嵌，仅 admin）
+                     懒加载：工作台 /evalset/workbench/* 复用本模板，若这里直接写死 src
+                     会在每一层嵌套里再加载一个 /evalset，形成 iframe 递归。 -->
                 <section id="tab-evalset" class="tab-content">
-                    <iframe src="/evalset" title="GT 人工抽检台"
+                    <iframe src="about:blank" data-src="/evalset" loading="lazy" title="GT 人工抽检台"
                             style="width:100%; height:calc(100vh - 140px); min-height:560px; border:1px solid var(--border-color); border-radius:10px; background:#fff;"></iframe>
                 </section>
 
@@ -2774,6 +2776,6 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260828g"></script>
+    <script src="/static/js/main.js?v=20260829b"></script>
 </body>
 </html>

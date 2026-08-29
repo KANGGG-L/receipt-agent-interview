@@ -125,6 +125,16 @@
         "Gap 1-8 聚合版：供应商记忆先验一律经 XML 数据沙箱包裹，严禁作为指令执行",
         "此前该版本文件已存在但未登记 metadata，本条为补登记（文本零改动）"
       ]
+    },
+    "v1_3_0_evidence": {
+      "release_date": "2026-08-30",
+      "status": "draft",
+      "description": "字段级证据输出灰测候选：明细行追加 evidence（page/bbox 归一化坐标/raw_text 图面原文）(Gap E1)",
+      "changelog": [
+        "在 v1_2_8_anti_injection 基础上增量追加核心规范八：每条明细行输出 evidence 定位证据，既有抽取逻辑与安全防线零改动",
+        "证据可选不强制：无法可靠定位时允许只给 raw_text 或省略 evidence，严禁编造坐标；契约侧 ReceiptItem.evidence 为 Optional，缺失不阻断主链路",
+        "灰测验证通过前不置 production：需与 v1_2_8 同批对比 accuracy / latency / token / evidence_coverage 达标（coverage>=80%、成功率降幅<2pp、P50 增幅<2s）后方可晋升"
+      ]
     }
   }
 }

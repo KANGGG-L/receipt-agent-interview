@@ -130,7 +130,7 @@ def evalset_workbench_page(sample_id: str):
     html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
     inject = (
         '<script>window.__EVAL_WORKBENCH__ = { sampleId: %s, autoNext: %s };</script>\n'
-        '<script src="/static/js/eval_workbench.js?v=20260829"></script>\n</body>'
+        '<script src="/static/js/eval_workbench.js?v=20260829b"></script>\n</body>'
         % (_json.dumps(sample_id), "true")
     )
     if "</body>" not in html:

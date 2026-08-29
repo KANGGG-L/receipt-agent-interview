@@ -4,7 +4,7 @@
 覆盖：
 1. confirm 后状态流转：draft → confirmed，写 gt_reviewed_by / gt_reviewed_at
 2. test 集未全量 confirmed 时，run_eval --require-confirmed 拒绝出分（SystemExit）
-3. confirm / sample 详情等抽检接口需 admin 权限（非 admin 403）
+3. confirm / sample 详情等抽检接口需 admin 权限（非 admin 403；不带角色的匿名 401 未认证）
 4. stats 接口返回各 split 的 draft/confirmed 计数
 5. samples 列表按 split + gt_status 过滤
 6. 路径穿越变体（../../ 与 ..\..\）被 manifest 白名单拒绝（404）
@@ -242,14 +242,18 @@ def test_confirm_requires_admin(evalset_env, client):
         resp = client.post("/api/evalset/sample/%s/confirm" % sid,
                            json={"gt": _CANDIDATE_GT}, headers={"X-Role": role})
         assert resp.status_code == 403, "%s 不应允许 confirm" % role
-    # 不带角色头（默认 owner）同样 403
+    # 不带角色头 = 匿名：401 未认证（后端不再静默当 owner，避免误报「权限不足：当前角色为老板」）
     resp = client.post("/api/evalset/sample/%s/confirm" % sid, json={"gt": _CANDIDATE_GT})
-    assert resp.status_code == 403
+    assert resp.status_code == 401, "匿名应判未认证 401，实际 %s" % resp.status_code
+    detail = resp.json()["detail"]
+    assert "未认证" in detail and "X-Role" in detail, detail
 
 
 def test_stats_requires_admin(evalset_env, client):
     assert client.get("/api/evalset/stats", headers={"X-Role": "owner"}).status_code == 403
-    assert client.get("/api/evalset/stats").status_code == 403
+    anonymous = client.get("/api/evalset/stats")
+    assert anonymous.status_code == 401, "匿名应判未认证 401"
+    assert "未认证" in anonymous.json()["detail"]
 
 
 def test_sample_detail_requires_admin(evalset_env, client):
@@ -695,3 +699,34 @@ def test_workbench_route_reuses_review_dom(evalset_env, client):
         assert 'id="%s"' % dom_id in html, "工作台必须复用 index.html 的 #%s" % dom_id
     # main.js 同源加载（渲染与字段组装函数来自同一份代码）
     assert "main.js" in html
+
+
+def _read_demo_file(rel_path):
+    with open(os.path.join(DEMO_DIR, *rel_path.split("/")), encoding="utf-8") as f:
+        return f.read()
+
+
+def test_workbench_embedding_does_not_duplicate_app_shell():
+    """工作台内嵌不得重复画一套应用外壳（用户反馈：GT 抽检里核对会冒出第二个 sider）。
+
+    三处约束缺一不可：
+      1. tab-evalset 的 iframe 懒加载——写死 src="/evalset" 时，复用 index.html 的工作台
+         会在每一层嵌套里再加载一个 /evalset，形成 iframe 递归；
+      2. 适配器隐藏 .sidebar 与 .breadcrumb-bar；
+      3. 激活该页签时把内框重置回 /evalset 列表——工作台会在同一 iframe 内导航走列表，
+         没有这条就没有返回路径。
+    """
+    html = _read_demo_file("templates/index.html")
+    seg = html[html.index('id="tab-evalset"'):]
+    iframe_tag = seg[:seg.index(">", seg.index("<iframe")) + 1]
+    assert 'src="about:blank"' in iframe_tag, \
+        "内嵌 iframe 必须懒加载，否则每层工作台都会递归再加载 /evalset"
+    assert 'data-src="/evalset"' in iframe_tag, "真实地址须放在 data-src 供激活时载入"
+
+    adapter = _read_demo_file("static/js/eval_workbench.js")
+    assert "'.app-wrapper > .sidebar'" in adapter, "工作台须隐藏复用来的侧边栏"
+    assert "'.breadcrumb-bar'" in adapter, "工作台须隐藏复用来的顶部面包屑"
+
+    main_js = _read_demo_file("static/js/main.js")
+    guard = main_js[main_js.index("targetId === 'tab-evalset'"):]
+    assert "data-src" in guard[:500], "缺少「再点 GT 抽检回到列表」的重置逻辑"

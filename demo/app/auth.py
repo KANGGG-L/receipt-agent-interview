@@ -68,28 +68,45 @@ def authenticate(email: str, password: str):
 
 
 def resolve_account(request: Request):
-    """从请求解析当前账号（优先 Bearer token，其次 X-Role 头，缺省 owner）。
+    """从请求解析当前账号身份，区分三种来源，不做静默降级。
 
-    返回 dict：{"email", "role"}。
+    返回 dict：{"email", "role", "source"}；匿名时 role=None（由调用方决定拒绝方式）。
+      - source="token"  ：Bearer 令牌验签通过（最强）
+      - source="header" ：X-Role 头声明（demo 无密码 RBAC 的正常通道）
+      - source=None     ：两者皆无 = 匿名。曾默认成 owner，使「角色头被中途丢弃」
+                          表现为「当前角色为老板」的误导性 403，故显式置空。
     """
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         parsed = parse_token(auth[7:].strip())
         if parsed:
-            return {"email": parsed[0], "role": parsed[1]}
-    role = request.headers.get("X-Role", "owner")
-    email = request.headers.get("X-Email", f"{role}@demo.hk")
-    return {"email": email, "role": role}
+            return {"email": parsed[0], "role": parsed[1], "source": "token"}
+    role = request.headers.get("X-Role")
+    if role in ROLE_RANK:
+        return {"email": request.headers.get("X-Email", f"{role}@demo.hk"),
+                "role": role, "source": "header"}
+    return {"email": None, "role": None, "source": None}
 
 
 _ROLE_LABEL = {"admin": "超管", "owner": "老板", "staff": "店员"}
+
+_UNAUTHENTICATED_DETAIL = ("未认证：请求未携带身份信息（既无有效 Bearer 令牌，也无 X-Role 角色头）。"
+                           "这通常意味着角色头在传输中被丢弃，并非权限不足——请确认前端已随请求附带 X-Role。")
+
+
+def _reject_anonymous():
+    """匿名请求走 401（未认证），与 403（已认证但权限不足）语义分开。"""
+    raise HTTPException(status_code=401, detail=_UNAUTHENTICATED_DETAIL)
+
 
 def require_role(role: str):
     """FastAPI 依赖：请求者角色层级 >= 目标角色。403 文案人话统一（含当前角色与所需角色指引）。"""
     def _dep(request: Request):
         account = resolve_account(request)
-        if ROLE_RANK.get(account.get("role", ""), 0) < ROLE_RANK.get(role, 99):
-            cur = account.get("role", "unknown")
+        cur = account.get("role")
+        if cur is None:
+            _reject_anonymous()
+        if ROLE_RANK.get(cur, 0) < ROLE_RANK.get(role, 99):
             need_label = _ROLE_LABEL.get(role, role)
             cur_label = _ROLE_LABEL.get(cur, cur)
             raise HTTPException(status_code=403, detail=f"权限不足：当前角色为{cur_label}（{cur}），此操作需{need_label}（{role}）及以上权限。请切换角色或联系管理员。")
@@ -103,8 +120,10 @@ def require_role(role: str):
 
 def require_admin(request: Request):
     account = resolve_account(request)
-    if account.get("role") != "admin":
-        cur = account.get("role", "unknown")
+    cur = account.get("role")
+    if cur is None:
+        _reject_anonymous()
+    if cur != "admin":
         cur_label = _ROLE_LABEL.get(cur, cur)
         raise HTTPException(status_code=403, detail=f"权限不足：此操作仅限超管（admin）执行，当前角色为{cur_label}（{cur}）。请切换为 admin 角色。")
     request.state.account = account

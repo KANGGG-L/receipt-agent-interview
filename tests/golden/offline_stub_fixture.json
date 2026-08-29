@@ -38,7 +38,8 @@
             "qty": 3.0,
             "raw_name": "菜心 [SKU:882910]",
             "unit": "斤",
-            "unit_price": 5.0
+            "unit_price": 5.0,
+            "evidence": null
           }
         ],
         "payment_marked": false,

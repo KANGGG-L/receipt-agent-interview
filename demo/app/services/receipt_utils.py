@@ -241,7 +241,7 @@ def canonical_sku_name(name: str) -> str:
 
 def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
-    from app.services.contract import sanitize_nan
+    from app.services.contract import sanitize_nan, normalize_evidence
 
     # P2-2：租户上下文从单据行派生（Job 线程内无 request 可读），
     # SKU 匹配限定本租户，避免跨租户 SKU 误匹配；行缺失时不过滤（向后兼容）
@@ -263,6 +263,10 @@ def save_parsed_data(receipt_id, data, result):
                 clean_name = strip_serial_suffix(raw)
         else:
             clean_name = strip_serial_suffix(raw)
+        # Gap E1 / T7：字段级证据（可选）——归一后随行落库，缺失/非法为 None 不阻断
+        _ev = getattr(it, "evidence", None)
+        if _ev is not None and hasattr(_ev, "model_dump"):
+            _ev = _ev.model_dump()
         items_raw.append({
             "name": clean_name, "raw_name": it.name,
             "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
@@ -273,6 +277,7 @@ def save_parsed_data(receipt_id, data, result):
             "fuzzy_candidates": [], "entity_candidates": [],
             "is_void": int(bool(getattr(it, "is_void", False))),
             "actual_qty": getattr(it, "actual_qty", None),
+            "evidence": normalize_evidence(_ev),
         })
         _match_sku(items_raw[-1], tenant_id=_tenant_ctx)
 

@@ -329,11 +329,13 @@ function jsStr(v) {
 // =====================================================================
 // P1-12：前端鉴权集成（AUTH_ENABLED=1 可用，R4）
 //   - 启动探测 GET /api/auth/me：auth_enabled=false 或 200 → 正常进入；401 → 登录面板
-//   - 全局 fetch 包装：/api/ 开头请求自动注入 Authorization: Bearer <token>
-//     （保留原 window.fetch；登录/注册豁免注入）
+//   - 身份头（X-Role + Authorization）由 attachAuthInit 显式合入 init，
+//     经 apiFetch 发出：全局 /api/ 调用的唯一出口。
+//   - window.fetch 包装仅作未迁移调用点（其他脚本/第三方）的兜底，
+//     不可依赖：任何后加载脚本重新赋值 window.fetch 都会剥掉隐式注入。
 //   - 任何 /api/ 响应再 401 → 回登录面板
 // 纯函数（buildAuthHeaders/attachAuthInit/decideAuthProbe/createAuthFetchWrapper）
-// 供 tests/frontend/r4_logic_test.js 在 node vm 中直接断言。
+// 供 demo/tests/frontend_auth_headers_test.js 在 node vm 中直接断言。
 // =====================================================================
 const AUTH_TOKEN_KEY = 'receipt_auth_token';
 const AUTH_EXEMPT_FRONTEND = ['/api/auth/login', '/api/auth/register'];
@@ -386,16 +388,21 @@ function attachAuthInit(init, url, token) {
     const extra = buildAuthHeaders(url, token);
     if (!extra) return init;
     const headers = (init && init.headers) || {};
-    // Headers 实例：就地补充（其内容本就属于本次请求构造）
+    // Headers 实例：就地逐项补充（其内容本就属于本次请求构造）
     if (typeof Headers !== 'undefined' && headers instanceof Headers) {
-        if (!headers.has('Authorization')) headers.set('Authorization', extra.Authorization);
+        Object.keys(extra).forEach(key => {
+            if (extra[key] != null && !headers.has(key)) headers.set(key, extra[key]);
+        });
         return Object.assign({}, init || {}, { headers: headers });
     }
+    // 普通对象：调用方显式给出的 Authorization 不覆盖，但其余身份头（X-Role）
+    // 必须补上——早期实现在此整体 return init，角色头会随之丢失。
+    const merged = Object.assign({}, extra);
     const keys = Object.keys(headers);
     for (let i = 0; i < keys.length; i++) {
-        if (String(keys[i]).toLowerCase() === 'authorization') return init;
+        if (String(keys[i]).toLowerCase() === 'authorization') delete merged.Authorization;
     }
-    return Object.assign({}, init || {}, { headers: Object.assign({}, headers, extra) });
+    return Object.assign({}, init || {}, { headers: Object.assign({}, headers, merged) });
 }
 
 // 纯工厂：包装 originalFetch 返回新 fetch——/api/ 注入令牌；/api/ 响应 401
@@ -421,22 +428,39 @@ function createAuthFetchWrapper(originalFetch, opts) {
 }
 
 // 安装全局 fetch 包装（脚本加载即生效，先于 DOMContentLoaded 的各数据拉取）
+// 脚本加载时捕获的原始 fetch：apiFetch 走它，不经 window.fetch，
+// 因此后续被第三方脚本重新赋值 window.fetch 时身份头仍不会被剥掉。
+const NATIVE_FETCH = (() => {
+    const scope = (typeof window !== 'undefined') ? window : globalThis;
+    return (scope && typeof scope.fetch === 'function') ? scope.fetch.bind(scope) : null;
+})();
+
 (function installAuthFetch() {
     const scope = (typeof window !== 'undefined') ? window : globalThis;
-    if (!scope || typeof scope.fetch !== 'function') return;
-    const originalFetch = scope.fetch.bind(scope);
-    scope.fetch = createAuthFetchWrapper(originalFetch, {
+    if (!scope || !NATIVE_FETCH) return;
+    scope.fetch = createAuthFetchWrapper(NATIVE_FETCH, {
         getToken: getAuthToken,
         onUnauthorized: () => showLoginPanel(),
     });
 })();
 
+// main.js 内所有 /api/ 调用的唯一出口：身份头（X-Role / Authorization）经
+// attachAuthInit 显式合入 init，再由脚本加载时捕获的 NATIVE_FETCH 发出。
+// 与 window.fetch 包装的区别只在于「不经全局」——后者可被任何后加载脚本覆盖。
+const apiFetch = NATIVE_FETCH
+    ? createAuthFetchWrapper(NATIVE_FETCH, {
+        getToken: getAuthToken,
+        onUnauthorized: () => showLoginPanel(),
+    })
+    : function (url, init) { return window.fetch(url, init); };
+window.apiFetch = apiFetch;
+
 // ---- 埋点（11-组件Spec-全链路埋点与体验反馈体系）----
-// fire-and-forget：走包装 fetch 自动带 X-Role；keepalive 允许卸载期发送；失败静默
+// fire-and-forget：走 apiFetch 显式带 X-Role；keepalive 允许卸载期发送；失败静默
 let parseStartTs = 0;
 function track(eventType, receiptId, properties) {
     try {
-        fetch('/api/track', {
+        apiFetch('/api/track', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -544,7 +568,7 @@ function submitAuthLogin() {
     const btn = document.getElementById('authLoginSubmit');
     if (btn) btn.disabled = true;
 
-    fetch('/api/auth/login', {
+    apiFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email, password: password })
@@ -571,7 +595,7 @@ function submitAuthLogin() {
 
 // 启动/登录后探测 /api/auth/me。reloadData=true（登录成功后）重载首屏数据。
 function probeAuthAndEnter(reloadData) {
-    return fetch('/api/auth/me')
+    return apiFetch('/api/auth/me')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, body]) => {
             if (decideAuthProbe(httpStatus, body) === 'login') {
@@ -670,7 +694,7 @@ function activeDepartments() {
 }
 
 function loadDepartmentsAll() {
-    return fetch('/api/departments')
+    return apiFetch('/api/departments')
         .then(res => res.json())
         .then(ret => {
             if (ret && ret.status === 'success') allDepartments = ret.data || [];
@@ -730,7 +754,7 @@ function loadDepartmentAdmin() {
     const addBtn = document.getElementById('btnAddDepartment');
     if (addBtn) addBtn.classList.toggle('hide', !owner);
 
-    return fetch('/api/departments')
+    return apiFetch('/api/departments')
         .then(res => res.json())
         .then(ret => {
             if (!ret || ret.status !== 'success') return;
@@ -831,7 +855,7 @@ function _saveDepartmentApi(id, n) {
     const url = isEdit ? ('/api/departments/' + Number(id)) : '/api/departments';
     const method = isEdit ? 'PATCH' : 'POST';
 
-    fetch(url, {
+    apiFetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: n }),
@@ -862,7 +886,7 @@ function deactivateDepartment(id) {
     const label = dept ? dept.name : ('#' + Number(id));
     if (!confirm('确定停用部门「' + label + '」？\n\n停用后它不再出现在「选部门」下拉中，'
         + '但历史明细成本仍归属该部门并照常出现在花销报表。')) return;
-    fetch('/api/departments/' + Number(id), { method: 'DELETE' })
+    apiFetch('/api/departments/' + Number(id), { method: 'DELETE' })
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
         if (!ret || ret.status !== 'success') {
@@ -910,7 +934,7 @@ function setCostReportCurrentMonth() {
 function loadCostReportAutoMonth() {
     const monthInput = document.getElementById('costReportMonth');
     if (monthInput && monthInput.value.trim()) { loadCostReport(); return; }
-    fetch('/api/receipts')
+    apiFetch('/api/receipts')
     .then(res => res.json())
     .then(ret => {
         let target = null;
@@ -970,7 +994,7 @@ function loadCostReport() {
     lastCostReportQuery = params.toString();
     const summary = document.getElementById('costReportSummary');
 
-    fetch('/api/cost_report?' + lastCostReportQuery)
+    apiFetch('/api/cost_report?' + lastCostReportQuery)
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
         if (!ret || ret.status !== 'success') {
@@ -1105,7 +1129,7 @@ function openCostDrilldown(deptId, deptName, displayPeriod) {
     const body = document.getElementById('costDrilldownBody');
     if (body) body.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--text-muted); padding:24px;">加载中…</td></tr>';
 
-    fetch(url)
+    apiFetch(url)
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
         if (body) body.innerHTML = '';
@@ -1296,6 +1320,17 @@ function initTabs() {
                 loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
                 loadPValueCards();       // E-P1-3 p-value 显著性卡片
             }
+            if (targetId === 'tab-evalset') {
+                // 懒加载 + 返回路径：工作台会在同一个 iframe 内把抽检台列表导航走，
+                // 再次点「GT 抽检」应回到列表，而不是停在某张样本的工作台上。
+                const frame = document.querySelector('#tab-evalset iframe');
+                if (frame) {
+                    const want = frame.getAttribute('data-src') || '/evalset';
+                    let at = null;
+                    try { at = frame.contentWindow.location.pathname; } catch (e) { at = null; }
+                    if (at !== want) frame.src = want;
+                }
+            }
             syncFeedbackVisibility();
         });
     });
@@ -1433,7 +1468,7 @@ async function ensureWebDisplayableImageFile(file, gen) {
     try {
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch('/api/convert-image', {
+        const res = await apiFetch('/api/convert-image', {
             method: 'POST',
             body: formData,
         });
@@ -1765,7 +1800,7 @@ function pollReceiptJob(jobId, onSettled, opts) {
                 msg: '识别任务轮询超时：超过设定时限仍未完成，已停止等待。请重试或检查后端服务状态。' });
             return;
         }
-        fetch(`/api/job/${jobId}`)
+        apiFetch(`/api/job/${jobId}`)
             .then(res => res.json())
             .then(job => {
                 if (job && job.job_status === 'done') {
@@ -2070,7 +2105,7 @@ function triggerAnalysisNow(forceFlag = false) {
     singlePollToken = { cancelled: false };
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${isForce ? 'true' : 'false'}`, {
+    apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${isForce ? 'true' : 'false'}`, {
         method: 'POST',
         body: formData
     })
@@ -2523,7 +2558,7 @@ function convertManualFromErrorCard() {
         document.getElementById('errorCard').classList.add('hide');
         document.getElementById('loadingCard').classList.remove('hide');
 
-        fetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
+        apiFetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
         .then(res => res.json())
         .then(ret => {
             document.getElementById('loadingCard').classList.add('hide');
@@ -2564,7 +2599,7 @@ function retryReceiptRecognition(receiptId, force = false) {
     if (singlePollToken) singlePollToken.cancelled = true;
     singlePollToken = { cancelled: false };
 
-    fetch(`/api/receipt/${receiptId}/retry?force=${force ? 'true' : 'false'}`, { method: 'POST' })
+    apiFetch(`/api/receipt/${receiptId}/retry?force=${force ? 'true' : 'false'}`, { method: 'POST' })
     .then(res => res.json())
     .then(ret => {
         if (gen !== singleUploadGen) return;
@@ -3255,6 +3290,8 @@ function resetImgTransform() {
 function applyImgTransform() {
     const img = document.getElementById('previewImg');
     img.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom}) rotate(${currentRotation}deg)`;
+    // T7：证据高亮层跟随缩放/平移/旋转
+    if (typeof _syncEvidenceLayerToImg === 'function') _syncEvidenceLayerToImg(img);
 }
 
 // -------------------------------------------------------------
@@ -3385,7 +3422,7 @@ function registerNewUnitsFromRows(rowElements) {
 let availableSuppliers = [];
 
 function loadSuppliersData() {
-    fetch('/api/suppliers')
+    apiFetch('/api/suppliers')
     .then(res => res.json())
     .then(ret => {
         if (ret.status === 'success') {
@@ -3441,7 +3478,7 @@ function selectSupplierItem(itemElem) {
 
 function renderSupplierMenuItems(inputElem, menuElem) {
     if (!availableSuppliers || availableSuppliers.length === 0) {
-        fetch('/api/suppliers')
+        apiFetch('/api/suppliers')
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'success' && ret.data) {
@@ -3689,7 +3726,7 @@ function openSkuMenuForNameInput(inputElem) {
     inpSku.__skuSearchQuery = val;
 
     if (!inpSku.__skuCandidates || inpSku.__skuCandidates.length === 0) {
-        fetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
+        apiFetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -3750,7 +3787,7 @@ function onItemNameInput(inputElem) {
 
     if (itemNameDebounceTimer) clearTimeout(itemNameDebounceTimer);
     itemNameDebounceTimer = setTimeout(() => {
-        fetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
+        apiFetch('/api/inventory?q=' + (val ? encodeURIComponent(val) : ''))
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -3885,7 +3922,7 @@ function quickCreateAndBindSku(itemElem) {
     const tr = itemElem.closest('tr');
     const rowUnit = tr ? (tr.querySelector('.inp-unit')?.value || '斤') : '斤';
 
-    fetch('/api/inventory/skus', {
+    apiFetch('/api/inventory/skus', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -4006,7 +4043,7 @@ function renderSkuMenuItems(inputElem, menuElem) {
 
     if (query !== inputElem.__skuLastFetchedQuery) {
         inputElem.__skuLastFetchedQuery = query;
-        fetch('/api/inventory?q=' + (query ? encodeURIComponent(query) : ''))
+        apiFetch('/api/inventory?q=' + (query ? encodeURIComponent(query) : ''))
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -4131,6 +4168,8 @@ function renderEditForm(data) {
 
     const tbody = document.getElementById('itemTableBody');
     tbody.innerHTML = '';
+    // T7：明细行重建 → 旧证据高亮失效，先清层避免残留
+    clearEvidenceHighlight();
 
     const items = (data.items || []).filter(item =>
         String((item && (item.raw_name || item.name)) || '').trim() !== '');
@@ -5031,11 +5070,21 @@ function appendTableRow(item = {}) {
         <td style="text-align:center;">
             <div class="row-actions">
                 ${isVoidMain ? '<span class="badge badge-secondary" title="票面划线行：不计入总额与入库" style="margin-right:4px;">作废</span>' : ''}
+                <button type="button" class="btn-evidence" onclick="highlightItemEvidence(this.closest('tr'), document.getElementById('previewImg'))" title="在原图上高亮该行的识别证据">证据</button>
                 <button type="button" class="btn-action-delete" onclick="removeRow(this)" title="删除此明细行">删除</button>
             </div>
         </td>
     `;
     tbody.appendChild(tr);
+
+    // T7（Gap E1）：行级证据挂载——点行内空白处或「证据」按钮 → 原图高亮；
+    // 无证据的行点击不报错（人话提示）。input/select/button 等交互控件不受影响。
+    tr.dataset.evidence = item.evidence ? JSON.stringify(item.evidence) : '';
+    if (item.evidence) tr.classList.add('evidence-row');
+    tr.addEventListener('click', (e) => {
+        if (e.target.closest('input, select, button, a, .unit-dropdown-menu, .sku-dropdown-floating')) return;
+        highlightItemEvidence(tr, document.getElementById('previewImg'));
+    });
 
     const skuInput = tr.querySelector('.inp-sku');
     if (skuInput) skuInput.__skuCandidates = skuCandidates;
@@ -5064,6 +5113,122 @@ function removeRow(btn) {
     }
     recalcTotalSum();
 }
+
+// -------------------------------------------------------------
+// T7（Gap E1）：字段级证据高亮 —— 明细行点击 → 原图叠加高亮框
+// （归一化 bbox 换算为百分比定位）+ 显示图面原文 raw_text。
+// 高亮层动态挂到原图容器（.img-viewer-container 已是 position:relative），
+// 与图片共用同一 transform/transform-origin，跟随缩放/平移/旋转。
+// Tab1 复核台（#previewImg）与归档弹窗（#archivePreviewImg）同一机制。
+// 无证据的行点击不报错，人话提示「该行无证据数据」。
+// -------------------------------------------------------------
+function _parseRowEvidence(tr) {
+    if (!tr || !tr.dataset || !tr.dataset.evidence) return null;
+    try {
+        const ev = JSON.parse(tr.dataset.evidence);
+        return (ev && typeof ev === 'object') ? ev : null;
+    } catch (e) { return null; }
+}
+
+function _ensureEvidenceLayer(img) {
+    const container = img ? img.parentElement : null;
+    if (!container) return null;
+    let layer = container.querySelector('.evidence-highlight-layer');
+    if (!layer) {
+        layer = document.createElement('div');
+        layer.className = 'evidence-highlight-layer';
+        layer.innerHTML = '<div class="evidence-highlight-box"></div>'
+            + '<div class="evidence-raw-text-label" role="status"></div>';
+        container.appendChild(layer);
+    }
+    return layer;
+}
+
+function _syncEvidenceLayerToImg(img) {
+    const layer = img && img.parentElement
+        ? img.parentElement.querySelector('.evidence-highlight-layer') : null;
+    if (!layer || !img) return;
+    layer.style.left = img.offsetLeft + 'px';
+    layer.style.top = img.offsetTop + 'px';
+    layer.style.width = img.offsetWidth + 'px';
+    layer.style.height = img.offsetHeight + 'px';
+    layer.style.transform = img.style.transform || '';
+    try {
+        layer.style.transformOrigin =
+            window.getComputedStyle(img).transformOrigin || 'center center';
+    } catch (e) {
+        layer.style.transformOrigin = 'center center';
+    }
+}
+
+function clearEvidenceHighlight() {
+    document.querySelectorAll('.evidence-highlight-layer').forEach(l => l.remove());
+    document.querySelectorAll('tr[data-evidence-active="1"]').forEach(tr => {
+        delete tr.dataset.evidenceActive;
+        tr.classList.remove('evidence-row-active');
+    });
+}
+
+function showEvidenceHighlight(imgEl, evidence) {
+    const usable = evidence && typeof evidence === 'object'
+        && (Array.isArray(evidence.bbox) || String(evidence.raw_text || '').trim() !== '');
+    if (!imgEl || !usable) {
+        showToast('该行无证据数据，请对照原图人工核对', 'info');
+        return false;
+    }
+    const layer = _ensureEvidenceLayer(imgEl);
+    if (!layer) {
+        showToast('该行无证据数据，请对照原图人工核对', 'info');
+        return false;
+    }
+    _syncEvidenceLayerToImg(imgEl);
+    const box = layer.querySelector('.evidence-highlight-box');
+    const label = layer.querySelector('.evidence-raw-text-label');
+    const bbox = (Array.isArray(evidence.bbox) && evidence.bbox.length === 4
+        && evidence.bbox.every(v => typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1))
+        ? evidence.bbox : null;
+    if (bbox) {
+        const x1 = Math.min(bbox[0], bbox[2]);
+        const y1 = Math.min(bbox[1], bbox[3]);
+        box.style.left = (x1 * 100).toFixed(3) + '%';
+        box.style.top = (y1 * 100).toFixed(3) + '%';
+        box.style.width = (Math.abs(bbox[2] - bbox[0]) * 100).toFixed(3) + '%';
+        box.style.height = (Math.abs(bbox[3] - bbox[1]) * 100).toFixed(3) + '%';
+        box.style.display = '';
+    } else {
+        box.style.display = 'none';
+    }
+    const rawText = String(evidence.raw_text || '').trim();
+    if (rawText) {
+        label.textContent = '图面原文：' + rawText;
+        label.style.display = '';
+    } else {
+        label.style.display = 'none';
+    }
+    return true;
+}
+
+// 明细行证据入口：行点击与「证据」按钮共用（再点一次收起高亮）
+function highlightItemEvidence(tr, imgEl) {
+    if (!tr) return;
+    const evidence = _parseRowEvidence(tr);
+    if (!evidence) {
+        showToast('该行无证据数据，请对照原图人工核对', 'info');
+        return;
+    }
+    if (tr.dataset.evidenceActive === '1') {
+        clearEvidenceHighlight();
+        return;
+    }
+    clearEvidenceHighlight();
+    if (showEvidenceHighlight(imgEl, evidence)) {
+        tr.dataset.evidenceActive = '1';
+        tr.classList.add('evidence-row-active');
+    }
+}
+window.highlightItemEvidence = highlightItemEvidence;
+window.clearEvidenceHighlight = clearEvidenceHighlight;
+window.showEvidenceHighlight = showEvidenceHighlight;
 
 // 产品决策（见 docs 决策记录）：手动作废入口已移除——作废态仅来自票面划线的 AI 提取，只读展示；
 // 用户剔除行的唯一操作是「删除」。is_void 行的置灰/划线/禁用样式在 appendTableRow 渲染时完成。
@@ -5284,7 +5449,7 @@ function _qualityWarningsLink(comment, likeVal) {
 
 function _postFeedback(receiptId, likeVal, comment, itemIndex) {
     const tenantId = _feedbackTenantId();
-    return fetch('/api/receipt/' + Number(receiptId) + '/feedback', {
+    return apiFetch('/api/receipt/' + Number(receiptId) + '/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
         body: JSON.stringify({ like: likeVal, comment: comment || '', item_index: itemIndex, tenant_id: tenantId })
@@ -5451,6 +5616,12 @@ function collectReviewFormData() {
             // D-P1-4：划线作废状态随行保存（后端算术门禁剔除 is_void 行）
             is_void: !!(tr.dataset && tr.dataset.isVoid === '1')
         };
+        // T7（Gap E1）：字段级证据随行透传（数值编辑不使原图定位失效）
+        try {
+            const rowEvidence = (tr.dataset && tr.dataset.evidence)
+                ? JSON.parse(tr.dataset.evidence) : null;
+            if (rowEvidence && typeof rowEvidence === 'object') item.evidence = rowEvidence;
+        } catch (e) { /* 坏证据降级：不带证据保存，不阻断 */ }
         // D19：行内显式指定 SKU → 携带 sku_id；未指定（保持未关联）→ 缺省不传
         const skuIdInput = tr.querySelector('.inp-sku-id');
         const skuIdVal = skuIdInput && String(skuIdInput.value || '').trim();
@@ -5527,6 +5698,10 @@ function buildSavePayloadFromData(data, receiptId) {
                 // D-P1-4：划线作废透传（后端算术门禁剔除 is_void 行）
                 is_void: !!(it.is_void)
             };
+            // T7（Gap E1）：字段级证据透传——自动保存/归档保存回环不丢证据
+            if (it.evidence && typeof it.evidence === 'object') {
+                itemPayload.evidence = it.evidence;
+            }
             // D19：行内显式指定的 sku_id 透传（未指定不携带，后端走安全精确匹配）
             if (it.sku_id != null && String(it.sku_id).trim() !== ''
                 && Number(it.sku_id) > 0) {
@@ -5624,7 +5799,7 @@ async function discardCurrentReceipt() {
 
     try {
         if (targetReceiptId) {
-            const res = await fetch(`/api/receipt/${targetReceiptId}/discard`, { method: 'POST' });
+            const res = await apiFetch(`/api/receipt/${targetReceiptId}/discard`, { method: 'POST' });
             const ret = await res.json().catch(() => null);
             if (!res.ok && res.status !== 404) {
                 const errorMsg = (ret && ret.msg) || `物理删除单据失败 HTTP ${res.status}`;
@@ -5761,7 +5936,7 @@ function submitSaveEdited() {
     const saveBtn = document.getElementById('btnSaveReview');
     if (saveBtn) saveBtn.disabled = true;
 
-    fetch('/api/save_edited', {
+    apiFetch('/api/save_edited', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -5851,7 +6026,7 @@ function submitSaveEdited() {
 function refreshReviewFormFromServer(receiptId) {
     if (!receiptId) return;
     resetManualEntryMode();   // D12：真实单据重载 → 退出新建手工单态
-    fetch(`/api/receipt/${receiptId}`)
+    apiFetch(`/api/receipt/${receiptId}`)
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') {
@@ -5998,7 +6173,7 @@ function loadInventoryData() {
     if (InventoryUI.price !== 'all') params.set('price', InventoryUI.price);
     if (InventoryUI.includeInactive) params.set('include_inactive', '1');
 
-    fetch('/api/inventory?' + params.toString())
+    apiFetch('/api/inventory?' + params.toString())
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') return;
@@ -6124,7 +6299,7 @@ function loadInventoryData() {
 
 function deduplicateSkus() {
     if (!confirm('确认一键清理重复食材？将按 canonical 归一合并所有 _\\d{10} 流水号变体（幂等、迁移流水、停用副 SKU、审计留痕）。')) return;
-    fetch('/api/admin/maintenance/deduplicate', {
+    apiFetch('/api/admin/maintenance/deduplicate', {
         method: 'POST',
         headers: _authHeaders({'Content-Type': 'application/json'})
     }).then(r => r.json()).then(ret => {
@@ -6311,7 +6486,7 @@ function submitSkuModal() {
 
     if (!skuId) {
         // Create
-        fetch('/api/inventory/skus', {
+        apiFetch('/api/inventory/skus', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -6371,7 +6546,7 @@ function submitSkuModal() {
             bodyData.base_unit = base_unit;
         }
 
-        fetch('/api/inventory/skus/' + skuId, {
+        apiFetch('/api/inventory/skus/' + skuId, {
             method: 'PATCH',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(bodyData)
@@ -6404,7 +6579,7 @@ function submitSkuModal() {
 // SKU 合并管理 (SKU Merge Modal)
 // -------------------------------------------------------------
 function openSkuMergeModalFromInv() {
-    fetch('/api/inventory?include_inactive=0')
+    apiFetch('/api/inventory?include_inactive=0')
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success' || !ret.data || ret.data.length < 2) {
@@ -6464,7 +6639,7 @@ function submitSkuMerge() {
     const btn = document.getElementById('skuMergeSubmitBtn');
     if (btn) btn.disabled = true;
 
-    fetch('/api/inventory/skus/merge', {
+    apiFetch('/api/inventory/skus/merge', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
@@ -6496,7 +6671,7 @@ function deleteSkuDirect(skuId, skuName) {
         return;
     }
 
-    fetch('/api/inventory/skus/' + skuId, {
+    apiFetch('/api/inventory/skus/' + skuId, {
         method: 'DELETE'
     })
     .then(res => res.json())
@@ -6526,7 +6701,7 @@ function loadAiLeanInsights() {
     // 店员不发 AI 洞察（owner 域接口），横幅保持隐藏
     if (isStaffRoleNow()) { banner.classList.add('hide'); return; }
 
-    fetch('/api/ai-insights')
+    apiFetch('/api/ai-insights')
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success' || !ret.data) {
@@ -6639,7 +6814,7 @@ function toggleSkuActive(skuTarget) {
         }
     }
 
-    fetch('/api/inventory/skus/' + sku.id, {
+    apiFetch('/api/inventory/skus/' + sku.id, {
         method: 'PATCH',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ active: targetActive })
@@ -6664,7 +6839,7 @@ function closeInvMoreMenu() {
 }
 
 function loadSuppliersData() {
-    fetch('/api/suppliers')
+    apiFetch('/api/suppliers')
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') return;
@@ -6688,7 +6863,7 @@ function loadSuppliersData() {
 let allArchiveReceipts = [];
 
 function loadReceiptsHistory() {
-    fetch('/api/receipts')
+    apiFetch('/api/receipts')
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') return;
@@ -7038,7 +7213,7 @@ function approveReceipt(receiptId, knownVersion) {
 
     // D17/W6 Q1：始终提交 JSON body 含 version（详情加载时记录于 currentArchiveDetailData）
     const body = { version: knownVersion };
-    return fetch(`/api/receipt/${receiptId}/approve`, {
+    return apiFetch(`/api/receipt/${receiptId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -7080,7 +7255,7 @@ function approveReceipt(receiptId, knownVersion) {
 
 function flagReceipt(receiptId) {
     if (!confirm(`确定要把单据 #${receiptId} 标记为异常吗？`)) return;
-    fetch(`/api/receipt/${receiptId}/flag`, { method: 'POST' })
+    apiFetch(`/api/receipt/${receiptId}/flag`, { method: 'POST' })
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') {
@@ -7120,7 +7295,7 @@ function retryReceiptFromArchive(receiptId) {
     if (!Number.isFinite(rid) || rid <= 0) return;
     if (!confirm(`确定对单据 #${rid} 重新发起识别吗？`)) return;
     showToast(`单据 #${rid} 重试已提交…`, 'info');
-    fetch(`/api/receipt/${rid}/retry`, { method: 'POST' })
+    apiFetch(`/api/receipt/${rid}/retry`, { method: 'POST' })
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'success' || ret.status === 'queued') {
@@ -7141,7 +7316,7 @@ function convertReceiptFromArchive(receiptId) {
     if (!Number.isFinite(rid) || rid <= 0) return;
     if (!confirm(`确定将单据 #${rid} 转为手工录入吗？将保留原图与已识别预填。`)) return;
     showToast(`单据 #${rid} 转手工请求已提交…`, 'info');
-    fetch(`/api/receipt/${rid}/convert_manual`, { method: 'POST' })
+    apiFetch(`/api/receipt/${rid}/convert_manual`, { method: 'POST' })
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'success') {
@@ -7180,7 +7355,7 @@ function toggleRagDataOnly() {
 }
 function loadReceiptDetail(receiptId) {
     const qs = isRagDataOnlyEnabled() ? '?data_only=true' : '';
-    fetch(`/api/receipt/${receiptId}${qs}`)
+    apiFetch(`/api/receipt/${receiptId}${qs}`)
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') {
@@ -7225,6 +7400,7 @@ function closeArchiveModal(force = false) {
         if (!confirmExit) return;
     }
     document.getElementById('archiveDetailModal').classList.add('hide');
+    clearEvidenceHighlight();  // T7：关闭归档弹窗 → 证据高亮层一并清除
     currentArchiveReceiptId = null;
     currentArchiveDetailData = null;
     hasUnsavedArcChanges = false;
@@ -7483,6 +7659,7 @@ function appendArcTableRow(item = {}) {
             </select>
         </td>
         <td style="text-align:center; white-space:nowrap;">
+            <button type="button" class="btn-evidence" onclick="highlightItemEvidence(this.closest('tr'), document.getElementById('archivePreviewImg'))" title="在原图上高亮该行的识别证据">证据</button>
             <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
         </td>
         <td style="text-align:center; white-space:nowrap;">
@@ -7502,6 +7679,14 @@ function appendArcTableRow(item = {}) {
     `;
     tr.dataset.isVoid = isVoid ? '1' : '0';
     tbody.appendChild(tr);
+
+    // T7（Gap E1）：归档行证据挂载（与 Tab1 同机制，目标为归档弹窗原图）
+    tr.dataset.evidence = item.evidence ? JSON.stringify(item.evidence) : '';
+    if (item.evidence) tr.classList.add('evidence-row');
+    tr.addEventListener('click', (e) => {
+        if (e.target.closest('input, select, button, a, textarea, .unit-dropdown-menu')) return;
+        highlightItemEvidence(tr, document.getElementById('archivePreviewImg'));
+    });
 
     // Wave 2（D44）：归档行内任何手动改动（含部门下拉）→ data-manual + 未保存脏标记；
     // "应用到全部明细"跳过已手动改过的行（04 章三）
@@ -7678,7 +7863,7 @@ function submitSaveArchiveEdited() {
     const arcSaveBtn = document.getElementById('btnSaveArchive');
     if (arcSaveBtn) arcSaveBtn.disabled = true;
 
-    fetch('/api/save_edited', {
+    apiFetch('/api/save_edited', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -7750,6 +7935,8 @@ function applyArchiveImgTransform() {
     const img = document.getElementById('archivePreviewImg');
     if (img) {
         img.style.transform = `translate(${arcPanX}px, ${arcPanY}px) scale(${arcZoom}) rotate(${arcRotation}deg)`;
+        // T7：证据高亮层跟随缩放/旋转（归档弹窗）
+        if (typeof _syncEvidenceLayerToImg === 'function') _syncEvidenceLayerToImg(img);
     }
 }
 
@@ -8183,7 +8370,7 @@ function viewPriceHistory(skuId) {
     setPriceHistoryViewState('loading');
     modal.classList.remove('hide');
 
-    fetch(`/api/price_history/${id}`)
+    apiFetch(`/api/price_history/${id}`)
         .then(res => res.json().then(body => ({ ok: res.ok, body })))
         .then(({ ok, body }) => {
             if (!ok || !body || body.status !== 'success') {
@@ -8307,7 +8494,7 @@ async function restoreBatchFromManifest() {
 
     for (const item of items) {
         try {
-            const res = await fetch(`/api/receipt/${item.receiptId}`);
+            const res = await apiFetch(`/api/receipt/${item.receiptId}`);
             if (res.status === 401) {
                 isUnauthorized = true;
                 break;
@@ -8641,7 +8828,7 @@ function uploadSinglePhoto(idx) {
     startBatchTimer();
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+    apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'queued') {
@@ -8734,7 +8921,7 @@ function uploadBatch(batchPhotos) {
         formData.append('receipt', photo.file);
         formData.append('force', photo.force ? 'true' : 'false');
 
-        fetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+        apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'queued') {
@@ -9112,6 +9299,7 @@ function setActivePhoto(idx) {
 function applyPhotoToMainArea(photo) {
     if (!photo) return;
     resetManualEntryMode();   // D12：真实单据接管主区域 → 退出新建手工单态
+    clearEvidenceHighlight();  // T7：切换照片 → 上一张的证据高亮不得残留
     if (photo.file) selectedFile = photo.file;
     // 预览：有 JPEG/裁剪图则显示；否则 HEIC 常驻提示（不经 objectUrl）
     currentZoom = 1.0;
@@ -9335,7 +9523,7 @@ function retryPhotoFromSider(idx) {
         if (wasActive) showLoadingCard();
         startBatchTimer();
 
-        fetch(`/api/receipt/${photo.receiptId}/retry`, { method: 'POST' })
+        apiFetch(`/api/receipt/${photo.receiptId}/retry`, { method: 'POST' })
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'queued' && ret.job_id) {
@@ -9441,7 +9629,7 @@ function retryPhotoFromSider(idx) {
         formData.append('force', photo.force ? 'true' : 'false');
         showLoadingCard();
         startBatchTimer();
-        fetch(`/api/upload_batch?codebuddy=${useCodebuddy}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+        apiFetch(`/api/upload_batch?codebuddy=${useCodebuddy}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 stopBatchTimer();
@@ -9501,7 +9689,7 @@ function autoSaveParsedPhoto(idx) {
     const payload = buildSavePayloadFromData(data, p.receiptId);
     payload.source = 'auto';
 
-    fetch('/api/save_edited', {
+    apiFetch('/api/save_edited', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -9613,7 +9801,7 @@ function exportArchiveCsv() {
 
     // P1-12：改 fetch+blob 下载——window.open 不携带 Authorization，AUTH=1 时会 401
     showToast('正在按当前筛选条件导出 CSV…', 'info');
-    fetch(`/api/receipts/export?${params.toString()}`)
+    apiFetch(`/api/receipts/export?${params.toString()}`)
         .then(res => {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.blob();
@@ -9747,8 +9935,8 @@ function loadFinancePanel() {
     if (isStaffRoleNow()) return;
     // 全局视图：供应商 + 全量单据并拉（契约①③）
     Promise.all([
-        fetch('/api/suppliers').then(res => res.json()),
-        fetch('/api/receipts').then(res => res.json()),
+        apiFetch('/api/suppliers').then(res => res.json()),
+        apiFetch('/api/receipts').then(res => res.json()),
     ])
         .then(([supRet, rcRet]) => {
             if (supRet && supRet.status === 'success') finState.suppliers = supRet.data || [];
@@ -9967,7 +10155,7 @@ function savePayDate(receiptId, dateStr) {
     const rid = Number(receiptId);
     if (!Number.isFinite(rid) || rid <= 0) return;
     const value = String(dateStr || '').trim();
-    fetch(`/api/receipt/${rid}/pay_date`, {
+    apiFetch(`/api/receipt/${rid}/pay_date`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expected_pay_date: value || null }),
@@ -10014,7 +10202,7 @@ function loadPaymentHistory() {
     const sup = finState.supplierId
         ? finState.suppliers.find(s => s.id === finState.supplierId) : null;
     const url = sup ? `/api/payments?supplier_id=${sup.id}` : '/api/payments';
-    fetch(url)
+    apiFetch(url)
         .then(res => res.json())
         .then(ret => {
             if (!ret || ret.status !== 'success') return;
@@ -10052,7 +10240,7 @@ function loadReconTasks() {
     const sup = finState.supplierId
         ? finState.suppliers.find(s => s.id === finState.supplierId) : null;
     const url = sup ? `/api/reconciliation?supplier_id=${sup.id}` : '/api/reconciliation';
-    fetch(url)
+    apiFetch(url)
         .then(res => res.json())
         .then(ret => {
             if (!ret || ret.status !== 'success') return;
@@ -10104,7 +10292,7 @@ function openPaymentModal() {
     document.getElementById('payCheckAll').checked = false;
 
     // 拉取最新单据列表（payment_id 实时），列出该供应商未付赊单供勾选
-    fetch('/api/receipts')
+    apiFetch('/api/receipts')
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -10150,7 +10338,7 @@ function submitPayment() {
     const voucherFile = document.getElementById('payVoucher').files[0];
     if (voucherFile) fd.append('voucher', voucherFile);
 
-    fetch('/api/payments', { method: 'POST', body: fd })
+    apiFetch('/api/payments', { method: 'POST', body: fd })
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') { showToast('登记支付失败' + toastFailDetail(ret.msg), 'error'); return; }
@@ -10191,7 +10379,7 @@ function submitReconCreate() {
     if (start) payload.start = start;
     if (end) payload.end = end;
 
-    fetch('/api/reconciliation', {
+    apiFetch('/api/reconciliation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -10211,7 +10399,7 @@ function submitReconCreate() {
 
 // ---- 对账差异明细 ----
 function viewReconTask(taskId) {
-    fetch(`/api/reconciliation/${taskId}`)
+    apiFetch(`/api/reconciliation/${taskId}`)
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') { showToast('加载对账详情失败' + toastFailDetail(ret.msg), 'error'); return; }
@@ -10329,7 +10517,7 @@ function submitReconResolve() {
         payload.receipt_id = Number(rid);
     }
 
-    fetch(`/api/reconciliation/${finState.currentTaskId}/resolve`, {
+    apiFetch(`/api/reconciliation/${finState.currentTaskId}/resolve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -10351,7 +10539,7 @@ function confirmReconTask() {
     if (!taskId) return;
     if (!confirm(`确认对账任务 #${taskId} 完成？\n确认后该期间将锁定，差异行保留在履历中；后续如需改动单据请走冲销路径。`)) return;
 
-    fetch(`/api/reconciliation/${taskId}/confirm`, { method: 'POST' })
+    apiFetch(`/api/reconciliation/${taskId}/confirm`, { method: 'POST' })
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') { showToast('确认对账失败' + toastFailDetail(ret.msg), 'error'); return; }
@@ -10382,7 +10570,7 @@ function loadSupplierAdmin() {
     const params = new URLSearchParams();
     if (SupplierUI.q) params.set('q', SupplierUI.q);
     if (SupplierUI.includeInactive) params.set('include_inactive', '1');
-    fetch('/api/suppliers?' + params.toString())
+    apiFetch('/api/suppliers?' + params.toString())
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -10523,7 +10711,7 @@ function saveSupplier() {
     const url = isEdit ? `/api/suppliers/${_editSupplierId}` : '/api/suppliers';
     const method = isEdit ? 'PATCH' : 'POST';
 
-    fetch(url, {
+    apiFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -10568,7 +10756,7 @@ function activateSupplier(id) {
 }
 
 function patchSupplierActive(id, active) {
-    fetch(`/api/suppliers/${Number(id)}`, {
+    apiFetch(`/api/suppliers/${Number(id)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active }),
@@ -10744,7 +10932,7 @@ let mergeDropId = null;
 
 function openMergeModal(dropId) {
     mergeDropId = dropId;
-    fetch('/api/suppliers')
+    apiFetch('/api/suppliers')
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') return;
@@ -10782,7 +10970,7 @@ function submitMerge() {
     if (!confirm(`最后确认：把 [${drop ? drop.name : mergeDropId}] 并入 [${keep ? keep.name : keepId}]？\n` +
         '被并供应商的全部单据/别称/记忆/支付/对账任务将迁移，其档案将被永久删除。')) return;
 
-    fetch('/api/suppliers/merge', {
+    apiFetch('/api/suppliers/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keep_id: keepId, drop_id: mergeDropId }),
@@ -10827,7 +11015,7 @@ function submitStocktake() {
     const note = document.getElementById('stocktakeNote').value.trim();
     if (note) payload.note = note;
 
-    fetch(`/api/inventory/${stocktakeSkuId}/stocktake`, {
+    apiFetch(`/api/inventory/${stocktakeSkuId}/stocktake`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -10914,7 +11102,7 @@ function submitOutbound() {
     const notes = document.getElementById('outboundNote').value.trim();
     if (notes) payload.notes = notes;
 
-    fetch(`/api/inventory/${outboundSkuId}/${meta.path}`, {
+    apiFetch(`/api/inventory/${outboundSkuId}/${meta.path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -11380,7 +11568,7 @@ function loadAdminEngineConfig() {
     if (role !== 'admin') return;
     bindAdminEngineEventsOnce();
 
-    fetch('/api/admin/engine-config')
+    apiFetch('/api/admin/engine-config')
         .then(res => res.json())
         .then(body => {
             if (!body || body.status !== 'success' || !body.data) {
@@ -11453,7 +11641,7 @@ function loadAdminEngineConfig() {
             setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
 
             // 动态从后端同步预设配置（自动融入 .env 中的密钥）
-            fetch('/api/admin/engine-presets')
+            apiFetch('/api/admin/engine-presets')
                 .then(r => r.json())
                 .then(pRet => {
                     if (pRet && pRet.status === 'success' && pRet.data) {
@@ -11474,7 +11662,7 @@ function loadAdminEngineConfig() {
             // 自动加载脱敏样本观测数据
             try { loadAdminGreySamples(); } catch (e) { console.error(e); }
             // 灰测状态
-            fetch('/api/admin/grey-test')
+            apiFetch('/api/admin/grey-test')
                 .then(r => r.json())
                 .then(gt => {
                     const el = document.getElementById('adminGreyStatus');
@@ -11545,7 +11733,7 @@ function saveAdminEngineConfig() {
             saveBtn.disabled = true;
             saveBtn.textContent = '正在保存配置...';
         }
-        return fetch('/api/admin/engine-config', {
+        return apiFetch('/api/admin/engine-config', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -11654,7 +11842,7 @@ function saveAdminEngineConfig() {
     showToast('检测到新模型，正在测试连通性，最长需 45s...', 'info');
 
     // 1. 仅针对未验证的新模型进行连接自测
-    fetch('/api/admin/test-engine-config', {
+    apiFetch('/api/admin/test-engine-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -11912,7 +12100,7 @@ function fetchAndRenderDiff(onRendered) {
         panel.classList.remove('hide');
         panel.dataset.loading = '1';
     }
-    fetch('/api/admin/engine-config/diff')
+    apiFetch('/api/admin/engine-config/diff')
         .then(r => r.json())
         .then(body => {
             if (!body || body.status !== 'success') {
@@ -11975,7 +12163,7 @@ function promoteGreyConfig() {
         confirmText: '确认推全',
         cancelText: '取消',
         onConfirm: () => {
-            fetch('/api/admin/engine-config/promote', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
+            apiFetch('/api/admin/engine-config/promote', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
                 .then(r => r.json())
                 .then(body => {
                     if (!body || body.status !== 'success') {
@@ -12020,7 +12208,7 @@ function rollbackEngineConfig() {
         confirmText: '确认回滚',
         cancelText: '取消',
         onConfirm: () => {
-            fetch('/api/admin/engine-config/rollback', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
+            apiFetch('/api/admin/engine-config/rollback', { method: 'PUT', headers: { 'Content-Type': 'application/json' } })
                 .then(r => r.json())
                 .then(body => {
                     if (!body || body.status !== 'success') {
@@ -12070,7 +12258,7 @@ function loadAdminGreySamples() {
     const tbody = document.getElementById('adminGreySamplesBody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666;">正在拉取脱敏单据流并执行 PII 过滤与 AI 效果评估...</td></tr>';
 
-    fetch('/api/admin/grey-test/samples')
+    apiFetch('/api/admin/grey-test/samples')
         .then(r => r.json())
         .then(res => {
             if (!res || res.status !== 'success' || !res.samples) {
@@ -12337,7 +12525,7 @@ function loadGoldenBoard() {
     const body = document.getElementById('goldenBoardBody');
     const summary = document.getElementById('goldenBoardSummary');
     if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">加载中</td></tr>';
-    fetch('/api/admin/golden-samples')
+    apiFetch('/api/admin/golden-samples')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             if (!ret || ret.status !== 'success') {
@@ -12386,7 +12574,7 @@ function loadGoldenBoard() {
 function importGoldenSamples(limit) {
     if (!confirm('确认导入 ' + limit + ' 张黄金样本？将按 manifest 去重，已导入的自动跳过。')) return;
     showToast('正在导入黄金样本...', 'info');
-    fetch('/api/admin/golden-samples/import?limit=' + Number(limit), { method: 'POST' })
+    apiFetch('/api/admin/golden-samples/import?limit=' + Number(limit), { method: 'POST' })
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             if (!ret || ret.status !== 'success') {
@@ -12414,7 +12602,7 @@ function loadPValueCards() {
     const container = document.getElementById('pvalueCardsContainer');
     const select = document.getElementById('pvalueExperimentSelect');
     if (!container) return;
-    fetch('/api/admin/experiments')
+    apiFetch('/api/admin/experiments')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             if (!ret || ret.status !== 'success') {
@@ -12451,7 +12639,7 @@ function loadPValueCards() {
 function loadPValueCardsFor(expId) {
     const container = document.getElementById('pvalueCardsContainer');
     if (!container || !expId) return;
-    fetch('/api/admin/experiments/' + Number(expId) + '/pvalue')
+    apiFetch('/api/admin/experiments/' + Number(expId) + '/pvalue')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             if (!ret || ret.status !== 'success') {
@@ -12664,7 +12852,7 @@ function convertUnitQtyFrontend(qty, fromUnit, toUnit) {
  * 拉取系统当前可用食材 SKU 列表（供配方下拉选择）
  */
 function fetchDishAvailableSkus(callback) {
-    fetch('/api/inventory?include_inactive=0')
+    apiFetch('/api/inventory?include_inactive=0')
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'success' && Array.isArray(ret.data)) {
@@ -12735,7 +12923,7 @@ function switchDishSubtab(subtabId) {
  * 加载餐品库全量列表
  */
 function loadDishesList() {
-    fetch('/api/dishes')
+    apiFetch('/api/dishes')
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') {
@@ -12982,7 +13170,7 @@ function openDishModal(dishId) {
                 calcDishModalTheoryCost();
                 openModalById('dishEditModal');
             } else {
-                fetch('/api/dishes/' + dishId)
+                apiFetch('/api/dishes/' + dishId)
                     .then(res => res.json())
                     .then(ret => {
                         if (ret.status !== 'success') {
@@ -13283,7 +13471,7 @@ function saveDishModal() {
     const url = isEdit ? ('/api/dishes/' + dishId) : '/api/dishes';
     const method = isEdit ? 'PUT' : 'POST';
 
-    fetch(url, {
+    apiFetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -13324,7 +13512,7 @@ function deleteDish(dishId, dishName) {
         confirmText: '确认操作',
         cancelText: '取消',
         onConfirm: () => {
-            fetch('/api/dishes/' + dishId + '?hard=0', { method: 'DELETE' })
+            apiFetch('/api/dishes/' + dishId + '?hard=0', { method: 'DELETE' })
                 .then(res => res.json())
                 .then(ret => {
                     if (ret.status !== 'success') {
@@ -13397,8 +13585,8 @@ function loadDailyConsumption(targetDate) {
 
     // 并行获取当日已提交流水与当前在售餐品列表
     Promise.all([
-        fetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(curDate)).then(r => r.json()),
-        fetch('/api/dishes?status=active').then(r => r.json())
+        apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(curDate)).then(r => r.json()),
+        apiFetch('/api/dishes?status=active').then(r => r.json())
     ])
     .then(([dailyRes, dishesRes]) => {
         if (dailyRes.status === 'success') {
@@ -13612,7 +13800,7 @@ function submitDailyConsumptionBatch() {
         items: items
     };
 
-    fetch('/api/dishes/daily_consumption/batch', {
+    apiFetch('/api/dishes/daily_consumption/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -13714,7 +13902,7 @@ function showCostTraceModal(consumptionId) {
         // 若本地缓存中没有，则请求单日接口刷新
         const dateInput = document.getElementById('dishConsumptionDate');
         const dStr = dateInput ? dateInput.value : '';
-        fetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(dStr))
+        apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(dStr))
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'success') {
@@ -13837,7 +14025,7 @@ function voidDailyConsumption(consumptionId) {
         confirmText: '确认冲销',
         cancelText: '取消',
         onConfirm: () => {
-            fetch('/api/dishes/daily_consumption/' + consumptionId + '/void', { method: 'POST' })
+            apiFetch('/api/dishes/daily_consumption/' + consumptionId + '/void', { method: 'POST' })
                 .then(res => res.json())
                 .then(ret => {
                     if (ret.status !== 'success') {
@@ -13885,7 +14073,7 @@ function setCostAnalysisDays(days) {
  */
 function loadDishCostAnalysis(days) {
     const periodDays = days || dishAnalysisDays || 7;
-    fetch('/api/dishes/cost_analysis?days=' + periodDays)
+    apiFetch('/api/dishes/cost_analysis?days=' + periodDays)
         .then(res => res.json())
         .then(ret => {
             if (ret.status !== 'success') {
@@ -14140,7 +14328,7 @@ function onFeedbackClick(like) {
         // 租户标识与 _postFeedback（FR-8 行反馈发送器）同源：localStorage demo_tenant_id，
         // 缺省 default；否则非 default 租户下内联反馈会因租户不匹配恒 404
         const tenantId = _feedbackTenantId();
-        fetch(`/api/receipt/${rid}/feedback`, {
+        apiFetch(`/api/receipt/${rid}/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
             body: JSON.stringify({ like: like, tenant_id: tenantId }),

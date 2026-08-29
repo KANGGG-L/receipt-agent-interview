@@ -142,6 +142,7 @@ def _make_engine():
         entity_candidates_json = Column(Text, default="[]")
         is_void = Column(Integer, default=0)                # 划线作废（Gap 6 / D-P1-4）
         actual_qty = Column(Float, nullable=True)           # 手写实收数量（Gap 6）
+        evidence_json = Column(Text, nullable=True)         # 字段级证据（Gap E1 / T7）：{page, bbox 归一化, raw_text}
         # Gap E2：租户隔离键（随所属单据）
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -467,6 +468,8 @@ def _make_engine():
         "ALTER TABLE receipts ADD COLUMN payment_evidence TEXT DEFAULT ''",
         "ALTER TABLE receipt_items ADD COLUMN is_void INTEGER DEFAULT 0",
         "ALTER TABLE receipt_items ADD COLUMN actual_qty REAL",
+        # Gap E1 / T7：字段级证据列（可空；旧行无证据为 NULL，向后兼容）
+        "ALTER TABLE receipt_items ADD COLUMN evidence_json TEXT",
     ):
         _apply_migration_ddl(_engine, _ddl)
     # SQLite 迁移（Gap E2 租户隔离）：7 张业务主表补 tenant_id 列并建索引。
@@ -969,6 +972,7 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
         if tenant_id is None or not str(tenant_id).strip():
             rc = s.get(_ReceiptRow, int(receipt_id))
             tenant_id = getattr(rc, "tenant_id", None) if rc is not None else None
+        from app.services.contract import normalize_evidence
         s.query(_ItemRow).filter(_ItemRow.receipt_id == int(receipt_id)).delete()
         for it in items:
             row = dict(it)
@@ -980,6 +984,8 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
             raw_unit = row.pop("raw_unit", None)
             is_void = 1 if row.pop("is_void", 0) else 0
             actual_qty = row.pop("actual_qty", None)
+            # Gap E1 / T7：字段级证据（可选）——归一后落 evidence_json，非法降级 NULL 不阻断
+            evidence = normalize_evidence(row.pop("evidence", None))
             s.add(_ItemRow(
                 receipt_id=int(receipt_id),
                 raw_name=raw_name,
@@ -988,6 +994,8 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
                 entity_candidates_json=json.dumps(entity, ensure_ascii=False),
                 is_void=is_void,
                 actual_qty=actual_qty,
+                evidence_json=(json.dumps(evidence, ensure_ascii=False)
+                               if evidence else None),
                 tenant_id=str(tenant_id or "default"),
                 **row,
             ))
@@ -1145,6 +1153,13 @@ def update_item_sku(item_id, sku_id):
 
 
 def _row_to_item(r):
+    # Gap E1 / T7：字段级证据回读（坏 JSON 容错为 None，不阻断）
+    try:
+        evidence = json.loads(getattr(r, "evidence_json", None) or "null")
+    except (TypeError, ValueError):
+        evidence = None
+    if not isinstance(evidence, dict):
+        evidence = None
     return {
         "id": r.id, "name": r.name, "raw_name": r.raw_name or r.name,
         "quantity": r.quantity, "unit": r.unit, "raw_unit": r.raw_unit or r.unit,
@@ -1159,6 +1174,7 @@ def _row_to_item(r):
         "entity_candidates": json.loads(r.entity_candidates_json or "[]"),
         "is_void": bool(getattr(r, "is_void", 0) or 0),
         "actual_qty": getattr(r, "actual_qty", None),
+        "evidence": evidence,
     }
 
 

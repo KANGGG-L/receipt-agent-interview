@@ -25,6 +25,18 @@ class DocForm(str, Enum):
 # -------------------------------------------------------------
 # Pydantic 契约（AI 输出契约，契约门禁用）
 # -------------------------------------------------------------
+class Evidence(BaseModel):
+    """字段级证据（Gap E1 / T7）：明细行在原图上的定位证据。
+
+    可选、非强制：契约门禁不校验该字段，未升级的模型不输出也合法；
+    子字段宽松模式（extra 默认 ignore），证据杂质不得阻断主链路。
+    bbox 为归一化坐标 [x1, y1, x2, y2]（0-1，左上/右下），供前端换算高亮。
+    """
+    page: int = 1
+    bbox: Optional[list[float]] = None
+    raw_text: Optional[str] = None
+
+
 class ReceiptItem(BaseModel):
     model_config = ConfigDict(extra="forbid")  # 契约门禁：拒绝 schema 外字段
 
@@ -36,6 +48,7 @@ class ReceiptItem(BaseModel):
     raw_name: Optional[str] = Field(default=None, description="原始品名")
     is_void: bool = Field(default=False, description="是否划线作废/拒收 (Gap 6)")
     actual_qty: Optional[float] = Field(default=None, description="手写实收/修改后数量 (Gap 6)")
+    evidence: Optional[Evidence] = Field(default=None, description="字段级证据（Gap E1）：page/bbox 归一化坐标/图面原文，可选不强制")
 
 
 class ReceiptData(BaseModel):

@@ -92,9 +92,39 @@ def _cost_from_tokens(tu: dict) -> float:
 # ---- Prompt 唯一事实源：一律经 ai_registry 加载（T12 SSOT 收敛）----
 # 1) 主链路 VLM 识别：active 版本（v1_2_8_anti_injection，Gap1-8 聚合版）
 # 2) 解析通道 / 修正通道：显式版本加载（登记自原内联文本，字节等价迁移，active 不受影响）
+# 3) T7（Gap E1）：字段级证据版 v1_3_0_evidence 仅灰测/评测显式选择时生效，
+#    默认链路行为零变化（active 保持 v1_2_8 不动；灰测验证通过前不置 production）。
 from ai_registry.registry import ai_registry
 
-SYSTEM_PROMPT = ai_registry.get_prompt("extract")
+# 证据版 prompt 的版本名（灰测/评测显式加载入口专用，禁内联硬编码提示词文本）
+EVIDENCE_PROMPT_VERSION = "v1_3_0_evidence"
+
+
+def _resolve_extract_system_prompt() -> str:
+    """识别主链路系统提示词选择：默认 active；EXTRACT_PROMPT_VERSION 显式指定时按版本加载。
+
+    灰测换 prompt 的唯一运行时开关（评测走 run_eval --prompt 同款显式版本机制）。
+    指定版本不存在时回落 active，不阻断。
+    """
+    ver = os.environ.get("EXTRACT_PROMPT_VERSION", "").strip()
+    if ver:
+        try:
+            return ai_registry.get_prompt("extract", ver)
+        except Exception:
+            logging.getLogger("extract_chain").warning(
+                f"[PROMPT] EXTRACT_PROMPT_VERSION={ver} 加载失败，回落 active")
+    return ai_registry.get_prompt("extract")
+
+
+def load_prompt_with_evidence() -> str:
+    """T7（Gap E1）：显式加载字段级证据版 prompt（v1_3_0_evidence）。
+
+    仅供灰测/评测/引擎配置显式选择该版本时调用；默认识别链路不经过本函数。
+    """
+    return ai_registry.get_prompt("extract", EVIDENCE_PROMPT_VERSION)
+
+
+SYSTEM_PROMPT = _resolve_extract_system_prompt()
 PARSE_SYSTEM_PROMPT = ai_registry.get_prompt("parse", "v2_2_0_structured_json")
 CORRECT_SYSTEM_PROMPT = ai_registry.get_prompt("correct", "v1_0_0")
 
@@ -545,7 +575,7 @@ def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
                         _it["raw_name"] = str(_code)
                 for _ik in ["contains_huama", "confidence", "item_code", "quantity"]:
                     _it.pop(_ik, None)
-                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty"}
+                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty", "evidence"}
                 for _k in list(_it.keys()):
                     if _k not in _allowed_item:
                         _it.pop(_k, None)
@@ -645,6 +675,16 @@ def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
             import logging
             logging.getLogger("extract_chain").warning(f"[WARN] 后处理管道异常: {e}")
 
-    from app.services.contract import validate_contract
+    from app.services.contract import validate_contract, normalize_evidence
+    # T7（Gap E1）：字段级证据容错归一——bbox 非法/越界/非数字一律置 None，
+    # 空壳证据整体丢弃；任何证据杂质不得阻断契约门禁与主链路。
+    if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+        for _it in payload["items"]:
+            if isinstance(_it, dict) and "evidence" in _it:
+                _ev = normalize_evidence(_it.get("evidence"))
+                if _ev is None:
+                    _it.pop("evidence", None)
+                else:
+                    _it["evidence"] = _ev
     data, err = validate_contract(payload)
     return data, err

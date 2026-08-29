@@ -29,16 +29,20 @@ def login(body: LoginBody, request: Request):
 
 @router.get("/api/auth/me")
 def me(request: Request):
-    """角色探测：始终返回 auth_enabled=true + account（角色由 X-Role 头指定）。
+    """角色探测：回显当前请求携带的身份来源（角色由 X-Role 头指定）。
 
     Demo 无密码：前端角色下拉 → localStorage → 请求带 X-Role 头。
+    匿名（无令牌且无 X-Role）时 account 返回 null——不再凭空报 owner，否则
+    「角色头被中途丢弃」会被前端读成「当前就是老板」。
     """
     acct = resolve_account(request)
-    role = acct.get("role", "owner")
+    role = acct.get("role")
     if role not in ("admin", "owner", "staff"):
-        role = "owner"
+        return {"status": "success", "auth_enabled": True,
+                "account": None, "identity_source": "missing"}
     return {
         "status": "success",
         "auth_enabled": True,
         "account": {"email": acct.get("email", ""), "role": role},
+        "identity_source": acct.get("source"),
     }
