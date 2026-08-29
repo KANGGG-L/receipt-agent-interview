@@ -1351,6 +1351,12 @@ table.data-table td input {
     min-height: 38px;
     text-align: right;
 }
+/* 手写注记动态行：文本输入占满整行，删除按钮与费用行同款 */
+.fee-row .note-text-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 38px;
+}
 .fee-row .fee-remove-btn {
     flex: 0 0 auto;
     min-height: 38px;

@@ -230,11 +230,16 @@ def test_dynamic_fee_rows_ui_mode():
                       "inpTaxAmount", "inpDeposit", "inpRounding"):
         assert 'id="%s"' % legacy_id not in html, \
             "固定六宫格输入 #%s 应由动态费用行取代" % legacy_id
-    # 仍保留的手写注记 / 付款证据控件
-    for ctrl_id in ("inpAdjustmentNotes", "inpPaymentEvidence"):
-        assert 'id="%s"' % ctrl_id in html, "复核区缺少控件 #%s" % ctrl_id
+    # 仍保留的手写注记（已改动态行模式）/ 付款证据控件
+    for mark in ('id="notesRowsEmpty"', 'id="notesRowsContainer"', 'id="btnAddNoteRow"'):
+        assert mark in html, "复核区缺少手写注记动态行要素 %s" % mark
     assert "手写注记" in html
     assert "付款证据" in html
+    # 旧单个 textarea 注记入口必须移除（不保留双入口）
+    assert 'id="inpAdjustmentNotes"' not in html, \
+        "手写注记 textarea 应由动态注记行取代"
+    assert "对照原图一行一条" not in html, \
+        "旧注记 textarea 的 label 文案应随动态行模式一并移除"
 
 
 def test_fee_type_options_match_contract_fields():
@@ -315,3 +320,131 @@ def test_fee_rows_render_and_autofocus():
     add_end = src.index("function onFeeTypeChange")
     add_src = src[add_start:add_end]
     assert "focus()" in add_src, "「+ 添加费用」新增行必须自动聚焦原因下拉"
+
+
+# -------------------------------------------------------------
+# 手写注记动态行：与附加费用动态行同款交互（纯视图层，契约 list[str] 不变）
+# -------------------------------------------------------------
+def _eval_js_src():
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                        "static", "js", "eval_workbench.js")
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_dynamic_note_rows_ui_mode():
+    """注记动态行视图：占位提示/行容器/添加按钮存在且位于复核区，旧 textarea 已移除。"""
+    html = _index_html()
+    # 动态模式三要素（与费用区同款命名风格）
+    assert 'id="notesRowsEmpty"' in html, "缺少注记占位提示 #notesRowsEmpty"
+    assert 'id="notesRowsContainer"' in html, "缺少动态注记行容器 #notesRowsContainer"
+    assert 'id="btnAddNoteRow"' in html, "缺少「+ 添加注记」按钮 #btnAddNoteRow"
+    assert "无手写注记" in html, "占位提示必须是人话文案「无手写注记」"
+    assert "+ 添加注记" in html
+    # 添加按钮高度 >= 38px（与费用区按钮同款触控标准）
+    add_btn_pos = html.index('id="btnAddNoteRow"')
+    assert 'min-height:38px' in html[add_btn_pos:add_btn_pos + 200], \
+        "「+ 添加注记」按钮必须保持 38px 触控高度"
+    # 位置：注记抽屉仍在 Side-by-Side 复核表单卡内（供应商输入之后、明细表之前）
+    anchor_supplier = html.index('id="inpSupplier"')
+    anchor_table = html.index('id="itemTableBody"')
+    for mark in ('id="notesRowsEmpty"', 'id="notesRowsContainer"', 'id="btnAddNoteRow"'):
+        pos = html.index(mark)
+        assert anchor_supplier < pos < anchor_table, \
+            "%s 不在复核区（供应商与明细表之间）" % mark
+    # 徽章「N 条注记」仍在抽屉标题上（实时联动载体）
+    assert 'id="notesSummaryBadge"' in html, "注记抽屉标题缺少徽章 #notesSummaryBadge"
+
+
+def test_note_rows_render_collect_and_empty_semantics():
+    """数据 → 注记行渲染（renderNoteRowsFromData）、行 → 数组采集（collectNoteRows
+    空行剔除）、删除行 = 移除该项（removeNoteRow）、renderEditForm 接线。"""
+    src = _main_js_src()
+    render_start = src.index("function renderNoteRowsFromData")
+    render_end = src.index("function appendNoteRow")
+    render_src = src[render_start:render_end]
+    assert "container.innerHTML = ''" in render_src, "渲染前必须清空旧注记行"
+    assert "appendNoteRow(" in render_src, "adjustment_notes 数组必须逐项渲染为注记行"
+    assert "updateNotesEmptyState()" in render_src, "渲染后必须刷新占位提示状态"
+    assert "notesDrawerContent" in render_src, "有注记必须自动展开注记抽屉"
+    # renderEditForm 必须走动态行渲染，不再灌 textarea
+    edit_start = src.index("function renderEditForm")
+    edit_end = src.index("window.renderEditForm")
+    edit_src = src[edit_start:edit_end]
+    assert "renderNoteRowsFromData(data)" in edit_src, \
+        "renderEditForm 必须以动态行模式渲染注记"
+    assert "inpAdjustmentNotes" not in edit_src, \
+        "renderEditForm 不得再写旧 textarea"
+    # 采集：空行剔除（与旧 textarea 一行一条语义一致）
+    collect_start = src.index("function collectNoteRows")
+    collect_end = src.index("function updateNotesSummaryBadge")
+    collect_src = src[collect_start:collect_end]
+    assert "querySelectorAll('.note-row')" in collect_src, \
+        "collectNoteRows 必须遍历现存注记行"
+    assert "trim" in collect_src and "!== ''" in collect_src, \
+        "collectNoteRows 必须剔除空行"
+    # collectReviewFormData 的 adjustment_notes 必须来自动态行采集
+    form_start = src.index("function collectReviewFormData")
+    form_end = src.index("function buildSavePayloadFromData")
+    form_src = src[form_start:form_end]
+    assert "adjustment_notes: collectNoteRows()" in form_src, \
+        "collectReviewFormData 必须从动态注记行采集 adjustment_notes"
+    assert "inpAdjustmentNotes" not in form_src, \
+        "collectReviewFormData 不得再读旧 textarea"
+    # 全文件不再有 textarea 注记双入口
+    assert "inpAdjustmentNotes" not in src, "main.js 不应残留旧注记 textarea 引用"
+
+
+def test_note_row_add_remove_and_badge_semantics():
+    """点添加 = 追加一行并自动聚焦；删行 = 移除该项；徽章「N 条注记」实时联动。"""
+    src = _main_js_src()
+    # 行结构：[注记文本输入 placeholder] + [删除按钮]
+    append_start = src.index("function appendNoteRow")
+    append_end = src.index("function addNoteRow")
+    append_src = src[append_start:append_end]
+    assert "note-text-input" in append_src, "注记行必须含文本输入 .note-text-input"
+    assert "如: 拒收 2 包 / 短装 1 箱" in append_src, "注记输入必须带指定 placeholder"
+    assert "fee-remove-btn" in append_src, "注记行删除按钮必须与费用行同款"
+    assert "removeNoteRow" in append_src, "删除按钮必须挂 removeNoteRow"
+    # 添加入口：追加空行 + 自动聚焦
+    add_start = src.index("function addNoteRow")
+    add_end = src.index("function removeNoteRow")
+    add_src = src[add_start:add_end]
+    assert "appendNoteRow('')" in add_src, "「+ 添加注记」必须追加空行"
+    assert "focus()" in add_src, "「+ 添加注记」新增行必须自动聚焦文本输入"
+    # 删除：仅移除该行 + 刷新占位与徽章
+    rm_start = src.index("function removeNoteRow")
+    rm_end = src.index("function collectNoteRows")
+    rm_src = src[rm_start:rm_end]
+    assert "row.remove()" in rm_src, "删除注记行必须移除该行 DOM"
+    assert "updateNotesEmptyState()" in rm_src and "updateNotesSummaryBadge()" in rm_src, \
+        "删除注记行后必须联动占位与徽章"
+    # 徽章：非空注记计数，0 条隐藏
+    badge_start = src.index("function updateNotesSummaryBadge")
+    badge_end = src.index("function autoFillSheetNameFromDate")
+    badge_src = src[badge_start:badge_end]
+    assert "collectNoteRows().length" in badge_src, "徽章计数必须来自动态行采集"
+    assert "条注记" in badge_src, "徽章文案必须为「N 条注记」"
+    assert "classList.add('hide')" in badge_src, "0 条注记时徽章必须隐藏"
+
+
+def test_eval_workbench_note_rows_roundtrip():
+    """评测工作台：候选注记数组灌入动态行（gtToFormData）；
+    buildGtFromForm 表单值优先、候选值仅兜底，删行后不得复活候选注记。"""
+    src = _eval_js_src()
+    # gtToFormData：候选注记数组原样透传给 renderEditForm（由其灌行）
+    gt_start = src.index("function gtToFormData")
+    gt_end = src.index("function loadSample")
+    gt_src = src[gt_start:gt_end]
+    assert "adjustment_notes: Array.isArray(gt.adjustment_notes) ? gt.adjustment_notes : []" \
+        in gt_src, "gtToFormData 必须透传候选注记数组（renderEditForm 据此灌行）"
+    # buildGtFromForm：表单值优先；删光行后（seededFromData 已标记）不回落候选值
+    build_start = src.index("function buildGtFromForm")
+    build_end = src.index("return { gt: gt, blankTotal: blankTotal }")
+    build_src = src[build_start:build_end]
+    assert "notesRowsContainer" in build_src, \
+        "buildGtFromForm 必须识别注记行容器是否已由候选数据渲染"
+    assert "seededFromData" in build_src, \
+        "删光注记行后必须走「不复活候选注记」分支（费用区同款语义）"
+    assert "cand.adjustment_notes" in build_src, \
+        "表单从未渲染时仍需候选注记兜底"

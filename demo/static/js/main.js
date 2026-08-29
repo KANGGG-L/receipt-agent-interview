@@ -4062,30 +4062,9 @@ function renderEditForm(data) {
     renderFeeRowsFromData(data);
     updateFeesSummaryBadge();
 
-    // Gap 6：手写注记（拒收/短装/调整）——有注记时灌入原文并展开，无注记保持折叠零负担
-    const notesElem = document.getElementById('inpAdjustmentNotes');
-    const notesList = Array.isArray(data.adjustment_notes) ? data.adjustment_notes : [];
-    if (notesElem) notesElem.value = notesList.join('\n');
-    const notesBadge = document.getElementById('notesSummaryBadge');
-    if (notesBadge) {
-        if (notesList.length > 0) {
-            notesBadge.textContent = notesList.length + ' 条注记';
-            notesBadge.classList.remove('hide');
-        } else {
-            notesBadge.classList.add('hide');
-        }
-    }
-    const notesContent = document.getElementById('notesDrawerContent');
-    const notesIcon = document.getElementById('notesToggleIcon');
-    if (notesContent) {
-        if (notesList.length > 0) {
-            notesContent.classList.remove('hide');
-            if (notesIcon) notesIcon.textContent = '▲';
-        } else {
-            notesContent.classList.add('hide');
-            if (notesIcon) notesIcon.textContent = '▾';
-        }
-    }
+    // Gap 6：手写注记（拒收/短装/调整）——动态行模式：数组每项一行，
+    // 有注记自动展开抽屉，无注记折叠；徽章「N 条注记」联动
+    renderNoteRowsFromData(data);
 
     // M3/D4: 从 prefill 数据初始化结算方式与付款标记
     applySettlementToForm('inp', data);
@@ -4422,6 +4401,126 @@ function updateFeesSummaryBadge() {
     }
 }
 window.updateFeesSummaryBadge = updateFeesSummaryBadge;
+
+// -------------------------------------------------------------
+// 手写注记动态行（与附加费用动态行同款交互）：
+// 契约字段不变：adjustment_notes: list[str]——仅换视图，落库链路零改动。
+// -------------------------------------------------------------
+// 单据数据 → 注记行：数组每项一行（与费用行「非零字段成行」同策略）
+function renderNoteRowsFromData(data) {
+    const container = document.getElementById('notesRowsContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    // 标记行容器已由单据/候选数据渲染过（评测工作台据此判断删行后不再回落候选注记）
+    container.dataset.seededFromData = '1';
+    const notesList = Array.isArray(data && data.adjustment_notes) ? data.adjustment_notes : [];
+    notesList.forEach(note => {
+        appendNoteRow(String(note == null ? '' : note));
+    });
+    updateNotesEmptyState();
+    updateNotesSummaryBadge();
+    // 有注记时自动展开抽屉，无注记保持折叠零负担（与费用抽屉同策略）
+    const drawer = document.getElementById('notesDrawerContent');
+    const icon = document.getElementById('notesToggleIcon');
+    if (drawer) {
+        if (container.children.length > 0) {
+            drawer.classList.remove('hide');
+            if (icon) icon.textContent = '▲';
+        } else {
+            drawer.classList.add('hide');
+            if (icon) icon.textContent = '▾';
+        }
+    }
+}
+
+// 追加一行注记 = [注记文本输入] + [删除按钮]
+function appendNoteRow(noteValue) {
+    const container = document.getElementById('notesRowsContainer');
+    if (!container) return null;
+
+    const row = document.createElement('div');
+    row.className = 'fee-row note-row';
+
+    const textInput = document.createElement('input');
+    textInput.type = 'text';
+    textInput.className = 'note-text-input form-control form-control-sm';
+    textInput.placeholder = '如: 拒收 2 包 / 短装 1 箱';
+    textInput.title = '对照原图一行一条抄录手写注记';
+    textInput.value = String(noteValue == null ? '' : noteValue);
+    textInput.addEventListener('input', function () {
+        updateNotesSummaryBadge();
+    });
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'fee-remove-btn btn btn-secondary btn-sm';
+    removeBtn.textContent = '删除';
+    removeBtn.title = '删除该注记行';
+    removeBtn.addEventListener('click', function () { removeNoteRow(removeBtn); });
+
+    row.appendChild(textInput);
+    row.appendChild(removeBtn);
+    container.appendChild(row);
+    updateNotesEmptyState();
+    updateNotesSummaryBadge();
+    return row;
+}
+
+// 「+ 添加注记」入口：追加空行并自动聚焦文本输入
+function addNoteRow() {
+    const row = appendNoteRow('');
+    if (row) {
+        const inp = row.querySelector('.note-text-input');
+        if (inp) inp.focus();
+    }
+}
+window.addNoteRow = addNoteRow;
+
+// 删除行 = 移除该项注记（采集时不再产出）
+function removeNoteRow(btn) {
+    const row = btn.closest('.note-row');
+    if (row) row.remove();
+    updateNotesEmptyState();
+    updateNotesSummaryBadge();
+}
+
+function updateNotesEmptyState() {
+    const container = document.getElementById('notesRowsContainer');
+    const emptyTip = document.getElementById('notesRowsEmpty');
+    if (!container || !emptyTip) return;
+    if (container.children.length > 0) {
+        emptyTip.classList.add('hide');
+    } else {
+        emptyTip.classList.remove('hide');
+    }
+}
+
+// 注记行 → list[str]（空行剔除，与旧 textarea 一行一条语义一致）
+function collectNoteRows() {
+    const notes = [];
+    const container = document.getElementById('notesRowsContainer');
+    if (!container) return notes;
+    container.querySelectorAll('.note-row').forEach(row => {
+        const raw = row.querySelector('.note-text-input')?.value || '';
+        const s = String(raw).trim();
+        if (s !== '') notes.push(s);
+    });
+    return notes;
+}
+
+// 标题徽章「N 条注记」实时联动（新增/删除/输入均触发）
+function updateNotesSummaryBadge() {
+    const badge = document.getElementById('notesSummaryBadge');
+    if (!badge) return;
+    const count = collectNoteRows().length;
+    if (count > 0) {
+        badge.textContent = count + ' 条注记';
+        badge.classList.remove('hide');
+    } else {
+        badge.classList.add('hide');
+    }
+}
+window.updateNotesSummaryBadge = updateNotesSummaryBadge;
 
 function autoFillSheetNameFromDate(dateVal) {
     const sheetInp = document.getElementById('inpSheet');
@@ -5343,11 +5442,8 @@ function collectReviewFormData() {
         // Gap 9：服务费(加一)/税额——店员可修正，随 save_edited 提交
         service_fee: feeFields.service_fee,
         tax_amount: feeFields.tax_amount,
-        // Gap 6：手写注记（一行一条）
-        adjustment_notes: (function () {
-            const raw = (document.getElementById('inpAdjustmentNotes')?.value || '');
-            return raw.split('\n').map(s => s.trim()).filter(s => s !== '');
-        })(),
+        // Gap 6：手写注记——动态注记行 → list[str]（空行剔除，一行一条）
+        adjustment_notes: collectNoteRows(),
         // G3：付款证据描述（识别检出预填，店员可修正）
         payment_evidence: (document.getElementById('inpPaymentEvidence')?.value || '').trim(),
     };

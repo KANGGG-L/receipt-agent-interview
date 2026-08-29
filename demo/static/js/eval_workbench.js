@@ -212,9 +212,18 @@
             service_fee: Number(data.service_fee) || 0,
             tax_amount: Number(data.tax_amount) || 0,
             rounding_adjustment: Number(data.rounding_adjustment) || 0,
-            adjustment_notes: (Array.isArray(data.adjustment_notes) && data.adjustment_notes.length)
-                ? data.adjustment_notes
-                : (Array.isArray(cand.adjustment_notes) ? cand.adjustment_notes : []),
+            // 手写注记：动态注记行 → 数组。候选注记已由 renderEditForm 灌入行中，
+            // 表单实际值优先；仅当表单从未被候选数据渲染过时才回落候选值——
+            // 抽检员删光注记行后不得复活候选注记（与费用区「删除行 = 归 0」同款语义）。
+            adjustment_notes: (function () {
+                var formNotes = Array.isArray(data.adjustment_notes) ? data.adjustment_notes : [];
+                if (formNotes.length) return formNotes;
+                var notesContainer = document.getElementById('notesRowsContainer');
+                var seededFromData = !!(notesContainer
+                    && notesContainer.dataset.seededFromData === '1');
+                if (seededFromData) return [];
+                return Array.isArray(cand.adjustment_notes) ? cand.adjustment_notes : [];
+            })(),
             items: items.map(function (it) {
                 return {
                     name: String(it.name || '').trim(),
