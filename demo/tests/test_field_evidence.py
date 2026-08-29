@@ -414,7 +414,8 @@ def test_run_eval_report_evidence_coverage(tmp_path):
     report_dir = os.path.join(str(tmp_path), "reports")
     report = run_eval.run_eval(split="test", prompt_version="v1_3_0_evidence",
                                engine="stub", evalset_dir=evalset_dir,
-                               report_dir=report_dir)
+                               report_dir=report_dir,
+                               require_confirmed=False)  # L2：本用例只验证据统计通路
     # 3/4 明细行带证据
     assert report["evidence_coverage"] == 0.75
     assert os.path.exists(report["report_path"])

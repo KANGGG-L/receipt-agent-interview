@@ -377,18 +377,30 @@ def _real_predictor(engine, model, prompt_version):
 # ------------------------------------------------------------------
 def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="opencode", model=None,
              limit=None, evalset_dir=None, report_dir=None, predictor=None,
-             require_confirmed=False):
+             require_confirmed=None):
     """跑一个 split 的评测，返回 EvalReport（dict）。
 
     predictor（可选）：自定义预测器 `(image_path, sample_id) -> (payload|None, meta)`，
     供测试注入故障或离线自检；不传则按 engine 构建真实识别链路。
 
-    require_confirmed（T4，默认关，向后兼容）：为 True 时，该 split 存在任何
-    未 confirmed 的 GT（missing/draft）即拒绝出分（SystemExit），保证报告只由
-    人工抽检确认过的 GT 产生。
+    require_confirmed（T4 + L2 收口）：None 时按 split 取默认——test split 默认 True
+    （强制 GT 人工确认门禁，生产准入口径），val/train 默认 False（调参观测用，
+    向后兼容）。显式传 True/False 覆盖默认；test split 显式传 False（CLI
+    --no-require-confirmed）时报告顶层 gt_status 标记为 "partial"（含未经人工
+    抽检确认的 GT，分数不得作为生产基线），CLI 侧同时在 stdout 大字警告。
+    为 True 时，该 split 存在任何未 confirmed 的 GT（missing/draft）即拒绝出分
+    （SystemExit），保证报告只由人工抽检确认过的 GT 产生。
     """
     evalset_dir = os.path.abspath(evalset_dir or DEFAULT_EVALSET_DIR)
     report_dir = os.path.abspath(report_dir or DEFAULT_REPORT_DIR)
+
+    # L2 门禁默认值：test split 生产准入口径强制人工确认；val/train 维持默认关。
+    # None（未显式指定）→ 按 split 取默认；显式 True/False 覆盖默认。
+    gate_default_enforced = (split == "test")
+    if require_confirmed is None:
+        require_confirmed = gate_default_enforced
+    # test split 显式关闭门禁 → 报告标记 partial（不可作为生产基线分数）
+    gt_gate_partial = gate_default_enforced and not require_confirmed
 
     rows = [r for r in load_manifest(evalset_dir) if r.get("split") == split]
     if not rows:
@@ -514,6 +526,10 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="opencode", mo
         "sample_ids": [r["sample_id"] for r in rows],
         "per_sample": per_sample,
     }
+    if gt_gate_partial:
+        # L2：test split 显式 --no-require-confirmed 时带 partial 标记，
+        # 下游与评审一眼识别「含未确认 GT 的分数」
+        report["gt_status"] = "partial"
 
     os.makedirs(report_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -556,14 +572,25 @@ def main():
     ap.add_argument("--evalset-dir", default=None, help="评测集目录（默认 demo/evalsets）")
     ap.add_argument("--report-dir", default=None,
                     help="报告落盘目录（默认 ai_registry/benchmarks/eval_runs）")
-    ap.add_argument("--require-confirmed", action="store_true", default=False,
-                    help="GT 门禁：split 内存在未人工确认（missing/draft）的 GT 时拒绝出分")
+    ap.add_argument("--require-confirmed", action=argparse.BooleanOptionalAction,
+                    default=None,
+                    help="GT 门禁：split 内存在未人工确认（missing/draft）的 GT 时拒绝出分。"
+                         "test split 默认强制（生产准入），可用 --no-require-confirmed 显式关闭"
+                         "（报告带 gt_status=partial 标记并大字警告）；val/train 默认关闭，"
+                         "需显式 --require-confirmed 才开启")
     args = ap.parse_args()
 
     report = run_eval(split=args.split, prompt_version=args.prompt, engine=args.engine,
                       model=args.model, limit=args.limit,
                       evalset_dir=args.evalset_dir, report_dir=args.report_dir,
                       require_confirmed=args.require_confirmed)
+    if report.get("gt_status") == "partial":
+        # L2 大字警告：test split 被显式关闭 GT 确认门禁，分数仅作调参参考
+        print("!" * 68)
+        print("!! 警告：本次运行显式关闭了 GT 确认门禁（--no-require-confirmed）！！")
+        print("!! 报告 gt_status 已标记为 partial —— 含未经人工抽检确认的 GT，")
+        print("!! 该分数不得作为生产基线或对外汇报口径。请先在 GT 抽检台逐张确认。")
+        print("!" * 68)
     _print_summary(report)
     return 0
 

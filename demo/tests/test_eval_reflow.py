@@ -49,9 +49,18 @@ ENGINE_NAME = "opencode"
 
 
 def _make_png(path, size=(1100, 800)):
-    from PIL import Image
+    """合成 PNG；按路径注入唯一底色像素，保证不同单据图字节不同。
+
+    （L3 候选池卫生引入原图 sha1 去重：字节完全相同的图会被视为同一张原图，
+    去重跳过建候选——因此每张测试图必须内容唯一。）
+    """
+    from PIL import Image, ImageDraw
     os.makedirs(os.path.dirname(str(path)), exist_ok=True)
-    Image.new("RGB", size, "white").save(str(path))
+    img = Image.new("RGB", size, "white")
+    d = ImageDraw.Draw(img)
+    h = abs(hash(str(path)))
+    d.rectangle([0, 0, 8, 8], fill=(h % 256, (h // 256) % 256, (h // 65536) % 256))
+    img.save(str(path))
     return str(path)
 
 

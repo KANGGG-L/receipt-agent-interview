@@ -724,12 +724,58 @@ def _model_name_for(cfg, side, use_grey):
     return cfg.recognition_model if side == "rec" else cfg.audit_model
 
 
+def _leg_identity(cfg, side, use_grey):
+    """解析单腿 (kind, model, base_url) 三元组（openai 引擎以 base_url 区分厂商）。"""
+    engine_kind = _engine_kind_for(cfg, side, use_grey)
+    name = _model_name_for(cfg, side, use_grey) or ""
+    kind, resolved = _resolve_engine(name, engine_kind, cfg, side=side, use_grey=use_grey)
+    base_url = ""
+    if kind == "openai" and cfg is not None:
+        if side == "rec":
+            base_url = cfg.grey_openai_rec_base_url if use_grey else cfg.openai_rec_base_url
+        else:
+            base_url = cfg.grey_openai_aud_base_url if use_grey else cfg.openai_aud_base_url
+    return kind, resolved, (base_url or "")
+
+
+# 生成器-评估器异构（ai_registry 准入规则 3）运行时告警：每次进程对同一
+# (kind, model, base_url, use_grey) 组合只告警一次，防刷屏；不阻断任何调用。
+_HOMOGENEITY_WARNED: set = set()
+
+_HOMOGENEITY_MSG = ("识别腿与审核腿同源（%s/%s），违反 ai_registry 准入规则 3，"
+                    "请在引擎配置切换异构审核模型")
+
+
+def check_leg_homogeneity(cfg=None, use_grey=False):
+    """双腿同源检查（L1）：识别腿与审核腿解析为同引擎同名时 logger.warning 人话告警。
+
+    - 不阻断：仅告警，模型照常构建（异构是准入规则，运行时只提示不拒绝）
+    - 每进程每组合只告警一次（_HOMOGENEITY_WARNED 去重，防刷屏）
+    - cfg=None（脱离引擎配置的裸调用）无法判定双腿，跳过
+    - use_grey=True 检查灰测组双腿；常规腿与灰测腿互不影响
+    """
+    if cfg is None:
+        return
+    try:
+        rec = _leg_identity(cfg, "rec", use_grey)
+        aud = _leg_identity(cfg, "aud", use_grey)
+    except Exception:
+        return  # 配置字段缺失等异常场景静默跳过，绝不影响构建路径
+    if rec == aud:
+        key = (rec[0], rec[1], rec[2], bool(use_grey))
+        if key in _HOMOGENEITY_WARNED:
+            return
+        _HOMOGENEITY_WARNED.add(key)
+        logging.getLogger("llm").warning(_HOMOGENEITY_MSG % (rec[0], rec[1]))
+
+
 def build_recognition_model(model_name=None, cfg=None, use_grey=False):
     """按 EngineConfig 构建识别用多模态模型。use_grey=True 走灰测组。"""
     engine_kind = _engine_kind_for(cfg, "rec", use_grey) if cfg is not None else ""
     default = _model_name_for(cfg, "rec", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
     name = model_name or (default or os.environ.get("CODEBUDDY_MODEL", "opencode/mimo-v2.5-free"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=use_grey)
+    check_leg_homogeneity(cfg, use_grey=use_grey)
     return _build(kind, resolved, cfg, side="rec", use_grey=use_grey,
                    transport=_transport_for(cfg, "rec", use_grey))
 
@@ -740,6 +786,7 @@ def build_audit_model(model_name=None, cfg=None, use_grey=False):
     default = _model_name_for(cfg, "aud", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
     name = model_name or (default or os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="aud", use_grey=use_grey)
+    check_leg_homogeneity(cfg, use_grey=use_grey)
     return _build(kind, resolved, cfg, side="aud", use_grey=use_grey,
                    transport=_transport_for(cfg, "aud", use_grey))
 

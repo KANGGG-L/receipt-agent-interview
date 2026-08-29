@@ -344,6 +344,7 @@ def test_run_eval_report_fields(tmp_path):
     report = run_eval.run_eval(
         split="test", prompt_version="v1_2_0_sku_clean", engine="stub",
         evalset_dir=evalset, report_dir=str(tmp_path / "reports"),
+        require_confirmed=False,  # L2：本用例只验报告字段通路，不测 GT 门禁
     )
     for key in ("accuracy", "cer", "per_field_accuracy", "edit_proxy",
                 "evidence_coverage", "avg_tokens", "p50_latency_ms",
@@ -404,7 +405,8 @@ def test_single_sample_failure_does_not_break_run(tmp_path):
     report = run_eval.run_eval(split="test", prompt_version="v1_2_0_sku_clean",
                                engine="stub", evalset_dir=evalset,
                                report_dir=str(tmp_path / "reports"),
-                               predictor=_boom)
+                               predictor=_boom,
+                               require_confirmed=False)  # L2：不测门禁
     assert report["n_samples"] > 0
     assert report["accuracy"] == 0.0
     assert report["errors"] == report["n_samples"]
@@ -414,9 +416,45 @@ def test_missing_expected_is_counted_not_crashed(tmp_path):
     evalset = _prepare_corpus(tmp_path)  # 不写任何 expected
     report = run_eval.run_eval(split="test", prompt_version="v1_2_0_sku_clean",
                                engine="stub", evalset_dir=evalset,
-                               report_dir=str(tmp_path / "reports"))
+                               report_dir=str(tmp_path / "reports"),
+                               require_confirmed=False)  # L2：missing 场景关掉门禁统计
     assert report["gt_status_breakdown"].get("missing") == report["n_samples"]
     assert report["accuracy"] == 0.0
+
+
+def test_test_split_default_requires_confirmed_gt(tmp_path):
+    """L2：test split 默认强制 GT 确认门禁——存在未确认 GT 即拒绝出分（SystemExit）。"""
+    evalset = _prepare_corpus(tmp_path)  # manifest gt_status=missing，无 expected
+    with pytest.raises(SystemExit) as ei:
+        run_eval.run_eval(split="test", prompt_version="v1_2_0_sku_clean",
+                          engine="stub", evalset_dir=evalset,
+                          report_dir=str(tmp_path / "reports"))
+    assert "confirmed" in str(ei.value) or "确认" in str(ei.value), \
+        "拒绝信息必须说明 GT 未确认"
+
+
+def test_test_split_no_require_confirmed_scores_with_partial_marker(tmp_path):
+    """L2：test split 显式关闭门禁可出分，但报告必须带 gt_status=partial 标记；
+    val/train 默认行为不变（默认不强制，无 partial 标记）。"""
+    evalset = _prepare_corpus(tmp_path)
+    for r in _read_manifest(os.path.join(evalset, "manifest.csv")):
+        _write_expected(evalset, r["sample_id"], _GT_PAYLOAD)
+
+    report = run_eval.run_eval(split="test", prompt_version="v1_2_0_sku_clean",
+                               engine="stub", evalset_dir=evalset,
+                               report_dir=str(tmp_path / "reports"),
+                               require_confirmed=False)
+    assert report["n_scored"] > 0, "显式关闭门禁后必须能出分"
+    assert report.get("gt_status") == "partial", "绕过门禁的报告必须带 partial 标记"
+    with open(report["report_path"], encoding="utf-8") as f:
+        saved = json.load(f)
+    assert saved.get("gt_status") == "partial", "落盘报告同样必须带 partial 标记"
+
+    # val/train 维持既有默认：不强制、无 partial 标记
+    val_report = run_eval.run_eval(split="val", prompt_version="v1_2_0_sku_clean",
+                                   engine="stub", evalset_dir=evalset,
+                                   report_dir=str(tmp_path / "reports"))
+    assert "gt_status" not in val_report or val_report.get("gt_status") != "partial"
 
 
 # ------------------------------------------------------------------

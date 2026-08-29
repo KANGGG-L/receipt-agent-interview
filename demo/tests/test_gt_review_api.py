@@ -224,12 +224,25 @@ def test_require_confirmed_refuses_to_score(evalset_env):
     assert report["n_scored"] == len([r for r in all_rows if r["split"] == "test"])
 
 
-def test_require_confirmed_default_off_backward_compatible(evalset_env):
-    """默认关：draft 状态下不带开关照常出分（向后兼容）。"""
+def test_require_confirmed_default_enforced_on_test_split(evalset_env):
+    """L2 收口：test split 默认强制 GT 确认（存在 draft 即拒绝出分）。
+
+    旧语义（默认关）已收口为生产准入口径：test 默认 True；val/train 默认仍关，
+    需显式 --require-confirmed；显式 require_confirmed=False 可出分但报告带
+    gt_status=partial 标记。
+    """
     evalset_dir, rows = evalset_env
+    # 默认（require_confirmed=None → test split 强制）：有 draft 拒绝出分
+    with pytest.raises(SystemExit):
+        run_eval.run_eval(split="test", engine="stub", evalset_dir=evalset_dir,
+                          report_dir=os.path.join(evalset_dir, "reports"))
+    # 显式关闭门禁：可出分，报告必须带 partial 标记
     report = run_eval.run_eval(split="test", engine="stub", evalset_dir=evalset_dir,
-                               report_dir=os.path.join(evalset_dir, "reports"))
+                               report_dir=os.path.join(evalset_dir, "reports"),
+                               require_confirmed=False)
     assert report["n_samples"] == len([r for r in rows if r["split"] == "test"])
+    assert report.get("gt_status") == "partial", \
+        "test split 显式关闭门禁出分必须带 gt_status=partial 标记"
 
 
 # ------------------------------------------------------------------

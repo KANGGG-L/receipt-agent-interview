@@ -3500,6 +3500,28 @@ def should_distill_vendor_memory(vendor, tenant_id="default", threshold=None):
 EVAL_CANDIDATE_REASONS = ("low_confidence", "gate_reject", "user_edit", "audit_discrepancy")
 EVAL_CANDIDATE_STATUSES = ("pending", "promoted_to_val", "promoted_to_test", "rejected")
 
+# L3/T6 候选池卫生：pending 候选总量上限，防止线上信号把候选池刷爆。
+# 超限时 create_eval_candidate 返回既有错误形态 (None, False)，不抛异常不阻断主链路。
+# TODO(T10): 若后续需要按租户/环境调整，改为配置化开关
+EVAL_CANDIDATE_MAX_PENDING = 500
+
+
+def _receipt_image_sha1(s, receipt_id):
+    """计算单据原图文件 sha1（L3 候选池去重，复用 manifest src_sha1 思路）。
+
+    图片缺失/读取失败返回 ""（不阻断建候选，仅跳过去重比对）。
+    """
+    import hashlib
+    try:
+        rc = s.get(_ReceiptRow, int(receipt_id)) if _ReceiptRow is not None else None
+        path = getattr(rc, "image_path", "") if rc is not None else ""
+        if not path or not os.path.exists(path):
+            return ""
+        with open(path, "rb") as f:
+            return hashlib.sha1(f.read()).hexdigest()
+    except Exception:
+        return ""
+
 
 def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
                           confidence=None, ai_candidate=None, note=""):
@@ -3508,6 +3530,12 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
     同 receipt_id 同 reason 已存在（任意状态）时返回 (既有 id, False)，不重复建。
     tenant_id 缺省时回读单据归属；均无则落 'default'。
     返回 (candidate_id, created)。
+
+    L3 候选池卫生：
+    - pending 候选总量达 EVAL_CANDIDATE_MAX_PENDING 时拒绝新建，返回 (None, False)
+      （既有错误形态，不抛异常；supervisor 钩子侧负责 warning）
+    - 原图 sha1 相同且 reason 相同的 pending 候选已存在时跳过不重复建，
+      返回 (既有候选 id, False)；sha1 记入 ai_candidate_json.src_sha1
     """
     if receipt_id is None or _EvalCandidateRow is None:
         return None, False
@@ -3522,6 +3550,26 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
         ).first()
         if existing is not None:
             return existing.id, False
+        # L3 卫生 1：pending 总量上限（超限拒绝，返回既有 (None, False) 形态）
+        pending_count = s.query(_EvalCandidateRow).filter(
+            _EvalCandidateRow.status == "pending",
+        ).count()
+        if pending_count >= EVAL_CANDIDATE_MAX_PENDING:
+            return None, False
+        # L3 卫生 2：原图 sha1 去重（同图同 reason 已有 pending 则跳过）
+        src_sha1 = _receipt_image_sha1(s, receipt_id)
+        if src_sha1:
+            same_image = s.query(_EvalCandidateRow).filter(
+                _EvalCandidateRow.reason == str(reason),
+                _EvalCandidateRow.status == "pending",
+            ).all()
+            for cand in same_image:
+                try:
+                    cand_json = json.loads(cand.ai_candidate_json or "{}")
+                except Exception:
+                    continue
+                if cand_json.get("src_sha1") == src_sha1:
+                    return cand.id, False
         if tenant_id is None or not str(tenant_id).strip():
             rc = s.get(_ReceiptRow, int(receipt_id))
             tenant_id = getattr(rc, "tenant_id", None) if rc is not None else None
@@ -3531,13 +3579,16 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
                 conf = float(confidence)
             except (TypeError, ValueError):
                 conf = None
+        ai_payload = dict(ai_candidate or {})
+        if src_sha1:
+            ai_payload["src_sha1"] = src_sha1
         row = _EvalCandidateRow(
             receipt_id=int(receipt_id),
             reason=str(reason),
             tenant_id=str(tenant_id or "default"),
             doc_form=str(doc_form or "")[:60],
             confidence=conf,
-            ai_candidate_json=json.dumps(ai_candidate or {}, ensure_ascii=False),
+            ai_candidate_json=json.dumps(ai_payload, ensure_ascii=False),
             note=str(note or "")[:500],
             status="pending",
             created_at=now_iso(),

@@ -170,6 +170,11 @@ def maybe_create_eval_candidate(receipt_id, reason, doc_form="", confidence=None
             logging.getLogger("supervisor").info(
                 "EVAL_CANDIDATE created id=%s receipt=%s reason=%s",
                 cid, receipt_id, reason)
+        elif cid is None:
+            # L3 候选池卫生：create_eval_candidate 返回 (None, False) 即超限拒绝
+            logging.getLogger("supervisor").warning(
+                "评测候选池已达上限，候选未创建(不阻断主链路): reason=%s receipt=%s",
+                reason, receipt_id)
         return cid, created
     except Exception as e:
         logging.getLogger("supervisor").warning(
@@ -177,12 +182,42 @@ def maybe_create_eval_candidate(receipt_id, reason, doc_form="", confidence=None
         return None, False
 
 
+# L3/T6 候选池卫生：audit_discrepancy 严重度门槛。
+# 差异条数达到该值视为严重；不足时仅在含总额类差异（supplier/total/amount
+# 关键词）时才回流建候选，单条轻微差异（如币种缺失）不建候选。
+# TODO(T10): 若后续需要按租户/环境调整，改为配置化开关
+AUDIT_DISCREPANCY_SEVERE_MIN_COUNT = 2
+_AUDIT_DISCREPANCY_TOTAL_KEYWORDS = ("supplier", "total", "amount")
+
+
+def _audit_discrepancy_severe(discrepancies) -> bool:
+    """审核分歧严重度判定（L3）：条数达标 或 含总额类差异（supplier/total/amount）。
+
+    discrepancies 元素为 {"field": ..., "issue": ...}（兼容 dict 与其他形态，
+    非 dict 退化为整串文本匹配）。任何异常按不严重处理（不建候选，不阻断）。
+    """
+    try:
+        if len(discrepancies) >= AUDIT_DISCREPANCY_SEVERE_MIN_COUNT:
+            return True
+        for d in discrepancies:
+            if isinstance(d, dict):
+                text = " ".join(str(d.get(k, "") or "") for k in ("field", "issue"))
+            else:
+                text = str(d or "")
+            tl = text.lower()
+            if any(k in tl for k in _AUDIT_DISCREPANCY_TOTAL_KEYWORDS):
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _reflow_from_state(state: dict):
     """管线收尾回流判定（T6 Gap A5）：三类信号各查一次，幂等去重交给 db 层。
 
     - low_confidence: data.confidence 非空且 < EVAL_CANDIDATE_LOW_CONFIDENCE
     - gate_reject:    state.contract_error 非空（门禁拒绝/快速反馈最终态）
-    - audit_discrepancy: audit.discrepancies 非空
+    - audit_discrepancy: audit.discrepancies 非空且达严重度门槛（L3 候选池卫生）
     user_edit（人工保存差异）在 api_receipts.save_edited 路径挂钩。
     """
     rid = state.get("receipt_id")
@@ -211,10 +246,11 @@ def _reflow_from_state(state: dict):
         maybe_create_eval_candidate(
             rid, "gate_reject", doc_form=doc_form, confidence=conf,
             ai_candidate=gt, note=gate_err[:200])
-    # 3) 审核分歧
+    # 3) 审核分歧（L3 严重度门槛：单条轻微差异不足以回流建候选）
     audit = state.get("audit_result") or {}
     discrepancies = audit.get("discrepancies") if isinstance(audit, dict) else None
-    if isinstance(discrepancies, list) and discrepancies:
+    if isinstance(discrepancies, list) and discrepancies \
+            and _audit_discrepancy_severe(discrepancies):
         maybe_create_eval_candidate(
             rid, "audit_discrepancy", doc_form=doc_form, confidence=conf,
             ai_candidate=gt,
