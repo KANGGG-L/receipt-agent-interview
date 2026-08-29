@@ -1,16 +1,27 @@
 // -*- coding: utf-8 -*-
-// GT 人工抽检台前端（T4 Gap A2）。
+// GT 人工抽检队列页前端。
+// 设计原则（用户反馈③收敛单一编辑表面）：本页只做导航/进度/过滤/批量/回流候选，
+// 不含任何可编辑控件；单张 GT 校正的唯一编辑表面是工作台
+// /evalset/workbench/<sid>（复用店员复核界面，含付款标记等全部字段，控制变量）。
 // 数据源：/api/evalset/*（仅 admin）。角色与主台一致：localStorage('demo_role') → X-Role 头。
-// 快捷键：J 下一张 / K 上一张 / A 确认当前并跳下一张。
+// 快捷键：J 下一张 / K 上一张（确认动作只在工作台发生）。
 
 (function () {
     'use strict';
 
     var samples = [];          // 当前过滤条件下的样本列表
     var pos = -1;              // 当前样本下标
-    var current = null;        // 当前样本详情（含 gt）
+    var current = null;        // 当前样本详情（含 gt，仅用于缩略图渲染）
     var stats = null;
-    var formDirty = false;     // 当前表单是否有已编辑未保存的内容
+
+    var DOC_FORM_LABELS = {
+        printed_delivery_note: '印刷送货单',
+        ncr_handwritten: '手写单',
+        thermal: '热敏小票',
+        weigh_slip: '磅单',
+        correction_note: '更正单',
+        monthly_statement: '月结单'
+    };
 
     function role() {
         try { return localStorage.getItem('demo_role') || 'admin'; } catch (e) { return 'admin'; }
@@ -51,6 +62,21 @@
         });
     }
 
+    function esc(s) {
+        var d = document.createElement('div');
+        d.textContent = s === null || s === undefined ? '' : String(s);
+        return d.innerHTML;
+    }
+
+    function docFormLabel(code) {
+        return DOC_FORM_LABELS[code] || code || '-';
+    }
+
+    function statusLabel(st) {
+        return st === 'confirmed' ? '已确认' :
+            (st === 'draft' ? '待抽检' : (st === 'missing' ? '缺 GT' : (st || '-')));
+    }
+
     // ---------------- 统计与进度条 ----------------
     function loadStats() {
         return api('/api/evalset/stats').then(function (data) {
@@ -69,7 +95,7 @@
             '（' + pct + '%）｜待抽检 ' + s.draft + '｜缺 GT ' + s.missing;
     }
 
-    // ---------------- 列表加载 ----------------
+    // ---------------- 样本列表 ----------------
     function loadSamples() {
         var split = document.getElementById('splitSelect').value;
         var status = document.getElementById('statusSelect').value;
@@ -79,12 +105,43 @@
             samples = data.data.samples || [];
             document.getElementById('posText').textContent = samples.length ?
                 ('本批 ' + samples.length + ' 张') : '本批没有样本';
+            renderSampleList();
             if (!samples.length) {
                 showEmpty('当前过滤条件下没有样本。若刚生成完候选，请点「刷新」。');
                 return;
             }
             hideEmpty();
             gotoSample(0);
+        });
+    }
+
+    function renderSampleList() {
+        var wrap = document.getElementById('sampleList');
+        wrap.innerHTML = '';
+        if (!samples.length) {
+            wrap.innerHTML = '<div class="loading-note">无样本</div>';
+            return;
+        }
+        samples.forEach(function (s, i) {
+            var row = document.createElement('div');
+            row.className = 'sample-row' + (i === pos ? ' selected' : '');
+            row.innerHTML =
+                '<span class="sample-id">' + esc(s.sample_id) + '</span>' +
+                '<span class="sample-form">' + esc(docFormLabel(s.doc_form)) + '</span>' +
+                '<span class="sample-status st-' + esc(s.gt_status || 'missing') + '">' +
+                esc(statusLabel(s.gt_status)) + '</span>';
+            row.title = '点击选中该样本';
+            var btn = document.createElement('button');
+            btn.className = 'btn-secondary row-workbench';
+            btn.textContent = '在工作台核对';
+            btn.title = '打开与店员复核界面同源的工作台（唯一编辑表面）';
+            btn.onclick = function (e) {
+                e.stopPropagation();
+                openWorkbenchFor(s.sample_id);
+            };
+            row.appendChild(btn);
+            row.onclick = function () { if (i !== pos) { gotoSample(i); } };
+            wrap.appendChild(row);
         });
     }
 
@@ -100,7 +157,7 @@
         loadSamples().catch(showErr);
     }
 
-    // ---------------- 样本详情渲染 ----------------
+    // ---------------- 当前样本（缩略图 + 只读信息卡） ----------------
     function gotoSample(idx) {
         if (!samples.length) { return; }
         if (idx < 0) { idx = 0; }
@@ -113,12 +170,14 @@
         var sid = samples[pos].sample_id;
         document.getElementById('posText').textContent =
             '第 ' + (pos + 1) + ' / ' + samples.length + ' 张（' + sid + '）';
+        renderSampleList();
+        renderInfoCard(samples[pos]);
         var box = document.getElementById('imgBox');
         box.innerHTML = '<div class="loading-note">加载图片中…</div>';
         api('/api/evalset/sample/' + encodeURIComponent(sid)).then(function (data) {
             current = data.data;
             renderImage();
-            renderForm();
+            renderInfoCard(current);
         }).catch(showErr);
     }
 
@@ -139,97 +198,33 @@
             (current.gt_source_model || '无');
     }
 
-    function renderForm() {
-        formDirty = false;
-        var gt = current.gt || {};
-        document.getElementById('fSupplier').value = gt.supplier_name || '';
-        document.getElementById('fDate').value = gt.date || '';
-        var total = gt.total_amount;
-        document.getElementById('fTotal').value =
-            (total === null || total === undefined || total === '') ? '' : total;
-        document.getElementById('fDocForm').value = gt.doc_form || 'printed_delivery_note';
-
-        var body = document.getElementById('itemsBody');
-        body.innerHTML = '';
-        var items = (gt.items && gt.items.length) ? gt.items : [];
-        if (!items.length) {
-            addItemRow();
-        } else {
-            items.forEach(function (it) { addItemRow(it); });
+    // 只读样本信息卡：样本号/形态/候选来源模型/gt_status（来自 samples 接口，
+    // 无任何可编辑控件；编辑请进工作台）。
+    function renderInfoCard(src) {
+        src = src || {};
+        function set(id, v) {
+            document.getElementById(id).textContent =
+                (v === undefined || v === null || v === '') ? '-' : v;
         }
-
+        set('infoSampleId', src.sample_id);
+        set('infoDocForm', docFormLabel(src.doc_form));
+        set('infoSourceModel', src.gt_source_model || '无');
+        set('infoGtStatus', statusLabel(src.gt_status));
         var badge = document.getElementById('gtStatusBadge');
-        var st = current.gt_status || 'missing';
+        var st = src.gt_status || 'missing';
         badge.textContent = st === 'confirmed' ? '已确认' :
             (st === 'draft' ? '待抽检（draft）' : '缺 GT');
         badge.className = st === 'confirmed' ? 'status-ok' :
             (st === 'draft' ? 'status-draft' : 'status-missing');
-        document.getElementById('confirmBtn').textContent =
-            st === 'confirmed' ? '更新确认内容（A）' : '确认本张（A）并跳下一张';
     }
 
-    function addItemRow(it) {
-        it = it || {};
-        // 纵深防御：候选 GT 可能仍带 quantity 键（旧数据/服务端兜底前），渲染层统一读 qty
-        if (it.qty === undefined || it.qty === null) { it.qty = it.quantity; }
-        var tr = document.createElement('tr');
-        ['name', 'qty', 'unit', 'unit_price', 'amount'].forEach(function (key) {
-            var td = document.createElement('td');
-            var input = document.createElement('input');
-            input.type = (key === 'name' || key === 'unit') ? 'text' : 'number';
-            if (key !== 'name' && key !== 'unit') { input.step = '0.01'; }
-            input.value = it[key] === null || it[key] === undefined ? '' : it[key];
-            input.dataset.field = key;
-            td.appendChild(input);
-            tr.appendChild(td);
-        });
-        var tdDel = document.createElement('td');
-        var del = document.createElement('button');
-        del.className = 'row-del';
-        del.textContent = '删';
-        del.title = '删除本明细行';
-        del.onclick = function () { tr.remove(); };
-        tdDel.appendChild(del);
-        tr.appendChild(tdDel);
-        document.getElementById('itemsBody').appendChild(tr);
-    }
-
-    function collectGt() {
-        var items = [];
-        var rows = document.querySelectorAll('#itemsBody tr');
-        rows.forEach(function (tr) {
-            var it = {};
-            tr.querySelectorAll('input').forEach(function (input) {
-                var v = input.value.trim();
-                if (input.dataset.field === 'name' || input.dataset.field === 'unit') {
-                    it[input.dataset.field] = v;
-                } else {
-                    it[input.dataset.field] = v === '' ? null : parseFloat(v);
-                }
-            });
-            // 跳过整行为空的行
-            if (!(it.name === '' && it.qty === null && it.amount === null)) {
-                items.push(it);
-            }
-        });
-        return {
-            supplier_name: document.getElementById('fSupplier').value.trim(),
-            date: document.getElementById('fDate').value.trim(),
-            total_amount: document.getElementById('fTotal').value === '' ?
-                null : parseFloat(document.getElementById('fTotal').value),
-            doc_form: document.getElementById('fDocForm').value,
-            items: items
-        };
-    }
-
-    // ---------------- 确认 ----------------
+    // ---------------- 批量原样确认 ----------------
     function isBlankTotal(v) {
         return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
     }
 
-    // GT v2 字段（对齐 ReceiptData 契约）：队列页表单只渲染核心字段，
-    // 付款标记/币种/费用/注记等从 AI 候选原样透传（完整编辑走工作台
-    // /evalset/workbench/<sid>，那里复用店员复核界面含付款标记控件）。
+    // GT v2 字段（对齐 ReceiptData 契约）：批量原样确认从服务端 AI 候选原样透传
+    // （付款标记/币种/费用/注记等），完整人工编辑只在工作台 /evalset/workbench/<sid>。
     var GT_V2_KEYS = ['payment_marked', 'payment_evidence', 'currency',
         'discount_amount', 'deposit_amount', 'delivery_fee', 'service_fee',
         'tax_amount', 'rounding_adjustment', 'adjustment_notes'];
@@ -252,50 +247,9 @@
         return gt;
     }
 
-    function confirmCurrent(advance) {
-        if (!current) { toast('当前没有可确认的样本', true); return; }
-        var gt = mergeGtV2(collectGt());
-        if (!gt.supplier_name) { toast('供应商名称为空，请先核对图面填写', true); return; }
-        if (!gt.date) { toast('开单日期为空：图面确实无日期时可填 1970-01-01 并在明细备注', true); return; }
-        var blankTotal = isBlankTotal(gt.total_amount);
-        if (blankTotal && !window.confirm('总额为空。若图面确无总额（如月结单）可留空确认；' +
-                '否则请回到表单核实图面金额。确定留空吗？')) {
-            return;
-        }
-        var payload = { gt: gt };
-        if (blankTotal) { payload.confirm_blank_total = true; }
-        api('/api/evalset/sample/' + encodeURIComponent(current.sample_id) + '/confirm', {
-            method: 'POST',
-            body: JSON.stringify(payload)
-        }).then(function () {
-            toast('已确认 ' + current.sample_id);
-            // 同步本地列表状态，避免重复确认
-            samples.forEach(function (s) {
-                if (s.sample_id === current.sample_id) { s.gt_status = 'confirmed'; }
-            });
-            if (advance && document.getElementById('statusSelect').value === 'draft') {
-                // draft 视图：当前张已确认，原地刷新列表后继续看下一张
-                loadSamples().catch(showErr);
-            } else if (advance) {
-                gotoSample(pos + 1);
-            } else {
-                loadStats().then(renderFormFallback).catch(function () {});
-            }
-        }).catch(showErr);
-    }
-
-    function renderFormFallback() {
-        // 确认后刷新进度（不移动指针）
-        if (current) {
-            current.gt_status = 'confirmed';
-            renderForm();
-        }
-    }
-
-    // 批量原样确认：对本批 draft 样本逐张取回服务端 AI 候选原样提交。
+    // 批量原样确认：对本批 draft 样本逐张取回服务端 AI 候选原样提交（不经过本页任何表单）。
     // 风险显式化：不做逐张人工核对（一键操作），因此弹窗必须列出样本 ID 清单与总数，
-    // 并明确警告「未经人工逐张核对，将直接参与出分」；若当前表单有未保存编辑，先让用户选择
-    // 「放弃编辑」或「取消批量」，避免静默丢失人工校正。
+    // 并明确警告「未经人工逐张核对，将直接参与出分」；人工校正请逐张进工作台。
     function batchConfirmUntouched() {
         if (document.getElementById('statusSelect').value !== 'draft') {
             toast('批量确认只对「待抽检（draft）」视图可用', true);
@@ -303,15 +257,10 @@
         }
         var draftCount = samples.length;
         if (!draftCount) { toast('本批没有待抽检样本', true); return; }
-        if (formDirty &&
-                !window.confirm('当前样本的表单有已编辑但未保存的内容，批量确认不会包含这些编辑' +
-                    '（将切换样本导致编辑丢失）。选择「确定」放弃编辑并继续批量，或「取消」先保存。')) {
-            return;
-        }
         var ids = samples.map(function (s) { return s.sample_id; });
         if (!window.confirm('即将原样确认本批 ' + ids.length + ' 张 draft 样本：\n' + ids.join('、') +
                 '\n\n警告：这些 GT 未经人工逐张核对，将直接参与出分。' +
-                '仅适用于您已核对图面且候选无需改动的情况。确定继续？')) {
+                '如需人工校正（含付款标记），请逐张进工作台核对。确定继续？')) {
             return;
         }
         var done = 0, failed = 0;
@@ -361,13 +310,7 @@
 
     // ---------------- 回流候选（T6 Gap A5）----------------
     // 简化列表实现：线上失败样本（低置信/门禁拒绝/店员修改/审核分歧）在此人工取舍。
-    // 晋升仅把「原图 + AI 候选 GT」带进评测集（draft），仍需在上方抽检台逐张核对确认。
-    function esc(s) {
-        var d = document.createElement('div');
-        d.textContent = s === null || s === undefined ? '' : String(s);
-        return d.innerHTML;
-    }
-
+    // 晋升仅把「原图 + AI 候选 GT」带进评测集（draft），仍需进工作台逐张核对确认。
     function loadCandidates() {
         return api('/api/evalset/candidates?status=pending').then(function (data) {
             var list = (data.data && data.data.candidates) || [];
@@ -407,14 +350,14 @@
     function promoteCandidate(id, split) {
         if (!window.confirm('把候选 #' + id + ' 晋升到 ' + split + ' 集？\n' +
                 '将复制原图与 AI 候选 GT（未经人工核对，状态为 draft），' +
-                '晋升后请在上方抽检台逐张核对确认。')) {
+                '晋升后请在工作台逐张核对确认。')) {
             return;
         }
         api('/api/evalset/candidates/' + id + '/promote?split=' + encodeURIComponent(split), {
             method: 'POST'
         }).then(function (data) {
             toast('已晋升为评测样本 ' + (data.data && data.data.sample_id || '') +
-                '（' + split + ' 集，GT 为 AI 候选 draft，请记得抽检确认）');
+                '（' + split + ' 集，GT 为 AI 候选 draft，请进工作台抽检确认）');
             loadCandidates().catch(function () {});
             loadStats().catch(function () {});
         }).catch(showErr);
@@ -438,24 +381,30 @@
     function nextSample() { gotoSample(pos + 1); }
     function prevSample() { gotoSample(pos - 1); }
 
-    // 跳转工作台：在店员日常使用的同一套 Side-by-Side 复核界面中完成校正
-    // （合并反馈②：eval 工作台复用用户界面，控制变量；本队列页保留导航/进度/过滤/批量）。
+    // 跳转工作台：在店员日常使用的同一套 Side-by-Side 复核界面中完成全部校正
+    // （唯一编辑表面，控制变量；本队列页只保留导航/进度/过滤/批量/回流候选）。
+    function openWorkbenchFor(sid) {
+        if (!sid) { toast('没有样本 ID，无法进入工作台', true); return; }
+        window.location.href = '/evalset/workbench/' + encodeURIComponent(sid);
+    }
+
     function openWorkbench() {
         if (!current || !current.sample_id) { toast('当前没有样本，无法进入工作台', true); return; }
-        window.location.href = '/evalset/workbench/' + encodeURIComponent(current.sample_id);
+        openWorkbenchFor(current.sample_id);
     }
 
     function showEmpty(msg) {
         var note = document.getElementById('emptyNote');
         note.textContent = msg;
         note.className = 'loading-note';
-        document.getElementById('formArea').style.display = 'none';
+        document.getElementById('infoArea').style.display = 'none';
         document.getElementById('imgBox').innerHTML = '<div class="loading-note">无样本</div>';
+        document.getElementById('gtStatusBadge').textContent = '';
     }
 
     function hideEmpty() {
         document.getElementById('emptyNote').className = 'loading-note hide';
-        document.getElementById('formArea').style.display = '';
+        document.getElementById('infoArea').style.display = '';
     }
 
     function showErr(e) {
@@ -463,22 +412,18 @@
     }
 
     // ---------------- 快捷键 ----------------
+    // 只有 J/K 导航；确认动作统一在工作台（队列页无表单，无 A 键确认）。
     document.addEventListener('keydown', function (e) {
         var tag = (e.target.tagName || '').toLowerCase();
         if (tag === 'input' || tag === 'textarea' || tag === 'select') { return; }
         if (e.metaKey || e.ctrlKey || e.altKey) { return; }
         if (e.key === 'j' || e.key === 'J') { gotoSample(pos + 1); }
         else if (e.key === 'k' || e.key === 'K') { gotoSample(pos - 1); }
-        else if (e.key === 'a' || e.key === 'A') { confirmCurrent(true); }
     });
 
     // ---------------- 启动 ----------------
     document.getElementById('roleNote').textContent =
         '当前角色：' + role() + (role() === 'admin' ? '' : '（非 admin，接口将返回 403，请回主界面切换角色）');
-    // 表单脏标记：任何输入即视为「已编辑未保存」，批量确认前需用户显式取舍
-    document.getElementById('formArea').addEventListener('input', function () {
-        formDirty = true;
-    });
     reloadAll();
 
     // 暴露给 inline onclick
@@ -487,8 +432,6 @@
     window.gotoSample = gotoSample;
     window.nextSample = nextSample;
     window.prevSample = prevSample;
-    window.confirmCurrent = confirmCurrent;
-    window.addItemRow = addItemRow;
     window.openWorkbench = openWorkbench;
     window.batchConfirmUntouched = batchConfirmUntouched;
     window.promoteCandidate = promoteCandidate;

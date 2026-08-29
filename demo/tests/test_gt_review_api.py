@@ -497,9 +497,10 @@ def test_batch_confirm_ui_discloses_unreviewed_risk():
     assert "ids.join" in js, "弹窗必须列出将确认的样本 ID 清单"
     assert "ids.length" in js, "弹窗必须给出将确认的总数"
 
-    # 有未保存编辑时必须先让用户选择放弃或取消
-    assert "formDirty" in js, "必须有表单脏标记检测"
-    assert "放弃编辑" in js and "取消" in js
+    # 队列页已收敛为无表单导航面（单一编辑表面=工作台），不存在「未保存编辑」问题，
+    # 批量确认弹窗应指引用户进工作台做人工校正
+    assert "formDirty" not in js, "队列页无内联表单，不应再有表单脏标记逻辑"
+    assert "工作台" in js, "批量确认弹窗必须指引用户进工作台做人工校正"
 
     # 空总额确认链路：前端需携带 confirm_blank_total
     assert "confirm_blank_total" in js
@@ -519,8 +520,43 @@ def test_explicit_paging_buttons_use_wrapper_functions():
     assert 'onclick="prevSample()"' in html, "上一张按钮必须调用 prevSample 包装函数"
     assert 'gotoSample(pos' not in html, "inline onclick 引用局部 pos 会 ReferenceError，禁止"
     assert "window.nextSample = nextSample" in js and "window.prevSample = prevSample" in js
-    # 快捷键逻辑保留
-    assert "e.key === 'j'" in js and "e.key === 'k'" in js and "e.key === 'a'" in js
+    # 快捷键逻辑保留（仅 J/K 导航；A 键确认已随队列表单移除，确认只在工作台发生）
+    assert "e.key === 'j'" in js and "e.key === 'k'" in js
+    assert "e.key === 'a'" not in js, "队列页不应有 A 键确认，单张确认只在工作台发生"
+
+
+# ------------------------------------------------------------------
+# 9b. 单一编辑表面收敛（用户反馈③）：队列页无内联校正表单（f* 无付款标记控件，
+#     与店员界面不一致），单张确认唯一入口是工作台 /evalset/workbench/<sid>
+# ------------------------------------------------------------------
+def test_evalset_queue_page_is_navigation_only_single_edit_surface():
+    demo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    with open(os.path.join(demo_dir, "templates", "evalset.html"), encoding="utf-8") as f:
+        html = f.read()
+    with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
+        js = f.read()
+
+    # T4 时期的内联校正表单必须整体移除（模板与 JS 双侧）
+    for forbidden in ("fSupplier", "fDate", "fTotal", "fDocForm", "itemsBody",
+                      "collectGt", "addItemRow", "confirmCurrent", "formDirty"):
+        assert forbidden not in html, "队列页模板不应再含队列表单残留: %s" % forbidden
+        assert forbidden not in js, "队列页 JS 不应再读队列表单字段: %s" % forbidden
+    assert "<input" not in html and "<table class=\"items\"" not in html, \
+        "队列页不得含任何可编辑输入框或明细行编辑表格"
+
+    # 空出版面用只读样本信息卡补充（来自 samples 接口，无可编辑控件）
+    assert "样本信息" in html and "候选来源模型" in html and "gtStatusBadge" in html
+    assert "sampleInfoCard" in html and "infoSampleId" in html
+
+    # 单张确认唯一入口=工作台：按钮与逐行入口、选中高亮都必须存在
+    assert "在工作台核对" in html, "队列页必须保留「在工作台核对」入口"
+    assert "openWorkbench" in js and "/evalset/workbench/" in js
+    assert "sample-row" in js and "selected" in js, "样本列表当前选中样本必须视觉高亮"
+
+    # 保留面：过滤/进度/批量原样确认/回流候选
+    assert "splitSelect" in html and "statusSelect" in html
+    assert "progressFill" in html
+    assert "batchConfirmUntouched" in js and "api/evalset/candidates" in js
 
 
 # ------------------------------------------------------------------

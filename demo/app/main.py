@@ -107,7 +107,12 @@ def index():
 
 @app.get("/evalset")
 def evalset_review_page():
-    """GT 人工抽检台（T4 Gap A2）：左图右表单逐字段校正 + 快捷键确认。"""
+    """GT 人工抽检队列页（T4 Gap A2，反馈③收敛后）。
+
+    只保留导航/进度/过滤/批量原样确认/回流候选，无任何可编辑控件；
+    单张 GT 校正唯一编辑表面是 /evalset/workbench/<sid>（复用店员复核界面，
+    含付款标记控件，控制变量）。
+    """
     resp = FileResponse(TEMPLATES_DIR / "evalset.html")
     if DEV_MODE:
         resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
