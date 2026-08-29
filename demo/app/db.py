@@ -2028,11 +2028,13 @@ def _is_placeholder_key(key) -> bool:
 
 
 def hydrate_engine_config_from_env():
-    """启动自愈：识别密钥为空/占位符时，自动从 .env 读取真实密钥并装配识别引擎。
+    """启动装配：SiliconFlow 为默认识别 provider（用户决策 2026-08-30）。
 
-    密钥来源优先级：SILICONFLOW_API_KEY / OPENAI_API_KEY（SiliconFlow 等 OpenAI 兼容）> DASHSCOPE_API_KEY。
-    SiliconFlow 通道装配前做轻量健康检查（/models），故障时自动改用 DashScope。
-    已存在真实密钥的配置一律不覆盖。幂等，可每次启动安全执行。
+    每次重启都把识别腿强制装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
+    管理台对识别引擎的临时切换在重启后不保留（灰测组与审核腿配置不受影响）。
+    密钥优先级：SILICONFLOW_API_KEY / OPENAI_API_KEY（SiliconFlow 等 OpenAI 兼容）> DASHSCOPE_API_KEY。
+    SiliconFlow 通道装配前做轻量健康检查（/models），故障时自动改用 DashScope；
+    两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
     """
     import logging
     log = logging.getLogger("startup")
@@ -2040,8 +2042,6 @@ def hydrate_engine_config_from_env():
         from dotenv import load_dotenv
         load_dotenv()
         cfg = get_engine_config()
-        if not _is_placeholder_key(cfg.openai_rec_api_key):
-            return
         sf_key = (os.environ.get("SILICONFLOW_API_KEY")
                   or os.environ.get("OPENAI_REC_API_KEY")
                   or os.environ.get("OPENAI_API_KEY") or "").strip()
@@ -2059,7 +2059,7 @@ def hydrate_engine_config_from_env():
             cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
                                     or os.environ.get("OPENAI_MODEL")
                                     or cfg.openai_rec_model or "Qwen/Qwen2.5-VL-7B-Instruct")
-            source = "SILICONFLOW/OPENAI"
+            source = "SILICONFLOW/OPENAI（默认 provider，重启强制装配）"
         elif ds_key and not _is_placeholder_key(ds_key):
             cfg.recognition_engine = "openai"
             cfg.openai_rec_base_url = (os.environ.get("DASHSCOPE_BASE_URL")
@@ -2067,12 +2067,12 @@ def hydrate_engine_config_from_env():
             cfg.openai_rec_api_key = ds_key
             cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
                                     or cfg.openai_rec_model or "qwen3-vl-flash")
-            source = "DASHSCOPE_API_KEY"
+            source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配）"
         else:
             log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），保持现有引擎配置")
             return
         set_engine_config(cfg)
-        log.info(f"[engine-env] 已从 .env {source} 自动装配识别引擎: {cfg.openai_rec_base_url} / {cfg.openai_rec_model}")
+        log.info(f"[engine-env] 已从 .env {source}: {cfg.openai_rec_base_url} / {cfg.openai_rec_model}")
     except Exception as e:
         log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
 
