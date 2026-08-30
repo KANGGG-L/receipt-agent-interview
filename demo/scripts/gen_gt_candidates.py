@@ -63,16 +63,27 @@ DEMO_DIR = os.path.abspath(os.path.join(_HERE, ".."))
 DEFAULT_EVALSET_DIR = os.path.join(DEMO_DIR, "evalsets")
 DEMO_ENV_PATH = os.path.join(DEMO_DIR, ".env")
 
-# 阈值：T10 的 app_settings 就绪后应迁移为配置
-# TODO(T10): 迁移到 app_settings（settings_service.get_float / get_int）
 DEFAULT_GT_MODEL = "zai-org/GLM-4.5V"
 FALLBACK_GT_MODELS = ["PaddlePaddle/PaddleOCR-VL-1.5"]   # 禁止回落 Qwen 家族
 DASHSCOPE_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DASHSCOPE_DEFAULT_GT_MODEL = "qwen3-vl-plus"
 DASHSCOPE_FALLBACK_GT_MODELS = ["qwen3-vl-flash"]
-MIN_SHORT_SIDE = 1000        # 短边下限，低于此值影响小字识别（与 build_evalset 一致）
-PREVIEW_LONG_SIDE = 1600     # API payload 上限：长边压到 1600（4:3 时短边约 1200）
-JPEG_QUALITY = 85
+
+
+def _settings_value(key, default):
+    """T10：app_settings 缺省读取；脚本离线跑/依赖缺失时回退默认值。"""
+    try:
+        if DEMO_DIR not in sys.path:
+            sys.path.insert(0, DEMO_DIR)
+        from app.services import settings_service
+        return settings_service.get(key, default)
+    except Exception:
+        return default
+
+
+MIN_SHORT_SIDE = int(_settings_value("gt_min_short_side", 1000))        # 短边下限，低于此值影响小字识别（与 build_evalset 一致）
+PREVIEW_LONG_SIDE = int(_settings_value("gt_preview_long_side", 1600))  # API payload 上限：长边压到 1600（4:3 时短边约 1200）
+JPEG_QUALITY = int(_settings_value("gt_jpeg_quality", 85))
 MAX_ATTEMPTS = 3             # 每个模型最多尝试次数（1 次原始 + 2 次重试）
 RETRY_BACKOFF_SECONDS = (5, 15)   # 429/5xx 退避
 CHAT_TIMEOUT_SECONDS = 300

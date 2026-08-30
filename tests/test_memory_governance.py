@@ -98,8 +98,18 @@ def test_feedback_memory_source_ref_traces_receipt_ids():
         source_receipt_ids=["901", "902", "903"])
     assert "品名" in content
 
+    # T8：蒸馏先入待确认队列（带触发来源），人工 approve 后才落记忆库
+    pend = _db.list_pending_memory(tenant_id="gov_t2")
+    assert len(pend) == 1
+    assert json.loads(pend[0]["source_receipt_ids_json"]) == ["901", "902", "903"]
+    assert _db.list_vendor_memory(vendor, tenant_id="gov_t2") == []
+
+    rag.approve_pending_to_memory(
+        vendor, content, tenant_id="gov_t2",
+        source_receipt_ids=["901", "902", "903"])
+
     rows = _db.list_vendor_memory(vendor, tenant_id="gov_t2")
-    assert len(rows) == 1, "一次蒸馏沉淀应恰好生成一条独立记忆"
+    assert len(rows) == 1, "一次蒸馏沉淀经 approve 后应恰好生成一条独立记忆"
     r = rows[0]
     assert r["source_kind"] == "feedback_distilled"
     assert json.loads(r["source_ref"]) == ["901", "902", "903"]

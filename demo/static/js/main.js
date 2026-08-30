@@ -1315,7 +1315,10 @@ function initTabs() {
                 loadCostReportAutoMonth();
                 loadDepartmentAdmin();   // Wave 2 部门管理
             }
-            if (targetId === 'tab-engine') loadAdminEngineConfig();
+            if (targetId === 'tab-engine') {
+                loadAdminEngineConfig();
+                loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
+            }
             if (targetId === 'tab-golden') {
                 loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
                 loadPValueCards();       // E-P1-3 p-value 显著性卡片
@@ -5493,7 +5496,7 @@ function submitRowFeedback(btn) {
             showToast('反馈已提交', 'success');
             _qualityWarningsLink(comment, likeVal);
             if (body.distilled) {
-                showToast('已沉淀到供应商记忆（连续3次纠偏触发）', 'info', TOAST_DURATION.long);
+                showToast('已记入待确认记忆队列（连续3次纠偏触发，管理员确认后生效）', 'info', TOAST_DURATION.long);
             }
         } else {
             if (statusEl) statusEl.textContent = prevStatus || '提交失败';
@@ -5544,7 +5547,7 @@ function submitArcFeedback(btn) {
             showToast('归档反馈已提交', 'success');
             _qualityWarningsLink(comment, likeVal);
             if (body.distilled) {
-                showToast('已沉淀到供应商记忆（连续3次纠偏触发）', 'info', TOAST_DURATION.long);
+                showToast('已记入待确认记忆队列（连续3次纠偏触发，管理员确认后生效）', 'info', TOAST_DURATION.long);
             }
         } else {
             if (statusEl) statusEl.textContent = prevStatus || '提交失败';
@@ -12224,6 +12227,111 @@ function rollbackEngineConfig() {
         },
         onCancel: () => { showToast('已取消回滚', 'info'); }
     });
+}
+
+/* =============================================================
+   T10 Gap E3：系统配置（阈值规则配置化 + 预处理纠偏开关）
+   GET /api/admin/settings 读取；PUT /api/admin/settings 保存；
+   改动即时生效（后端实时读 app_settings），无需重启。
+   ============================================================= */
+// [控件 id, settings 键, 类型]
+const ADMIN_SETTINGS_FIELDS = [
+    ['setBlurLaplacianThreshold', 'blur_laplacian_threshold', 'float'],
+    ['setEvalCandidateLowConfidence', 'eval_candidate_low_confidence', 'float'],
+    ['setEvalCandidateMaxPending', 'eval_candidate_max_pending', 'int'],
+    ['setAuditDiscrepancySevereMinCount', 'audit_discrepancy_severe_min_count', 'int'],
+    ['setFeedbackDistillThreshold', 'feedback_distill_threshold', 'int'],
+    ['setPriceAnomalyThresholdPct', 'price_anomaly_threshold_pct', 'float'],
+    ['setMemoryBudgetFactsTokens', 'memory_budget_facts_tokens', 'int'],
+    ['setMemoryBudgetPerItemTokens', 'memory_budget_per_item_tokens', 'int'],
+    ['setMemoryBudgetMaxItems', 'memory_budget_max_items', 'int'],
+    ['setMemoryDecayHitBonus', 'memory_decay_hit_bonus', 'float'],
+    ['setMemoryDecayOverridePenalty', 'memory_decay_override_penalty', 'float'],
+    ['setMemoryArchiveThreshold', 'memory_archive_threshold', 'float']
+];
+let _adminSettingsDefaults = null;
+
+function loadAdminSettings() {
+    const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
+    if (role !== 'admin') return;
+    apiFetch('/api/admin/settings')
+        .then(res => res.json())
+        .then(body => {
+            if (!body || body.status !== 'success' || !body.data) return;
+            _adminSettingsDefaults = body.defaults || {};
+            const data = body.data;
+            ADMIN_SETTINGS_FIELDS.forEach(([id, key]) => {
+                const el = document.getElementById(id);
+                if (el && data[key] !== undefined && data[key] !== null) el.value = String(data[key]);
+            });
+            const pre = document.getElementById('setPreprocessEnabled');
+            if (pre) pre.checked = !!data.preprocess_enabled;
+        })
+        .catch(() => { /* 读取失败静默，表单保持空态 */ });
+}
+
+function _collectAdminSettingsPayload() {
+    const payload = {};
+    for (const [id, key, type] of ADMIN_SETTINGS_FIELDS) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const raw = String(el.value || '').trim();
+        if (raw === '') continue;   // 留空不覆盖（后端缺省回退）
+        const num = Number(raw);
+        if (!isFinite(num)) {
+            showToast('「' + key + '」不是合法数字，已忽略该项', 'error');
+            return null;
+        }
+        payload[key] = (type === 'int') ? Math.round(num) : num;
+    }
+    const pre = document.getElementById('setPreprocessEnabled');
+    if (pre) payload.preprocess_enabled = !!pre.checked;
+    return payload;
+}
+
+function saveAdminSettings() {
+    const payload = _collectAdminSettingsPayload();
+    if (!payload) return;
+    if (!Object.keys(payload).length) { showToast('没有需要保存的配置项', 'info'); return; }
+    apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(res => res.json().then(body => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+            if (!ok || !body || body.status !== 'success') {
+                showToast('保存系统配置失败：' + ((body && body.msg) || '未知错误'), 'error');
+                return;
+            }
+            showToast('系统配置已保存，改动即时生效', 'success');
+            loadAdminSettings();
+        })
+        .catch(() => { showToast('保存系统配置失败（网络错误）', 'error'); });
+}
+
+function resetAdminSettingsToDefaults() {
+    if (!_adminSettingsDefaults) { showToast('缺省值尚未加载，请先刷新页面', 'info'); return; }
+    const payload = {};
+    ADMIN_SETTINGS_FIELDS.forEach(([id, key]) => {
+        if (_adminSettingsDefaults[key] !== undefined) payload[key] = _adminSettingsDefaults[key];
+    });
+    payload.preprocess_enabled = !!_adminSettingsDefaults.preprocess_enabled;
+    apiFetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+        .then(res => res.json())
+        .then(body => {
+            if (!body || body.status !== 'success') {
+                showToast('恢复缺省值失败：' + ((body && body.msg) || '未知错误'), 'error');
+                return;
+            }
+            showToast('已恢复全部缺省值', 'success');
+            loadAdminSettings();
+        })
+        .catch(() => { showToast('恢复缺省值失败（网络错误）', 'error'); });
 }
 
 // 辅助：转义 HTML

@@ -1,0 +1,238 @@
+{
+  "evaluator_trustworthy": false,
+  "total": 25,
+  "n_absolutely_correct": 13,
+  "n_absolutely_wrong": 12,
+  "correct_rate": 0.8462,
+  "wrong_rate": 0.9167,
+  "miss_count": 3,
+  "per_item": [
+    {
+      "id": "ME-001",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 数量10×单价5=50 但小计写 55（差5），行内算术不自洽，算术门禁必须拦截",
+      "why_judged": "未提供原图，仅做内部自洽校验。项目小计校验不通过：qty(10) × unit_price(5) = 50，但 amount 填写为 55，差额 5 元无法解释。total(55) 与 amount(55) 一致，说明小计错误或数量/单价有误。"
+    },
+    {
+      "id": "ME-002",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 3×80=240 但小计写 230（差10），错读数量型幻觉，必须判错",
+      "why_judged": "无原图可供对照，仅能进行数据自洽性校验：items[0] 数量3斤 × 单价80元/斤 = 240元，但小计填写为230元，算术不一致；总额230元与小计一致但同样偏离240元"
+    },
+    {
+      "id": "ME-003",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 5×45=225 但小计写 235（差10），行内算术不自洽",
+      "why_judged": "数量×单价计算错误：5斤×45元=225元，但小计显示235元，差额10元"
+    },
+    {
+      "id": "ME-004",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 8×12=96 但小计写 90（差6），必须判错",
+      "why_judged": "items[0].amount 计算错误: 8×12=96元, 识别为90元"
+    },
+    {
+      "id": "ME-005",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 2×55=110 但小计写 100（差10），错读数量型幻觉",
+      "why_judged": "小计计算错误：数量 2 斤 × 单价 55 元 = 110 元，但识别结果中小计为 100 元"
+    },
+    {
+      "id": "ME-006",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 4×60=240 但小计写 245（差5），行内算术不自洽",
+      "why_judged": "数量4只乘以单价60元应为240元，但小计记录为245元，数学不一致"
+    },
+    {
+      "id": "ME-007",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 6×8=48 但小计写 55（差7），必须判错",
+      "why_judged": "数量6板×单价8元=48元，与小计55元不符，存在计算错误"
+    },
+    {
+      "id": "ME-008",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 10×3=30 但小计写 35（差5），错读数量型幻觉",
+      "why_judged": "未提供原图图片，无法进行对照审核。仅从JSON自洽性检查发现：数量10斤×单价3元=30元，但amount字段为35元，存在计算不一致"
+    },
+    {
+      "id": "ME-009",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 1×50=50 但小计写 45（差5），行内算术不自洽",
+      "why_judged": "行项目数学不自洽: qty(1) × unit_price(50) = 50，但 amount 记录为 45，差额 5 元无法解释"
+    },
+    {
+      "id": "ME-010",
+      "source": "tests/test_hallucination_adversarial.py::TestAC08HallucinationAdversarial::test_type2_wrong_qty_intercepted_100pct",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "第1行 2×30=60 但小计写 55（差5），必须判错",
+      "why_judged": "数量2乘以单价30应为60，小计字段显示55，计算不一致；未提供原图无法逐字段核对"
+    },
+    {
+      "id": "ME-011",
+      "source": "tests/test_gap3_discount_deposit_math.py::test_math_engine_detects_real_error",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_wrong",
+      "hit": true,
+      "why_expected": "Σitems(265)-折让20+押金40+运费30=预期总额315.0，但票面总额写 350.0（差35），总额不守恒必须判错",
+      "why_judged": "总价计算不一致：物品小计 265 元，减折扣 20 元加押金 40 元加配送费 30 元应为 315 元，识别结果为 350 元，差额 35 元"
+    },
+    {
+      "id": "ME-012",
+      "source": "tests/test_gap6_strikethrough_notes.py::test_math_engine_detects_mismatch_with_void",
+      "expected": "absolutely_wrong",
+      "judged": "absolutely_correct",
+      "hit": false,
+      "why_expected": "划线作废行不计入实付，预期总额=265.0，但总额写成含作废行的 415.0，总额不守恒必须判错",
+      "why_judged": "各项数量×单价与小计及总额的算术关系正确（85+150+180=415），但冰鲜黄花鱼已标注划线拒收（is_void=true）且有 adjustment_notes 记录，该笔不应计入应付总额，当前 total=415 疑似遗漏扣减"
+    },
+    {
+      "id": "ME-013",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「印章印油」是含印章字眼的合法商品（Gap1 白名单保护用例），行内算术与总额均自洽，必须判对",
+      "why_judged": "数学自洽：数量2 × 单价15.0 = 小计30.0，总计30.0与明细一致。但未提供原图，无法核实品名、单位、单价的真实性。"
+    },
+    {
+      "id": "ME-014",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「送货单收据本」是合法商品（Gap1 白名单用例），不得因含「收据」字眼被误判，算术自洽必须判对",
+      "why_judged": "未提供原图，仅复核 JSON 内部自洽性：数量×单价=小计（5×10.0=50.0），总额与明细合计一致，字段完整且类型合理"
+    },
+    {
+      "id": "ME-015",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_wrong",
+      "hit": false,
+      "why_expected": "「优质原子印油」是合法商品（Gap1 白名单用例），行内算术与总额自洽必须判对",
+      "why_judged": "未提供原图，无法进行字段复核；但'测试供应商'表明此为测试数据而非真实单据转录"
+    },
+    {
+      "id": "ME-016",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "普通食材行（Gap1 白名单用例），10×5.5=55 与总额一致，必须判对",
+      "why_judged": "JSON结构自洽：小计计算正确（10×5.5=55.0），总额与小计一致，日期格式有效，所有必要字段均存在且类型正确。"
+    },
+    {
+      "id": "ME-017",
+      "source": "tests/test_gap1_stamp_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「鲜鸡蛋 30只」是复合规格合法商品（Gap1 白名单用例），2×45=90 与总额一致必须判对",
+      "why_judged": "AI识别结果内部一致，无矛盾"
+    },
+    {
+      "id": "ME-018",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「九龙酱油 500ml」是含地名字眼的合法商品（Gap2 白名单用例），不得误判，算术自洽必须判对",
+      "why_judged": "AI 识别与原图一致（无原图可对照，仅做自洽性校验：2 × 18.0 = 36.0 与小计/总额均吻合，结构完整）"
+    },
+    {
+      "id": "ME-019",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「电话线干菜」是含「电话」字眼的合法食材（Gap2 白名单用例），算术自洽必须判对",
+      "why_judged": "无原图可供比对，仅基于JSON内部自洽性检查：数量3×单价12.0=小计36.0，小计之和等于总额36.0，数值关系正确，字段格式合规。无法判断与原图是否一致。"
+    },
+    {
+      "id": "ME-020",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_wrong",
+      "hit": false,
+      "why_expected": "「地址标签纸」是含「地址」字眼的合法商品（Gap2 白名单用例），不得误杀，算术自洽必须判对",
+      "why_judged": "未提供原图，无法对照复核识别结果。请上传原始收据图片以便进行逐字段比对。"
+    },
+    {
+      "id": "ME-021",
+      "source": "tests/test_gap2_disclaimer_anti_pollution.py::test_legit_item_whitelist_protection",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "普通食材行（Gap2 白名单用例），10×8=80 与总额一致，必须判对",
+      "why_judged": "无法对照原图审核（未提供图片），仅数据自洽：10斤 × 8.0元/斤 = 80.0元，总额一致。需提供原图方可完成完整审核。"
+    },
+    {
+      "id": "ME-022",
+      "source": "tests/test_gap3_discount_deposit_math.py::test_math_engine_with_discount_and_deposit",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "Σitems(265)-折让20+押金40+运费30=315.0 与总额一致（Gap3 结构化解耦正确用例），必须判对",
+      "why_judged": "未提供原图，无法逐字段对照；纯数学验算通过：10×8.5=85，4×45=180，合计265，减折扣20加押金40加运费30得315，与总额一致"
+    },
+    {
+      "id": "ME-023",
+      "source": "tests/test_gap6_strikethrough_notes.py::test_math_engine_with_void_strikethrough",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "作废行被算术门禁正确剔除，85+180=265.0 与总额守恒（Gap6 正确用例），必须判对",
+      "why_judged": "JSON 内部自洽：金额计算正确（85.0+180.0=265.0，已排除划线拒收的黄花鱼），单位合理，划线拒收说明与 is_void 标记一致"
+    },
+    {
+      "id": "ME-024",
+      "source": "tests/test_gap4_multi_pack_units.py::test_multi_pack_decoupling",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "复合包装「大豆油 5L*2樽」经拆解后品名/数量/单位正确（Gap4 拆解断言），金额自洽必须判对",
+      "why_judged": "未提供原图，无法逐字段比对；仅从结构化数据自洽性看，小计 2×30.0=60.0、总额 60.0 均正确，字段完整，数据可信"
+    },
+    {
+      "id": "ME-025",
+      "source": "tests/test_gap4_multi_pack_units.py::test_protected_single_items_not_broken",
+      "expected": "absolutely_correct",
+      "judged": "absolutely_correct",
+      "hit": true,
+      "why_expected": "「澳洲和牛M7」是含数字品牌的受保护品名（Gap4 保护断言），不得被破坏，算术自洽必须判对",
+      "why_judged": "数据内部自洽：1公斤 × 300.0元 = 300.0元，总额与明细一致；但无原图可供逐字段复核，无法判断识别准确度"
+    }
+  ],
+  "judge": "audit",
+  "generated_at": "2026-08-30T06:38:40"
+}

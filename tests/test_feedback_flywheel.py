@@ -1,13 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-F-P0-1 反馈飞轮专项测试：三次连续点踩 -> Chroma 租户隔离沉淀。
+F-P0-1 反馈飞轮专项测试：三次连续点踩 -> 待确认记忆队列（T8 人工闸语义）。
 
 覆盖：
 1. 阈值常量 FEEDBACK_DISTILL_THRESHOLD=3（models.py，禁止散落硬编码）
 2. 同供应商同租户连续 3 次点踩触发 should_distill_vendor_memory
 3. 少于阈值 / 点赞打断 / 租户不同 均不触发
-4. ingest_feedback_memory 写入租户隔离 collection（tenant_{id}_vendor_memory）
+4. ingest_feedback_memory 进入 pending_memory 待确认队列（租户隔离），
+   未 approve 不参与检索；Chroma 租户集合物理隔离结构不变
 5. API POST /api/receipt/{id}/feedback 第 3 次点踩返回 distilled=True
+   且落入 pending（未 approve 不注入识别）
+
+T8 语义变更：旧口径「第 3 次点踩自动写入生效」已废弃——规则级记忆写入
+必须经人工 approve（Gap D1），本文件按新口径断言。
 """
 
 import json
@@ -116,9 +121,9 @@ def test_tenant_isolation_no_cross_trigger():
 
 
 # -------------------------------------------------------------
-# 4. Chroma 租户隔离沉淀（三次点踩端到端）
+# 4. 蒸馏进待确认队列（T8 人工闸）+ 租户隔离
 # -------------------------------------------------------------
-def test_distill_writes_to_isolated_collection():
+def test_distill_enqueues_pending_not_injected_until_approved():
     _db = _fresh_db()
     vendor = "沉澱測試商戶"
     for i in range(FEEDBACK_DISTILL_THRESHOLD):
@@ -132,6 +137,20 @@ def test_distill_writes_to_isolated_collection():
 
     assert "單價" in content or "糾偏" in content
 
+    # T8：蒸馏产物进入 pending_memory 待确认队列，而非直接生效
+    pend_a = _db.list_pending_memory(tenant_id=tenant_a)
+    assert len(pend_a) == 1, "三次点踩应产生且仅产生一条待确认记忆"
+    assert pend_a[0]["status"] == "pending"
+    assert pend_a[0]["vendor"] == vendor
+    assert pend_a[0]["source_kind"] == "feedback_distilled"
+
+    # 未 approve 不参与检索（人工闸核心断言）
+    assert rag.retrieve_context(vendor, tenant_id=tenant_a).strip() == "", \
+        "未 approve 的待确认记忆不得注入识别上下文"
+
+    # 租户隔离：租户 B 既无待确认记录，也不得召回租户 A 的内容
+    assert _db.list_pending_memory(tenant_id=tenant_b) == []
+
     # collection 物理隔离：两个租户是不同 Chroma 实例、不同 collection 名
     store_a = rag._store(tenant_a)
     store_b = rag._store(tenant_b)
@@ -139,19 +158,6 @@ def test_distill_writes_to_isolated_collection():
     assert rag._tenant_collection_name(tenant_a) != rag._tenant_collection_name(tenant_b)
     assert rag._tenant_collection_name(tenant_a).startswith("tenant_flywheel_A_")
     assert rag._tenant_collection_name(tenant_b).startswith("tenant_flywheel_B_")
-
-    # 检索：租户 A 能召回沉淀记忆（精确匹配走 vendor_memory 落库）
-    ctx_a = rag.retrieve_context(vendor, tenant_id=tenant_a)
-    assert ctx_a.strip() != "", "租户 A 应检索到精确/沉淀记忆"
-
-    # 租户 B 的向量库不得包含本次写入的纠偏内容（物理隔离，非文本巧合）
-    try:
-        hits_b = store_b.similarity_search("沉澱測試商戶 連續三次單價糾偏", k=5)
-        contents_b = [d.page_content for d in hits_b]
-        assert all("連續三次單價糾偏" not in c for c in contents_b), \
-            "租户 B 不得召回租户 A 的沉淀内容（穿透）"
-    except Exception:
-        pass  # 空 collection 时 Chroma 可能报错；实例级断言已保证隔离
 
 
 # -------------------------------------------------------------
@@ -196,6 +202,15 @@ def test_api_third_dislike_returns_distilled():
 
     assert distilled_flags == [False, False, True], \
         f"仅第 {FEEDBACK_DISTILL_THRESHOLD} 次连续点踩应 distilled=True: {distilled_flags}"
+
+    # T8：distilled=True 的语义是「进入待确认队列」，而非直接生效
+    pend = _db.list_pending_memory(tenant_id="default")
+    assert len(pend) == 1, "第 3 次点踩应产生一条待确认记忆"
+    assert pend[0]["status"] == "pending"
+    assert pend[0]["vendor"] == vendor
+    # 未 approve 不注入检索（人工闸）
+    import app.services.rag as _rag
+    assert _rag.retrieve_context(vendor, tenant_id="default").strip() == ""
 
     # 审计履历包含 feedback_distilled
     assert any(l.get("action") == "feedback_distilled" for l in last_logs), \

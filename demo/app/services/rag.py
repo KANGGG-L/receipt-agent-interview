@@ -30,8 +30,8 @@ class MemoryBudget:
     token 口径：无 tokenizer 依赖（禁新增依赖），_approx_tokens(text) = len(text)，
     即 1 字符按 1 token 保守计（对 CJK 偏保守、对英文偏宽松，整体取安全侧）。
 
-    TODO(T10)：三个阈值迁移到 app_settings 配置化（settings_service 在 Wave D
-    T10 建立），本 Wave 允许模块级常量 DEFAULT_MEMORY_BUDGET。
+    T10 收口：三个阈值经 settings_service 实时读取（键 memory_budget_*，
+    缺省 800/200/6），管理台改后无需重启；from_settings() 为运行时入口。
     """
 
     def __init__(self, facts_tokens: int = 800, per_item_tokens: int = 200,
@@ -40,8 +40,22 @@ class MemoryBudget:
         self.per_item_tokens = int(per_item_tokens)  # 单条记忆截断上限
         self.max_items = int(max_items)            # 最多注入条数
 
+    @classmethod
+    def from_settings(cls) -> "MemoryBudget":
+        """按 app_settings 当前值构造；读取失败回退缺省（800/200/6）。"""
+        try:
+            from app.services import settings_service as _ss
+            return cls(
+                facts_tokens=_ss.get_int("memory_budget_facts_tokens", 800),
+                per_item_tokens=_ss.get_int("memory_budget_per_item_tokens", 200),
+                max_items=_ss.get_int("memory_budget_max_items", 6),
+            )
+        except Exception:
+            return cls()
 
-DEFAULT_MEMORY_BUDGET = MemoryBudget()  # TODO(T10): 阈值走 app_settings 配置化
+
+# 缺省形态实例（等价旧行为）；运行时注入路径一律用 MemoryBudget.from_settings()
+DEFAULT_MEMORY_BUDGET = MemoryBudget()
 
 
 def _approx_tokens(text: str) -> int:
@@ -271,7 +285,21 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
     """
     if not vendor or not str(vendor).strip():
         return ""
-    b = budget or DEFAULT_MEMORY_BUDGET
+    try:
+        b = budget or MemoryBudget.from_settings()
+    except Exception:
+        b = budget or DEFAULT_MEMORY_BUDGET
+    # T8 非对称淘汰：归档阈值以下（含）的记忆停止注入
+    try:
+        archive_th = db.memory_archive_threshold()
+    except Exception:
+        archive_th = 0.5
+
+    def _decay_ok(row):
+        try:
+            return float(row.get("decay_score", 1.0)) > archive_th
+        except (TypeError, ValueError):
+            return True
 
     # 候选条目：(展示文本, 可回溯的 memory_id 或 None)
     candidates = []
@@ -279,6 +307,8 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
     # 1) 精确/别名匹配：该供应商自己的历史记忆最可信（active 行，最新在前）
     try:
         for row in db.list_vendor_memory(vendor, tenant_id=tenant_id):
+            if not _decay_ok(row):
+                continue  # T8：劣化/归档记忆停止注入
             parts = []
             if row.get("notes"):
                 parts.append(row["notes"])
@@ -293,7 +323,12 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
 
     # 2) 相似度兜底：其他供应商的近似单据（冷启动/名字微变），按租户隔离
     #    相关性门：fuzzy 结果按来源供应商名与查询名归一匹配，不匹配的丢弃
+    #    T8 治理门：仅允许 status=active 且衰减分达标的 memory_id 注入
     try:
+        allowed_mids = set()
+        for row in db.list_vendor_memory(None, tenant_id=tenant_id):
+            if _decay_ok(row) and row.get("memory_id"):
+                allowed_mids.add(row["memory_id"])
         results = _store(tenant_id).similarity_search(
             f"供应商 {vendor} 的收据版式与单位习惯", k=top_k
         )
@@ -302,9 +337,11 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
                 continue
             if not _vendor_related(vendor, d.metadata.get("vendor")):
                 continue
+            dmid = d.metadata.get("memory_id")
+            if not dmid or dmid not in allowed_mids:
+                continue  # T8：不可回溯或已劣化/归档的向量不得注入
             candidates.append(
-                (f"[{d.metadata.get('vendor')}] {d.page_content}",
-                 d.metadata.get("memory_id")))
+                (f"[{d.metadata.get('vendor')}] {d.page_content}", dmid))
     except Exception:
         pass
 
@@ -343,41 +380,59 @@ def retrieve_context(vendor: str, top_k: int = 3, tenant_id: str = "default",
 
 def ingest_feedback_memory(vendor: str, comment: str, quality_warnings=None,
                            tenant_id: str = "default", source_receipt_ids=None):
-    """FR-9 三次连续点踩提炼：把连续纠偏的反馈沉淀为供应商记忆。
+    """FR-9 三次连续点踩提炼（T8 人工闸语义）：蒸馏产物入待确认队列。
 
-    仅当同供应商同租户最近 3 次反馈均为点踩时调用，写入 Chroma 租户隔离集合，
-    避免错误记忆自我强化（单次点踩不沉淀）。
-    Gap B1：source_kind='feedback_distilled'，source_ref 记录触发点踩的
-    receipt_id 列表 JSON（可回溯）。
-    Gap B4：替换旧 notes[-4000:] 累积拼接 —— 每次沉淀独立成行（追加式），
-    体积由读取侧 MemoryBudget 控制取条数与长度，不再无限累积。
+    Gap D1：不再自动写入 vendor_memory / Chroma —— 先落 pending_memory
+    （status=pending，带 source_receipt_ids 可回溯），经人工 approve 后才走
+    既有 upsert 链路生效（approve_pending_to_memory）。单次点踩依旧不沉淀。
+    返回蒸馏内容文本（保持既有调用方契约）。
     """
     tid = str(tenant_id or "default").strip() or "default"
     qw = quality_warnings or []
     content = f"供应商 {vendor} 反馈纠偏：{comment}".strip()
     if qw:
         content += f"\n关联质量告警：{'; '.join(qw)}"
+    try:
+        db.enqueue_pending_memory(
+            vendor, content, tenant_id=tid,
+            source_kind="feedback_distilled",
+            source_receipt_ids=source_receipt_ids or [])
+    except Exception as e:
+        logger.warning("[rag] enqueue pending memory failed vendor=%s: %s", vendor, e)
+    return content
+
+
+def approve_pending_to_memory(vendor: str, content: str, tenant_id: str = "default",
+                              source_receipt_ids=None):
+    """T8：人工 approve 后把待确认记忆落 vendor_memory + Chroma（治理元数据齐全）。
+
+    复用既有 upsert 链路：source_kind='feedback_distilled'，source_ref 记录
+    全部触发 receipt_id（可回溯）；Chroma 故障只告警降级（DB 行为准）。
+    """
+    tid = str(tenant_id or "default").strip() or "default"
     ref = json.dumps([str(r) for r in (source_receipt_ids or [])])
     mid = uuid.uuid4().hex
     ts = datetime.now().isoformat()
     stored_new = True
     try:
         mid, stored_new = db.upsert_vendor_memory(
-            vendor, content, "", tenant_id=tid,
+            vendor, content or "", "", tenant_id=tid,
             source_kind="feedback_distilled", source_ref=ref,
             memory_id=mid, created_at=ts)
     except Exception:
         stored_new = True
     if not stored_new:
-        return content  # 内容完全相同的沉淀已存在（幂等），不重复入向量库
+        return content
     doc = Document(
-        page_content=content,
+        page_content=content or "",
         metadata={"vendor": vendor, "kind": "feedback_distilled", "tenant_id": tid,
                   "memory_id": mid, "source_kind": "feedback_distilled",
                   "created_at": ts},
     )
     try:
         _store(tid).add_documents([doc])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(
+            "[rag] approve add_documents degraded (DB row kept, vector missing) "
+            "vendor=%s memory_id=%s: %s", vendor, mid, e)
     return content

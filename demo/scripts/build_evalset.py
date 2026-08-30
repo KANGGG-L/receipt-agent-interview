@@ -29,13 +29,31 @@ import shutil
 import subprocess
 import sys
 
-# ---- 分层与配比（阈值：若 T10 的 app_settings 已就绪，应改为读配置）----
-# TODO(T10): 迁移到 app_settings（settings_service.get_float / get_int），本 Wave 暂用模块级常量
+# ---- 分层与配比（T10 收口：走 app_settings 读取，缺省值即迁移前现值）----
 DEFAULT_SEED = 20260828
 SPLIT_NAMES = ("train", "val", "test")
-SPLIT_RATIOS = (0.55, 0.25, 0.20)
-MIN_SPLIT_COVERAGE = 3      # doc_form 样本数 ≥ 该值时，保证每个 split 至少 1 张
-MIN_SHORT_SIDE = 1000       # 短边分辨率下限（低于此值会影响小字识别）
+
+
+def _settings_value(key, default):
+    """T10：app_settings 实时缺省读取；脚本离线跑/依赖缺失时回退默认值。"""
+    try:
+        _demo = os.path.abspath(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+        if _demo not in sys.path:
+            sys.path.insert(0, _demo)
+        from app.services import settings_service
+        return settings_service.get(key, default)
+    except Exception:
+        return default
+
+
+SPLIT_RATIOS = (
+    float(_settings_value("evalset_split_train", 0.55)),
+    float(_settings_value("evalset_split_val", 0.25)),
+    float(_settings_value("evalset_split_test", 0.20)),
+)
+MIN_SPLIT_COVERAGE = int(_settings_value("evalset_min_split_coverage", 3))  # doc_form 样本数 ≥ 该值时，保证每个 split 至少 1 张
+MIN_SHORT_SIDE = int(_settings_value("evalset_min_short_side", 1000))       # 短边分辨率下限（低于此值会影响小字识别）
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif")
 

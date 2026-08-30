@@ -28,6 +28,7 @@ from app.api_dishes import router as dishes_router
 from app.api_evalset import router as evalset_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
+from app.api_memory import router as memory_router
 from app.api_phase2 import router as phase2_router
 from app.api_receipts import router as receipts_router
 from app.api_suppliers import router as suppliers_router
@@ -42,6 +43,7 @@ app.include_router(dishes_router)
 app.include_router(admin_router)
 app.include_router(phase2_router)
 app.include_router(evalset_router)
+app.include_router(memory_router)
 
 
 @app.on_event("startup")
@@ -67,6 +69,22 @@ def _auto_deduplicate_skus():
 def _hydrate_engine_key_from_env():
     """启动自愈：识别密钥为空/占位符时，从 .env 自动读取真实密钥装配识别引擎（重启无需手填）。"""
     db.hydrate_engine_config_from_env()
+
+
+@app.on_event("startup")
+def _start_experiment_guardian():
+    """T9（Gap C3）：实验守护后台线程。
+
+    间隔经 settings 键 'guard_interval_minutes' 配置（缺省 15 分钟）；
+    巡检失败只告警不阻断。线程随进程退出（daemon），重启服务后生效。
+    """
+    try:
+        from app.services import guardian
+        guardian.start_background_thread()
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(
+            f"[guardian] 实验守护线程启动失败(不阻断): {e}")
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

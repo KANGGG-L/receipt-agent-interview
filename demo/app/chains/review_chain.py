@@ -88,8 +88,8 @@ def weekly_insights(cost_summary: dict) -> dict:
         return dict(_INSIGHTS_CACHE["payload"])
 
     from app import db as _db
-    from app.models import PRICE_ANOMALY_THRESHOLD_PCT
-    from app.services.price_anomaly import compute_vs_avg_and_anomaly
+    from app.services.price_anomaly import compute_vs_avg_and_anomaly, get_threshold_pct
+    PRICE_ANOMALY_THRESHOLD_PCT = get_threshold_pct()
     top_price_risers: list = []
     total_impact = 0.0
     alert_count = 0
@@ -172,7 +172,8 @@ def weekly_insights(cost_summary: dict) -> dict:
 
 def _gen_suggestions(top_risers, anomaly_count):
     """根据发现生成 1-3 条事实陈述与复核建议。"""
-    from app.models import PRICE_ANOMALY_THRESHOLD_PCT
+    from app.services.price_anomaly import get_threshold_pct
+    PRICE_ANOMALY_THRESHOLD_PCT = get_threshold_pct()
     suggestions: list = []
     if top_risers:
         names = "、".join(r["name"] for r in top_risers[:2])

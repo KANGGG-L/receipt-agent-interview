@@ -120,12 +120,16 @@ class VendorMemory(BaseModel):
 # -------------------------------------------------------------
 # 收据反馈飞轮（FR-8 / FR-9）常量
 # -------------------------------------------------------------
-FEEDBACK_DISTILL_THRESHOLD = 3  # 连续点踩阈值：同供应商同租户连续 N 次点踩触发 Chroma 沉淀
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'feedback_distill_threshold' 实时读取（消费方：db.should_distill_vendor_memory / api_receipts）
+FEEDBACK_DISTILL_THRESHOLD = 3  # 连续点踩阈值：同供应商同租户连续 N 次点踩触发记忆沉淀
 FEEDBACK_COMMENT_MAXLEN = 2000
 
 # -------------------------------------------------------------
 # 价格异动口径（FR-6）：最新单价较均价涨幅超过该百分比视为异常
 # 库存页与 AI 发现（weekly_insights）共用，保证两处数字一致
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'price_anomaly_threshold_pct' 实时读取（消费方：services.price_anomaly）
 # -------------------------------------------------------------
 PRICE_ANOMALY_THRESHOLD_PCT = 10.0
 
@@ -186,17 +190,17 @@ class EngineConfig(BaseModel):
     recognition_transport: str = "subprocess"
     # 审核引擎
     # 生成器-评估器强制异构（Gap A3）：审核腿必须与识别腿跨厂商异构，禁止同源。
-    # 默认 opencode/mimo-v2.5-free 与识别基线（SiliconFlow Qwen 系）即跨厂商；
-    # 若识别腿改为 opencode 系，审核腿必须换 Qwen/GLM 系。
+    # 用户决策（2026-08-30）：SiliconFlow 为默认 provider，审核腿默认 SF DeepSeek 系
+    # （与识别腿 Qwen 系跨厂商异构，Gap A3）；opencode 系仅作显式选择，不再作为默认。
     audit_engine: EngineKind = Field(
-        default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "opencode").lower())
-        if os.environ.get("AUDIT_ENGINE", "opencode").lower() in [e.value for e in EngineKind]
-        else EngineKind.OPENCODE,
+        default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "openai").lower())
+        if os.environ.get("AUDIT_ENGINE", "openai").lower() in [e.value for e in EngineKind]
+        else EngineKind.OPENAI,
         description="审核引擎（评估器）。强制与识别腿跨厂商异构（Gap A3），禁止与识别腿同引擎同家族。",
     )
     audit_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENCODE_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free")),
-        description="审核腿模型（评估器）。必须与识别腿跨厂商异构：识别=Qwen/GLM 系时审核走 opencode 系；识别=opencode 系时审核必须换 Qwen/GLM 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
+        default_factory=lambda: os.environ.get("SILICONFLOW_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "deepseek-ai/DeepSeek-V3.2")),
+        description="审核腿模型（评估器）。默认 SF DeepSeek 系，与识别腿 Qwen 系跨厂商异构；识别=DeepSeek/GLM 系时审核必须换 Qwen 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
     )
     audit_enabled: bool = True
     # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
@@ -222,7 +226,7 @@ class EngineConfig(BaseModel):
         default_factory=lambda: os.environ.get("OPENAI_AUD_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
     )
     openai_aud_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_AUD_MODEL", os.environ.get("OPENAI_MODEL", ""))
+        default_factory=lambda: os.environ.get("OPENAI_AUD_MODEL", os.environ.get("SILICONFLOW_AUDIT_MODEL", "deepseek-ai/DeepSeek-V3.2"))
     )
     # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s
     call_timeout_seconds: int = 90

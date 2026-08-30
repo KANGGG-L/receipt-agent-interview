@@ -98,6 +98,12 @@ curl -s http://127.0.0.1:15010/api/admin/metrics -H X-Role:owner | grep avg_toke
 
 **所有 Agent（无论主代理或任何角色的 Subagent）必须通过 `ai_registry/` 工程化管理 Prompt、Skills、Tools、MCP，禁止绕行。**
 
+0. **默认 Provider 策略（用户决策 2026-08-30，随 L4 红灯与两次服务拖死事故确立）**：
+   - **SiliconFlow 是本项目的默认 provider**：服务每次重启，识别腿（SF Qwen-VL 系）与审核腿（SF DeepSeek 系）都被 `hydrate_engine_config_from_env` 强制装配回 SiliconFlow 通道——管理台对双腿的临时切换不跨重启保留（灰测组配置不受影响）
+   - **opencode/CLI 引擎从默认路径移除**：仅作显式选择。依据：opencode CLI 两次挂起拖死 uvicorn 线程池（首页超时），且元评测 audit 模式 25 项中 8 次 30s 超时——CLI 稳定性不足以承担默认链路
+   - **异构纪律（Gap A3）**：识别腿 Qwen 系 ↔ 审核腿 DeepSeek 系跨厂商；降级链（SF 不可用 → DashScope）期间双腿同家族，异构性弱化必须日志提示
+   - 环境变量：`SILICONFLOW_AUDIT_MODEL`（默认 deepseek-ai/DeepSeek-V3.2）覆盖审核模型；`DASHSCOPE_AUDIT_MODEL`（默认 qwen3-max）覆盖降级审核模型
+
 1. **唯一来源原则**：
    - Prompt 一律放 `ai_registry/prompts/<domain>/`（SemVer 独立文件 + `metadata.json`），通过 `ai_registry/registry.py` 加载激活版本，禁止在 `demo/app/` 内散落硬编码系统提示词
    - Skills 一律放 `ai_registry/skills/<name>/`（含 `eval.json` 能力矩阵），调用经 registry 检索

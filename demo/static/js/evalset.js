@@ -148,6 +148,7 @@
     function reloadAll() {
         loadStats().then(loadSamples).catch(showErr);
         loadCandidates().catch(function () {});
+        loadPendingMemories().catch(function () {});
     }
 
     function onFilterChange() {
@@ -371,6 +372,56 @@
             .then(function () {
                 toast('已驳回候选 #' + id);
                 loadCandidates().catch(function () {});
+            })
+            .catch(showErr);
+    }
+
+    // ---------------- 待确认记忆（T8 Gap D1 人工闸）----------------
+    // 连续纠偏蒸馏产物先进队列，人工批准后才注入识别；未批准不参与检索。
+    function loadPendingMemories() {
+        return api('/api/memory/pending?status=pending').then(function (data) {
+            var list = (data && data.data) || [];
+            var body = document.getElementById('pendingMemoryBody');
+            var empty = document.getElementById('pendingMemoryEmpty');
+            if (!body) { return; }
+            body.innerHTML = '';
+            if (!list.length) {
+                empty.textContent = '暂无待确认记忆。同供应商连续 3 次点踩纠偏会自动出现在这里，等待人工批准。';
+                empty.className = 'loading-note';
+                return;
+            }
+            empty.className = 'loading-note hide';
+            list.forEach(function (m) {
+                var refs = '[]';
+                try { refs = JSON.parse(m.source_receipt_ids_json || '[]'); } catch (e) { refs = []; }
+                var tr = document.createElement('tr');
+                tr.innerHTML =
+                    '<td>#' + m.id + '</td>' +
+                    '<td>' + esc(m.vendor || '') + '</td>' +
+                    '<td style="max-width:420px; white-space:pre-wrap;">' + esc(m.content || '') + '</td>' +
+                    '<td>' + esc(refs.map(function (r) { return '#' + r; }).join(' ') || '-') + '</td>' +
+                    '<td>' + esc(m.status) + '</td>' +
+                    '<td><div class="reflow-actions">' +
+                    '<button class="btn-success">批准并生效</button>' +
+                    '<button class="btn-danger">拒绝</button>' +
+                    '</div></td>';
+                var btns = tr.querySelectorAll('button');
+                btns[0].onclick = function () { reviewPendingMemory(m.id, 'approve'); };
+                btns[1].onclick = function () { reviewPendingMemory(m.id, 'reject'); };
+                body.appendChild(tr);
+            });
+        });
+    }
+
+    function reviewPendingMemory(id, action) {
+        var verb = action === 'approve' ? '批准记忆 #' + id + ' 并注入后续识别？' :
+            '拒绝记忆 #' + id + '？拒绝后不会写入任何记忆库。';
+        if (!window.confirm(verb)) { return; }
+        api('/api/memory/pending/' + id + '/' + action, { method: 'POST' })
+            .then(function () {
+                toast(action === 'approve' ? '已批准记忆 #' + id + '（已写入供应商记忆）' :
+                    '已拒绝记忆 #' + id);
+                loadPendingMemories().catch(function () {});
             })
             .catch(showErr);
     }

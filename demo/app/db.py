@@ -52,7 +52,9 @@ _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
 _ReceiptFeedbackRow = None
+_PendingMemoryRow = None
 _EvalCandidateRow = None
+_GuardrailEventRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 
 
@@ -62,7 +64,9 @@ def _make_engine():
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
     global _ReceiptFeedbackRow
+    global _PendingMemoryRow
     global _EvalCandidateRow
+    global _GuardrailEventRow
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
@@ -293,6 +297,10 @@ def _make_engine():
         audit_adoption_rate = Column(Float, nullable=True)
         trust_score = Column(Float, nullable=True)
         sample_size = Column(Integer, default=0)
+        # T9（Gap D4）方向性约束指标：不直接触发回滚，连续同向漂移只告警
+        avg_output_tokens = Column(Float, nullable=True)
+        avg_tool_calls = Column(Float, nullable=True)
+        avg_retry_rounds = Column(Float, nullable=True)
         computed_at = Column(String, default="")
 
     class UserEventRow(Base):
@@ -338,6 +346,19 @@ def _make_engine():
         grp = Column(String, default="control")
         assigned_at = Column(String, default="")
 
+    class GuardrailEventRow(Base):
+        """T9（Gap C3）：实验守护动作留痕。
+
+        action: rollback | freeze | alert；metrics_json 记触发时指标快照，可回溯。
+        """
+        __tablename__ = "guardrail_event"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        ts = Column(String, default="")
+        experiment_id = Column(Integer, index=True, nullable=True)
+        action = Column(String(24), default="")   # rollback|freeze|alert
+        reason = Column(Text, default="")
+        metrics_json = Column(Text, default="{}")
+
     # -------------------------------------------------------------
     # FR-8/FR-9 反馈飞轮：receipt_feedback
     # like: 1=点赞, -1=点踩, 0=未表态；item_index: None=整单, 数字=明细行
@@ -356,6 +377,23 @@ def _make_engine():
         vendor = Column(String, default="")
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
+
+    # -------------------------------------------------------------
+    # T8（Gap D1）：待确认记忆队列 —— 反馈蒸馏产物不再自动生效，
+    # 先入队，经人工 approve 才走既有 upsert 链路落 vendor_memory + 向量库。
+    # -------------------------------------------------------------
+    class PendingMemoryRow(Base):
+        __tablename__ = "pending_memory"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        tenant_id = Column(String(64), default="default", index=True)
+        vendor = Column(String, index=True, default="")
+        content = Column(Text, default="")
+        source_kind = Column(String(32), default="feedback_distilled")
+        source_receipt_ids_json = Column(Text, default="[]")  # 触发的单据 id 列表 JSON（可回溯）
+        status = Column(String(16), default="pending", index=True)  # pending|approved|rejected
+        created_at = Column(String, default="")
+        reviewed_by = Column(String, nullable=True)
+        reviewed_at = Column(String, nullable=True)
 
     # -------------------------------------------------------------
     # 餐品管理与 FIFO 批次库存
@@ -539,6 +577,56 @@ def _make_engine():
     ):
         _apply_migration_ddl(_engine, _ddl)
 
+    # SQLite 迁移（T8 Gap D1 记忆写入人工闸）：pending_memory 新表。
+    # 幂等 CREATE TABLE IF NOT EXISTS（与 eval_candidate 同款兜底），禁重建表。
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS pending_memory ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " tenant_id VARCHAR(64) DEFAULT 'default',"
+        " vendor VARCHAR DEFAULT '',"
+        " content TEXT DEFAULT '',"
+        " source_kind VARCHAR(32) DEFAULT 'feedback_distilled',"
+        " source_receipt_ids_json TEXT DEFAULT '[]',"
+        " status VARCHAR(16) DEFAULT 'pending',"
+        " created_at TEXT DEFAULT '',"
+        " reviewed_by VARCHAR,"
+        " reviewed_at TEXT)",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_pending_memory_tenant_id"
+        " ON pending_memory (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pending_memory_status"
+        " ON pending_memory (status)",
+        "CREATE INDEX IF NOT EXISTS idx_pending_memory_vendor"
+        " ON pending_memory (vendor)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（T9 Gap C3+D4 实验守护）：
+    # ai_metric_snapshot 追加 3 个方向性列 + guardrail_event 新表（均幂等）。
+    for _ddl in (
+        "ALTER TABLE ai_metric_snapshot ADD COLUMN avg_output_tokens FLOAT",
+        "ALTER TABLE ai_metric_snapshot ADD COLUMN avg_tool_calls FLOAT",
+        "ALTER TABLE ai_metric_snapshot ADD COLUMN avg_retry_rounds FLOAT",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS guardrail_event ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " ts TEXT DEFAULT '',"
+        " experiment_id INTEGER,"
+        " action VARCHAR(24) DEFAULT '',"
+        " reason TEXT DEFAULT '',"
+        " metrics_json TEXT DEFAULT '{}')",
+    )
+    _apply_migration_ddl(
+        _engine,
+        "CREATE INDEX IF NOT EXISTS idx_guardrail_event_experiment_id"
+        " ON guardrail_event (experiment_id)",
+    )
+
     # memory_id 回填：存量行补 UUID（SQLite ADD COLUMN 无法使用非常量默认值）
     try:
         from sqlalchemy import text as _sa_text5
@@ -581,7 +669,9 @@ def _make_engine():
     _ExperimentRow = ExperimentRow
     _ExperimentAssignRow = ExperimentAssignRow
     _ReceiptFeedbackRow = ReceiptFeedbackRow
+    _PendingMemoryRow = PendingMemoryRow
     _EvalCandidateRow = EvalCandidateRow
+    _GuardrailEventRow = GuardrailEventRow
     _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
     _InventoryBatchRow = InventoryBatchRow
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
@@ -1958,11 +2048,18 @@ def get_vendor_memory(vendor, tenant_id="default"):
 def bump_vendor_memory_hit(memory_ids):
     """Gap B1 命中记账：自增 hit_count 并刷新 last_hit_at（检索注入后调用）。
 
+    T8 非对称衰减（强化慢）：每次命中按 settings 键 'memory_decay_hit_bonus'
+    （缺省 +0.05）上调 decay_score，封顶 1.0。
     memory_id 不存在的忽略；返回实际更新的行数。异常由调用方兜底（不阻断识别）。
     """
     ids = [str(m) for m in (memory_ids or []) if m]
     if not ids:
         return 0
+    try:
+        from app.services import settings_service
+        bonus = settings_service.get_float("memory_decay_hit_bonus", 0.05)
+    except Exception:
+        bonus = 0.05
     s = get_session()
     try:
         rows = s.query(_VendorMemoryRow).filter(
@@ -1971,8 +2068,230 @@ def bump_vendor_memory_hit(memory_ids):
         for r in rows:
             r.hit_count = int(r.hit_count or 0) + 1
             r.last_hit_at = now
+            cur = float(r.decay_score if r.decay_score is not None else 1.0)
+            r.decay_score = min(1.0, cur + bonus)
         s.commit()
         return len(rows)
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# T8（Gap D1 + B2）：待确认记忆队列 + 非对称淘汰
+# -------------------------------------------------------------
+def enqueue_pending_memory(vendor, content, tenant_id="default",
+                           source_kind="feedback_distilled",
+                           source_receipt_ids=None):
+    """蒸馏产物入待确认队列（不直接生效）。
+
+    幂等：同 (vendor, tenant_id, content) 已有 pending 行时并入触发来源并返回
+    既有行 (id, False)。返回 (pending_id, is_new)。
+    """
+    vid = str(vendor or "")
+    tid = str(tenant_id or "default").strip() or "default"
+    refs = json.dumps([str(r) for r in (source_receipt_ids or [])],
+                      ensure_ascii=False)
+    s = get_session()
+    try:
+        dup = s.query(_PendingMemoryRow).filter(
+            _PendingMemoryRow.vendor == vid,
+            _PendingMemoryRow.tenant_id == tid,
+            _PendingMemoryRow.status == "pending",
+            _PendingMemoryRow.content == (content or ""),
+        ).first()
+        if dup is not None:
+            try:
+                old = json.loads(dup.source_receipt_ids_json or "[]")
+                if not isinstance(old, list):
+                    old = []
+                merged = [str(x) for x in old]
+                for r in (source_receipt_ids or []):
+                    if str(r) not in merged:
+                        merged.append(str(r))
+                dup.source_receipt_ids_json = json.dumps(merged, ensure_ascii=False)
+                s.commit()
+            except Exception:
+                s.rollback()
+            return dup.id, False
+        row = _PendingMemoryRow(
+            tenant_id=tid,
+            vendor=vid,
+            content=content or "",
+            source_kind=str(source_kind or "feedback_distilled"),
+            source_receipt_ids_json=refs,
+            status="pending",
+            created_at=now_iso(),
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return row.id, True
+    finally:
+        s.close()
+
+
+def _pending_row_to_dict(r):
+    return {
+        "id": r.id,
+        "tenant_id": r.tenant_id or "default",
+        "vendor": r.vendor or "",
+        "content": r.content or "",
+        "source_kind": r.source_kind or "feedback_distilled",
+        "source_receipt_ids_json": r.source_receipt_ids_json or "[]",
+        "status": r.status or "pending",
+        "created_at": r.created_at or "",
+        "reviewed_by": r.reviewed_by,
+        "reviewed_at": r.reviewed_at,
+    }
+
+
+def list_pending_memory(status=None, tenant_id=None):
+    """待确认记忆列表（可按 status / 租户过滤），id 倒序。"""
+    if _PendingMemoryRow is None:
+        return []
+    s = get_session()
+    try:
+        q = scoped(s.query(_PendingMemoryRow), _PendingMemoryRow, tenant_id)
+        if status:
+            q = q.filter(_PendingMemoryRow.status == str(status))
+        rows = q.order_by(_PendingMemoryRow.id.desc()).all()
+        return [_pending_row_to_dict(r) for r in rows]
+    finally:
+        s.close()
+
+
+def get_pending_memory(pending_id, tenant_id=None):
+    """按 id 取待确认记忆；跨租户视为不存在（返回 None）。"""
+    if _PendingMemoryRow is None:
+        return None
+    s = get_session()
+    try:
+        row = s.get(_PendingMemoryRow, int(pending_id))
+        if row is None:
+            return None
+        if tenant_id is not None and str(tenant_id).strip() \
+                and row.tenant_id != str(tenant_id).strip():
+            return None
+        return _pending_row_to_dict(row)
+    except (TypeError, ValueError):
+        return None
+    finally:
+        s.close()
+
+
+def review_pending_memory(pending_id, status, reviewed_by, tenant_id=None):
+    """流转待确认记忆：仅 pending 可转 approved / rejected。
+
+    返回 True=流转成功；False=不存在（或跨租户）/已审过/非法目标状态。
+    """
+    if status not in ("approved", "rejected"):
+        return False
+    if _PendingMemoryRow is None:
+        return False
+    s = get_session()
+    try:
+        row = s.get(_PendingMemoryRow, int(pending_id))
+        if row is None:
+            return False
+        if tenant_id is not None and str(tenant_id).strip() \
+                and row.tenant_id != str(tenant_id).strip():
+            return False
+        if row.status != "pending":
+            return False
+        row.status = status
+        row.reviewed_by = str(reviewed_by or "")
+        row.reviewed_at = now_iso()
+        s.commit()
+        return True
+    except (TypeError, ValueError):
+        return False
+    finally:
+        s.close()
+
+
+def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
+    """T8 非对称衰减（淘汰快）：用户覆写 → 该供应商活跃记忆扣分。
+
+    步长取 settings 键 'memory_decay_override_penalty'（缺省 -0.12）；
+    扣分后低于归档阈值（键 'memory_archive_threshold'，缺省 0.5）的行自动
+    置 archived，停止注入。返回受影响的行数。
+    """
+    if _VendorMemoryRow is None:
+        return 0
+    try:
+        from app.services import settings_service
+        penalty = abs(settings_service.get_float(
+            "memory_decay_override_penalty", 0.12))
+        threshold = settings_service.get_float("memory_archive_threshold", 0.5)
+    except Exception:
+        penalty, threshold = 0.12, 0.5
+    vid = str(vendor or "")
+    tid = str(tenant_id or "default").strip() or "default"
+    if not vid:
+        return 0
+    s = get_session()
+    try:
+        rows = s.query(_VendorMemoryRow).filter(
+            _VendorMemoryRow.vendor == vid,
+            _VendorMemoryRow.tenant_id == tid,
+            _VendorMemoryRow.status == "active",
+        ).all()
+        for r in rows:
+            cur = float(r.decay_score if r.decay_score is not None else 1.0)
+            new = cur - penalty
+            r.decay_score = new
+            if new <= threshold:
+                r.status = "archived"
+            r.updated_at = now_iso()
+        s.commit()
+        return len(rows)
+    finally:
+        s.close()
+
+
+def memory_archive_threshold():
+    """归档阈值（settings 实时读取，缺省 0.5），供检索侧过滤。"""
+    try:
+        from app.services import settings_service
+        return settings_service.get_float("memory_archive_threshold", 0.5)
+    except Exception:
+        return 0.5
+
+
+# -------------------------------------------------------------
+# app_settings 通用键值读写（T10 Gap E3）：settings_service 的底层。
+# engine_config / system_audit_json 是历史专用键，其余键走通用读写。
+# -------------------------------------------------------------
+def get_app_setting(key, default=None):
+    """读取 app_settings 单个键；不存在返回 default（None）。"""
+    s = get_session()
+    try:
+        row = s.get(_AppSettingRow, str(key))
+        return row.value if row is not None else default
+    finally:
+        s.close()
+
+
+def set_app_setting(key, value):
+    """写入 app_settings 单个键（幂等 upsert，值一律文本化）。"""
+    s = get_session()
+    try:
+        row = s.get(_AppSettingRow, str(key))
+        if row is None:
+            row = _AppSettingRow(key=str(key))
+            s.add(row)
+        row.value = "" if value is None else str(value)
+        s.commit()
+    finally:
+        s.close()
+
+
+def list_app_settings():
+    """全量 app_settings 键值 dict（含 engine_config 等历史键，调用方自滤）。"""
+    s = get_session()
+    try:
+        rows = s.query(_AppSettingRow).all()
+        return {r.key: r.value for r in rows}
     finally:
         s.close()
 
@@ -2028,13 +2347,14 @@ def _is_placeholder_key(key) -> bool:
 
 
 def hydrate_engine_config_from_env():
-    """启动装配：SiliconFlow 为默认识别 provider（用户决策 2026-08-30）。
+    """启动装配：SiliconFlow 为默认 provider（用户决策 2026-08-30），识别与审核双腿强制装配。
 
-    每次重启都把识别腿强制装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
-    管理台对识别引擎的临时切换在重启后不保留（灰测组与审核腿配置不受影响）。
-    密钥优先级：SILICONFLOW_API_KEY / OPENAI_API_KEY（SiliconFlow 等 OpenAI 兼容）> DASHSCOPE_API_KEY。
-    SiliconFlow 通道装配前做轻量健康检查（/models），故障时自动改用 DashScope；
-    两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
+    每次重启都把双腿装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
+    管理台的临时切换在重启后不保留（灰测组不受影响）。
+    识别腿：SF Qwen-VL 系（OPENAI_MODEL）；审核腿：SF DeepSeek 系（SILICONFLOW_AUDIT_MODEL，
+    与识别腿跨厂商异构，Gap A3）。opencode/CLI 仅作显式选择，不再出现在默认路径。
+    SiliconFlow 健康检查失败自动降级 DashScope（识别 qwen3-vl / 审核 qwen3-max，降级期间
+    双腿同家族、异构性弱化，日志提示）；两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
     """
     import logging
     log = logging.getLogger("startup")
@@ -2059,20 +2379,35 @@ def hydrate_engine_config_from_env():
             cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
                                     or os.environ.get("OPENAI_MODEL")
                                     or cfg.openai_rec_model or "Qwen/Qwen2.5-VL-7B-Instruct")
-            source = "SILICONFLOW/OPENAI（默认 provider，重启强制装配）"
+            # 审核腿：SF DeepSeek 系（与识别 Qwen 系跨厂商异构），禁止回落 opencode
+            cfg.audit_engine = "openai"
+            cfg.openai_aud_base_url = base
+            cfg.openai_aud_api_key = sf_key
+            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
+                                    or cfg.openai_aud_model or "deepseek-ai/DeepSeek-V3.2")
+            cfg.audit_model = cfg.openai_aud_model
+            source = "SILICONFLOW/OPENAI（默认 provider，重启双腿强制装配）"
         elif ds_key and not _is_placeholder_key(ds_key):
             cfg.recognition_engine = "openai"
-            cfg.openai_rec_base_url = (os.environ.get("DASHSCOPE_BASE_URL")
-                                       or "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            base = (os.environ.get("DASHSCOPE_BASE_URL")
+                    or "https://dashscope.aliyuncs.com/compatible-mode/v1")
+            cfg.openai_rec_base_url = base
             cfg.openai_rec_api_key = ds_key
             cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
                                     or cfg.openai_rec_model or "qwen3-vl-flash")
-            source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配）"
+            # 审核腿降级：DashScope 文本模型；与识别腿同为 Qwen 家族，异构性弱化（日志提示）
+            cfg.audit_engine = "openai"
+            cfg.openai_aud_base_url = base
+            cfg.openai_aud_api_key = ds_key
+            cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
+                                    or "qwen3-max")
+            cfg.audit_model = cfg.openai_aud_model
+            source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配；降级期间双腿同家族）"
         else:
             log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），保持现有引擎配置")
             return
         set_engine_config(cfg)
-        log.info(f"[engine-env] 已从 .env {source}: {cfg.openai_rec_base_url} / {cfg.openai_rec_model}")
+        log.info(f"[engine-env] 已从 .env {source}: 识别 {cfg.openai_rec_base_url} / {cfg.openai_rec_model}；审核 {cfg.openai_aud_model}")
     except Exception as e:
         log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
 
@@ -2783,6 +3118,33 @@ def list_ai_decisions(receipt_id):
         s.close()
 
 
+def list_experiment_decision_rows(experiment_id):
+    """T9：按实验取全部决策行（extra 已解析为 dict），供守护指标计算。
+
+    返回 [{grp, decision_type, receipt_id, extra}]，id 正序。
+    """
+    if not experiment_id:
+        return []
+    s = get_session()
+    try:
+        rows = (
+            s.query(_DecisionLogRow)
+            .filter(_DecisionLogRow.experiment_id == int(experiment_id))
+            .order_by(_DecisionLogRow.id.asc())
+            .all()
+        )
+        return [{
+            "grp": r.grp or "control",
+            "decision_type": r.decision_type or "",
+            "receipt_id": r.receipt_id,
+            "extra": _parse_json(r.extra),
+        } for r in rows]
+    except (TypeError, ValueError):
+        return []
+    finally:
+        s.close()
+
+
 def log_user_event(account_id="", session_id="", event_type="",
                    receipt_id=None, properties=None, grp=None):
     """前端埋点事件。"""
@@ -2994,6 +3356,130 @@ def list_experiments():
     try:
         rows = s.query(_ExperimentRow).order_by(_ExperimentRow.id.desc()).all()
         return [_exp_to_dict(r) for r in rows]
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# T9（Gap C3 + D4）：实验守护——事件留痕 / 方向性快照 / 冻结
+# -------------------------------------------------------------
+def write_guardrail_event(experiment_id, action, reason="", metrics=None):
+    """守护动作留痕（rollback|freeze|alert），metrics 记触发时指标快照。"""
+    s = get_session()
+    try:
+        row = _GuardrailEventRow(
+            ts=now_iso(),
+            experiment_id=int(experiment_id) if experiment_id else None,
+            action=str(action or ""),
+            reason=str(reason or "")[:1000],
+            metrics_json=_safe_json(metrics or {}),
+        )
+        s.add(row)
+        s.commit()
+        return row.id
+    finally:
+        s.close()
+
+
+def list_guardrail_events(experiment_id=None):
+    """守护事件列表（可按实验过滤），id 倒序。"""
+    if _GuardrailEventRow is None:
+        return []
+    s = get_session()
+    try:
+        q = s.query(_GuardrailEventRow)
+        if experiment_id is not None:
+            q = q.filter(_GuardrailEventRow.experiment_id == int(experiment_id))
+        rows = q.order_by(_GuardrailEventRow.id.desc()).all()
+        return [{
+            "id": r.id, "ts": r.ts or "",
+            "experiment_id": r.experiment_id,
+            "action": r.action or "", "reason": r.reason or "",
+            "metrics": _parse_json(r.metrics_json),
+        } for r in rows]
+    finally:
+        s.close()
+
+
+def write_experiment_directional_snapshot(exp_id, avg_output_tokens=None,
+                                          avg_tool_calls=None,
+                                          avg_retry_rounds=None,
+                                          accuracy=None, sample_size=None,
+                                          grp="treatment"):
+    """T9：写入一期实验粒度方向性快照（granularity='experiment'）。"""
+    s = get_session()
+    try:
+        now = now_iso()
+        row = _SnapshotRow(
+            period_start="", period_end=now,
+            granularity="experiment", granularity_id=str(exp_id),
+            grp=str(grp) if grp else None,
+            accuracy=accuracy, sample_size=sample_size or 0,
+            avg_output_tokens=avg_output_tokens,
+            avg_tool_calls=avg_tool_calls,
+            avg_retry_rounds=avg_retry_rounds,
+            computed_at=now,
+        )
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return {"id": row.id, "computed_at": row.computed_at,
+                "avg_output_tokens": row.avg_output_tokens,
+                "avg_tool_calls": row.avg_tool_calls,
+                "avg_retry_rounds": row.avg_retry_rounds}
+    finally:
+        s.close()
+
+
+def list_experiment_snapshots(exp_id, limit=3):
+    """实验粒度方向性快照最近 N 期（时间正序返回，便于看连续漂移）。"""
+    if _SnapshotRow is None:
+        return []
+    s = get_session()
+    try:
+        rows = (
+            s.query(_SnapshotRow)
+            .filter(_SnapshotRow.granularity == "experiment",
+                    _SnapshotRow.granularity_id == str(exp_id))
+            .order_by(_SnapshotRow.id.desc())
+            .limit(int(limit or 3))
+            .all()
+        )
+        out = [{
+            "id": r.id, "computed_at": r.computed_at or "",
+            "avg_output_tokens": r.avg_output_tokens,
+            "avg_tool_calls": r.avg_tool_calls,
+            "avg_retry_rounds": r.avg_retry_rounds,
+            "accuracy": r.accuracy, "sample_size": r.sample_size,
+        } for r in rows]
+        out.reverse()
+        return out
+    finally:
+        s.close()
+
+
+def freeze_experiment_rollback(exp_id, reason="", by="guardian"):
+    """T9：守护触发回滚时冻结实验 —— status='stopped' + conclusion='rollback'。
+
+    与人工 conclude 区分：守护冻结保留 stopped 状态（不进入正常结题口径），
+    conclusion='rollback' 供看板与审计识别。返回实验 dict；不存在返回 None。
+    """
+    s = get_session()
+    try:
+        row = s.get(_ExperimentRow, int(exp_id))
+        if row is None:
+            return None
+        row.status = "stopped"
+        row.end_ts = now_iso()
+        row.conclusion = "rollback"
+        row.conclusion_reason = str(reason or "")[:1000]
+        row.concluded_by = str(by or "guardian")
+        row.concluded_at = now_iso()
+        s.commit()
+        s.refresh(row)
+        return _exp_to_dict(row)
+    except (TypeError, ValueError):
+        return None
     finally:
         s.close()
 
@@ -3471,13 +3957,19 @@ def count_vendor_feedbacks(vendor, tenant_id="default"):
 def should_distill_vendor_memory(vendor, tenant_id="default", threshold=None):
     """FR-9 判定：同供应商同租户连续 N 次点踩（dislike）触发提炼。
 
-    阈值取 FEEDBACK_DISTILL_THRESHOLD 常量（默认 3），可由 threshold 参数覆盖。
+    阈值经 settings_service 键 'feedback_distill_threshold' 实时读取
+    （缺省 FEEDBACK_DISTILL_THRESHOLD=3），可由 threshold 参数覆盖。
     语义：最近 N 条反馈均为点踩，认为需要沉淀为供应商记忆。
     返回 True 需调用 rag 沉淀。
     """
     from app.models import FEEDBACK_DISTILL_THRESHOLD
 
-    n = int(threshold) if threshold else int(FEEDBACK_DISTILL_THRESHOLD)
+    if threshold:
+        n = int(threshold)
+    else:
+        from app.services import settings_service  # 局部引入避免循环依赖
+        n = settings_service.get_int("feedback_distill_threshold",
+                                     FEEDBACK_DISTILL_THRESHOLD)
     s = get_session()
     try:
         rows = s.query(_ReceiptFeedbackRow).filter(
@@ -3502,7 +3994,8 @@ EVAL_CANDIDATE_STATUSES = ("pending", "promoted_to_val", "promoted_to_test", "re
 
 # L3/T6 候选池卫生：pending 候选总量上限，防止线上信号把候选池刷爆。
 # 超限时 create_eval_candidate 返回既有错误形态 (None, False)，不抛异常不阻断主链路。
-# TODO(T10): 若后续需要按租户/环境调整，改为配置化开关
+# T10 收口：本常量仅作 settings 缺省值，运行时值经 settings_service 键
+# 'eval_candidate_max_pending' 实时读取（管理台改后无需重启）。
 EVAL_CANDIDATE_MAX_PENDING = 500
 
 
@@ -3532,8 +4025,9 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
     返回 (candidate_id, created)。
 
     L3 候选池卫生：
-    - pending 候选总量达 EVAL_CANDIDATE_MAX_PENDING 时拒绝新建，返回 (None, False)
+    - pending 候选总量达上限时拒绝新建，返回 (None, False)
       （既有错误形态，不抛异常；supervisor 钩子侧负责 warning）
+      上限经 settings_service 键 'eval_candidate_max_pending' 实时读取
     - 原图 sha1 相同且 reason 相同的 pending 候选已存在时跳过不重复建，
       返回 (既有候选 id, False)；sha1 记入 ai_candidate_json.src_sha1
     """
@@ -3542,6 +4036,9 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
     if reason not in EVAL_CANDIDATE_REASONS:
         raise ValueError("非法候选 reason: %r（合法枚举: %s）"
                          % (reason, ", ".join(EVAL_CANDIDATE_REASONS)))
+    from app.services import settings_service  # 局部引入避免循环依赖
+    max_pending = settings_service.get_int(
+        "eval_candidate_max_pending", EVAL_CANDIDATE_MAX_PENDING)
     s = get_session()
     try:
         existing = s.query(_EvalCandidateRow).filter(
@@ -3554,7 +4051,7 @@ def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
         pending_count = s.query(_EvalCandidateRow).filter(
             _EvalCandidateRow.status == "pending",
         ).count()
-        if pending_count >= EVAL_CANDIDATE_MAX_PENDING:
+        if pending_count >= max_pending:
             return None, False
         # L3 卫生 2：原图 sha1 去重（同图同 reason 已有 pending 则跳过）
         src_sha1 = _receipt_image_sha1(s, receipt_id)

@@ -182,6 +182,25 @@
         </div>
     </div>
 
+    <div class="reflow-wrap">
+        <div class="reflow-pane">
+            <div class="pane-title">
+                <span>待确认记忆（连续纠偏蒸馏产物，人工批准后才注入识别）</span>
+                <span class="kbd-hint">Gap D1 记忆写入人工闸：未批准不参与检索</span>
+            </div>
+            <div style="overflow:auto; max-height: 40vh;">
+                <table class="reflow">
+                    <thead><tr><th>ID</th><th>供应商</th><th>记忆内容</th><th>触发单据</th>
+                        <th>状态</th><th style="width:230px;">操作</th></tr></thead>
+                    <tbody id="pendingMemoryBody">
+                        <tr><td colspan="6" class="loading-note">加载中…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="pendingMemoryEmpty" class="loading-note hide"></div>
+        </div>
+    </div>
+
     <div class="toast" id="toast"></div>
     <script src="/static/js/evalset.js"></script>
 </body>

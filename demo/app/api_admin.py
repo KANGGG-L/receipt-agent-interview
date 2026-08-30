@@ -319,29 +319,20 @@ def promote_grey_config(request: Request):
 
 @router.put("/api/admin/engine-config/rollback")
 def rollback_engine_config(request: Request):
-    """一键回滚：用最近一次推全快照覆盖回常规组并清空快照。"""
+    """一键回滚：用最近一次推全快照覆盖回常规组并清空快照。
+
+    T9：核心逻辑收敛到 services.guardian.perform_engine_rollback，
+    与实验守护自动回滚同一事实源。
+    """
     account = require_admin(request)
     who = account.get("email", "unknown")
-    from app.models import EngineConfig
-    cfg = db.get_engine_config()
-    snap = cfg.rollback_snapshot
-    if not snap or "prev" not in snap:
+    from app.services.guardian import perform_engine_rollback
+    ok, new_cfg = perform_engine_rollback(who=who)
+    if not ok:
         return JSONResponse(status_code=400, content={
             "status": "error",
             "msg": "没有可回滚的快照（从未执行过推全，或快照已被清空）",
         })
-    prev = snap.get("prev", {})
-    old_engine = cfg.recognition_engine
-    new_dict = {
-        **cfg.model_dump(),
-        **prev,
-        "rollback_snapshot": None,
-    }
-    new_cfg = EngineConfig(**new_dict)
-    db.set_engine_config(new_cfg)
-    db.append_system_audit_log(who, "rollback_engine_config",
-                               "recognition_engine",
-                               str(old_engine), str(new_cfg.recognition_engine))
     return {
         "status": "success",
         "data": new_cfg.model_dump(),
@@ -647,6 +638,67 @@ def get_system_audit(request: Request):
     """系统级审计日志读取（engine 配置变更等无 receipt_id 的操作）。"""
     require_admin(request)
     return {"status": "success", "data": db.read_system_audit_log()}
+
+
+# -------------------------------------------------------------
+# 系统配置（T10 Gap E3）：阈值/开关写 app_settings，改完即时生效无需重启
+# -------------------------------------------------------------
+@router.get("/api/admin/settings")
+def get_admin_settings(request: Request):
+    """全量系统配置（当前生效值 + 缺省值对照，供管理台表单渲染与还原）。"""
+    require_admin(request)
+    from app.services import settings_service
+    return {"status": "success",
+            "data": settings_service.all_settings(),
+            "defaults": dict(settings_service.SETTINGS_DEFAULTS)}
+
+
+@router.put("/api/admin/settings")
+async def update_admin_settings(request: Request):
+    """批量保存系统配置：body 为 {key: value}；仅接受已登记键，未知键 400。"""
+    require_admin(request)
+    from app.services import settings_service
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse(content={"status": "error", "msg": "请求体必须是 JSON 对象"},
+                            status_code=400)
+    if not isinstance(body, dict) or not body:
+        return JSONResponse(content={"status": "error", "msg": "请求体必须是非空 JSON 对象"},
+                            status_code=400)
+    unknown = [k for k in body if k not in settings_service.SETTINGS_DEFAULTS]
+    if unknown:
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": "未知配置键: " + ", ".join(sorted(unknown))},
+            status_code=400)
+    changed = {}
+    for key, value in body.items():
+        old = settings_service.get(key)
+        settings_service.set_value(key, value)
+        changed[key] = {"old": old, "new": settings_service.get(key)}
+    account = getattr(request.state, "account", {})
+    who = account.get("email", "admin") if isinstance(account, dict) else "admin"
+    try:
+        db.append_system_audit_log(
+            who, "settings_update", "app_settings",
+            "", {k: v["new"] for k, v in changed.items()})
+    except Exception:
+        pass
+    return {"status": "success", "data": settings_service.all_settings(),
+            "changed": changed}
+
+
+@router.post("/api/admin/guardian/check")
+def guardian_check(request: Request):
+    """T9（Gap C3）：手动触发实验守护巡检（与后台线程同一入口）。
+
+    返回本次动作列表（rollback / alert）；无运行中实验或无触发时为空列表。
+    """
+    require_admin(request)
+    from app.services import guardian
+    actions = guardian.check_once()
+    return {"status": "success", "data": {"actions": actions}}
 
 
 @router.get("/api/admin/metrics")

@@ -16,6 +16,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "demo", ".env"))
 
 from app import db  # noqa: E402
+from app.models import EngineConfig  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +53,12 @@ def _assert_forced_to_siliconflow(cfg):
     assert cfg.openai_rec_base_url == "https://api.siliconflow.cn/v1"
     assert cfg.openai_rec_api_key == "sk-test-default-provider"
     assert cfg.openai_rec_model == "Qwen/Qwen3-VL-32B-Thinking"
+    # 用户决策 2026-08-30：审核腿同样强制装配（SF DeepSeek 系，与识别 Qwen 异构）
+    assert cfg.audit_engine == "openai"
+    assert cfg.openai_aud_base_url == "https://api.siliconflow.cn/v1"
+    assert cfg.openai_aud_api_key == "sk-test-default-provider"
+    assert cfg.openai_aud_model == "deepseek-ai/DeepSeek-V3.2"
+    assert cfg.audit_model == "deepseek-ai/DeepSeek-V3.2"
 
 
 def test_force_siliconflow_even_when_db_stores_opencode(monkeypatch):
@@ -70,8 +77,8 @@ def test_force_siliconflow_overwrites_other_openai_config(monkeypatch):
     _assert_forced_to_siliconflow(db.get_engine_config())
 
 
-def test_audit_leg_and_grey_config_untouched(monkeypatch):
-    """强制只作用于识别腿：审核腿与灰测组配置保持 DB 现值。"""
+def test_audit_leg_forced_grey_untouched(monkeypatch):
+    """双腿强制：DB 里审核腿存 opencode 也会被装配回 SF DeepSeek；灰测组保持现值。"""
     cfg = db.get_engine_config()
     cfg.audit_engine = "opencode"
     cfg.audit_model = "opencode/mimo-v2.5-free"
@@ -82,10 +89,22 @@ def test_audit_leg_and_grey_config_untouched(monkeypatch):
     db.hydrate_engine_config_from_env()
     after = db.get_engine_config()
     _assert_forced_to_siliconflow(after)
-    assert after.audit_engine == "opencode"
-    assert after.audit_model == "opencode/mimo-v2.5-free"
+    assert after.audit_engine == "openai"
+    assert after.audit_model == "deepseek-ai/DeepSeek-V3.2"
     assert after.grey_recognition_engine == "codebuddy"
     assert after.grey_recognition_model == "minimax-m3-pay"
+
+
+def test_pure_default_config_is_heterogeneous(monkeypatch):
+    """纯默认（无 env）即异构：修复「纯默认双腿同源」历史遗留（Gap A3）。"""
+    for var in ("AUDIT_ENGINE", "AUDIT_MODEL", "SILICONFLOW_AUDIT_MODEL",
+                "OPENCODE_AUDIT_MODEL", "OPENAI_AUD_MODEL", "OPENAI_MODEL",
+                "OPENAI_BASE_URL", "OPENAI_API_KEY", "SILICONFLOW_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    cfg = EngineConfig()
+    assert cfg.audit_engine == "openai"
+    assert cfg.audit_model == "deepseek-ai/DeepSeek-V3.2"
+    assert cfg.audit_model != "opencode/mimo-v2.5-free"
 
 
 def test_siliconflow_unhealthy_falls_back_to_dashscope(monkeypatch):
@@ -99,6 +118,10 @@ def test_siliconflow_unhealthy_falls_back_to_dashscope(monkeypatch):
     assert cfg.recognition_engine == "openai"
     assert cfg.openai_rec_base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert cfg.openai_rec_api_key == "sk-dashscope-fallback"
+    # 审核腿随降级装配 DashScope 文本模型（双腿同家族，异构性弱化已在日志提示）
+    assert cfg.audit_engine == "openai"
+    assert cfg.openai_aud_base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    assert cfg.openai_aud_model == "qwen3-max"
 
 
 def test_no_provider_available_keeps_existing_config(monkeypatch):

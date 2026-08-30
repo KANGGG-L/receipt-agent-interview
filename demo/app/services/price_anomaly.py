@@ -8,6 +8,16 @@
 from app.models import PRICE_ANOMALY_THRESHOLD_PCT
 
 
+def get_threshold_pct():
+    """T10：阈值走 settings 实时读取（缺省 PRICE_ANOMALY_THRESHOLD_PCT=10.0）。"""
+    try:
+        from app.services import settings_service
+        return settings_service.get_float(
+            "price_anomaly_threshold_pct", PRICE_ANOMALY_THRESHOLD_PCT)
+    except Exception:
+        return PRICE_ANOMALY_THRESHOLD_PCT
+
+
 def compute_vs_avg_and_anomaly(sku_id, threshold_pct=None):
     """计算 SKU 的 vs_avg 涨幅与是否异动。
 
@@ -15,7 +25,7 @@ def compute_vs_avg_and_anomaly(sku_id, threshold_pct=None):
     价格历史不足 2 条时不判异动。
     """
     if threshold_pct is None:
-        threshold_pct = PRICE_ANOMALY_THRESHOLD_PCT
+        threshold_pct = get_threshold_pct()
 
     from app import db  # 函数内引入，避免循环 import
     rows = db.price_history(sku_id)

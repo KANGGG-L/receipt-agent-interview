@@ -29,8 +29,19 @@ from app import db
 MAX_RETRY = 3
 
 # T6 Gap A5：低置信回流阈值（低于该值的识别结果回流为评测候选）。
-# TODO(T10): 迁移至 app_settings 配置化（阈值规则统一治理），当前为模块常量。
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'eval_candidate_low_confidence' 实时读取（eval_candidate_low_confidence_threshold()）。
 EVAL_CANDIDATE_LOW_CONFIDENCE = 0.6
+
+
+def eval_candidate_low_confidence_threshold() -> float:
+    """低置信回流阈值（settings 实时读取，缺省 EVAL_CANDIDATE_LOW_CONFIDENCE）。"""
+    try:
+        from app.services import settings_service
+        return settings_service.get_float(
+            "eval_candidate_low_confidence", EVAL_CANDIDATE_LOW_CONFIDENCE)
+    except Exception:
+        return EVAL_CANDIDATE_LOW_CONFIDENCE
 
 # ---- 记忆落盘：文件层并发安全与路径 ----
 _MEMORY_LOCK = threading.Lock()
@@ -185,9 +196,19 @@ def maybe_create_eval_candidate(receipt_id, reason, doc_form="", confidence=None
 # L3/T6 候选池卫生：audit_discrepancy 严重度门槛。
 # 差异条数达到该值视为严重；不足时仅在含总额类差异（supplier/total/amount
 # 关键词）时才回流建候选，单条轻微差异（如币种缺失）不建候选。
-# TODO(T10): 若后续需要按租户/环境调整，改为配置化开关
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'audit_discrepancy_severe_min_count' 实时读取。
 AUDIT_DISCREPANCY_SEVERE_MIN_COUNT = 2
 _AUDIT_DISCREPANCY_TOTAL_KEYWORDS = ("supplier", "total", "amount")
+
+
+def _audit_discrepancy_severe_min_count() -> int:
+    try:
+        from app.services import settings_service
+        return settings_service.get_int(
+            "audit_discrepancy_severe_min_count", AUDIT_DISCREPANCY_SEVERE_MIN_COUNT)
+    except Exception:
+        return AUDIT_DISCREPANCY_SEVERE_MIN_COUNT
 
 
 def _audit_discrepancy_severe(discrepancies) -> bool:
@@ -197,7 +218,7 @@ def _audit_discrepancy_severe(discrepancies) -> bool:
     非 dict 退化为整串文本匹配）。任何异常按不严重处理（不建候选，不阻断）。
     """
     try:
-        if len(discrepancies) >= AUDIT_DISCREPANCY_SEVERE_MIN_COUNT:
+        if len(discrepancies) >= _audit_discrepancy_severe_min_count():
             return True
         for d in discrepancies:
             if isinstance(d, dict):
@@ -233,11 +254,12 @@ def _reflow_from_state(state: dict):
     # 1) 低置信
     if conf is not None:
         try:
-            if float(conf) < EVAL_CANDIDATE_LOW_CONFIDENCE:
+            _low_conf_th = eval_candidate_low_confidence_threshold()
+            if float(conf) < _low_conf_th:
                 maybe_create_eval_candidate(
                     rid, "low_confidence", doc_form=doc_form, confidence=conf,
                     ai_candidate=gt,
-                    note="confidence=%s < %s" % (conf, EVAL_CANDIDATE_LOW_CONFIDENCE))
+                    note="confidence=%s < %s" % (conf, _low_conf_th))
         except (TypeError, ValueError):
             pass
     # 2) 门禁拒绝（contract_error 保留最终门禁错误摘要）

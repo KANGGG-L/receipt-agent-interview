@@ -116,7 +116,17 @@ def _save_upload(file: UploadFile) -> str:
 
 
 # P0-1 极模糊前置拦截：Laplacian 方差阈值（与 image_quality_guard 对齐）
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'blur_laplacian_threshold' 实时读取（_blur_threshold()）。
 BLUR_THRESHOLD = 30.0
+
+
+def _blur_threshold() -> float:
+    try:
+        from app.services import settings_service
+        return settings_service.get_float("blur_laplacian_threshold", BLUR_THRESHOLD)
+    except Exception:
+        return BLUR_THRESHOLD
 
 
 def _laplacian_variance(image_path: str):
@@ -237,12 +247,12 @@ async def upload_receipt(
             }
         )
 
-    # P0-1 极模糊前置拦截：Laplacian 方差 <30 默认 400 快速失败（<1s，不进 opencode 管线）
+    # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进 opencode 管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断
     blur_score = _laplacian_variance(image_path)
     quality_warnings = []
     is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
-    if blur_score is not None and blur_score < BLUR_THRESHOLD:
+    if blur_score is not None and blur_score < _blur_threshold():
         if is_force:
             quality_warnings.append("image_blur")
         else:
@@ -262,6 +272,16 @@ async def upload_receipt(
                     "confidence": 0.35,
                 }
             )
+
+    # T10 预处理纠偏（上传后、抽取前）：开关 'preprocess_enabled' 默认 OFF；
+    # 任何失败回落原图，绝不阻断识别主链路
+    try:
+        from app.services import preprocess
+        image_path, _prep_meta = preprocess.apply_pipeline(image_path)
+        if _prep_meta.get("applied"):
+            quality_warnings.append("preprocess_applied")
+    except Exception:
+        pass
 
     job_id, receipt_id = start_recognition_job(
         image_path, vendor_hint=vendor_hint or "",
@@ -327,7 +347,7 @@ async def upload_batch(
         blur_score = _laplacian_variance(image_path)
         photo_warnings = []
         is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
-        if blur_score is not None and blur_score < BLUR_THRESHOLD:
+        if blur_score is not None and blur_score < _blur_threshold():
             if is_force:
                 photo_warnings.append("image_blur")
             else:
@@ -358,6 +378,14 @@ async def upload_batch(
             })
             continue
         seen_hashes.add(file_hash)
+        # T10 预处理纠偏（上传后、抽取前，与单张同口径；失败回落原图不阻断）
+        try:
+            from app.services import preprocess
+            image_path, _prep_meta = preprocess.apply_pipeline(image_path)
+            if _prep_meta.get("applied"):
+                photo_warnings.append("preprocess_applied")
+        except Exception:
+            pass
         # P0-1: 批量上传链路租户透传（在派发 Job 线程前捕获，线程内不读 request）
         job_id, receipt_id = start_recognition_job(
             image_path, tenant_id=_tenant_id(request))
@@ -667,20 +695,35 @@ def save_edited(body: SaveEditedBody, request: Request):
     db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 
     # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
+    _manual_changed = False
     if not is_auto and body.receipt_id is not None and row is not None:
         for old_it, new_it in zip(old_items, items_raw):
             if old_it.get("unit_price") != new_it.get("unit_price"):
                 db.append_audit_log(rid, who, "save_edited", "unit_price",
                                     old_it.get("unit_price"), new_it.get("unit_price"))
+                _manual_changed = True
             if old_it.get("amount") != new_it.get("amount"):
                 db.append_audit_log(rid, who, "save_edited", "amount",
                                     old_it.get("amount"), new_it.get("amount"))
+                _manual_changed = True
         if row.supplier_name != body.supplier_name:
             db.append_audit_log(rid, who, "save_edited", "supplier_name",
                                 row.supplier_name, body.supplier_name)
+            _manual_changed = True
         if row.total_amount != body.total_amount:
             db.append_audit_log(rid, who, "save_edited", "total_amount",
                                 row.total_amount, body.total_amount)
+            _manual_changed = True
+        # T8 非对称淘汰（覆写 -0.12 口径）：店员真的改了 AI 预填值 → 该供应商
+        # 活跃记忆扣分，低于归档阈值自动 archived 停止注入。失败不阻断保存。
+        if _manual_changed:
+            try:
+                db.apply_vendor_memory_override_penalty(
+                    row.supplier_name or "", tenant_id=tenant_id)
+            except Exception as _e:
+                import logging as _logging
+                _logging.getLogger("api_receipts").warning(
+                    f"[WARN] 记忆衰减扣分失败(不阻断): {_e}")
 
     # 埋点（规范事件 #7 receipt_review_submitted）：行级三类 diff + FER，分析用途
     if not is_auto and body.receipt_id is not None and row is not None:
@@ -1129,11 +1172,18 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
         try:
             if db.should_distill_vendor_memory(vendor_name, tenant_id):
                 from app.services.rag import ingest_feedback_memory
+                # T10：蒸馏阈值与判定同口径走 settings（缺省 FEEDBACK_DISTILL_THRESHOLD）
+                try:
+                    from app.services import settings_service
+                    _distill_n = settings_service.get_int(
+                        "feedback_distill_threshold", FEEDBACK_DISTILL_THRESHOLD)
+                except Exception:
+                    _distill_n = FEEDBACK_DISTILL_THRESHOLD
                 # T3 Gap B1：source_ref 记录触发点踩的 receipt_id 列表（可回溯）
                 _src_ids = []
                 try:
                     _recent = db.list_receipt_feedbacks(vendor=vendor_name, tenant_id=tenant_id)
-                    _src_ids = [str(f.get("receipt_id")) for f in _recent[:FEEDBACK_DISTILL_THRESHOLD]
+                    _src_ids = [str(f.get("receipt_id")) for f in _recent[:_distill_n]
                                 if f.get("like") == -1 and f.get("receipt_id") is not None]
                 except Exception:
                     _src_ids = []

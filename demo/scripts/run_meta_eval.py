@@ -47,8 +47,25 @@ VERDICT_WRONG = "absolutely_wrong"
 VERDICT_ENUM = (VERDICT_CORRECT, VERDICT_WRONG)
 
 # 元评测集最小条数（Gap A4：>=20 条已确证样本）
-# TODO(T10): 若后续需要按环境调整，改为配置化开关
+# T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
+# 'meta_eval_min_items' 实时读取（_meta_eval_min_items()）。
 META_EVAL_MIN_ITEMS = 20
+
+
+def _meta_eval_min_items():
+    try:
+        from app.services import settings_service
+        return settings_service.get_int("meta_eval_min_items", META_EVAL_MIN_ITEMS)
+    except Exception:
+        return META_EVAL_MIN_ITEMS
+
+
+# L4 量测基建修复：audit 逐条评估的单条超时（秒）。
+# 生产审核腿超时口径不变（llm._resolve_timeout 依旧钳制 <=60s），
+# 本常量只在 --judge audit 量测路径内覆盖模型实例的 call_timeout。
+# 背景：历史两轮 audit 元评测 11/25 miss 中 8 次为 opencode CLI 30s 超时，
+# 量测噪声淹没了评估器真实判定能力信号。
+META_EVAL_AUDIT_TIMEOUT_SECONDS = 120
 
 REQUIRED_ITEM_FIELDS = ("id", "source", "input", "expected_verdict", "why")
 
@@ -73,8 +90,9 @@ def validate_meta_eval_set(items):
     problems = []
     if not isinstance(items, list):
         return ["items 必须是数组"]
-    if len(items) < META_EVAL_MIN_ITEMS:
-        problems.append(f"样本数 {len(items)} < 最低要求 {META_EVAL_MIN_ITEMS}")
+    _min_items = _meta_eval_min_items()
+    if len(items) < _min_items:
+        problems.append(f"样本数 {len(items)} < 最低要求 {_min_items}")
     ids = set()
     for i, item in enumerate(items):
         for field in REQUIRED_ITEM_FIELDS:
@@ -119,6 +137,10 @@ def audit_judge(receipt_input, cfg=None):
 
     用 build_audit_model(cfg) 构建审核腿模型（必须与识别腿异构，temperature=0），
     以文本方式（原图不在元评测链路内）送入 receipt JSON 求二元判定。
+
+    L4 量测基建修复：单条调用超时 120s（仅本量测脚本覆盖模型实例的
+    call_timeout，不改生产审核腿超时口径）；输出不可解析时重试 1 次，
+    避免量测噪声（超时/偶发解析失败）淹没评估器真实判定能力信号。
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -130,6 +152,13 @@ def audit_judge(receipt_input, cfg=None):
         model = build_audit_model(cfg=cfg)
     except Exception as e:  # 模型不可用 → 本条判 skip（计为未命中）
         return {"verdict": None, "why": f"audit 模型构建失败: {e}"}
+    try:
+        object.__setattr__(model, "call_timeout", META_EVAL_AUDIT_TIMEOUT_SECONDS)
+    except Exception:
+        try:
+            model.call_timeout = META_EVAL_AUDIT_TIMEOUT_SECONDS
+        except Exception:
+            pass
     prompt = [
         SystemMessage(content=AUDIT_SYSTEM),
         HumanMessage(content=
@@ -137,14 +166,19 @@ def audit_judge(receipt_input, cfg=None):
             "输出 JSON：{\"overall_consistent\": true/false, \"reason\": \"...\"}\n"
             + json.dumps(payload, ensure_ascii=False, indent=2)),
     ]
-    try:
-        result = model.invoke(prompt)
-        raw = result.content if not isinstance(result, str) else result
-        parsed = _parse_audit(raw)
-    except Exception as e:
-        return {"verdict": None, "why": f"audit 调用失败: {e}"}
+    parsed = None
+    for _attempt in range(2):  # 解析失败重试 1 次（量测口径，防偶发噪声）
+        try:
+            result = model.invoke(prompt)
+            raw = result.content if not isinstance(result, str) else result
+            parsed = _parse_audit(raw)
+        except Exception as e:
+            return {"verdict": None, "why": f"audit 调用失败: {e}"}
+        if not parsed.get("skipped"):
+            break
     if parsed.get("skipped"):
-        return {"verdict": None, "why": f"audit 输出不可解析: {parsed.get('reason')}"}
+        return {"verdict": None,
+                "why": f"audit 输出不可解析（已重试 1 次）: {parsed.get('reason')}"}
     verdict = VERDICT_CORRECT if parsed.get("overall_consistent") else VERDICT_WRONG
     return {"verdict": verdict, "why": parsed.get("reason", "")}
 
