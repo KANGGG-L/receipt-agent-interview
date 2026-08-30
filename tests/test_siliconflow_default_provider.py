@@ -57,8 +57,8 @@ def _assert_forced_to_siliconflow(cfg):
     assert cfg.audit_engine == "openai"
     assert cfg.openai_aud_base_url == "https://api.siliconflow.cn/v1"
     assert cfg.openai_aud_api_key == "sk-test-default-provider"
-    assert cfg.openai_aud_model == "deepseek-ai/DeepSeek-V3.2"
-    assert cfg.audit_model == "deepseek-ai/DeepSeek-V3.2"
+    assert cfg.openai_aud_model == "zai-org/GLM-4.5V"
+    assert cfg.audit_model == "zai-org/GLM-4.5V"
 
 
 def test_force_siliconflow_even_when_db_stores_opencode(monkeypatch):
@@ -90,7 +90,7 @@ def test_audit_leg_forced_grey_untouched(monkeypatch):
     after = db.get_engine_config()
     _assert_forced_to_siliconflow(after)
     assert after.audit_engine == "openai"
-    assert after.audit_model == "deepseek-ai/DeepSeek-V3.2"
+    assert after.audit_model == "zai-org/GLM-4.5V"
     assert after.grey_recognition_engine == "codebuddy"
     assert after.grey_recognition_model == "minimax-m3-pay"
 
@@ -103,7 +103,7 @@ def test_pure_default_config_is_heterogeneous(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     cfg = EngineConfig()
     assert cfg.audit_engine == "openai"
-    assert cfg.audit_model == "deepseek-ai/DeepSeek-V3.2"
+    assert cfg.audit_model == "zai-org/GLM-4.5V"
     assert cfg.audit_model != "opencode/mimo-v2.5-free"
 
 
@@ -121,7 +121,7 @@ def test_siliconflow_unhealthy_falls_back_to_dashscope(monkeypatch):
     # 审核腿随降级装配 DashScope 文本模型（双腿同家族，异构性弱化已在日志提示）
     assert cfg.audit_engine == "openai"
     assert cfg.openai_aud_base_url == "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    assert cfg.openai_aud_model == "qwen3-max"
+    assert cfg.openai_aud_model == "qwen3-vl-plus"
 
 
 def test_no_provider_available_keeps_existing_config(monkeypatch):

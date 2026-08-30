@@ -2351,8 +2351,9 @@ def hydrate_engine_config_from_env():
 
     每次重启都把双腿装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
     管理台的临时切换在重启后不保留（灰测组不受影响）。
-    识别腿：SF Qwen-VL 系（OPENAI_MODEL）；审核腿：SF DeepSeek 系（SILICONFLOW_AUDIT_MODEL，
-    与识别腿跨厂商异构，Gap A3）。opencode/CLI 仅作显式选择，不再出现在默认路径。
+    识别腿：SF Qwen-VL 系（OPENAI_MODEL）；审核腿：SF GLM-4.5V（SILICONFLOW_AUDIT_MODEL，
+    视觉模型支持 text/vlm/ondemand 审核，与识别腿跨厂商异构，Gap A3）。
+    opencode/CLI 仅作显式选择，不再出现在默认路径。
     SiliconFlow 健康检查失败自动降级 DashScope（识别 qwen3-vl / 审核 qwen3-max，降级期间
     双腿同家族、异构性弱化，日志提示）；两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
     """
@@ -2384,7 +2385,7 @@ def hydrate_engine_config_from_env():
             cfg.openai_aud_base_url = base
             cfg.openai_aud_api_key = sf_key
             cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                    or cfg.openai_aud_model or "deepseek-ai/DeepSeek-V3.2")
+                                    or cfg.openai_aud_model or "zai-org/GLM-4.5V")
             cfg.audit_model = cfg.openai_aud_model
             source = "SILICONFLOW/OPENAI（默认 provider，重启双腿强制装配）"
         elif ds_key and not _is_placeholder_key(ds_key):
@@ -2400,7 +2401,7 @@ def hydrate_engine_config_from_env():
             cfg.openai_aud_base_url = base
             cfg.openai_aud_api_key = ds_key
             cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
-                                    or "qwen3-max")
+                                    or "qwen3-vl-plus")
             cfg.audit_model = cfg.openai_aud_model
             source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配；降级期间双腿同家族）"
         else:

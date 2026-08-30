@@ -199,8 +199,8 @@ class EngineConfig(BaseModel):
         description="审核引擎（评估器）。强制与识别腿跨厂商异构（Gap A3），禁止与识别腿同引擎同家族。",
     )
     audit_model: str = Field(
-        default_factory=lambda: os.environ.get("SILICONFLOW_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "deepseek-ai/DeepSeek-V3.2")),
-        description="审核腿模型（评估器）。默认 SF DeepSeek 系，与识别腿 Qwen 系跨厂商异构；识别=DeepSeek/GLM 系时审核必须换 Qwen 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
+        default_factory=lambda: os.environ.get("SILICONFLOW_AUDIT_MODEL", os.environ.get("AUDIT_MODEL", "zai-org/GLM-4.5V")),
+        description="审核腿模型（评估器）。默认 SF GLM-4.5V（视觉模型，支持 text/vlm/ondemand 三种审核模式），与识别腿 Qwen 系跨厂商异构；识别=GLM 系时审核必须换 Qwen/DeepSeek 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
     )
     audit_enabled: bool = True
     # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
@@ -226,7 +226,7 @@ class EngineConfig(BaseModel):
         default_factory=lambda: os.environ.get("OPENAI_AUD_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
     )
     openai_aud_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_AUD_MODEL", os.environ.get("SILICONFLOW_AUDIT_MODEL", "deepseek-ai/DeepSeek-V3.2"))
+        default_factory=lambda: os.environ.get("OPENAI_AUD_MODEL", os.environ.get("SILICONFLOW_AUDIT_MODEL", "zai-org/GLM-4.5V"))
     )
     # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s
     call_timeout_seconds: int = 90
