@@ -2377,15 +2377,16 @@ def hydrate_engine_config_from_env():
                 base = base[:-len("/chat/completions")]
             cfg.openai_rec_base_url = base
             cfg.openai_rec_api_key = sf_key
+            # 强制语义：模型解析不读 DB 旧值（env → 内置默认），管理台临时切换不跨重启
             cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
                                     or os.environ.get("OPENAI_MODEL")
-                                    or cfg.openai_rec_model or "Qwen/Qwen2.5-VL-7B-Instruct")
+                                    or "Qwen/Qwen2.5-VL-7B-Instruct")
             # 审核腿：SF DeepSeek 系（与识别 Qwen 系跨厂商异构），禁止回落 opencode
             cfg.audit_engine = "openai"
             cfg.openai_aud_base_url = base
             cfg.openai_aud_api_key = sf_key
             cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                    or cfg.openai_aud_model or "zai-org/GLM-4.5V")
+                                    or "zai-org/GLM-4.5V")
             cfg.audit_model = cfg.openai_aud_model
             source = "SILICONFLOW/OPENAI（默认 provider，重启双腿强制装配）"
         elif ds_key and not _is_placeholder_key(ds_key):
