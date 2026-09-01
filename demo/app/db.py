@@ -2353,10 +2353,11 @@ def hydrate_engine_config_from_env():
     """启动装配：SiliconFlow 为默认 provider（用户决策 2026-08-30），识别与审核双腿强制装配。
 
     每次重启都把双腿装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
-    管理台的临时切换在重启后不保留（灰测组不受影响）。
+    管理台的临时切换在重启后不保留。
     识别腿：SF Qwen-VL 系（OPENAI_MODEL）；审核腿：SF GLM-4.5V（SILICONFLOW_AUDIT_MODEL，
     视觉模型支持 text/vlm/ondemand 审核，与识别腿跨厂商异构，Gap A3）。
-    opencode/CLI 仅作显式选择，不再出现在默认路径。
+    用户决策（2026-09-02）：opencode 已过期——灰测/解析腿若仍为 opencode（历史遗留默认值），
+    一并归一为 SF 通道（沿用主腿 base/key，模型用标准 SF 模型，业务开关保持原值）。
     SiliconFlow 健康检查失败自动降级 DashScope（识别 qwen3-vl / 审核 qwen3-max，降级期间
     双腿同家族、异构性弱化，日志提示）；两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
     """
@@ -2383,8 +2384,8 @@ def hydrate_engine_config_from_env():
             # 强制语义：模型解析不读 DB 旧值（env → 内置默认），管理台临时切换不跨重启
             cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
                                     or os.environ.get("OPENAI_MODEL")
-                                    or "Qwen/Qwen2.5-VL-7B-Instruct")
-            # 审核腿：SF DeepSeek 系（与识别 Qwen 系跨厂商异构），禁止回落 opencode
+                                    or _SF_DEFAULT_REC_MODEL)
+            # 审核腿：SF GLM-4.5V（与识别 Qwen 系跨厂商异构），禁止回落 opencode
             cfg.audit_engine = "openai"
             cfg.openai_aud_base_url = base
             cfg.openai_aud_api_key = sf_key
@@ -2409,12 +2410,81 @@ def hydrate_engine_config_from_env():
             cfg.audit_model = cfg.openai_aud_model
             source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配；降级期间双腿同家族）"
         else:
-            log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），保持现有引擎配置")
+            log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），仅归一遗留 opencode 配置")
+            _normalize_legacy_cli_engines(cfg, log)
+            set_engine_config(cfg)
             return
+        _normalize_legacy_cli_engines(cfg, log, sf_base=cfg.openai_rec_base_url,
+                                      sf_key=cfg.openai_rec_api_key)
         set_engine_config(cfg)
         log.info(f"[engine-env] 已从 .env {source}: 识别 {cfg.openai_rec_base_url} / {cfg.openai_rec_model}；审核 {cfg.openai_aud_model}")
     except Exception as e:
         log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
+
+
+# 默认 SF 模型：识别/解析用非思考型 Qwen3-VL（适配 60s 高压上限，Thinking 型实测必超时），
+# 审核用 GLM-4.5V（与识别 Qwen 系跨厂商异构）。
+# 注意 Qwen2.5-VL-7B-Instruct 已下架 SiliconFlow 目录（2026-09 实测），禁止再作为默认。
+_SF_DEFAULT_REC_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
+_SF_DEFAULT_AUD_MODEL = "zai-org/GLM-4.5V"
+
+
+def _normalize_legacy_cli_engines(cfg, log, sf_base: str = "", sf_key: str = "") -> None:
+    """归一历史遗留的 opencode 引擎配置（灰测/解析腿）。幂等；业务开关一律不动。
+
+    引擎值 opencode → openai；模型 opencode/* → 标准 SF 模型；灰测 openai 参数为空时
+    沿用主腿 base/key（llm._build 对灰测腿不回退主腿参数，必须显式填充）。
+    """
+    changed = []
+
+    def _enum_str(v):
+        # EngineKind 等枚举字段的字符串取值（str(enum) 是 "EngineKind.X" 形态，不能直接比较）
+        return str(getattr(v, "value", v) or "").lower()
+
+    if _enum_str(getattr(cfg, "parse_llm_engine", "")) == "opencode":
+        cfg.parse_llm_engine = "openai"
+        if str(cfg.parse_llm_model or "").startswith("opencode"):
+            cfg.parse_llm_model = _SF_DEFAULT_REC_MODEL
+        changed.append("parse")
+
+    if _enum_str(getattr(cfg, "grey_recognition_engine", "")) == "opencode":
+        cfg.grey_recognition_engine = "openai"
+        if str(cfg.grey_recognition_model or "").startswith("opencode"):
+            cfg.grey_recognition_model = _SF_DEFAULT_REC_MODEL
+        if not getattr(cfg, "grey_openai_rec_base_url", "") and sf_base:
+            cfg.grey_openai_rec_base_url = sf_base
+        if not getattr(cfg, "grey_openai_rec_api_key", "") and sf_key:
+            cfg.grey_openai_rec_api_key = sf_key
+        if not getattr(cfg, "grey_openai_rec_model", ""):
+            cfg.grey_openai_rec_model = _SF_DEFAULT_REC_MODEL
+        changed.append("grey_rec")
+
+    if _enum_str(getattr(cfg, "grey_audit_engine", "")) == "opencode":
+        cfg.grey_audit_engine = "openai"
+        if str(cfg.grey_audit_model or "").startswith("opencode"):
+            cfg.grey_audit_model = _SF_DEFAULT_AUD_MODEL
+        if not getattr(cfg, "grey_openai_aud_base_url", "") and sf_base:
+            cfg.grey_openai_aud_base_url = sf_base
+        if not getattr(cfg, "grey_openai_aud_api_key", "") and sf_key:
+            cfg.grey_openai_aud_api_key = sf_key
+        if not getattr(cfg, "grey_openai_aud_model", ""):
+            cfg.grey_openai_aud_model = _SF_DEFAULT_AUD_MODEL
+        changed.append("grey_aud")
+
+    if _enum_str(getattr(cfg, "grey_parse_llm_engine", "")) == "opencode":
+        cfg.grey_parse_llm_engine = "openai"
+        if str(cfg.grey_parse_llm_model or "").startswith("opencode"):
+            cfg.grey_parse_llm_model = _SF_DEFAULT_REC_MODEL
+        if not getattr(cfg, "grey_openai_parse_base_url", "") and sf_base:
+            cfg.grey_openai_parse_base_url = sf_base
+        if not getattr(cfg, "grey_openai_parse_api_key", "") and sf_key:
+            cfg.grey_openai_parse_api_key = sf_key
+        if not getattr(cfg, "grey_openai_parse_model", ""):
+            cfg.grey_openai_parse_model = _SF_DEFAULT_REC_MODEL
+        changed.append("grey_parse")
+
+    if changed:
+        log.info("[engine-env] 已归一遗留 opencode 配置 → SiliconFlow: %s", ",".join(changed))
 
 
 def _openai_gateway_healthy(api_key: str) -> bool:
@@ -2468,9 +2538,8 @@ def write_decision_log(receipt_id=None, supplier_id=None, experiment_id=None,
         s.close()
 
 
-def write_user_event(event_type, account_id="", session_id="", receipt_id=None,
-                     properties=None, grp=None, tenant_id=None):
-    """写一条用户行为埋点（漏斗用）。"""
+def _event_tenant_id(tenant_id, receipt_id):
+    """埋点租户键缺省链：显式 tenant_id → 单据回填 → default（write/log 两路共用）。"""
     t_id = (tenant_id or "").strip()
     if not t_id and receipt_id is not None:
         try:
@@ -2479,8 +2548,13 @@ def write_user_event(event_type, account_id="", session_id="", receipt_id=None,
                 t_id = r.tenant_id
         except Exception:
             pass
-    if not t_id:
-        t_id = "default"
+    return t_id or "default"
+
+
+def write_user_event(event_type, account_id="", session_id="", receipt_id=None,
+                     properties=None, grp=None, tenant_id=None):
+    """写一条用户行为埋点（漏斗用）。"""
+    t_id = _event_tenant_id(tenant_id, receipt_id)
     s = get_session()
     try:
         s.add(_UserEventRow(
@@ -3164,16 +3238,7 @@ def list_experiment_decision_rows(experiment_id):
 def log_user_event(account_id="", session_id="", event_type="",
                    receipt_id=None, properties=None, grp=None, tenant_id=None):
     """前端埋点事件。"""
-    t_id = (tenant_id or "").strip()
-    if not t_id and receipt_id is not None:
-        try:
-            r = get_receipt_row(receipt_id)
-            if r and getattr(r, "tenant_id", None):
-                t_id = r.tenant_id
-        except Exception:
-            pass
-    if not t_id:
-        t_id = "default"
+    t_id = _event_tenant_id(tenant_id, receipt_id)
     s = get_session()
     try:
         row = _UserEventRow(

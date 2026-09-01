@@ -21,8 +21,12 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+import logging
+
 from app import db
 from app.auth import require_role
+
+logger = logging.getLogger("dishes")
 from app.services.costing_service import CostingService, convert_unit_quantity
 
 router = APIRouter()
@@ -495,7 +499,9 @@ def delete_dish_category(name: str, request: Request, replace_with: str = "其�
         }
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"删除分类失败: {str(e)}"}
+        logger.exception("删除分类失败 name=%s", cat)
+        return JSONResponse(status_code=500,
+                            content={"status": "error", "msg": f"删除分类失败: {str(e)}"})
     finally:
         session.close()
 

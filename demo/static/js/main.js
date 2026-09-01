@@ -679,6 +679,13 @@ let isFocalZoomed = false;
 // 旋转烤入状态：烘焙进行中标志与非批量单张烤后预览 URL（用于 reset 回收）
 let _isBakingRotation = false;
 let _bakedPreviewUrl = null;
+// C2：烤后预览 URL 回收统一入口（原先 7 处重复 revoke 块）
+function revokeBakedPreviewUrl() {
+    if (_bakedPreviewUrl) {
+        try { URL.revokeObjectURL(_bakedPreviewUrl); } catch (e) {}
+        _bakedPreviewUrl = null;
+    }
+}
 
 // 裁剪控制变量
 let isCropDragging = false;
@@ -1578,10 +1585,7 @@ async function handleFileSelect(file, gen) {
             try { URL.revokeObjectURL(originalObjectUrl); } catch (e) {}
             originalObjectUrl = null;
         }
-        if (_bakedPreviewUrl) {
-            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch (e) {}
-            _bakedPreviewUrl = null;
-        }
+        revokeBakedPreviewUrl();
 
         const newObjUrl = isNonWebImageFile(file) ? null : URL.createObjectURL(file);
         originalObjectUrl = newObjUrl;
@@ -2121,7 +2125,6 @@ function triggerAnalysisNow(forceFlag = false) {
         return;
     }
     // 自检：FormData 中 selectedFile 的尺寸/类型（旋转后 w/h 已互换可在控制台核验）
-    try { console.log('[triggerAnalysisNow] selectedFile', selectedFile && { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type }); } catch(e) {}
 
     // D13: 若当前是已有单据行的失败照片（批量/重试场景），复用原单据走 retry 端点，不新建记录
     // P1-16: 路由前校验 selectedFile 仍是该照片的文件（含裁剪后 file）；
@@ -2693,7 +2696,6 @@ function pollAndApply(postRet, receiptId) {
         applyRecognizedResult(jobRet, receiptId);
     }, { token: singlePollToken });
 }
-window.pollAndApply = pollAndApply;
 
 // 重试/转手工录入成功后的统一渲染入口（单张与批量共用）
 function applyRecognizedResult(ret, fallbackReceiptId) {
@@ -3320,9 +3322,7 @@ function applyCropSelection() {
             setMainPreview(photo);
         } else {
             // 非批量：记录烤后预览 URL 到 _bakedPreviewUrl 体系，reset 时可回收；同时兼容旧逻辑直接写 img.src
-            if (_bakedPreviewUrl) {
-                try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
-            }
+            revokeBakedPreviewUrl();
             _bakedPreviewUrl = croppedUrl;
             img.src = croppedUrl;
             setNonWebPreviewHint(false, croppedFile);
@@ -3350,27 +3350,31 @@ function zoomImg(delta) {
  */
 function bakeCurrentRotation() {
     return new Promise((resolve) => {
-        if (currentRotation === 0) { resolve(true); return; }
+        // F4：守卫置位于入口——img 等加载的异步间隙里二次旋转也可能并发烘焙，
+        // 只在 toBlob 前置位太晚；done() 统一清位。
+        _isBakingRotation = true;
+        const done = (v) => { _isBakingRotation = false; resolve(v); };
+        if (currentRotation === 0) { done(true); return; }
         const img = document.getElementById('previewImg');
         const photo = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
         const currFile = (photo && photo.file) || selectedFile || originalFile;
         if (!currFile) {
             currentRotation = 0;
             if (img) applyImgTransform();
-            resolve(true);
+            done(true);
             return;
         }
         if (isNonWebImageFile(currFile)) {
             showToast('该格式浏览器无法直接旋转预览，已重置旋转角度；解析时服务端会自动处理', 'info');
             currentRotation = 0;
             if (img) applyImgTransform();
-            resolve(true);
+            done(true);
             return;
         }
         if (!img || !img.src || img.src.startsWith('data:image/svg')) {
             currentRotation = 0;
             if (img) applyImgTransform();
-            resolve(true);
+            done(true);
             return;
         }
         if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
@@ -3385,7 +3389,7 @@ function bakeCurrentRotation() {
                 showToast('图片加载失败，无法旋转', 'error');
                 currentRotation = 0;
                 applyImgTransform();
-                resolve(false);
+                done(false);
             };
             img.addEventListener('load', onLoad);
             img.addEventListener('error', onError);
@@ -3400,7 +3404,7 @@ function bakeCurrentRotation() {
             if (!nw || !nh) {
                 currentRotation = 0;
                 applyImgTransform();
-                resolve(true);
+                done(true);
                 return;
             }
             const angle = ((currentRotation % 360) + 360) % 360;
@@ -3414,7 +3418,7 @@ function bakeCurrentRotation() {
             if (!ctx) {
                 currentRotation = 0;
                 applyImgTransform();
-                resolve(false);
+                done(false);
                 return;
             }
             ctx.fillStyle = '#ffffff';
@@ -3427,7 +3431,7 @@ function bakeCurrentRotation() {
                 console.error('bake rotate drawImage failed', e);
                 currentRotation = 0;
                 applyImgTransform();
-                resolve(false);
+                done(false);
                 return;
             }
             _isBakingRotation = true;
@@ -3443,7 +3447,7 @@ function bakeCurrentRotation() {
                     console.warn('canvas.toBlob returned null');
                     currentRotation = 0;
                     applyImgTransform();
-                    resolve(false);
+                    done(false);
                     return;
                 }
                 const baseName = (currFile.name || 'receipt').replace(/\.[^.]+$/, '') || 'receipt';
@@ -3460,9 +3464,7 @@ function bakeCurrentRotation() {
                     photo.file = newFile;
                     setMainPreview(photo);
                 } else {
-                    if (_bakedPreviewUrl) {
-                        try { URL.revokeObjectURL(_bakedPreviewUrl); } catch (e) {}
-                    }
+                    revokeBakedPreviewUrl();
                     _bakedPreviewUrl = URL.createObjectURL(blob);
                     const imgEl = document.getElementById('previewImg');
                     if (imgEl) imgEl.src = _bakedPreviewUrl;
@@ -3476,13 +3478,11 @@ function bakeCurrentRotation() {
                 if (overlay) overlay.classList.add('hide');
                 cropRect = { left: 0, top: 0, width: 0, height: 0 };
                 showToast('已固化旋转并更新待上传文件', 'success');
-                console.log('[bakeRotation] baked', { angle, canvasW, canvasH, newFileName: newFile.name, newSize: newFile.size });
-                resolve(true);
+                done(true);
             }, 'image/jpeg', 0.95);
         }
     });
 }
-if (typeof window !== 'undefined') window.bakeCurrentRotation = bakeCurrentRotation;
 
 function rotateImg() {
     if (_isBakingRotation) {
@@ -3530,25 +3530,16 @@ function resetImgTransform() {
             photo.file = photo.originalFile || photo.file;
         }
         // 清理非批量路径的烤后 URL 残留（若曾混用）
-        if (_bakedPreviewUrl) {
-            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
-            _bakedPreviewUrl = null;
-        }
+        revokeBakedPreviewUrl();
         selectedFile = photo.file;
         setMainPreview(photo);
     } else if (originalFile) {
-        if (_bakedPreviewUrl) {
-            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
-            _bakedPreviewUrl = null;
-        }
+        revokeBakedPreviewUrl();
         selectedFile = originalFile;
         setMainPreviewFromFile(originalFile, originalObjectUrl);
     } else {
         // 无 photo 也无 originalFile 但有 _bakedPreviewUrl 残留，清理
-        if (_bakedPreviewUrl) {
-            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
-            _bakedPreviewUrl = null;
-        }
+        revokeBakedPreviewUrl();
     }
 
     if (img) {
@@ -3704,7 +3695,7 @@ function loadSuppliersData() {
             availableSuppliers = ret.data || [];
         }
     })
-    .catch(err => console.error("加载供应商列表失败:", err));
+    .catch(err => { if (!window.__roleSwitchPending) console.error("加载供应商列表失败:", err); });
 }
 
 let isSelectingSupplier = false;
@@ -7003,7 +6994,7 @@ function loadAiLeanInsights() {
         banner.classList.remove('hide');
     })
     .catch(err => {
-        console.error('加载极简 AI 发现异常:', err);
+        if (!window.__roleSwitchPending) console.error('加载极简 AI 发现异常:', err);
         if (banner) banner.classList.add('hide');
     });
 }
@@ -7133,7 +7124,7 @@ function loadSuppliersData() {
             });
         }
     })
-    .catch(err => console.error("加载供应商列表失败:", err));
+    .catch(err => { if (!window.__roleSwitchPending) console.error("加载供应商列表失败:", err); });
 }
 
 let allArchiveReceipts = [];
@@ -8991,10 +8982,7 @@ document.addEventListener('click', function (e) {
 async function handleFilesSelect(fileList, gen) {
     if (!fileList || fileList.length === 0) return;
     // 清理非批量路径残留的烤后预览 URL（切换至批量后不再使用）
-    if (_bakedPreviewUrl) {
-        try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
-        _bakedPreviewUrl = null;
-    }
+    revokeBakedPreviewUrl();
 
     const currentGen = (typeof gen === 'number') ? gen : nextFileSelectionGen();
 
@@ -10139,8 +10127,11 @@ const PAY_METHOD_LABELS = {
 
 // owner 判定：AUTH_ENABLED=0 时 /api/auth/me 返回 owner；仅明确 staff 时隐藏资金类行内操作
 function isOwnerRole() {
+    // C3：与 isOwnerRoleNow 收敛为单一事实来源链——优先 /me 回填的服务端确认角色，
+    // 未回填时回落 localStorage demo_role（X-Role 同源），消除双来源漂移。
     const role = AuthState.account && AuthState.account.role;
-    return role !== 'staff';
+    if (role) return role !== 'staff';
+    return isOwnerRoleNow();
 }
 
 // owner 判定（同步可用，与 buildAuthHeaders/X-Role 同源：localStorage demo_role，
@@ -10251,7 +10242,7 @@ function loadFinancePanel() {
 
             renderPayablesAll();
         })
-        .catch(err => console.error('加载财务面板失败:', err));
+        .catch(err => { if (!window.__roleSwitchPending) console.error('加载财务面板失败:', err); });
 }
 
 function renderPayablesAll() {
@@ -11436,6 +11427,9 @@ function initDemoRoleSwitch() {
         showToast('角色已切换：' + role, 'info');
         // 重探 /me 刷新 AuthState.account → isOwnerRole() 生效
         probeAuthAndEnter(true);
+        // B1：即将整页重载，在途请求被浏览器中断属预期行为；
+        // 置位后各加载器 catch 跳过 console.error，避免每次切换刷屏假错误
+        window.__roleSwitchPending = true;
         location.reload();
     });
 }
@@ -11528,13 +11522,7 @@ function applyModalRoleVisibility(optionalRole) {
 // admin：引擎配置 / 灰测管理界面
 // -------------------------------------------------------------
 const DEFAULT_ENGINE_MODELS = {
-    opencode: [
-        { value: 'opencode/mimo-v2.5-free', label: 'MiMo-V2.5 Free' },
-        { value: 'opencode/longcat-2.0-free', label: 'LongCat-2.0 Free' },
-        { value: 'opencode/deepseek-v4-flash-free', label: 'deepseek-v4-flash-free' },
-        { value: 'opencode-go/deepseek-v4-flash', label: 'deepseek-v4-flash' },
-        { value: 'opencode-go/glm-5v-turbo', label: 'glm-5v-turbo' },
-    ],
+    // 用户决策 2026-09-02：opencode 已过期，预设组移除；openai 引擎模型手动填写（SF 平台目录）
     codebuddy: [
         { value: 'minimax-m3-pay', label: 'minimax-m3-pay' },
     ],
@@ -11613,7 +11601,7 @@ function removeCustomModel(engine, modelName) {
 function fillModelOptions(selId, current, engine) {
     const sel = document.getElementById(selId);
     if (!sel) return;
-    const eng = engine || 'opencode';
+    const eng = engine || 'openai';
     if (eng === 'openai') {
         sel.innerHTML = '';
         return;
@@ -11702,9 +11690,7 @@ function handleModelSelectChange(selId, engineGetter) {
     const engine = typeof engineGetter === 'function' ? engineGetter() : engineGetter;
     if (val === '__ADD_CUSTOM__') {
         let exampleModel = 'provider/model-name';
-        if (engine === 'opencode') {
-            exampleModel = 'opencode-go/gpt-5.6-luna';
-        } else if (engine === 'codebuddy') {
+        if (engine === 'codebuddy') {
             exampleModel = 'hy3';
         }
         showCustomInputModal({
@@ -11889,11 +11875,11 @@ function loadAdminEngineConfig() {
             }
             const cfg = body.data;
             // 引擎类型
-            document.getElementById('adminRecognitionEngine').value = cfg.recognition_engine || 'opencode';
-            document.getElementById('adminAuditEngine').value = cfg.audit_engine || 'opencode';
+            document.getElementById('adminRecognitionEngine').value = cfg.recognition_engine || 'openai';
+            document.getElementById('adminAuditEngine').value = cfg.audit_engine || 'openai';
             // 模型下拉（根据对应引擎渲染）
-            fillModelOptions('adminRecognitionModel', cfg.recognition_model, cfg.recognition_engine || 'opencode');
-            fillModelOptions('adminAuditModel', cfg.audit_model, cfg.audit_engine || 'opencode');
+            fillModelOptions('adminRecognitionModel', cfg.recognition_model, cfg.recognition_engine || 'openai');
+            fillModelOptions('adminAuditModel', cfg.audit_model, cfg.audit_engine || 'openai');
             document.getElementById('adminAuditEnabled').value = cfg.audit_enabled ? 'true' : 'false';
             // OpenAI 兼容参数（识别/审核各自独立）
             document.getElementById('adminOpenaiRecBaseUrl').value = cfg.openai_rec_base_url || '';
@@ -11904,15 +11890,15 @@ function loadAdminEngineConfig() {
             document.getElementById('adminOpenaiAudModel').value = cfg.openai_aud_model || '';
             // 常规解析 LLM
             document.getElementById('adminParseEnabled').value = cfg.parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminParseEngine').value = cfg.parse_llm_engine || 'opencode';
-            fillModelOptions('adminParseModel', cfg.parse_llm_model, cfg.parse_llm_engine || 'opencode');
+            document.getElementById('adminParseEngine').value = cfg.parse_llm_engine || 'openai';
+            fillModelOptions('adminParseModel', cfg.parse_llm_model, cfg.parse_llm_engine || 'openai');
             document.getElementById('adminParseOpenaiBaseUrl').value = cfg.openai_parse_base_url || '';
             document.getElementById('adminParseOpenaiApiKey').value = cfg.openai_parse_api_key || '';
             document.getElementById('adminParseOpenaiModel').value = cfg.openai_parse_model || '';
             // 灰测解析 LLM
             document.getElementById('adminGreyParseEnabled').value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminGreyParseEngine').value = cfg.grey_parse_llm_engine || 'opencode';
-            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, cfg.grey_parse_llm_engine || 'opencode');
+            document.getElementById('adminGreyParseEngine').value = cfg.grey_parse_llm_engine || 'openai';
+            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, cfg.grey_parse_llm_engine || 'openai');
             document.getElementById('adminGreyParseOpenaiBaseUrl').value = cfg.grey_openai_parse_base_url || '';
             document.getElementById('adminGreyParseOpenaiApiKey').value = cfg.grey_openai_parse_api_key || '';
             document.getElementById('adminGreyParseOpenaiModel').value = cfg.grey_openai_parse_model || '';
@@ -11920,11 +11906,11 @@ function loadAdminEngineConfig() {
             document.getElementById('adminGreyEnabled').value = cfg.grey_enabled ? 'true' : 'false';
             document.getElementById('adminGreyPercent').value = cfg.grey_percent || 0;
             document.getElementById('adminGreyAssignMode').value = cfg.grey_assign_mode || 'receipt';
-            document.getElementById('adminGreyRecEngine').value = cfg.grey_recognition_engine || 'opencode';
-            document.getElementById('adminGreyAudEngine').value = cfg.grey_audit_engine || 'opencode';
+            document.getElementById('adminGreyRecEngine').value = cfg.grey_recognition_engine || 'openai';
+            document.getElementById('adminGreyAudEngine').value = cfg.grey_audit_engine || 'openai';
             document.getElementById('adminGreyAuditEnabled').value = cfg.grey_audit_enabled ? 'true' : 'false';
-            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, cfg.grey_recognition_engine || 'opencode');
-            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, cfg.grey_audit_engine || 'opencode');
+            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, cfg.grey_recognition_engine || 'openai');
+            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, cfg.grey_audit_engine || 'openai');
             document.getElementById('adminGreyOpenaiRecBaseUrl').value = cfg.grey_openai_rec_base_url || '';
             document.getElementById('adminGreyOpenaiRecApiKey').value = cfg.grey_openai_rec_api_key || '';
             document.getElementById('adminGreyOpenaiRecModel').value = cfg.grey_openai_rec_model || '';
@@ -12658,10 +12644,12 @@ function loadAdminGreySamples(tenantId, isManual = false) {
 
     const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
     const url = '/api/admin/grey-test/samples' + (tId && tId !== 'all' ? '?tenant_id=' + encodeURIComponent(tId) : '');
+    const isCurrent = _analyticsSeq('greySamples');
 
     apiFetch(url)
         .then(r => r.json())
         .then(res => {
+            if (!isCurrent()) return;
             if (!res || res.status !== 'success' || !res.samples) {
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00;">拉取失败，请确认是否具备 admin 权限</td></tr>';
                 return;
@@ -13099,6 +13087,15 @@ function renderPValueCards(cards, lowConfidence) {
 // /api/admin/grey-test、/api/admin/experiments(+pvalue)，不重复造端点。
 // 可视化：HTML 表格 + CSS 进度条（复用 batch-progress 样式），不引图表库。
 // =====================================================================
+// F3：观测台加载器 stale-response 守卫（对齐 dailyConsumptionReqSeq 模式）。
+// 每个加载器独立计数：仅当响应仍属该加载器最新一次发起时才允许渲染/写选择器。
+const _analyticsLoadSeq = { recovery: 0, greySamples: 0, greyStatus: 0, experiments: 0 };
+function _analyticsSeq(key) {
+    _analyticsLoadSeq[key] = (_analyticsLoadSeq[key] || 0) + 1;
+    const seq = _analyticsLoadSeq[key];
+    return () => seq === _analyticsLoadSeq[key];
+}
+
 function loadAnalyticsBoard(tenantId) {
     const sel = document.getElementById('analyticsTenantSelect');
     const selectedTenant = tenantId || (sel ? sel.value : 'all') || 'all';
@@ -13142,9 +13139,12 @@ function loadRecoverySummaryBlocks(tenantId) {
     if (recEl) recEl.innerHTML = '加载中';
     const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
     const url = '/api/analytics/recovery-summary?tenant_id=' + encodeURIComponent(tId);
+    // F3：stale-response 守卫——快速切换租户时，旧慢响应不得覆写新区块/租户选择器
+    const isCurrent = _analyticsSeq('recovery');
     apiFetch(url)
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
+            if (!isCurrent()) return;
             if (!ret || ret.status !== 'success') {
                 const msg = '加载失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus))
                     + (httpStatus === 403 ? '（本区块仅限 admin 权限访问）' : '');
@@ -13168,6 +13168,7 @@ function loadRecoverySummaryBlocks(tenantId) {
             renderRecoveryMetrics(recEl, data);
         })
         .catch(err => {
+            if (!isCurrent()) return;
             console.error('埋点观测台加载失败', err);
             if (distEl) distEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
             if (recEl) recEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
@@ -13213,9 +13214,9 @@ function renderRecoveryMetrics(el, data) {
             '占比 ' + _analyticsPct(rec.input_attribution_share))
         + _analyticsStatHtml('重新解析点击（模型归因）', rec.reparse_clicked != null ? rec.reparse_clicked : '-',
             '占比 ' + _analyticsPct(rec.model_attribution_share))
-        + _analyticsStatHtml('挽回入口率', _analyticsPct(rec.entry_rate),
+        + _analyticsStatHtml('挽回点击比（可>100%）', _analyticsPct(rec.entry_rate),
             '挽回点击 ' + (rec.total || 0) + ' / 解析成功')
-        + _analyticsStatHtml('点踩率', _analyticsPct(fb.down_rate),
+        + _analyticsStatHtml('点踩比（可>100%）', _analyticsPct(fb.down_rate),
             '点踩 ' + (fb.down || 0) + ' / 有反馈单据 ' + (fb.feedbacked_receipts || 0))
         + _analyticsStatHtml('挽回成功率', _analyticsPct(rs.rate),
             '成功 ' + (rs.success || 0) + ' / 点击 ' + (rs.total || 0))
@@ -13223,7 +13224,7 @@ function renderRecoveryMetrics(el, data) {
     if (lowNote) {
         html += '<div style="font-size:0.75rem; color:#b8860b; margin-bottom:10px;">' + w2Escape(lowNote) + '</div>';
     }
-    html += '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">口径：挽回成功 = 点击后同单据出现更晚的保存/审核通过事件；点踩率分母为有反馈的去重单据。</div>';
+    html += '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">口径：挽回成功 = 点击后同单据出现更晚的保存/审核通过事件；点踩比与挽回点击比的分母（有反馈单据/解析成功）小于分子计数属正常，比值可>100%。</div>';
 
     const events = data.recent_events || [];
     html += '<div style="font-weight:600; font-size:0.85rem; margin:12px 0 6px;">最近事件流（最新 ' + events.length + ' 条）</div>';
@@ -13254,9 +13255,11 @@ function loadAnalyticsGreyStatus() {
     const el = document.getElementById('analyticsGreyBody');
     if (!el) return;
     el.innerHTML = '加载中';
+    const isCurrent = _analyticsSeq('greyStatus');
     apiFetch('/api/admin/grey-test')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
+            if (!isCurrent()) return;
             if (!ret || ret.status !== 'success') {
                 if (httpStatus === 403 || httpStatus === 401) {
                     el.innerHTML = '<span style="color:var(--text-muted);">灰测配置为 admin 专属，请切换 admin 角色查看。</span>';
@@ -13288,9 +13291,11 @@ function loadAnalyticsExperiments() {
     const el = document.getElementById('analyticsExperimentsBody');
     if (!el) return;
     el.innerHTML = '加载中';
+    const isCurrent = _analyticsSeq('experiments');
     apiFetch('/api/admin/experiments')
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
+            if (!isCurrent()) return;
             if (!ret || ret.status !== 'success') {
                 if (httpStatus === 403 || httpStatus === 401) {
                     el.innerHTML = '<span style="color:var(--text-muted);">A/B 实验为 admin 专属，请切换 admin 角色查看。</span>';
@@ -13548,7 +13553,7 @@ function fetchDishAvailableSkus(callback) {
             if (typeof callback === 'function') callback(dishAvailableSkus);
         })
         .catch(err => {
-            console.error('Failed to fetch SKUs for dish recipe:', err);
+            if (!window.__roleSwitchPending) console.error('Failed to fetch SKUs for dish recipe:', err);
             if (typeof inventorySkusMap !== 'undefined' && inventorySkusMap.size > 0) {
                 dishAvailableSkus = Array.from(inventorySkusMap.values());
             }
@@ -15286,7 +15291,6 @@ function hasRecognizedResult(data) {
         && (!preConfirm || preConfirm.classList.contains('hide'));
     return scanActive && !!(currentReceiptId && !isManualEntry && idle && aiItems.length > 0);
 }
-window.hasRecognizedResult = hasRecognizedResult;
 
 // ---- 点赞/点踩反馈显隐：只评价识别结果——仅「收据识别」Tab 且已有识别结果时出现 ----
 function syncFeedbackVisibility(data) {

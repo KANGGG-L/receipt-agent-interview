@@ -17,6 +17,7 @@ from pydantic import BaseModel
 import json
 
 from app import db
+from app.api_admin import resolve_tenant_filter
 from app.auth import require_role, require_admin
 
 router = APIRouter()
@@ -204,11 +205,8 @@ def _parse_props(raw):
 def recovery_summary(request: Request, tenant_id: Optional[str] = None):
     require_admin(request)
     
-    # 租户入参：Query 参数优先，其次请求 Header
-    req_tenant = tenant_id if tenant_id is not None else request.headers.get("X-Tenant-Id")
-    if req_tenant:
-        req_tenant = req_tenant.strip()
-    effective_tenant = req_tenant if (req_tenant and req_tenant != "all") else None
+    # 租户入参：Query 参数优先，其次请求 Header（与 api_admin 共用解析器）
+    effective_tenant = resolve_tenant_filter(request, tenant_id)
 
     s = db.get_session()
     try:
@@ -311,7 +309,7 @@ def recovery_summary(request: Request, tenant_id: Optional[str] = None):
     ]
 
     return {"status": "success", "data": {
-        "tenant_id": req_tenant or "all",
+        "tenant_id": effective_tenant or "all",
         "available_tenants": available_tenants,
         "event_distribution": distribution,
         "recovery": recovery,

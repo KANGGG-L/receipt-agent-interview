@@ -61,3 +61,8 @@ artifacts/e2e.tar.gz
 # 端到端测试截图与临时转储（本地运行产物，绝不提交）
 scripts/*_result.png
 demo/ocr_out*.txt
+
+# 本机回滚资产与 GUI 测试产物（2026-09-02 QA workflow）
+.env.bak*
+gui-test-screenshots/
+.playwright-cli/

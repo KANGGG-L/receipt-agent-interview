@@ -5,7 +5,7 @@
   Laplacian 口径；ndarray 输入走同参数 numpy 实现）
 - deskew(image): OpenCV 最小外接矩形估计倾斜角并旋转还原；±1° 内不纠偏
 - enhance(image): 自适应对比度（CLAHE，LAB 空间 L 通道）+ 轻度去噪（双边滤波）
-- orthogonal_correct(image): 正交旋转纠正（90/180/270），四假设+水平
+- _orthogonal_correct(image): 正交旋转纠正（90/180/270），四假设+水平
   投影方差+顶部重心启发式，90/270 换边 via cv2.rotate，避免 warpAffine 裁切
 - apply_pipeline(image_path): 上传后、抽取前的统一入口。
   · 正交纠正由 'preprocess_orthogonal_enabled'（默认 true）控制，不受
@@ -152,7 +152,7 @@ def _orthogonal_correct(image):
     场景由此区分为 upright vs upside-down。90/270 换边 via cv2.rotate
     （交换 w/h），避免 warpAffine 保持 (w,h) 的裁切。对空白/低方差图
     回落 0，不阻断主链路。
-    angle 为需对原图顺时针旋转的角度（0/90/180/270），0 表示已摆正。
+    angle 为将输入图恢复摆正所需的顺时针旋转角度（0/90/180/270），0 表示已摆正。
     """
     try:
         import cv2
@@ -314,11 +314,6 @@ def enhance(image):
     except Exception:
         pass
     return out
-
-
-def orthogonal_correct(image):
-    """公开 wrapper：正交纠正对外别名（与 _orthogonal_correct 同口径）。"""
-    return _orthogonal_correct(image)
 
 
 def apply_pipeline(image_path):

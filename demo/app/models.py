@@ -176,22 +176,25 @@ class EngineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # ---- 常规引擎配置 ----
-    # 识别引擎（优先从 .env 读取）
+    # 识别引擎（优先从 .env 读取）。用户决策（2026-09-02）：opencode 已过期，
+    # 默认引擎全面走 SiliconFlow openai 兼容通道；OPENCODE 枚举仅为存量 DB 兼容保留。
     recognition_engine: EngineKind = Field(
-        default_factory=lambda: EngineKind(os.environ.get("RECOGNITION_ENGINE", "opencode").lower())
-        if os.environ.get("RECOGNITION_ENGINE", "opencode").lower() in [e.value for e in EngineKind]
-        else EngineKind.OPENCODE
+        default_factory=lambda: EngineKind(os.environ.get("RECOGNITION_ENGINE", "openai").lower())
+        if os.environ.get("RECOGNITION_ENGINE", "openai").lower() in [e.value for e in EngineKind]
+        else EngineKind.OPENAI
     )
     recognition_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENCODE_RECOGNITION_MODEL", os.environ.get("RECOGNITION_MODEL", "opencode/mimo-v2.5-free")),
-        description="识别腿模型（生成器）。生产基线为 SiliconFlow Qwen/Qwen3-VL-32B-Thinking（openai 引擎）。",
+        default_factory=lambda: os.environ.get("RECOGNITION_MODEL", "Qwen/Qwen3-VL-32B-Instruct"),
+        description="识别腿模型（生成器）。SiliconFlow 非思考型 Qwen3-VL-32B-Instruct：适配 60s 高压上限"
+                    "（Thinking 型实测复杂单据 >60s 必触发降级，禁止作为默认）。",
     )
     # 识别 transport：subprocess(默认，CLI 快路径) | persistent(常驻进程，需显式开启)
     recognition_transport: str = "subprocess"
     # 审核引擎
     # 生成器-评估器强制异构（Gap A3）：审核腿必须与识别腿跨厂商异构，禁止同源。
     # 用户决策（2026-08-30）：SiliconFlow 为默认 provider，审核腿默认 SF DeepSeek 系
-    # （与识别腿 Qwen 系跨厂商异构，Gap A3）；opencode 系仅作显式选择，不再作为默认。
+    # （与识别腿 Qwen 系跨厂商异构，Gap A3）；用户决策（2026-09-02）opencode 已过期，
+    # 不再作为默认或可选项（枚举仅为存量 DB 兼容保留）。
     audit_engine: EngineKind = Field(
         default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "openai").lower())
         if os.environ.get("AUDIT_ENGINE", "openai").lower() in [e.value for e in EngineKind]
@@ -232,8 +235,8 @@ class EngineConfig(BaseModel):
     call_timeout_seconds: int = 90
     # 常规解析 LLM（VLM 识别后 → LLM 规范化解析，可选）
     parse_llm_enabled: bool = False
-    parse_llm_engine: EngineKind = EngineKind.OPENCODE
-    parse_llm_model: str = "opencode/mimo-v2.5-free"
+    parse_llm_engine: EngineKind = EngineKind.OPENAI
+    parse_llm_model: str = "Qwen/Qwen3-VL-32B-Instruct"
     openai_parse_base_url: str = Field(
         default_factory=lambda: os.environ.get("OPENAI_PARSE_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
     )
@@ -251,14 +254,14 @@ class EngineConfig(BaseModel):
     grey_percent: int = 0                            # 随机分配概率 0-100
     grey_assign_mode: GreyAssignMode = GreyAssignMode.RECEIPT
     grey_supplier_ids: list[int] = []                # 灰测指定的供应商名单（ID allowlist）
-    # 灰测组识别引擎/模型
-    grey_recognition_engine: EngineKind = EngineKind.OPENCODE
-    grey_recognition_model: str = "opencode/mimo-v2.5-free"
+    # 灰测组识别引擎/模型（默认 SF 非思考型，与常规腿同源不同参）
+    grey_recognition_engine: EngineKind = EngineKind.OPENAI
+    grey_recognition_model: str = "Qwen/Qwen3-VL-32B-Instruct"
     grey_recognition_transport: str = "subprocess"
-    # 灰测组审核引擎/模型
+    # 灰测组审核引擎/模型（与灰测识别腿跨厂商异构：GLM 系）
     grey_audit_enabled: bool = True
-    grey_audit_engine: EngineKind = EngineKind.OPENCODE
-    grey_audit_model: str = "opencode/mimo-v2.5-free"
+    grey_audit_engine: EngineKind = EngineKind.OPENAI
+    grey_audit_model: str = "zai-org/GLM-4.5V"
     grey_audit_transport: str = "subprocess"
     # 灰测组自定义 OpenAI 兼容参数（识别/审核各自独立）
     grey_openai_rec_base_url: str = ""
@@ -269,8 +272,8 @@ class EngineConfig(BaseModel):
     grey_openai_aud_model: str = ""
     # 灰测组解析 LLM
     grey_parse_llm_enabled: bool = False
-    grey_parse_llm_engine: EngineKind = EngineKind.OPENCODE
-    grey_parse_llm_model: str = "opencode/mimo-v2.5-free"
+    grey_parse_llm_engine: EngineKind = EngineKind.OPENAI
+    grey_parse_llm_model: str = "Qwen/Qwen3-VL-32B-Instruct"
     grey_openai_parse_base_url: str = ""
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""

@@ -772,8 +772,8 @@ def check_leg_homogeneity(cfg=None, use_grey=False):
 def build_recognition_model(model_name=None, cfg=None, use_grey=False):
     """按 EngineConfig 构建识别用多模态模型。use_grey=True 走灰测组。"""
     engine_kind = _engine_kind_for(cfg, "rec", use_grey) if cfg is not None else ""
-    default = _model_name_for(cfg, "rec", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
-    name = model_name or (default or os.environ.get("CODEBUDDY_MODEL", "opencode/mimo-v2.5-free"))
+    default = _model_name_for(cfg, "rec", use_grey) if cfg is not None else "Qwen/Qwen3-VL-32B-Instruct"
+    name = model_name or (default or os.environ.get("CODEBUDDY_MODEL", "Qwen/Qwen3-VL-32B-Instruct"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=use_grey)
     check_leg_homogeneity(cfg, use_grey=use_grey)
     return _build(kind, resolved, cfg, side="rec", use_grey=use_grey,
@@ -783,8 +783,8 @@ def build_recognition_model(model_name=None, cfg=None, use_grey=False):
 def build_audit_model(model_name=None, cfg=None, use_grey=False):
     """构建审核模型（交叉审核，与识别模型不同家族）。use_grey=True 走灰测组。"""
     engine_kind = _engine_kind_for(cfg, "aud", use_grey) if cfg is not None else ""
-    default = _model_name_for(cfg, "aud", use_grey) if cfg is not None else "opencode/mimo-v2.5-free"
-    name = model_name or (default or os.environ.get("AUDIT_MODEL", "opencode/mimo-v2.5-free"))
+    default = _model_name_for(cfg, "aud", use_grey) if cfg is not None else "zai-org/GLM-4.5V"
+    name = model_name or (default or os.environ.get("AUDIT_MODEL", "zai-org/GLM-4.5V"))
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="aud", use_grey=use_grey)
     check_leg_homogeneity(cfg, use_grey=use_grey)
     return _build(kind, resolved, cfg, side="aud", use_grey=use_grey,
@@ -798,13 +798,13 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
     """
     if use_grey:
         engine_kind = cfg.grey_parse_llm_engine.value if hasattr(cfg.grey_parse_llm_engine, "value") else str(cfg.grey_parse_llm_engine)
-        default = cfg.grey_parse_llm_model or "opencode/mimo-v2.5-free"
+        default = cfg.grey_parse_llm_model or "Qwen/Qwen3-VL-32B-Instruct"
         base_url = cfg.grey_openai_parse_base_url
         api_key = cfg.grey_openai_parse_api_key
         openai_model = cfg.grey_openai_parse_model
     else:
         engine_kind = cfg.parse_llm_engine.value if hasattr(cfg.parse_llm_engine, "value") else str(cfg.parse_llm_engine)
-        default = cfg.parse_llm_model or "opencode/mimo-v2.5-free"
+        default = cfg.parse_llm_model or "Qwen/Qwen3-VL-32B-Instruct"
         base_url = cfg.openai_parse_base_url
         api_key = cfg.openai_parse_api_key
         openai_model = cfg.openai_parse_model

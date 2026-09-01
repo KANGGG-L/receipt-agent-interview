@@ -176,7 +176,7 @@ Python 侧循环聚合（对齐 `/api/admin/metrics` 既有模式；数据量万
 
 ---
 
-### 7.1 挽回与埋点观测（recovery-summary + 埋点观测台）
+### 7.1 挽回与埋点观测（recovery-summary + 治理与埋点观测台）
 
 `GET /api/analytics/recovery-summary`（**admin** 专属，`api_phase2.py` 实现，支持 `?tenant_id=` 参数；分母 < 30 附 `low_confidence` 标记）：
 
@@ -213,7 +213,7 @@ Python 侧循环聚合（对齐 `/api/admin/metrics` 既有模式；数据量万
 5. **挽回成功率**：每条挽回点击事件，在同 `receipt_id` 的 `user_event` 中找 ts 更晚的 `receipt_review_submitted` 或 `receipt_approved` 即记成功——复用既有结果侧事件，不新增结果事件；
 6. **最近事件流**：最近 50 条 `user_event`（ts、event_type、receipt_id、account_id、properties），供人工逐条核对。
 
-**埋点观测台（前端）**：侧边栏新增 `埋点观测` 页签（`tab-analytics`，**admin 可见，staff/owner 隐藏**），顶部提供多租户（`#analyticsTenantSelect`）选择器，四区块：
+**治理与埋点观测台（前端）**：侧边栏新增 `治理与埋点观测` 页签（`tab-analytics`，**admin 可见，staff/owner 隐藏**），顶部提供多租户（`#analyticsTenantSelect`）选择器，四区块：
 
 - **全量埋点事件分布**：消费 `recovery-summary.event_distribution`，HTML 表格 + CSS 进度条渲染占比；
 - **挽回与点踩指标**：消费 `recovery-summary` 的 `recovery / feedback / recovery_success / recent_events`，`low_confidence` 时标灰提示；

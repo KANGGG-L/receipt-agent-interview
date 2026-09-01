@@ -33,6 +33,8 @@
     --warning: #b45309;
     --warning-bg: #fef3c7;
     --danger: #d80d0d;
+    --danger-strong: #b91c1c;  /* 深红阶：白字对比 6.5:1 (WCAG AA)，hover/强调用 */
+    --text-muted-2: #6b7280;   /* 次级弱化文字阶 */
     --danger-bg: #fde8e8;
 
     /* shape & elevation */
@@ -361,7 +363,7 @@ body {
 .btn-success:hover { background: var(--success-hover); }
 
 .btn-danger { background: var(--danger); color: #fff; }
-.btn-danger:hover { background: #b91c1c; }
+.btn-danger:hover { background: var(--danger-strong); }
 
 .btn-secondary { background: #ffffff; color: var(--text-main); border: 1px solid var(--border-strong); }
 .btn-secondary:hover { background: var(--bg-hover); }
@@ -579,13 +581,13 @@ body {
 .btn-tool-reload {
     background: var(--danger-bg);
     border-color: rgba(185, 28, 28, 0.3);
-    color: #b91c1c;
+    color: var(--danger-strong);
     font-weight: 600;
 }
 
 .btn-tool-reload:hover {
     background: rgba(185, 28, 28, 0.15);
-    border-color: #b91c1c;
+    border-color: var(--danger-strong);
     color: #991b1b;
 }
 
@@ -597,8 +599,8 @@ body {
 }
 
 .btn-tool-delete:hover {
-    background: #b91c1c;
-    border-color: #b91c1c;
+    background: var(--danger-strong);
+    border-color: var(--danger-strong);
     color: #fff;
 }
 
@@ -779,7 +781,7 @@ table.data-table tbody tr:last-child td:last-child  { border-bottom-right-radius
 
 table.data-table th {
     background: var(--bg-sidebar);
-    color: #6b7280;
+    color: var(--text-muted-2);
     font-weight: 600;
     font-size: 0.82rem;
     letter-spacing: 0.02em;
@@ -935,14 +937,14 @@ table.data-table td input {
     gap: 4px;
 }
 
-.badge-danger { background: var(--danger-bg); color: #b91c1c; border: 1px solid rgba(216, 13, 13, 0.2); }
+.badge-danger { background: var(--danger-bg); color: var(--danger-strong); border: 1px solid rgba(216, 13, 13, 0.2); }
 .badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(180, 83, 9, 0.2); }
 .badge-success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(47, 107, 79, 0.2); }
 .badge-info { background: #ffedd5; color: #c2410c; border: 1px solid rgba(194, 65, 12, 0.2); }
 /* 中性态：已停用 / 分类 / 弱标签（与 text-muted 同源，非语义告警） */
 .badge-secondary {
     background: var(--bg-hover, #f3f2f1);
-    color: var(--text-muted, #6b7280);
+    color: var(--text-muted-2);
     border: 1px solid var(--border-color, #d8dce0);
 }
 
@@ -1431,7 +1433,7 @@ table.data-table.receipt-item-table th {
     padding: 4px 4px;
     font-size: 0.8rem;
     font-weight: 600;
-    color: #6b7280;
+    color: var(--text-muted-2);
     height: 66px;
     min-height: 66px;
     box-sizing: border-box;
@@ -3658,7 +3660,7 @@ table.data-table tr.inv-row-low-stock td {
 .payment-mark-toggle:focus-visible { outline: 3px solid rgba(3, 36, 37, 0.35); outline-offset: 2px; }
 .payment-mark-toggle.payment-mark-paid { background: #2f6b4f; }
 .payment-mark-toggle.payment-mark-paid:hover { background: #1e4d37; }
-.payment-mark-toggle.payment-mark-unpaid { background: #b91c1c; }
+.payment-mark-toggle.payment-mark-unpaid { background: var(--danger-strong); }
 .payment-mark-toggle.payment-mark-unpaid:hover { background: #991b1b; }
 
 /* 付款证据只读展示区（自动带出，无输入框） */

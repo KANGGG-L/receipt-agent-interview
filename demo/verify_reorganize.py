@@ -173,6 +173,20 @@ def run_tests():
                 assert "hide" in (modal.get_attribute("class") or ""), "Modal should be closed after clicking close button"
                 print("✓ Desensitized sample detail modal functions correctly.")
 
+            # 4.5 Test tenant switching linkage（修复「文档承诺>实际覆盖」）
+            print("\n[Step 4.5] Testing tenant selection linkage...")
+            requested_urls.clear()
+            page.locator("#analyticsTenantSelect").select_option("default")
+            time.sleep(2.5)
+            tenant_reqs = [u for u in requested_urls if "tenant_id=default" in u]
+            print(f"Requests carrying tenant_id=default: {len(tenant_reqs)}")
+            assert len(tenant_reqs) >= 1, "切换单租户后请求未携带 tenant_id=default"
+            sel_val = page.locator("#analyticsTenantSelect").input_value()
+            assert sel_val == "default", f"租户选择器应保持 default，实际 {sel_val}"
+            page.locator("#analyticsTenantSelect").select_option("all")
+            time.sleep(1.5)
+            print("✓ Tenant selection linkage verified.")
+
             # 5. Test repeated tab switching
             print("\n[Step 6] Testing repeated switching between tabs...")
             for i in range(3):

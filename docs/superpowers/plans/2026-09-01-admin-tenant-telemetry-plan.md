@@ -1,8 +1,8 @@
-# 埋点观测台 Admin 权限与多租户观测实现计划
+# 治理与埋点观测台 Admin 权限与多租户观测实现计划
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 将埋点观测台提升为仅限 Admin 访问，并支持按 Tenant（租户）维度进行全量聚合与单租户下钻观测。
+**Goal:** 将治理与埋点观测台提升为仅限 Admin 访问，并支持按 Tenant（租户）维度进行全量聚合与单租户下钻观测。
 
 **Architecture:** 
 - 数据层：`user_event` 表增加 `tenant_id` 字段及自动迁移，埋点写入时注入租户上下文；
@@ -105,7 +105,7 @@ tenant_id = Column(String(64), default="default", index=True)
 - [ ] **Step 1: 更新 `index.html` 导航徽章与观测台顶部控件**
 1. 侧边栏 `#analyticsBoardBtn` 的徽章更新为：
 ```html
-<button class="sidebar-btn" id="analyticsBoardBtn" data-target="tab-analytics" data-title="埋点观测台"><span class="nav-title">埋点观测</span><span class="role-badge admin">admin</span></button>
+<button class="sidebar-btn" id="analyticsBoardBtn" data-target="tab-analytics" data-title="治理与埋点观测台"><span class="nav-title">埋点观测</span><span class="role-badge admin">admin</span></button>
 ```
 2. 在 `#tab-analytics` 顶部操作区（全量埋点事件分布标题旁/刷新按钮左侧）增加：
 ```html

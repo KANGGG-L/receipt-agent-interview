@@ -210,7 +210,7 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 确定性逻辑（契约门禁/算术门禁/RBAC/入库/乐观锁/租户隔离/记忆治理）有 pytest 覆盖，不依赖 LLM、秒级：
 
 ```bash
-python -m pytest tests/            # 全量：144 passed + 1 条件 skip（评测用例，需 --run-eval 且语料存在）
+python -m pytest tests/            # 全量：225 passed + 1 条件 skip（评测用例，需 --run-eval 且语料存在）
 ./demo.sh test                     # 快速子集（test_demo.py，30 passed）
 ```
 

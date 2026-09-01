@@ -23,6 +23,16 @@ def _tenant_id(request: Request) -> str:
             or request.headers.get("x-tenant-id") or "default").strip() or "default"
 
 
+def resolve_tenant_filter(request: Request, query_value=None):
+    """观测域租户过滤键（原 api_admin/api_phase2 两处内联块收敛）：
+    Query 参数优先 → X-Tenant-Id 头 → 剔除空白；'all'/空 → None（全租户聚合）。"""
+    t = query_value if query_value is not None else (
+        request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id"))
+    if t:
+        t = t.strip()
+    return t if (t and t != "all") else None
+
+
 class EngineConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     # 常规
@@ -104,23 +114,6 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
             return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
         return None
 
-    if engine_type == "opencode":
-        from app.llm import _get_opencode_bin
-        bin_path = _get_opencode_bin()
-        if not model_name or not model_name.strip():
-            return f"[{label}] 请指定 opencode 模型名"
-        # 针对 opencode run 执行 15s 快测
-        cmd = [bin_path, "run", "-m", model_name.strip(), "--auto", "hi"]
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
-            if res.returncode != 0:
-                err_info = (res.stderr or res.stdout or "").strip()[-250:]
-                return f"[{label}] opencode 报错 (rc={res.returncode}): {err_info}"
-        except subprocess.TimeoutExpired:
-            return f"[{label}] opencode 测试超时（>45s），请确认模型名是否有效"
-        except Exception as e:
-            return f"[{label}] opencode 执行异常: {str(e)}"
-        return None
 
     if engine_type == "codebuddy":
         from app.llm import _get_codebuddy_bin
@@ -289,11 +282,11 @@ def promote_grey_config(request: Request):
         "grey_enabled": False,
         "grey_percent": 0,
         "grey_assign_mode": GreyAssignMode.RECEIPT,
-        "grey_recognition_engine": EngineKind.OPENCODE,
-        "grey_recognition_model": "opencode/mimo-v2.5-free",
+        "grey_recognition_engine": EngineKind.OPENAI,
+        "grey_recognition_model": "Qwen/Qwen3-VL-32B-Instruct",
         "grey_audit_enabled": True,
-        "grey_audit_engine": EngineKind.OPENCODE,
-        "grey_audit_model": "opencode/mimo-v2.5-free",
+        "grey_audit_engine": EngineKind.OPENAI,
+        "grey_audit_model": "zai-org/GLM-4.5V",
         "grey_openai_rec_base_url": "",
         "grey_openai_rec_api_key": "",
         "grey_openai_rec_model": "",
@@ -301,8 +294,8 @@ def promote_grey_config(request: Request):
         "grey_openai_aud_api_key": "",
         "grey_openai_aud_model": "",
         "grey_parse_llm_enabled": False,
-        "grey_parse_llm_engine": EngineKind.OPENCODE,
-        "grey_parse_llm_model": "opencode/mimo-v2.5-free",
+        "grey_parse_llm_engine": EngineKind.OPENAI,
+        "grey_parse_llm_model": "Qwen/Qwen3-VL-32B-Instruct",
         "grey_openai_parse_base_url": "",
         "grey_openai_parse_api_key": "",
         "grey_openai_parse_model": "",
@@ -459,8 +452,8 @@ def get_engine_presets(request: Request):
             "label": "SiliconFlow · 硅基流动",
             "base_url": "https://api.siliconflow.cn/v1",
             "api_key": siliconflow_key,
-            "rec_model": "Qwen/Qwen2.5-VL-7B-Instruct",
-            "aud_model": "Qwen/Qwen2.5-VL-7B-Instruct",
+            "rec_model": "Qwen/Qwen3-VL-32B-Instruct",
+            "aud_model": "zai-org/GLM-4.5V",
         },
     }
     return {"status": "success", "data": presets}
@@ -1006,14 +999,26 @@ def get_grey_test_samples(request: Request):
             return f"HK$ {s[0]}**.*{s[-1]}"
         return f"HK$ **.{s[-1]}"
 
-    req_tenant = request.query_params.get("tenant_id")
-    if not req_tenant:
-        req_tenant = request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id")
-    if req_tenant:
-        req_tenant = req_tenant.strip()
-    effective_tenant = req_tenant if (req_tenant and req_tenant != "all") else None
+    effective_tenant = resolve_tenant_filter(
+        request, request.query_params.get("tenant_id"))
 
     rows = db.list_receipt_rows(tenant_id=effective_tenant)
+    # 分流引擎标签读真实引擎配置（不再硬编码 opencode/mimo 文案）
+    _cfg = db.get_engine_config()
+
+    def _leg_label(engine, model, fallback_model):
+        eng = str(getattr(engine, "value", engine) or "").lower()
+        if eng == "openai":
+            shown = model or fallback_model
+            return f"openai/{shown} (SF)"
+        return f"{eng}/{model or ''}".strip("/")
+
+    _label_reg = _leg_label(_cfg.recognition_engine,
+                            _cfg.openai_rec_model or _cfg.recognition_model,
+                            "Qwen/Qwen3-VL-32B-Instruct") + " (常规组)"
+    _label_grey = _leg_label(_cfg.grey_recognition_engine,
+                             _cfg.grey_openai_rec_model or _cfg.grey_recognition_model,
+                             "Qwen/Qwen3-VL-32B-Instruct") + " (灰测组)"
     samples = []
 
     for r in rows:
@@ -1137,7 +1142,7 @@ def get_grey_test_samples(request: Request):
             "doc_form": r.doc_form or "ncr_handwritten",
             "user_status": r.status,  # uploaded, parsed, edited, approved, flagged
             "use_grey": use_grey,
-            "engine": "opencode/mimo-v2.5-free (灰测组)" if use_grey else "opencode/mimo-v2.5-free (常规组)",
+            "engine": _label_grey if use_grey else _label_reg,
             "image_url": f"/api/receipt/{r.id}/image" if r.id else "",
             "masked_items": masked_items,
             "is_user_edited": r.status in ["edited", "approved"],

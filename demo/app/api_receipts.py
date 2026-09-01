@@ -122,6 +122,38 @@ def _save_upload(file: UploadFile) -> str:
 BLUR_THRESHOLD = 30.0
 
 
+def _image_quality_reject(msg, warnings, **extra):
+    """IMAGE_QUALITY_ERROR 400 统一构造（原先 4 处重复响应体收敛于此）。"""
+    body = {"status": "error", "code": "IMAGE_QUALITY_ERROR",
+            "msg": msg, "quality_warnings": warnings}
+    body.update(extra)
+    return JSONResponse(status_code=400, content=body)
+
+
+def _assert_retryable(row, action, verb):
+    """挽回动作状态门（/retry 与 /replace-image 共用）。
+
+    edited 必须放行——解析完成后自动保存（前端 autoSaveParsedPhoto）把状态置为
+    edited，这是自动保存的正常产物，正是常驻挽回按钮的主场景；
+    parsing 拒绝（任务在途防并发）、approved 拒绝（已背书入账，修正走冲销语义，
+    与 flag 口径一致）、flagged 拒绝（人工异常须显式处置）。
+    返回 None 表示放行。
+    """
+    old_status = row.status
+    if old_status not in ("uploaded", "parsed", "edited", "error"):
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": f"当前状态 [{old_status}] 不允许{action}：仅 uploaded/parsed/edited/error 单据可{verb}"
+                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
+            status_code=409)
+    if (row.doc_form or "") == "manual_entry":
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": f"手工录入单据无原图，不可{action}；请直接编辑保存。"},
+            status_code=400)
+    return None
+
+
 def _blur_threshold() -> float:
     try:
         from app.services import settings_service
@@ -238,15 +270,9 @@ async def upload_receipt(
     if file_size < 30:
         if os.path.exists(image_path):
             os.remove(image_path)
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "code": "IMAGE_QUALITY_ERROR",
-                "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
-                "quality_warnings": ["image_empty_or_corrupted"]
-            }
-        )
+        return _image_quality_reject(
+            "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
+            ["image_empty_or_corrupted"])
 
     # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进 opencode 管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断
@@ -262,17 +288,10 @@ async def upload_receipt(
                     os.remove(image_path)
                 except Exception:
                     pass
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "code": "IMAGE_QUALITY_ERROR",
-                    "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
-                    "quality_warnings": ["image_blur"],
-                    "blur_score": round(float(blur_score), 2),
-                    "confidence": 0.35,
-                }
-            )
+            return _image_quality_reject(
+                "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
+                ["image_blur"],
+                blur_score=round(float(blur_score), 2), confidence=0.35)
 
     # T10 预处理纠偏（上传后、抽取前）：开关 'preprocess_enabled' 默认 OFF；
     # 任何失败回落原图，绝不阻断识别主链路
@@ -918,23 +937,9 @@ def retry_receipt(receipt_id: int, request: Request):
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
-    old_status = row.status
-    # 挽回动作状态门（复核工作台「重新解析」常驻入口）：
-    # edited 必须放行——解析完成后自动保存（前端 autoSaveParsedPhoto）把状态置为
-    # edited，这是自动保存的正常产物，正是常驻挽回按钮的主场景；
-    # parsing 拒绝（任务在途防并发）、approved 拒绝（已背书入账，修正走冲销语义，
-    # 与 flag 口径一致）、flagged 拒绝（人工异常须显式处置）。
-    if old_status not in ("uploaded", "parsed", "edited", "error"):
-        return JSONResponse(
-            content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许重试：仅 uploaded/parsed/edited/error 单据可重跑识别"
-                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
-            status_code=409)
-    if (row.doc_form or "") == "manual_entry":
-        return JSONResponse(
-            content={"status": "error",
-                     "msg": "手工录入单据无原图，不可重跑识别；请直接编辑保存。"},
-            status_code=400)
+    gate = _assert_retryable(row, action="重试", verb="重跑识别")
+    if gate is not None:
+        return gate
     if not row.image_path or not os.path.exists(row.image_path):
         return JSONResponse(
             content={"status": "error",
@@ -966,18 +971,9 @@ async def replace_receipt_image(
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
-    old_status = row.status
-    if old_status not in ("uploaded", "parsed", "edited", "error"):
-        return JSONResponse(
-            content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许换图重跑：仅 uploaded/parsed/edited/error 单据可重拍"
-                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
-            status_code=409)
-    if (row.doc_form or "") == "manual_entry":
-        return JSONResponse(
-            content={"status": "error",
-                     "msg": "手工录入单据无原图，不可换图重跑；请直接编辑保存。"},
-            status_code=400)
+    gate = _assert_retryable(row, action="换图重跑", verb="重拍")
+    if gate is not None:
+        return gate
 
     # 与 /api/upload 同源的画质拦截：空文件/过小 400 + 极模糊硬拦截（force 可绕过）
     image_path = _save_upload(receipt)
@@ -985,15 +981,9 @@ async def replace_receipt_image(
     if file_size < 30:
         if os.path.exists(image_path):
             os.remove(image_path)
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "code": "IMAGE_QUALITY_ERROR",
-                "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
-                "quality_warnings": ["image_empty_or_corrupted"]
-            }
-        )
+        return _image_quality_reject(
+            "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
+            ["image_empty_or_corrupted"])
     blur_score = _laplacian_variance(image_path)
     is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
     if blur_score is not None and blur_score < _blur_threshold():
@@ -1003,17 +993,10 @@ async def replace_receipt_image(
                     os.remove(image_path)
                 except Exception:
                     pass
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "code": "IMAGE_QUALITY_ERROR",
-                    "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
-                    "quality_warnings": ["image_blur"],
-                    "blur_score": round(float(blur_score), 2),
-                    "confidence": 0.35,
-                }
-            )
+            return _image_quality_reject(
+                "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
+                ["image_blur"],
+                blur_score=round(float(blur_score), 2), confidence=0.35)
 
     old_image_path = row.image_path or ""
     old_image_name = os.path.basename(old_image_path) if old_image_path else ""

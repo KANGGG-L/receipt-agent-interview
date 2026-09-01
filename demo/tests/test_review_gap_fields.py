@@ -318,7 +318,8 @@ def test_payment_mark_badge_ui_mode():
     assert "min-width" in toggle_css, "徽章必须有舒适宽度"
     # WCAG AA：绿/红底白字（#2f6b4f 6.3:1、#b91c1c 6.5:1，均 >= 4.5:1）
     assert ".payment-mark-toggle.payment-mark-paid { background: #2f6b4f; }" in css
-    assert ".payment-mark-toggle.payment-mark-unpaid { background: #b91c1c; }" in css
+    assert ".payment-mark-toggle.payment-mark-unpaid { background: var(--danger-strong); }" in css
+    assert "--danger-strong: #b91c1c" in css, "深红令牌必须保持 #b91c1c（WCAG AA 6.5:1）"
     # 检测信息只读提示保留（「未检测到商户付款标记」等信息载体）
     assert 'id="inpPaymentMarkDetectBadge"' in html, "检测信息只读提示必须保留"
     # 付款证据只读展示区（非输入框）
