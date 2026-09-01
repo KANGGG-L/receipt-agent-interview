@@ -129,17 +129,17 @@ def run_tests():
             # Dimension 1: 全量埋点事件分布
             event_dist_text = page.locator("#analyticsEventDistBody").inner_text()
             print(f"Dimension 1 text length: {len(event_dist_text)}")
-            assert "加载中" not in event_dist_text, "Event distribution should be loaded"
+            assert "加载中" not in event_dist_text and "加载失败" not in event_dist_text, "Event distribution should be loaded without errors"
 
             # Dimension 2: 挽回与点踩指标
             recovery_text = page.locator("#analyticsRecoveryBody").inner_text()
             print(f"Dimension 2 text length: {len(recovery_text)}")
-            assert "加载中" not in recovery_text, "Recovery metrics should be loaded"
+            assert "加载中" not in recovery_text and "加载失败" not in recovery_text, "Recovery metrics should be loaded without errors"
 
             # Dimension 3: 灰测现状与脱敏单据抽样观测
             grey_status_text = page.locator("#analyticsGreyBody").inner_text()
             print(f"Dimension 3 status text: {grey_status_text[:60]}...")
-            assert "加载中" not in grey_status_text, "Grey status should be loaded"
+            assert "加载中" not in grey_status_text and "加载失败" not in grey_status_text, "Grey status should be loaded without errors"
 
             # Wait for sample rendering to finish
             page.wait_for_function("!document.getElementById('adminGreySamplesBody').innerHTML.includes('正在拉取')", timeout=15000)
@@ -157,6 +157,11 @@ def run_tests():
             sample_buttons = page.locator("#adminGreySamplesBody button:has-text('查看脱敏解析')")
             btn_count = sample_buttons.count()
             print(f"\n[Step 5] Sample rows with detail button: {btn_count}")
+            if btn_count == 0:
+                # 显式 SKIP（不再静默跳过）：空库合法，但须与指标卡口径自洽
+                total_txt = page.locator("#mGreyTotal").inner_text().strip()
+                assert total_txt in ("0", ""), f"无样本行时指标卡应为 0，实际 {total_txt}"
+                print("SKIP: 样本流为空（空库环境），弹窗用例未执行（显式跳过）")
             if btn_count > 0:
                 sample_buttons.first.click()
                 time.sleep(0.5)
@@ -211,6 +216,22 @@ def run_tests():
             print("✓ Staff RBAC verified: adminEngineBtn and analyticsBoardBtn correctly hidden.")
 
             staff_context.close()
+
+            # Step 8: RBAC role isolation for owner（design §3：owner 角色同样隐藏管理入口）
+            print("\n[Step 8] Testing RBAC role isolation for owner...")
+            owner_context = browser.new_context(viewport={"width": 1440, "height": 900})
+            owner_context.add_init_script("localStorage.setItem('demo_role', 'owner');")
+            owner_page = owner_context.new_page()
+            owner_page.goto(BASE_URL, wait_until="domcontentloaded")
+            owner_page.wait_for_selector("#demoRoleSelect", timeout=10000)
+            time.sleep(0.5)
+            assert not owner_page.locator("#adminEngineBtn").is_visible(), "adminEngineBtn must be hidden for owner"
+            assert not owner_page.locator("#analyticsBoardBtn").is_visible(), "analyticsBoardBtn must be hidden for owner"
+            assert not owner_page.locator("#evalsetReviewBtn").is_visible(), "evalsetReviewBtn must be hidden for owner"
+            assert not owner_page.locator("#goldenBoardBtn").is_visible(), "goldenBoardBtn must be hidden for owner"
+            print("✓ Owner RBAC verified: all admin entries correctly hidden.")
+            owner_context.close()
+
             browser.close()
             print("\n==========================================")
             print("ALL VERIFICATION CHECKS PASSED SUCCESSFULLY!")
