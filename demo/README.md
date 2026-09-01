@@ -75,8 +75,9 @@ admin 通过「引擎配置 · 灰测」弹窗（侧边栏  按钮，仅 admin �
 ## 三、架构
 
 ```
-upload ──► [识别管线]（后台 Job）
-            ├─ extract_chain（VLM → 结构化 JSON，LangChain 模型封装）
+upload ──► [预处理：EXIF 扶正 + 正交 90/180/270 自动纠正（`preprocess_orthogonal_enabled` 默认 true，`cv2.rotate` 换边） + 小角 deskew/enhance（`preprocess_enabled` 默认 OFF）]
+        ──► [识别管线]（后台 Job）
+            ├─ extract_chain（VLM → 结构化 JSON，LangChain 模型封装，前端旋转已烤入 `bakeCurrentRotation`）
             ├─ contract gate（Pydantic 拒绝 schema 外字段）
             ├─ math gate（算术校验，零 token）
             ├─ audit_chain（交叉审核，admin 可开关）

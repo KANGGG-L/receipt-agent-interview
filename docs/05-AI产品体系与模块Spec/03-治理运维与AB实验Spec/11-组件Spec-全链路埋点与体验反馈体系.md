@@ -35,6 +35,9 @@
 | 解析放弃率 | L3 | `parse_abandoned_for_manual` / `ocr_parse_started` | user_event | ≤ 5% |
 | SKU 更改率 | L3 | sku_changed>0 的复核单占比 | `receipt_review_submitted` | 趋势下降（RAG 飞轮） |
 | 反馈满意率 | L3 | 👍 / (👍+👎) | receipt_feedback + `feedback_received` | ≥ 90% |
+| 挽回点击占比（归因拆分） | L3 | `retake_clicked` / (`retake_clicked` + `reparse_clicked`) 为输入归因占比，其余为模型归因；另计挽回入口率 = 挽回点击总数 / `ocr_parsed` 总数 | user_event | 输入:模型归因趋势观测，无硬目标 |
+| 点踩率 | L3 | `receipt_feedback` 表 down 数 / 有反馈单据数 | receipt_feedback | ≤ 10% |
+| 挽回成功率 | L3 | 每条 `retake_clicked`/`reparse_clicked` 事件，在同 `receipt_id` 存在 ts 更晚的 `receipt_review_submitted` 或 `receipt_approved` 记为挽回成功；成功数 / 点击数 | user_event | ≥ 60% |
 | 北极星：周入库单数 | L4 | `receipt_approved` 周计数 | user_event | ≥ 50 张/周/店 |
 
 ---
@@ -80,6 +83,9 @@
 | 15 | `rag_hit` | VendorMemory 检索注入非空上下文 | `context_len`（**不含供应商名**，见 §8） | 后端 supervisor |
 | 16 | `feedback_received` | 👍/ 且无加载单据（全局体验） | `like: 1\|-1, tab, role` | 前端 |
 | 17 | `reupload_after_fail` | 解析失败态点击「重新上传」：移除坏图、回到标准上传入口流程 | `receipt_id`（失败单据） | 前端 |
+| 18 | `retake_clicked` | 复核工作台点击「重拍」（输入归因：怀疑图拍坏了） | `prior_feedback: 1\|-1\|null`（点击前本会话对该单的最后表态） | 前端 |
+| 19 | `reparse_clicked` | 复核工作台点击「重新解析」（模型归因：图没问题怀疑解析错） | `prior_feedback: 1\|-1\|null` | 前端 |
+| 20 | `image_replaced` | `replace-image` 换图成功、新图重跑识别前 | `old_image`（旧图文件名，可审计回溯）, `trigger: "retake"` | 后端 |
 
 ### 3.3 事件流全景
 
@@ -141,6 +147,7 @@ receipt_uploaded ──► ocr_parse_started ──► ocr_parsed / ocr_error
 | `GET` | `/api/analytics/recognition-summary` | `period_days`（默认 7） | 见 §7 聚合结构 | **admin** |
 | `GET` | `/api/admin/funnel` | `period_days, groups` | 扩展步骤：upload→ocr_parse_started→ocr_parsed→edit→approve | admin |
 | `POST` | `/api/receipt/{id}/feedback` | `{like: 1\|-1, comment?}` | 现有结构（含 distilled 提炼标记） | staff+（复用） |
+| `GET` | `/api/analytics/recovery-summary` | `tenant_id?`（`all` 或指定租户） | 挽回与埋点观测聚合：全量事件分布、挽回点击占比、点踩率、挽回成功率、最近事件流（§7.1） | **admin** |
 
 ---
 
@@ -166,6 +173,54 @@ Python 侧循环聚合（对齐 `/api/admin/metrics` 既有模式；数据量万
   }
 }
 ```
+
+---
+
+### 7.1 挽回与埋点观测（recovery-summary + 埋点观测台）
+
+`GET /api/analytics/recovery-summary`（**admin** 专属，`api_phase2.py` 实现，支持 `?tenant_id=` 参数；分母 < 30 附 `low_confidence` 标记）：
+
+```json
+{
+  "status": "success",
+  "data": {
+    "tenant_id": "all",
+    "available_tenants": ["default", "tenant_a"],
+    "event_distribution": [
+      {"event_type": "upload", "count": 120, "share": 0.31, "last_ts": "2026-08-30T09:12:00"}
+    ],
+    "recovery": {
+      "retake_clicked": 8, "reparse_clicked": 12,
+      "input_attribution_share": 0.4,
+      "total": 20, "entry_rate": 0.19
+    },
+    "feedback": {"down": 5, "feedbacked_receipts": 30, "down_rate": 0.1667},
+    "recovery_success": {"success": 14, "total": 20, "rate": 0.7},
+    "recent_events": [
+      {"ts": "...", "event_type": "retake_clicked", "receipt_id": 42, "account_id": "staff@demo.hk", "properties": {"prior_feedback": -1}}
+    ],
+    "low_confidence": true
+  }
+}
+```
+
+**口径细则**：
+
+1. **多租户过滤**：当入参 `tenant_id` 指定且非 `all` 时，仅聚合计算该租户下的 `user_event` 与 `receipt_feedback`；当未指定或为 `all` 时，聚合计算全量租户；返回 `available_tenants` 供前端选择器渲染；
+2. **全量事件分布**：`user_event` 中所有 `event_type` 的计数、占比（分母=全部事件数）、最近触发时间——一张表覆盖当前全部埋点事件（含挽回三事件），按计数降序；
+3. **挽回点击**：`retake_clicked`（输入归因）与 `reparse_clicked`（模型归因）计数及各自占比；`entry_rate` = 挽回点击总数 / `ocr_parsed` 总数（无解析事件时为 `null`）；
+4. **点踩率**：查 `receipt_feedback` 表——down 数（`like = -1`）/ 有反馈的去重单据数（口径与 `/api/analytics/recognition-summary` 的 feedback 块同源）；
+5. **挽回成功率**：每条挽回点击事件，在同 `receipt_id` 的 `user_event` 中找 ts 更晚的 `receipt_review_submitted` 或 `receipt_approved` 即记成功——复用既有结果侧事件，不新增结果事件；
+6. **最近事件流**：最近 50 条 `user_event`（ts、event_type、receipt_id、account_id、properties），供人工逐条核对。
+
+**埋点观测台（前端）**：侧边栏新增 `埋点观测` 页签（`tab-analytics`，**admin 可见，staff/owner 隐藏**），顶部提供多租户（`#analyticsTenantSelect`）选择器，四区块：
+
+- **全量埋点事件分布**：消费 `recovery-summary.event_distribution`，HTML 表格 + CSS 进度条渲染占比；
+- **挽回与点踩指标**：消费 `recovery-summary` 的 `recovery / feedback / recovery_success / recent_events`，`low_confidence` 时标灰提示；
+- **灰测现状**：复用 `GET /api/admin/grey-test`（admin 专属）；
+- **A/B 实验数据**：复用 `GET /api/admin/experiments` + `GET /api/admin/experiments/{id}/pvalue`（与黄金样本看板同源端点，不重复造）。
+
+可视化不引图表库，一律 HTML 表格 + CSS 进度条（对齐批量聚合进度条样式）。
 
 ---
 

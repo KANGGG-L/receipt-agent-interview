@@ -327,3 +327,73 @@ def test_rbac_dishes_permissions():
     # 店员试图冲销 -> 403
     resp_void = client.post("/api/dishes/daily_consumption/999/void", headers=_staff_headers())
     assert resp_void.status_code == 403
+
+
+def test_dish_categories_list_and_delete():
+    # 1. 准备食材 SKU 与两个分类的餐品
+    sku_id, _ = db.create_sku("测试食材", base_unit="kg")
+    db.update_sku(sku_id, last_unit_price=10.0, current_stock=20.0)
+
+    dish_a = client.post("/api/dishes", json={
+        "name": "分类菜甲", "category": "主食热菜", "price": 20.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 1.0, "unit": "kg"}],
+    }, headers=_owner_headers()).json()
+    assert dish_a["status"] == "success"
+    dish_b = client.post("/api/dishes", json={
+        "name": "分类菜乙", "category": "主食热菜", "price": 22.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 1.0, "unit": "kg"}],
+    }, headers=_owner_headers()).json()
+    assert dish_b["status"] == "success"
+    dish_c = client.post("/api/dishes", json={
+        "name": "分类菜丙", "category": "主菜", "price": 25.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 1.0, "unit": "kg"}],
+    }, headers=_owner_headers()).json()
+    assert dish_c["status"] == "success"
+
+    # 2. GET /api/dishes/categories：distinct 非空分类 + 引用数，按引用数降序
+    cats_resp = client.get("/api/dishes/categories", headers=_staff_headers())
+    assert cats_resp.status_code == 200
+    data = cats_resp.json()["data"]
+    by_name = {c["name"]: c["count"] for c in data}
+    assert by_name.get("主食热菜") == 2
+    assert by_name.get("主菜") == 1
+    assert "" not in by_name
+
+    # 3. 店员无权限删除分类 -> 403
+    del_staff = client.delete("/api/dishes/categories/%E4%B8%BB%E8%8F%9C",
+                              headers=_staff_headers())
+    assert del_staff.status_code == 403
+
+    # 4. owner 删除「主菜」（0 引用场景单独覆盖：先建再删），受影响条数正确
+    del_resp = client.delete("/api/dishes/categories/%E4%B8%BB%E8%8F%9C", headers=_owner_headers())
+    assert del_resp.status_code == 200
+    body = del_resp.json()
+    assert body["status"] == "success"
+    assert body["data"]["affected"] == 1
+    assert body["data"]["replace_with"] == "其他"
+    # 被引用餐品 category 已改写为「其他」
+    updated = client.get(f"/api/dishes/{dish_c['data']['id']}", headers=_staff_headers()).json()["data"]
+    assert updated["category"] == "其他"
+    # 删除后 categories 集合不再包含该分类
+    after = client.get("/api/dishes/categories", headers=_staff_headers()).json()["data"]
+    assert not any(c["name"] == "主菜" for c in after)
+
+    # 5. replace_with 参数生效：把「主食热菜」改为「主食」
+    del2 = client.delete(
+        "/api/dishes/categories/%E4%B8%BB%E9%A3%9F%E7%83%AD%E8%8F%9C?replace_with=%E4%B8%BB%E9%A3%9F",
+        headers=_owner_headers())
+    assert del2.status_code == 200
+    assert del2.json()["data"]["affected"] == 2
+    assert del2.json()["data"]["replace_with"] == "主食"
+    updated_b = client.get(f"/api/dishes/{dish_b['data']['id']}", headers=_staff_headers()).json()["data"]
+    assert updated_b["category"] == "主食"
+
+
+def test_delete_category_empty_name_returns_400():
+    # 空名 / 纯空白名（%20）删除分类应返回 400，而非 200+status:error
+    for empty in ("%20", "%20%20"):
+        resp = client.delete(f"/api/dishes/categories/{empty}", headers=_owner_headers())
+        assert resp.status_code == 400
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["msg"] == "分类名称不能为空"

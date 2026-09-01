@@ -39,7 +39,7 @@
 | Task | Gap | 状态 | 证据 / 数字出处 |
 | :--- | :--- | :--- | :--- |
 | T9 实验守护：自动回滚 + 方向性约束 | C3+D4 | 完成 | `services/guardian.py`：成功率降 >5pp / 成本涨 >50% / P95 >20000ms 触发回滚并冻结实验；方向性指标连续两期同向漂移 >20% 只告警；回滚复用 `rollback_snapshot` 还原；`demo/tests/test_experiment_guardian.py` 6 条；后台线程随服务重启生效 |
-| T10 阈值配置化 + 预处理纠偏 | E3+E4 | 完成 | `services/settings_service.py`（27 键，缺省=迁移前现值）+ 管理台「系统配置」区；`services/preprocess.py`（assess/deskew/enhance，开关默认 OFF）；全仓 TODO(T10) 常量收口；`tests/test_settings_and_preprocess.py` 11 条 |
+| T10 阈值配置化 + 预处理纠偏 | E3+E4 | 完成（2026-08-31 增补正交） | `services/settings_service.py`（28 键，新增 `preprocess_orthogonal_enabled=true` 默认必纠）+ 管理台「系统配置」区；`services/preprocess.py`（assess/deskew/enhance + `orthogonal_correct` 四假设 0/90/180/270，`cv2.rotate` 换边，正交不受 `OFF` 限制）+ 前端 `static/js/main.js:3311` `bakeCurrentRotation` 烤入；全仓 TODO(T10) 常量收口；`tests/test_settings_and_preprocess.py` 11 条（另合成 90/180/270 验证通过） |
 
 ### Wave E：文档收口
 

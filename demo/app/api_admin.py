@@ -1006,12 +1006,19 @@ def get_grey_test_samples(request: Request):
             return f"HK$ {s[0]}**.*{s[-1]}"
         return f"HK$ **.{s[-1]}"
 
-    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
+    req_tenant = request.query_params.get("tenant_id")
+    if not req_tenant:
+        req_tenant = request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id")
+    if req_tenant:
+        req_tenant = req_tenant.strip()
+    effective_tenant = req_tenant if (req_tenant and req_tenant != "all") else None
+
+    rows = db.list_receipt_rows(tenant_id=effective_tenant)
     samples = []
 
     for r in rows:
         # 获取该单据脱敏后的信息
-        items = db.get_receipt_items(r.id, tenant_id=_tenant_id(request)) if hasattr(db, "get_receipt_items") else []
+        items = db.get_receipt_items(r.id, tenant_id=effective_tenant) if hasattr(db, "get_receipt_items") else []
         masked_items = []
         for it in items:
             masked_items.append({

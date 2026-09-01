@@ -317,6 +317,7 @@ def _make_engine():
         receipt_id = Column(Integer, index=True, nullable=True)
         properties = Column(Text, default="{}")
         grp = Column(String, nullable=True)
+        tenant_id = Column(String(64), default="default", index=True)
 
     class ExperimentRow(Base):
         """A/B 实验主体。状态：draft→running→stopped/concluded。"""
@@ -522,6 +523,7 @@ def _make_engine():
         "ALTER TABLE inventory_log ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
         "ALTER TABLE dishes ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
         "ALTER TABLE vendor_memory ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+        "ALTER TABLE user_event ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
         "CREATE INDEX IF NOT EXISTS idx_receipts_tenant_id ON receipts (tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_receipt_items_tenant_id ON receipt_items (tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_id ON suppliers (tenant_id)",
@@ -529,6 +531,7 @@ def _make_engine():
         "CREATE INDEX IF NOT EXISTS idx_inventory_log_tenant_id ON inventory_log (tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_dishes_tenant_id ON dishes (tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_vendor_memory_tenant_id ON vendor_memory (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_user_event_tenant_id ON user_event (tenant_id)",
     ):
         _apply_migration_ddl(_engine, _ddl)
 
@@ -2466,8 +2469,18 @@ def write_decision_log(receipt_id=None, supplier_id=None, experiment_id=None,
 
 
 def write_user_event(event_type, account_id="", session_id="", receipt_id=None,
-                     properties=None, grp=None):
+                     properties=None, grp=None, tenant_id=None):
     """写一条用户行为埋点（漏斗用）。"""
+    t_id = (tenant_id or "").strip()
+    if not t_id and receipt_id is not None:
+        try:
+            r = get_receipt_row(receipt_id)
+            if r and getattr(r, "tenant_id", None):
+                t_id = r.tenant_id
+        except Exception:
+            pass
+    if not t_id:
+        t_id = "default"
     s = get_session()
     try:
         s.add(_UserEventRow(
@@ -2478,6 +2491,7 @@ def write_user_event(event_type, account_id="", session_id="", receipt_id=None,
             receipt_id=int(receipt_id) if receipt_id is not None else None,
             properties=json.dumps(properties, ensure_ascii=False) if isinstance(properties, dict) else "{}",
             grp=grp or None,
+            tenant_id=t_id,
         ))
         s.commit()
     finally:
@@ -3148,8 +3162,18 @@ def list_experiment_decision_rows(experiment_id):
 
 
 def log_user_event(account_id="", session_id="", event_type="",
-                   receipt_id=None, properties=None, grp=None):
+                   receipt_id=None, properties=None, grp=None, tenant_id=None):
     """前端埋点事件。"""
+    t_id = (tenant_id or "").strip()
+    if not t_id and receipt_id is not None:
+        try:
+            r = get_receipt_row(receipt_id)
+            if r and getattr(r, "tenant_id", None):
+                t_id = r.tenant_id
+        except Exception:
+            pass
+    if not t_id:
+        t_id = "default"
     s = get_session()
     try:
         row = _UserEventRow(
@@ -3160,6 +3184,7 @@ def log_user_event(account_id="", session_id="", event_type="",
             receipt_id=int(receipt_id) if receipt_id else None,
             properties=_safe_json(properties),
             grp=str(grp) if grp else None,
+            tenant_id=t_id,
         )
         s.add(row)
         s.commit()

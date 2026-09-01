@@ -441,6 +441,65 @@ def get_daily_consumption(
         session.close()
 
 
+@router.get("/api/dishes/categories")
+def list_dish_categories(request: Request):
+    """查询当前租户餐品分类（distinct 非空）及每类引用餐品数。"""
+    require_role("staff")(request)
+    session = db.get_session()
+    try:
+        rows = db.scoped(
+            session.query(db._DishRow),
+            db._DishRow, _tenant_id(request)).all()
+        counter = defaultdict(int)
+        for r in rows:
+            cat = (r.category or "").strip()
+            if cat:
+                counter[cat] += 1
+        data = [
+            {"name": name, "count": count}
+            for name, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        ]
+        return {"status": "success", "data": data}
+    finally:
+        session.close()
+
+
+@router.delete("/api/dishes/categories/{name}")
+def delete_dish_category(name: str, request: Request, replace_with: str = "其他"):
+    """删除餐品分类：把引用该分类的餐品 category 改写为 replace_with（空字符串表示清空归类），返回受影响条数。"""
+    require_role("owner")(request)
+    session = db.get_session()
+    try:
+        cat = name.strip()
+        if not cat:
+            return JSONResponse(status_code=400, content={"status": "error", "msg": "分类名称不能为空"})
+        replace = (replace_with or "").strip()
+        if replace == cat:
+            return JSONResponse(status_code=400, content={"status": "error", "msg": "请选择一个与被删除分类不同的替代分类"})
+        rows = db.scoped(
+            session.query(db._DishRow).filter(db._DishRow.category == cat),
+            db._DishRow, _tenant_id(request)).all()
+        if not rows:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "分类不存在"})
+        affected = 0
+        for r in rows:
+            r.category = replace
+            r.updated_at = db.now_iso()
+            affected += 1
+        session.commit()
+        msg = f"分类「{cat}」已删除，{affected} 道餐品的分类已改为「{replace}」" if replace else f"分类「{cat}」已删除，{affected} 道餐品已清空分类"
+        return {
+            "status": "success",
+            "data": {"name": cat, "replace_with": replace, "affected": affected},
+            "msg": msg,
+        }
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"删除分类失败: {str(e)}"}
+    finally:
+        session.close()
+
+
 @router.get("/api/dishes/{dish_id}")
 def get_dish(dish_id: int, request: Request):
     """查询单个餐品详情（含配方食材列表与关联 SKU 实时库存）。"""

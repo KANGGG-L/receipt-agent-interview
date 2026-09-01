@@ -28,14 +28,18 @@ def run_interactive_browser():
         page.select_option("#demoRoleSelect", "admin")
         time.sleep(0.5)
 
-        # 2. 切换至「引擎与灰测」Tab
-        print("[2/6] 切换至「引擎与灰测」控制台...", flush=True)
+        # 2. 切换至「引擎与系统配置」Tab，验证职责纯化（仅配置项，无脱敏单据表格）
+        print("[2/6] 切换至「引擎与系统配置」控制台...", flush=True)
         page.locator("#adminEngineBtn").click()
         time.sleep(1)
+        assert page.locator("#tab-engine #adminRecognitionEngine").is_visible()
+        assert page.locator("#tab-engine #adminGreySamplesBody").count() == 0
 
-        # 3. 触发刷新脱敏单据流
-        print("[3/6] 拉取脱敏单据流水与使用状态指标...", flush=True)
-        refresh_btn = page.locator("button:has-text('刷新脱敏单据流')").first
+        # 3. 切换至「埋点观测台」Tab，拉取脱敏单据流水与使用状态指标
+        print("[3/6] 切换至「埋点观测台」并拉取脱敏单据流水与使用状态指标...", flush=True)
+        page.locator("#analyticsBoardBtn").click()
+        time.sleep(1)
+        refresh_btn = page.locator("#tab-analytics button:has-text('刷新脱敏单据流')").first
         refresh_btn.scroll_into_view_if_needed()
         refresh_btn.click()
         time.sleep(1.5)

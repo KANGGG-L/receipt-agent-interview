@@ -183,6 +183,147 @@ def funnel(request: Request):
 
 
 # -------------------------------------------------------------
+# 2.5 埋点观测台：挽回与全量埋点聚合
+# 口径见《11-组件Spec-全链路埋点与体验反馈体系》§7.1：
+# 全量事件分布 / 挽回点击归因（输入:模型）/ 点踩率 / 挽回成功率 /
+# 最近事件流。仿 /api/admin/funnel：全量查 user_event + Python 循环，
+# 不用 SQL group by；分母 < 30 附 low_confidence 标记。
+# -------------------------------------------------------------
+RECOVERY_CLICK_EVENTS = ("retake_clicked", "reparse_clicked")
+RECOVERY_SUCCESS_EVENTS = ("receipt_review_submitted", "receipt_approved")
+
+
+def _parse_props(raw):
+    try:
+        return json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        return {}
+
+
+@router.get("/api/analytics/recovery-summary")
+def recovery_summary(request: Request, tenant_id: Optional[str] = None):
+    require_admin(request)
+    
+    # 租户入参：Query 参数优先，其次请求 Header
+    req_tenant = tenant_id if tenant_id is not None else request.headers.get("X-Tenant-Id")
+    if req_tenant:
+        req_tenant = req_tenant.strip()
+    effective_tenant = req_tenant if (req_tenant and req_tenant != "all") else None
+
+    s = db.get_session()
+    try:
+        all_rows = s.query(db._UserEventRow).all()
+        # 收集系统中存在的所有租户 ID（去重排序）
+        found_tenants = set()
+        for r in all_rows:
+            if getattr(r, "tenant_id", None):
+                found_tenants.add(r.tenant_id)
+        try:
+            for r in s.query(db._ReceiptRow.tenant_id).distinct():
+                if r[0]:
+                    found_tenants.add(r[0])
+        except Exception:
+            pass
+        if not found_tenants:
+            found_tenants.add("default")
+        available_tenants = sorted(list(found_tenants))
+
+        # 按租户过滤
+        if effective_tenant:
+            rows = [r for r in all_rows if (getattr(r, "tenant_id", None) or "default") == effective_tenant]
+        else:
+            rows = all_rows
+    finally:
+        s.close()
+
+    total = len(rows)
+    # 1) 全量事件分布：所有 event_type 的计数 / 占比 / 最近触发时间（计数降序）
+    counts = {}
+    last_ts = {}
+    for r in rows:
+        counts[r.event_type] = counts.get(r.event_type, 0) + 1
+        cur = last_ts.get(r.event_type)
+        if cur is None or (r.ts or "") > cur:
+            last_ts[r.event_type] = r.ts or ""
+    distribution = [
+        {"event_type": k, "count": c,
+         "share": round(c / total, 4) if total else 0.0,
+         "last_ts": last_ts.get(k, "")}
+        for k, c in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+
+    # 2) 挽回点击：输入归因（重拍）: 模型归因（重新解析）
+    retake = counts.get("retake_clicked", 0)
+    reparse = counts.get("reparse_clicked", 0)
+    recovery_total = retake + reparse
+    parsed_total = counts.get("ocr_parsed", 0)
+    recovery = {
+        "retake_clicked": retake,
+        "reparse_clicked": reparse,
+        "total": recovery_total,
+        "input_attribution_share": round(retake / recovery_total, 4) if recovery_total else None,
+        "model_attribution_share": round(reparse / recovery_total, 4) if recovery_total else None,
+        "entry_rate": round(recovery_total / parsed_total, 4) if parsed_total else None,
+    }
+
+    # 3) 点踩率：receipt_feedback down 数 / 有反馈的去重单据数
+    # （口径与 /api/analytics/recognition-summary 的 feedback 块同源）
+    if effective_tenant:
+        fbs = db.list_receipt_feedbacks(tenant_id=effective_tenant)
+    else:
+        fbs = db.list_receipt_feedbacks()
+    fb_down = sum(1 for f in fbs if f.get("like") == -1)
+    fb_receipts = len({f.get("receipt_id") for f in fbs
+                       if f.get("receipt_id") is not None})
+    feedback = {
+        "down": fb_down,
+        "feedbacked_receipts": fb_receipts,
+        "down_rate": round(fb_down / fb_receipts, 4) if fb_receipts else None,
+    }
+
+    # 4) 挽回成功率：每条挽回点击事件，在同 receipt_id 找 ts 更晚的
+    #    receipt_review_submitted / receipt_approved（ts 秒级同值时以自增 id 定序）
+    success_points = {}
+    for r in rows:
+        if r.event_type in RECOVERY_SUCCESS_EVENTS and r.receipt_id is not None:
+            success_points.setdefault(r.receipt_id, []).append((r.ts or "", r.id))
+    recovery_rows = [r for r in rows if r.event_type in RECOVERY_CLICK_EVENTS]
+    success_count = 0
+    for r in recovery_rows:
+        if r.receipt_id is None:
+            continue
+        point = (r.ts or "", r.id)
+        if any(sp > point for sp in success_points.get(r.receipt_id, [])):
+            success_count += 1
+    recovery_success = {
+        "success": success_count,
+        "total": len(recovery_rows),
+        "rate": round(success_count / len(recovery_rows), 4) if recovery_rows else None,
+    }
+
+    # 5) 最近事件流（最近 50 条，供人工逐条核对）
+    recent = sorted(rows, key=lambda r: ((r.ts or ""), r.id), reverse=True)[:50]
+    recent_events = [
+        {"ts": r.ts or "", "event_type": r.event_type,
+         "receipt_id": r.receipt_id, "account_id": r.account_id or "",
+         "properties": _parse_props(r.properties)}
+        for r in recent
+    ]
+
+    return {"status": "success", "data": {
+        "tenant_id": req_tenant or "all",
+        "available_tenants": available_tenants,
+        "event_distribution": distribution,
+        "recovery": recovery,
+        "feedback": feedback,
+        "recovery_success": recovery_success,
+        "recent_events": recent_events,
+        "total_events": total,
+        "low_confidence": total < 30,
+    }}
+
+
+# -------------------------------------------------------------
 # 2.4 A/B 实验
 # -------------------------------------------------------------
 class ExpCreateBody(BaseModel):

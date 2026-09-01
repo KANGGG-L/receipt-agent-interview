@@ -158,6 +158,19 @@ function w2Escape(s) {
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+// 本地日期（YYYY-MM-DD）：避免 toISOString() 取 UTC 日期导致 UTC+8 凌晨 0:00-8:00
+// 「今天/昨天」错位一天；一律用本地 getFullYear/getMonth+1/getDate 补零。
+function fmtLocalDateStr(d) {
+    const dt = d ? new Date(d) : new Date();
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const day = String(dt.getDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+}
+function todayLocalStr() {
+    return fmtLocalDateStr(new Date());
+}
+
 function makeSvgDataUrl(text) {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#e2e8f0"/><text x="50%" y="55%" dominant-baseline="middle" text-anchor="middle" fill="#475569" font-size="11" font-family="sans-serif">${text}</text></svg>`;
     return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
@@ -662,6 +675,10 @@ if (typeof window !== 'undefined') {
 let currentZoom = 1.0;
 let currentRotation = 0;
 let isFocalZoomed = false;
+
+// 旋转烤入状态：烘焙进行中标志与非批量单张烤后预览 URL（用于 reset 回收）
+let _isBakingRotation = false;
+let _bakedPreviewUrl = null;
 
 // 裁剪控制变量
 let isCropDragging = false;
@@ -1323,6 +1340,9 @@ function initTabs() {
                 loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
                 loadPValueCards();       // E-P1-3 p-value 显著性卡片
             }
+            if (targetId === 'tab-analytics') {
+                loadAnalyticsBoard();    // 埋点观测台（11-组件Spec §7.1）
+            }
             if (targetId === 'tab-evalset') {
                 // 懒加载 + 返回路径：工作台会在同一个 iframe 内把抽检台列表导航走，
                 // 再次点「GT 抽检」应回到列表，而不是停在某张样本的工作台上。
@@ -1335,6 +1355,7 @@ function initTabs() {
                 }
             }
             syncFeedbackVisibility();
+            syncRecoveryVisibility();
         });
     });
 }
@@ -1556,6 +1577,10 @@ async function handleFileSelect(file, gen) {
         if (originalObjectUrl) {
             try { URL.revokeObjectURL(originalObjectUrl); } catch (e) {}
             originalObjectUrl = null;
+        }
+        if (_bakedPreviewUrl) {
+            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch (e) {}
+            _bakedPreviewUrl = null;
         }
 
         const newObjUrl = isNonWebImageFile(file) ? null : URL.createObjectURL(file);
@@ -2078,6 +2103,26 @@ function triggerAnalysisNow(forceFlag = false) {
         return;
     }
 
+    // 旋转烤入竞态防护：若存在未固化的 CSS 旋转，先同步烤入再上传，避免上传原文件
+    if (currentRotation !== 0) {
+        if (_isBakingRotation) {
+            showToast('正在固化旋转，请稍候再解析', 'info');
+            return;
+        }
+        showToast('检测到未固化的旋转，正在先固化后再上传…', 'info');
+        if (typeof bakeCurrentRotation === 'function') {
+            bakeCurrentRotation().then((ok) => {
+                if (ok) triggerAnalysisNow(forceFlag);
+                else showToast('旋转固化失败，请重试', 'error');
+            });
+        } else {
+            showToast('旋转固化函数缺失，请刷新页面重试', 'error');
+        }
+        return;
+    }
+    // 自检：FormData 中 selectedFile 的尺寸/类型（旋转后 w/h 已互换可在控制台核验）
+    try { console.log('[triggerAnalysisNow] selectedFile', selectedFile && { name: selectedFile.name, size: selectedFile.size, type: selectedFile.type }); } catch(e) {}
+
     // D13: 若当前是已有单据行的失败照片（批量/重试场景），复用原单据走 retry 端点，不新建记录
     // P1-16: 路由前校验 selectedFile 仍是该照片的文件（含裁剪后 file）；
     // 用户已换新文件时不走 retry，落入下方新上传，避免误重试旧错误单吞新文件
@@ -2514,6 +2559,7 @@ function showErrorCard(msg, receiptId, code) {
 
     document.getElementById('errorCard').classList.remove('hide');
     syncFeedbackVisibility();
+    syncRecoveryVisibility();
 }
 
 function retryFromErrorCard(force = true) {
@@ -2546,6 +2592,7 @@ function reuploadFromErrorCard() {
     });
     if (typeof renderSider === 'function') renderSider();
     syncFeedbackVisibility();
+    syncRecoveryVisibility();
     const ua = document.getElementById('uploadArea');
     if (ua) ua.scrollIntoView({ block: 'center' });
     // 真实浏览器直接弹文件选择；内置环境也可走「选择收据图片」/拖拽入口
@@ -2607,18 +2654,7 @@ function retryReceiptRecognition(receiptId, force = false) {
     .then(ret => {
         if (gen !== singleUploadGen) return;
         if (ret.status === 'queued' && ret.job_id) {
-            pollReceiptJob(ret.job_id, (jobRet) => {
-                if (gen !== singleUploadGen) return;
-                stopOcrTimer();
-                document.getElementById('loadingCard').classList.add('hide');
-                if (jobRet.status === 'cancelled') return;
-                if (jobRet.status !== 'success') {
-                    if (routeRecognitionFailure(jobRet, receiptId)) return;
-                    showErrorCard(jobRet.msg || '重试识别失败', receiptId);
-                    return;
-                }
-                applyRecognizedResult(jobRet, receiptId);
-            }, { token: singlePollToken });
+            pollAndApply(ret, receiptId);
             return;
         }
         stopOcrTimer();
@@ -2639,6 +2675,26 @@ function retryReceiptRecognition(receiptId, force = false) {
     });
 }
 
+// 挽回链路公共段（重新解析 / 重拍共用）：轮询识别任务并应用结果。
+// 调用前须已：切到 loadingCard、startOcrTimer()、作废并重建 singlePollToken。
+// 代际校验取调用时刻的 singleUploadGen，后续新上传会使旧结果静默丢弃。
+function pollAndApply(postRet, receiptId) {
+    const gen = singleUploadGen;
+    pollReceiptJob(postRet.job_id, (jobRet) => {
+        if (gen !== singleUploadGen) return;
+        stopOcrTimer();
+        document.getElementById('loadingCard').classList.add('hide');
+        if (jobRet.status === 'cancelled') return;
+        if (jobRet.status !== 'success') {
+            if (routeRecognitionFailure(jobRet, receiptId)) return;
+            showErrorCard(jobRet.msg || '识别失败', receiptId);
+            return;
+        }
+        applyRecognizedResult(jobRet, receiptId);
+    }, { token: singlePollToken });
+}
+window.pollAndApply = pollAndApply;
+
 // 重试/转手工录入成功后的统一渲染入口（单张与批量共用）
 function applyRecognizedResult(ret, fallbackReceiptId) {
     // U-8: 解析/转录成功重置连续失败计数
@@ -2651,6 +2707,8 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     const rid = ret.receipt_id || fallbackReceiptId || null;
     currentReceiptId = rid;
     currentReceiptData = ret.data || null;
+    // 新识别结果产生 → 本会话对该单的点赞/点踩态清零（挽回埋点 prior_feedback 口径）
+    lastFeedbackForCurrent = null;
 
     if (ret.image_url && isBrowserDisplayableImageUrl(ret.image_url)) {
         setNonWebPreviewHint(false, selectedFile);
@@ -2835,6 +2893,7 @@ function startManualEntry() {
 
     showToast('已进入新建手工单：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
     syncFeedbackVisibility();
+    syncRecoveryVisibility();
 }
 
 // U-11: 识别过程随时转手工逃生通道（保留原图，中止识别，直接切入复核/手工表单）
@@ -2901,7 +2960,7 @@ function abortLoadingAndSwitchToManual() {
     const inpPaymentMark = document.getElementById('inpPaymentMark');
     const inpDept = document.getElementById('inpDepartmentId');
     if (inpDate && !inpDate.value) {
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = todayLocalStr();
         inpDate.value = todayStr;
         if (inpSheet && !inpSheet.value) {
             inpSheet.value = todayStr.slice(0, 7);
@@ -3182,6 +3241,30 @@ function applyCropSelection() {
         showToast('该照片已完成解析，不可再裁剪', 'warning');
         return;
     }
+    // 方案 A（推荐）：先烤入再裁剪 —— 旋转态下裁剪坐标系错位（CSS rotate 不影响 naturalWidth，且 getBoundingClientRect 已含旋转后的视口尺寸，直接按 scale 计算会错位）
+    // 最简且不易错：检测到 currentRotation!=0 时强制先固化旋转，清空选区要求用户重新框选，避免逆旋转矩阵映射的复杂实现。
+    // 若需支持旋转态直接裁剪，需将 cropRect 逆旋转映射回原图坐标系（按 cos/sin 变换），实现较复杂，此处选 A 并在注释说明。
+    if (currentRotation !== 0) {
+        if (_isBakingRotation) {
+            showToast('正在固化旋转，请稍候再裁剪', 'info');
+            return;
+        }
+        showToast('检测到图片已旋转，需先固化旋转后再裁剪', 'warning');
+        // 自动固化当前旋转，完成后清空选区并提示重选
+        if (typeof bakeCurrentRotation === 'function') {
+            bakeCurrentRotation().then(() => {
+                activeTool = null;
+                const ov = document.getElementById('cropOverlay');
+                if (ov) ov.classList.add('hide');
+                cropRect = { left: 0, top: 0, width: 0, height: 0 };
+                updateToolbarButtonStates();
+                showToast('旋转已固化，请重新拖拽框选裁剪区域', 'info');
+            });
+        } else {
+            showToast('请先点击“旋转 90°”完成固化或点“重置”后再框选裁剪', 'warning');
+        }
+        return;
+    }
     const img = document.getElementById('previewImg');
     const container = document.getElementById('imgViewerContainer');
     const overlay = document.getElementById('cropOverlay');
@@ -3236,6 +3319,11 @@ function applyCropSelection() {
             photo.cropped = true;
             setMainPreview(photo);
         } else {
+            // 非批量：记录烤后预览 URL 到 _bakedPreviewUrl 体系，reset 时可回收；同时兼容旧逻辑直接写 img.src
+            if (_bakedPreviewUrl) {
+                try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
+            }
+            _bakedPreviewUrl = croppedUrl;
             img.src = croppedUrl;
             setNonWebPreviewHint(false, croppedFile);
         }
@@ -3251,9 +3339,173 @@ function zoomImg(delta) {
     updateToolbarButtonStates();
 }
 
+/**
+ * 将当前 visual 旋转（currentRotation）烤入文件，避免仅 CSS 导致上传仍是原文件。
+ * - 按 0°/180° 保持 w/h，90°/270° 交换 w/h 创建 canvas
+ * - ctx.translate(w/2,h/2); ctx.rotate(angle); ctx.drawImage(img, -nw/2, -nh/2)
+ * - toBlob → new File 覆盖 selectedFile 与 photo.file，预览更新为 blob URL，currentRotation 归 0
+ * - 保留 originalFile/originalObjectUrl 与 photo.originalFile 不被覆盖，reset 可回原
+ * - HEIC 等 isNonWebImageFile 已转 JPEG 后才可 canvas；否则仅重置视觉
+ * - 烤入期间禁用“开始 AI 解析”等按钮防竞态
+ */
+function bakeCurrentRotation() {
+    return new Promise((resolve) => {
+        if (currentRotation === 0) { resolve(true); return; }
+        const img = document.getElementById('previewImg');
+        const photo = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
+        const currFile = (photo && photo.file) || selectedFile || originalFile;
+        if (!currFile) {
+            currentRotation = 0;
+            if (img) applyImgTransform();
+            resolve(true);
+            return;
+        }
+        if (isNonWebImageFile(currFile)) {
+            showToast('该格式浏览器无法直接旋转预览，已重置旋转角度；解析时服务端会自动处理', 'info');
+            currentRotation = 0;
+            if (img) applyImgTransform();
+            resolve(true);
+            return;
+        }
+        if (!img || !img.src || img.src.startsWith('data:image/svg')) {
+            currentRotation = 0;
+            if (img) applyImgTransform();
+            resolve(true);
+            return;
+        }
+        if (!img.complete || !img.naturalWidth || !img.naturalHeight) {
+            const onLoad = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                doBake();
+            };
+            const onError = () => {
+                img.removeEventListener('load', onLoad);
+                img.removeEventListener('error', onError);
+                showToast('图片加载失败，无法旋转', 'error');
+                currentRotation = 0;
+                applyImgTransform();
+                resolve(false);
+            };
+            img.addEventListener('load', onLoad);
+            img.addEventListener('error', onError);
+            // 若已 complete 但 naturalWidth 仍 0，延迟一帧再试
+            if (img.complete) setTimeout(onLoad, 50);
+            return;
+        }
+        doBake();
+        function doBake() {
+            const nw = img.naturalWidth;
+            const nh = img.naturalHeight;
+            if (!nw || !nh) {
+                currentRotation = 0;
+                applyImgTransform();
+                resolve(true);
+                return;
+            }
+            const angle = ((currentRotation % 360) + 360) % 360;
+            const isSwap = angle === 90 || angle === 270;
+            const canvasW = isSwap ? nh : nw;
+            const canvasH = isSwap ? nw : nh;
+            const canvas = document.createElement('canvas');
+            canvas.width = canvasW;
+            canvas.height = canvasH;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                currentRotation = 0;
+                applyImgTransform();
+                resolve(false);
+                return;
+            }
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, canvasW, canvasH);
+            ctx.translate(canvasW / 2, canvasH / 2);
+            ctx.rotate(angle * Math.PI / 180);
+            try {
+                ctx.drawImage(img, -nw / 2, -nh / 2, nw, nh);
+            } catch (e) {
+                console.error('bake rotate drawImage failed', e);
+                currentRotation = 0;
+                applyImgTransform();
+                resolve(false);
+                return;
+            }
+            _isBakingRotation = true;
+            const triggerBtns = document.querySelectorAll('button[onclick*="triggerAnalysisNow"]');
+            triggerBtns.forEach(b => { b.disabled = true; });
+            const rotateBtn = document.getElementById('btnRotate');
+            if (rotateBtn) rotateBtn.disabled = true;
+            canvas.toBlob((blob) => {
+                _isBakingRotation = false;
+                triggerBtns.forEach(b => { b.disabled = false; });
+                if (rotateBtn) rotateBtn.disabled = false;
+                if (!blob) {
+                    console.warn('canvas.toBlob returned null');
+                    currentRotation = 0;
+                    applyImgTransform();
+                    resolve(false);
+                    return;
+                }
+                const baseName = (currFile.name || 'receipt').replace(/\.[^.]+$/, '') || 'receipt';
+                const newFile = new File([blob], baseName + '.jpg', { type: 'image/jpeg' });
+                if (currFile._convertedFromHeic) newFile._convertedFromHeic = true;
+                if (currFile._originalName) newFile._originalName = currFile._originalName;
+                selectedFile = newFile;
+                if (photo) {
+                    if (photo.croppedObjectUrl) {
+                        try { URL.revokeObjectURL(photo.croppedObjectUrl); } catch (e) {}
+                    }
+                    const newUrl = URL.createObjectURL(blob);
+                    photo.croppedObjectUrl = newUrl;
+                    photo.file = newFile;
+                    setMainPreview(photo);
+                } else {
+                    if (_bakedPreviewUrl) {
+                        try { URL.revokeObjectURL(_bakedPreviewUrl); } catch (e) {}
+                    }
+                    _bakedPreviewUrl = URL.createObjectURL(blob);
+                    const imgEl = document.getElementById('previewImg');
+                    if (imgEl) imgEl.src = _bakedPreviewUrl;
+                    setNonWebPreviewHint(false, newFile);
+                }
+                currentRotation = 0;
+                applyImgTransform();
+                updateToolbarButtonStates();
+                activeTool = null;
+                const overlay = document.getElementById('cropOverlay');
+                if (overlay) overlay.classList.add('hide');
+                cropRect = { left: 0, top: 0, width: 0, height: 0 };
+                showToast('已固化旋转并更新待上传文件', 'success');
+                console.log('[bakeRotation] baked', { angle, canvasW, canvasH, newFileName: newFile.name, newSize: newFile.size });
+                resolve(true);
+            }, 'image/jpeg', 0.95);
+        }
+    });
+}
+if (typeof window !== 'undefined') window.bakeCurrentRotation = bakeCurrentRotation;
+
 function rotateImg() {
+    if (_isBakingRotation) {
+        showToast('正在处理旋转，请稍候', 'info');
+        return;
+    }
+    const photo = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
+    const currFile = (photo && photo.file) || selectedFile;
+    if (!currFile) {
+        currentRotation = (currentRotation + 90) % 360;
+        applyImgTransform();
+        return;
+    }
+    if (isNonWebImageFile(currFile)) {
+        currentRotation = (currentRotation + 90) % 360;
+        applyImgTransform();
+        showToast('HEIC 照片已记录旋转，解析时将自动校正', 'info');
+        return;
+    }
     currentRotation = (currentRotation + 90) % 360;
+    // 即时视觉反馈，再异步烤入固化（避免 toBlob 期间黑屏）
     applyImgTransform();
+    bakeCurrentRotation();
 }
 
 function resetImgTransform() {
@@ -3266,6 +3518,7 @@ function resetImgTransform() {
 
     // 核心重置逻辑：在启动分析之前，按【重置】可还原为原始未裁剪照片
     // 注意：HEIC 等绝不能写回 objectUrl（浏览器黑屏）；走 setMainPreview 保持常驻提示
+    // 烤入后 reset 仍能回到原始 originalFile（保留 originalFile/originalObjectUrl 不被覆盖，photo.originalFile 同理）
     const img = document.getElementById('previewImg');
 
     const photo = (typeof BatchUploader !== 'undefined') ? getActivePhoto() : null;
@@ -3276,22 +3529,41 @@ function resetImgTransform() {
             photo.cropped = false;
             photo.file = photo.originalFile || photo.file;
         }
+        // 清理非批量路径的烤后 URL 残留（若曾混用）
+        if (_bakedPreviewUrl) {
+            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
+            _bakedPreviewUrl = null;
+        }
         selectedFile = photo.file;
         setMainPreview(photo);
     } else if (originalFile) {
+        if (_bakedPreviewUrl) {
+            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
+            _bakedPreviewUrl = null;
+        }
         selectedFile = originalFile;
         setMainPreviewFromFile(originalFile, originalObjectUrl);
+    } else {
+        // 无 photo 也无 originalFile 但有 _bakedPreviewUrl 残留，清理
+        if (_bakedPreviewUrl) {
+            try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
+            _bakedPreviewUrl = null;
+        }
     }
 
     if (img) {
         img.style.transformOrigin = 'center center';
         applyImgTransform();
     }
+    cropRect = { left: 0, top: 0, width: 0, height: 0 };
+    const overlay = document.getElementById('cropOverlay');
+    if (overlay) overlay.classList.add('hide');
     updateToolbarButtonStates();
 }
 
 function applyImgTransform() {
     const img = document.getElementById('previewImg');
+    if (!img) return;
     img.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom}) rotate(${currentRotation}deg)`;
     // T7：证据高亮层跟随缩放/平移/旋转
     if (typeof _syncEvidenceLayerToImg === 'function') _syncEvidenceLayerToImg(img);
@@ -4083,6 +4355,7 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
 function renderEditForm(data) {
     if (!data) data = {};
     syncFeedbackVisibility(data);
+    syncRecoveryVisibility(data);
     document.getElementById('inpSupplier').value = data.supplier_name || '';
     document.getElementById('inpDate').value = data.date || '';
     document.getElementById('inpSheet').value = data.sheet_name || (data.date ? data.date.slice(0, 7) : '');
@@ -7921,6 +8194,8 @@ function toggleArchiveZoomMode() {
 }
 
 function rotateArchiveImg() {
+    // 归档弹窗为只读查看，影响较小，保持纯 CSS 旋转即可，不强制烤入文件
+    // 原因：归档图已落库且为服务端 JPEG，无需再上传；CSS 足够用于查看校对
     arcRotation = (arcRotation + 90) % 360;
     applyArchiveImgTransform();
 }
@@ -8715,6 +8990,11 @@ document.addEventListener('click', function (e) {
 // 多文件入口（>=2 触发批量；P1-15：本批已存在时单张也路由进批次）
 async function handleFilesSelect(fileList, gen) {
     if (!fileList || fileList.length === 0) return;
+    // 清理非批量路径残留的烤后预览 URL（切换至批量后不再使用）
+    if (_bakedPreviewUrl) {
+        try { URL.revokeObjectURL(_bakedPreviewUrl); } catch(e) {}
+        _bakedPreviewUrl = null;
+    }
 
     const currentGen = (typeof gen === 'number') ? gen : nextFileSelectionGen();
 
@@ -9861,6 +10141,15 @@ const PAY_METHOD_LABELS = {
 function isOwnerRole() {
     const role = AuthState.account && AuthState.account.role;
     return role !== 'staff';
+}
+
+// owner 判定（同步可用，与 buildAuthHeaders/X-Role 同源：localStorage demo_role，
+// 不依赖异步 /me 回填）。动态渲染的「停用/删除」「冲销作废」按钮用它判定，
+// 避免 staff 首帧在 AuthState.account 回填前误渲染出 owner 按钮。
+function isOwnerRoleNow() {
+    try {
+        return localStorage.getItem('demo_role') !== 'staff';
+    } catch (e) { return true; }
 }
 
 // ISO 日期（YYYY-MM-DD）距今天数：正数=未来，负数=已过；非法/空 → null
@@ -11176,22 +11465,42 @@ function applyDemoRoleColor(role) {
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
-    ['adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn'].forEach(id => {
+    ['adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn', 'analyticsBoardBtn'].forEach(id => {
         const btn = document.getElementById(id);
         if (btn) btn.style.display = isAdmin ? '' : 'none';
     });
     const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
     if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
     // 当前停留在已隐藏的页签时回落到收据识别（admin 不受影响）
-    // T4：GT 抽检台（tab-evalset）为 admin 专属入口（接口 403 兜底）
-    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-report']
-                     : (role === 'owner') ? ['tab-engine', 'tab-golden', 'tab-evalset'] : [];
+    // T4：GT 抽检台（tab-evalset）与埋点观测台（tab-analytics）为 admin 专属入口（接口 403 兜底）
+    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-report', 'tab-analytics']
+                     : (role === 'owner') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-analytics'] : [];
     const active = document.querySelector('.tab-content.active');
     if (active && hiddenTabs.indexOf(active.id) !== -1) {
         const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
         if (scanBtn) scanBtn.click();
     }
     applyModalRoleVisibility(role);
+    applyDishRoleVisibility(role);
+}
+
+// D-5：餐品域老板级按钮的视觉级隐藏。
+// staff 视角隐藏「+ 新建餐品」「管理分类」；「冲销作废」「停用/删除」为动态渲染，
+// 由渲染函数按 isOwnerRole() 直接不输出（见 renderDailyHistoryTable / renderDishCards / renderDishTable）。
+function applyDishRoleVisibility(optionalRole) {
+    const isStaff = optionalRole ? (optionalRole === 'staff') : isStaffRoleNow();
+    ['btnOpenAddDishModal', 'btnManageDishCategories'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (isStaff) {
+                el.classList.add('hide');
+                el.style.display = 'none';
+            } else {
+                el.classList.remove('hide');
+                el.style.display = '';
+            }
+        }
+    });
 }
 
 // U-6: 弹窗内老板级按钮的视觉级隐藏
@@ -11662,25 +11971,6 @@ function loadAdminEngineConfig() {
             updateGreyAuditDisabledState();
             updateOpenaiBoxes();
             updateGreyOpenaiBoxes();
-            // 自动加载脱敏样本观测数据
-            try { loadAdminGreySamples(); } catch (e) { console.error(e); }
-            // 灰测状态
-            apiFetch('/api/admin/grey-test')
-                .then(r => r.json())
-                .then(gt => {
-                    const el = document.getElementById('adminGreyStatus');
-                    if (el && gt && gt.data) {
-                        const cur = gt.data.current || {};
-                        const greyState = cur.grey_enabled
-                            ? ('<strong style="color:#b8860b;">灰测开启</strong> · 概率 <code>' + (cur.grey_percent || 0) +
-                               '%</code> · 分配 <code>' + (cur.grey_assign_mode || '—') +
-                               '</code><br>灰测识别 <code>' + (cur.grey_recognition_engine || '—') + '/' + (cur.grey_recognition_model || '—') +
-                               '</code> · 灰测审核 <code>' + (cur.grey_audit_engine || '—') + '/' + (cur.grey_audit_model || '—'))
-                            : '<strong>灰测停用</strong>';
-                        el.innerHTML = '';
-                    }
-                })
-                .catch(() => {});
         })
         .catch(() => showToast('读取引擎配置失败', 'error'));
 }
@@ -12362,11 +12652,14 @@ function greyBadgeHtml(useGrey) {
 // -------------------------------------------------------------
 let _adminGreySamplesCache = [];
 
-function loadAdminGreySamples() {
+function loadAdminGreySamples(tenantId, isManual = false) {
     const tbody = document.getElementById('adminGreySamplesBody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666;">正在拉取脱敏单据流并执行 PII 过滤与 AI 效果评估...</td></tr>';
 
-    apiFetch('/api/admin/grey-test/samples')
+    const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
+    const url = '/api/admin/grey-test/samples' + (tId && tId !== 'all' ? '?tenant_id=' + encodeURIComponent(tId) : '');
+
+    apiFetch(url)
         .then(r => r.json())
         .then(res => {
             if (!res || res.status !== 'success' || !res.samples) {
@@ -12428,7 +12721,9 @@ function loadAdminGreySamples() {
                 `;
             });
             if (tbody) tbody.innerHTML = html;
-            showToast('已成功拉取 ' + res.samples.length + ' 份脱敏灰测样本与效果评估', 'success');
+            if (isManual) {
+                showToast('已成功拉取 ' + res.samples.length + ' 份脱敏灰测样本与效果评估', 'success');
+            }
         })
         .catch(err => {
             console.error(err);
@@ -12615,6 +12910,11 @@ function closeGreySampleModal() {
     const modal = document.getElementById('adminGreySampleModal');
     if (modal) modal.classList.add('hide');
 }
+if (typeof window !== 'undefined') {
+    window.loadAdminGreySamples = loadAdminGreySamples;
+    window.viewGreySampleDetail = viewGreySampleDetail;
+    window.closeGreySampleModal = closeGreySampleModal;
+}
 
 // =====================================================================
 // E-P1-2 黄金样本 57 看板（Admin）
@@ -12793,6 +13093,282 @@ function renderPValueCards(cards, lowConfidence) {
 }
 
 // =====================================================================
+// 埋点观测台（11-组件Spec §7.1；owner/admin 可见）
+// 四区块：全量埋点事件分布 / 挽回与点踩指标 / 灰测现状 / A/B 实验数据
+// 复用现有端点：/api/analytics/recovery-summary（新增）、
+// /api/admin/grey-test、/api/admin/experiments(+pvalue)，不重复造端点。
+// 可视化：HTML 表格 + CSS 进度条（复用 batch-progress 样式），不引图表库。
+// =====================================================================
+function loadAnalyticsBoard(tenantId) {
+    const sel = document.getElementById('analyticsTenantSelect');
+    const selectedTenant = tenantId || (sel ? sel.value : 'all') || 'all';
+    loadRecoverySummaryBlocks(selectedTenant);
+    loadAnalyticsGreyStatus();
+    loadAdminGreySamples(selectedTenant, false);
+    loadAnalyticsExperiments();
+}
+window.loadAnalyticsBoard = loadAnalyticsBoard;
+
+window.onAnalyticsTenantChange = function(tId) {
+    loadAnalyticsBoard(tId);
+};
+
+// 小工具：0~1 比率 → 百分文本（空值返回 '-'）
+function _analyticsPct(v) {
+    return (v == null) ? '-' : (Number(v) * 100).toFixed(1) + '%';
+}
+
+// CSS 进度条（复用批量聚合进度条样式）
+function _analyticsBarHtml(share) {
+    const w = Math.max(0, Math.min(100, Math.round((share || 0) * 100)));
+    return '<div class="batch-progress-track" style="height:6px; min-width:80px;">'
+        + '<div class="batch-progress-bar" style="width:' + w + '%"></div></div>';
+}
+
+// 指标小卡片
+function _analyticsStatHtml(label, value, sub) {
+    return '<div style="border:1px solid var(--border-color); border-radius:10px; padding:10px 14px; background:var(--bg-main); min-width:130px;">'
+        + '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">' + w2Escape(label) + '</div>'
+        + '<div style="font-size:1.15rem; font-weight:700; color:var(--text-main); font-variant-numeric:tabular-nums;">' + w2Escape(String(value)) + '</div>'
+        + (sub ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">' + w2Escape(sub) + '</div>' : '')
+        + '</div>';
+}
+
+// 区块 1 + 2：全量事件分布 / 挽回与点踩指标（同一端点）
+function loadRecoverySummaryBlocks(tenantId) {
+    const distEl = document.getElementById('analyticsEventDistBody');
+    const recEl = document.getElementById('analyticsRecoveryBody');
+    if (distEl) distEl.innerHTML = '加载中';
+    if (recEl) recEl.innerHTML = '加载中';
+    const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
+    const url = '/api/analytics/recovery-summary?tenant_id=' + encodeURIComponent(tId);
+    apiFetch(url)
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                const msg = '加载失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus))
+                    + (httpStatus === 403 ? '（本区块仅限 admin 权限访问）' : '');
+                if (distEl) distEl.innerHTML = '<span style="color:#c00;">' + w2Escape(msg) + '</span>';
+                if (recEl) recEl.innerHTML = '<span style="color:#c00;">' + w2Escape(msg) + '</span>';
+                return;
+            }
+            const data = ret.data || {};
+            // 更新租户下拉选项
+            const sel = document.getElementById('analyticsTenantSelect');
+            if (sel && Array.isArray(data.available_tenants)) {
+                const curVal = data.tenant_id || tId || 'all';
+                let optHtml = '<option value="all">全部租户 (All)</option>';
+                data.available_tenants.forEach(t => {
+                    optHtml += '<option value="' + w2Escape(t) + '">' + w2Escape(t) + '</option>';
+                });
+                sel.innerHTML = optHtml;
+                sel.value = curVal;
+            }
+            renderEventDistribution(distEl, data);
+            renderRecoveryMetrics(recEl, data);
+        })
+        .catch(err => {
+            console.error('埋点观测台加载失败', err);
+            if (distEl) distEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
+            if (recEl) recEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
+        });
+}
+
+function renderEventDistribution(el, data) {
+    if (!el) return;
+    const dist = data.event_distribution || [];
+    if (dist.length === 0) {
+        el.innerHTML = '<span style="color:var(--text-muted);">暂无埋点事件。</span>';
+        return;
+    }
+    let html = '<div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">'
+        + '共 ' + Number(data.total_events || 0) + ' 条事件、' + dist.length + ' 类；占比条相对全量事件。'
+        + (data.low_confidence ? '（样本 < 30，低置信度，仅作参考）' : '')
+        + '</div>'
+        + '<div class="table-container"><table class="data-table">'
+        + '<thead><tr><th>事件类型</th><th class="col-right">计数</th><th style="width:34%;">占比</th><th>最近触发</th></tr></thead><tbody>';
+    dist.forEach(d => {
+        html += '<tr>'
+            + '<td><code>' + w2Escape(d.event_type) + '</code></td>'
+            + '<td class="col-right">' + Number(d.count) + '</td>'
+            + '<td><div style="display:flex; align-items:center; gap:8px;">'
+            + _analyticsBarHtml(d.share)
+            + '<span style="font-size:0.75rem; color:var(--text-muted); font-variant-numeric:tabular-nums;">' + _analyticsPct(d.share) + '</span>'
+            + '</div></td>'
+            + '<td style="font-size:0.78rem; color:var(--text-muted);">' + w2Escape(d.last_ts || '-') + '</td>'
+            + '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+}
+
+function renderRecoveryMetrics(el, data) {
+    if (!el) return;
+    const rec = data.recovery || {};
+    const fb = data.feedback || {};
+    const rs = data.recovery_success || {};
+    const lowNote = data.low_confidence ? '（低置信度：全量事件 < 30，仅作参考）' : '';
+    let html = '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">'
+        + _analyticsStatHtml('重拍点击（输入归因）', rec.retake_clicked != null ? rec.retake_clicked : '-',
+            '占比 ' + _analyticsPct(rec.input_attribution_share))
+        + _analyticsStatHtml('重新解析点击（模型归因）', rec.reparse_clicked != null ? rec.reparse_clicked : '-',
+            '占比 ' + _analyticsPct(rec.model_attribution_share))
+        + _analyticsStatHtml('挽回入口率', _analyticsPct(rec.entry_rate),
+            '挽回点击 ' + (rec.total || 0) + ' / 解析成功')
+        + _analyticsStatHtml('点踩率', _analyticsPct(fb.down_rate),
+            '点踩 ' + (fb.down || 0) + ' / 有反馈单据 ' + (fb.feedbacked_receipts || 0))
+        + _analyticsStatHtml('挽回成功率', _analyticsPct(rs.rate),
+            '成功 ' + (rs.success || 0) + ' / 点击 ' + (rs.total || 0))
+        + '</div>';
+    if (lowNote) {
+        html += '<div style="font-size:0.75rem; color:#b8860b; margin-bottom:10px;">' + w2Escape(lowNote) + '</div>';
+    }
+    html += '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">口径：挽回成功 = 点击后同单据出现更晚的保存/审核通过事件；点踩率分母为有反馈的去重单据。</div>';
+
+    const events = data.recent_events || [];
+    html += '<div style="font-weight:600; font-size:0.85rem; margin:12px 0 6px;">最近事件流（最新 ' + events.length + ' 条）</div>';
+    if (events.length === 0) {
+        html += '<div style="color:var(--text-muted); font-size:0.8rem;">暂无事件。</div>';
+    } else {
+        html += '<div class="table-container" style="max-height:260px; overflow:auto;"><table class="data-table">'
+            + '<thead><tr><th>时间</th><th>事件</th><th>单据</th><th>操作者</th><th>properties</th></tr></thead><tbody>';
+        events.forEach(ev => {
+            let propsText = '';
+            try { propsText = JSON.stringify(ev.properties || {}); } catch (e) { propsText = ''; }
+            if (propsText.length > 80) propsText = propsText.slice(0, 80) + '...';
+            html += '<tr>'
+                + '<td style="font-size:0.75rem; white-space:nowrap;">' + w2Escape(ev.ts || '-') + '</td>'
+                + '<td><code>' + w2Escape(ev.event_type || '') + '</code></td>'
+                + '<td>' + (ev.receipt_id != null ? '#' + Number(ev.receipt_id) : '-') + '</td>'
+                + '<td style="font-size:0.75rem;">' + w2Escape(ev.account_id || '-') + '</td>'
+                + '<td style="font-size:0.72rem; color:var(--text-muted);">' + w2Escape(propsText) + '</td>'
+                + '</tr>';
+        });
+        html += '</tbody></table></div>';
+    }
+    el.innerHTML = html;
+}
+
+// 区块 3：灰测现状（复用 /api/admin/grey-test；非 admin 降级提示）
+function loadAnalyticsGreyStatus() {
+    const el = document.getElementById('analyticsGreyBody');
+    if (!el) return;
+    el.innerHTML = '加载中';
+    apiFetch('/api/admin/grey-test')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (httpStatus === 403 || httpStatus === 401) {
+                    el.innerHTML = '<span style="color:var(--text-muted);">灰测配置为 admin 专属，请切换 admin 角色查看。</span>';
+                    return;
+                }
+                el.innerHTML = '<span style="color:#c00;">灰测状态加载失败：' + w2Escape((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)) + '</span>';
+                return;
+            }
+            const cur = (ret.data && ret.data.current) || {};
+            const on = !!cur.grey_enabled;
+            let html = '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">'
+                + _analyticsStatHtml('灰测状态', on ? '开启' : '停用',
+                    on ? ('概率 ' + (cur.grey_percent || 0) + '% · 分配 ' + (cur.grey_assign_mode || '-')) : '全量走常规引擎')
+                + _analyticsStatHtml('常规识别引擎', (cur.recognition_engine || '-') + ' / ' + (cur.recognition_model || '-'))
+                + (on ? _analyticsStatHtml('灰测识别引擎', (cur.grey_recognition_engine || '-') + ' / ' + (cur.grey_recognition_model || '-')) : '')
+                + (on && cur.grey_audit_enabled ? _analyticsStatHtml('灰测审核引擎', (cur.grey_audit_engine || '-') + ' / ' + (cur.grey_audit_model || '-')) : '')
+                + '</div>';
+            html += '<div style="font-size:0.75rem; color:var(--text-muted);">配置快照来自引擎配置实时读取；调整请前往「引擎与系统配置」页签（admin）。</div>';
+            el.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('灰测现状加载失败', err);
+            el.innerHTML = '<span style="color:#c00;">灰测状态加载失败，请稍后重试</span>';
+        });
+}
+
+// 区块 4：A/B 实验数据（复用 /api/admin/experiments + pvalue；非 admin 降级提示）
+function loadAnalyticsExperiments() {
+    const el = document.getElementById('analyticsExperimentsBody');
+    if (!el) return;
+    el.innerHTML = '加载中';
+    apiFetch('/api/admin/experiments')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (httpStatus === 403 || httpStatus === 401) {
+                    el.innerHTML = '<span style="color:var(--text-muted);">A/B 实验为 admin 专属，请切换 admin 角色查看。</span>';
+                    return;
+                }
+                el.innerHTML = '<span style="color:#c00;">实验列表加载失败：' + w2Escape((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)) + '</span>';
+                return;
+            }
+            const exps = ret.data || [];
+            if (exps.length === 0) {
+                el.innerHTML = '<span style="color:var(--text-muted);">暂无 A/B 实验。灰测开启后可在实验管理创建，样本回流后此处展示指标与 p 值。</span>';
+                return;
+            }
+            const STATUS_LABELS = { draft: '草稿', running: '进行中', stopped: '已停止', concluded: '已结题' };
+            let html = '<div class="table-container"><table class="data-table">'
+                + '<thead><tr><th>编号</th><th>名称</th><th>状态</th><th>主指标</th><th>目标流量</th><th>最小样本</th><th>结论</th></tr></thead><tbody>';
+            exps.forEach(e => {
+                html += '<tr>'
+                    + '<td>#' + Number(e.id) + '</td>'
+                    + '<td>' + w2Escape(e.name || '-') + '</td>'
+                    + '<td>' + w2Escape(STATUS_LABELS[e.status] || e.status || '-') + '</td>'
+                    + '<td><code>' + w2Escape(e.success_metric || '-') + '</code></td>'
+                    + '<td class="col-right">' + Number(e.target_percent || 0) + '%</td>'
+                    + '<td class="col-right">' + Number(e.min_sample || 0) + '</td>'
+                    + '<td>' + w2Escape(e.conclusion || '-') + '</td>'
+                    + '</tr>';
+            });
+            html += '</tbody></table></div>'
+                + '<div id="analyticsPvalueArea" style="margin-top:10px;"></div>';
+            el.innerHTML = html;
+            // 优先取进行中实验的 p 值卡片；无进行中则取最新一条
+            const running = exps.find(e => e.status === 'running') || exps[0];
+            if (running) loadAnalyticsPValue(Number(running.id));
+        })
+        .catch(err => {
+            console.error('实验列表加载失败', err);
+            el.innerHTML = '<span style="color:#c00;">实验列表加载失败，请稍后重试</span>';
+        });
+}
+
+function loadAnalyticsPValue(expId) {
+    const area = document.getElementById('analyticsPvalueArea');
+    if (!area || !expId) return;
+    area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">p 值加载中（实验 #' + Number(expId) + '）...</div>';
+    apiFetch('/api/admin/experiments/' + Number(expId) + '/pvalue')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">实验 #' + Number(expId) + ' 的 p 值暂不可用'
+                    + (httpStatus === 403 ? '（admin 专属）' : '') + '。</div>';
+                return;
+            }
+            const METRIC_LABELS = { accuracy: '准确率', hallucination_rate: '幻觉率', edit_rate: '人工修改率' };
+            let html = '<div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:6px;">实验 #' + Number(expId) + ' 显著性检验（双侧 z 检验，alpha=0.05）'
+                + (ret.low_confidence ? '｜样本不足，低置信度' : '') + '</div>'
+                + '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px;">';
+            (ret.cards || []).forEach(c => {
+                const sigBadge = (c.significant == null)
+                    ? '<span class="badge badge-secondary">无法判定</span>'
+                    : (c.significant ? '<span class="badge badge-success">显著</span>' : '<span class="badge badge-warning">不显著</span>');
+                html += '<div style="border:1px solid var(--border-color); border-radius:10px; padding:8px 12px; background:var(--bg-main);">'
+                    + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
+                    + '<strong style="font-size:0.8rem;">' + w2Escape(METRIC_LABELS[c.metric] || c.metric) + '</strong>' + sigBadge + '</div>'
+                    + '<div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6;">'
+                    + 'p=' + (c.p_value == null ? '-' : Number(c.p_value).toFixed(4))
+                    + '　z=' + (c.z == null ? '-' : Number(c.z).toFixed(3))
+                    + '　效应=' + (c.effect_size_pp == null ? '-' : ((c.effect_size_pp > 0 ? '+' : '') + Number(c.effect_size_pp).toFixed(2) + 'pp'))
+                    + '</div></div>';
+            });
+            html += '</div>';
+            area.innerHTML = html;
+        })
+        .catch(() => {
+            area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">p 值加载失败，请稍后重试。</div>';
+        });
+}
+
+// =====================================================================
 // F-P1-5 成本分摊（归档弹窗）：整单金额按部门比例分摊到明细行部门
 // =====================================================================
 let costShareRows = [];
@@ -12910,6 +13486,7 @@ function applyCostShare() {
 let dishLibraryCache = [];          // 餐品库全量缓存
 let dailyConsumptionCache = [];     // 当日消耗流水缓存
 let dishDailyDishesCache = [];      // 极速录入在售餐品列表缓存
+let dailyKpiSummaryCache = {};      // 最近一次后端返回的当日流水汇总（KPI 预估叠加的实际值基准）
 let dishCostAnalysisData = null;    // 成本大盘分析数据缓存
 let dishViewMode = 'card';          // 'card' 或 'table'
 let dishAnalysisDays = 7;           // 成本分析周期天数
@@ -13039,7 +13616,7 @@ function loadDishesList() {
                 return;
             }
             dishLibraryCache = ret.data || [];
-            updateDishCategoryDatalist(dishLibraryCache);
+            refreshDishCategoryOptions();
             filterDishBomLibrary();
         })
         .catch(err => {
@@ -13048,18 +13625,205 @@ function loadDishesList() {
         });
 }
 
+// 分类单一事实源：由 GET /api/dishes/categories 拉取（distinct 非空 + 引用数），
+// 供 datalist / 筛选下拉 / 分类管理弹窗共用同一集合（D-4）。
+let dishCategoryList = [];
+
 /**
- * 动态更新分类 Datalist
+ * 拉取分类集合并同步刷新 datalist 与筛选下拉（保留「全部分类」置顶）
  */
-function updateDishCategoryDatalist(dishes) {
-    const datalist = document.getElementById('dishModalCategoryList');
-    if (!datalist) return;
+function refreshDishCategoryOptions() {
+    return apiFetch('/api/dishes/categories')
+        .then(res => res.json())
+        .then(ret => {
+            dishCategoryList = (ret.status === 'success' && Array.isArray(ret.data)) ? ret.data : [];
+        })
+        .catch(() => { dishCategoryList = []; })
+        .then(() => {
+            renderDishCategoryFilter();
+            updateDishCategorySuggestions();
+        });
+}
+
+/**
+ * 重建 #dishCategoryFilter 下拉：全部分类 + 动态 distinct 分类（来自 dishCategoryList）
+ */
+function renderDishCategoryFilter() {
+    const catSelect = document.getElementById('dishCategoryFilter');
+    if (!catSelect) return;
+    const current = catSelect.value;
+    let html = '<option value="">全部分类</option>';
+    dishCategoryList.forEach(c => {
+        html += '<option value="' + w2Escape(c.name) + '">' + w2Escape(c.name) + '</option>';
+    });
+    catSelect.innerHTML = html;
+    if (current && dishCategoryList.some(c => c.name === current)) {
+        catSelect.value = current;
+    }
+    filterDishBomLibrary();
+}
+
+/**
+ * 重建分类建议集合（默认 9 项 + 当前 distinct 分类），供自定义 Combobox 下拉使用
+ */
+let dishCategorySuggestions = [];
+
+function updateDishCategorySuggestions() {
     const defaultCats = ['主食', '热菜', '凉菜', '汤品', '点心', '饮品', '甜品', '小吃', '其他'];
     const customCats = new Set(defaultCats);
-    dishes.forEach(d => {
-        if (d.category && d.category.trim()) customCats.add(d.category.trim());
+    dishCategoryList.forEach(c => {
+        if (c.name && c.name.trim()) customCats.add(c.name.trim());
     });
-    datalist.innerHTML = Array.from(customCats).map(cat => '<option value="' + w2Escape(cat) + '"></option>').join('');
+    dishCategorySuggestions = Array.from(customCats);
+}
+
+/**
+ * 打开餐品分类自定义下拉（页内渲染，规避原生 datalist 弹窗在嵌入式浏览器飞出窗口）
+ */
+function openDishCategoryMenu(inputElem) {
+    document.querySelectorAll('.unit-dropdown-menu').forEach(m => m.classList.add('hide'));
+    const wrap = inputElem.closest('.unit-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.unit-dropdown-menu');
+    if (!menu) return;
+    renderDishCategoryMenuItems(inputElem, menu);
+    menu.classList.remove('hide');
+}
+
+function renderDishCategoryMenuItems(inputElem, menuElem) {
+    const cur = (inputElem.value || '').trim().toLowerCase();
+    const recommended = [];
+    const regular = [];
+    dishCategorySuggestions.forEach(cat => {
+        const cLower = cat.toLowerCase();
+        const isExact = cLower === cur;
+        const isSimilar = !!cur && (cLower.includes(cur) || cur.includes(cLower));
+        (isExact || isSimilar ? recommended : regular).push({ cat, isExact, isSimilar });
+    });
+    const html = [...recommended, ...regular].map(it =>
+        '<div class="unit-dropdown-item' + ((it.isExact || it.isSimilar) ? ' highlight' : '') + '" data-dish-cat="' + w2Escape(it.cat) + '">'
+        + '<span>' + w2Escape(it.cat) + '</span>'
+        + (it.isExact ? '<span class="badge-matched">已选择</span>' : (it.isSimilar ? '<span class="badge-matched">推荐匹配</span>' : ''))
+        + '</div>'
+    ).join('');
+    menuElem.innerHTML = html || '<div class="unit-dropdown-item" style="cursor:default; color:var(--text-muted);">无匹配分类，可直接输入新分类</div>';
+}
+
+function closeDishCategoryMenuDelay(inputElem) {
+    setTimeout(() => {
+        const wrap = inputElem.closest('.unit-combobox-wrap');
+        if (wrap) {
+            const menu = wrap.querySelector('.unit-dropdown-menu');
+            if (menu) menu.classList.add('hide');
+        }
+    }, 200);
+}
+
+// 分类下拉选项选择（事件委托，与单位下拉同模式）
+document.addEventListener('mousedown', (e) => {
+    const item = e.target && e.target.closest
+        ? e.target.closest('.unit-dropdown-item[data-dish-cat]') : null;
+    if (!item) return;
+    const wrap = item.closest('.unit-combobox-wrap');
+    if (!wrap) return;
+    const input = wrap.querySelector('#dishModalCategory');
+    if (input) {
+        input.value = item.getAttribute('data-dish-cat') || '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    const menu = wrap.querySelector('.unit-dropdown-menu');
+    if (menu) menu.classList.add('hide');
+});
+
+/**
+ * 打开餐品分类管理弹窗（仅 owner，见 applyDishRoleVisibility）
+ */
+function openDishCategoryManager() {
+    const modal = document.getElementById('dishCategoryManagerModal');
+    const body = document.getElementById('dishCategoryManagerBody');
+    if (body) body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">加载分类中…</div>';
+    if (modal) openModalById('dishCategoryManagerModal');
+    apiFetch('/api/dishes/categories')
+        .then(res => res.json())
+        .then(ret => {
+            dishCategoryList = (ret.status === 'success' && Array.isArray(ret.data)) ? ret.data : [];
+            renderDishCategoryManager(dishCategoryList);
+        })
+        .catch(() => {
+            renderDishCategoryManager([]);
+        });
+}
+
+/**
+ * 渲染分类管理列表（分类名 + 引用数 + 删除按钮；删除按钮走事件委托）
+ */
+function renderDishCategoryManager(cats) {
+    const body = document.getElementById('dishCategoryManagerBody');
+    if (!body) return;
+    if (!cats.length) {
+        body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无已使用餐品分类</div>';
+        return;
+    }
+    let html = '';
+    cats.forEach(c => {
+        html += '<div class="dish-cat-mgmt-row" data-cat-name="' + w2Escape(c.name) + '" data-cat-count="' + c.count + '"'
+            + ' style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:8px;">'
+            + '  <div style="display:flex; align-items:center; gap:8px;">'
+            + '    <span class="badge badge-info" style="font-size:0.8rem;">' + w2Escape(c.name) + '</span>'
+            + '    <span style="font-size:0.78rem; color:var(--text-muted);">' + c.count + ' 道餐品引用</span>'
+            + '  </div>'
+            + '  <button type="button" class="btn btn-danger btn-delete-dish-cat" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;">删除</button>'
+            + '</div>';
+    });
+    body.innerHTML = html;
+    body.onclick = (e) => {
+        const delBtn = e.target && e.target.closest('.btn-delete-dish-cat');
+        if (!delBtn) return;
+        const row = delBtn.closest('.dish-cat-mgmt-row');
+        if (!row) return;
+        const name = row.getAttribute('data-cat-name') || '';
+        const count = parseInt(row.getAttribute('data-cat-count') || '0', 10) || 0;
+        deleteDishCategory(name, count);
+    };
+}
+
+/**
+ * 删除餐品分类：二次确认（被引用时给出影响提示），删除后同步刷新 datalist/筛选
+ */
+function deleteDishCategory(name, count) {
+    const catName = name || '';
+    const isOtherCat = catName === '其他';
+    const title = '删除分类确认';
+    const message = count > 0
+        ? (isOtherCat
+            ? '删除分类「' + catName + '」？\n将影响 ' + count + ' 道餐品，这些餐品将清空分类（不再属于任何分类）。'
+            : '删除分类「' + catName + '」？\n将影响 ' + count + ' 道餐品，这些餐品的分类将改为「其他」。')
+        : '删除分类「' + catName + '」？';
+    showCustomConfirmModal({
+        title: title,
+        message: message,
+        confirmText: '确认删除',
+        cancelText: '取消',
+        onConfirm: () => {
+            const delUrl = '/api/dishes/categories/' + encodeURIComponent(catName)
+                + (isOtherCat ? '?replace_with=' : '');
+            apiFetch(delUrl, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(ret => {
+                    if (ret.status !== 'success') {
+                        showToast(ret.msg || '删除分类失败', 'error');
+                        return;
+                    }
+                    showToast(ret.msg || '分类已删除', 'success');
+                    openDishCategoryManager();
+                    loadDishesList();
+                })
+                .catch(err => {
+                    console.error('deleteDishCategory error:', err);
+                    showToast('网络异常，无法删除分类', 'error');
+                });
+        }
+    });
 }
 
 /**
@@ -13126,7 +13890,7 @@ function renderDishCards(dishes) {
             ingredientsHtml = d.ingredients.map(ing => {
                 return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
                     + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
-                    + ing.consumption_qty + ing.unit
+                    + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
                     + ' <span style="color:var(--text-muted); font-size:0.7rem;">(¥' + fmtMoney(ing.ingredient_cost) + ')</span>'
                     + '</span>';
             }).join('');
@@ -13171,7 +13935,7 @@ function renderDishCards(dishes) {
             + '</div>'
             + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
             + '  <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
-            + '  <button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick="deleteDish(' + d.id + ', \'' + w2Escape(d.name) + '\')">' + (isActive ? '停用' : '删除') + '</button>'
+            + (isOwnerRoleNow() ? ('  <button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>') : '')
             + '</div>'
             + '</div>';
     });
@@ -13208,7 +13972,7 @@ function renderDishTable(dishes) {
             + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
             + '<td class="col-center">'
             + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
-            + '  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="deleteDish(' + d.id + ', \'' + w2Escape(d.name) + '\')">' + (isActive ? '停用' : '删除') + '</button>'
+            + (isOwnerRoleNow() ? ('  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>') : '')
             + '</td>'
             + '</tr>';
     });
@@ -13527,10 +14291,14 @@ function saveDishModal() {
         const unitInp = tr.querySelector('.ing-unit-input');
 
         const skuVal = sel ? sel.value : '';
-        const qtyVal = qtyInp ? parseFloat(qtyInp.value) : 0;
+        const qtyRaw = qtyInp ? qtyInp.value : '';
+        const qtyNum = parseFloat(qtyRaw);
+        const qtyVal = isNaN(qtyNum) ? 0 : qtyNum;
+        const qtyFilled = qtyRaw.trim() !== '' && !isNaN(qtyNum) && qtyNum > 0;
         const unitVal = (unitInp ? unitInp.value : '').trim();
 
-        if (!skuVal && qtyVal <= 0) continue; // 跳过完全为空的行
+        // D-7：全空行（未选 SKU 且 份数无效/空）直接跳过；部分填写仍按下方人话文案拦截
+        if (!skuVal && !qtyFilled) continue;
 
         if (!skuVal) {
             if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材配方未选择 SKU'; errEl.classList.remove('hide'); }
@@ -13588,8 +14356,12 @@ function saveDishModal() {
     .then(ret => {
         if (saveBtn) { saveBtn.disabled = false; saveBtn.innerText = '保存餐品配方'; }
         if (ret.status !== 'success') {
-            if (errEl) { errEl.innerText = ret.msg || '保存失败'; errEl.classList.remove('hide'); }
-            showToast(ret.msg || '保存失败', 'error');
+            // D-8：内联错误优先取 ret.detail 再 ret.msg（403/校验 detail 为服务端人话文案）
+            const errText = (typeof ret.detail === 'string' && ret.detail)
+                ? ret.detail
+                : (ret.msg || '保存失败');
+            if (errEl) { errEl.innerText = errText; errEl.classList.remove('hide'); }
+            showToast(errText, 'error');
             return;
         }
 
@@ -13611,12 +14383,39 @@ function saveDishModal() {
 }
 
 /**
- * 停用或删除餐品
+ * 停用或删除餐品：active 走 hard=0 停用；inactive 走 hard=1 彻底删除（不可撤销）
  */
-function deleteDish(dishId, dishName) {
+function deleteDish(dishId, dishName, dishStatus) {
+    const name = dishName || ('#' + dishId);
+    if (dishStatus === 'inactive') {
+        showCustomConfirmModal({
+            title: '彻底删除餐品确认',
+            message: '彻底删除餐品「' + name + '」？\n此操作不可撤销，配方将一并移除；历史消耗与成本核算数据完整保留。',
+            confirmText: '彻底删除',
+            cancelText: '取消',
+            onConfirm: () => {
+                apiFetch('/api/dishes/' + dishId + '?hard=1', { method: 'DELETE' })
+                    .then(res => res.json())
+                    .then(ret => {
+                        if (ret.status !== 'success') {
+                            showToast(ret.msg || '操作失败', 'error');
+                            return;
+                        }
+                        showToast(ret.msg || '餐品已彻底删除', 'success');
+                        loadDishesList();
+                        loadDailyConsumption();
+                    })
+                    .catch(err => {
+                        console.error('deleteDish error:', err);
+                        showToast('网络异常，无法彻底删除餐品', 'error');
+                    });
+            }
+        });
+        return;
+    }
     showCustomConfirmModal({
         title: '停用/删除餐品确认',
-        message: '确定要停用或删除餐品「' + (dishName || ('#' + dishId)) + '」吗？\n停用后该餐品将不会在每日消耗录入界面出现，历史消耗与成本核算数据将完整保留。',
+        message: '确定要停用或删除餐品「' + name + '」吗？\n停用后该餐品将不会在每日消耗录入界面出现，历史消耗与成本核算数据将完整保留。',
         confirmText: '确认操作',
         cancelText: '取消',
         onConfirm: () => {
@@ -13649,7 +14448,7 @@ function deleteDish(dishId, dishName) {
 function initDishConsumptionDate() {
     const dateInput = document.getElementById('dishConsumptionDate');
     if (dateInput && !dateInput.value) {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayLocalStr();
         dateInput.value = today;
     }
 }
@@ -13658,7 +14457,7 @@ function initDishConsumptionDate() {
  * 快捷设置核算日期为「今天」
  */
 function setDishConsumptionToday() {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayLocalStr();
     const dateInput = document.getElementById('dishConsumptionDate');
     if (dateInput) dateInput.value = today;
     loadDailyConsumption(today);
@@ -13670,7 +14469,7 @@ function setDishConsumptionToday() {
 function setDishConsumptionYesterday() {
     const d = new Date();
     d.setDate(d.getDate() - 1);
-    const yest = d.toISOString().slice(0, 10);
+    const yest = fmtLocalDateStr(d);
     const dateInput = document.getElementById('dishConsumptionDate');
     if (dateInput) dateInput.value = yest;
     loadDailyConsumption(yest);
@@ -13683,13 +14482,17 @@ function onDishConsumptionDateChange(val) {
     loadDailyConsumption(val);
 }
 
+let dailyConsumptionReqSeq = 0;
+
 /**
  * 加载指定日期的餐品消耗记录与当日在售餐品录入列表
  */
 function loadDailyConsumption(targetDate) {
     const dateInput = document.getElementById('dishConsumptionDate');
-    const curDate = (targetDate || (dateInput ? dateInput.value : '') || new Date().toISOString().slice(0, 10)).trim();
+    const curDate = (targetDate || (dateInput ? dateInput.value : '') || todayLocalStr()).trim();
     if (dateInput && dateInput.value !== curDate) dateInput.value = curDate;
+
+    const reqSeq = ++dailyConsumptionReqSeq;
 
     // 并行获取当日已提交流水与当前在售餐品列表
     Promise.all([
@@ -13697,6 +14500,7 @@ function loadDailyConsumption(targetDate) {
         apiFetch('/api/dishes?status=active').then(r => r.json())
     ])
     .then(([dailyRes, dishesRes]) => {
+        if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
         if (dailyRes.status === 'success') {
             const data = dailyRes.data || {};
             dailyConsumptionCache = data.consumptions || [];
@@ -13712,6 +14516,7 @@ function loadDailyConsumption(targetDate) {
         }
     })
     .catch(err => {
+        if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
         console.error('loadDailyConsumption error:', err);
         showToast('网络请求异常，无法加载每日消耗数据', 'error');
     });
@@ -13721,6 +14526,7 @@ function loadDailyConsumption(targetDate) {
  * 渲染当日 KPI 统计面板
  */
 function renderDailyKPI(summary) {
+    dailyKpiSummaryCache = summary || {};
     const costEl = document.getElementById('kpiDishCost');
     const revEl = document.getElementById('kpiDishRevenue');
     const marginEl = document.getElementById('kpiDishGrossMargin');
@@ -13733,7 +14539,61 @@ function renderDailyKPI(summary) {
         marginEl.innerText = gm.toFixed(1) + '%';
         marginEl.style.color = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
     }
-    if (countEl) countEl.innerText = (summary.records_count || 0) + ' 笔流水';
+    if (countEl) {
+        const validCount = Math.max(0, (summary.records_count || 0) - (summary.void_count || 0));
+        countEl.innerText = validCount + ' 笔';
+    }
+    refreshDishKpiEstimates();
+}
+
+/**
+ * 预估 KPI 叠加：已提交流水实际值 + 当前已输入未提交份数的理论估算（Σ 份数 × 理论成本/售价）
+ */
+function refreshDishKpiEstimates() {
+    const summary = dailyKpiSummaryCache || {};
+    let estCost = 0;
+    let estRevenue = 0;
+    let pendingQty = 0;
+
+    const rows = document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row');
+    rows.forEach(tr => {
+        const dishId = tr.getAttribute('data-dish-id');
+        const input = document.getElementById('dishConsumeQty_' + dishId);
+        const qty = input ? Math.max(0, parseInt(input.value) || 0) : 0;
+        if (qty > 0) {
+            pendingQty += qty;
+            estCost += qty * (parseFloat(tr.getAttribute('data-dish-cost')) || 0);
+            estRevenue += qty * (parseFloat(tr.getAttribute('data-dish-price')) || 0);
+        }
+    });
+
+    const costEl = document.getElementById('kpiDishCost');
+    const revEl = document.getElementById('kpiDishRevenue');
+    const marginEl = document.getElementById('kpiDishGrossMargin');
+    const badgeEl = document.getElementById('kpiDishCostBadge');
+
+    const totalCost = Number(summary.total_cost || 0) + estCost;
+    const totalRevenue = Number(summary.total_revenue || 0) + estRevenue;
+
+    if (costEl) costEl.innerText = '¥' + fmtMoney(totalCost);
+    if (revEl) revEl.innerText = '¥' + fmtMoney(totalRevenue);
+    if (marginEl) {
+        const gm = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue * 100 : 0;
+        marginEl.innerText = gm.toFixed(1) + '%';
+        marginEl.style.color = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+    }
+    if (badgeEl) {
+        if (pendingQty > 0) {
+            badgeEl.innerText = '预估叠加 ' + pendingQty + ' 份未提交';
+            badgeEl.className = 'badge badge-info';
+        } else if ((summary.records_count || 0) - (summary.void_count || 0) > 0) {
+            badgeEl.innerText = '实际 FIFO';
+            badgeEl.className = 'badge badge-success';
+        } else {
+            badgeEl.innerText = '基准理论';
+            badgeEl.className = 'badge badge-warning';
+        }
+    }
 }
 
 /**
@@ -13758,7 +14618,7 @@ function renderDishConsumeEntryTable(dishes) {
     dishes.forEach(d => {
         const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '未配置配方';
 
-        html += '<tr class="dish-consume-row" data-dish-id="' + d.id + '" data-dish-name="' + w2Escape(d.name) + '" data-dish-price="' + (d.price || 0) + '">'
+        html += '<tr class="dish-consume-row" data-dish-id="' + d.id + '" data-dish-name="' + w2Escape(d.name) + '" data-dish-price="' + (d.price || 0) + '" data-dish-cost="' + (d.theoretical_cost || 0) + '">'
             + '<td>'
             + '  <div style="font-weight:600; color:var(--text-main); font-size:0.95rem;">' + w2Escape(d.name) + '</div>'
             + (d.description ? ('<div style="font-size:0.75rem; color:var(--text-muted);">' + w2Escape(d.description) + '</div>') : '')
@@ -13770,11 +14630,11 @@ function renderDishConsumeEntryTable(dishes) {
             + '</td>'
             + '<td style="text-align:center;">'
             + '  <div class="dish-qty-control" style="display:inline-flex; align-items:center; gap:4px;">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:28px; padding:0; line-height:26px;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
-            + '    <input type="number" min="0" step="1" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:70px; text-align:center; font-weight:700; height:28px; padding:2px 4px;" value="0" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:28px; padding:0; line-height:26px;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:28px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:28px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:38px; padding:0; line-height:36px;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
+            + '    <input type="number" min="0" step="1" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:70px; text-align:center; font-weight:700; height:38px; padding:2px 4px;" value="0" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:38px; padding:0; line-height:36px;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
             + '  </div>'
             + '</td>'
             + '<td class="col-right" style="font-weight:700; color:var(--primary, #0f766e); font-size:0.95rem;" id="dishSubtotal_' + d.id + '">'
@@ -13855,6 +14715,8 @@ function updateDishConsumeSummary() {
 
     if (countText) countText.innerText = totalItems;
     if (qtyText) qtyText.innerText = totalQty;
+
+    refreshDishKpiEstimates();
 }
 
 /**
@@ -13873,7 +14735,7 @@ function resetDishConsumeInputs() {
  */
 function submitDailyConsumptionBatch() {
     const dateInput = document.getElementById('dishConsumptionDate');
-    const dateStr = (dateInput ? dateInput.value : '').trim() || new Date().toISOString().slice(0, 10);
+    const dateStr = (dateInput ? dateInput.value : '').trim() || todayLocalStr();
 
     const rows = document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row');
     const items = [];
@@ -13989,7 +14851,7 @@ function renderDailyHistoryTable(consumptions) {
             + '<td class="col-center">' + statusBadge + '</td>'
             + '<td class="col-center">'
             + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="showCostTraceModal(' + r.id + ')">批次溯源</button>'
-            + (!isVoid ? ('<button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="voidDailyConsumption(' + r.id + ')">冲销作废</button>') : '')
+            + (!isVoid && isOwnerRoleNow() ? ('<button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="voidDailyConsumption(' + r.id + ')">冲销作废</button>') : '')
             + '</td>'
             + '</tr>';
     });
@@ -14411,10 +15273,10 @@ if (typeof window !== 'undefined') {
     window.loadDishCostAnalysis = loadDishCostAnalysis;
 }
 
-// ---- 点赞/点踩反馈显隐：只评价识别结果——仅「收据识别」Tab 且已有识别结果时出现 ----
-function syncFeedbackVisibility(data) {
-    const box = document.getElementById('feedbackInline');
-    if (!box) return;
+// ---- 复核完成态谓词：识别 Tab 激活且已有识别结果 ----
+// 点踩按钮与挽回动作栏（重新解析/重拍）共用同一显隐口径，恒同步
+// （复核工作台 Spec 2.3：常驻、与点踩无关、解析中/预确认/手工单隐藏）
+function hasRecognizedResult(data) {
     const d = data || currentReceiptData || null;
     const aiItems = ((d && d.ai_prefill) || {}).items || [];
     const scanActive = !!document.querySelector('.sidebar-btn[data-target="tab-scan"].active');
@@ -14422,10 +15284,108 @@ function syncFeedbackVisibility(data) {
     const preConfirm = document.getElementById('preConfirmCard');
     const idle = (!loading || loading.classList.contains('hide'))
         && (!preConfirm || preConfirm.classList.contains('hide'));
-    const recognized = !!(currentReceiptId && !isManualEntry && idle && aiItems.length > 0);
-    box.style.display = (scanActive && recognized) ? 'inline-flex' : 'none';
+    return scanActive && !!(currentReceiptId && !isManualEntry && idle && aiItems.length > 0);
+}
+window.hasRecognizedResult = hasRecognizedResult;
+
+// ---- 点赞/点踩反馈显隐：只评价识别结果——仅「收据识别」Tab 且已有识别结果时出现 ----
+function syncFeedbackVisibility(data) {
+    const box = document.getElementById('feedbackInline');
+    if (!box) return;
+    box.style.display = hasRecognizedResult(data) ? 'inline-flex' : 'none';
 }
 window.syncFeedbackVisibility = syncFeedbackVisibility;
+
+// ---- 挽回动作栏显隐：与点踩同条件（解析中/预确认/手工单隐藏，防并发双击）----
+function syncRecoveryVisibility(data) {
+    const show = hasRecognizedResult(data);
+    ['btnReparse', 'btnRetake'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = show ? '' : 'none';
+    });
+}
+window.syncRecoveryVisibility = syncRecoveryVisibility;
+
+// 本会话对当前单据的最后一次点赞/点踩表态（挽回埋点 properties.prior_feedback；
+// 新识别结果产生时在 applyRecognizedResult 清零）
+let lastFeedbackForCurrent = null;
+
+// ---- 挽回动作：重新解析（模型归因）——复用原图重跑，直接走既有重试链路 ----
+function onReparseClick() {
+    const rid = currentReceiptId;
+    if (!rid) return;
+    track('reparse_clicked', rid, { prior_feedback: lastFeedbackForCurrent });
+    retryReceiptRecognition(rid);
+}
+window.onReparseClick = onReparseClick;
+
+// ---- 挽回动作：重拍（输入归因）——埋点 → 二次确认 → 选新图换图重跑 ----
+function onRetakeClick() {
+    const rid = currentReceiptId;
+    if (!rid) return;
+    track('retake_clicked', rid, { prior_feedback: lastFeedbackForCurrent });
+    const ok = confirm('将用新图替换原图并重新解析，当前识别结果与已编辑内容会被覆盖。是否继续？');
+    if (!ok) return;
+    const fi = document.getElementById('retakeFile');
+    if (!fi) return;
+    fi.value = '';
+    fi.onchange = () => {
+        const f = fi.files && fi.files[0];
+        fi.value = '';
+        fi.onchange = null;
+        if (f) submitRetakeImage(rid, f);
+    };
+    fi.click();
+}
+window.onRetakeClick = onRetakeClick;
+
+// 重拍提交：FormData POST replace-image（字段名与 /api/upload 一致），
+// 成功后先刷左图（新图）再轮询识别结果；失败仅 toast，保留当前界面不破坏
+function submitRetakeImage(receiptId, file) {
+    const fd = new FormData();
+    fd.append('receipt', file);
+    // 作废在途轮询，防并发双击（后端 parsing 409 兜底）
+    const gen = ++singleUploadGen;
+    if (singlePollToken) singlePollToken.cancelled = true;
+    singlePollToken = { cancelled: false };
+
+    apiFetch(`/api/receipt/${receiptId}/replace-image`, { method: 'POST', body: fd })
+    .then(res => res.json().then(body => ({ res, body })).catch(() => ({ res, body: null })))
+    .then(({ res, body }) => {
+        if (gen !== singleUploadGen) return;
+        const ret = body || {};
+        if (res.ok && ret.status === 'queued' && ret.job_id) {
+            // 切换到解析中界面（与重试链路一致）
+            document.getElementById('errorCard').classList.add('hide');
+            document.getElementById('preConfirmCard').classList.add('hide');
+            document.getElementById('prefillFormCard').classList.add('hide');
+            document.getElementById('loadingCard').classList.remove('hide');
+            startOcrTimer();
+            syncFeedbackVisibility();
+            syncRecoveryVisibility();
+            // 轮询前先刷新左图为新图
+            if (ret.image_url) {
+                const img = document.getElementById('previewImg');
+                if (img) img.src = ret.image_url;
+                const ph = getActivePhoto();
+                if (ph) {
+                    ph.imageUrl = ret.image_url;
+                    if (typeof renderSider === 'function') renderSider();
+                }
+            }
+            pollAndApply(ret, receiptId);
+            return;
+        }
+        const msg = (ret && ret.msg) || '重拍失败，请稍后重试';
+        showToast(msg, 'error');
+    })
+    .catch(err => {
+        if (gen !== singleUploadGen) return;
+        console.error('重拍请求异常', err);
+        showToast('重拍请求失败，请检查网络后重试', 'error');
+    });
+}
+window.submitRetakeImage = submitRetakeImage;
 
 // ---- 点赞/点踩反馈按钮（内联于「确认上传单据」右侧，11-组件Spec §5 智能归属）----
 function onFeedbackClick(like) {
@@ -14443,8 +15403,10 @@ function onFeedbackClick(like) {
         })
             .then(r => r.json())
             .then(ret => {
-                if (ret && ret.status === 'success') showToast(okMsg, like === 1 ? 'success' : 'info');
-                else showToast('反馈提交失败', 'error');
+                if (ret && ret.status === 'success') {
+                    lastFeedbackForCurrent = like;   // 供挽回埋点 prior_feedback
+                    showToast(okMsg, like === 1 ? 'success' : 'info');
+                } else showToast('反馈提交失败', 'error');
             })
             .catch(() => showToast('反馈提交失败', 'error'));
     } else {

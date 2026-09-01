@@ -344,6 +344,12 @@ body {
     flex-shrink: 0;
 }
 
+.dish-step-btn {
+    min-height: 38px;
+    height: 38px !important;
+    line-height: 36px;
+}
+
 .btn:active {
     transform: scale(0.98);
 }
@@ -675,7 +681,14 @@ body {
     border-radius: 8px;
     font-size: 0.92rem;
     font-family: var(--font-ui);
+    height: 38px;
+    box-sizing: border-box;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* D-3：文本域保持自然多行高度，不受全局 38px 等高约束 */
+textarea.form-control {
+    height: auto;
 }
 
 .form-control:focus {
@@ -683,6 +696,34 @@ body {
     border-color: var(--primary);
     background: #ffffff;
     box-shadow: 0 0 0 3px rgba(3, 36, 37, 0.08);
+}
+
+/* 餐品建档弹窗基本信息网格（D-2）：>=900px 3 列 / 768-899px 2 列 / <768px 1 列，
+   390px 视口不横向溢出；描述宽格在 1 列布局回落为整行。 */
+.dish-basic-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.dish-basic-grid-wide {
+    grid-column: span 2;
+}
+@media (min-width: 768px) and (max-width: 899px) {
+    .dish-basic-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .dish-basic-grid-wide {
+        grid-column: span 2;
+    }
+}
+@media (max-width: 767px) {
+    .dish-basic-grid {
+        grid-template-columns: 1fr;
+    }
+    .dish-basic-grid-wide {
+        grid-column: auto;
+    }
 }
 
 /* 表格控件 */
@@ -738,7 +779,7 @@ table.data-table tbody tr:last-child td:last-child  { border-bottom-right-radius
 
 table.data-table th {
     background: var(--bg-sidebar);
-    color: var(--text-muted);
+    color: #6b7280;
     font-weight: 600;
     font-size: 0.82rem;
     letter-spacing: 0.02em;
@@ -894,7 +935,7 @@ table.data-table td input {
     gap: 4px;
 }
 
-.badge-danger { background: var(--danger-bg); color: var(--danger); border: 1px solid rgba(216, 13, 13, 0.2); }
+.badge-danger { background: var(--danger-bg); color: #b91c1c; border: 1px solid rgba(216, 13, 13, 0.2); }
 .badge-warning { background: var(--warning-bg); color: var(--warning); border: 1px solid rgba(180, 83, 9, 0.2); }
 .badge-success { background: var(--success-bg); color: var(--success); border: 1px solid rgba(47, 107, 79, 0.2); }
 .badge-info { background: #ffedd5; color: #c2410c; border: 1px solid rgba(194, 65, 12, 0.2); }
@@ -1390,7 +1431,7 @@ table.data-table.receipt-item-table th {
     padding: 4px 4px;
     font-size: 0.8rem;
     font-weight: 600;
-    color: var(--text-muted);
+    color: #6b7280;
     height: 66px;
     min-height: 66px;
     box-sizing: border-box;

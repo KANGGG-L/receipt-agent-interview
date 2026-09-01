@@ -450,9 +450,12 @@ get_float(key, default) / set_value(key, value) / all_settings()
 #   guard_*                     (T9 消费)
 
 # preprocess.py
-deskew(image) -> (image, angle)     # OpenCV 最小外接矩形/霍夫变换纠偏
+deskew(image) -> (image, angle)     # OpenCV 最小外接矩形/霍夫变换纠偏（小角度 ±12°，±1° 死区）
 enhance(image) -> image             # 自适应对比度 + 轻度去噪
+orthogonal_correct(image) -> (image, angle)  # 正交 90/180/270 四假设行方差+重心启发式，cv2.rotate 换边，默认必纠
 assess(image) -> {sharpness, is_blurry, skew_angle}
+# 正交开关 preprocess_orthogonal_enabled=true（不受 preprocess_enabled 限制）+ 前端 bakeCurrentRotation 烤入
+app/services/settings_service.py: 28 键（新增 orthogonal）
 ```
 
 - [ ] **Step 1:** 写 `test_settings_and_preprocess.py`：settings 覆盖默认值生效、缺失回退默认；`deskew` 对已知角度的旋转图能还原（±1°）；纠偏后模糊评分不下降

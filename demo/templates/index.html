@@ -101,15 +101,20 @@
                     <span class="icon"></span>
                     <span>部门花销报表</span>
                 </button>
-                <button class="sidebar-btn" id="adminEngineBtn" data-target="tab-engine" data-title="引擎配置与灰测大盘">
+                <button class="sidebar-btn" id="adminEngineBtn" data-target="tab-engine" data-title="引擎与系统配置">
                     <span class="icon"></span>
-                    <span>引擎与灰测</span>
+                    <span>引擎与系统配置</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
                 <button class="sidebar-btn" id="goldenBoardBtn" data-target="tab-golden" data-title="黄金样本57看板">
                     <span class="icon"></span>
                     <span>黄金样本</span>
                     <span style="color:var(--primary); font-size:0.65rem; margin-left:auto; border:1px solid var(--primary); border-radius:4px; padding:0 4px;">57</span>
+                </button>
+                <button class="sidebar-btn" id="analyticsBoardBtn" data-target="tab-analytics" data-title="治理与埋点观测台">
+                    <span class="icon"></span>
+                    <span>治理与埋点观测台</span>
+                    <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
                 <button class="sidebar-btn" id="evalsetReviewBtn" data-target="tab-evalset" data-title="GT 人工抽检台（评测集确认）">
                     <span class="icon"></span>
@@ -495,6 +500,10 @@
                                     <div style="display:flex; gap:12px; align-items:center;">
                                         <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果并彻底删除单据">放弃上传</button>
                                         <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
+                                        <!-- 挽回动作栏（复核工作台 Spec 2.3）：解析完成后常驻，与点踩/编辑保存并存 -->
+                                        <button id="btnReparse" class="btn btn-secondary" style="display:none;" onclick="onReparseClick()" title="复用原图重新识别（怀疑模型解析错了）">重新解析</button>
+                                        <button id="btnRetake" class="btn btn-secondary" style="display:none;" onclick="onRetakeClick()" title="换新图重新识别（怀疑图拍坏了）">重拍</button>
+                                        <input type="file" id="retakeFile" accept="image/*" class="hide" style="display: none !important;" hidden>
                                         <span id="feedbackInline" class="feedback-inline" style="display:none;">
                                             <button type="button" class="feedback-btn feedback-btn-up"
                                                     onclick="onFeedbackClick(1)" title="满意当前解析结果" aria-label="点赞">👍</button>
@@ -691,15 +700,15 @@
                                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                                     <label for="dishConsumptionDate" style="font-size: 0.9rem; font-weight: 600; color: var(--text-main);">消耗核算日期：</label>
                                     <input type="date" id="dishConsumptionDate" class="form-control" style="width: 140px; font-weight: 600;" onchange="onDishConsumptionDateChange(this.value)">
-                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="setDishConsumptionToday()">今天</button>
-                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="setDishConsumptionYesterday()">昨天</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 38px; height: 38px; font-size: 0.85rem;" onclick="setDishConsumptionToday()">今天</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 10px; min-height: 38px; height: 38px; font-size: 0.85rem;" onclick="setDishConsumptionYesterday()">昨天</button>
                                 </div>
                                 <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
                                     <div style="position: relative; min-width: 200px;">
                                         <input type="text" id="dishConsumeSearchInput" class="form-control" placeholder="搜索在售餐品..." oninput="filterDishConsumeEntryTable(this.value)">
                                     </div>
-                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="resetDishConsumeInputs()">清空份数</button>
-                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 38px; height: 38px; font-size: 0.85rem;" onclick="resetDishConsumeInputs()">清空份数</button>
+                                    <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 38px; height: 38px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新</button>
                                 </div>
                             </div>
                         </div>
@@ -708,22 +717,22 @@
                         <div class="metrics-grid dish-kpi-grid">
                             <div class="metric-card">
                                 <div style="color: var(--text-muted); font-size: 0.88rem; display: flex; justify-content: space-between; align-items: center;">
-                                    <span>当日预估总成本 (BOM)</span>
+                                    <span>当日总成本 (BOM)</span>
                                     <span class="badge badge-warning" id="kpiDishCostBadge">基准理论</span>
                                 </div>
                                 <div id="kpiDishCost" class="metric-value" style="color: var(--primary);">¥0.00</div>
                             </div>
                             <div class="metric-card">
-                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日预计营业额</div>
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日营业额</div>
                                 <div id="kpiDishRevenue" class="metric-value" style="color: #2563eb;">¥0.00</div>
                             </div>
                             <div class="metric-card">
-                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日预估毛利率</div>
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日毛利率</div>
                                 <div id="kpiDishGrossMargin" class="metric-value" style="color: var(--success);">0.0%</div>
                             </div>
                             <div class="metric-card">
-                                <div style="color: var(--text-muted); font-size: 0.88rem;">已录入消耗餐品</div>
-                                <div id="kpiDishCount" class="metric-value">0 种</div>
+                                <div style="color: var(--text-muted); font-size: 0.88rem;">当日消耗流水笔数</div>
+                                <div id="kpiDishCount" class="metric-value">0 笔</div>
                             </div>
                         </div>
 
@@ -777,7 +786,7 @@
                                 <div style="display: flex; align-items: center; gap: 8px;">
                                     <span>当日已提交消耗流水与 FIFO 成本核算记录</span>
                                 </div>
-                                <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新流水</button>
+                                <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 38px; height: 38px; font-size: 0.85rem;" onclick="loadDailyConsumption()">刷新流水</button>
                             </div>
                             <div class="table-container">
                                 <table class="data-table">
@@ -822,15 +831,6 @@
                                     </div>
                                     <select id="dishCategoryFilter" class="form-control" style="width: 120px;" onchange="filterDishBomLibrary()">
                                         <option value="">全部分类</option>
-                                        <option value="主食">主食</option>
-                                        <option value="热菜">热菜</option>
-                                        <option value="凉菜">凉菜</option>
-                                        <option value="汤品">汤品</option>
-                                        <option value="点心">点心</option>
-                                        <option value="饮品">饮品</option>
-                                        <option value="甜品">甜品</option>
-                                        <option value="小吃">小吃</option>
-                                        <option value="其他">其他</option>
                                     </select>
                                     <select id="dishStatusFilter" class="form-control" style="width: 110px;" onchange="filterDishBomLibrary()">
                                         <option value="active" selected>仅在售</option>
@@ -840,6 +840,7 @@
                                 </div>
                                 <div class="inv-toolbar-actions">
                                     <button type="button" class="btn btn-secondary" id="btnToggleDishView" onclick="toggleDishViewMode()">切换列表视图</button>
+                                    <button type="button" class="btn btn-secondary" id="btnManageDishCategories" onclick="openDishCategoryManager()">管理分类</button>
                                     <button type="button" id="btnOpenAddDishModal" class="btn btn-primary" onclick="openDishModal()">+ 新建餐品</button>
                                 </div>
                             </div>
@@ -1751,41 +1752,6 @@
                     <div class="diff-wrap"></div>
                 </div>
 
-                <!-- 灰测用户使用状态与脱敏单据抽样观测面板 (Admin 专属) -->
-                <div class="card" style="margin-top:20px; border:1px solid #b8860b; background:#fefdf8;">
-                    <div class="card-title" style="justify-content:space-between; align-items:center;">
-                        <span style="color:#b8860b; font-weight:700;">灰测单据与用户使用状态抽样观测 (已脱敏保护)</span>
-                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples()">刷新脱敏单据流</button>
-                    </div>
-                    <div id="adminGreySampleMetrics" style="display:flex; gap:12px; margin-bottom:12px; font-size:0.82rem; flex-wrap:wrap;">
-                        <span class="badge" style="background:#fff3cd; color:#856404;">总样本: <b id="mGreyTotal">0</b></span>
-                        <span class="badge" style="background:#d4edda; color:#155724;">已审批入库: <b id="mGreyApproved">0</b></span>
-                        <span class="badge" style="background:#cce5ff; color:#004085;">店员已复核: <b id="mGreyEdited">0</b></span>
-                        <span class="badge" style="background:#e8f5e9; color:#2e7d32;">赞同(完全采纳): <b id="mGreyPositive">0</b></span>
-                        <span class="badge" style="background:#fff8e1; color:#b8860b;">纠偏(人工修正): <b id="mGreyModified">0</b></span>
-                        <span class="badge" style="background:#ede7f6; color:#512da8;">平均采纳率: <b id="mGreyAvgMatch">0%</b></span>
-                        <span class="badge" style="background:#e2e3e5; color:#383d41;">灰测组: <b id="mGreyCanary">0</b></span>
-                    </div>
-                    <div class="table-container" style="max-height:280px; overflow-y:auto;">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>单据 ID</th>
-                                    <th>脱敏供应商</th>
-                                    <th>单据形态</th>
-                                    <th>脱敏金额</th>
-                                    <th>分流引擎</th>
-                                    <th>使用状态</th>
-                                    <th>AI 效果反馈</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="adminGreySamplesBody">
-                                <tr><td colspan="8" style="text-align:center; color:#999;">点击「刷新脱敏单据流」拉取数据...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
 
                 <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; margin-top:18px;">
                     <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
@@ -1907,6 +1873,69 @@
                                 判定阈值：双侧双比例 z 检验，显著性水平 alpha = 0.05。p &lt; 0.05 视为显著；样本量 N &lt; 30 时标记低置信度，仅作参考不作为推全依据。
                             </div>
                             <div id="pvalueCardsContainer" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px;"></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- TAB: 治理与埋点观测台（11-组件Spec §7.1；admin 可见，staff/owner 前端隐藏 + 后端 403 兜底） -->
+                <section id="tab-analytics" class="tab-content">
+                    <div style="max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:16px;">
+                        <div class="card">
+                            <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                <span>全量埋点事件分布</span>
+                                <div style="display:inline-flex; align-items:center; gap:8px;">
+                                    <label for="analyticsTenantSelect" style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;">租户：</label>
+                                    <select id="analyticsTenantSelect" style="font-size:0.8rem; padding:2px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-main);" onchange="onAnalyticsTenantChange(this.value)">
+                                        <option value="all">全部租户</option>
+                                    </select>
+                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadAnalyticsBoard()">刷新</button>
+                                </div>
+                            </div>
+                            <div id="analyticsEventDistBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title"><span>挽回与点踩指标</span></div>
+                            <div id="analyticsRecoveryBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
+                        </div>
+                        <!-- 灰测现状与脱敏单据抽样观测 (Admin 专属) -->
+                        <div class="card">
+                            <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                <span>灰测现状与样本观测</span>
+                                <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples(null, true)">刷新脱敏单据流</button>
+                            </div>
+                            <div id="analyticsGreyBody" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">加载中</div>
+                            <div id="adminGreySampleMetrics" style="display:flex; gap:12px; margin-bottom:12px; font-size:0.82rem; flex-wrap:wrap;">
+                                <span class="badge" style="background:#fff3cd; color:#856404;">总样本: <b id="mGreyTotal">0</b></span>
+                                <span class="badge" style="background:#d4edda; color:#155724;">已审批入库: <b id="mGreyApproved">0</b></span>
+                                <span class="badge" style="background:#cce5ff; color:#004085;">店员已复核: <b id="mGreyEdited">0</b></span>
+                                <span class="badge" style="background:#e8f5e9; color:#2e7d32;">赞同(完全采纳): <b id="mGreyPositive">0</b></span>
+                                <span class="badge" style="background:#fff8e1; color:#b8860b;">纠偏(人工修正): <b id="mGreyModified">0</b></span>
+                                <span class="badge" style="background:#ede7f6; color:#512da8;">平均采纳率: <b id="mGreyAvgMatch">0%</b></span>
+                                <span class="badge" style="background:#e2e3e5; color:#383d41;">灰测组: <b id="mGreyCanary">0</b></span>
+                            </div>
+                            <div class="table-container" style="max-height:280px; overflow-y:auto;">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>单据 ID</th>
+                                            <th>脱敏供应商</th>
+                                            <th>单据形态</th>
+                                            <th>脱敏金额</th>
+                                            <th>分流引擎</th>
+                                            <th>使用状态</th>
+                                            <th>AI 效果反馈</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="adminGreySamplesBody">
+                                        <tr><td colspan="8" style="text-align:center; color:#999;">点击「刷新脱敏单据流」拉取数据...</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="card">
+                            <div class="card-title"><span>A/B 实验数据</span></div>
+                            <div id="analyticsExperimentsBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
                         </div>
                     </div>
                 </section>
@@ -2702,31 +2731,24 @@
                 <input type="hidden" id="dishModalId" value="">
                 
                 <!-- 基本信息网格 -->
-                <div class="form-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 16px;">
+                <div class="dish-basic-grid">
                     <div class="form-group">
                         <label>餐品名称 <span style="color:var(--danger);">*</span></label>
                         <input type="text" id="dishModalName" class="form-control" placeholder="如：港式柱侯萝卜牛腩煲">
                     </div>
                     <div class="form-group">
                         <label>餐品分类 <span style="color:var(--danger);">*</span></label>
-                        <input type="text" id="dishModalCategory" list="dishModalCategoryList" class="form-control" placeholder="如：热菜、主食">
-                        <datalist id="dishModalCategoryList">
-                            <option value="主食"></option>
-                            <option value="热菜"></option>
-                            <option value="凉菜"></option>
-                            <option value="汤品"></option>
-                            <option value="点心"></option>
-                            <option value="饮品"></option>
-                            <option value="甜品"></option>
-                            <option value="小吃"></option>
-                            <option value="其他"></option>
-                        </datalist>
+                        <div class="unit-combobox-wrap">
+                            <input type="text" id="dishModalCategory" class="form-control" style="padding-right:30px;" placeholder="如：热菜、主食" autocomplete="off" onfocus="openDishCategoryMenu(this)" oninput="openDishCategoryMenu(this)" onblur="closeDishCategoryMenuDelay(this)">
+                            <span class="combobox-arrow">▼</span>
+                            <div id="dishCategoryDropdownMenu" class="unit-dropdown-menu hide"></div>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>销售单价 ($) <span style="color:var(--danger);">*</span></label>
                         <input type="number" step="0.01" min="0" id="dishModalPrice" class="form-control" placeholder="如：88.00" oninput="calcDishModalTheoryCost()">
                     </div>
-                    <div class="form-group" style="grid-column: span 2;">
+                    <div class="form-group dish-basic-grid-wide">
                         <label>餐品描述</label>
                         <input type="text" id="dishModalDescription" class="form-control" placeholder="选填，如口感、规格、主要食材说明">
                     </div>
@@ -2746,7 +2768,7 @@
                             BOM 食材配方清单
                             <span style="font-size: 0.78rem; color: var(--text-muted); font-weight: 400; margin-left: 6px;">(每份餐品消耗的食材 SKU 与用量)</span>
                         </div>
-                        <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 36px; height: 36px; font-size: 0.82rem;" onclick="addDishIngredientRow()">+ 添加食材配方行</button>
+                        <button type="button" class="btn btn-secondary" style="padding: 4px 12px; min-height: 38px; height: 38px; font-size: 0.875rem;" onclick="addDishIngredientRow()">+ 添加食材配方行</button>
                     </div>
 
                     <div class="table-container" style="max-height: 280px; overflow-y: auto; margin-bottom: 12px;">
@@ -2802,6 +2824,23 @@
         </div>
     </div>
 
+    <!-- 餐品分类管理弹窗 (dishCategoryManagerModal)：仅 owner 入口 -->
+    <div id="dishCategoryManagerModal" class="modal-backdrop hide">
+        <div class="modal-card" style="max-width:560px;">
+            <div class="modal-header">
+                <h3>餐品分类管理</h3>
+                <button type="button" class="modal-close-btn" onclick="closeModalById('dishCategoryManagerModal')">x</button>
+            </div>
+            <div class="modal-body">
+                <div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px;">删除分类后，引用该分类的餐品将归入「其他」；若删除的正是「其他」，则清空这些餐品的分类。</div>
+                <div id="dishCategoryManagerBody" style="max-height:320px; overflow:auto;"></div>
+            </div>
+            <div style="display:flex; justify-content:flex-end; gap:10px; padding:12px 16px; border-top:1px solid var(--border-color);">
+                <button type="button" class="btn btn-secondary" onclick="closeModalById('dishCategoryManagerModal')">关闭</button>
+            </div>
+        </div>
+    </div>
+
     <!-- FIFO 批次穿透溯源弹窗 (costTraceModal) -->
     <div id="costTraceModal" class="modal-backdrop hide">
         <div class="modal-card" style="max-width:840px;">
@@ -2852,6 +2891,6 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260829b"></script>
+    <script src="/static/js/main.js?v=20260901d"></script>
 </body>
 </html>

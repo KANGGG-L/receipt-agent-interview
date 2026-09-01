@@ -49,7 +49,7 @@
 **必读**:
 1. `docs/05-AI产品体系与模块Spec/02-AI原生引擎与RAG飞轮Spec/05-组件Spec-三层互不信任AI原生感知引擎与编排管线.md` — Zero-Trust、线性编排、算术自愈
 2. `docs/05-AI产品体系与模块Spec/02-AI原生引擎与RAG飞轮Spec/06-组件Spec-动态RAG与供应商记忆知识飞轮.md` — Chroma向量、租户隔离
-3. `docs/04-AI技术选型与评测/00-README.md` `01-AI方案与规格/02-算法与工程方案.md` `02-L0-L9选型决策档案/*` — L0-L9 结论 `qwen3-vl-flash ¥0.0022/张` 163张评测
+3. `docs/04-AI技术选型与评测/00-README.md` `01-AI方案与规格/02-算法与工程方案.md` `02-L0-L9选型决策档案/*` — L0-L9 结论 `qwen3-vl-flash HK$0.0024/张` 163张评测
 4. `docs/05-AI产品体系与模块Spec/04-OCR专项治理与面试攻防体系/02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md` — 8大Gap STAR + HEIC/SKU
 5. `ai_registry/tools/prompt_injection_guard/v1_0_0.py:28` `huama_evaluator/v1_0_0.py:20` `date_normalizer/v1_0_0.py:40`
 
@@ -314,7 +314,7 @@ Task(subagent_type="explore", prompt="你是 SubAgent-F · 交互易用总审 ..
 **17场景清单 (摘自 `02-17个核心业务场景清单.md:1-94`)**:
 1. 拍照上传 2. 弱光/湿手 3. 印章 4. 免责 5. 折让押金 6. 复合包装 7. 港式日期 8. 划线 9. 花码 10. 注入 11. SKU去重 12. 价格预警 13. 供应商档案 14. 月结 15. 成本分摊 16. 灰测 17. 反馈飞轮 — 每个 SubAgent 需在报告中标 `已实现/缺失/P0`
 
-**NFR-1~6**: NFR-1 准确率>85% / NFR-2 成本¥0.0022 / NFR-3 可用性 / NFR-4 安全沙箱 / NFR-5 多租户硬隔离 / NFR-6 可观测
+**NFR-1~6**: NFR-1 准确率>85% / NFR-2 成本 HK$0.0024 / NFR-3 可用性 / NFR-4 安全沙箱 / NFR-5 多租户硬隔离 / NFR-6 可观测
 
 ---
 

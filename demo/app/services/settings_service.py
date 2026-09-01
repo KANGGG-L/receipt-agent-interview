@@ -41,6 +41,9 @@ SETTINGS_DEFAULTS = {
     "price_anomaly_threshold_pct": 10.0,
     # T10 预处理纠偏开关：默认 OFF，等灰测数据决定是否默认开启
     "preprocess_enabled": False,
+    # T10 正交纠正（90/180/270）开关：默认 true，不受 preprocess_enabled 限制
+    # 致命错误必纠；单独可控供灰测回退
+    "preprocess_orthogonal_enabled": True,
     # T9（Gap C3）实验守护阈值（GUARD_*）：触发即自动回滚并冻结实验
     "guard_success_drop_pp": 5,
     "guard_cost_rise_pct": 50,

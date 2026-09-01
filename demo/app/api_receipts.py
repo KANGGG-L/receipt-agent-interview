@@ -39,7 +39,7 @@ def _supplement_payment_mark(receipt_row) -> str:
 
 
 def _track_event(account, session_id, event_type, receipt_id=None,
-                 properties=None, grp=None):
+                 properties=None, grp=None, tenant_id=None):
     """埋点封装：失败静默忽略，不影响主业务。"""
     try:
         db.log_user_event(
@@ -49,6 +49,7 @@ def _track_event(account, session_id, event_type, receipt_id=None,
             receipt_id=int(receipt_id) if receipt_id else None,
             properties=properties or {},
             grp=str(grp) if grp else None,
+            tenant_id=tenant_id,
         )
     except Exception as e:
         import logging
@@ -918,11 +919,22 @@ def retry_receipt(receipt_id: int, request: Request):
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
     old_status = row.status
-    if old_status not in ("uploaded", "parsed", "error"):
+    # 挽回动作状态门（复核工作台「重新解析」常驻入口）：
+    # edited 必须放行——解析完成后自动保存（前端 autoSaveParsedPhoto）把状态置为
+    # edited，这是自动保存的正常产物，正是常驻挽回按钮的主场景；
+    # parsing 拒绝（任务在途防并发）、approved 拒绝（已背书入账，修正走冲销语义，
+    # 与 flag 口径一致）、flagged 拒绝（人工异常须显式处置）。
+    if old_status not in ("uploaded", "parsed", "edited", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许重试：仅 uploaded/parsed/error 单据可重跑识别。"},
+                     "msg": f"当前状态 [{old_status}] 不允许重试：仅 uploaded/parsed/edited/error 单据可重跑识别"
+                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
             status_code=409)
+    if (row.doc_form or "") == "manual_entry":
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": "手工录入单据无原图，不可重跑识别；请直接编辑保存。"},
+            status_code=400)
     if not row.image_path or not os.path.exists(row.image_path):
         return JSONResponse(
             content={"status": "error",
@@ -933,6 +945,92 @@ def retry_receipt(receipt_id: int, request: Request):
                                       tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version}
+
+
+@router.post("/api/receipt/{receipt_id}/replace-image")
+async def replace_receipt_image(
+    receipt_id: int,
+    request: Request,
+    receipt: UploadFile = File(...),
+    force: str = Form("false"),  # true → 用户已确认继续，跳过极模糊硬拦截
+):
+    """挽回动作「重拍」：新图替换原图并重跑识别（原单据保留，区别于批次换图新建单据）。
+
+    状态门与 /retry 相同；旧图文件保留（可审计），换图动作落 audit_logs_json
+    与 image_replaced 埋点（含 old_image）。
+    """
+    require_role("staff")(request)
+    account = getattr(request.state, "account", {})
+    who = account.get("email", "unknown")
+    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
+    if row is None:
+        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+                            status_code=404)
+    old_status = row.status
+    if old_status not in ("uploaded", "parsed", "edited", "error"):
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": f"当前状态 [{old_status}] 不允许换图重跑：仅 uploaded/parsed/edited/error 单据可重拍"
+                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
+            status_code=409)
+    if (row.doc_form or "") == "manual_entry":
+        return JSONResponse(
+            content={"status": "error",
+                     "msg": "手工录入单据无原图，不可换图重跑；请直接编辑保存。"},
+            status_code=400)
+
+    # 与 /api/upload 同源的画质拦截：空文件/过小 400 + 极模糊硬拦截（force 可绕过）
+    image_path = _save_upload(receipt)
+    file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
+    if file_size < 30:
+        if os.path.exists(image_path):
+            os.remove(image_path)
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "IMAGE_QUALITY_ERROR",
+                "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
+                "quality_warnings": ["image_empty_or_corrupted"]
+            }
+        )
+    blur_score = _laplacian_variance(image_path)
+    is_force = (force.lower() == "true") or (request.query_params.get("force", "").lower() == "true")
+    if blur_score is not None and blur_score < _blur_threshold():
+        if not is_force:
+            if os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except Exception:
+                    pass
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "code": "IMAGE_QUALITY_ERROR",
+                    "msg": "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
+                    "quality_warnings": ["image_blur"],
+                    "blur_score": round(float(blur_score), 2),
+                    "confidence": 0.35,
+                }
+            )
+
+    old_image_path = row.image_path or ""
+    old_image_name = os.path.basename(old_image_path) if old_image_path else ""
+    new_image_name = os.path.basename(image_path)
+    # 换图落库（旧图文件保留不删，可审计）+ 审计 + 埋点，随后复用原单据重跑识别
+    db.update_receipt(receipt_id, image_path=image_path)
+    db.append_audit_log(receipt_id, who, "replace_image", "image_path",
+                        old_image_name, new_image_name)
+    _track_event(account, getattr(request.state, "session_id", ""),
+                 "image_replaced", receipt_id=receipt_id,
+                 properties={"old_image": old_image_name, "trigger": "retake"},
+                 tenant_id=_tenant_id(request))
+    job_id, _ = start_recognition_job(image_path, receipt_id=receipt_id,
+                                      tenant_id=_tenant_id(request))
+    return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
+            "version": row.version,
+            "image_url": "/uploads/" + new_image_name}
 
 
 @router.post("/api/receipt/{receipt_id}/convert_manual")
@@ -1229,8 +1327,10 @@ def track_event(body: TrackBody, request: Request):
     """前端行为埋点统一入口：失败静默，始终 200，不阻塞业务。"""
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
+    tenant_id = _tenant_id(request)
     _track_event(account, getattr(request.state, "session_id", ""),
                  body.event_type, receipt_id=body.receipt_id,
-                 properties=body.properties or {})
+                 properties=body.properties or {},
+                 tenant_id=tenant_id)
     return {"status": "ok"}
 
