@@ -12040,6 +12040,10 @@ function updateGreyDisabledState() {
         });
         body.style.opacity = enabled ? '1' : '0.45';
         body.style.pointerEvents = enabled ? 'auto' : 'none';
+        if (enabled) {
+            updateGreyAuditDisabledState();
+            updateGreyParseDisabledState();
+        }
     }
 }
 
