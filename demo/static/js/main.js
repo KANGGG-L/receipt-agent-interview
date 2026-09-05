@@ -11546,221 +11546,22 @@ try {
     });
 } catch (e) {}
 
-const DEFAULT_ENGINE_MODELS = {
-    // 已全面移除 opencode cli 与 codebuddy cli 预设组，统一使用 OpenAI 兼容通道
-    openai: []
-};
-
-// 连通性测试通过的白名单模型库 (已验证通过的模型跳过重复测试)
-function getVerifiedModels(engine) {
-    try {
-        const raw = localStorage.getItem('verified_models_' + engine);
-        return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-        return [];
-    }
-}
-
-function markModelVerified(engine, modelName) {
-    const trimmed = (modelName || '').trim();
-    if (!trimmed) return;
-    const verified = getVerifiedModels(engine);
-    if (!verified.includes(trimmed)) {
-        verified.push(trimmed);
-        try {
-            localStorage.setItem('verified_models_' + engine, JSON.stringify(verified));
-        } catch (e) {}
-    }
-}
-
-function isModelVerified(engine, modelName) {
-    if (!modelName || !modelName.trim()) return true;
-    const trimmed = modelName.trim();
-    // 1. 系统内置默认模型默认视为已验证
-    const defaults = (DEFAULT_ENGINE_MODELS[engine] || []).map(m => m.value);
-    if (defaults.includes(trimmed)) return true;
-    // 2. 之前测试通过并记录的模型
-    const verified = getVerifiedModels(engine);
-    return verified.includes(trimmed);
-}
-
-function getCustomModels(engine) {
-    try {
-        const raw = localStorage.getItem('custom_models_' + engine);
-        return raw ? JSON.parse(raw) : [];
-    } catch (e) {
-        return [];
-    }
-}
-
-function saveCustomModels(engine, list) {
-    try {
-        localStorage.setItem('custom_models_' + engine, JSON.stringify(list));
-    } catch (e) {}
-}
-
-function addCustomModel(engine, modelName) {
-    const trimmed = (modelName || '').trim();
-    if (!trimmed) return false;
-    const defaults = (DEFAULT_ENGINE_MODELS[engine] || []).map(m => m.value);
-    if (defaults.includes(trimmed)) {
-        return true;
-    }
-    const customs = getCustomModels(engine);
-    if (!customs.includes(trimmed)) {
-        customs.push(trimmed);
-        saveCustomModels(engine, customs);
-    }
-    return true;
-}
-
-function removeCustomModel(engine, modelName) {
-    let customs = getCustomModels(engine);
-    customs = customs.filter(m => m !== modelName);
-    saveCustomModels(engine, customs);
-}
-
-function fillModelOptions(selId, current, engine) {
-    const sel = document.getElementById(selId);
-    if (!sel) return;
-    const eng = engine || 'openai';
-    if (eng === 'openai') {
-        sel.innerHTML = '';
-        return;
-    }
-    const defaultModels = DEFAULT_ENGINE_MODELS[eng] || [];
-    const customModels = getCustomModels(eng);
-    
-    sel.innerHTML = '';
-    // 1. 系统默认模型
-    defaultModels.forEach((m) => {
-        const opt = document.createElement('option');
-        opt.value = m.value;
-        opt.textContent = m.label;
-        sel.appendChild(opt);
-    });
-    // 2. 用户自定义模型 (带 [自定义] 标记)
-    customModels.forEach((m) => {
-        const opt = document.createElement('option');
-        opt.value = m;
-        opt.textContent = m;
-        opt.setAttribute('data-custom', 'true');
-        sel.appendChild(opt);
-    });
-    // 3. 自定义输入入口
-    const addOpt = document.createElement('option');
-    addOpt.value = '__ADD_CUSTOM__';
-    addOpt.textContent = '自定义输入模型...';
-    sel.appendChild(addOpt);
-
-    // 4. 若传入了 current：
-    // 若在列表中直接选中；若不在（用户刚刚输入的新自定义模型），则作为临时选项插入并选中
-    if (current) {
-        sel.value = current;
-        if (sel.value !== current) {
-            const opt = document.createElement('option');
-            opt.value = current;
-            opt.textContent = current;
-            opt.setAttribute('data-custom', 'true');
-            sel.insertBefore(opt, addOpt);
-            sel.value = current;
-        }
-    }
-    if (!sel.value && sel.options.length > 0) {
-        sel.selectedIndex = 0;
-    }
-    updateModelDeleteButtonVisibility(selId);
-}
-
-function updateModelDeleteButtonVisibility(selId) {
-    const sel = document.getElementById(selId);
-    if (!sel) return;
-    const parentGroup = sel.closest('.form-group');
-    if (!parentGroup) return;
-    const delBtn = parentGroup.querySelector('.custom-del-btn');
-    if (!delBtn) return;
-    const selectedOpt = sel.options[sel.selectedIndex];
-    const isCustom = selectedOpt && selectedOpt.getAttribute('data-custom') === 'true';
-    delBtn.style.display = isCustom ? 'inline' : 'none';
-}
-
-function handleDeleteCurrentModel(selId, engineId) {
-    const sel = document.getElementById(selId);
-    const engineEl = document.getElementById(engineId);
-    if (!sel || !engineEl) return;
-    const val = sel.value;
-    const engine = engineEl.value;
-    if (!val) return;
-    showCustomConfirmModal({
-        title: '删除自定义模型',
-        message: '确定要删除自定义模型 [' + val + '] 吗？系统默认模型不受影响。',
-        confirmText: '确定删除',
-        cancelText: '取消',
-        onConfirm: () => {
-            removeCustomModel(engine, val);
-            showToast('已删除自定义模型：' + val, 'info');
-            fillModelOptions(selId, null, engine);
-            updateModelDeleteButtonVisibility(selId);
-        }
-    });
-}
-
-function handleModelSelectChange(selId, engineGetter) {
-    const sel = document.getElementById(selId);
-    if (!sel) return;
-    const val = sel.value;
-    const engine = typeof engineGetter === 'function' ? engineGetter() : engineGetter;
-    if (val === '__ADD_CUSTOM__') {
-        const exampleModel = 'provider/model-name';
-        showCustomInputModal({
-            title: '添加自定义模型',
-            message: '请输入 ' + engine + ' 引擎的模型名称：\n参考格式案例：' + exampleModel,
-            defaultValue: exampleModel,
-            placeholder: exampleModel,
-            onConfirm: (newModel) => {
-                const trimmed = (newModel || '').trim();
-                if (trimmed) {
-                    // 仅填入当前下拉框作为临时选中值，不在此时写入 localStorage
-                    fillModelOptions(selId, trimmed, engine);
-                    showToast('已选择模型：' + trimmed + '（保存配置通过后将持久化保存）', 'info');
-                } else {
-                    fillModelOptions(selId, null, engine);
-                }
-                updateModelDeleteButtonVisibility(selId);
-            },
-            onCancel: () => {
-                fillModelOptions(selId, null, engine);
-                updateModelDeleteButtonVisibility(selId);
-            }
-        });
-    }
-    updateModelDeleteButtonVisibility(selId);
-}
-
-// 辅助函数：根据引擎是否为 openai，动态插入或移除临时 placeholder 选项并选中
-function syncModelSelectOpenaiState(selId, isOpenai) {
-    const sel = document.getElementById(selId);
-    if (!sel) return;
-    let ph = sel.querySelector('option[data-placeholder="openai"]');
-    if (isOpenai) {
-        if (!ph) {
-            ph = document.createElement('option');
-            ph.value = '';
-            ph.setAttribute('data-placeholder', 'openai');
-            ph.textContent = '— 无（使用下方 OpenAI 模型） —';
-            sel.prepend(ph);
-        }
-        sel.value = '';
+function toggleEngineDrawer(drawerId) {
+    const drawer = document.getElementById(drawerId);
+    if (!drawer) return;
+    const isCollapsed = drawer.classList.contains('collapsed');
+    if (isCollapsed) {
+        drawer.classList.remove('collapsed');
     } else {
-        if (ph) {
-            ph.remove();
-            // 移除后若无选中，恢复首个有效模型
-            if (!sel.value && sel.options.length > 0) {
-                sel.selectedIndex = 0;
-            }
-        }
+        drawer.classList.add('collapsed');
+    }
+    const header = drawer.querySelector('.engine-drawer-header');
+    if (header) {
+        header.setAttribute('aria-expanded', isCollapsed ? 'true' : 'false');
     }
 }
+window.toggleEngineDrawer = toggleEngineDrawer;
+
 
 // 预设 OpenAI 网关（选择后自动填入识别/审核参数）
 const OPENAI_PRESETS = {
@@ -11809,27 +11610,6 @@ function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud) {
         }
     }
     if (mEl) mEl.value = isAud ? p.aud_model : p.rec_model;
-
-    // 联动：自动将对应引擎切换为 openai 并展开参数区
-    if (presetSelectId === 'adminOpenaiRecPreset') {
-        const eng = document.getElementById('adminRecognitionEngine');
-        if (eng && eng.value !== 'openai') {
-            eng.value = 'openai';
-            updateOpenaiBoxes();
-        }
-    } else if (presetSelectId === 'adminOpenaiAudPreset') {
-        const eng = document.getElementById('adminAuditEngine');
-        if (eng && eng.value !== 'openai') {
-            eng.value = 'openai';
-            updateOpenaiBoxes();
-        }
-    } else if (presetSelectId === 'adminParseOpenaiPreset') {
-        const eng = document.getElementById('adminParseEngine');
-        if (eng && eng.value !== 'openai') {
-            eng.value = 'openai';
-            updateParseOpenaiBox();
-        }
-    }
     showToast('已填入预设：' + p.label, 'info');
 }
 
@@ -11839,22 +11619,12 @@ function bindAdminEngineEventsOnce() {
     if (_adminEngineEventsBound) return;
     _adminEngineEventsBound = true;
 
-    // 模型下拉变更（支持自定义添加）
-    document.getElementById('adminRecognitionModel').addEventListener('change', () => handleModelSelectChange('adminRecognitionModel', () => document.getElementById('adminRecognitionEngine').value));
-    document.getElementById('adminAuditModel').addEventListener('change', () => handleModelSelectChange('adminAuditModel', () => document.getElementById('adminAuditEngine').value));
-    document.getElementById('adminParseModel').addEventListener('change', () => handleModelSelectChange('adminParseModel', () => document.getElementById('adminParseEngine').value));
-    document.getElementById('adminGreyRecModel').addEventListener('change', () => handleModelSelectChange('adminGreyRecModel', () => document.getElementById('adminGreyRecEngine').value));
-    document.getElementById('adminGreyAudModel').addEventListener('change', () => handleModelSelectChange('adminGreyAudModel', () => document.getElementById('adminGreyAudEngine').value));
-    document.getElementById('adminGreyParseModel').addEventListener('change', () => handleModelSelectChange('adminGreyParseModel', () => document.getElementById('adminGreyParseEngine').value));
+    // 审核开关控制置灰
+    const auditEnabledEl = document.getElementById('adminAuditEnabled');
+    if (auditEnabledEl) auditEnabledEl.addEventListener('change', updateAuditDisabledState);
+    const greyAuditEnabledEl = document.getElementById('adminGreyAuditEnabled');
+    if (greyAuditEnabledEl) greyAuditEnabledEl.addEventListener('change', updateGreyAuditDisabledState);
 
-    // 审核开关控制审核引擎/模型置灰
-    document.getElementById('adminAuditEnabled').addEventListener('change', updateAuditDisabledState);
-    document.getElementById('adminGreyAuditEnabled').addEventListener('change', updateGreyAuditDisabledState);
-    // 引擎选择 → OpenAI 参数区显隐（常规 + 灰测）
-    document.getElementById('adminRecognitionEngine').addEventListener('change', updateOpenaiBoxes);
-    document.getElementById('adminAuditEngine').addEventListener('change', updateOpenaiBoxes);
-    document.getElementById('adminGreyRecEngine').addEventListener('change', updateGreyOpenaiBoxes);
-    document.getElementById('adminGreyAudEngine').addEventListener('change', updateGreyOpenaiBoxes);
     // 各 OpenAI 参数区独立预设网关绑定
     [
         ['adminOpenaiRecPreset', 'adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey', 'adminOpenaiRecModel', false],
@@ -11870,13 +11640,35 @@ function bindAdminEngineEventsOnce() {
             el.addEventListener('change', () => applyBoxPreset(presetId, bId, kId, mId, isAud));
         }
     });
-    // 灰测停用 → 整块置灰
-    document.getElementById('adminGreyEnabled').addEventListener('change', updateGreyDisabledState);
-    // 解析 LLM 开关 → 置灰；引擎 → OpenAI 区显隐
-    document.getElementById('adminParseEnabled').addEventListener('change', updateParseDisabledState);
-    document.getElementById('adminParseEngine').addEventListener('change', updateParseOpenaiBox);
-    document.getElementById('adminGreyParseEnabled').addEventListener('change', updateGreyParseDisabledState);
-    document.getElementById('adminGreyParseEngine').addEventListener('change', updateGreyParseOpenaiBox);
+
+    // 灰测停用 -> 整块置灰
+    const greyEnabledEl = document.getElementById('adminGreyEnabled');
+    if (greyEnabledEl) greyEnabledEl.addEventListener('change', updateGreyDisabledState);
+
+    // 解析 LLM 开关 -> 置灰
+    const parseEnabledEl = document.getElementById('adminParseEnabled');
+    if (parseEnabledEl) parseEnabledEl.addEventListener('change', updateParseDisabledState);
+
+    // 灰测解析 LLM 开关 -> 置灰
+    const greyParseEnabledEl = document.getElementById('adminGreyParseEnabled');
+    if (greyParseEnabledEl) greyParseEnabledEl.addEventListener('change', updateGreyParseDisabledState);
+
+    // 抽屉无障碍键盘支持 (role="button", tabindex="0", keydown for Enter/Space)
+    document.querySelectorAll('.engine-drawer').forEach((drawer) => {
+        const header = drawer.querySelector('.engine-drawer-header');
+        if (header) {
+            header.setAttribute('role', 'button');
+            header.setAttribute('tabindex', '0');
+            const isCollapsed = drawer.classList.contains('collapsed');
+            header.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+            header.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                    e.preventDefault();
+                    toggleEngineDrawer(drawer.id);
+                }
+            });
+        }
+    });
 }
 
 function loadAdminEngineConfig() {
@@ -11893,57 +11685,70 @@ function loadAdminEngineConfig() {
                 return;
             }
             const cfg = body.data;
-            const _cleanEngine = (v) => (v === 'opencode' || v === 'codebuddy') ? 'openai' : (v || 'openai');
-            const recEng = _cleanEngine(cfg.recognition_engine);
-            const audEng = _cleanEngine(cfg.audit_engine);
-            const parseEng = _cleanEngine(cfg.parse_llm_engine);
-            const greyRecEng = _cleanEngine(cfg.grey_recognition_engine);
-            const greyAudEng = _cleanEngine(cfg.grey_audit_engine);
-            const greyParseEng = _cleanEngine(cfg.grey_parse_llm_engine);
 
-            // 引擎类型（统一为 OpenAI 兼容接口）
-            document.getElementById('adminRecognitionEngine').value = recEng;
-            document.getElementById('adminAuditEngine').value = audEng;
-            // 模型下拉（根据对应引擎渲染）
-            fillModelOptions('adminRecognitionModel', cfg.recognition_model, recEng);
-            fillModelOptions('adminAuditModel', cfg.audit_model, audEng);
-            document.getElementById('adminAuditEnabled').value = cfg.audit_enabled ? 'true' : 'false';
-            // OpenAI 兼容参数（识别/审核各自独立）
-            document.getElementById('adminOpenaiRecBaseUrl').value = cfg.openai_rec_base_url || '';
-            document.getElementById('adminOpenaiRecApiKey').value = cfg.openai_rec_api_key || '';
-            document.getElementById('adminOpenaiRecModel').value = cfg.openai_rec_model || '';
-            document.getElementById('adminOpenaiAudBaseUrl').value = cfg.openai_aud_base_url || '';
-            document.getElementById('adminOpenaiAudApiKey').value = cfg.openai_aud_api_key || '';
-            document.getElementById('adminOpenaiAudModel').value = cfg.openai_aud_model || '';
+            // 常规识别 OpenAI 参数
+            const recBase = document.getElementById('adminOpenaiRecBaseUrl');
+            const recKey = document.getElementById('adminOpenaiRecApiKey');
+            const recMod = document.getElementById('adminOpenaiRecModel');
+            if (recBase) recBase.value = cfg.openai_rec_base_url || '';
+            if (recKey) recKey.value = cfg.openai_rec_api_key || '';
+            if (recMod) recMod.value = cfg.openai_rec_model || cfg.recognition_model || '';
+
+            // 常规审核
+            const audEnabled = document.getElementById('adminAuditEnabled');
+            if (audEnabled) audEnabled.value = cfg.audit_enabled ? 'true' : 'false';
+            const audBase = document.getElementById('adminOpenaiAudBaseUrl');
+            const audKey = document.getElementById('adminOpenaiAudApiKey');
+            const audMod = document.getElementById('adminOpenaiAudModel');
+            if (audBase) audBase.value = cfg.openai_aud_base_url || '';
+            if (audKey) audKey.value = cfg.openai_aud_api_key || '';
+            if (audMod) audMod.value = cfg.openai_aud_model || cfg.audit_model || '';
+
             // 常规解析 LLM
-            document.getElementById('adminParseEnabled').value = cfg.parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminParseEngine').value = parseEng;
-            fillModelOptions('adminParseModel', cfg.parse_llm_model, parseEng);
-            document.getElementById('adminParseOpenaiBaseUrl').value = cfg.openai_parse_base_url || '';
-            document.getElementById('adminParseOpenaiApiKey').value = cfg.openai_parse_api_key || '';
-            document.getElementById('adminParseOpenaiModel').value = cfg.openai_parse_model || '';
-            // 灰测解析 LLM
-            document.getElementById('adminGreyParseEnabled').value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminGreyParseEngine').value = greyParseEng;
-            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, greyParseEng);
-            document.getElementById('adminGreyParseOpenaiBaseUrl').value = cfg.grey_openai_parse_base_url || '';
-            document.getElementById('adminGreyParseOpenaiApiKey').value = cfg.grey_openai_parse_api_key || '';
-            document.getElementById('adminGreyParseOpenaiModel').value = cfg.grey_openai_parse_model || '';
+            const parseEnabled = document.getElementById('adminParseEnabled');
+            if (parseEnabled) parseEnabled.value = cfg.parse_llm_enabled ? 'true' : 'false';
+            const parseBase = document.getElementById('adminParseOpenaiBaseUrl');
+            const parseKey = document.getElementById('adminParseOpenaiApiKey');
+            const parseMod = document.getElementById('adminParseOpenaiModel');
+            if (parseBase) parseBase.value = cfg.openai_parse_base_url || '';
+            if (parseKey) parseKey.value = cfg.openai_parse_api_key || '';
+            if (parseMod) parseMod.value = cfg.openai_parse_model || cfg.parse_llm_model || '';
+
             // 分组测试（灰测）
-            document.getElementById('adminGreyEnabled').value = cfg.grey_enabled ? 'true' : 'false';
-            document.getElementById('adminGreyPercent').value = cfg.grey_percent || 0;
-            document.getElementById('adminGreyAssignMode').value = cfg.grey_assign_mode || 'receipt';
-            document.getElementById('adminGreyRecEngine').value = greyRecEng;
-            document.getElementById('adminGreyAudEngine').value = greyAudEng;
-            document.getElementById('adminGreyAuditEnabled').value = cfg.grey_audit_enabled ? 'true' : 'false';
-            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, greyRecEng);
-            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, greyAudEng);
-            document.getElementById('adminGreyOpenaiRecBaseUrl').value = cfg.grey_openai_rec_base_url || '';
-            document.getElementById('adminGreyOpenaiRecApiKey').value = cfg.grey_openai_rec_api_key || '';
-            document.getElementById('adminGreyOpenaiRecModel').value = cfg.grey_openai_rec_model || '';
-            document.getElementById('adminGreyOpenaiAudBaseUrl').value = cfg.grey_openai_aud_base_url || '';
-            document.getElementById('adminGreyOpenaiAudApiKey').value = cfg.grey_openai_aud_api_key || '';
-            document.getElementById('adminGreyOpenaiAudModel').value = cfg.grey_openai_aud_model || '';
+            const greyEnabled = document.getElementById('adminGreyEnabled');
+            if (greyEnabled) greyEnabled.value = cfg.grey_enabled ? 'true' : 'false';
+            const greyPercent = document.getElementById('adminGreyPercent');
+            if (greyPercent) greyPercent.value = cfg.grey_percent || 0;
+            const greyAssign = document.getElementById('adminGreyAssignMode');
+            if (greyAssign) greyAssign.value = cfg.grey_assign_mode || 'receipt';
+
+            // 灰测识别
+            const gRecBase = document.getElementById('adminGreyOpenaiRecBaseUrl');
+            const gRecKey = document.getElementById('adminGreyOpenaiRecApiKey');
+            const gRecMod = document.getElementById('adminGreyOpenaiRecModel');
+            if (gRecBase) gRecBase.value = cfg.grey_openai_rec_base_url || '';
+            if (gRecKey) gRecKey.value = cfg.grey_openai_rec_api_key || '';
+            if (gRecMod) gRecMod.value = cfg.grey_openai_rec_model || cfg.grey_recognition_model || '';
+
+            // 灰测审核
+            const gAudEnabled = document.getElementById('adminGreyAuditEnabled');
+            if (gAudEnabled) gAudEnabled.value = cfg.grey_audit_enabled ? 'true' : 'false';
+            const gAudBase = document.getElementById('adminGreyOpenaiAudBaseUrl');
+            const gAudKey = document.getElementById('adminGreyOpenaiAudApiKey');
+            const gAudMod = document.getElementById('adminGreyOpenaiAudModel');
+            if (gAudBase) gAudBase.value = cfg.grey_openai_aud_base_url || '';
+            if (gAudKey) gAudKey.value = cfg.grey_openai_aud_api_key || '';
+            if (gAudMod) gAudMod.value = cfg.grey_openai_aud_model || cfg.grey_audit_model || '';
+
+            // 灰测解析 LLM
+            const gParseEnabled = document.getElementById('adminGreyParseEnabled');
+            if (gParseEnabled) gParseEnabled.value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
+            const gParseBase = document.getElementById('adminGreyParseOpenaiBaseUrl');
+            const gParseKey = document.getElementById('adminGreyParseOpenaiApiKey');
+            const gParseMod = document.getElementById('adminGreyParseOpenaiModel');
+            if (gParseBase) gParseBase.value = cfg.grey_openai_parse_base_url || '';
+            if (gParseKey) gParseKey.value = cfg.grey_openai_parse_api_key || '';
+            if (gParseMod) gParseMod.value = cfg.grey_openai_parse_model || cfg.grey_parse_llm_model || '';
 
             // 自动检测并设置匹配的预设网关下拉选项
             function detectPresetKey(baseUrl) {
@@ -11965,6 +11770,22 @@ function loadAdminEngineConfig() {
             setPresetVal('adminGreyOpenaiAudPreset', cfg.grey_openai_aud_base_url);
             setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
 
+            // 自动展开抽屉（若对应功能启用）
+            const parseDrawer = document.getElementById('adminParseDrawer');
+            if (parseDrawer) {
+                const parseExpanded = !!cfg.parse_llm_enabled;
+                parseDrawer.classList.toggle('collapsed', !parseExpanded);
+                const h = parseDrawer.querySelector('.engine-drawer-header');
+                if (h) h.setAttribute('aria-expanded', parseExpanded ? 'true' : 'false');
+            }
+            const greyDrawer = document.getElementById('adminGreyDrawer');
+            if (greyDrawer) {
+                const greyExpanded = !!cfg.grey_enabled;
+                greyDrawer.classList.toggle('collapsed', !greyExpanded);
+                const h = greyDrawer.querySelector('.engine-drawer-header');
+                if (h) h.setAttribute('aria-expanded', greyExpanded ? 'true' : 'false');
+            }
+
             // 动态从后端同步预设配置（自动融入 .env 中的密钥）
             apiFetch('/api/admin/engine-presets')
                 .then(r => r.json())
@@ -11978,58 +11799,74 @@ function loadAdminEngineConfig() {
             updateAuditDisabledState();
             updateGreyDisabledState();
             updateParseDisabledState();
-            updateParseOpenaiBox();
             updateGreyParseDisabledState();
-            updateGreyParseOpenaiBox();
             updateGreyAuditDisabledState();
-            updateOpenaiBoxes();
-            updateGreyOpenaiBoxes();
         })
         .catch(() => showToast('读取引擎配置失败', 'error'));
 }
 
 function saveAdminEngineConfig() {
-    const saveBtn = document.getElementById('btnSaveAdminEngine');
+    const saveBtn = document.getElementById('adminSaveEngineBtn') || document.getElementById('btnSaveAdminEngine');
     const origText = saveBtn ? saveBtn.textContent : '保存配置';
-    
+
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+    };
+
+    const recModel = getVal('adminOpenaiRecModel');
+    const audModel = getVal('adminOpenaiAudModel');
+    const parseModel = getVal('adminParseOpenaiModel');
+    const greyRecModel = getVal('adminGreyOpenaiRecModel');
+    const greyAudModel = getVal('adminGreyOpenaiAudModel');
+    const greyParseModel = getVal('adminGreyParseOpenaiModel');
+
+    // 采集 pure OpenAI DOM 字段并构建带双向对齐的配置体
+    // 保留 **** 敏感掩码传回后端，后端自动比对并维持未改动的原密钥
     const body = {
-        recognition_engine: document.getElementById('adminRecognitionEngine').value,
-        recognition_model: document.getElementById('adminRecognitionModel').value,
-        audit_engine: document.getElementById('adminAuditEngine').value,
-        audit_model: document.getElementById('adminAuditModel').value,
-        audit_enabled: document.getElementById('adminAuditEnabled').value === 'true',
-        openai_rec_base_url: document.getElementById('adminOpenaiRecBaseUrl').value,
-        openai_rec_api_key: document.getElementById('adminOpenaiRecApiKey').value,
-        openai_rec_model: document.getElementById('adminOpenaiRecModel').value,
-        openai_aud_base_url: document.getElementById('adminOpenaiAudBaseUrl').value,
-        openai_aud_api_key: document.getElementById('adminOpenaiAudApiKey').value,
-        openai_aud_model: document.getElementById('adminOpenaiAudModel').value,
-        parse_llm_enabled: document.getElementById('adminParseEnabled').value === 'true',
-        parse_llm_engine: document.getElementById('adminParseEngine').value,
-        parse_llm_model: document.getElementById('adminParseModel').value,
-        openai_parse_base_url: document.getElementById('adminParseOpenaiBaseUrl').value,
-        openai_parse_api_key: document.getElementById('adminParseOpenaiApiKey').value,
-        openai_parse_model: document.getElementById('adminParseOpenaiModel').value,
-        grey_enabled: document.getElementById('adminGreyEnabled').value === 'true',
-        grey_percent: parseInt(document.getElementById('adminGreyPercent').value, 10) || 0,
-        grey_assign_mode: document.getElementById('adminGreyAssignMode').value,
-        grey_recognition_engine: document.getElementById('adminGreyRecEngine').value,
-        grey_recognition_model: document.getElementById('adminGreyRecModel').value,
-        grey_audit_engine: document.getElementById('adminGreyAudEngine').value,
-        grey_audit_enabled: document.getElementById('adminGreyAuditEnabled').value === 'true',
-        grey_audit_model: document.getElementById('adminGreyAudModel').value,
-        grey_openai_rec_base_url: document.getElementById('adminGreyOpenaiRecBaseUrl').value,
-        grey_openai_rec_api_key: document.getElementById('adminGreyOpenaiRecApiKey').value,
-        grey_openai_rec_model: document.getElementById('adminGreyOpenaiRecModel').value,
-        grey_openai_aud_base_url: document.getElementById('adminGreyOpenaiAudBaseUrl').value,
-        grey_openai_aud_api_key: document.getElementById('adminGreyOpenaiAudApiKey').value,
-        grey_openai_aud_model: document.getElementById('adminGreyOpenaiAudModel').value,
-        grey_parse_llm_enabled: document.getElementById('adminGreyParseEnabled').value === 'true',
-        grey_parse_llm_engine: document.getElementById('adminGreyParseEngine').value,
-        grey_parse_llm_model: document.getElementById('adminGreyParseModel').value,
-        grey_openai_parse_base_url: document.getElementById('adminGreyParseOpenaiBaseUrl').value,
-        grey_openai_parse_api_key: document.getElementById('adminGreyParseOpenaiApiKey').value,
-        grey_openai_parse_model: document.getElementById('adminGreyParseOpenaiModel').value,
+        recognition_engine: 'openai',
+        recognition_model: recModel,
+        openai_rec_base_url: getVal('adminOpenaiRecBaseUrl'),
+        openai_rec_api_key: getVal('adminOpenaiRecApiKey'),
+        openai_rec_model: recModel,
+
+        audit_enabled: document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false,
+        audit_engine: 'openai',
+        audit_model: audModel,
+        openai_aud_base_url: getVal('adminOpenaiAudBaseUrl'),
+        openai_aud_api_key: getVal('adminOpenaiAudApiKey'),
+        openai_aud_model: audModel,
+
+        parse_llm_enabled: document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false,
+        parse_llm_engine: 'openai',
+        parse_llm_model: parseModel,
+        openai_parse_base_url: getVal('adminParseOpenaiBaseUrl'),
+        openai_parse_api_key: getVal('adminParseOpenaiApiKey'),
+        openai_parse_model: parseModel,
+
+        grey_enabled: document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false,
+        grey_percent: parseInt(document.getElementById('adminGreyPercent') ? document.getElementById('adminGreyPercent').value : 0, 10) || 0,
+        grey_assign_mode: getVal('adminGreyAssignMode') || 'receipt',
+
+        grey_recognition_engine: 'openai',
+        grey_recognition_model: greyRecModel,
+        grey_openai_rec_base_url: getVal('adminGreyOpenaiRecBaseUrl'),
+        grey_openai_rec_api_key: getVal('adminGreyOpenaiRecApiKey'),
+        grey_openai_rec_model: greyRecModel,
+
+        grey_audit_enabled: document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false,
+        grey_audit_engine: 'openai',
+        grey_audit_model: greyAudModel,
+        grey_openai_aud_base_url: getVal('adminGreyOpenaiAudBaseUrl'),
+        grey_openai_aud_api_key: getVal('adminGreyOpenaiAudApiKey'),
+        grey_openai_aud_model: greyAudModel,
+
+        grey_parse_llm_enabled: document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false,
+        grey_parse_llm_engine: 'openai',
+        grey_parse_llm_model: greyParseModel,
+        grey_openai_parse_base_url: getVal('adminGreyParseOpenaiBaseUrl'),
+        grey_openai_parse_api_key: getVal('adminGreyParseOpenaiApiKey'),
+        grey_openai_parse_model: greyParseModel,
     };
 
     const skipTest = document.getElementById('adminSkipModelTest') && document.getElementById('adminSkipModelTest').checked;
@@ -12047,43 +11884,35 @@ function saveAdminEngineConfig() {
             .then(r => r.json())
             .then(ret => {
                 if (ret && ret.status === 'success') {
-                    // 保存成功：将有效的自定义模型正式持久化到 localStorage
-                    const recEngine = document.getElementById('adminRecognitionEngine').value;
-                    const recModel = document.getElementById('adminRecognitionModel').value;
-                    if (recEngine !== 'openai' && recModel) addCustomModel(recEngine, recModel);
-
-                    const parseEngine = document.getElementById('adminParseEngine').value;
-                    const parseModel = document.getElementById('adminParseModel').value;
-                    if (parseEngine !== 'openai' && parseModel) addCustomModel(parseEngine, parseModel);
-
-                    const audEngine = document.getElementById('adminAuditEngine').value;
-                    const audModel = document.getElementById('adminAuditModel').value;
-                    if (audEngine !== 'openai' && audModel) addCustomModel(audEngine, audModel);
-
-                    // 灰测区域自定义模型同步持久化
-                    const gRecEngine = document.getElementById('adminGreyRecEngine').value;
-                    const gRecModel = document.getElementById('adminGreyRecModel').value;
-                    if (gRecEngine !== 'openai' && gRecModel) addCustomModel(gRecEngine, gRecModel);
-
-                    const gAudEngine = document.getElementById('adminGreyAudEngine').value;
-                    const gAudModel = document.getElementById('adminGreyAudModel').value;
-                    if (gAudEngine !== 'openai' && gAudModel) addCustomModel(gAudEngine, gAudModel);
-
-                    const gParseEngine = document.getElementById('adminGreyParseEngine').value;
-                    const gParseModel = document.getElementById('adminGreyParseModel').value;
-                    if (gParseEngine !== 'openai' && gParseModel) addCustomModel(gParseEngine, gParseModel);
-
-                    // 记录通过测试并保存的模型到白名单库
-                    if (recEngine !== 'openai' && recModel) markModelVerified(recEngine, recModel);
-                    if (parseEngine !== 'openai' && parseModel) markModelVerified(parseEngine, parseModel);
-                    if (audEngine !== 'openai' && audModel) markModelVerified(audEngine, audModel);
-                    if (gRecEngine !== 'openai' && gRecModel) markModelVerified(gRecEngine, gRecModel);
-                    if (gAudEngine !== 'openai' && gAudModel) markModelVerified(gAudEngine, gAudModel);
-                    if (gParseEngine !== 'openai' && gParseModel) markModelVerified(gParseEngine, gParseModel);
-
                     showToast('配置已成功保存', 'success');
+                    if (ret.data) {
+                        const d = ret.data;
+                        if (d.openai_rec_api_key) {
+                            const el = document.getElementById('adminOpenaiRecApiKey');
+                            if (el) el.value = d.openai_rec_api_key;
+                        }
+                        if (d.openai_aud_api_key) {
+                            const el = document.getElementById('adminOpenaiAudApiKey');
+                            if (el) el.value = d.openai_aud_api_key;
+                        }
+                        if (d.openai_parse_api_key) {
+                            const el = document.getElementById('adminParseOpenaiApiKey');
+                            if (el) el.value = d.openai_parse_api_key;
+                        }
+                        if (d.grey_openai_rec_api_key) {
+                            const el = document.getElementById('adminGreyOpenaiRecApiKey');
+                            if (el) el.value = d.grey_openai_rec_api_key;
+                        }
+                        if (d.grey_openai_aud_api_key) {
+                            const el = document.getElementById('adminGreyOpenaiAudApiKey');
+                            if (el) el.value = d.grey_openai_aud_api_key;
+                        }
+                        if (d.grey_openai_parse_api_key) {
+                            const el = document.getElementById('adminGreyParseOpenaiApiKey');
+                            if (el) el.value = d.grey_openai_parse_api_key;
+                        }
+                    }
                 } else {
-                    // E-P1-4：403 人话统一（FastAPI HTTPException 返回 detail 字段）
                     const errMsg = (ret && (ret.msg || ret.detail)) || '保存失败';
                     showToast(humanizeForbidden(errMsg) || errMsg, 'error');
                 }
@@ -12099,34 +11928,7 @@ function saveAdminEngineConfig() {
             });
     }
 
-    // 判断当前启用的各模块模型是否均已通过测试（已验证过）
-    const recEng = body.recognition_engine;
-    const recMod = body.recognition_model;
-    const parseEng = body.parse_llm_engine;
-    const parseMod = body.parse_llm_model;
-    const audEng = body.audit_engine;
-    const audMod = body.audit_model;
-
-    const gRecEng = body.grey_recognition_engine;
-    const gRecMod = body.grey_recognition_model;
-    const gParseEng = body.grey_parse_llm_engine;
-    const gParseMod = body.grey_parse_llm_model;
-    const gAudEng = body.grey_audit_engine;
-    const gAudMod = body.grey_audit_model;
-
-    let allVerified = true;
-    if (recEng !== 'openai' && !isModelVerified(recEng, recMod)) allVerified = false;
-    if (body.parse_llm_enabled && parseEng !== 'openai' && !isModelVerified(parseEng, parseMod)) allVerified = false;
-    if (body.audit_enabled && audEng !== 'openai' && !isModelVerified(audEng, audMod)) allVerified = false;
-
-    if (body.grey_enabled && body.grey_percent > 0) {
-        if (gRecEng !== 'openai' && !isModelVerified(gRecEng, gRecMod)) allVerified = false;
-        if (body.grey_parse_llm_enabled && gParseEng !== 'openai' && !isModelVerified(gParseEng, gParseMod)) allVerified = false;
-        if (body.audit_enabled && gAudEng !== 'openai' && !isModelVerified(gAudEng, gAudMod)) allVerified = false;
-    }
-
-    // 若用户勾选跳过测试，或当前所有配置的模型此前已通过测试，则直接秒级保存
-    if (skipTest || allVerified) {
+    if (skipTest) {
         return doSave();
     }
 
@@ -12145,9 +11947,8 @@ function saveAdminEngineConfig() {
             }
         }, 1000);
     }
-    showToast('检测到新模型，正在测试连通性，最长需 45s...', 'info');
+    showToast('正在测试连通性，最长需 45s...', 'info');
 
-    // 1. 仅针对未验证的新模型进行连接自测
     apiFetch('/api/admin/test-engine-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -12158,7 +11959,6 @@ function saveAdminEngineConfig() {
             if (timer) clearInterval(timer);
             if (resObj.status !== 200 || resObj.data.status !== 'success') {
                 let errMsg = (resObj.data && (resObj.data.msg || resObj.data.detail)) || '连接测试未通过';
-                // E-P1-4：403 人话统一（admin 专属接口被非 admin 触发时给出角色指引）
                 errMsg = humanizeForbidden(errMsg, resObj.status) || errMsg;
                 if (saveBtn) {
                     saveBtn.disabled = false;
@@ -12180,7 +11980,6 @@ function saveAdminEngineConfig() {
                 return;
             }
 
-            // 2. 测试通过，执行实际保存
             return doSave();
         })
         .catch(err => {
@@ -12205,124 +12004,35 @@ function saveAdminEngineConfig() {
         });
 }
 
-// 审核开关：关 → 审核引擎/模型置灰（disabled）并隐藏审核 OpenAI 参数窗口
 function updateAuditDisabledState() {
-    const enabled = document.getElementById('adminAuditEnabled').value === 'true';
-    const audIsOpenai = document.getElementById('adminAuditEngine').value === 'openai';
-    const engineEl = document.getElementById('adminAuditEngine');
-    if (engineEl) {
-        engineEl.disabled = !enabled;
-        engineEl.style.opacity = enabled ? '1' : '0.45';
-    }
-    const modelEl = document.getElementById('adminAuditModel');
-    if (modelEl) {
-        const modelDisabled = !enabled || audIsOpenai;
-        modelEl.disabled = modelDisabled;
-        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminAuditModel', audIsOpenai);
-    }
-    const audBox = document.getElementById('adminOpenaiAuditBox');
-    if (audBox) {
-        audBox.style.display = (enabled && audIsOpenai) ? '' : 'none';
+    const enabled = document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false;
+    const box = document.getElementById('adminOpenaiAuditBox');
+    const preset = document.getElementById('adminOpenaiAudPreset');
+    if (preset) preset.disabled = !enabled;
+    if (box) {
+        box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
+        box.style.opacity = enabled ? '1' : '0.45';
+        box.style.pointerEvents = enabled ? 'auto' : 'none';
     }
 }
 
-// 引擎选择 → 重新填充模型列表（切换引擎时自动重置为该引擎默认模型） & OpenAI 参数区显隐 & 相应模型下拉置灰
-function updateOpenaiBoxes(e) {
-    const recEngine = document.getElementById('adminRecognitionEngine').value;
-    const audEngine = document.getElementById('adminAuditEngine').value;
-    const recIsOpenai = recEngine === 'openai';
-    const auditEnabled = document.getElementById('adminAuditEnabled').value === 'true';
-    const audIsOpenai = audEngine === 'openai';
-    
-    // 识别模型根据引擎动态渲染并联动置灰（切换引擎时不保留上一引擎旧模型）
-    const recModelEl = document.getElementById('adminRecognitionModel');
-    if (recModelEl) {
-        const curVal = recModelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[recEngine] || []).map(m => m.value).concat(getCustomModels(recEngine));
-        const keepVal = (e && e.type === 'change' && e.target && e.target.id === 'adminRecognitionEngine')
-            ? (validModels.includes(curVal) ? curVal : null)
-            : (validModels.includes(curVal) ? curVal : null);
-        fillModelOptions('adminRecognitionModel', keepVal, recEngine);
-        recModelEl.disabled = recIsOpenai;
-        recModelEl.style.opacity = recIsOpenai ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminRecognitionModel', recIsOpenai);
-    }
-    
-    // 审核模型根据引擎动态渲染
-    const audModelEl = document.getElementById('adminAuditModel');
-    if (audModelEl) {
-        const curVal = audModelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[audEngine] || []).map(m => m.value).concat(getCustomModels(audEngine));
-        const keepVal = validModels.includes(curVal) ? curVal : null;
-        fillModelOptions('adminAuditModel', keepVal, audEngine);
-    }
-    
-    // 审核模型与窗口显隐联动
-    updateAuditDisabledState();
-    
-    document.getElementById('adminOpenaiRecognitionBox').style.display = recIsOpenai ? '' : 'none';
-    document.getElementById('adminOpenaiAuditBox').style.display = (auditEnabled && audIsOpenai) ? '' : 'none';
-}
-
-// 灰测引擎选择 → 重新填充模型列表（切换引擎时自动重置为该引擎默认模型） & 灰测 OpenAI 参数区显隐
-function updateGreyOpenaiBoxes() {
-    const recEngine = document.getElementById('adminGreyRecEngine').value;
-    const audEngine = document.getElementById('adminGreyAudEngine').value;
-    const recIsOpenai = recEngine === 'openai';
-    const audIsOpenai = audEngine === 'openai';
-
-    const recModelEl = document.getElementById('adminGreyRecModel');
-    if (recModelEl) {
-        const curVal = recModelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[recEngine] || []).map(m => m.value).concat(getCustomModels(recEngine));
-        const keepVal = validModels.includes(curVal) ? curVal : null;
-        fillModelOptions('adminGreyRecModel', keepVal, recEngine);
-        recModelEl.disabled = recIsOpenai;
-        recModelEl.style.opacity = recIsOpenai ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminGreyRecModel', recIsOpenai);
-    }
-
-    const audModelEl = document.getElementById('adminGreyAudModel');
-    if (audModelEl) {
-        const curVal = audModelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[audEngine] || []).map(m => m.value).concat(getCustomModels(audEngine));
-        const keepVal = validModels.includes(curVal) ? curVal : null;
-        fillModelOptions('adminGreyAudModel', keepVal, audEngine);
-        audModelEl.disabled = audIsOpenai;
-        audModelEl.style.opacity = audIsOpenai ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminGreyAudModel', audIsOpenai);
-    }
-
-    document.getElementById('adminGreyOpenaiRecBox').style.display = recIsOpenai ? '' : 'none';
-    // 灰测审核 OpenAI 参数区显隐由 updateGreyAuditDisabledState 统一管控（需 gate audit_enabled）
-    updateGreyAuditDisabledState();
-}
-
-// 灰测审核开关：关 → 灰测审核引擎/模型置灰并隐藏灰测审核 OpenAI 参数区（对齐常规审核）
 function updateGreyAuditDisabledState() {
-    const enabled = document.getElementById('adminGreyAuditEnabled').value === 'true';
-    const audIsOpenai = document.getElementById('adminGreyAudEngine').value === 'openai';
-    const engineEl = document.getElementById('adminGreyAudEngine');
-    if (engineEl) {
-        engineEl.disabled = !enabled;
-        engineEl.style.opacity = enabled ? '1' : '0.45';
-    }
-    const modelEl = document.getElementById('adminGreyAudModel');
-    if (modelEl) {
-        const modelDisabled = !enabled || audIsOpenai;
-        modelEl.disabled = modelDisabled;
-        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminGreyAudModel', audIsOpenai);
-    }
-    const audBox = document.getElementById('adminGreyOpenaiAudBox');
-    if (audBox) {
-        audBox.style.display = (enabled && audIsOpenai) ? '' : 'none';
+    const enabled = document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false;
+    const box = document.getElementById('adminGreyOpenaiAudBox');
+    const preset = document.getElementById('adminGreyOpenaiAudPreset');
+    if (preset) preset.disabled = !enabled;
+    if (box) {
+        box.querySelectorAll('input, select').forEach(el => {
+            if (el.id !== 'adminGreyAuditEnabled') {
+                el.disabled = !enabled;
+            }
+        });
+        box.style.opacity = enabled ? '1' : '0.45';
     }
 }
-// 灰测停用 → 整块（adminGreyBody）置灰：全部控件 disabled + 半透明
+
 function updateGreyDisabledState() {
-    const enabled = document.getElementById('adminGreyEnabled').value === 'true';
+    const enabled = document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false;
     const body = document.getElementById('adminGreyBody');
     if (body) {
         body.querySelectorAll('input, select, button').forEach((el) => {
@@ -12333,68 +12043,28 @@ function updateGreyDisabledState() {
     }
 }
 
-// 解析 LLM：关 → 置灰（引擎/模型/OpenAI 区）；引擎选 openai → 模型置灰清空并显示参数区
 function updateParseDisabledState() {
-    const enabled = document.getElementById('adminParseEnabled').value === 'true';
-    const isOpenai = document.getElementById('adminParseEngine').value === 'openai';
-    const engineEl = document.getElementById('adminParseEngine');
-    if (engineEl) {
-        engineEl.disabled = !enabled;
-        engineEl.style.opacity = enabled ? '1' : '0.45';
-    }
-    const modelEl = document.getElementById('adminParseModel');
-    if (modelEl) {
-        const modelDisabled = !enabled || isOpenai;
-        modelEl.disabled = modelDisabled;
-        modelEl.style.opacity = modelDisabled ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminParseModel', isOpenai);
-    }
+    const enabled = document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false;
     const box = document.getElementById('adminParseOpenaiBox');
+    const preset = document.getElementById('adminParseOpenaiPreset');
+    if (preset) preset.disabled = !enabled;
     if (box) {
-        box.style.display = (enabled && isOpenai) ? '' : 'none';
+        box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
+        box.style.opacity = enabled ? '1' : '0.45';
+        box.style.pointerEvents = enabled ? 'auto' : 'none';
     }
-}
-function updateParseOpenaiBox() {
-    const enabled = document.getElementById('adminParseEnabled').value === 'true';
-    const parseEngine = document.getElementById('adminParseEngine').value;
-    const isOpenai = parseEngine === 'openai';
-    const parseModelEl = document.getElementById('adminParseModel');
-    if (parseModelEl) {
-        const curVal = parseModelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[parseEngine] || []).map(m => m.value).concat(getCustomModels(parseEngine));
-        const keepVal = validModels.includes(curVal) ? curVal : null;
-        fillModelOptions('adminParseModel', keepVal, parseEngine);
-    }
-    updateParseDisabledState();
-    document.getElementById('adminParseOpenaiBox').style.display = (enabled && isOpenai) ? '' : 'none';
 }
 
-// 灰测解析 LLM：关 → 置灰；引擎选 openai → 显示参数区
 function updateGreyParseDisabledState() {
-    const enabled = document.getElementById('adminGreyParseEnabled').value === 'true';
-    const body = document.getElementById('adminGreyParseBody');
-    if (body) {
-        body.querySelectorAll('input, select').forEach((el) => { el.disabled = !enabled; });
-        body.style.opacity = enabled ? '1' : '0.45';
-        body.style.pointerEvents = enabled ? 'auto' : 'none';
+    const enabled = document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false;
+    const box = document.getElementById('adminGreyParseOpenaiBox');
+    const preset = document.getElementById('adminGreyParseOpenaiPreset');
+    if (preset) preset.disabled = !enabled;
+    if (box) {
+        box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
+        box.style.opacity = enabled ? '1' : '0.45';
+        box.style.pointerEvents = enabled ? 'auto' : 'none';
     }
-    updateGreyParseOpenaiBox();
-}
-function updateGreyParseOpenaiBox() {
-    const enabled = document.getElementById('adminGreyParseEnabled').value === 'true';
-    const parseEngine = document.getElementById('adminGreyParseEngine').value;
-    const isOpenai = parseEngine === 'openai';
-    const modelEl = document.getElementById('adminGreyParseModel');
-    if (modelEl) {
-        const curVal = modelEl.value;
-        const validModels = (DEFAULT_ENGINE_MODELS[parseEngine] || []).map(m => m.value).concat(getCustomModels(parseEngine));
-        const keepVal = validModels.includes(curVal) ? curVal : null;
-        fillModelOptions('adminGreyParseModel', keepVal, parseEngine);
-        modelEl.disabled = isOpenai;
-        modelEl.style.opacity = isOpenai ? '0.45' : '1';
-        syncModelSelectOpenaiState('adminGreyParseModel', isOpenai);
-    }
-    document.getElementById('adminGreyParseOpenaiBox').style.display = (enabled && isOpenai) ? '' : 'none';
 }
 
 // ---------------------------------- 推全 / 回滚 / 对比 ----------------------------------

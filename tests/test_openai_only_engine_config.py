@@ -201,3 +201,77 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
     assert 'id="adminEngineStatus"' in html
 
 
+def test_main_js_no_longer_queries_removed_engine_controls():
+    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
+    with open(js_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 验证 saveAdminEngineConfig 与 bindAdminEngineEventsOnce 不再依赖已删除的旧控件
+    for removed_id in [
+        "adminRecognitionEngine",
+        "adminRecognitionModel",
+        "adminParseEngine",
+        "adminParseModel",
+        "adminAuditEngine",
+        "adminAuditModel",
+        "adminGreyRecEngine",
+        "adminGreyRecModel",
+        "adminGreyAudEngine",
+        "adminGreyAudModel",
+        "adminGreyParseEngine",
+        "adminGreyParseModel",
+    ]:
+        assert f"document.getElementById('{removed_id}')" not in content, f"Found lingering query for removed element {removed_id}"
+
+    # 废弃函数已被移除
+    assert "function fillModelOptions" not in content
+    assert "function handleModelSelectChange" not in content
+    assert "function syncModelSelectOpenaiState" not in content
+    assert "function handleDeleteCurrentModel" not in content
+
+    # 新抽屉交互函数存在
+    assert "function toggleEngineDrawer" in content
+
+
+def test_main_js_engine_drawer_and_pure_openai_interactions():
+    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
+    with open(js_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 抽屉折叠与无障碍逻辑
+    assert "function toggleEngineDrawer" in content
+    assert "aria-expanded" in content
+    assert "engine-drawer-header" in content
+    assert "adminParseDrawer" in content
+    assert "adminGreyDrawer" in content
+
+    # 回显时自动展开抽屉
+    assert "parseDrawer.classList.toggle('collapsed'" in content
+    assert "greyDrawer.classList.toggle('collapsed'" in content
+
+    # 直接读取 pure OpenAI 字段
+    for el_id in [
+        "adminOpenaiRecBaseUrl",
+        "adminOpenaiRecApiKey",
+        "adminOpenaiRecModel",
+        "adminOpenaiAudBaseUrl",
+        "adminOpenaiAudApiKey",
+        "adminOpenaiAudModel",
+        "adminParseOpenaiBaseUrl",
+        "adminParseOpenaiApiKey",
+        "adminParseOpenaiModel",
+        "adminGreyOpenaiRecBaseUrl",
+        "adminGreyOpenaiRecApiKey",
+        "adminGreyOpenaiRecModel",
+        "adminGreyOpenaiAudBaseUrl",
+        "adminGreyOpenaiAudApiKey",
+        "adminGreyOpenaiAudModel",
+        "adminGreyParseOpenaiBaseUrl",
+        "adminGreyParseOpenaiApiKey",
+        "adminGreyParseOpenaiModel",
+    ]:
+        assert el_id in content, f"Expected {el_id} in main.js"
+
+
+
+
