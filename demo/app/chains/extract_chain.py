@@ -22,6 +22,12 @@ from langchain_core.output_parsers import PydanticOutputParser
 from app.llm import build_parse_model, build_recognition_model
 from app.models import ReceiptData
 from app.services.rag import retrieve_context
+from app.services.canary_guard import (
+    CANARY_FIELD,
+    generate_canary_token,
+    inject_canary_instructions,
+    verify_canary_token,
+)
 
 load_dotenv()
 
@@ -232,7 +238,8 @@ def build_prompt(image_path: str, vendor_context: str = "") -> list:
 def extract_receipt(image_path: str, vendor_hint: str = "",
                     model=None, config=None, retry_feedback: str = "",
                     use_grey: bool = False, vendor_prior: str = "",
-                    on_event=None) -> dict:
+                    on_event=None,
+                    enable_canary: bool = True) -> dict:
     """识别链路入口。返回结构化 dict + 元数据。
 
     流程：VLM 读图 → 原始输出 →（可选）LLM 解析规范化 → 契约校验。
@@ -244,6 +251,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     vendor_context 为三通道（hint/parse/retry）带来源标注的先验合并（去重 + 截断 4000），
     供 supervisor 透传落库 rag_context。
     """
+    canary = generate_canary_token() if enable_canary else ""
     priors = []  # [(tag, 检索原文)] 各通道先验，统一沙箱注入并合并落库
     rag_ms = 0.0  # 分段计时：RAG 检索耗时（hint + parse 两通道）
 
@@ -292,6 +300,9 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                 f"4. 重新输出包含完整字段的单一份 JSON。"
             )
         ))
+
+    if enable_canary and canary:
+        prompt = inject_canary_instructions(prompt, canary)
 
     # 透传真实引擎 kind（opencode/codebuddy/openai/qwen），修正此前硬编码 "codebuddy" 的误导标签
     engine = getattr(model, "kind", "unknown")
@@ -430,6 +441,8 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             p_start = time.time()
             p_prior = _strip_prior_tags(vendor_prior)
             parse_msgs = _build_parse_prompt(raw, _prior_block("parse", p_prior) if p_prior else "")
+            if enable_canary and canary:
+                parse_msgs = inject_canary_instructions(parse_msgs, canary)
             p_result = parse_model.invoke(parse_msgs)
             raw = _extract_text(p_result)
             parse_elapsed = round((time.time() - p_start) * 1000, 1)
@@ -440,7 +453,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             parse_cost = 0.0
 
-    data, err = _parse_to_receipt(raw)
+    data, err = _parse_to_receipt(raw, expected_canary=canary if enable_canary else "")
     # 合计 token 与成本（VLM + 解析）
     total_token = {
         "prompt_tokens": int(vlm_token.get("prompt_tokens", 0) or 0) + int(parse_token.get("prompt_tokens", 0) or 0),
@@ -529,26 +542,38 @@ def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey
         return None
 
 
-def _parse_to_receipt(raw: str) -> tuple[Optional[ReceiptData], Optional[str]]:
+def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[ReceiptData], Optional[str]]:
     """LLM 文本 → ReceiptData（配对截取 JSON + Pydantic 契约校验）。"""
-    if not raw:
+    if not raw and not isinstance(raw, dict):
         return None, "空输出"
-    text = raw.strip()
-    # 剥离可能的 markdown 围栏
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError:
-        # 尝试配对截取第一个 { ... } 块
-        start_i = text.find("{")
-        end_i = text.rfind("}")
-        if start_i == -1 or end_i == -1 or end_i <= start_i:
-            return None, "输出不是合法 JSON"
+    if isinstance(raw, dict):
+        payload = dict(raw)
+    else:
+        text = str(raw).strip()
+        if not text:
+            return None, "空输出"
+        # 剥离可能的 markdown 围栏
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         try:
-            payload = json.loads(text[start_i:end_i + 1])
+            payload = json.loads(text)
         except json.JSONDecodeError:
-            return None, "JSON 解析失败"
+            # 尝试配对截取第一个 { ... } 块
+            start_i = text.find("{")
+            end_i = text.rfind("}")
+            if start_i == -1 or end_i == -1 or end_i <= start_i:
+                return None, "输出不是合法 JSON"
+            try:
+                payload = json.loads(text[start_i:end_i + 1])
+            except json.JSONDecodeError:
+                return None, "JSON 解析失败"
+
+    if expected_canary:
+        ok, canary_err = verify_canary_token(payload, expected_canary)
+        if not ok:
+            return None, f"安全阻断: {canary_err}"
+    elif isinstance(payload, dict):
+        payload.pop(CANARY_FIELD, None)
 
     # 6. 兼容 ai_registry Gap1-8 聚合版 Prompt 的输出 Schema 映射至 demo 契约（supplier_name→vendor 等）
     # 必须先于清洗管道执行：清洗工具按 name/qty 契约字段识别明细，未映射的 item_name/quantity 会被整行丢弃
