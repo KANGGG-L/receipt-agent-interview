@@ -16,15 +16,15 @@
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                        │
 │   【第 1 层：多模态 VLM 概率感知层 (Probabilistic Perception)】                         │
-│    · 执行者：Qwen3-VL / MiMo-V2.5 / MiniMax-M3 / GPT-4o                                │
+│    · 执行者：Qwen3-VL / GLM-4.5V / 第三方中转与公益站 API                               │
 │    · 职责：像素级空间布局理解、手写字与繁体识别、红色已付款印章检测                   │
 │    · 纪律：允许自报置信度，但输出全部视为“不可信草稿”，绝不直接写库                   │
 │                                                                                        │
 │                                          │ （输出 Raw JSON 草稿）                      │
 │                                          ▼                                             │
 │   【第 2 层：确定性代码契约与算术门禁层 (Deterministic Gate)】                          │
-│    · 执行者：Pydantic Schema (contract.py) + 纯 Python 算术引擎 (math_engine.py)       │
-│    · 职责：① 阻断 Schema 外部字段；② 强制 `数量 × 单价 = 金额` 与 `∑明细 = 总额` 守恒 │
+│    · 执行者：Pydantic Schema (contract.py) + Canary Token 验签 + math_engine.py         │
+│    · 职责：① 验证 Canary Token 防上游篡改；② 阻断 Schema 外部字段；③ 强制算术勾稽守恒 │
 │    · 纪律：校验并提供建议，不静默改写；发现不一致反馈至 Prompt 触发自愈重试            │
 │                                                                                        │
 │                                          │ （输出 Verified Draft）                     │
