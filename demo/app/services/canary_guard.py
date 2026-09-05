@@ -142,7 +142,7 @@ def verify_canary_token(data: Dict[str, Any], expected_token: str) -> Tuple[bool
     if not actual_clean:
         return False, "上游响应缺失安全握手令牌（检测到 System Prompt 遭到代理篡改或剥离）"
 
-    if actual_clean != expected_clean:
+    if not secrets.compare_digest(actual_clean, expected_clean):
         return False, f"安全握手令牌不匹配（预期 {expected_token}，实际 {actual}）"
 
     return True, None

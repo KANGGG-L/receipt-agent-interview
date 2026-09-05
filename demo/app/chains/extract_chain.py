@@ -571,6 +571,7 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
     if expected_canary:
         ok, canary_err = verify_canary_token(payload, expected_canary)
         if not ok:
+            logging.getLogger("extract_chain").warning(f"[SECURITY_ALERT] Canary Token 握手失败: {canary_err}")
             return None, f"安全阻断: {canary_err}"
     elif isinstance(payload, dict):
         payload.pop(CANARY_FIELD, None)
@@ -609,7 +610,6 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
             if _k not in _allowed_top:
                 payload.pop(_k, None)
     except Exception as _e:
-        import logging
         logging.getLogger("extract_chain").warning(f"[WARN] Schema 归一化异常: {_e}")
 
     if isinstance(payload, dict) and "items" in payload and isinstance(payload["items"], list):
@@ -697,7 +697,6 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
             _huama_evaluator = HuamaEvaluatorTool()
             payload = _huama_evaluator.calibrate_confidence_and_flags(payload)
         except Exception as e:
-            import logging
             logging.getLogger("extract_chain").warning(f"[WARN] 后处理管道异常: {e}")
 
     from app.services.contract import validate_contract, normalize_evidence
