@@ -101,6 +101,10 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
             return f"[{label}] API Key 不能为空"
         if not model_name or not model_name.strip():
             return f"[{label}] 模型名不能为空"
+        from app.services.security_guard import validate_safe_external_url
+        is_safe, reason = validate_safe_external_url(base_url)
+        if not is_safe:
+            return f"[{label}] 非法 Base URL (安全阻断): {reason}"
         url = base_url.strip().rstrip("/")
         if not url.endswith("/chat/completions"):
             url = f"{url}/chat/completions"
@@ -115,22 +119,8 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
         return None
 
 
-    if engine_type == "codebuddy":
-        from app.llm import _get_codebuddy_bin
-        bin_path = _get_codebuddy_bin()
-        cmd = [bin_path, "--print"]
-        if model_name and model_name.strip():
-            cmd += ["--model", model_name.strip()]
-        cmd.append("hi")
-        try:
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
-            if res.returncode != 0:
-                return f"[{label}] codebuddy 报错 (rc={res.returncode}): {(res.stderr or '')[:200]}"
-        except subprocess.TimeoutExpired:
-            return f"[{label}] codebuddy 测试超时（>45s）"
-        except Exception as e:
-            return f"[{label}] codebuddy 执行异常: {str(e)}"
-        return None
+    if engine_type in ("codebuddy", "opencode"):
+        return f"[{label}] 本地 CLI 引擎 ({engine_type}) 已彻底下线，请配置 OpenAI 兼容接口"
 
     return None
 
@@ -479,20 +469,31 @@ def get_engine_config(request: Request):
         has_valid_qwen = False
     perf = {
         "baseline": "qwen3-vl-flash P50 9.0s P95 12s (L4 定稿冠军, step12 P95 ≤12s, NFR-2 P95 ≤60s)",
-        "local_expected": "opencode/mimo-v2.5-free IMG_5809 165s done, codebuddy/minimax-m3-pay Vitasoy 90s timeout",
+        "local_expected": "纯 API 驱动 (SiliconFlow / DashScope)，CLI 引擎已彻底废弃",
         "current_p95_compliant": (engine_str == "openai" and has_valid_qwen),
         "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 90),
         "timeout_policy": "保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底",
     }
-    resp = {"status": "success", "data": cfg.model_dump(), "perf": perf}
+    data = cfg.model_dump()
+    from app.services.security_guard import mask_secret_key
+    for kf in (
+        "openai_rec_api_key",
+        "openai_aud_api_key",
+        "openai_parse_api_key",
+        "grey_openai_rec_api_key",
+        "grey_openai_aud_api_key",
+        "grey_openai_parse_api_key",
+    ):
+        if kf in data and data[kf]:
+            data[kf] = mask_secret_key(data[kf])
+
+    resp = {"status": "success", "data": data, "perf": perf}
     if advice:
         resp["timeout_advice"] = advice
         resp["warning"] = advice
-    if engine_str in ("opencode", "codebuddy") and not has_valid_qwen:
+    if engine_str in ("opencode", "codebuddy"):
         resp["degradation_notice"] = (
-            "显式降级提示：当前为本地兜底引擎，预期 165s 不达标 (P95 12s 标准)；"
-            "需 DashScope 有效 key (dashscope.aliyuncs.com/compatible-mode/v1 + sk-) "
-            "方可热切至 qwen3-vl-flash 达成 P50 9s；否则属预期不达标但需显式告警而非静默超时。"
+            "提示：历史本地 CLI 引擎已彻底下线，系统已自动转换为 OpenAI 兼容接口。"
         )
     return resp
 
@@ -520,14 +521,54 @@ def set_engine_config(body: EngineConfigBody, request: Request):
                 "grey_recognition_engine", "grey_audit_engine",
                 "parse_llm_engine", "grey_parse_llm_engine"):
         if key in updates:
-            updates[key] = EngineKind(updates[key])
+            val_str = str(getattr(updates[key], "value", updates[key]) or "").lower()
+            if val_str in ("opencode", "codebuddy"):
+                updates[key] = EngineKind.OPENAI
+            else:
+                updates[key] = EngineKind(updates[key])
     if "grey_percent" in updates:
         updates["grey_percent"] = max(0, min(100, int(updates["grey_percent"])))
+
+    key_fields = (
+        "openai_rec_api_key",
+        "openai_aud_api_key",
+        "openai_parse_api_key",
+        "grey_openai_rec_api_key",
+        "grey_openai_aud_api_key",
+        "grey_openai_parse_api_key",
+    )
+    for kf in key_fields:
+        if kf in updates:
+            val_str = str(updates[kf] or "")
+            if "****" in val_str or val_str == "******":
+                updates[kf] = getattr(cfg, kf, "")
 
     # 任务 3a：热切到 qwen3-vl-flash 需有效 dashscope.aliyuncs.com compatible-mode/v1 + sk-，
     # 若无有效 key 则显式降级提示而非静默超时（避免本地 165s 不达标却静默阻塞）
     # 在写入前对 openai 引擎做强校验（识别/审核/解析三侧）
     new_dict = {**cfg.model_dump(), **updates}
+
+    # SSRF 阻断网关：校验所有外部 API Base URL
+    from app.services.security_guard import validate_safe_external_url, mask_secret_key
+    url_checks = [
+        ("openai_rec_base_url", "识别引擎 Base URL"),
+        ("openai_aud_base_url", "审核引擎 Base URL"),
+        ("openai_parse_base_url", "解析 LLM Base URL"),
+        ("grey_openai_rec_base_url", "灰测识别引擎 Base URL"),
+        ("grey_openai_aud_base_url", "灰测审核引擎 Base URL"),
+        ("grey_openai_parse_base_url", "灰测解析 LLM Base URL"),
+    ]
+    for field_name, field_label in url_checks:
+        val = new_dict.get(field_name)
+        if val and str(val).strip():
+            is_safe, reason = validate_safe_external_url(str(val).strip())
+            if not is_safe:
+                return JSONResponse(status_code=400, content={
+                    "status": "error",
+                    "code": "ENGINE_CONFIG_INVALID",
+                    "msg": f"{field_label} 安全校验未通过: {reason}"
+                })
+
     # 识别引擎校验
     rec_engine = str(new_dict.get("recognition_engine", "") or "")
     if hasattr(new_dict.get("recognition_engine"), "value"):
@@ -587,14 +628,11 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     # call_timeout 语义：保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底
     # 若切换至 openai/qwen 且超时仍为 240，自动建议 90（或保持但附加 warning）
     if "call_timeout_seconds" not in updates:
-        # 自动治理：qwen 路径保持 90，本地兜底才 240
+        # 自动治理：qwen 路径保持 90
         if rec_engine == "openai" and _is_valid_dashscope_config(rec_base, rec_key):
             # qwen 侧若之前为 240，热切时顺手降至 90（9s 足够，避免无畏长等待）
             if int(cfg.call_timeout_seconds or 90) >= 200:
                 new_dict["call_timeout_seconds"] = 90
-        elif rec_engine in ("opencode", "codebuddy"):
-            # 本地兜底允许 240，但需显式告警已在 timeout_advice 中
-            pass
 
     old_engine = cfg.recognition_engine
     new_cfg = EngineConfig(**new_dict)
@@ -610,19 +648,19 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     # 附带超时显式降级告警与性能预期（任务 3a）
     advice = get_timeout_advice(new_cfg)
     warning = ""
-    if rec_engine in ("opencode", "codebuddy") and int(new_cfg.call_timeout_seconds or 90) >= 240:
-        warning = ("当前本地引擎 call_timeout 240 为兜底，实测 IMG_5809 165s done 远超 qwen3-vl-flash 9s P50 100% "
-                   "(L4 定稿) 与 P95 ≤12s 标准，不达标需显式告警；"
-                   "建议热切至 qwen3-vl-flash (PUT openai + dashscope + sk-) 以达成 9s。")
     # 性能基线提示
-    perf_note = "预期：qwen3-vl-flash P50 9.0s P95 12s (step12) / 本地兜底 165s 不达标"
-    resp = {"status": "success", "data": new_cfg.model_dump(), "perf_note": perf_note}
+    perf_note = "预期：qwen3-vl-flash P50 9.0s P95 12s (step12) / 纯 API 驱动"
+    resp_data = new_cfg.model_dump()
+    for kf in key_fields:
+        if kf in resp_data and resp_data[kf]:
+            resp_data[kf] = mask_secret_key(resp_data[kf])
+    resp = {"status": "success", "data": resp_data, "perf_note": perf_note}
     if advice:
         resp["timeout_advice"] = advice
     if warning:
         resp["warning"] = warning
     if rec_engine == "openai":
-        resp["msg"] = "已热切至 qwen3-vl-flash，预期 P50 9s P95 12s（需保持 dashscope remain 有效）"
+        resp["msg"] = "已保存引擎配置，预期 P50 9s P95 12s"
     return resp
 
 
@@ -992,12 +1030,19 @@ def get_grey_test_samples(request: Request):
         elif any(w in name for w in ["杂", "粮", "油", "海鲜"]): category = "粮油海鲜"
         return f"{category}批发商_#V{hash_val}"
 
-    def mask_amount(amt: float) -> str:
-        if amt is None or amt == 0: return "HK$ 0.00"
-        s = f"{float(amt):.2f}"
-        if len(s) > 4:
-            return f"HK$ {s[0]}**.*{s[-1]}"
-        return f"HK$ **.{s[-1]}"
+    def mask_amount(amt) -> str:
+        # 首位数字 + **.**：只保量级首位，不泄露金额（旧 f"{v:.1f}"[:2] 会把 100.0 扭曲成 10.**、5.0 变 5..**）
+        if amt is None or float(amt) == 0:
+            return "HK$ 0.00"
+        sign = "-" if float(amt) < 0 else ""
+        return f"HK$ {sign}{str(int(abs(float(amt))))[0]}**.**"
+
+    def mask_number(v) -> str:
+        # 明细行数值掩码，与 mask_amount 同规则：首字符 + **.**（不改数量级、不产生非法格式）
+        if v is None or float(v) == 0:
+            return "0.00"
+        sign = "-" if float(v) < 0 else ""
+        return f"{sign}{str(int(abs(float(v))))[0]}**.**"
 
     effective_tenant = resolve_tenant_filter(
         request, request.query_params.get("tenant_id"))
@@ -1030,39 +1075,28 @@ def get_grey_test_samples(request: Request):
                 "item_name": _mask_sensitive(it.get("name", "")),
                 "quantity": it.get("qty", 1.0),
                 "unit": it.get("unit", "斤"),
-                "unit_price": f"{it.get('unit_price', 0):.1f}"[:2] + ".**" if it.get("unit_price") else "**",
-                "amount": f"{it.get('amount', 0):.1f}"[:2] + ".**" if it.get("amount") else "**",
+                "unit_price": mask_number(it.get("unit_price")),
+                "amount": mask_number(it.get("amount")),
             })
-            
-        use_grey = bool(getattr(r, "use_grey", False) or (r.id % 2 == 1))
-        
-        # 分析 AI 原始解析数据 vs 用户最终录入数据（评估采纳率与用户反馈）
+
+        # 灰测分组只读真实 use_grey 列（历史上曾用 id 奇偶伪造分组，导致灰测统计失真）
+        use_grey = bool(getattr(r, "use_grey", 0) or 0)
+
+        # 分析 AI 原始解析数据 vs 用户最终录入数据（评估采纳率与用户反馈）。
+        # 无真实 ai_prefill 时如实标注「无预填可比对」，不得用用户最终数据构造镜像冒充 AI 数据。
         import json as _json
-        ai_prefill = {}
         try:
             ai_prefill = _json.loads(getattr(r, "ai_prefill_json", "{}") or "{}")
         except Exception:
             ai_prefill = {}
+        has_prefill = bool(ai_prefill.get("supplier_name"))
 
         user_vendor = mask_vendor(r.supplier_name)
         user_total = mask_amount(r.total_amount)
-        
-        # 若 prefill 缺失，依业务状态构建合理的 AI 初始解析镜像
-        if not ai_prefill or not ai_prefill.get("supplier_name"):
-            if r.status == "approved":
-                ai_vendor_raw = user_vendor
-                ai_total_raw = user_total
-                ai_items_raw = masked_items[:]
-            elif r.status in ["uploaded", "parsed"]:
-                ai_vendor_raw = user_vendor
-                ai_total_raw = user_total
-                ai_items_raw = masked_items[:]
-            else:
-                # edited 状态：模拟 AI 预测与用户修正项
-                ai_vendor_raw = user_vendor
-                ai_total_raw = user_total if r.id % 3 != 0 else "HK$ 1**.*0"
-                ai_items_raw = masked_items[:]
-        else:
+
+        # 逐字段比对（仅当存在真实 AI 预填数据）
+        field_comparisons = []
+        if has_prefill:
             ai_vendor_raw = mask_vendor(ai_prefill.get("supplier_name", ""))
             ai_total_raw = mask_amount(ai_prefill.get("total_amount", 0))
             ai_items_raw = []
@@ -1071,54 +1105,57 @@ def get_grey_test_samples(request: Request):
                     "item_name": _mask_sensitive(it.get("name", "")),
                     "quantity": it.get("quantity", it.get("qty", 1.0)),
                     "unit": it.get("unit", "斤"),
-                    "unit_price": f"{it.get('unit_price', 0):.1f}"[:2] + ".**" if it.get("unit_price") else "**",
-                    "amount": f"{it.get('amount', 0):.1f}"[:2] + ".**" if it.get("amount") else "**",
+                    "unit_price": mask_number(it.get("unit_price")),
+                    "amount": mask_number(it.get("amount")),
                 })
 
-        # 逐字段比对
-        field_comparisons = []
-        
-        # 1. 供应商比对
-        vendor_match = (ai_vendor_raw == user_vendor)
-        field_comparisons.append({
-            "field": "供应商名称",
-            "ai_value": ai_vendor_raw,
-            "user_value": user_vendor,
-            "is_match": vendor_match,
-            "status_text": "完全采纳" if vendor_match else "人工纠偏"
-        })
-        
-        # 2. 总金额比对
-        total_match = (ai_total_raw == user_total)
-        field_comparisons.append({
-            "field": "单据总额",
-            "ai_value": ai_total_raw,
-            "user_value": user_total,
-            "is_match": total_match,
-            "status_text": "完全采纳" if total_match else "人工纠偏"
-        })
-
-        # 3. 明细行逐项比对
-        for i in range(max(len(ai_items_raw), len(masked_items))):
-            ai_it = ai_items_raw[i] if i < len(ai_items_raw) else {}
-            u_it = masked_items[i] if i < len(masked_items) else {}
-            item_match = (ai_it.get("item_name") == u_it.get("item_name") and 
-                          ai_it.get("amount") == u_it.get("amount"))
+            # 1. 供应商比对
+            vendor_match = (ai_vendor_raw == user_vendor)
             field_comparisons.append({
-                "field": f"明细行 #{i+1} ({u_it.get('item_name') or ai_it.get('item_name') or '商品'})",
-                "ai_value": f"{ai_it.get('item_name', '-')} · {ai_it.get('amount', '-')}",
-                "user_value": f"{u_it.get('item_name', '-')} · {u_it.get('amount', '-')}",
-                "is_match": item_match,
-                "status_text": "完全采纳" if item_match else "人工纠偏"
+                "field": "供应商名称",
+                "ai_value": ai_vendor_raw,
+                "user_value": user_vendor,
+                "is_match": vendor_match,
+                "status_text": "完全采纳" if vendor_match else "人工纠偏"
             })
+
+            # 2. 总金额比对
+            total_match = (ai_total_raw == user_total)
+            field_comparisons.append({
+                "field": "单据总额",
+                "ai_value": ai_total_raw,
+                "user_value": user_total,
+                "is_match": total_match,
+                "status_text": "完全采纳" if total_match else "人工纠偏"
+            })
+
+            # 3. 明细行逐项比对
+            for i in range(max(len(ai_items_raw), len(masked_items))):
+                ai_it = ai_items_raw[i] if i < len(ai_items_raw) else {}
+                u_it = masked_items[i] if i < len(masked_items) else {}
+                item_match = (ai_it.get("item_name") == u_it.get("item_name") and
+                              ai_it.get("amount") == u_it.get("amount"))
+                field_comparisons.append({
+                    "field": f"明细行 #{i+1} ({u_it.get('item_name') or ai_it.get('item_name') or '商品'})",
+                    "ai_value": f"{ai_it.get('item_name', '-')} · {ai_it.get('amount', '-')}",
+                    "user_value": f"{u_it.get('item_name', '-')} · {u_it.get('amount', '-')}",
+                    "is_match": item_match,
+                    "status_text": "完全采纳" if item_match else "人工纠偏"
+                })
 
         total_fields = len(field_comparisons)
         matched_fields = sum(1 for fc in field_comparisons if fc["is_match"])
-        match_rate = round((matched_fields / total_fields * 100) if total_fields else 100, 1)
-        is_exact_match = (matched_fields == total_fields)
+        # 无预填时 match_rate 如实返回 null（前端显示「—」），不再伪造成 100%
+        match_rate = round(matched_fields / total_fields * 100, 1) if has_prefill and total_fields else None
+        is_exact_match = bool(has_prefill and matched_fields == total_fields)
 
-        # 综合效果与用户反馈判定 (thumbs_up / thumbs_down / pending)
-        if r.status == "approved" or (r.status == "edited" and is_exact_match):
+        # 综合效果与用户反馈判定 (thumbs_up / thumbs_down / no_prefill / pending)
+        if not has_prefill:
+            feedback_type = "no_prefill"
+            feedback_label = "无 AI 预填 · 无法比对"
+            feedback_badge_color = "#383d41"
+            feedback_badge_bg = "#e2e3e5"
+        elif r.status == "approved" or (r.status == "edited" and is_exact_match):
             feedback_type = "thumbs_up"
             feedback_label = "用户赞同 · 完全采纳"
             feedback_badge_color = "#155724"
@@ -1137,7 +1174,7 @@ def get_grey_test_samples(request: Request):
         samples.append({
             "receipt_id": r.id,
             "masked_vendor": user_vendor,
-            "date": r.receipt_date or "2026-08-20",
+            "date": r.receipt_date or "",
             "masked_total": user_total,
             "doc_form": r.doc_form or "ncr_handwritten",
             "user_status": r.status,  # uploaded, parsed, edited, approved, flagged
@@ -1147,8 +1184,9 @@ def get_grey_test_samples(request: Request):
             "masked_items": masked_items,
             "is_user_edited": r.status in ["edited", "approved"],
             "is_approved": r.status == "approved",
-            "math_gate_passed": True,
-            "created_at": r.created_at or "2026-08-20 08:30:00",
+            # 无逐单真实门禁结果来源，置 null（不再硬编码 True 伪装）
+            "math_gate_passed": None,
+            "created_at": r.created_at or "",
             # 新增 AI 解析 vs 用户最终录入效果评估字段
             "effect_evaluation": {
                 "is_exact_match": is_exact_match,
@@ -1164,10 +1202,13 @@ def get_grey_test_samples(request: Request):
             }
         })
 
-    # 统计全局采纳指标
-    positive_count = sum(1 for s in samples if s["effect_evaluation"]["feedback_type"] == "thumbs_up")
-    modified_count = sum(1 for s in samples if s["effect_evaluation"]["feedback_type"] == "thumbs_down")
-    avg_match_rate = round(sum(s["effect_evaluation"]["match_rate"] for s in samples) / len(samples), 1) if samples else 0.0
+    # 统计全局采纳指标（口径：仅统计有真实 AI 预填可比对的样本，no_prefill 样本不计入）
+    comparable = [s["effect_evaluation"] for s in samples
+                  if s["effect_evaluation"]["feedback_type"] != "no_prefill"]
+    positive_count = sum(1 for e in comparable if e["feedback_type"] == "thumbs_up")
+    modified_count = sum(1 for e in comparable if e["feedback_type"] == "thumbs_down")
+    rates = [e["match_rate"] for e in comparable if e["match_rate"] is not None]
+    avg_match_rate = round(sum(rates) / len(rates), 1) if rates else None
 
     return {
         "status": "success",
@@ -1175,6 +1216,7 @@ def get_grey_test_samples(request: Request):
         "grey_count": sum(1 for s in samples if s["use_grey"]),
         "user_approved_count": sum(1 for s in samples if s["is_approved"]),
         "user_edited_count": sum(1 for s in samples if s["is_user_edited"]),
+        "prefill_available_count": len(comparable),
         "positive_feedback_count": positive_count,
         "modified_feedback_count": modified_count,
         "avg_match_rate": avg_match_rate,
@@ -1326,10 +1368,16 @@ def recognition_summary(request: Request):
     end_ts = db.now_iso()
     start_ts = (datetime.fromisoformat(end_ts) - timedelta(days=period_days)).isoformat()
 
+    # 观测口径跟随租户：Query 参数优先 → X-Tenant-Id 头；'all'/空 → 全租户聚合
+    effective_tenant = resolve_tenant_filter(
+        request, request.query_params.get("tenant_id"))
+
     s = db.get_session()
     try:
-        rows = s.query(db._UserEventRow).filter(
-            db._UserEventRow.ts >= start_ts).all()
+        q = s.query(db._UserEventRow).filter(db._UserEventRow.ts >= start_ts)
+        if effective_tenant:
+            q = q.filter(db._UserEventRow.tenant_id == effective_tenant)
+        rows = q.all()
         events = [(e.event_type, e.properties or "{}", e.grp or "") for e in rows]
     finally:
         s.close()
@@ -1375,7 +1423,7 @@ def recognition_summary(request: Request):
     e2e_vals = [int(p.get("e2e_ms")) for p in approves
                 if isinstance(p.get("e2e_ms"), (int, float))]
 
-    fbs = db.list_receipt_feedbacks()
+    fbs = db.list_receipt_feedbacks(tenant_id=effective_tenant)
     fb_up = sum(1 for f in fbs if f.get("like") == 1)
     fb_down = sum(1 for f in fbs if f.get("like") == -1)
 
@@ -1391,6 +1439,7 @@ def recognition_summary(request: Request):
         }
 
     data = {
+        "tenant_id": effective_tenant or "all",
         "parse_total": parse_total,
         "parse_success": parse_success,
         "parse_fail": parse_fail,

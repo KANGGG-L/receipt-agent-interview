@@ -814,6 +814,10 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
     parse_transport = cfg.grey_parse_transport if use_grey else cfg.parse_transport
     parse_transport = parse_transport or "subprocess"
     if kind == "openai":
+        from app.services.security_guard import validate_safe_external_url
+        is_safe, reason = validate_safe_external_url(base_url)
+        if not is_safe:
+            raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
         m = OpenAIChatModel(base_url=base_url, api_key=api_key,
                             model=openai_model or resolved,
                             call_timeout=_resolve_timeout(cfg))
@@ -856,6 +860,11 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
         else:
             base_url = cfg.openai_aud_base_url
             api_key = cfg.openai_aud_api_key
+
+        from app.services.security_guard import validate_safe_external_url
+        is_safe, reason = validate_safe_external_url(base_url)
+        if not is_safe:
+            raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
 
     key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout) + (side,)
     m = _MODEL_CACHE.get(key)
