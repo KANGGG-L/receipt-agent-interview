@@ -1565,7 +1565,7 @@
 
                         <!-- 解析 LLM 高级抽屉 -->
                         <div id="adminParseDrawer" class="engine-drawer collapsed">
-                            <div class="engine-drawer-header" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminParseDrawer'); } else { document.getElementById('adminParseDrawer').classList.toggle('collapsed'); }">
+                            <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminParseDrawer'); } else { document.getElementById('adminParseDrawer').classList.toggle('collapsed'); }">
                                 <div class="engine-drawer-title">
                                     <span style="color:#6a1b9a;">高级配置 · 解析 LLM (OpenAI 兼容)</span>
                                 </div>
@@ -1613,7 +1613,7 @@
 
                         <!-- A/B 灰度测试 高级抽屉 -->
                         <div id="adminGreyDrawer" class="engine-drawer collapsed">
-                            <div class="engine-drawer-header" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminGreyDrawer'); } else { document.getElementById('adminGreyDrawer').classList.toggle('collapsed'); }">
+                            <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminGreyDrawer'); } else { document.getElementById('adminGreyDrawer').classList.toggle('collapsed'); }">
                                 <div class="engine-drawer-title">
                                     <span style="color:#b8860b;">高级配置 · A/B 分组灰度测试</span>
                                 </div>

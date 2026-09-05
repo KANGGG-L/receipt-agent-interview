@@ -182,9 +182,24 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
         return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
 
 
-def _normalize_and_sync_engine_updates(updates: dict) -> dict:
-    """归一化引擎枚举与双向字段对齐（单一事实源）。"""
+def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
+    """归一化引擎枚举与双向字段对齐（单一事实源），并统一解析带掩码的 API Key。"""
     from app.models import GreyAssignMode, EngineKind
+
+    if cfg is not None:
+        key_fields = (
+            "openai_rec_api_key",
+            "openai_aud_api_key",
+            "openai_parse_api_key",
+            "grey_openai_rec_api_key",
+            "grey_openai_aud_api_key",
+            "grey_openai_parse_api_key",
+        )
+        for key_field in key_fields:
+            if key_field in updates and updates[key_field]:
+                val_str = str(updates[key_field])
+                if "****" in val_str or val_str == "******":
+                    updates[key_field] = getattr(cfg, key_field, "") if not isinstance(cfg, dict) else cfg.get(key_field, "")
 
     if "grey_assign_mode" in updates:
         updates["grey_assign_mode"] = GreyAssignMode(updates["grey_assign_mode"])
@@ -267,7 +282,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     from app.models import EngineConfig
     
     cfg = db.get_engine_config()
-    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True))
+    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
     test_cfg = EngineConfig(**{**cfg.model_dump(), **updates})
 
     # 1. 常规识别引擎测试
@@ -470,15 +485,15 @@ def diff_regular_vs_grey(request: Request):
         ("parse_llm_enabled", "grey_parse_llm_enabled", "解析 LLM 开关"),
         ("parse_llm_engine", "grey_parse_llm_engine", "解析引擎"),
         ("parse_llm_model", "grey_parse_llm_model", "解析模型"),
+        ("openai_rec_model", "grey_openai_rec_model", "识别 · OpenAI 模型名"),
+        ("openai_aud_model", "grey_openai_aud_model", "审核 · OpenAI 模型名"),
+        ("openai_parse_model", "grey_openai_parse_model", "解析 · OpenAI 模型名"),
     ]
     # OpenAI 参数区：敏感字段（api_key / base_url）不直接展示值，仅提示一致/不一致
     sensitive_pairs = [
         ("openai_rec_base_url", "grey_openai_rec_base_url", "识别 · OpenAI Base URL"),
-        ("openai_rec_model", "grey_openai_rec_model", "识别 · OpenAI 模型名"),
         ("openai_aud_base_url", "grey_openai_aud_base_url", "审核 · OpenAI Base URL"),
-        ("openai_aud_model", "grey_openai_aud_model", "审核 · OpenAI 模型名"),
         ("openai_parse_base_url", "grey_openai_parse_base_url", "解析 · OpenAI Base URL"),
-        ("openai_parse_model", "grey_openai_parse_model", "解析 · OpenAI 模型名"),
     ]
     secret_pairs = [
         ("openai_rec_api_key", "grey_openai_rec_api_key", "识别 · OpenAI API Key"),
@@ -631,21 +646,7 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     from app.models import EngineConfig
     from app.llm import _is_valid_dashscope_url, _is_valid_sk, _is_valid_dashscope_config, get_timeout_advice
     cfg = db.get_engine_config()
-    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True))
-
-    key_fields = (
-        "openai_rec_api_key",
-        "openai_aud_api_key",
-        "openai_parse_api_key",
-        "grey_openai_rec_api_key",
-        "grey_openai_aud_api_key",
-        "grey_openai_parse_api_key",
-    )
-    for kf in key_fields:
-        if kf in updates:
-            val_str = str(updates[kf] or "")
-            if "****" in val_str or val_str == "******":
-                updates[kf] = getattr(cfg, kf, "")
+    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
 
     # 任务 3a：热切到 qwen3-vl-flash 需有效 dashscope.aliyuncs.com compatible-mode/v1 + sk-，
     # 若无有效 key 则显式降级提示而非静默超时（避免本地 165s 不达标却静默阻塞）

@@ -173,6 +173,7 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
     assert 'id="adminAuditCard"' in html
     assert 'id="adminParseDrawer"' in html
     assert 'id="adminGreyDrawer"' in html
+    assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 2
 
     # 断言保留必须的 OpenAI 输入项与预设选择
     assert 'id="adminOpenaiRecBaseUrl"' in html
@@ -453,3 +454,75 @@ def test_engine_config_full_lifecycle_and_security_adversarial(monkeypatch):
         assert cfg_rolled_back.rollback_snapshot is None
     finally:
         db.set_engine_config(orig_cfg)
+
+
+def test_test_engine_config_unmasks_masked_api_key(monkeypatch):
+    orig_cfg = db.get_engine_config()
+    try:
+        # Pre-seed database with a valid real key
+        real_key = "sk-real-test-secret-key-1234567890"
+        seeded_cfg = orig_cfg.model_copy()
+        seeded_cfg.openai_rec_base_url = "https://api.openai.com/v1"
+        seeded_cfg.openai_rec_api_key = real_key
+        seeded_cfg.openai_rec_model = "gpt-4o"
+        seeded_cfg.audit_enabled = False
+        seeded_cfg.parse_llm_enabled = False
+        seeded_cfg.grey_enabled = False
+        db.set_engine_config(seeded_cfg)
+
+        used_auth_headers = []
+
+        class MockResponse:
+            def __init__(self, status_code=200):
+                self.status_code = status_code
+                self.text = "ok"
+
+            def json(self):
+                return {"data": []}
+
+        def mock_get(url, headers=None, **kwargs):
+            if headers and "Authorization" in headers:
+                used_auth_headers.append(headers["Authorization"])
+            return MockResponse(200)
+
+        monkeypatch.setattr("requests.get", mock_get)
+        monkeypatch.setattr("requests.post", lambda *a, **kw: MockResponse(200))
+
+        # Administrator tests configuration with a masked key
+        payload = {
+            "openai_rec_base_url": "https://api.openai.com/v1",
+            "openai_rec_api_key": "sk-****1234",
+            "openai_rec_model": "gpt-4o",
+        }
+        res = client.post("/api/admin/test-engine-config", json=payload)
+        assert res.status_code == 200
+        assert res.json().get("status") == "success"
+
+        # Verify probe received the unmasked real key from db, not the masked key
+        assert used_auth_headers
+        assert f"Bearer {real_key}" in used_auth_headers
+        assert "sk-****1234" not in used_auth_headers[0]
+    finally:
+        db.set_engine_config(orig_cfg)
+
+
+def test_diff_regular_vs_grey_shows_unmasked_model_names():
+    orig_cfg = db.get_engine_config()
+    try:
+        cfg = orig_cfg.model_copy()
+        cfg.grey_enabled = True
+        cfg.openai_rec_model = "Qwen/Qwen3-VL-32B-Instruct"
+        cfg.grey_openai_rec_model = "Qwen/Qwen2.5-VL-72B-Instruct"
+        db.set_engine_config(cfg)
+
+        res = client.get("/api/admin/engine-config/diff")
+        assert res.status_code == 200
+        diffs = res.json()["data"]["diffs"]
+        model_diff = next((d for d in diffs if d["label"] == "识别 · OpenAI 模型名"), None)
+        assert model_diff is not None
+        assert model_diff["sensitive"] is False
+        assert model_diff["regular"] == "Qwen/Qwen3-VL-32B-Instruct"
+        assert model_diff["grey"] == "Qwen/Qwen2.5-VL-72B-Instruct"
+    finally:
+        db.set_engine_config(orig_cfg)
+
