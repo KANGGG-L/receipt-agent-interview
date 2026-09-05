@@ -180,3 +180,14 @@ CREATE TABLE receipt_audit_logs (
 #### 5. 前端安全渲染 (XSS 免疫)
 - 前端展示 LLM 输出的商品品名、供应商名称、调整说明、审核理由时，统一使用 DOM `textContent` 属性赋值或 `escapeHtml()` 实体化转义，杜绝 DOM-based XSS。
 
+### 6.4 生产代码落盘与自动化测试矩阵 (Production Implementation)
+
+| 防御层级 | 生产落地组件 | 核心安全拦截与中和机制 | 核心测试套件 |
+|---|---|---|---|
+| **网络防线** | `demo/app/services/security_guard.py`<br>`demo/app/api_admin.py`<br>`demo/app/llm.py` | - `validate_safe_external_url`: 严格阻断私网 (RFC 1918)、回环地址、CGNAT (`100.64.0.0/10`) 及云元数据 (`169.254.169.254`)。<br>- 域名 DNS 预解析校验，阻止 DNS 重绑定绕过。<br>- 外呼显式配置 `allow_redirects=False` 阻断 HTTP 30x 重定向绕过。<br>- `mask_secret_key`: 接口及日志中密钥仅暴露前3后4位。 | `tests/test_ssrf_and_credential_guard.py` (9 passed) |
+| **协议防线** | `demo/app/services/canary_guard.py`<br>`demo/app/chains/extract_chain.py` | - `generate_canary_token`: 生成高熵 `CANARY_<hex>` 单次握手令牌。<br>- `inject_canary_instructions`: 在 System Prompt 与 User 消息尾部实施双重协议锚定。<br>- `verify_canary_token`: 恒定时间校验 (`secrets.compare_digest`)，缺失或不匹配立即 Fail-Fast 阻断。<br>- 契约校验前无条件剥离 `__guard_token`，确保 Pydantic `extra="forbid"` 洁净。 | `tests/test_canary_protocol_guard.py` (6 passed) |
+| **数据防线** | `ai_registry/tools/prompt_injection_guard/v1_0_0.py`<br>`demo/app/chains/extract_chain.py` | - 扩充凭证嗅探与提权正则 (`OPENAI_API_KEY`, `process.env`, `os.environ` 窃取拦截)。<br>- `wrap_untrusted_input_sandbox`: 强制 HTML 实体转义并封入 `<untrusted_input data_only="true" security="untrusted_external_data">` 沙箱，剥夺指令执行权。 | `tests/test_enhanced_prompt_guard.py` (7 passed) |
+| **展现防线** | `demo/static/js/main.js`<br>`demo/app/api_admin.py` | - 前端 `escapeHtml`: 支持 `null`/`undefined` 安全容错，转义单双引号、`&`、`<`、`>`。<br>- 管理端 `GET /api/admin/engine-config`、`GET /api/admin/grey-test`、`PUT /api/admin/engine-config/*` 与审计日志执行递归密钥打码。 | `tests/test_xss_and_audit_sanitization.py` (4 passed) |
+| **端到端攻防** | `tests/test_untrusted_api_security_e2e.py` | - 仿真 SSRF 越界、Canary 丢包/篡改熔断、物理算术门禁强制校验、DOM XSS 载荷免疫四大攻防场景。 | `tests/test_untrusted_api_security_e2e.py` (9 passed) |
+
+

@@ -91,3 +91,25 @@ extract_prompt = get_prompt("extract")
 # 2. 针对特定单据类型指定拉取版本（如 A/B 灰测）
 audit_prompt = get_prompt("audit", version="v2_0_0_reason")
 ```
+
+---
+
+## 五、不可信第三方 API 与对抗性 Prompt 纵深防御升级（2026-09）
+
+针对接入不可信第三方公益站端点与对抗性恶意 Prompt 风险，系统实施了四重纵深安全加固，并在生产代码与自动化测试中全面落盘：
+
+1. **网络层 SSRF 阻断与敏感凭证脱敏 (`demo/app/services/security_guard.py`)**：
+   - 阻断私网 (RFC 1918)、本地回环 (`127.0.0.1`, `localhost`)、CGNAT (`100.64.0.0/10`) 与云元数据 (`169.254.169.254`)。
+   - 域名 DNS 预解析校验防重绑定，外呼强制禁用 HTTP 30x 重定向 (`allow_redirects=False`)。
+   - 密钥仅在接口与审计日志中暴露前3后4位，杜绝明文凭证泄露。
+2. **协议层 Canary Token 动态握手防上游篡改 (`demo/app/services/canary_guard.py`)**：
+   - 动态生成高熵 Nonce `CANARY_<HEX>`，并在 System 与 User 消息尾部实施双重协议锚定。
+   - 若上游代理剥离或篡改 System Prompt，触发 Fail-Fast 快速熔断；恒定时间比对安全弹出令牌，保护 Pydantic `extra="forbid"` 契约。
+3. **数据层 XML 数据沙箱与凭证嗅探过滤 (`ai_registry/tools/prompt_injection_guard/v1_0_0.py`)**：
+   - 扩充针对 `OPENAI_API_KEY`, `process.env`, `os.environ` 的嗅探拦截正则。
+   - 所有不可信输入封入 `<untrusted_input data_only="true" security="untrusted_external_data">` 沙箱，强制 HTML/XML 实体转义剥夺可执行权。
+4. **展现层 DOM XSS 免疫 (`demo/static/js/main.js`)**：
+   - 前端 `escapeHtml()` 全面转义单双引号、`&`、`<`、`>`，阻断 DOM-based XSS 攻击。
+5. **自动化测试与端到端回归 (`tests/test_untrusted_api_security_e2e.py`)**：
+   - 9 个端到端攻防模拟用例与 59 个回归用例全部通过（100% PASS），严格遵守零 Emoji 规范。
+

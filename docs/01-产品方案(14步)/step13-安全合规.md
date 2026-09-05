@@ -111,6 +111,24 @@ flowchart TD
 - **禁止 AI 自主入库**：大模型仅能生成草稿，**绝无直接写入生产账本权限**；
 - **算术硬门禁拦截**：大模型编造的单价与金额必须通过 `数量 × 单价 = 金额` 乘法硬校验，一旦不符立即标红拦截并强制人工裁决。
 
+### 3.3 第三方不可信 API 与对抗性 Prompt 全链路纵深加固
+
+针对接入第三方公益站端点、中转代理或对抗性 Prompt 注入风险，系统落地四重纵深安全防护矩阵（详见 [`../05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/08-组件Spec-安全合规、隐私保护与系统运维保障.md`](../05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/08-组件Spec-安全合规、隐私保护与系统运维保障.md)）：
+
+1. **网络层 SSRF 阻断与敏感凭证脱敏**：
+   - 部署 `security_guard.py`，对外呼 Base URL 执行域名解析与 IP 范围双重审查，严格封锁私网网段 (RFC 1918)、本地回环 (`127.0.0.1`, `localhost`)、CGNAT (`100.64.0.0/10`) 与云元数据地址 (`169.254.169.254`)；
+   - 禁用 30x HTTP 重定向（`allow_redirects=False`），并在配置接口与审计日志中对 API Key 实施掩码脱敏（保留前3后4位）。
+2. **协议层 Canary Token 动态握手防上游篡改**：
+   - 每次调用生成单次高熵暗号 `CANARY_<HEX>`，在 User 消息尾部与 System 消息中实施双重锚定；
+   - 若上游中转代理剥离或篡改了 System Prompt，模型回包必然缺失 `__guard_token`，系统执行 Fail-Fast 快速熔断拦截；
+   - 恒定时间校验比对通过后，在 Pydantic 校验前自动弹出安全令牌，保持业务 Schema 洁净。
+3. **数据层进站隔离与 XML 数据沙箱**：
+   - 升级 `PromptInjectionGuardTool`，扩充凭证嗅探关键词库（阻断针对 `OPENAI_API_KEY`, `process.env`, `os.environ` 等敏感信息的窃取）；
+   - 将不可信先验、历史备注与反馈文本封入 `<untrusted_input data_only="true" security="untrusted_external_data">` 沙箱，强制 HTML/XML 实体转义剥夺其可执行权限。
+4. **展现层 DOM XSS 全面免疫**：
+   - 前端升级 `escapeHtml()`，针对不可信单据品名、供应商与备注文本全面执行安全转义与 `textContent` 渲染，阻断 DOM 跨站脚本攻击。
+
+
 ---
 
 ## 4. 审计日志与溯源追踪规范（Audit Log & Compliance Tracing）
