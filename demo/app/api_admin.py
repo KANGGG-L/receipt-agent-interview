@@ -160,7 +160,9 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
     base = base_url.strip().rstrip("/")
     if base.endswith("/chat/completions"):
         base = base[:-len("/chat/completions")].rstrip("/")
-    models_url = f"{base}/models" if not base.endswith("/models") else base
+    if base.endswith("/models"):
+        base = base[:-len("/models")].rstrip("/")
+    models_url = f"{base}/models"
 
     headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
     try:
@@ -180,14 +182,10 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
         return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
 
 
-@router.post("/api/admin/test-engine-config")
-def test_engine_config(body: EngineConfigBody, request: Request):
-    """保存前自测校验：对启用的引擎（识别/解析/审核及灰测）发送轻量探测。"""
-    require_admin(request)
-    from app.models import EngineConfig, GreyAssignMode, EngineKind
-    
-    cfg = db.get_engine_config()
-    updates = body.model_dump(exclude_none=True)
+def _normalize_and_sync_engine_updates(updates: dict) -> dict:
+    """归一化引擎枚举与双向字段对齐（单一事实源）。"""
+    from app.models import GreyAssignMode, EngineKind
+
     if "grey_assign_mode" in updates:
         updates["grey_assign_mode"] = GreyAssignMode(updates["grey_assign_mode"])
     for key in ("recognition_engine", "audit_engine",
@@ -259,6 +257,17 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if "grey_openai_parse_base_url" in updates:
         updates["grey_parse_llm_engine"] = EngineKind.OPENAI
 
+    return updates
+
+
+@router.post("/api/admin/test-engine-config")
+def test_engine_config(body: EngineConfigBody, request: Request):
+    """保存前自测校验：对启用的引擎（识别/解析/审核及灰测）发送轻量探测。"""
+    require_admin(request)
+    from app.models import EngineConfig
+    
+    cfg = db.get_engine_config()
+    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True))
     test_cfg = EngineConfig(**{**cfg.model_dump(), **updates})
 
     # 1. 常规识别引擎测试
@@ -619,23 +628,10 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     require_admin(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    from app.models import EngineConfig, GreyAssignMode, EngineKind
+    from app.models import EngineConfig
     from app.llm import _is_valid_dashscope_url, _is_valid_sk, _is_valid_dashscope_config, get_timeout_advice
     cfg = db.get_engine_config()
-    updates = body.model_dump(exclude_none=True)
-    if "grey_assign_mode" in updates:
-        updates["grey_assign_mode"] = GreyAssignMode(updates["grey_assign_mode"])
-    for key in ("recognition_engine", "audit_engine",
-                "grey_recognition_engine", "grey_audit_engine",
-                "parse_llm_engine", "grey_parse_llm_engine"):
-        if key in updates:
-            val_str = str(getattr(updates[key], "value", updates[key]) or "").lower()
-            if val_str in ("opencode", "codebuddy"):
-                updates[key] = EngineKind.OPENAI
-            else:
-                updates[key] = EngineKind(updates[key])
-    if "grey_percent" in updates:
-        updates["grey_percent"] = max(0, min(100, int(updates["grey_percent"])))
+    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True))
 
     key_fields = (
         "openai_rec_api_key",
@@ -650,63 +646,6 @@ def set_engine_config(body: EngineConfigBody, request: Request):
             val_str = str(updates[kf] or "")
             if "****" in val_str or val_str == "******":
                 updates[kf] = getattr(cfg, kf, "")
-
-    # 纯 OpenAI 参数双向自动同步映射 (单一事实源)
-    if updates.get("openai_rec_model"):
-        updates["recognition_model"] = updates["openai_rec_model"]
-        updates["recognition_engine"] = EngineKind.OPENAI
-    elif updates.get("recognition_model"):
-        updates["openai_rec_model"] = updates["recognition_model"]
-        updates["recognition_engine"] = EngineKind.OPENAI
-
-    if updates.get("openai_aud_model"):
-        updates["audit_model"] = updates["openai_aud_model"]
-        updates["audit_engine"] = EngineKind.OPENAI
-    elif updates.get("audit_model"):
-        updates["openai_aud_model"] = updates["audit_model"]
-        updates["audit_engine"] = EngineKind.OPENAI
-
-    if updates.get("openai_parse_model"):
-        updates["parse_llm_model"] = updates["openai_parse_model"]
-        updates["parse_llm_engine"] = EngineKind.OPENAI
-    elif updates.get("parse_llm_model"):
-        updates["openai_parse_model"] = updates["parse_llm_model"]
-        updates["parse_llm_engine"] = EngineKind.OPENAI
-
-    # 灰测组同理
-    if updates.get("grey_openai_rec_model"):
-        updates["grey_recognition_model"] = updates["grey_openai_rec_model"]
-        updates["grey_recognition_engine"] = EngineKind.OPENAI
-    elif updates.get("grey_recognition_model"):
-        updates["grey_openai_rec_model"] = updates["grey_recognition_model"]
-        updates["grey_recognition_engine"] = EngineKind.OPENAI
-
-    if updates.get("grey_openai_aud_model"):
-        updates["grey_audit_model"] = updates["grey_openai_aud_model"]
-        updates["grey_audit_engine"] = EngineKind.OPENAI
-    elif updates.get("grey_audit_model"):
-        updates["grey_openai_aud_model"] = updates["grey_audit_model"]
-        updates["grey_audit_engine"] = EngineKind.OPENAI
-
-    if updates.get("grey_openai_parse_model"):
-        updates["grey_parse_llm_model"] = updates["grey_openai_parse_model"]
-        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
-    elif updates.get("grey_parse_llm_model"):
-        updates["grey_openai_parse_model"] = updates["grey_parse_llm_model"]
-        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
-
-    if "openai_rec_base_url" in updates:
-        updates["recognition_engine"] = EngineKind.OPENAI
-    if "openai_aud_base_url" in updates:
-        updates["audit_engine"] = EngineKind.OPENAI
-    if "openai_parse_base_url" in updates:
-        updates["parse_llm_engine"] = EngineKind.OPENAI
-    if "grey_openai_rec_base_url" in updates:
-        updates["grey_recognition_engine"] = EngineKind.OPENAI
-    if "grey_openai_aud_base_url" in updates:
-        updates["grey_audit_engine"] = EngineKind.OPENAI
-    if "grey_openai_parse_base_url" in updates:
-        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
 
     # 任务 3a：热切到 qwen3-vl-flash 需有效 dashscope.aliyuncs.com compatible-mode/v1 + sk-，
     # 若无有效 key 则显式降级提示而非静默超时（避免本地 165s 不达标却静默阻塞）

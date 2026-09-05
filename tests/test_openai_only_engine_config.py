@@ -117,3 +117,31 @@ def test_put_engine_config_masks_secret_in_response():
     finally:
         db.set_engine_config(orig_cfg)
 
+
+def test_quick_test_engine_defensive_url_stripping(monkeypatch):
+    from app.api_admin import _quick_test_engine
+
+    requested_urls = []
+
+    class DummyResponse:
+        def __init__(self, status_code):
+            self.status_code = status_code
+            self.text = "ok"
+
+    def mock_get(url, **kwargs):
+        requested_urls.append(("GET", url))
+        return DummyResponse(404)
+
+    def mock_post(url, **kwargs):
+        requested_urls.append(("POST", url))
+        return DummyResponse(200)
+
+    monkeypatch.setattr("requests.get", mock_get)
+    monkeypatch.setattr("requests.post", mock_post)
+
+    err = _quick_test_engine("openai", "test-model", "https://api.example.com/v1/models", "sk-validkey1234", "测试")
+    assert err is None
+    assert requested_urls[0] == ("GET", "https://api.example.com/v1/models")
+    assert requested_urls[1] == ("POST", "https://api.example.com/v1/chat/completions")
+
+
