@@ -274,10 +274,6 @@ def test_main_js_engine_drawer_and_pure_openai_interactions():
 
 
 def test_engine_config_full_lifecycle_and_security_adversarial(monkeypatch):
-    if not any(getattr(r, "path", None) == "/api/admin/engine-config/promote-grey" for r in app.routes):
-        from app.api_admin import promote_grey_config
-        app.router.add_api_route("/api/admin/engine-config/promote-grey", promote_grey_config, methods=["PUT"])
-
     orig_cfg = db.get_engine_config()
     try:
         # 1. Read engine config (verify initial masked keys)
@@ -406,8 +402,8 @@ def test_engine_config_full_lifecycle_and_security_adversarial(monkeypatch):
         assert cfg.grey_parse_llm_model == "deepseek-ai/DeepSeek-V3"
         assert cfg.grey_openai_parse_model == "deepseek-ai/DeepSeek-V3"
 
-        # 6. Promote grey config (/api/admin/engine-config/promote-grey) -> verify grey OpenAI parameters promote to main OpenAI parameters and sync to legacy fields
-        res_promote = client.put("/api/admin/engine-config/promote-grey")
+        # 6. Promote grey config (/api/admin/engine-config/promote) -> verify grey OpenAI parameters promote to main OpenAI parameters and sync to legacy fields
+        res_promote = client.put("/api/admin/engine-config/promote")
         assert res_promote.status_code == 200
         for raw_k in [main_rec_key, main_aud_key, main_parse_key, grey_rec_key, grey_aud_key, grey_parse_key]:
             assert raw_k not in res_promote.text
