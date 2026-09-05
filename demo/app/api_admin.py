@@ -939,7 +939,7 @@ def grey_test_status(request: Request):
     require_admin(request)
     cfg = db.get_engine_config()
     return {"status": "success", "data": {
-        "current": cfg.model_dump(),
+        "current": mask_engine_config_dict(cfg.model_dump()),
         "assign_modes": {
             "receipt": "按单据随机分配（每单独立 random < 概率%）",
             "supplier": "按供应商分配（同供应商一致命中，确定性）",

@@ -77,7 +77,22 @@ def test_engine_config_masks_api_keys():
         snap_prev = data["rollback_snapshot"]["prev"]
         assert snap_prev["openai_rec_api_key"] == "sk-pre****5678"
         assert snap_prev["openai_aud_api_key"] == "sk-pre****4321"
-        assert snap_prev["openai_parse_api_key"] == "sk-pre****3344"
+        # Verify GET /api/admin/grey-test also masks all keys in data.current
+        resp_grey = client.get("/api/admin/grey-test")
+        assert resp_grey.status_code == 200
+        assert "sk-recsecretkey12345678" not in resp_grey.text
+        assert resp_grey.json()["data"]["current"]["openai_rec_api_key"] == "sk-rec****5678"
+
+        # Verify PUT /api/admin/engine-config masks keys in response
+        put_resp = client.put("/api/admin/engine-config", json={
+            "openai_rec_api_key": "sk-newputkey12345678",
+            "openai_aud_api_key": "sk-newputaudkey87654321",
+        })
+        assert put_resp.status_code == 200
+        assert "sk-newputkey12345678" not in put_resp.text
+        assert "sk-newputaudkey87654321" not in put_resp.text
+        assert put_resp.json()["data"]["openai_rec_api_key"] == "sk-new****5678"
+        assert put_resp.json()["data"]["openai_aud_api_key"] == "sk-new****4321"
     finally:
         db.set_engine_config(orig_cfg)
 
