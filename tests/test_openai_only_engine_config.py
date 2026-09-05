@@ -145,3 +145,59 @@ def test_quick_test_engine_defensive_url_stripping(monkeypatch):
     assert requested_urls[1] == ("POST", "https://api.example.com/v1/chat/completions")
 
 
+def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
+    html_path = os.path.abspath(os.path.join(DEMO_DIR, "templates", "index.html"))
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+
+    # 断言已彻底移除 12 个旧选择控件
+    legacy_ids = [
+        'id="adminRecognitionEngine"',
+        'id="adminRecognitionModel"',
+        'id="adminParseEngine"',
+        'id="adminParseModel"',
+        'id="adminAuditEngine"',
+        'id="adminAuditModel"',
+        'id="adminGreyRecEngine"',
+        'id="adminGreyRecModel"',
+        'id="adminGreyAudEngine"',
+        'id="adminGreyAudModel"',
+        'id="adminGreyParseEngine"',
+        'id="adminGreyParseModel"',
+    ]
+    for lid in legacy_ids:
+        assert lid not in html, f"Legacy control {lid} should be removed from template"
+
+    # 断言存在核心双列卡片与高级抽屉结构
+    assert 'id="adminRecognitionCard"' in html
+    assert 'id="adminAuditCard"' in html
+    assert 'id="adminParseDrawer"' in html
+    assert 'id="adminGreyDrawer"' in html
+
+    # 断言保留必须的 OpenAI 输入项与预设选择
+    assert 'id="adminOpenaiRecBaseUrl"' in html
+    assert 'id="adminOpenaiRecApiKey"' in html
+    assert 'id="adminOpenaiRecModel"' in html
+    assert 'id="adminOpenaiRecPreset"' in html
+
+    assert 'id="adminOpenaiAudBaseUrl"' in html
+    assert 'id="adminOpenaiAudApiKey"' in html
+    assert 'id="adminOpenaiAudModel"' in html
+    assert 'id="adminOpenaiAudPreset"' in html
+
+    assert 'id="adminParseOpenaiBaseUrl"' in html
+    assert 'id="adminParseOpenaiApiKey"' in html
+    assert 'id="adminParseOpenaiModel"' in html
+    assert 'id="adminParseOpenaiPreset"' in html
+
+    assert 'id="adminGreyOpenaiRecBaseUrl"' in html
+    assert 'id="adminGreyOpenaiAudBaseUrl"' in html
+    assert 'id="adminGreyParseOpenaiBaseUrl"' in html
+
+    # 断言动作按钮与状态容器
+    assert 'id="adminSaveEngineBtn"' in html
+    assert 'id="adminRollbackEngineBtn"' in html
+    assert 'id="adminPromoteGreyBtn"' in html
+    assert 'id="adminEngineStatus"' in html
+
+
