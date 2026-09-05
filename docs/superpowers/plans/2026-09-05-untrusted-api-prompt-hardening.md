@@ -33,7 +33,7 @@
   - `mask_secret_key(key: str) -> str`: 脱敏密钥（保留前3后4）。
 - Consumes: `urllib.parse`, `ipaddress`, `socket`.
 
-- [ ] **Step 1: Write the failing test for SSRF & secret masking**
+- [x] **Step 1: Write the failing test for SSRF & secret masking**
 
 ```python
 # tests/test_ssrf_and_credential_guard.py
@@ -73,12 +73,12 @@ def test_mask_secret_key():
     assert mask_secret_key("") == ""
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_ssrf_and_credential_guard.py -v`
 Expected: FAIL (ModuleNotFoundError: No module named 'app.services.security_guard')
 
-- [ ] **Step 3: Implement `security_guard.py` & wire into `api_admin.py` and `llm.py`**
+- [x] **Step 3: Implement `security_guard.py` & wire into `api_admin.py` and `llm.py`**
 
 ```python
 # demo/app/services/security_guard.py
@@ -150,12 +150,12 @@ def mask_secret_key(key: str) -> str:
 
 在 `demo/app/api_admin.py` 中的 `set_engine_config` 与 `_quick_test_engine` 校验各 `base_url` 前调用 `validate_safe_external_url`，并对返回的 config 中的 api_key 实施脱敏处理。
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_ssrf_and_credential_guard.py -v`
 Expected: PASS (3 passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add demo/app/services/security_guard.py demo/app/api_admin.py tests/test_ssrf_and_credential_guard.py`
 Commit: `git commit -m "feat: add SSRF blocking and credential masking guard"`
@@ -177,7 +177,7 @@ Commit: `git commit -m "feat: add SSRF blocking and credential masking guard"`
   - `verify_canary_token(raw_json: dict, expected_token: str) -> Tuple[bool, Optional[str]]`: 验证回显。
 - Consumes: `secrets`.
 
-- [ ] **Step 1: Write the failing test for Canary Token guard**
+- [x] **Step 1: Write the failing test for Canary Token guard**
 
 ```python
 # tests/test_canary_protocol_guard.py
@@ -212,12 +212,12 @@ def test_canary_verification_tampered_fails():
     assert "篡改" in err or "缺失" in err
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_canary_protocol_guard.py -v`
 Expected: FAIL (ModuleNotFoundError: No module named 'app.services.canary_guard')
 
-- [ ] **Step 3: Implement `canary_guard.py` and connect to `extract_chain.py`**
+- [x] **Step 3: Implement `canary_guard.py` and connect to `extract_chain.py`**
 
 ```python
 # demo/app/services/canary_guard.py
@@ -260,12 +260,12 @@ def verify_canary_token(data: Dict[str, Any], expected_token: str) -> Tuple[bool
     return True, None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_canary_protocol_guard.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add demo/app/services/canary_guard.py tests/test_canary_protocol_guard.py demo/app/chains/extract_chain.py`
 Commit: `git commit -m "feat: implement Canary Token protocol to prevent upstream prompt tampering"`
@@ -285,7 +285,7 @@ Commit: `git commit -m "feat: implement Canary Token protocol to prevent upstrea
   - `wrap_untrusted_input_sandbox(text: str, source_tag: str) -> str`: 剥夺数据执行权的 XML 隔离沙箱。
   - `detect_and_neutralize_injections(text: str) -> Tuple[str, bool, list]`: 深度指令中和。
 
-- [ ] **Step 1: Write the failing test for enhanced prompt injection guard**
+- [x] **Step 1: Write the failing test for enhanced prompt injection guard**
 
 ```python
 # tests/test_enhanced_prompt_guard.py
@@ -314,24 +314,24 @@ def test_untrusted_input_sandbox_escaping():
     assert 'security="untrusted_external_data"' in sandboxed
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/test_enhanced_prompt_guard.py -v`
 Expected: FAIL (`wrap_untrusted_input_sandbox` not implemented / pattern missing)
 
-- [ ] **Step 3: Implement enhanced patterns and sandboxing in `PromptInjectionGuardTool`**
+- [x] **Step 3: Implement enhanced patterns and sandboxing in `PromptInjectionGuardTool`**
 
 In `ai_registry/tools/prompt_injection_guard/v1_0_0.py`:
 - 扩充 `INJECTION_PATTERNS` 加入环境变量探测、系统密码、API 密钥泄漏关键词；
 - 新增 `wrap_untrusted_input_sandbox(text: str, tag: str = "untrusted_input") -> str`；
 - 在 `extract_chain.py` 中，无论 `vendor_prior`、`vendor_hint` 还是用户自定义 Prompt，一律经由此沙箱过滤包裹。
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_enhanced_prompt_guard.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add ai_registry/tools/prompt_injection_guard/v1_0_0.py tests/test_enhanced_prompt_guard.py demo/app/chains/extract_chain.py`
 Commit: `git commit -m "feat: enhance prompt injection patterns and untrusted input sandbox"`
@@ -349,7 +349,7 @@ Commit: `git commit -m "feat: enhance prompt injection patterns and untrusted in
 - Frontend: 保证所有 LLM 提取字段在渲染到表格、模态框、日志时均通过安全赋值或 `escapeHtml()`。
 - Backend: `GET /api/admin/engine-config` 和 `GET /api/admin/system-audit` 自动对密钥字段打码。
 
-- [ ] **Step 1: Write test for API response secret masking**
+- [x] **Step 1: Write test for API response secret masking**
 
 ```python
 # tests/test_xss_and_audit_sanitization.py
@@ -371,21 +371,21 @@ def test_engine_config_masks_api_keys():
             assert "****" in v, f"Key {k} is not properly masked: {v}"
 ```
 
-- [ ] **Step 2: Run test to verify status**
+- [x] **Step 2: Run test to verify status**
 
 Run: `pytest tests/test_xss_and_audit_sanitization.py -v`
 
-- [ ] **Step 3: Implement secret masking in `api_admin.py` and DOM escaping in `main.js`**
+- [x] **Step 3: Implement secret masking in `api_admin.py` and DOM escaping in `main.js`**
 
 - In `api_admin.py`: 在 `get_engine_config` 返回体前使用 `mask_secret_key` 打码各 key 字段；
 - In `main.js`: 审查 `adminGreySamplesBody`、`mModalVendor`、`mModalTotal` 等渲染函数，确保使用的是 `escapeHtml(val)` 或 `textContent`，杜绝直接拼接不可信字符串为 HTML。
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `pytest tests/test_xss_and_audit_sanitization.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run: `git add demo/app/api_admin.py demo/static/js/main.js tests/test_xss_and_audit_sanitization.py`
 Commit: `git commit -m "feat: enforce API key masking and frontend XSS immunity"`
@@ -397,7 +397,7 @@ Commit: `git commit -m "feat: enforce API key masking and frontend XSS immunity"
 **Files:**
 - Create: `tests/test_untrusted_api_security_e2e.py`
 
-- [ ] **Step 1: Write comprehensive security integration tests**
+- [x] **Step 1: Write comprehensive security integration tests**
 
 覆盖四大攻击场景：
 1. **SSRF 越界探测**：尝试将 Base URL 设置为 `http://169.254.169.254/v1`，断言被 400 拦截；
@@ -405,19 +405,19 @@ Commit: `git commit -m "feat: enforce API key masking and frontend XSS immunity"
 3. **恶意 Prompt 算术篡改**：Mock 模型被注入后返回 `total_amount = 0.0` 但明细总和为 `100.0`，断言本地 `math_engine` 抛出警告并打回复核；
 4. **XSS 注入载荷**：Mock 模型返回品名为 `<script>alert('xss')</script>`，断言数据入库脱敏且前端渲染安全转义。
 
-- [ ] **Step 2: Run comprehensive security tests**
+- [x] **Step 2: Run comprehensive security tests**
 
 Run: `pytest tests/test_untrusted_api_security_e2e.py -v`
 Expected: PASS
 
-- [ ] **Step 3: Run full project regression suite**
+- [x] **Step 3: Run full project regression suite**
 
 Run:
 - `pytest tests/test_siliconflow_default_provider.py`
 - `pytest demo/tests/test_export_center_ac.py`
 - `pytest tests/test_fix_p1_governance.py`
 
-- [ ] **Step 4: Final commit**
+- [x] **Step 4: Final commit**
 
 Run: `git add tests/test_untrusted_api_security_e2e.py`
 Commit: `git commit -m "test: complete comprehensive security hardening E2E test suite"`
