@@ -42,6 +42,7 @@ def test_block_metadata_and_private_ips():
         "http://[fe80::1]:8000/v1",
         "http://[::ffff:127.0.0.1]:8000/v1",
         "http://[::ffff:169.254.169.254]:8000/v1",
+        "http://100.64.0.1/v1",
     ]
     for url in dangerous_urls:
         valid, reason = validate_safe_external_url(url)

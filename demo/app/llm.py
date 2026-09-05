@@ -448,6 +448,10 @@ class OpenAIChatModel(BaseChatModel):
         # 校验 OpenAI 兼容接口 Base URL
         if not self.base_url or not str(self.base_url).strip():
             raise RuntimeError("OpenAI 兼容接口未配置有效 Base URL")
+        from app.services.security_guard import validate_safe_external_url
+        is_safe, reason = validate_safe_external_url(self.base_url)
+        if not is_safe:
+            raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
         payload_messages = [_lc_to_openai(m) for m in messages]
         url = self.base_url.rstrip("/") + "/chat/completions"
         headers = {"Content-Type": "application/json"}
@@ -458,6 +462,7 @@ class OpenAIChatModel(BaseChatModel):
             json={"model": self.model, "messages": payload_messages,
                   "temperature": self.temperature, "max_tokens": 4000},
             timeout=self.call_timeout,
+            allow_redirects=False,
         )
         if resp.status_code in (401, 403):
             raise RuntimeError(

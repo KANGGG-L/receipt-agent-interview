@@ -111,7 +111,7 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         payload = {"model": model_name, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
         try:
-            r = requests.post(url, headers=headers, json=payload, timeout=12)
+            r = requests.post(url, headers=headers, json=payload, timeout=12, allow_redirects=False)
             if r.status_code != 200:
                 return f"[{label}] OpenAI 接口返回 HTTP {r.status_code}: {r.text[:200]}"
         except Exception as e:
