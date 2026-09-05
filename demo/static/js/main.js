@@ -471,6 +471,26 @@ window.apiFetch = apiFetch;
 // ---- 埋点（11-组件Spec-全链路埋点与体验反馈体系）----
 // fire-and-forget：走 apiFetch 显式带 X-Role；keepalive 允许卸载期发送；失败静默
 let parseStartTs = 0;
+
+// Spec §3.0 公共上下文字段：会话标识首次生成后 localStorage 持久化，之后每次上报携带
+function _demoSessionId() {
+    try {
+        let sid = localStorage.getItem('demo_session_id');
+        if (!sid) {
+            let rand = Math.random().toString(36).slice(2, 8);
+            while (rand.length < 6) rand += '0';
+            sid = 's_' + Date.now().toString(36) + '_' + rand;
+            localStorage.setItem('demo_session_id', sid);
+        }
+        return sid;
+    } catch (e) {
+        // localStorage 不可用（隐私模式等）：退化为每次临时生成，不阻塞埋点
+        let rand = Math.random().toString(36).slice(2, 8);
+        while (rand.length < 6) rand += '0';
+        return 's_' + Date.now().toString(36) + '_' + rand;
+    }
+}
+
 function track(eventType, receiptId, properties) {
     try {
         apiFetch('/api/track', {
@@ -479,6 +499,7 @@ function track(eventType, receiptId, properties) {
             body: JSON.stringify({
                 event_type: eventType,
                 receipt_id: receiptId || null,
+                session_id: _demoSessionId(),
                 properties: properties || {},
             }),
             keepalive: true,
@@ -1339,6 +1360,9 @@ function initTabs() {
                 loadCostReportAutoMonth();
                 loadDepartmentAdmin();   // Wave 2 部门管理
             }
+            if (targetId === 'tab-export') {
+                if (typeof initExportCenter === 'function') initExportCenter();
+            }
             if (targetId === 'tab-engine') {
                 loadAdminEngineConfig();
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
@@ -1348,18 +1372,10 @@ function initTabs() {
                 loadPValueCards();       // E-P1-3 p-value 显著性卡片
             }
             if (targetId === 'tab-analytics') {
-                loadAnalyticsBoard();    // 埋点观测台（11-组件Spec §7.1）
-            }
-            if (targetId === 'tab-evalset') {
-                // 懒加载 + 返回路径：工作台会在同一个 iframe 内把抽检台列表导航走，
-                // 再次点「GT 抽检」应回到列表，而不是停在某张样本的工作台上。
-                const frame = document.querySelector('#tab-evalset iframe');
-                if (frame) {
-                    const want = frame.getAttribute('data-src') || '/evalset';
-                    let at = null;
-                    try { at = frame.contentWindow.location.pathname; } catch (e) { at = null; }
-                    if (at !== want) frame.src = want;
-                }
+                loadAnalyticsBoard();    // 埋点分布与实验
+                loadAdminGreySamples(null, true); // 灰测脱敏单据流
+                loadGoldenBoard();       // 黄金样本 57 看板
+                loadPValueCards();       // A/B p-value 显著性卡片
             }
             syncFeedbackVisibility();
             syncRecoveryVisibility();
@@ -2049,11 +2065,12 @@ function showQualityWarnings(warnings) {
     // 单条与多条格式化呈现（按具体碰到的问题精准输出）
     let contentHtml = '';
     if (items.length === 1) {
-        contentHtml = `<span style="font-weight:600;">[${items[0].title}] 提示：</span>${items[0].tip}`;
+        contentHtml = `<span style="font-weight:600;">[${escapeHtml(items[0].title)}] 提示：</span>${escapeHtml(items[0].tip)}`;
     } else {
-        const lines = items.map((it, idx) => `<div><strong>${idx + 1}. [${it.title}]</strong> ${it.tip}</div>`).join('');
+        const lines = items.map((it, idx) => `<div><strong>${idx + 1}. [${escapeHtml(it.title)}]</strong> ${escapeHtml(it.tip)}</div>`).join('');
         contentHtml = `<div style="font-weight:600; margin-bottom:4px;">画质预检提示：</div>${lines}`;
     }
+
 
     banner.innerHTML = contentHtml;
     banner.classList.remove('hide');
@@ -11459,9 +11476,9 @@ function applyDemoRoleColor(role) {
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
-    ['adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn', 'analyticsBoardBtn'].forEach(id => {
-        const btn = document.getElementById(id);
-        if (btn) btn.style.display = isAdmin ? '' : 'none';
+    ['adminSidebarSection', 'adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn', 'analyticsBoardBtn'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = (isAdmin && id !== 'goldenBoardBtn' && id !== 'evalsetReviewBtn') ? '' : 'none';
     });
     const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
     if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
@@ -11521,11 +11538,16 @@ function applyModalRoleVisibility(optionalRole) {
 // -------------------------------------------------------------
 // admin：引擎配置 / 灰测管理界面
 // -------------------------------------------------------------
+// 清理历史残留已保存的 opencode / codebuddy 模型配置与白名单缓存
+try {
+    ['custom_models_opencode', 'custom_models_codebuddy',
+     'verified_models_opencode', 'verified_models_codebuddy'].forEach(k => {
+        localStorage.removeItem(k);
+    });
+} catch (e) {}
+
 const DEFAULT_ENGINE_MODELS = {
-    // 用户决策 2026-09-02：opencode 已过期，预设组移除；openai 引擎模型手动填写（SF 平台目录）
-    codebuddy: [
-        { value: 'minimax-m3-pay', label: 'minimax-m3-pay' },
-    ],
+    // 已全面移除 opencode cli 与 codebuddy cli 预设组，统一使用 OpenAI 兼容通道
     openai: []
 };
 
@@ -11689,10 +11711,7 @@ function handleModelSelectChange(selId, engineGetter) {
     const val = sel.value;
     const engine = typeof engineGetter === 'function' ? engineGetter() : engineGetter;
     if (val === '__ADD_CUSTOM__') {
-        let exampleModel = 'provider/model-name';
-        if (engine === 'codebuddy') {
-            exampleModel = 'hy3';
-        }
+        const exampleModel = 'provider/model-name';
         showCustomInputModal({
             title: '添加自定义模型',
             message: '请输入 ' + engine + ' 引擎的模型名称：\n参考格式案例：' + exampleModel,
@@ -11874,12 +11893,20 @@ function loadAdminEngineConfig() {
                 return;
             }
             const cfg = body.data;
-            // 引擎类型
-            document.getElementById('adminRecognitionEngine').value = cfg.recognition_engine || 'openai';
-            document.getElementById('adminAuditEngine').value = cfg.audit_engine || 'openai';
+            const _cleanEngine = (v) => (v === 'opencode' || v === 'codebuddy') ? 'openai' : (v || 'openai');
+            const recEng = _cleanEngine(cfg.recognition_engine);
+            const audEng = _cleanEngine(cfg.audit_engine);
+            const parseEng = _cleanEngine(cfg.parse_llm_engine);
+            const greyRecEng = _cleanEngine(cfg.grey_recognition_engine);
+            const greyAudEng = _cleanEngine(cfg.grey_audit_engine);
+            const greyParseEng = _cleanEngine(cfg.grey_parse_llm_engine);
+
+            // 引擎类型（统一为 OpenAI 兼容接口）
+            document.getElementById('adminRecognitionEngine').value = recEng;
+            document.getElementById('adminAuditEngine').value = audEng;
             // 模型下拉（根据对应引擎渲染）
-            fillModelOptions('adminRecognitionModel', cfg.recognition_model, cfg.recognition_engine || 'openai');
-            fillModelOptions('adminAuditModel', cfg.audit_model, cfg.audit_engine || 'openai');
+            fillModelOptions('adminRecognitionModel', cfg.recognition_model, recEng);
+            fillModelOptions('adminAuditModel', cfg.audit_model, audEng);
             document.getElementById('adminAuditEnabled').value = cfg.audit_enabled ? 'true' : 'false';
             // OpenAI 兼容参数（识别/审核各自独立）
             document.getElementById('adminOpenaiRecBaseUrl').value = cfg.openai_rec_base_url || '';
@@ -11890,15 +11917,15 @@ function loadAdminEngineConfig() {
             document.getElementById('adminOpenaiAudModel').value = cfg.openai_aud_model || '';
             // 常规解析 LLM
             document.getElementById('adminParseEnabled').value = cfg.parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminParseEngine').value = cfg.parse_llm_engine || 'openai';
-            fillModelOptions('adminParseModel', cfg.parse_llm_model, cfg.parse_llm_engine || 'openai');
+            document.getElementById('adminParseEngine').value = parseEng;
+            fillModelOptions('adminParseModel', cfg.parse_llm_model, parseEng);
             document.getElementById('adminParseOpenaiBaseUrl').value = cfg.openai_parse_base_url || '';
             document.getElementById('adminParseOpenaiApiKey').value = cfg.openai_parse_api_key || '';
             document.getElementById('adminParseOpenaiModel').value = cfg.openai_parse_model || '';
             // 灰测解析 LLM
             document.getElementById('adminGreyParseEnabled').value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
-            document.getElementById('adminGreyParseEngine').value = cfg.grey_parse_llm_engine || 'openai';
-            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, cfg.grey_parse_llm_engine || 'openai');
+            document.getElementById('adminGreyParseEngine').value = greyParseEng;
+            fillModelOptions('adminGreyParseModel', cfg.grey_parse_llm_model, greyParseEng);
             document.getElementById('adminGreyParseOpenaiBaseUrl').value = cfg.grey_openai_parse_base_url || '';
             document.getElementById('adminGreyParseOpenaiApiKey').value = cfg.grey_openai_parse_api_key || '';
             document.getElementById('adminGreyParseOpenaiModel').value = cfg.grey_openai_parse_model || '';
@@ -11906,11 +11933,11 @@ function loadAdminEngineConfig() {
             document.getElementById('adminGreyEnabled').value = cfg.grey_enabled ? 'true' : 'false';
             document.getElementById('adminGreyPercent').value = cfg.grey_percent || 0;
             document.getElementById('adminGreyAssignMode').value = cfg.grey_assign_mode || 'receipt';
-            document.getElementById('adminGreyRecEngine').value = cfg.grey_recognition_engine || 'openai';
-            document.getElementById('adminGreyAudEngine').value = cfg.grey_audit_engine || 'openai';
+            document.getElementById('adminGreyRecEngine').value = greyRecEng;
+            document.getElementById('adminGreyAudEngine').value = greyAudEng;
             document.getElementById('adminGreyAuditEnabled').value = cfg.grey_audit_enabled ? 'true' : 'false';
-            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, cfg.grey_recognition_engine || 'openai');
-            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, cfg.grey_audit_engine || 'openai');
+            fillModelOptions('adminGreyRecModel', cfg.grey_recognition_model, greyRecEng);
+            fillModelOptions('adminGreyAudModel', cfg.grey_audit_model, greyAudEng);
             document.getElementById('adminGreyOpenaiRecBaseUrl').value = cfg.grey_openai_rec_base_url || '';
             document.getElementById('adminGreyOpenaiRecApiKey').value = cfg.grey_openai_rec_api_key || '';
             document.getElementById('adminGreyOpenaiRecModel').value = cfg.grey_openai_rec_model || '';
@@ -12612,12 +12639,15 @@ function resetAdminSettingsToDefaults() {
 
 // 辅助：转义 HTML
 function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
     return String(s)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
+
 
 /* =============================================================
    阶段 1：AI 可见性与信任
@@ -12671,7 +12701,8 @@ function loadAdminGreySamples(tenantId, isManual = false) {
             if (mCanary) mCanary.textContent = res.grey_count || 0;
             if (mPos) mPos.textContent = res.positive_feedback_count || 0;
             if (mMod) mMod.textContent = res.modified_feedback_count || 0;
-            if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '100%');
+            // avg_match_rate 只由有真实 AI 预填的样本贡献；无可比样本时如实显示「—」
+            if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '—');
 
             if (res.samples.length === 0) {
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999;">暂无单据样本</td></tr>';
@@ -12691,14 +12722,16 @@ function loadAdminGreySamples(tenantId, isManual = false) {
                     : '<span class="badge" style="background:#e9ecef; color:#495057;">常规线上组</span>';
 
                 const evalData = s.effect_evaluation || {};
-                const feedbackBadge = `<span class="badge" style="background:${evalData.feedback_badge_bg || '#e2e3e5'}; color:${evalData.feedback_badge_color || '#383d41'}; font-size:0.75rem;">${evalData.feedback_label || '待复核'} (${evalData.match_rate || 100}%)</span>`;
+                // match_rate 为 null（无 AI 预填可比对）时显示「—」，不再回退 100%
+                const matchRateText = '(' + (evalData.match_rate != null ? evalData.match_rate + '%' : '—') + ')';
+                const feedbackBadge = `<span class="badge" style="background:${evalData.feedback_badge_bg || '#e2e3e5'}; color:${evalData.feedback_badge_color || '#383d41'}; font-size:0.75rem;">${w2Escape(evalData.feedback_label || '待复核')} ${w2Escape(matchRateText)}</span>`;
 
                 html += `
                     <tr>
-                        <td><strong>#${s.receipt_id}</strong></td>
-                        <td><span style="color:#2f6b4f; font-weight:600;">${s.masked_vendor}</span> <small style="color:#999;">(已脱敏)</small></td>
-                        <td><code>${s.doc_form}</code></td>
-                        <td><code>${s.masked_total}</code></td>
+                        <td><strong>#${w2Escape(s.receipt_id)}</strong></td>
+                        <td><span style="color:#2f6b4f; font-weight:600;">${w2Escape(s.masked_vendor)}</span> <small style="color:#999;">(已脱敏)</small></td>
+                        <td><code>${w2Escape(s.doc_form)}</code></td>
+                        <td><code>${w2Escape(s.masked_total)}</code></td>
                         <td>${engineBadge}</td>
                         <td>${statusBadge}</td>
                         <td>${feedbackBadge}</td>
@@ -12771,6 +12804,10 @@ function viewGreySampleDetail(idx) {
     const evalData = s.effect_evaluation || {};
 
     if (mTitle) mTitle.textContent = `单据 #${s.receipt_id} 脱敏解析详情与图像切片（${s.masked_vendor} · ${s.user_status}）`;
+    const mWorkbenchLink = document.getElementById('mModalWorkbenchLink');
+    if (mWorkbenchLink) {
+        mWorkbenchLink.href = '/evalset/workbench/' + encodeURIComponent(s.receipt_id);
+    }
     if (mImg) {
         mImg.onerror = function() {
             this.onerror = null;
@@ -12796,7 +12833,7 @@ function viewGreySampleDetail(idx) {
         mBadge.style.background = evalData.feedback_badge_bg || '#e2e3e5';
         mBadge.style.color = evalData.feedback_badge_color || '#383d41';
     }
-    if (mMatchRate) mMatchRate.textContent = (evalData.match_rate != null ? evalData.match_rate + '%' : '100%');
+    if (mMatchRate) mMatchRate.textContent = (evalData.match_rate != null ? evalData.match_rate + '%' : '—');
     if (mMatchedFields) mMatchedFields.textContent = evalData.matched_fields || 0;
     if (mModifiedFields) mModifiedFields.textContent = evalData.modified_fields || 0;
 
@@ -12804,7 +12841,8 @@ function viewGreySampleDetail(idx) {
     if (mCompareBody) {
         const comparisons = evalData.field_comparisons || [];
         if (comparisons.length === 0) {
-            mCompareBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999;">暂无字段对照数据</td></tr>';
+            // 无真实 AI 预填时后端不造对照数据，如实显示占位
+            mCompareBody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#999;">无 AI 预填数据</td></tr>';
         } else {
             let compHtml = '';
             comparisons.forEach(c => {
@@ -12856,11 +12894,11 @@ function viewGreySampleDetail(idx) {
             "engine_routing": s.engine,
             "is_user_edited": s.is_user_edited,
             "is_approved_by_owner": s.is_approved,
-            "math_gate_verified": s.math_gate_passed,
+            "math_gate_verified": s.math_gate_passed ?? null,
             "effect_evaluation": {
                 "feedback_result": evalData.feedback_label,
                 "is_exact_match": evalData.is_exact_match,
-                "field_match_rate": evalData.match_rate + "%",
+                "field_match_rate": (evalData.match_rate != null ? evalData.match_rate + "%" : null),
                 "matched_fields_count": evalData.matched_fields,
                 "user_modified_fields_count": evalData.modified_fields
             },
@@ -12894,6 +12932,16 @@ function viewGreySampleDetail(idx) {
     }
 }
 
+function openGreySampleModal(receiptId) {
+    if (receiptId == null) return;
+    const idx = _adminGreySamplesCache.findIndex(s => s && String(s.receipt_id) === String(receiptId));
+    if (idx >= 0) {
+        viewGreySampleDetail(idx);
+    } else if (typeof receiptId === 'number' && _adminGreySamplesCache[receiptId]) {
+        viewGreySampleDetail(receiptId);
+    }
+}
+
 function closeGreySampleModal() {
     const modal = document.getElementById('adminGreySampleModal');
     if (modal) modal.classList.add('hide');
@@ -12901,6 +12949,7 @@ function closeGreySampleModal() {
 if (typeof window !== 'undefined') {
     window.loadAdminGreySamples = loadAdminGreySamples;
     window.viewGreySampleDetail = viewGreySampleDetail;
+    window.openGreySampleModal = openGreySampleModal;
     window.closeGreySampleModal = closeGreySampleModal;
 }
 
@@ -13109,6 +13158,51 @@ window.loadAnalyticsBoard = loadAnalyticsBoard;
 window.onAnalyticsTenantChange = function(tId) {
     loadAnalyticsBoard(tId);
 };
+
+// AI 效果观测与评测中心：三大独立功能区分段切换器
+function switchAnalyticsSubView(targetViewId) {
+    const validViews = ['sec-telemetry', 'sec-canary', 'sec-eval'];
+    if (!validViews.includes(targetViewId)) {
+        targetViewId = 'sec-telemetry';
+    }
+
+    // 更新分段按钮状态与无障碍属性
+    const buttons = document.querySelectorAll('.analytics-segment-btn');
+    buttons.forEach(btn => {
+        const isMatch = btn.getAttribute('data-view') === targetViewId;
+        btn.classList.toggle('active', isMatch);
+        btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+    });
+
+    // 切换三大独立功能区子面板显示
+    validViews.forEach(viewId => {
+        const panel = document.getElementById(viewId);
+        if (panel) {
+            if (viewId === targetViewId) {
+                panel.style.display = '';
+                panel.classList.add('active');
+            } else {
+                panel.style.display = 'none';
+                panel.classList.remove('active');
+            }
+        }
+    });
+
+    // 针对激活的功能区触发专属刷新/加载
+    if (targetViewId === 'sec-telemetry') {
+        const sel = document.getElementById('analyticsTenantSelect');
+        const tId = sel ? sel.value : 'all';
+        if (typeof loadRecoverySummaryBlocks === 'function') loadRecoverySummaryBlocks(tId);
+    } else if (targetViewId === 'sec-canary') {
+        if (typeof loadAnalyticsGreyStatus === 'function') loadAnalyticsGreyStatus();
+        if (typeof loadAdminGreySamples === 'function') loadAdminGreySamples(null, true);
+    } else if (targetViewId === 'sec-eval') {
+        if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
+        if (typeof loadAnalyticsExperiments === 'function') loadAnalyticsExperiments();
+        if (typeof loadPValueCards === 'function') loadPValueCards();
+    }
+}
+window.switchAnalyticsSubView = switchAnalyticsSubView;
 
 // 小工具：0~1 比率 → 百分文本（空值返回 '-'）
 function _analyticsPct(v) {
@@ -13896,7 +13990,7 @@ function renderDishCards(dishes) {
                 return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
                     + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
                     + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
-                    + ' <span style="color:var(--text-muted); font-size:0.7rem;">(¥' + fmtMoney(ing.ingredient_cost) + ')</span>'
+                    + ' <span style="color:var(--text-muted); font-size:0.7rem;">($' + fmtMoney(ing.ingredient_cost) + ')</span>'
                     + '</span>';
             }).join('');
         } else {
@@ -13914,7 +14008,7 @@ function renderDishCards(dishes) {
             + '      <h4 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
             + '    </div>'
             + '    <div style="text-align:right;">'
-            + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">¥' + fmtMoney(d.price) + '</div>'
+            + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + '$' + fmtMoney(d.price) + '</div>'
             + '      <div style="font-size:0.72rem; color:var(--text-muted);">建议售价</div>'
             + '    </div>'
             + '  </div>'
@@ -13922,11 +14016,11 @@ function renderDishCards(dishes) {
             + '  <div class="dish-metrics-box" style="background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">'
             + '    <div>'
             + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论单份成本</div>'
-            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.theoretical_cost) + '</div>'
+            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">' + '$' + fmtMoney(d.theoretical_cost) + '</div>'
             + '    </div>'
             + '    <div>'
             + '      <div style="font-size:0.72rem; color:var(--text-muted);">单份理论毛利</div>'
-            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">¥' + fmtMoney(d.gross_profit) + '</div>'
+            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">' + '$' + fmtMoney(d.gross_profit) + '</div>'
             + '    </div>'
             + '    <div>'
             + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论毛利率</div>'
@@ -13939,8 +14033,10 @@ function renderDishCards(dishes) {
             + '  </div>'
             + '</div>'
             + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
-            + '  <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
-            + (isOwnerRoleNow() ? ('  <button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>') : '')
+            + (isOwnerRoleNow()
+                ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
+                   + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
+                : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
             + '</div>'
             + '</div>';
     });
@@ -13971,13 +14067,15 @@ function renderDishTable(dishes) {
         html += '<tr>'
             + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
             + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
-            + '<td class="col-right" style="font-weight:600;">¥' + fmtMoney(d.price) + '</td>'
+            + '<td class="col-right" style="font-weight:600;">$' + fmtMoney(d.price) + '</td>'
             + '<td style="font-size:0.82rem; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">' + w2Escape(ingSummary) + '</td>'
-            + '<td class="col-right">¥' + fmtMoney(d.theoretical_cost) + '</td>'
+            + '<td class="col-right">$' + fmtMoney(d.theoretical_cost) + '</td>'
             + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
             + '<td class="col-center">'
-            + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
-            + (isOwnerRoleNow() ? ('  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>') : '')
+            + (isOwnerRoleNow()
+                ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
+                   + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
+                : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
             + '</td>'
             + '</tr>';
     });
@@ -14025,9 +14123,77 @@ function openDishModal(dishId) {
 
     if (rowsBody) rowsBody.innerHTML = '';
 
+    const applyDishModalRoleState = () => {
+        const isOwner = isOwnerRoleNow();
+        const btnSaveElem = document.getElementById('btnSaveDishModal');
+        const modalCard = modal ? modal.querySelector('.modal-card') : null;
+        const btnCancelElem = document.getElementById('btnCancelDishModal') || (modal ? modal.querySelector('.modal-body button[onclick*="dishEditModal"]') : null);
+        const headerCloseBtn = modal ? modal.querySelector('.modal-header .modal-close-btn') : null;
+        if (headerCloseBtn) {
+            headerCloseBtn.innerText = 'x';
+            headerCloseBtn.removeAttribute('style');
+        }
+        const btnAddIngElem = modal ? modal.querySelector('button[onclick="addDishIngredientRow()"]') : null;
+
+        let staffNotice = document.getElementById('dishModalStaffNotice');
+        if (!isOwner) {
+            if (titleEl) titleEl.innerText = '餐品配方详情（店员查阅）';
+            if (!staffNotice && modalCard) {
+                staffNotice = document.createElement('div');
+                staffNotice.id = 'dishModalStaffNotice';
+                staffNotice.style.cssText = 'margin-bottom:12px; padding:10px 14px; font-size:0.85rem; border-left:4px solid var(--primary, #0f766e); background:var(--bg-subtle, #f0fdf4); color:var(--text-main); border-radius:4px;';
+                staffNotice.innerText = '[提示] 店员仅支持查阅食材用量与规格。如需调整配方或售价，请联系老板。';
+                const bodyElem = modalCard.querySelector('.modal-body');
+                if (bodyElem) bodyElem.insertBefore(staffNotice, bodyElem.firstChild);
+            } else if (staffNotice) {
+                staffNotice.classList.remove('hide');
+            }
+
+            if (nameInput) nameInput.disabled = true;
+            if (catInput) catInput.disabled = true;
+            if (priceInput) priceInput.disabled = true;
+            if (descInput) descInput.disabled = true;
+            if (statusInput) statusInput.disabled = true;
+
+            if (btnAddIngElem) btnAddIngElem.classList.add('hide');
+            if (btnSaveElem) btnSaveElem.classList.add('hide');
+
+            if (btnCancelElem) {
+                btnCancelElem.innerText = '关闭';
+                btnCancelElem.style.cssText = 'min-height:42px; height:42px; min-width:90px; padding:0 24px; font-size:0.95rem;';
+            }
+
+            if (rowsBody) {
+                rowsBody.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
+                rowsBody.querySelectorAll('button').forEach(btn => { btn.classList.add('hide'); });
+            }
+        } else {
+            if (staffNotice) staffNotice.classList.add('hide');
+
+            if (nameInput) nameInput.disabled = false;
+            if (catInput) catInput.disabled = false;
+            if (priceInput) priceInput.disabled = false;
+            if (descInput) descInput.disabled = false;
+            if (statusInput) statusInput.disabled = false;
+
+            if (btnAddIngElem) btnAddIngElem.classList.remove('hide');
+            if (btnSaveElem) btnSaveElem.classList.remove('hide');
+
+            if (btnCancelElem) {
+                btnCancelElem.innerText = '取消';
+                btnCancelElem.style.cssText = 'min-height:38px; height:38px; min-width:auto; padding:0 16px; font-size:0.875rem;';
+            }
+
+            if (rowsBody) {
+                rowsBody.querySelectorAll('input, select').forEach(el => { el.disabled = false; });
+                rowsBody.querySelectorAll('button').forEach(btn => { btn.classList.remove('hide'); });
+            }
+        }
+    };
+
     const prepareModal = () => {
         if (dishId) {
-            if (titleEl) titleEl.innerText = '编辑餐品与配方';
+            if (titleEl) titleEl.innerText = isOwnerRoleNow() ? '编辑餐品与配方' : '餐品配方详情（店员查阅）';
             const dish = dishLibraryCache.find(d => d.id === Number(dishId));
             if (dish) {
                 if (idInput) idInput.value = dish.id;
@@ -14045,6 +14211,7 @@ function openDishModal(dishId) {
                     addDishIngredientRow();
                 }
                 calcDishModalTheoryCost();
+                applyDishModalRoleState();
                 openModalById('dishEditModal');
             } else {
                 apiFetch('/api/dishes/' + dishId)
@@ -14070,6 +14237,7 @@ function openDishModal(dishId) {
                             addDishIngredientRow();
                         }
                         calcDishModalTheoryCost();
+                        applyDishModalRoleState();
                         openModalById('dishEditModal');
                     });
             }
@@ -14084,6 +14252,7 @@ function openDishModal(dishId) {
 
             addDishIngredientRow();
             calcDishModalTheoryCost();
+            applyDishModalRoleState();
             openModalById('dishEditModal');
         }
     };
@@ -14118,34 +14287,35 @@ function addDishIngredientRow(skuId, qty, unit, notes) {
             + ' data-price="' + (s.last_unit_price || 0) + '"'
             + ' data-stock="' + (s.current_stock || 0) + '"'
             + ' data-category="' + w2Escape(s.category || '') + '">'
-            + w2Escape(s.name) + ' (' + (s.category || '通用') + ' ｜ 库存: ' + (s.current_stock || 0) + (s.base_unit || '') + ' ｜ ¥' + fmtMoney(s.last_unit_price) + '/' + (s.base_unit || '') + ')'
+            + w2Escape(s.name) + ' (' + (s.category || '通用') + ' ｜ 库存: ' + (s.current_stock || 0) + (s.base_unit || '') + ' ｜ $' + fmtMoney(s.last_unit_price) + '/' + (s.base_unit || '') + ')'
             + '</option>';
     });
 
     const initQty = qty != null ? qty : '';
     const initUnit = unit != null ? unit : (selectedSku ? selectedSku.base_unit : '');
     const initNotes = notes != null ? notes : '';
-    const refPriceText = selectedSku ? ('¥' + fmtMoney(selectedSku.last_unit_price) + '/' + (selectedSku.base_unit || '')) : '-';
+    const refPriceText = selectedSku ? ('$' + fmtMoney(selectedSku.last_unit_price) + '/' + (selectedSku.base_unit || '')) : '-';
+    const isOwner = isOwnerRoleNow();
 
     tr.innerHTML = '<td>'
-        + '  <select class="form-control ing-sku-select" onchange="onDishIngredientSkuChange(this)">'
+        + '  <select class="form-control ing-sku-select" onchange="onDishIngredientSkuChange(this)"' + (!isOwner ? ' disabled' : '') + '>'
         + optionsHtml
         + '  </select>'
         + '</td>'
         + '<td>'
-        + '  <input type="number" step="0.0001" min="0.0001" class="form-control ing-qty-input col-right" placeholder="0.00" value="' + initQty + '" oninput="calcDishModalTheoryCost()">'
+        + '  <input type="number" step="0.0001" min="0.0001" class="form-control ing-qty-input col-right" placeholder="0.00" value="' + initQty + '" oninput="calcDishModalTheoryCost()"' + (!isOwner ? ' disabled' : '') + '>'
         + '</td>'
         + '<td>'
-        + '  <input type="text" class="form-control ing-unit-input col-center" placeholder="单位" value="' + w2Escape(initUnit) + '" oninput="calcDishModalTheoryCost()">'
+        + '  <input type="text" class="form-control ing-unit-input col-center" placeholder="单位" value="' + w2Escape(initUnit) + '" oninput="calcDishModalTheoryCost()"' + (!isOwner ? ' disabled' : '') + '>'
         + '</td>'
         + '<td class="col-right">'
         + '  <span class="ing-ref-price" style="font-size:0.85rem; color:var(--text-muted);">' + refPriceText + '</span>'
         + '</td>'
         + '<td class="col-right">'
-        + '  <span class="ing-item-cost" style="font-weight:600; color:var(--primary, #0f766e);">¥0.00</span>'
+        + '  <span class="ing-item-cost" style="font-weight:600; color:var(--primary, #0f766e);">$0.00</span>'
         + '</td>'
         + '<td class="col-center">'
-        + '  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="removeDishIngredientRow(this)">删除</button>'
+        + (isOwner ? '  <button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="removeDishIngredientRow(this)">删除</button>' : '')
         + '</td>';
 
     tbody.appendChild(tr);
@@ -14181,7 +14351,7 @@ function onDishIngredientSkuChange(selectEl) {
             unitInput.value = baseUnit;
         }
         if (refPriceSpan) {
-            refPriceSpan.innerText = '¥' + fmtMoney(lastPrice) + '/' + (baseUnit || '');
+            refPriceSpan.innerText = '$' + fmtMoney(lastPrice) + '/' + (baseUnit || '');
         }
     } else {
         if (refPriceSpan) refPriceSpan.innerText = '-';
@@ -14214,16 +14384,16 @@ function calcDishModalTheoryCost() {
             const skuPrice = parseFloat(opt.getAttribute('data-price')) || 0;
 
             if (refPriceSpan) {
-                refPriceSpan.innerText = '¥' + fmtMoney(skuPrice) + '/' + (skuBaseUnit || '');
+                refPriceSpan.innerText = '$' + fmtMoney(skuPrice) + '/' + (skuBaseUnit || '');
             }
 
             const convertedQty = convertUnitQtyFrontend(rawQty, ingUnit || skuBaseUnit, skuBaseUnit);
             const rowCost = Math.round(convertedQty * skuPrice * 100) / 100;
             totalTheoreticalCost += rowCost;
 
-            if (costSpan) costSpan.innerText = '¥' + fmtMoney(rowCost);
+            if (costSpan) costSpan.innerText = '$' + fmtMoney(rowCost);
         } else {
-            if (costSpan) costSpan.innerText = '¥0.00';
+            if (costSpan) costSpan.innerText = '$0.00';
         }
     });
 
@@ -14238,9 +14408,9 @@ function calcDishModalTheoryCost() {
     const profitEl = document.getElementById('dishModalTheoryProfit');
     const marginEl = document.getElementById('dishModalTheoryMargin');
 
-    if (costEl) costEl.innerText = '¥' + fmtMoney(totalTheoreticalCost);
+    if (costEl) costEl.innerText = '$' + fmtMoney(totalTheoreticalCost);
     if (profitEl) {
-        profitEl.innerText = '¥' + fmtMoney(grossProfit);
+        profitEl.innerText = '$' + fmtMoney(grossProfit);
         profitEl.style.color = grossProfit >= 0 ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)';
     }
     if (marginEl) {
@@ -14537,8 +14707,8 @@ function renderDailyKPI(summary) {
     const marginEl = document.getElementById('kpiDishGrossMargin');
     const countEl = document.getElementById('kpiDishCount');
 
-    if (costEl) costEl.innerText = '¥' + fmtMoney(summary.total_cost || 0);
-    if (revEl) revEl.innerText = '¥' + fmtMoney(summary.total_revenue || 0);
+    if (costEl) costEl.innerText = '$' + fmtMoney(summary.total_cost || 0);
+    if (revEl) revEl.innerText = '$' + fmtMoney(summary.total_revenue || 0);
     if (marginEl) {
         const gm = Number(summary.gross_margin_rate || 0);
         marginEl.innerText = gm.toFixed(1) + '%';
@@ -14548,7 +14718,39 @@ function renderDailyKPI(summary) {
         const validCount = Math.max(0, (summary.records_count || 0) - (summary.void_count || 0));
         countEl.innerText = validCount + ' 笔';
     }
+
+    // 零成本/数据完整性风险警示横幅
+    let bannerEl = document.getElementById('dishDataIntegrityBanner');
+    if (!bannerEl) {
+        const kpiGrid = document.querySelector('.metrics-grid.dish-kpi-grid');
+        if (kpiGrid && kpiGrid.parentNode) {
+            bannerEl = document.createElement('div');
+            bannerEl.id = 'dishDataIntegrityBanner';
+            kpiGrid.parentNode.insertBefore(bannerEl, kpiGrid.nextSibling);
+        }
+    }
+    if (bannerEl) {
+        if (summary.has_zero_cost_batch || summary.data_integrity_status === 'zero_cost_alert') {
+            bannerEl.className = 'alert alert-warning';
+            bannerEl.style.cssText = 'margin: 12px 0 20px 0; padding: 12px 16px; border-left: 4px solid var(--warning, #eab308); background: rgba(234, 179, 8, 0.12); border-radius: 6px; font-size: 0.88rem; color: var(--text-main); line-height: 1.5;';
+            bannerEl.innerHTML = '<strong>提示：</strong>' + w2Escape(summary.data_integrity_msg || '今日核算中包含未录入进货价的食材（暂估成本 $0）。当前大盘毛利率可能偏高，请提醒老板尽快补录进货单据以还原真实利润。');
+            bannerEl.classList.remove('hide');
+        } else {
+            bannerEl.classList.add('hide');
+            bannerEl.innerHTML = '';
+        }
+    }
+
     refreshDishKpiEstimates();
+}
+
+/**
+ * 浮点安全解析函数：支持半份/小数份（如 0.5），防 NaN 与负数截断
+ */
+function parseSafeQuantity(val) {
+    if (val === null || val === undefined || val === '') return 0;
+    const num = parseFloat(val);
+    return isNaN(num) ? 0 : Math.max(0, Math.round(num * 100) / 100);
 }
 
 /**
@@ -14564,9 +14766,9 @@ function refreshDishKpiEstimates() {
     rows.forEach(tr => {
         const dishId = tr.getAttribute('data-dish-id');
         const input = document.getElementById('dishConsumeQty_' + dishId);
-        const qty = input ? Math.max(0, parseInt(input.value) || 0) : 0;
+        const qty = input ? parseSafeQuantity(input.value) : 0;
         if (qty > 0) {
-            pendingQty += qty;
+            pendingQty = Math.round((pendingQty + qty) * 100) / 100;
             estCost += qty * (parseFloat(tr.getAttribute('data-dish-cost')) || 0);
             estRevenue += qty * (parseFloat(tr.getAttribute('data-dish-price')) || 0);
         }
@@ -14580,8 +14782,8 @@ function refreshDishKpiEstimates() {
     const totalCost = Number(summary.total_cost || 0) + estCost;
     const totalRevenue = Number(summary.total_revenue || 0) + estRevenue;
 
-    if (costEl) costEl.innerText = '¥' + fmtMoney(totalCost);
-    if (revEl) revEl.innerText = '¥' + fmtMoney(totalRevenue);
+    if (costEl) costEl.innerText = '$' + fmtMoney(totalCost);
+    if (revEl) revEl.innerText = '$' + fmtMoney(totalRevenue);
     if (marginEl) {
         const gm = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue * 100 : 0;
         marginEl.innerText = gm.toFixed(1) + '%';
@@ -14629,21 +14831,21 @@ function renderDishConsumeEntryTable(dishes) {
             + (d.description ? ('<div style="font-size:0.75rem; color:var(--text-muted);">' + w2Escape(d.description) + '</div>') : '')
             + '</td>'
             + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
-            + '<td class="col-right" style="font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.price) + '</td>'
+            + '<td class="col-right" style="font-weight:600; color:var(--text-main);">$' + fmtMoney(d.price) + '</td>'
             + '<td style="font-size:0.8rem; color:var(--text-secondary); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">'
             + w2Escape(ingSummary)
             + '</td>'
             + '<td style="text-align:center;">'
             + '  <div class="dish-qty-control" style="display:inline-flex; align-items:center; gap:4px;">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:38px; padding:0; line-height:36px;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
-            + '    <input type="number" min="0" step="1" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:70px; text-align:center; font-weight:700; height:38px; padding:2px 4px;" value="0" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:28px; height:38px; padding:0; line-height:36px;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.72rem; padding:0 6px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
+            + '    <input type="number" min="0" step="0.5" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:80px; text-align:center; font-weight:700; height:38px; min-height:38px; padding:2px 4px; font-size:1rem;" value="0" onkeydown="if([\x27-\x27, \x27+\x27, \x27e\x27, \x27E\x27].includes(event.key)){event.preventDefault();}" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
             + '  </div>'
             + '</td>'
             + '<td class="col-right" style="font-weight:700; color:var(--primary, #0f766e); font-size:0.95rem;" id="dishSubtotal_' + d.id + '">'
-            + '¥0.00'
+            + '$0.00'
             + '</td>'
             + '</tr>';
     });
@@ -14674,8 +14876,8 @@ function filterDishConsumeEntryTable(query) {
 function adjustDishConsumeQty(dishId, delta) {
     const input = document.getElementById('dishConsumeQty_' + dishId);
     if (!input) return;
-    let current = parseInt(input.value) || 0;
-    current = Math.max(0, current + delta);
+    let current = parseSafeQuantity(input.value);
+    current = Math.max(0, Math.round((current + delta) * 100) / 100);
     input.value = current;
     onDishConsumeQtyInput(dishId, current);
 }
@@ -14688,11 +14890,11 @@ function onDishConsumeQtyInput(dishId, val) {
     if (!row) return;
 
     const price = parseFloat(row.getAttribute('data-dish-price')) || 0;
-    const qty = Math.max(0, parseInt(val) || 0);
+    const qty = parseSafeQuantity(val);
     const subtotal = Math.round(qty * price * 100) / 100;
 
     const subtotalEl = document.getElementById('dishSubtotal_' + dishId);
-    if (subtotalEl) subtotalEl.innerText = '¥' + fmtMoney(subtotal);
+    if (subtotalEl) subtotalEl.innerText = '$' + fmtMoney(subtotal);
 
     updateDishConsumeSummary();
 }
@@ -14708,10 +14910,10 @@ function updateDishConsumeSummary() {
     rows.forEach(tr => {
         const dishId = tr.getAttribute('data-dish-id');
         const input = document.getElementById('dishConsumeQty_' + dishId);
-        const qty = input ? (parseInt(input.value) || 0) : 0;
+        const qty = input ? parseSafeQuantity(input.value) : 0;
         if (qty > 0) {
             totalItems++;
-            totalQty += qty;
+            totalQty = Math.round((totalQty + qty) * 100) / 100;
         }
     });
 
@@ -14728,11 +14930,19 @@ function updateDishConsumeSummary() {
  * 清空所有已输入份数
  */
 function resetDishConsumeInputs() {
-    const inputs = document.querySelectorAll('.dish-consume-qty-input');
-    inputs.forEach(inp => { inp.value = 0; });
-    const subtotals = document.querySelectorAll('[id^="dishSubtotal_"]');
-    subtotals.forEach(st => { st.innerText = '¥0.00'; });
-    updateDishConsumeSummary();
+    showCustomConfirmModal({
+        title: '清空确认',
+        message: '确定要清空刚才输入的所有数字吗？',
+        confirmText: '确认清空',
+        cancelText: '取消',
+        onConfirm: () => {
+            const inputs = document.querySelectorAll('.dish-consume-qty-input');
+            inputs.forEach(inp => { inp.value = 0; });
+            const subtotals = document.querySelectorAll('[id^="dishSubtotal_"]');
+            subtotals.forEach(st => { st.innerText = '$0.00'; });
+            updateDishConsumeSummary();
+        }
+    });
 }
 
 /**
@@ -14748,7 +14958,7 @@ function submitDailyConsumptionBatch() {
     rows.forEach(tr => {
         const dishId = parseInt(tr.getAttribute('data-dish-id'));
         const input = document.getElementById('dishConsumeQty_' + dishId);
-        const qty = input ? (parseInt(input.value) || 0) : 0;
+        const qty = input ? parseSafeQuantity(input.value) : 0;
         if (dishId && qty > 0) {
             items.push({
                 dish_id: dishId,
@@ -14759,7 +14969,7 @@ function submitDailyConsumptionBatch() {
     });
 
     if (items.length === 0) {
-        showToast('请至少输入一种餐品的消耗份数（份数大于 0）', 'warning');
+        showToast('请至少输入一种餐品的售出份数（份数大于 0）', 'warning');
         return;
     }
 
@@ -14780,20 +14990,28 @@ function submitDailyConsumptionBatch() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     })
-    .then(res => res.json())
+    .then(res => res.json().then(data => ({ status: res.status, body: data })))
     .then(ret => {
         if (btnSubmit) {
             btnSubmit.disabled = false;
             btnSubmit.innerText = '一键扣减库存并核算真实成本';
         }
 
-        if (ret.status !== 'success') {
-            showToast(ret.msg || '消耗扣减失败', 'error');
+        if (ret.status !== 200 || ret.body.status !== 'success') {
+            const err = ret.body.msg || '消耗扣减失败，请检查输入后重试';
+            showToast(err, 'error');
+            // 保留已录入内容，绝不清空输入框
             return;
         }
 
-        showToast(ret.msg || '消耗扣减成功！已完成 FIFO 批次精确计价', 'success');
-        resetDishConsumeInputs();
+        showToast(ret.body.msg || '消耗扣减成功！已完成 FIFO 批次精确计价', 'success');
+
+        // 仅在成功后清空输入框
+        const inputs = document.querySelectorAll('.dish-consume-qty-input');
+        inputs.forEach(inp => { inp.value = 0; });
+        const subtotals = document.querySelectorAll('[id^="dishSubtotal_"]');
+        subtotals.forEach(st => { st.innerText = '$0.00'; });
+        updateDishConsumeSummary();
 
         // 1. 刷新当日流水与 KPI
         loadDailyConsumption(dateStr);
@@ -14802,8 +15020,8 @@ function submitDailyConsumptionBatch() {
         loadInventoryData();
 
         // 3. 自动展示第一条记录的 FIFO 批次穿透溯源报告
-        if (ret.data && Array.isArray(ret.data.consumption_ids) && ret.data.consumption_ids.length > 0) {
-            showCostTraceModal(ret.data.consumption_ids[0]);
+        if (ret.body.data && Array.isArray(ret.body.data.consumption_ids) && ret.body.data.consumption_ids.length > 0) {
+            showCostTraceModal(ret.body.data.consumption_ids[0]);
         }
     })
     .catch(err => {
@@ -14812,7 +15030,7 @@ function submitDailyConsumptionBatch() {
             btnSubmit.innerText = '一键扣减库存并核算真实成本';
         }
         console.error('submitDailyConsumptionBatch error:', err);
-        showToast('网络请求异常，消耗扣减失败', 'error');
+        showToast('网络请求异常，消耗扣减失败，已保留填写内容', 'error');
     });
 }
 
@@ -14848,15 +15066,15 @@ function renderDailyHistoryTable(consumptions) {
             + '</td>'
             + '<td class="col-right" style="font-weight:600;">' + r.quantity + ' 份</td>'
             + '<td class="col-right" style="font-weight:600; color:var(--primary, #0f766e);">'
-            + '  ¥' + fmtMoney(r.total_cost)
-            + '  <div style="font-size:0.72rem; color:var(--text-muted); font-weight:400;">单份 ¥' + fmtMoney(r.unit_cost) + '</div>'
+            + '  $' + fmtMoney(r.total_cost)
+            + '  <div style="font-size:0.72rem; color:var(--text-muted); font-weight:400;">单份 $' + fmtMoney(r.unit_cost) + '</div>'
             + '</td>'
-            + '<td class="col-right">¥' + fmtMoney(r.revenue) + '</td>'
+            + '<td class="col-right">$' + fmtMoney(r.revenue) + '</td>'
             + '<td class="col-right"><span class="badge ' + gmBadgeClass + '">' + gm.toFixed(1) + '%</span></td>'
             + '<td class="col-center">' + statusBadge + '</td>'
             + '<td class="col-center">'
-            + '  <button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin-right:4px;" onclick="showCostTraceModal(' + r.id + ')">批次溯源</button>'
-            + (!isVoid && isOwnerRoleNow() ? ('<button type="button" class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem;" onclick="voidDailyConsumption(' + r.id + ')">冲销作废</button>') : '')
+            + '  <button type="button" class="btn btn-secondary" style="padding:4px 10px; font-size:0.85rem; min-height:38px; height:38px; margin-right:4px;" onclick="showCostTraceModal(' + r.id + ')">批次溯源</button>'
+            + (!isVoid && isOwnerRoleNow() ? ('<button type="button" class="btn btn-danger" style="padding:4px 10px; font-size:0.85rem; min-height:38px; height:38px;" onclick="voidDailyConsumption(' + r.id + ')">冲销作废</button>') : '')
             + '</td>'
             + '</tr>';
     });
@@ -14905,11 +15123,11 @@ function renderCostTraceModalContent(c) {
 
     if (nameEl) nameEl.innerText = c.dish_name || ('餐品#' + c.dish_id);
     if (qtyEl) qtyEl.innerText = (c.date || '-') + ' / 售出 ' + c.quantity + ' 份';
-    if (totalEl) totalEl.innerText = '¥' + fmtMoney(c.total_cost);
+    if (totalEl) totalEl.innerText = '$' + fmtMoney(c.total_cost);
 
     const unitCost = Number(c.unit_cost || 0);
     if (diffEl) {
-        diffEl.innerHTML = '<span style="font-weight:600;">¥' + fmtMoney(unitCost) + '/份</span>'
+        diffEl.innerHTML = '<span style="font-weight:600;">$' + fmtMoney(unitCost) + '/份</span>'
             + ' <span style="font-size:0.75rem; color:var(--text-muted);">(基于入库批次 FIFO 实际加权计价)</span>';
     }
 
@@ -14945,26 +15163,31 @@ function renderCostTraceModalContent(c) {
     skuMap.forEach(group => {
         let batchesHtml = '';
         group.batches.forEach(b => {
-            const isEst = (!b.batch_id || b.batch_id <= 0);
+            const isEst = (b.is_estimated === 1) || (!b.batch_id || b.batch_id <= 0);
+            const isZeroCost = (b.is_zero_cost === true) || (Number(b.unit_cost || 0) <= 0);
             if (isEst) {
-                batchesHtml += '<div class="cost-trace-batch-item" style="padding:8px 12px; margin:4px 0 4px 16px; background:rgba(239,68,68,0.08); border-left:3px solid var(--danger, #dc2626); border-radius:4px; font-size:0.84rem;">'
+                const badgeLabel = isZeroCost ? '[零成本暂估]' : '[超卖暂估批次]';
+                const warningMsg = isZeroCost
+                    ? '注意：暂无进货单价，按 $0 计入。该食材尚未录入真实进货单据，系统暂按 $0 暂估价计算。该餐品当前计算出的毛利偏高，待补录进货单据后系统将自动校准真实成本。'
+                    : '无可用历史入库批次，已生成暂估对冲批次，待新入库后自动核销差异。';
+                batchesHtml += '<div class="cost-trace-batch-item" style="padding:10px 12px; margin:4px 0 4px 16px; background:rgba(239,68,68,0.08); border-left:4px solid var(--danger, #dc2626); border-radius:4px; font-size:0.85rem;">'
                     + '<div style="display:flex; justify-content:space-between; align-items:center;">'
                     + '  <div>'
-                    + '    <span class="badge badge-danger" style="font-size:0.7rem; margin-right:6px;">超卖暂估批次</span>'
-                    + '    <span>扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ 暂估基准单价 ¥' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
+                    + '    <span class="badge badge-danger" style="font-size:0.75rem; margin-right:6px; padding:2px 6px;">' + badgeLabel + '</span>'
+                    + '    <span>扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ 暂估单价 $' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
                     + '  </div>'
-                    + '  <div style="font-weight:700; color:var(--danger, #dc2626);">¥' + fmtMoney(b.total_cost) + '</div>'
+                    + '  <div style="font-weight:700; color:var(--danger, #dc2626);">$' + fmtMoney(b.total_cost) + '</div>'
                     + '</div>'
-                    + '<div style="font-size:0.74rem; color:var(--text-muted); margin-top:2px;">无可用历史入库批次，已生成暂估对冲批次，待新入库后自动核销差异</div>'
+                    + '<div style="font-size:0.76rem; color:' + (isZeroCost ? 'var(--danger, #dc2626)' : 'var(--text-muted)') + '; margin-top:4px; line-height:1.4;">' + warningMsg + '</div>'
                     + '</div>';
             } else {
-                batchesHtml += '<div class="cost-trace-batch-item" style="padding:8px 12px; margin:4px 0 4px 16px; background:var(--bg-subtle, #f8fafc); border-left:3px solid var(--primary, #0f766e); border-radius:4px; font-size:0.84rem;">'
+                batchesHtml += '<div class="cost-trace-batch-item" style="padding:10px 12px; margin:4px 0 4px 16px; background:var(--bg-subtle, #f8fafc); border-left:4px solid var(--primary, #0f766e); border-radius:4px; font-size:0.85rem;">'
                     + '<div style="display:flex; justify-content:space-between; align-items:center;">'
                     + '  <div>'
-                    + '    <span class="badge badge-info" style="font-size:0.7rem; margin-right:6px;">批次 #' + b.batch_id + '</span>'
-                    + '    <span>入库日期: <strong>' + (b.batch_date || '未知') + '</strong> ｜ 扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ ¥' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
+                    + '    <span class="badge badge-info" style="font-size:0.75rem; margin-right:6px; padding:2px 6px;">批次 #' + b.batch_id + '</span>'
+                    + '    <span>入库日期: <strong>' + (b.batch_date || '未知') + '</strong> ｜ 扣减 <strong>' + b.qty_consumed + ' ' + w2Escape(b.unit) + '</strong> @ $' + fmtMoney(b.unit_cost) + '/' + w2Escape(b.unit) + '</span>'
                     + '  </div>'
-                    + '  <div style="font-weight:700; color:var(--primary, #0f766e);">¥' + fmtMoney(b.total_cost) + '</div>'
+                    + '  <div style="font-weight:700; color:var(--primary, #0f766e);">$' + fmtMoney(b.total_cost) + '</div>'
                     + '</div>'
                     + '</div>';
             }
@@ -14977,7 +15200,7 @@ function renderCostTraceModalContent(c) {
             + '    <span style="font-size:0.8rem; color:var(--text-muted); font-weight:400; margin-left:8px;">合计耗用: <strong>' + group.total_qty + ' ' + w2Escape(group.unit) + '</strong></span>'
             + '  </div>'
             + '  <div style="font-weight:700; color:var(--text-main); font-size:0.95rem;">'
-            + '    食材总计: ¥' + fmtMoney(group.total_cost)
+            + '    食材总计: $' + fmtMoney(group.total_cost)
             + '  </div>'
             + '</div>'
             + '<div class="cost-trace-batches-tree">'
@@ -15082,7 +15305,7 @@ function renderDishCostAnalysisDashboard(data) {
         avgMarginEl.innerText = overallMargin.toFixed(1) + '%';
         avgMarginEl.style.color = overallMargin >= 60 ? 'var(--success, #16a34a)' : (overallMargin >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
     }
-    if (totalCostEl) totalCostEl.innerText = '¥' + fmtMoney(summary.total_cost || 0);
+    if (totalCostEl) totalCostEl.innerText = '$' + fmtMoney(summary.total_cost || 0);
 
     const costUpDishes = dishes.filter(d => (d.avg_unit_cost > d.theoretical_cost) && d.total_sold_quantity > 0);
     if (costUpEl) costUpEl.innerText = costUpDishes.length;
@@ -15127,9 +15350,9 @@ function renderDishCostComparisonGrid(dishes) {
         if (!hasSales) {
             varianceTag = '<span class="badge badge-neutral" style="font-size:0.72rem;">周期内无售出</span>';
         } else if (variance > 0.05) {
-            varianceTag = '<span class="badge badge-danger" style="font-size:0.72rem;">真实成本 +¥' + fmtMoney(variance) + ' (上涨)</span>';
+            varianceTag = '<span class="badge badge-danger" style="font-size:0.72rem;">真实成本 +$' + fmtMoney(variance) + ' (上涨)</span>';
         } else if (variance < -0.05) {
-            varianceTag = '<span class="badge badge-success" style="font-size:0.72rem;">真实成本 -¥' + fmtMoney(Math.abs(variance)) + ' (下降)</span>';
+            varianceTag = '<span class="badge badge-success" style="font-size:0.72rem;">真实成本 -$' + fmtMoney(Math.abs(variance)) + ' (下降)</span>';
         } else {
             varianceTag = '<span class="badge badge-neutral" style="font-size:0.72rem;">与理论持平</span>';
         }
@@ -15141,22 +15364,22 @@ function renderDishCostComparisonGrid(dishes) {
             + '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">'
             + '  <div>'
             + '    <h4 style="margin:0 0 4px 0; font-size:1rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
-            + '    <div style="font-size:0.75rem; color:var(--text-muted);">' + (d.category ? ('<span class="badge badge-info" style="font-size:0.68rem;">' + w2Escape(d.category) + '</span> ') : '') + '售价: ¥' + fmtMoney(d.price) + '</div>'
+            + '    <div style="font-size:0.75rem; color:var(--text-muted);">' + (d.category ? ('<span class="badge badge-info" style="font-size:0.68rem;">' + w2Escape(d.category) + '</span> ') : '') + '售价: $' + fmtMoney(d.price) + '</div>'
             + '  </div>'
             + '  <div>' + varianceTag + '</div>'
             + '</div>'
             + '<div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:10px; background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px;">'
             + '  <div>'
             + '    <div style="font-size:0.72rem; color:var(--text-muted);">真实加权单份成本</div>'
-            + '    <div style="font-size:0.95rem; font-weight:700; color:' + (variance > 0.05 ? 'var(--danger, #dc2626)' : 'var(--primary, #0f766e)') + ';">¥' + fmtMoney(d.avg_unit_cost) + '</div>'
+            + '    <div style="font-size:0.95rem; font-weight:700; color:' + (variance > 0.05 ? 'var(--danger, #dc2626)' : 'var(--primary, #0f766e)') + ';">$' + fmtMoney(d.avg_unit_cost) + '</div>'
             + '  </div>'
             + '  <div>'
             + '    <div style="font-size:0.72rem; color:var(--text-muted);">理论基准单份成本</div>'
-            + '    <div style="font-size:0.95rem; font-weight:600; color:var(--text-main);">¥' + fmtMoney(d.theoretical_cost) + '</div>'
+            + '    <div style="font-size:0.95rem; font-weight:600; color:var(--text-main);">' + '$' + fmtMoney(d.theoretical_cost) + '</div>'
             + '  </div>'
             + '</div>'
             + '<div style="display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; color:var(--text-secondary); margin-bottom:4px;">'
-            + '  <span>累计售出: <strong>' + d.total_sold_quantity + ' 份</strong> (营收 ¥' + fmtMoney(d.total_revenue) + ')</span>'
+            + '  <span>累计售出: <strong>' + d.total_sold_quantity + ' 份</strong> (营收 $' + fmtMoney(d.total_revenue) + ')</span>'
             + '  <span>实际毛利率: <strong style="color:' + marginColor + ';">' + marginRate.toFixed(1) + '%</strong></span>'
             + '</div>'
             + '<div style="height:6px; background:var(--border-color); border-radius:3px; overflow:hidden;">'
@@ -15194,12 +15417,12 @@ function renderDishMarginRanking(dishes) {
             + '  <span style="font-size:0.9rem; font-weight:700; width:24px; text-align:center;">' + rankMedal + '</span>'
             + '  <div>'
             + '    <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">' + w2Escape(d.name) + '</div>'
-            + '    <div style="font-size:0.72rem; color:var(--text-muted);">售出 ' + d.total_sold_quantity + ' 份 ｜ 营业额 ¥' + fmtMoney(d.total_revenue) + '</div>'
+            + '    <div style="font-size:0.72rem; color:var(--text-muted);">售出 ' + d.total_sold_quantity + ' 份 ｜ 营业额 $' + fmtMoney(d.total_revenue) + '</div>'
             + '  </div>'
             + '</div>'
             + '<div style="text-align:right;">'
             + '  <div style="font-weight:700; font-size:0.92rem; color:' + gmColor + ';">' + gm.toFixed(1) + '%</div>'
-            + '  <div style="font-size:0.72rem; color:var(--text-muted);">毛利 ¥' + fmtMoney(d.total_gross_profit) + '</div>'
+            + '  <div style="font-size:0.72rem; color:var(--text-muted);">毛利 $' + fmtMoney(d.total_gross_profit) + '</div>'
             + '</div>'
             + '</div>';
     });
@@ -15229,10 +15452,10 @@ function renderDishPriceAnomalyImpact(dishes, costUpDishes) {
         html += '<div style="padding:10px 12px; margin-bottom:8px; border-left:4px solid var(--danger, #dc2626); background:rgba(239,68,68,0.05); border-radius:4px;">'
             + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
             + '  <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">' + w2Escape(d.name) + '</div>'
-            + '  <span class="badge badge-danger" style="font-size:0.7rem;">单份成本上涨 ¥' + fmtMoney(variance) + '</span>'
+            + '  <span class="badge badge-danger" style="font-size:0.7rem;">单份成本上涨 $' + fmtMoney(variance) + '</span>'
             + '</div>'
             + '<div style="font-size:0.78rem; color:var(--text-secondary); line-height:1.4;">'
-            + '由于进货食材单价上涨，实际 FIFO 单份成本达到 <strong>¥' + fmtMoney(d.avg_unit_cost) + '</strong> (理论基准 ¥' + fmtMoney(d.theoretical_cost) + ')，导致实际毛利率下滑至 <strong style="color:var(--danger, #dc2626);">' + (d.avg_gross_margin_rate || 0).toFixed(1) + '%</strong>。'
+            + '由于进货食材单价上涨，实际 FIFO 单份成本达到 <strong>$' + fmtMoney(d.avg_unit_cost) + '</strong> (理论基准 $' + fmtMoney(d.theoretical_cost) + ')，导致实际毛利率下滑至 <strong style="color:var(--danger, #dc2626);">' + (d.avg_gross_margin_rate || 0).toFixed(1) + '%</strong>。'
             + '</div>'
             + '</div>';
     });

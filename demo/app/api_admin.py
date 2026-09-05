@@ -11,10 +11,62 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
+import re
 from app import db
 from app.auth import require_admin, require_role
+from app.services.security_guard import mask_secret_key
+
+_SK_KEY_PATTERN = re.compile(r"sk-[a-zA-Z0-9_\-]{8,}")
+
+
+def mask_engine_config_dict(data: dict) -> dict:
+    """递归脱敏引擎配置字典中的所有 API Key 字段。"""
+    if not isinstance(data, dict):
+        return data
+    masked = {}
+    for k, v in data.items():
+        if isinstance(v, dict):
+            masked[k] = mask_engine_config_dict(v)
+        elif isinstance(v, list):
+            masked[k] = [mask_engine_config_dict(item) if isinstance(item, dict) else item for item in v]
+        elif (k == "api_key" or k.endswith("_api_key") or "api_key" in k.lower()) and isinstance(v, str):
+            masked[k] = mask_secret_key(v)
+        else:
+            masked[k] = v
+    return masked
+
+
+def sanitize_audit_log(logs: list) -> list:
+    """脱敏系统审计日志列表中的敏感凭证。"""
+    if not isinstance(logs, list):
+        return []
+    sanitized = []
+    for item in logs:
+        if not isinstance(item, dict):
+            sanitized.append(item)
+            continue
+        entry = dict(item)
+        field = str(entry.get("field") or "").lower()
+        is_secret_field = (
+            field == "api_key"
+            or field.endswith("_api_key")
+            or "api_key" in field
+            or "secret" in field
+            or "token" in field
+            or "password" in field
+        )
+        for k, v in entry.items():
+            if isinstance(v, str):
+                if k in ("old", "new") and is_secret_field:
+                    entry[k] = mask_secret_key(v)
+                else:
+                    entry[k] = _SK_KEY_PATTERN.sub(lambda m: mask_secret_key(m.group(0)), v)
+        sanitized.append(entry)
+    return sanitized
+
 
 router = APIRouter()
+
 
 
 def _tenant_id(request: Request) -> str:
@@ -297,7 +349,7 @@ def promote_grey_config(request: Request):
                                "recognition_engine",
                                str(cfg.recognition_engine), str(final_cfg.recognition_engine))
 
-    return {"status": "success", "data": final_cfg.model_dump()}
+    return {"status": "success", "data": mask_engine_config_dict(final_cfg.model_dump())}
 
 
 @router.put("/api/admin/engine-config/rollback")
@@ -318,9 +370,10 @@ def rollback_engine_config(request: Request):
         })
     return {
         "status": "success",
-        "data": new_cfg.model_dump(),
+        "data": mask_engine_config_dict(new_cfg.model_dump()),
         "msg": "已回滚至上次推全前的配置",
     }
+
 
 
 @router.get("/api/admin/engine-config/diff")
@@ -474,20 +527,10 @@ def get_engine_config(request: Request):
         "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 90),
         "timeout_policy": "保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底",
     }
-    data = cfg.model_dump()
-    from app.services.security_guard import mask_secret_key
-    for kf in (
-        "openai_rec_api_key",
-        "openai_aud_api_key",
-        "openai_parse_api_key",
-        "grey_openai_rec_api_key",
-        "grey_openai_aud_api_key",
-        "grey_openai_parse_api_key",
-    ):
-        if kf in data and data[kf]:
-            data[kf] = mask_secret_key(data[kf])
+    data = mask_engine_config_dict(cfg.model_dump())
 
     resp = {"status": "success", "data": data, "perf": perf}
+
     if advice:
         resp["timeout_advice"] = advice
         resp["warning"] = advice
@@ -650,11 +693,9 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     warning = ""
     # 性能基线提示
     perf_note = "预期：qwen3-vl-flash P50 9.0s P95 12s (step12) / 纯 API 驱动"
-    resp_data = new_cfg.model_dump()
-    for kf in key_fields:
-        if kf in resp_data and resp_data[kf]:
-            resp_data[kf] = mask_secret_key(resp_data[kf])
+    resp_data = mask_engine_config_dict(new_cfg.model_dump())
     resp = {"status": "success", "data": resp_data, "perf_note": perf_note}
+
     if advice:
         resp["timeout_advice"] = advice
     if warning:
@@ -668,7 +709,8 @@ def set_engine_config(body: EngineConfigBody, request: Request):
 def get_system_audit(request: Request):
     """系统级审计日志读取（engine 配置变更等无 receipt_id 的操作）。"""
     require_admin(request)
-    return {"status": "success", "data": db.read_system_audit_log()}
+    return {"status": "success", "data": sanitize_audit_log(db.read_system_audit_log())}
+
 
 
 # -------------------------------------------------------------
