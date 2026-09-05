@@ -142,39 +142,42 @@ class EngineConfigBody(BaseModel):
 
 
 def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key: str, label: str):
-    """轻量快速探测：校验引擎可用性与模型/Key合法性。"""
-    import subprocess
+    """轻量快速探测：校验 OpenAI 兼容接口可用性与模型/Key合法性。"""
     import requests
-    
-    if engine_type == "openai":
-        if not base_url or not base_url.strip():
-            return f"[{label}] Base URL 不能为空"
-        if not api_key or not api_key.strip():
-            return f"[{label}] API Key 不能为空"
-        if not model_name or not model_name.strip():
-            return f"[{label}] 模型名不能为空"
-        from app.services.security_guard import validate_safe_external_url
-        is_safe, reason = validate_safe_external_url(base_url)
-        if not is_safe:
-            return f"[{label}] 非法 Base URL (安全阻断): {reason}"
-        url = base_url.strip().rstrip("/")
-        if not url.endswith("/chat/completions"):
-            url = f"{url}/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        payload = {"model": model_name, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=12, allow_redirects=False)
-            if r.status_code != 200:
-                return f"[{label}] OpenAI 接口返回 HTTP {r.status_code}: {r.text[:200]}"
-        except Exception as e:
-            return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
-        return None
+    from app.services.security_guard import validate_safe_external_url
 
+    if not base_url or not str(base_url).strip():
+        return f"[{label}] Base URL 不能为空"
+    if not api_key or not str(api_key).strip():
+        return f"[{label}] API Key 不能为空"
+    if not model_name or not str(model_name).strip():
+        return f"[{label}] 模型名不能为空"
 
-    if engine_type in ("codebuddy", "opencode"):
-        return f"[{label}] 本地 CLI 引擎 ({engine_type}) 已彻底下线，请配置 OpenAI 兼容接口"
+    is_safe, reason = validate_safe_external_url(base_url)
+    if not is_safe:
+        return f"[{label}] 非法 Base URL (安全阻断): {reason}"
 
-    return None
+    base = base_url.strip().rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[:-len("/chat/completions")].rstrip("/")
+    models_url = f"{base}/models" if not base.endswith("/models") else base
+
+    headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
+    try:
+        r = requests.get(models_url, headers=headers, timeout=12, allow_redirects=False)
+        if r.status_code == 200:
+            return None
+        # 若 /models 接口返回 404/405（如 DashScope 等兼容层未暴露 /models），回退至 /chat/completions 最小探测
+        if r.status_code in (404, 405):
+            chat_url = f"{base}/chat/completions"
+            payload = {"model": model_name.strip(), "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
+            r_chat = requests.post(chat_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
+            if r_chat.status_code != 200:
+                return f"[{label}] OpenAI 接口返回 HTTP {r_chat.status_code}: {r_chat.text[:200]}"
+            return None
+        return f"[{label}] OpenAI 接口返回 HTTP {r.status_code}: {r.text[:200]}"
+    except Exception as e:
+        return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
 
 
 @router.post("/api/admin/test-engine-config")
@@ -191,14 +194,76 @@ def test_engine_config(body: EngineConfigBody, request: Request):
                 "grey_recognition_engine", "grey_audit_engine",
                 "parse_llm_engine", "grey_parse_llm_engine"):
         if key in updates:
-            updates[key] = EngineKind(updates[key])
+            val_str = str(getattr(updates[key], "value", updates[key]) or "").lower()
+            if val_str in ("opencode", "codebuddy"):
+                updates[key] = EngineKind.OPENAI
+            else:
+                updates[key] = EngineKind(updates[key])
     if "grey_percent" in updates:
         updates["grey_percent"] = max(0, min(100, int(updates["grey_percent"])))
+
+    # 纯 OpenAI 参数双向自动同步映射 (单一事实源)
+    if updates.get("openai_rec_model"):
+        updates["recognition_model"] = updates["openai_rec_model"]
+        updates["recognition_engine"] = EngineKind.OPENAI
+    elif updates.get("recognition_model"):
+        updates["openai_rec_model"] = updates["recognition_model"]
+        updates["recognition_engine"] = EngineKind.OPENAI
+
+    if updates.get("openai_aud_model"):
+        updates["audit_model"] = updates["openai_aud_model"]
+        updates["audit_engine"] = EngineKind.OPENAI
+    elif updates.get("audit_model"):
+        updates["openai_aud_model"] = updates["audit_model"]
+        updates["audit_engine"] = EngineKind.OPENAI
+
+    if updates.get("openai_parse_model"):
+        updates["parse_llm_model"] = updates["openai_parse_model"]
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+    elif updates.get("parse_llm_model"):
+        updates["openai_parse_model"] = updates["parse_llm_model"]
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+
+    # 灰测组同理
+    if updates.get("grey_openai_rec_model"):
+        updates["grey_recognition_model"] = updates["grey_openai_rec_model"]
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_recognition_model"):
+        updates["grey_openai_rec_model"] = updates["grey_recognition_model"]
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+
+    if updates.get("grey_openai_aud_model"):
+        updates["grey_audit_model"] = updates["grey_openai_aud_model"]
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_audit_model"):
+        updates["grey_openai_aud_model"] = updates["grey_audit_model"]
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+
+    if updates.get("grey_openai_parse_model"):
+        updates["grey_parse_llm_model"] = updates["grey_openai_parse_model"]
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_parse_llm_model"):
+        updates["grey_openai_parse_model"] = updates["grey_parse_llm_model"]
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
+
+    if "openai_rec_base_url" in updates:
+        updates["recognition_engine"] = EngineKind.OPENAI
+    if "openai_aud_base_url" in updates:
+        updates["audit_engine"] = EngineKind.OPENAI
+    if "openai_parse_base_url" in updates:
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+    if "grey_openai_rec_base_url" in updates:
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+    if "grey_openai_aud_base_url" in updates:
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+    if "grey_openai_parse_base_url" in updates:
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
+
     test_cfg = EngineConfig(**{**cfg.model_dump(), **updates})
 
     # 1. 常规识别引擎测试
     rec_eng = test_cfg.recognition_engine.value if hasattr(test_cfg.recognition_engine, "value") else str(test_cfg.recognition_engine)
-    err = _quick_test_engine(rec_eng, test_cfg.openai_rec_model if rec_eng == "openai" else test_cfg.recognition_model,
+    err = _quick_test_engine(rec_eng, test_cfg.openai_rec_model or test_cfg.recognition_model,
                              test_cfg.openai_rec_base_url, test_cfg.openai_rec_api_key, "识别引擎")
     if err:
         return JSONResponse(status_code=400, content={"status": "error", "msg": err})
@@ -206,7 +271,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     # 2. 常规解析引擎测试（开启时）
     if test_cfg.parse_llm_enabled:
         parse_eng = test_cfg.parse_llm_engine.value if hasattr(test_cfg.parse_llm_engine, "value") else str(test_cfg.parse_llm_engine)
-        err = _quick_test_engine(parse_eng, test_cfg.openai_parse_model if parse_eng == "openai" else test_cfg.parse_llm_model,
+        err = _quick_test_engine(parse_eng, test_cfg.openai_parse_model or test_cfg.parse_llm_model,
                                  test_cfg.openai_parse_base_url, test_cfg.openai_parse_api_key, "解析 LLM")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
@@ -214,7 +279,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     # 3. 常规审核引擎测试（开启时）
     if test_cfg.audit_enabled:
         aud_eng = test_cfg.audit_engine.value if hasattr(test_cfg.audit_engine, "value") else str(test_cfg.audit_engine)
-        err = _quick_test_engine(aud_eng, test_cfg.openai_aud_model if aud_eng == "openai" else test_cfg.audit_model,
+        err = _quick_test_engine(aud_eng, test_cfg.openai_aud_model or test_cfg.audit_model,
                                  test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
@@ -222,21 +287,21 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     # 4. 灰测测试（开启时）
     if test_cfg.grey_enabled and test_cfg.grey_percent > 0:
         g_rec_eng = test_cfg.grey_recognition_engine.value if hasattr(test_cfg.grey_recognition_engine, "value") else str(test_cfg.grey_recognition_engine)
-        err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model if g_rec_eng == "openai" else test_cfg.grey_recognition_model,
+        err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model or test_cfg.grey_recognition_model,
                                  test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_parse_llm_enabled:
             gp_eng = test_cfg.grey_parse_llm_engine.value if hasattr(test_cfg.grey_parse_llm_engine, "value") else str(test_cfg.grey_parse_llm_engine)
-            err = _quick_test_engine(gp_eng, test_cfg.grey_openai_parse_model if gp_eng == "openai" else test_cfg.grey_parse_llm_model,
+            err = _quick_test_engine(gp_eng, test_cfg.grey_openai_parse_model or test_cfg.grey_parse_llm_model,
                                      test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析")
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_audit_enabled:
             ga_eng = test_cfg.grey_audit_engine.value if hasattr(test_cfg.grey_audit_engine, "value") else str(test_cfg.grey_audit_engine)
-            err = _quick_test_engine(ga_eng, test_cfg.grey_openai_aud_model if ga_eng == "openai" else test_cfg.grey_audit_model,
+            err = _quick_test_engine(ga_eng, test_cfg.grey_openai_aud_model or test_cfg.grey_audit_model,
                                      test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核")
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
@@ -585,6 +650,63 @@ def set_engine_config(body: EngineConfigBody, request: Request):
             val_str = str(updates[kf] or "")
             if "****" in val_str or val_str == "******":
                 updates[kf] = getattr(cfg, kf, "")
+
+    # 纯 OpenAI 参数双向自动同步映射 (单一事实源)
+    if updates.get("openai_rec_model"):
+        updates["recognition_model"] = updates["openai_rec_model"]
+        updates["recognition_engine"] = EngineKind.OPENAI
+    elif updates.get("recognition_model"):
+        updates["openai_rec_model"] = updates["recognition_model"]
+        updates["recognition_engine"] = EngineKind.OPENAI
+
+    if updates.get("openai_aud_model"):
+        updates["audit_model"] = updates["openai_aud_model"]
+        updates["audit_engine"] = EngineKind.OPENAI
+    elif updates.get("audit_model"):
+        updates["openai_aud_model"] = updates["audit_model"]
+        updates["audit_engine"] = EngineKind.OPENAI
+
+    if updates.get("openai_parse_model"):
+        updates["parse_llm_model"] = updates["openai_parse_model"]
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+    elif updates.get("parse_llm_model"):
+        updates["openai_parse_model"] = updates["parse_llm_model"]
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+
+    # 灰测组同理
+    if updates.get("grey_openai_rec_model"):
+        updates["grey_recognition_model"] = updates["grey_openai_rec_model"]
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_recognition_model"):
+        updates["grey_openai_rec_model"] = updates["grey_recognition_model"]
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+
+    if updates.get("grey_openai_aud_model"):
+        updates["grey_audit_model"] = updates["grey_openai_aud_model"]
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_audit_model"):
+        updates["grey_openai_aud_model"] = updates["grey_audit_model"]
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+
+    if updates.get("grey_openai_parse_model"):
+        updates["grey_parse_llm_model"] = updates["grey_openai_parse_model"]
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
+    elif updates.get("grey_parse_llm_model"):
+        updates["grey_openai_parse_model"] = updates["grey_parse_llm_model"]
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
+
+    if "openai_rec_base_url" in updates:
+        updates["recognition_engine"] = EngineKind.OPENAI
+    if "openai_aud_base_url" in updates:
+        updates["audit_engine"] = EngineKind.OPENAI
+    if "openai_parse_base_url" in updates:
+        updates["parse_llm_engine"] = EngineKind.OPENAI
+    if "grey_openai_rec_base_url" in updates:
+        updates["grey_recognition_engine"] = EngineKind.OPENAI
+    if "grey_openai_aud_base_url" in updates:
+        updates["grey_audit_engine"] = EngineKind.OPENAI
+    if "grey_openai_parse_base_url" in updates:
+        updates["grey_parse_llm_engine"] = EngineKind.OPENAI
 
     # 任务 3a：热切到 qwen3-vl-flash 需有效 dashscope.aliyuncs.com compatible-mode/v1 + sk-，
     # 若无有效 key 则显式降级提示而非静默超时（避免本地 165s 不达标却静默阻塞）

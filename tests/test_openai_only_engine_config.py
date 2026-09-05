@@ -1,0 +1,119 @@
+# -*- coding: utf-8 -*-
+import os
+import sys
+import pytest
+from starlette.testclient import TestClient
+
+DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo"))
+if DEMO_DIR not in sys.path:
+    sys.path.insert(0, DEMO_DIR)
+
+from app import db
+from app.main import app
+
+client = TestClient(app, headers={"X-Role": "admin"})
+
+
+def test_put_engine_config_pure_openai_auto_syncs_legacy_fields():
+    orig_cfg = db.get_engine_config()
+    try:
+        payload = {
+            "openai_rec_base_url": "https://api.siliconflow.cn/v1",
+            "openai_rec_api_key": "sk-sync-test-key12345678",
+            "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
+            "audit_enabled": True,
+            "audit_mode": "text",
+            "openai_aud_base_url": "https://api.siliconflow.cn/v1",
+            "openai_aud_api_key": "sk-sync-aud-key87654321",
+            "openai_aud_model": "zai-org/GLM-4.5V",
+            "parse_llm_enabled": True,
+            "openai_parse_base_url": "https://api.siliconflow.cn/v1",
+            "openai_parse_api_key": "sk-sync-parse-key11223344",
+            "openai_parse_model": "meituan-longcat/LongCat-2.0",
+        }
+        res = client.put("/api/admin/engine-config", json=payload)
+        assert res.status_code == 200
+
+        cfg = db.get_engine_config()
+        # Verify automatic synchronization to legacy model and engine fields
+        assert cfg.recognition_engine.value == "openai"
+        assert cfg.recognition_model == "Qwen/Qwen3-VL-32B-Instruct"
+        assert cfg.audit_engine.value == "openai"
+        assert cfg.audit_model == "zai-org/GLM-4.5V"
+        assert cfg.parse_llm_engine.value == "openai"
+        assert cfg.parse_llm_model == "meituan-longcat/LongCat-2.0"
+    finally:
+        db.set_engine_config(orig_cfg)
+
+
+def test_put_engine_config_grey_pure_openai_auto_syncs_legacy_fields():
+    orig_cfg = db.get_engine_config()
+    try:
+        payload = {
+            "grey_enabled": True,
+            "grey_percent": 20,
+            "grey_openai_rec_base_url": "https://api.siliconflow.cn/v1",
+            "grey_openai_rec_api_key": "sk-sync-greyrec-12345678",
+            "grey_openai_rec_model": "Qwen/Qwen2.5-VL-72B-Instruct",
+            "grey_audit_enabled": True,
+            "grey_openai_aud_base_url": "https://api.siliconflow.cn/v1",
+            "grey_openai_aud_api_key": "sk-sync-greyaud-87654321",
+            "grey_openai_aud_model": "zai-org/GLM-4.5V",
+            "grey_parse_llm_enabled": True,
+            "grey_openai_parse_base_url": "https://api.siliconflow.cn/v1",
+            "grey_openai_parse_api_key": "sk-sync-greyparse-11223344",
+            "grey_openai_parse_model": "Qwen/Qwen3-VL-32B-Instruct",
+        }
+        res = client.put("/api/admin/engine-config", json=payload)
+        assert res.status_code == 200
+
+        cfg = db.get_engine_config()
+        assert cfg.grey_recognition_engine.value == "openai"
+        assert cfg.grey_recognition_model == "Qwen/Qwen2.5-VL-72B-Instruct"
+        assert cfg.grey_audit_engine.value == "openai"
+        assert cfg.grey_audit_model == "zai-org/GLM-4.5V"
+        assert cfg.grey_parse_llm_engine.value == "openai"
+        assert cfg.grey_parse_llm_model == "Qwen/Qwen3-VL-32B-Instruct"
+    finally:
+        db.set_engine_config(orig_cfg)
+
+
+def test_engine_presets_endpoint():
+    res = client.get("/api/admin/engine-presets")
+    assert res.status_code == 200
+    data = res.json()["data"]
+    assert "agnes" in data
+    assert "bailian" in data
+    assert "siliconflow" in data
+    assert data["siliconflow"]["base_url"] == "https://api.siliconflow.cn/v1"
+    assert data["siliconflow"]["rec_model"] == "Qwen/Qwen3-VL-32B-Instruct"
+
+
+def test_post_test_engine_config_rejects_ssrf_pure_openai():
+    payload = {
+        "openai_rec_base_url": "http://169.254.169.254/latest/meta-data",
+        "openai_rec_api_key": "sk-sync-test-key12345678",
+        "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
+    }
+    res = client.post("/api/admin/test-engine-config", json=payload)
+    assert res.status_code == 400
+    msg = res.json().get("msg", "")
+    assert any(kw in msg for kw in ("安全阻断", "非法 Base URL", "安全校验未通过", "私网", "元数据"))
+
+
+def test_put_engine_config_masks_secret_in_response():
+    orig_cfg = db.get_engine_config()
+    try:
+        payload = {
+            "openai_rec_base_url": "https://api.siliconflow.cn/v1",
+            "openai_rec_api_key": "sk-mask-test-key12345678",
+            "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
+        }
+        res = client.put("/api/admin/engine-config", json=payload)
+        assert res.status_code == 200
+        assert "sk-mask-test-key12345678" not in res.text
+        data = res.json()["data"]
+        assert data["openai_rec_api_key"] == "sk-mas****5678"
+    finally:
+        db.set_engine_config(orig_cfg)
+
