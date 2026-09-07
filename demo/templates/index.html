@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260907b">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260907c">
     <style>
         /* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
         .sidebar-btn { position: relative; }
@@ -1868,19 +1868,23 @@
                 <section id="tab-analytics" class="tab-content">
                     <div style="max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
                         
-                        <!-- 顶部三大独立功能区分段选项卡 (Segmented Control) -->
-                        <div class="analytics-segmented-bar" role="tablist" aria-label="AI效果观测与评测中心功能区">
+                        <!-- 顶部四大独立功能区分段选项卡 (Segmented Control) -->
+                        <div class="analytics-segmented-bar analytics-segmented-nav" role="tablist" aria-label="AI效果观测与评测中心功能区">
                             <button type="button" class="analytics-segment-btn active" id="btnSubViewTelemetry" data-view="sec-telemetry" role="tab" aria-selected="true" onclick="switchAnalyticsSubView('sec-telemetry')">
-                                <span class="analytics-segment-num">01</span>
-                                <span class="analytics-segment-text">线上体验与埋点感知</span>
+                                <span class="analytics-segment-num segment-num">01</span>
+                                <span class="analytics-segment-text">埋点分布与挽回</span>
                             </button>
                             <button type="button" class="analytics-segment-btn" id="btnSubViewCanary" data-view="sec-canary" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-canary')">
-                                <span class="analytics-segment-num">02</span>
-                                <span class="analytics-segment-text">灰测实验与推全</span>
+                                <span class="analytics-segment-num segment-num">02</span>
+                                <span class="analytics-segment-text">金丝雀发布监控</span>
+                            </button>
+                            <button type="button" class="analytics-segment-btn" id="btnSubViewExperiment" data-view="sec-experiment" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-experiment')">
+                                <span class="analytics-segment-num segment-num">03</span>
+                                <span class="analytics-segment-text">A/B 科学实验台</span>
                             </button>
                             <button type="button" class="analytics-segment-btn" id="btnSubViewEval" data-view="sec-eval" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-eval')">
-                                <span class="analytics-segment-num">03</span>
-                                <span class="analytics-segment-text">基准资产与 GT 确权</span>
+                                <span class="analytics-segment-num segment-num">04</span>
+                                <span class="analytics-segment-text">基准资产与确权</span>
                             </button>
                         </div>
 
@@ -1914,14 +1918,14 @@
                             </div>
                         </section>
 
-                        <!-- 功能区二：灰测实验与推全 (独立视图) -->
+                        <!-- 功能区二：金丝雀发布监控 (独立视图) -->
                         <section id="sec-canary" class="analytics-section-block analytics-subview-panel" style="display:none;">
                             <div class="analytics-section-header">
                                 <div class="analytics-section-title-wrap">
                                     <span class="analytics-section-badge">02</span>
                                     <div>
-                                        <div class="analytics-section-title">灰测实验与推全</div>
-                                        <div class="analytics-section-desc">灰测分流现状、脱敏单据流采纳率观测与 A/B 双侧显著性检验，闭合「敢不敢推全」决策环</div>
+                                        <div class="analytics-section-title">金丝雀发布监控</div>
+                                        <div class="analytics-section-desc">新版引擎运行稳定性、脱敏单据流实时巡检与渐进放量推全闭环，回答「新版本稳不稳、敢不敢推全」</div>
                                     </div>
                                 </div>
                             </div>
@@ -1930,6 +1934,7 @@
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
                                     <span>灰测现状与样本观测</span>
                                     <div style="display:flex; align-items:center; gap:8px;">
+                                        <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px;" onclick="gotoGreyPromote()" title="前往系统与引擎配置的灰测抽屉执行推全/回滚">前往推全操作</button>
                                         <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples(null, true)">刷新脱敏单据流</button>
                                     </div>
                                 </div>
@@ -1964,18 +1969,35 @@
                                     </table>
                                 </div>
                             </div>
+                        </section>
 
-                            <!-- A/B 实验与显著性检验（灰测结论，紧跟观测；推全操作经深链在引擎配置执行） -->
+                        <!-- 功能区三：A/B 科学实验台 (独立视图) -->
+                        <section id="sec-experiment" class="analytics-section-block analytics-subview-panel" style="display:none;">
+                            <div class="analytics-section-header">
+                                <div class="analytics-section-title-wrap">
+                                    <span class="analytics-section-badge">03</span>
+                                    <div>
+                                        <div class="analytics-section-title">A/B 科学实验台</div>
+                                        <div class="analytics-section-desc">双盲对等分组实验、Control vs Treatment 组别指标对比与双侧显著性假设检验 (p-value)，回答「哪个方案真正更好」</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- A/B 实验对比与组别表现 -->
                             <div class="card">
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
-                                    <span>A/B 实验数据与双侧显著性检验 (p-value)</span>
-                                    <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px;" onclick="gotoGreyPromote()" title="前往系统与引擎配置的灰测抽屉执行推全/回滚">前往推全操作</button>
+                                    <span>A/B 实验数据与组别指标对比</span>
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <select id="experimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.8rem;" onchange="loadAnalyticsExperiments()">
+                                            <option value="2">实验 #2: LongCat-2.0 vs Qwen3-VL (进行中)</option>
+                                        </select>
+                                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAnalyticsExperiments()">刷新实验数据</button>
+                                    </div>
                                 </div>
                                 <div id="analyticsExperimentsBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
                                 <!-- E-P1-3 p-value 卡片 -->
                                 <div style="margin-top:18px; border-top:1px dashed var(--border-color); padding-top:12px;">
                                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                                        <span style="font-weight:600; font-size:0.9rem;">A/B 显著性检验卡片（p-value）</span>
+                                        <span style="font-weight:600; font-size:0.9rem;">A/B 显著性假设检验卡片（双侧 z 检验）</span>
                                         <select id="pvalueExperimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="loadPValueCards()"></select>
                                     </div>
                                     <div id="pvalueThresholdNote" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
@@ -1986,11 +2008,11 @@
                             </div>
                         </section>
 
-                        <!-- 功能区三：基准资产与 GT 确权 (独立视图) -->
+                        <!-- 功能区四：基准资产与 GT 确权 (独立视图) -->
                         <section id="sec-eval" class="analytics-section-block analytics-subview-panel" style="display:none;">
                             <div class="analytics-section-header">
                                 <div class="analytics-section-title-wrap">
-                                    <span class="analytics-section-badge">03</span>
+                                    <span class="analytics-section-badge">04</span>
                                     <div>
                                         <div class="analytics-section-title">基准资产与 GT 确权</div>
                                         <div class="analytics-section-desc">GT 抽检确权闭环与黄金基准集资产管理（样本可动态增删），回答「引擎本身有没有变好」</div>
@@ -2991,7 +3013,7 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260907b"></script>
+    <script src="/static/js/main.js?v=20260907c"></script>
     <script src="/static/js/export_center.js?v=20260907a"></script>
 </body>
 </html>
