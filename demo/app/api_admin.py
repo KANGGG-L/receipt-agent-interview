@@ -9,6 +9,7 @@
 import os
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 import re
@@ -1169,10 +1170,12 @@ def get_grey_test_samples(request: Request):
                              _cfg.grey_openai_rec_model or _cfg.grey_recognition_model,
                              "Qwen/Qwen3-VL-32B-Instruct") + " (灰测组)"
     samples = []
+    # 批量拉取所有单据 items，杜绝 1484 次开闭 session 导致耗时高达 35 秒
+    all_items_by_rid = db.get_receipt_items_multi(None, tenant_id=effective_tenant) if hasattr(db, "get_receipt_items_multi") else {}
 
     for r in rows:
         # 获取该单据脱敏后的信息
-        items = db.get_receipt_items(r.id, tenant_id=effective_tenant) if hasattr(db, "get_receipt_items") else []
+        items = (all_items_by_rid.get(r.id) or []) if hasattr(db, "get_receipt_items_multi") else (db.get_receipt_items(r.id, tenant_id=effective_tenant) if hasattr(db, "get_receipt_items") else [])
         masked_items = []
         for it in items:
             masked_items.append({
@@ -1329,23 +1332,126 @@ def get_grey_test_samples(request: Request):
 
 
 @router.get("/api/admin/golden-samples")
-def golden_samples(request: Request):
-    """黄金样本看板：57 张构成与当前库内覆盖率（按形态/币种/灰测维度）。"""
+def golden_samples(request: Request, scope: str = "all"):
+    """黄金基准集看板：基准集成员标记 + 建议构成覆盖率（按成员统计）。
+    scope=all|golden|gt_confirmed|gt_pending。
+    """
     require_admin(request)
-    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
-    # 黄金形态目标分布
-    target = {"printed_delivery_note": 15, "ncr_handwritten": 22, "thermal": 6, "weigh_slip": 4, "correction_note": 6, "monthly_statement": 4}
-    # 实际覆盖按 doc_form 统计
-    from collections import Counter
-    counter = Counter((r.doc_form or "unknown") for r in rows)
-    total = len(rows)
-    coverage = {k: {"target": v, "actual": counter.get(k, 0), "rate": round(counter.get(k, 0) / v * 100, 1) if v else 0} for k, v in target.items()}
-    # 币种覆盖
-    cur_counter = Counter((getattr(r, "currency", None) or "HKD") for r in rows)
-    # 逐行精简，用于表格（最近 57 行倒序）
-    items = []
-    for r in rows[:57]:
-        items.append({
+    tenant = _tenant_id(request)
+    rows = db.list_receipt_rows(tenant_id=tenant)
+    golden_rows = [r for r in rows if (getattr(r, "is_golden_sample", 0) or 0) == 1]
+
+    # 1. 候选数据关联
+    eval_candidates = db.list_eval_candidates(tenant_id=tenant, limit=5000)
+    cand_by_rid = {}
+    cand_by_id = {}
+    for c in eval_candidates:
+        cand_by_id[c.id] = c
+        if c.receipt_id not in cand_by_rid:
+            cand_by_rid[c.receipt_id] = c
+
+    # 2. 评测集 GT 数据关联 (manifest.csv + expected/*.json)
+    from app.api_evalset import get_evalset_dir, _load_manifest, _load_gt
+    evalset_dir = get_evalset_dir()
+    manifest_rows = _load_manifest(evalset_dir) or []
+    confirmed_sids = {r["sample_id"] for r in manifest_rows if r.get("gt_status") == "confirmed"}
+    manifest_by_sid = {r["sample_id"]: r for r in manifest_rows if r.get("sample_id")}
+
+    sample_by_rid = {}
+    sample_ids = set(manifest_by_sid.keys())
+    exp_dir = os.path.join(evalset_dir, "expected")
+    if os.path.isdir(exp_dir):
+        for fname in os.listdir(exp_dir):
+            if fname.endswith(".json"):
+                sample_ids.add(fname[:-5])
+
+    for sid in sample_ids:
+        gt_data = _load_gt(evalset_dir, sid) or {}
+        m_row = manifest_by_sid.get(sid, {})
+        gt_status = gt_data.get("gt_status") or m_row.get("gt_status") or "draft"
+        if gt_status == "confirmed":
+            confirmed_sids.add(sid)
+
+        matched_rid = None
+        s_rid = gt_data.get("source_receipt_id")
+        if s_rid is not None:
+            try:
+                matched_rid = int(s_rid)
+            except (ValueError, TypeError):
+                matched_rid = None
+        if matched_rid is None and gt_data.get("source_candidate_id") is not None:
+            cid = gt_data.get("source_candidate_id")
+            try:
+                cid_int = int(cid)
+                cand = cand_by_id.get(cid_int) or db.get_eval_candidate(cid_int)
+                if cand and cand.receipt_id is not None:
+                    matched_rid = int(cand.receipt_id)
+            except (ValueError, TypeError):
+                pass
+
+        if matched_rid is not None:
+            if matched_rid not in sample_by_rid or gt_status == "confirmed":
+                sample_by_rid[matched_rid] = {
+                    "sample_id": sid,
+                    "gt_status": gt_status,
+                    "source_candidate_id": gt_data.get("source_candidate_id"),
+                }
+
+    # 3. 逐行判定 GT 状态并挂载标签与元数据
+    all_annotated = []
+    golden_total = len(golden_rows)
+    gt_confirmed_total = 0
+    gt_pending_total = 0
+
+    for r in rows:
+        sample_id = None
+        eval_candidate_id = None
+
+        if r.id in sample_by_rid and sample_by_rid[r.id].get("gt_status") == "confirmed":
+            gt_status = "confirmed"
+            gt_label = "已确权"
+            sample_id = sample_by_rid[r.id].get("sample_id")
+            eval_candidate_id = cand_by_rid[r.id].id if r.id in cand_by_rid else sample_by_rid[r.id].get("source_candidate_id")
+        elif r.id in cand_by_rid:
+            cand = cand_by_rid[r.id]
+            eval_candidate_id = cand.id
+            if cand.status == "pending":
+                gt_status = "pending"
+                gt_label = "待抽检"
+            elif cand.status in ("promoted_to_val", "promoted_to_test"):
+                gt_status = "promoted"
+                gt_label = "已晋升评测集"
+            elif cand.status == "rejected":
+                gt_status = "rejected"
+                gt_label = "已驳回"
+            else:
+                gt_status = "none"
+                gt_label = "未确权"
+            if r.id in sample_by_rid:
+                sample_id = sample_by_rid[r.id].get("sample_id")
+        elif r.id in sample_by_rid:
+            sample_id = sample_by_rid[r.id].get("sample_id")
+            eval_candidate_id = sample_by_rid[r.id].get("source_candidate_id")
+            s_status = sample_by_rid[r.id].get("gt_status")
+            if s_status in ("draft", "pending"):
+                gt_status = "promoted"
+                gt_label = "已晋升评测集"
+            else:
+                gt_status = "none"
+                gt_label = "未确权"
+        else:
+            gt_status = "none"
+            gt_label = "未确权"
+            sample_id = None
+            eval_candidate_id = None
+
+        if gt_status == "confirmed":
+            gt_confirmed_total += 1
+        elif gt_status in ("pending", "promoted"):
+            gt_pending_total += 1
+
+        is_golden = (getattr(r, "is_golden_sample", 0) or 0) == 1
+        all_annotated.append({
             "id": r.id,
             "supplier_name": r.supplier_name or "",
             "receipt_date": r.receipt_date or "",
@@ -1354,15 +1460,67 @@ def golden_samples(request: Request):
             "status": r.status or "",
             "currency": getattr(r, "currency", None) or "HKD",
             "use_grey": getattr(r, "use_grey", 0) or 0,
+            "is_golden_sample": is_golden,
+            "gt_status": gt_status,
+            "gt_label": gt_label,
+            "sample_id": sample_id,
+            "eval_candidate_id": eval_candidate_id,
         })
-    return {"status": "success", "total": total, "target_total": 57, "coverage": coverage, "currency_breakdown": dict(cur_counter), "items": items}
+
+    # 4. Scope 过滤
+    if scope == "golden":
+        scoped_rows = [item for item in all_annotated if item["is_golden_sample"]]
+    elif scope == "gt_confirmed":
+        scoped_rows = [item for item in all_annotated if item["gt_status"] == "confirmed"]
+    elif scope == "gt_pending":
+        scoped_rows = [item for item in all_annotated if item["gt_status"] in ("pending", "promoted")]
+    else:
+        scoped_rows = all_annotated
+
+    # 黄金形态建议构成（仅为参考分布，不限制实际样本数量）
+    target = {"printed_delivery_note": 15, "ncr_handwritten": 22, "thermal": 6, "weigh_slip": 4, "correction_note": 6, "monthly_statement": 4}
+    from collections import Counter
+    counter = Counter((r.doc_form or "unknown") for r in golden_rows)
+    coverage = {k: {"target": v, "actual": counter.get(k, 0), "rate": round(counter.get(k, 0) / v * 100, 1) if v else 0} for k, v in target.items()}
+    cur_counter = Counter((getattr(r, "currency", None) or "HKD") for r in golden_rows)
+
+    items = scoped_rows[:500]
+    valid_scopes = ("all", "golden", "gt_confirmed", "gt_pending")
+    effective_scope = scope if scope in valid_scopes else "all"
+
+    return {
+        "status": "success",
+        "total": len(scoped_rows),
+        "golden_total": golden_total,
+        "gt_confirmed_total": gt_confirmed_total,
+        "gt_pending_total": gt_pending_total,
+        "target_total": sum(target.values()),
+        "scope": effective_scope,
+        "coverage": coverage,
+        "currency_breakdown": dict(cur_counter),
+        "items": items,
+    }
+
+
+class GoldenMembershipBody(BaseModel):
+    in_set: bool
+
+
+@router.post("/api/admin/golden-samples/{receipt_id}/membership")
+def set_golden_membership(receipt_id: int, body: GoldenMembershipBody, request: Request):
+    """加入/移出黄金基准集（可逆策展标记；不删除单据本体，保留审计链）。"""
+    require_admin(request)
+    ok = db.set_golden_sample(receipt_id, 1 if body.in_set else 0, _tenant_id(request))
+    if not ok:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "单据不存在"})
+    return {"status": "success", "receipt_id": receipt_id, "in_set": body.in_set}
 
 
 @router.post("/api/admin/golden-samples/import")
 def import_golden_samples(request: Request, limit: int = 10):
-    """一键导入黄金样本（调用 scripts/import_golden 逻辑，默认 10 张）。"""
+    """一键导入黄金样本（调用 scripts/import_golden 逻辑，默认 10 张，上限 500）。"""
     require_admin(request)
-    limit = max(1, min(57, int(limit or 10)))
+    limit = max(1, min(500, int(limit or 10)))
     import subprocess
     import sys as _sys
     import os
@@ -1406,10 +1564,66 @@ def maintenance_deduplicate(request: Request):
     }
 
 
+class AdminExpCreateBody(BaseModel):
+    name: str
+    hypothesis: str = ""
+    success_metric: str = "accuracy"
+    target_percent: int = 50
+    min_sample: int = 30
+    treatment_model: Optional[str] = None
+
+
 @router.get("/api/admin/experiments")
 def list_experiments_admin(request: Request):
     require_admin(request)
     return {"status": "success", "data": db.list_experiments()}
+
+
+@router.post("/api/admin/experiments")
+def create_experiment_admin(body: AdminExpCreateBody, request: Request):
+    require_admin(request)
+    created = db.create_experiment(
+        name=body.name,
+        hypothesis=body.hypothesis,
+        success_metric=body.success_metric,
+        target_percent=body.target_percent,
+        min_sample=body.min_sample,
+        guardrail_metrics=[],
+        target_supplier_ids=[],
+    )
+    if body.treatment_model:
+        s = db.get_session()
+        try:
+            row = s.get(db._ExperimentRow, int(created["id"]))
+            if row:
+                snap = db._parse_json(row.grey_snapshot)
+                snap["treatment_model"] = body.treatment_model
+                row.grey_snapshot = db._safe_json(snap)
+                s.commit()
+        finally:
+            s.close()
+    exp = db.get_experiment(created["id"]) or created
+    return {"status": "success", "id": created["id"], "experiment": exp}
+
+
+@router.post("/api/admin/experiments/{exp_id}/start")
+def start_experiment_admin(exp_id: int, request: Request):
+    require_admin(request)
+    existing = db.get_experiment(exp_id)
+    if not existing:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
+    snap = existing.get("grey_snapshot") or {}
+    exp = db.start_experiment(exp_id, grey_snapshot=snap)
+    return {"status": "success", "experiment": exp}
+
+
+@router.post("/api/admin/experiments/{exp_id}/stop")
+def stop_experiment_admin(exp_id: int, request: Request):
+    require_admin(request)
+    exp = db.stop_experiment(exp_id)
+    if not exp:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
+    return {"status": "success", "experiment": exp}
 
 
 @router.get("/api/admin/experiments/{exp_id}")
