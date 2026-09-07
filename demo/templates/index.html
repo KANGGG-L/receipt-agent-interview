@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260907b">
     <style>
         /* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
         .sidebar-btn { position: relative; }
@@ -79,32 +79,31 @@
             </div>
 
             <nav class="sidebar-nav">
-                <button class="sidebar-btn active" data-target="tab-scan" data-title="收据识别">
+                <button class="sidebar-btn active" data-target="tab-scan" data-title="识别复核">
                     <span class="icon"></span>
-                    <span>收据识别</span>
+                    <span>识别复核</span>
                 </button>
                 <button class="sidebar-btn" data-target="tab-inventory" data-title="实时库存与价格">
                     <span class="icon"></span>
                     <span>实时库存与价格</span>
                 </button>
-                <button class="sidebar-btn" data-target="tab-dishes" data-title="餐品与消耗">
+                <button class="sidebar-btn" data-target="tab-dishes" data-title="餐品成本">
                     <span class="icon"></span>
-                    <span>餐品与消耗</span>
+                    <span>餐品成本</span>
                 </button>
-                <button class="sidebar-btn" data-target="tab-archive" data-title="供应商与归档">
+                <button class="sidebar-btn" data-target="tab-archive" data-title="归档对账">
                     <span class="icon"></span>
-                    <span>供应商与归档</span>
+                    <span>归档对账</span>
                     <!-- Wave 1：付款提醒红点（逾期+快到期计数，02 章） -->
                     <span id="navPayRedDot" class="nav-red-dot hide">0</span>
                 </button>
-                <button class="sidebar-btn" data-target="tab-report" data-title="部门花销报表">
+                <button class="sidebar-btn" data-target="tab-report" data-title="部门花销">
                     <span class="icon"></span>
-                    <span>部门花销报表</span>
+                    <span>部门花销</span>
                 </button>
                 <button class="sidebar-btn" data-target="tab-export" data-title="数据导出中心">
                     <span class="icon"></span>
                     <span>数据导出中心</span>
-                    <span class="badge badge-primary" style="font-size:0.65rem; margin-left:auto; padding:1px 5px;">PRO</span>
                 </button>
                 <div class="sidebar-section-title admin-only" id="adminSidebarSection">系统与算法工程</div>
                 <button class="sidebar-btn admin-only" id="adminEngineBtn" data-target="tab-engine" data-title="系统与引擎配置">
@@ -112,19 +111,9 @@
                     <span>系统与引擎配置</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
-                <button class="sidebar-btn admin-only hide" id="goldenBoardBtn" data-target="tab-golden" data-title="黄金样本57看板" style="display:none;">
-                    <span class="icon"></span>
-                    <span>黄金样本</span>
-                    <span style="color:var(--primary); font-size:0.65rem; margin-left:auto; border:1px solid var(--primary); border-radius:4px; padding:0 4px;">57</span>
-                </button>
                 <button class="sidebar-btn admin-only" id="analyticsBoardBtn" data-target="tab-analytics" data-title="AI 效果观测与评测中心">
                     <span class="icon"></span>
                     <span>AI 效果观测与评测中心</span>
-                    <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
-                </button>
-                <button class="sidebar-btn admin-only hide" id="evalsetReviewBtn" data-target="tab-evalset" data-title="GT 人工抽检台（评测集确认）" style="display:none;">
-                    <span class="icon"></span>
-                    <span>GT 抽检</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
             </nav>
@@ -1474,7 +1463,7 @@
                                 </div>
 
                                 <div class="table-container" style="max-height:460px; overflow-y:auto; overflow-x:auto;">
-                                    <table class="data-table" id="exportPreviewTable" style="width:100%;">
+                                    <table class="data-table export-preview-table" id="exportPreviewTable" style="width:100%;">
                                         <thead id="exportPreviewThead"></thead>
                                         <tbody id="exportPreviewTbody"></tbody>
                                     </table>
@@ -1488,12 +1477,12 @@
                     <div class="card" style="max-width:960px; margin:0 auto;">
                         <div class="card-title" style="justify-content:center;"><span>引擎配置</span></div>
 
-                        <!-- 核心双列卡片：常规识别 与 常规审核 -->
-                        <div class="engine-dual-grid">
+                        <!-- 核心卡片：常规识别（审核引擎改为抽屉，模拟高级配置折叠样式） -->
+                        <div class="engine-dual-grid" style="grid-template-columns:1fr;">
                             <!-- 识别引擎卡片 -->
                             <div id="adminRecognitionCard" class="engine-card">
                                 <div class="engine-card-header">
-                                    <div class="engine-card-title" style="color:#1565c0;">识别引擎 (OpenAI 兼容)</div>
+                                    <div class="engine-card-title" style="color:#1565c0;">识别引擎</div>
                                     <div style="display:flex; align-items:center; gap:6px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
@@ -1522,17 +1511,26 @@
                                 </div>
                             </div>
 
-                            <!-- 审核引擎卡片 -->
-                            <div id="adminAuditCard" class="engine-card">
-                                <div class="engine-card-header">
+                        </div>
+
+                        <!-- 审核引擎抽屉（模拟高级配置折叠抽屉样式，默认收起，启用时自动展开） -->
+                        <div id="adminAuditCard" class="engine-drawer collapsed">
+                            <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminAuditCard'); } else { document.getElementById('adminAuditCard').classList.toggle('collapsed'); }">
+                                <div class="engine-drawer-title">
+                                    <span style="color:#2f6b4f;">审核引擎</span>
+                                </div>
+                                <div class="engine-drawer-indicator">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                                </div>
+                            </div>
+                            <div class="engine-drawer-content">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        <span class="engine-card-title" style="color:#2f6b4f;">审核引擎 (OpenAI 兼容)</span>
-                                        <div id="adminAuditToggleGroup" style="display:inline-block;">
-                                            <select id="adminAuditEnabled" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:70px;">
-                                                <option value="true">开</option>
-                                                <option value="false">关</option>
-                                            </select>
-                                        </div>
+                                        <span style="font-size:0.85rem; font-weight:600;">审核引擎开关:</span>
+                                        <select id="adminAuditEnabled" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:70px;">
+                                            <option value="true">开</option>
+                                            <option value="false">关</option>
+                                        </select>
                                     </div>
                                     <div style="display:flex; align-items:center; gap:6px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
@@ -1567,7 +1565,7 @@
                         <div id="adminParseDrawer" class="engine-drawer collapsed">
                             <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminParseDrawer'); } else { document.getElementById('adminParseDrawer').classList.toggle('collapsed'); }">
                                 <div class="engine-drawer-title">
-                                    <span style="color:#6a1b9a;">高级配置 · 解析 LLM (OpenAI 兼容)</span>
+                                    <span style="color:#6a1b9a;">高级配置 · 解析 LLM</span>
                                 </div>
                                 <div class="engine-drawer-indicator">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -1611,11 +1609,12 @@
                             </div>
                         </div>
 
-                        <!-- A/B 灰度测试 高级抽屉 -->
+                        <!-- 金丝雀灰度发布 高级抽屉 -->
                         <div id="adminGreyDrawer" class="engine-drawer collapsed">
                             <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminGreyDrawer'); } else { document.getElementById('adminGreyDrawer').classList.toggle('collapsed'); }">
-                                <div class="engine-drawer-title">
-                                    <span style="color:#b8860b;">高级配置 · A/B 分组灰度测试</span>
+                                <div class="engine-drawer-title" title="金丝雀灰度发布：控制新引擎流量配比、版本晋级与快速回滚">
+                                    <span style="color:#b8860b;">高级配置 · 金丝雀灰度发布 (Canary Rollout)</span>
+                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">(流量灰度、版本晋级与快速回滚)</span>
                                 </div>
                                 <div class="engine-drawer-indicator">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -1647,7 +1646,7 @@
                                     <!-- 灰测识别 -->
                                     <div id="adminGreyOpenaiRecBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                                            <div style="font-size:0.82rem; font-weight:600; color:#1565c0;">灰测识别 · OpenAI 兼容参数</div>
+                                            <div style="font-size:0.82rem; font-weight:600; color:#1565c0;">灰测识别参数</div>
                                             <div style="display:flex; align-items:center; gap:6px;">
                                                 <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                 <select id="adminGreyOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
@@ -1678,7 +1677,7 @@
                                     <div id="adminGreyOpenaiAudBox" style="margin-top:10px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                                             <div style="display:flex; align-items:center; gap:8px;">
-                                                <span style="font-size:0.82rem; font-weight:600; color:#2f6b4f;">灰测审核 · OpenAI 兼容参数</span>
+                                                <span style="font-size:0.82rem; font-weight:600; color:#2f6b4f;">灰测审核参数</span>
                                                 <div id="adminGreyAuditToggleGroup" style="display:inline-block;">
                                                     <select id="adminGreyAuditEnabled" class="form-control" style="font-size:0.75rem; padding:2px 6px; height:26px; width:65px;">
                                                         <option value="true">开</option>
@@ -1724,7 +1723,7 @@
                                         <div id="adminGreyParseBody">
                                             <div id="adminGreyParseOpenaiBox" style="margin-top:10px; padding:10px; border:1px solid #f0c14b; border-radius:8px;">
                                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-                                                    <div style="font-size:0.78rem; font-weight:600; color:#6a1b9a;">灰测解析 · OpenAI 兼容参数</div>
+                                                    <div style="font-size:0.78rem; font-weight:600; color:#6a1b9a;">灰测解析参数</div>
                                                     <div style="display:flex; align-items:center; gap:6px;">
                                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                         <select id="adminGreyParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
@@ -1877,11 +1876,11 @@
                             </button>
                             <button type="button" class="analytics-segment-btn" id="btnSubViewCanary" data-view="sec-canary" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-canary')">
                                 <span class="analytics-segment-num">02</span>
-                                <span class="analytics-segment-text">灰测评估与抽检确权</span>
+                                <span class="analytics-segment-text">灰测实验与推全</span>
                             </button>
                             <button type="button" class="analytics-segment-btn" id="btnSubViewEval" data-view="sec-eval" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-eval')">
                                 <span class="analytics-segment-num">03</span>
-                                <span class="analytics-segment-text">基准评测与 A/B 显著性</span>
+                                <span class="analytics-segment-text">基准资产与 GT 确权</span>
                             </button>
                         </div>
 
@@ -1915,14 +1914,14 @@
                             </div>
                         </section>
 
-                        <!-- 功能区二：灰测流量评估与抽检确权 (独立视图) -->
+                        <!-- 功能区二：灰测实验与推全 (独立视图) -->
                         <section id="sec-canary" class="analytics-section-block analytics-subview-panel" style="display:none;">
                             <div class="analytics-section-header">
                                 <div class="analytics-section-title-wrap">
                                     <span class="analytics-section-badge">02</span>
                                     <div>
-                                        <div class="analytics-section-title">灰测流量评估与抽检确权</div>
-                                        <div class="analytics-section-desc">透视线上脱敏单据流、字段级采纳率判定与 Ground Truth 抽检闭环</div>
+                                        <div class="analytics-section-title">灰测实验与推全</div>
+                                        <div class="analytics-section-desc">灰测分流现状、脱敏单据流采纳率观测与 A/B 双侧显著性检验，闭合「敢不敢推全」决策环</div>
                                     </div>
                                 </div>
                             </div>
@@ -1931,7 +1930,6 @@
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
                                     <span>灰测现状与样本观测</span>
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        <a href="/evalset" target="_blank" class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px; text-decoration:none;" title="在新标签页中打开独立的 GT 人工抽检与标注队列">打开 GT 人工抽检台</a>
                                         <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples(null, true)">刷新脱敏单据流</button>
                                     </div>
                                 </div>
@@ -1945,18 +1943,19 @@
                                     <span class="badge" style="background:#ede7f6; color:#512da8;">平均采纳率: <b id="mGreyAvgMatch">0%</b></span>
                                     <span class="badge" style="background:#e2e3e5; color:#383d41;">灰测组: <b id="mGreyCanary">0</b></span>
                                 </div>
-                                <div class="table-container" style="max-height:280px; overflow-y:auto;">
-                                    <table class="data-table">
+                                <div id="adminGreySampleLimitNotice" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px; display:none;"></div>
+                                <div class="table-container canary-table-container" style="max-height:380px; overflow-x:auto; overflow-y:auto; scrollbar-width:thin;">
+                                    <table class="data-table canary-samples-table" id="adminGreySamplesTable" style="min-width:980px; width:100%;">
                                         <thead>
                                             <tr>
-                                                <th>单据 ID</th>
-                                                <th>脱敏供应商</th>
-                                                <th>单据形态</th>
-                                                <th>脱敏金额</th>
-                                                <th>分流引擎</th>
-                                                <th>使用状态</th>
-                                                <th>AI 效果反馈</th>
-                                                <th>操作</th>
+                                                <th style="width:65px;">单据 ID</th>
+                                                <th style="min-width:160px;">脱敏供应商</th>
+                                                <th style="min-width:140px;">单据形态</th>
+                                                <th style="min-width:85px;">脱敏金额</th>
+                                                <th style="min-width:85px;">分流引擎</th>
+                                                <th style="min-width:75px;">使用状态</th>
+                                                <th style="min-width:160px;">AI 效果反馈</th>
+                                                <th style="width:100px; text-align:right;">操作</th>
                                             </tr>
                                         </thead>
                                         <tbody id="adminGreySamplesBody">
@@ -1965,47 +1964,13 @@
                                     </table>
                                 </div>
                             </div>
-                        </section>
 
-                        <!-- 功能区三：基准评测与 A/B 显著性实验 (独立视图) -->
-                        <section id="sec-eval" class="analytics-section-block analytics-subview-panel" style="display:none;">
-                            <div class="analytics-section-header">
-                                <div class="analytics-section-title-wrap">
-                                    <span class="analytics-section-badge">03</span>
-                                    <div>
-                                        <div class="analytics-section-title">基准评测与 A/B 显著性实验</div>
-                                        <div class="analytics-section-desc">57 张黄金基准回归集、分流对照实验与双侧双比例 z 检验统计卡片</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <!-- 黄金基准集看板板块 (57 张测试集) -->
+                            <!-- A/B 实验与显著性检验（灰测结论，紧跟观测；推全操作经深链在引擎配置执行） -->
                             <div class="card">
-                                <div class="card-title" style="justify-content:space-between;">
-                                    <span>黄金基准集看板（57 张）</span>
-                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadGoldenBoard()">刷新</button>
+                                <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                    <span>A/B 实验数据与双侧显著性检验 (p-value)</span>
+                                    <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px;" onclick="gotoGreyPromote()" title="前往系统与引擎配置的灰测抽屉执行推全/回滚">前往推全操作</button>
                                 </div>
-                                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
-                                    <span class="badge" style="background:#eef2ff; color:#334155;">印刷送货单 15</span>
-                                    <span class="badge" style="background:#eef2ff; color:#334155;">手写街市单 22</span>
-                                    <span class="badge" style="background:#eef2ff; color:#334155;">磅单/热敏 10</span>
-                                    <span class="badge" style="background:#eef2ff; color:#334155;">更正单 6</span>
-                                    <span class="badge" style="background:#eef2ff; color:#334155;">月结单 4</span>
-                                </div>
-                                <div id="goldenBoardSummary" style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">点击刷新加载 57 张黄金样本状态与覆盖率。</div>
-                                <div class="table-container" style="max-height:420px; overflow:auto;">
-                                    <table class="data-table">
-                                        <thead><tr><th>编号</th><th>供应商</th><th>日期</th><th>形态</th><th>总额</th><th>状态</th><th>币种</th><th>操作</th></tr></thead>
-                                        <tbody id="goldenBoardBody"><tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">加载中</td></tr></tbody>
-                                    </table>
-                                </div>
-                                <div style="margin-top:12px; display:flex; gap:10px;">
-                                    <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.78rem;" onclick="importGoldenSamples(10)">导入 10 张样本</button>
-                                    <button class="btn btn-primary" style="padding:4px 10px; font-size:0.78rem;" onclick="importGoldenSamples(57)">一键导入 57 张</button>
-                                </div>
-                            </div>
-                            <!-- A/B 实验与显著性检验联合板块 -->
-                            <div class="card">
-                                <div class="card-title"><span>A/B 实验数据与双侧显著性检验 (p-value)</span></div>
                                 <div id="analyticsExperimentsBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
                                 <!-- E-P1-3 p-value 卡片 -->
                                 <div style="margin-top:18px; border-top:1px dashed var(--border-color); padding-top:12px;">
@@ -2017,6 +1982,62 @@
                                         判定阈值：双侧双比例 z 检验，显著性水平 alpha = 0.05。p &lt; 0.05 视为显著；样本量 N &lt; 30 时标记低置信度，仅作参考不作为推全依据。
                                     </div>
                                     <div id="pvalueCardsContainer" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px;"></div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <!-- 功能区三：基准资产与 GT 确权 (独立视图) -->
+                        <section id="sec-eval" class="analytics-section-block analytics-subview-panel" style="display:none;">
+                            <div class="analytics-section-header">
+                                <div class="analytics-section-title-wrap">
+                                    <span class="analytics-section-badge">03</span>
+                                    <div>
+                                        <div class="analytics-section-title">基准资产与 GT 确权</div>
+                                        <div class="analytics-section-desc">GT 抽检确权闭环与黄金基准集资产管理（样本可动态增删），回答「引擎本身有没有变好」</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- GT 抽检确权入口（低置信回流/灰测样本 → 人工确权 → 晋升黄金基准集） -->
+                            <div class="card">
+                                <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                    <span>GT 抽检确权</span>
+                                    <a href="/evalset" target="_blank" class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px; text-decoration:none;" title="在新标签页中打开独立的 GT 抽检确权队列">打开 GT 抽检确权台</a>
+                                </div>
+                                <div style="font-size:0.82rem; color:var(--text-muted); line-height:1.8;">
+                                    确权闭环：低置信回流 / 灰测样本进入候选池 → 在 GT 抽检确权台人工核对 → 晋升为黄金基准集样本 → 供基准回归与评测消费。<br>
+                                    基准集确权进度：<span id="gtEvalsetStats" style="color:var(--text-main);">加载中</span>
+                                </div>
+                            </div>
+                            <!-- 黄金基准集看板板块（动态样本库，可增删样本） -->
+                            <div class="card">
+                                <div class="card-title" style="justify-content:space-between;">
+                                    <span>黄金基准集看板</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <select id="goldenScopeSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="loadGoldenBoard(this.value)">
+                                            <option value="all">全部库内单据</option>
+                                            <option value="golden">仅基准集成员</option>
+                                            <option value="gt_confirmed">仅已 GT 确权</option>
+                                            <option value="gt_pending">待确权候选池</option>
+                                        </select>
+                                        <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadGoldenBoard()">刷新</button>
+                                    </div>
+                                </div>
+                                <div class="table-container" style="max-height:440px; overflow:auto;">
+                                    <table class="data-table golden-board-table" style="min-width:880px;">
+                                        <thead>
+                                            <tr>
+                                                <th style="padding:10px 12px; width:70px;">编号</th>
+                                                <th style="padding:10px 12px; min-width:160px;">供应商</th>
+                                                <th style="padding:10px 12px; width:110px;">开单日期</th>
+                                                <th style="padding:10px 12px; width:95px;">单据形态</th>
+                                                <th class="col-right" style="padding:10px 12px; width:110px;">核算总额</th>
+                                                <th style="padding:10px 12px; width:80px;">业务状态</th>
+                                                <th style="padding:10px 12px; width:120px;">GT 确权治理</th>
+                                                <th class="col-right" style="padding:10px 12px; width:155px;">基准治理与操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="goldenBoardBody"><tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">加载中...</td></tr></tbody>
+                                    </table>
                                 </div>
                             </div>
                         </section>
@@ -2970,7 +2991,7 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260901d"></script>
-    <script src="/static/js/export_center.js?v=20260903"></script>
+    <script src="/static/js/main.js?v=20260907b"></script>
+    <script src="/static/js/export_center.js?v=20260907a"></script>
 </body>
 </html>
