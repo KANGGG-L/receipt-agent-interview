@@ -43,3 +43,19 @@ def test_admin_grey_drawer_intact(soup):
     grey_title = grey_drawer.find(class_="engine-drawer-title")
     assert grey_title is not None
     assert "高级配置 · 金丝雀灰度发布 (Canary Rollout)" in grey_title.text
+
+
+def test_admin_experiments_js_bindings():
+    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
+        js = f.read()
+    for fn in [
+        "loadAdminExperimentsList",
+        "onAdminExpSelectChange",
+        "startCurrentExperiment",
+        "stopCurrentExperiment",
+        "openCreateExperimentModal",
+        "closeCreateExperimentModal",
+        "submitCreateExperiment",
+        "gotoExperimentObservatory",
+    ]:
+        assert fn in js, f"Expected {fn} to be defined in main.js"

@@ -11672,6 +11672,7 @@ function loadAdminEngineConfig() {
     const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
     if (role !== 'admin') return;
     bindAdminEngineEventsOnce();
+    loadAdminExperimentsList();
 
     apiFetch('/api/admin/engine-config')
         .then(res => res.json())
@@ -12208,6 +12209,263 @@ function rollbackEngineConfig() {
         onCancel: () => { showToast('已取消回滚', 'info'); }
     });
 }
+
+/* =============================================================
+   A/B 科学实验编排抽屉交互控制 (A/B Experimentation Drawer)
+   ============================================================= */
+let _adminExperimentsList = [];
+
+async function loadAdminExperimentsList() {
+    const sel = document.getElementById('adminExpSelect');
+    if (!sel) return;
+    try {
+        const res = await apiFetch('/api/admin/experiments');
+        const data = await res.json();
+        if (data && data.status === 'success' && Array.isArray(data.data)) {
+            _adminExperimentsList = data.data;
+            sel.innerHTML = '';
+            if (_adminExperimentsList.length === 0) {
+                sel.innerHTML = '<option value="">暂无实验 (请点击新建)</option>';
+                onAdminExpSelectChange('');
+                return;
+            }
+            const STATUS_MAP = {
+                draft: '草稿',
+                running: '运行中',
+                stopped: '已暂停',
+                concluded: '已结题'
+            };
+            _adminExperimentsList.forEach(exp => {
+                const opt = document.createElement('option');
+                opt.value = exp.id;
+                const statusLabel = STATUS_MAP[exp.status] || exp.status || '未知';
+                opt.innerHTML = `#${exp.id}: ${w2Escape(exp.name || '未命名')} (${statusLabel})`;
+                sel.appendChild(opt);
+            });
+            let activeId = _adminExperimentsList[0].id;
+            const prevSelected = sel.getAttribute('data-selected-id');
+            if (prevSelected) {
+                const found = _adminExperimentsList.find(e => String(e.id) === String(prevSelected));
+                if (found) activeId = found.id;
+            }
+            sel.value = String(activeId);
+            onAdminExpSelectChange(activeId);
+        } else {
+            sel.innerHTML = '<option value="">加载实验列表失败</option>';
+        }
+    } catch (err) {
+        console.error('loadAdminExperimentsList error:', err);
+        sel.innerHTML = '<option value="">加载实验列表异常</option>';
+    }
+}
+
+function onAdminExpSelectChange(expId) {
+    const sel = document.getElementById('adminExpSelect');
+    if (sel && expId) sel.setAttribute('data-selected-id', String(expId));
+
+    const hypEl = document.getElementById('adminExpHypothesis');
+    const metricEl = document.getElementById('adminExpMetric');
+    const trafficEl = document.getElementById('adminExpTraffic');
+    const minSampleEl = document.getElementById('adminExpMinSample');
+    const badgeEl = document.getElementById('adminExpStatusBadge');
+    const ctrlEl = document.getElementById('adminExpCtrlModel');
+    const treatEl = document.getElementById('adminExpTreatModel');
+    const startBtn = document.getElementById('adminExpStartBtn');
+    const stopBtn = document.getElementById('adminExpStopBtn');
+
+    const exp = _adminExperimentsList.find(e => String(e.id) === String(expId));
+    if (!exp) {
+        if (hypEl) hypEl.textContent = '—';
+        if (metricEl) metricEl.textContent = '—';
+        if (trafficEl) trafficEl.textContent = '—';
+        if (minSampleEl) minSampleEl.textContent = '—';
+        if (badgeEl) {
+            badgeEl.className = 'badge badge-secondary';
+            badgeEl.textContent = '—';
+        }
+        if (ctrlEl) ctrlEl.textContent = '生产主力引擎';
+        if (treatEl) treatEl.textContent = '待测对比模型';
+        if (startBtn) startBtn.disabled = true;
+        if (stopBtn) stopBtn.disabled = true;
+        return;
+    }
+
+    if (hypEl) hypEl.textContent = exp.hypothesis || '未设定实验假设';
+
+    const METRIC_LABELS = {
+        accuracy: 'accuracy (准确率)',
+        hallucination_rate: 'hallucination_rate (幻觉率)',
+        edit_rate: 'edit_rate (人工修改率)'
+    };
+    if (metricEl) metricEl.textContent = METRIC_LABELS[exp.success_metric] || exp.success_metric || 'accuracy (准确率)';
+
+    const treatPct = (exp.target_percent != null) ? Number(exp.target_percent) : 50;
+    const ctrlPct = 100 - treatPct;
+    if (trafficEl) trafficEl.textContent = `${ctrlPct}% Control : ${treatPct}% Treatment`;
+
+    if (minSampleEl) minSampleEl.textContent = exp.min_sample ? `${exp.min_sample} 样本/组` : '30 样本/组';
+
+    // 状态徽标与操作控制
+    const status = exp.status || 'draft';
+    if (badgeEl) {
+        if (status === 'running') {
+            badgeEl.className = 'badge badge-success';
+            badgeEl.textContent = '运行中';
+        } else if (status === 'stopped') {
+            badgeEl.className = 'badge badge-warning';
+            badgeEl.textContent = '已暂停';
+        } else if (status === 'concluded') {
+            badgeEl.className = 'badge badge-info';
+            badgeEl.textContent = '已结题';
+        } else {
+            badgeEl.className = 'badge badge-secondary';
+            badgeEl.textContent = '草稿';
+        }
+    }
+
+    // 模型信息
+    const baseRecModInput = document.getElementById('adminOpenaiRecModel');
+    const baselineModel = (baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : '生产主力引擎';
+    if (ctrlEl) ctrlEl.textContent = baselineModel;
+
+    let snapshot = exp.grey_snapshot;
+    if (typeof snapshot === 'string') {
+        try { snapshot = JSON.parse(snapshot); } catch (e) { snapshot = {}; }
+    }
+    const treatmentModel = (snapshot && snapshot.treatment_model) ? snapshot.treatment_model : '待测对比模型';
+    if (treatEl) treatEl.textContent = treatmentModel;
+
+    // 按钮禁用控制
+    if (startBtn) {
+        startBtn.disabled = (status === 'running' || status === 'concluded');
+    }
+    if (stopBtn) {
+        stopBtn.disabled = (status !== 'running');
+    }
+}
+
+async function startCurrentExperiment() {
+    const sel = document.getElementById('adminExpSelect');
+    const expId = sel ? sel.value : null;
+    if (!expId) {
+        showToast('请先选择要启动的实验', 'warning');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/admin/experiments/' + expId + '/start', { method: 'POST' });
+        const data = await res.json();
+        if (data && data.status === 'success') {
+            showToast('实验 #' + expId + ' 已成功启动！', 'success');
+            await loadAdminExperimentsList();
+        } else {
+            showToast('启动实验失败：' + ((data && (data.msg || data.detail)) || '未知错误'), 'error');
+        }
+    } catch (err) {
+        console.error('startCurrentExperiment error:', err);
+        showToast('启动实验网络异常', 'error');
+    }
+}
+
+async function stopCurrentExperiment() {
+    const sel = document.getElementById('adminExpSelect');
+    const expId = sel ? sel.value : null;
+    if (!expId) {
+        showToast('请先选择要暂停的实验', 'warning');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/admin/experiments/' + expId + '/stop', { method: 'POST' });
+        const data = await res.json();
+        if (data && data.status === 'success') {
+            showToast('实验 #' + expId + ' 已暂停！', 'info');
+            await loadAdminExperimentsList();
+        } else {
+            showToast('暂停实验失败：' + ((data && (data.msg || data.detail)) || '未知错误'), 'error');
+        }
+    } catch (err) {
+        console.error('stopCurrentExperiment error:', err);
+        showToast('暂停实验网络异常', 'error');
+    }
+}
+
+function openCreateExperimentModal() {
+    const modal = document.getElementById('createExperimentModal');
+    if (modal) modal.style.display = 'block';
+}
+
+function closeCreateExperimentModal() {
+    const modal = document.getElementById('createExperimentModal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function submitCreateExperiment() {
+    const nameEl = document.getElementById('newExpName');
+    const hypEl = document.getElementById('newExpHypothesis');
+    const metricEl = document.getElementById('newExpSuccessMetric');
+    const pctEl = document.getElementById('newExpTargetPercent');
+    const minSampleEl = document.getElementById('newExpMinSample');
+    const treatEl = document.getElementById('newExpTreatmentModel');
+
+    const name = nameEl ? nameEl.value.trim() : '';
+    if (!name) {
+        showToast('请输入实验名称', 'warning');
+        return;
+    }
+
+    const payload = {
+        name: name,
+        hypothesis: hypEl ? hypEl.value.trim() : '',
+        success_metric: metricEl ? metricEl.value : 'accuracy',
+        target_percent: pctEl ? parseInt(pctEl.value, 10) || 50 : 50,
+        min_sample: minSampleEl ? parseInt(minSampleEl.value, 10) || 30 : 30,
+        treatment_model: treatEl ? treatEl.value.trim() : ''
+    };
+
+    try {
+        const res = await apiFetch('/api/admin/experiments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data && data.status === 'success') {
+            showToast('A/B 实验创建成功！', 'success');
+            closeCreateExperimentModal();
+            if (nameEl) nameEl.value = '';
+            if (hypEl) hypEl.value = '';
+            if (treatEl) treatEl.value = '';
+            if (data.id) {
+                const sel = document.getElementById('adminExpSelect');
+                if (sel) sel.setAttribute('data-selected-id', String(data.id));
+            }
+            await loadAdminExperimentsList();
+        } else {
+            showToast('创建实验失败：' + ((data && (data.msg || data.detail)) || '未知错误'), 'error');
+        }
+    } catch (err) {
+        console.error('submitCreateExperiment error:', err);
+        showToast('创建实验网络异常', 'error');
+    }
+}
+
+function gotoExperimentObservatory() {
+    const btn = document.getElementById('analyticsBoardBtn');
+    if (btn) btn.click();
+    setTimeout(() => {
+        if (typeof switchAnalyticsSubView === 'function') {
+            switchAnalyticsSubView('sec-experiment');
+        }
+    }, 100);
+}
+
+window.loadAdminExperimentsList = loadAdminExperimentsList;
+window.onAdminExpSelectChange = onAdminExpSelectChange;
+window.startCurrentExperiment = startCurrentExperiment;
+window.stopCurrentExperiment = stopCurrentExperiment;
+window.openCreateExperimentModal = openCreateExperimentModal;
+window.closeCreateExperimentModal = closeCreateExperimentModal;
+window.submitCreateExperiment = submitCreateExperiment;
+window.gotoExperimentObservatory = gotoExperimentObservatory;
 
 /* =============================================================
    T10 Gap E3：系统配置（阈值规则配置化 + 预处理纠偏开关）
