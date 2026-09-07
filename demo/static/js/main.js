@@ -13101,7 +13101,7 @@ function importGoldenSamples(limit) {
 var PVALUE_ALPHA = 0.05;
 var PVALUE_MIN_SAMPLE = 30;
 
-function loadPValueCards() {
+function loadPValueCards(targetExpId) {
     const container = document.getElementById('pvalueCardsContainer');
     const select = document.getElementById('pvalueExperimentSelect');
     if (!container) return;
@@ -13114,30 +13114,48 @@ function loadPValueCards() {
                 return;
             }
             const exps = ret.data || [];
-            if (select) {
-                select.innerHTML = '';
-                if (exps.length === 0) {
-                    select.innerHTML = '<option value="">暂无实验</option>';
-                } else {
-                    exps.forEach(e => {
-                        const opt = document.createElement('option');
-                        opt.value = e.id;
-                        opt.textContent = '#' + e.id + ' ' + (e.name || '') + ' (' + (e.status || '') + ')';
-                        select.appendChild(opt);
-                    });
-                }
-            }
             if (exps.length === 0) {
+                if (select) select.innerHTML = '<option value="">暂无实验</option>';
                 container.innerHTML = '<div style="color:var(--text-muted); font-size:0.82rem;">暂无 A/B 实验。可在灰测开启后创建实验，样本回流后此处展示显著性卡片。</div>';
                 return;
             }
-            loadPValueCardsFor(Number(select.value || exps[0].id));
+            const currentVal = targetExpId || (select ? select.value : null);
+            if (select) {
+                select.innerHTML = '';
+                exps.forEach(e => {
+                    const opt = document.createElement('option');
+                    opt.value = e.id;
+                    opt.textContent = '#' + e.id + ' ' + (e.name || '') + ' (' + (e.status || '') + ')';
+                    select.appendChild(opt);
+                });
+            }
+            let chosenId = null;
+            if (currentVal && exps.some(e => String(e.id) === String(currentVal))) {
+                chosenId = currentVal;
+            } else {
+                const running = exps.find(e => e.status === 'running') || exps[0];
+                chosenId = running ? running.id : exps[0].id;
+            }
+            if (select) select.value = String(chosenId);
+            loadPValueCardsFor(Number(chosenId));
         })
         .catch(err => {
             console.error('实验列表加载失败', err);
             if (container) container.innerHTML = '<div style="color:#c00; font-size:0.82rem;">实验列表加载失败</div>';
         });
 }
+
+function onPValueExperimentChange(expId) {
+    const select = document.getElementById('pvalueExperimentSelect');
+    const targetId = Number(expId || (select ? select.value : null));
+    if (!targetId) return;
+    if (select && select.value !== String(targetId)) {
+        select.value = String(targetId);
+    }
+    loadPValueCardsFor(targetId);
+}
+window.onPValueExperimentChange = onPValueExperimentChange;
+window.loadPValueCards = loadPValueCards;
 
 function loadPValueCardsFor(expId) {
     const container = document.getElementById('pvalueCardsContainer');
@@ -13539,12 +13557,13 @@ function loadAnalyticsExperiments() {
                     + '<td>' + w2Escape(e.conclusion || '-') + '</td>'
                     + '</tr>';
             });
-            html += '</tbody></table></div>'
-                + '<div id="analyticsPvalueArea" style="margin-top:10px;"></div>';
+            html += '</tbody></table></div>';
             el.innerHTML = html;
-            // 优先取进行中实验的 p 值卡片；无进行中则取最新一条
+            // 联动刷新下方的 p 值卡片
             const running = exps.find(e => e.status === 'running') || exps[0];
-            if (running) loadAnalyticsPValue(Number(running.id));
+            const pvalSel = document.getElementById('pvalueExperimentSelect');
+            const targetId = (pvalSel && pvalSel.value) ? Number(pvalSel.value) : (running ? Number(running.id) : null);
+            if (typeof loadPValueCards === 'function') loadPValueCards(targetId);
         })
         .catch(err => {
             console.error('实验列表加载失败', err);
@@ -13553,45 +13572,17 @@ function loadAnalyticsExperiments() {
 }
 
 function loadAnalyticsPValue(expId) {
-    const area = document.getElementById('analyticsPvalueArea');
-    if (!area || !expId) return;
-    area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">p 值加载中（实验 #' + Number(expId) + '）...</div>';
-    apiFetch('/api/admin/experiments/' + Number(expId) + '/pvalue')
-        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
-        .then(([httpStatus, ret]) => {
-            if (!ret || ret.status !== 'success') {
-                area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">实验 #' + Number(expId) + ' 的 p 值暂不可用'
-                    + (httpStatus === 403 ? '（admin 专属）' : '') + '。</div>';
-                return;
-            }
-            const METRIC_LABELS = { accuracy: '准确率', hallucination_rate: '幻觉率', edit_rate: '人工修改率' };
-            let html = '<div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:6px;">实验 #' + Number(expId) + ' 显著性检验（双侧 z 检验，alpha=0.05）'
-                + (ret.low_confidence ? '｜样本不足，低置信度' : '') + '</div>'
-                + '<div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px;">';
-            (ret.cards || []).forEach(c => {
-                const sigBadge = (c.significant == null)
-                    ? '<span class="badge badge-secondary">无法判定</span>'
-                    : (c.significant ? '<span class="badge badge-success">显著</span>' : '<span class="badge badge-warning">不显著</span>');
-                html += '<div style="border:1px solid var(--border-color); border-radius:10px; padding:8px 12px; background:var(--bg-main);">'
-                    + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">'
-                    + '<strong style="font-size:0.8rem;">' + w2Escape(METRIC_LABELS[c.metric] || c.metric) + '</strong>' + sigBadge + '</div>'
-                    + '<div style="font-size:0.72rem; color:var(--text-muted); line-height:1.6;">'
-                    + 'p=' + (c.p_value == null ? '-' : Number(c.p_value).toFixed(4))
-                    + '　z=' + (c.z == null ? '-' : Number(c.z).toFixed(3))
-                    + '　效应=' + (c.effect_size_pp == null ? '-' : ((c.effect_size_pp > 0 ? '+' : '') + Number(c.effect_size_pp).toFixed(2) + 'pp'))
-                    + '</div></div>';
-            });
-            html += '</div>';
-            area.innerHTML = html;
-        })
-        .catch(() => {
-            area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">p 值加载失败，请稍后重试。</div>';
-        });
+    if (!expId) return;
+    if (typeof onPValueExperimentChange === 'function') {
+        onPValueExperimentChange(expId);
+    } else if (typeof loadPValueCardsFor === 'function') {
+        loadPValueCardsFor(expId);
+    }
 }
 
 function loadExperimentDetail(expId) {
     if (expId) {
-        loadAnalyticsPValue(Number(expId));
+        if (typeof onPValueExperimentChange === 'function') onPValueExperimentChange(expId);
     } else {
         loadAnalyticsExperiments();
     }

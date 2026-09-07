@@ -2076,9 +2076,6 @@
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
                                     <span>A/B 实验数据与组别指标对比</span>
                                     <div style="display:flex; gap:8px; align-items:center;">
-                                        <select id="experimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.8rem;" onchange="loadAnalyticsExperiments()">
-                                            <option value="2">实验 #2: LongCat-2.0 vs Qwen3-VL (进行中)</option>
-                                        </select>
                                         <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAnalyticsExperiments()">刷新实验数据</button>
                                     </div>
                                 </div>
@@ -2087,7 +2084,7 @@
                                 <div style="margin-top:18px; border-top:1px dashed var(--border-color); padding-top:12px;">
                                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                                         <span style="font-weight:600; font-size:0.9rem;">A/B 显著性假设检验卡片（双侧 z 检验）</span>
-                                        <select id="pvalueExperimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="loadPValueCards()"></select>
+                                        <select id="pvalueExperimentSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="onPValueExperimentChange(this.value)"></select>
                                     </div>
                                     <div id="pvalueThresholdNote" style="font-size:0.75rem; color:var(--text-muted); margin-bottom:8px;">
                                         判定阈值：双侧双比例 z 检验，显著性水平 alpha = 0.05。p &lt; 0.05 视为显著；样本量 N &lt; 30 时标记低置信度，仅作参考不作为推全依据。
@@ -3150,7 +3147,7 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260907d"></script>
+    <script src="/static/js/main.js?v=20260907e"></script>
     <script src="/static/js/export_center.js?v=20260907a"></script>
 </body>
 </html>
