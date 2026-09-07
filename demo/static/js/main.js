@@ -1367,15 +1367,8 @@ function initTabs() {
                 loadAdminEngineConfig();
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
             }
-            if (targetId === 'tab-golden') {
-                loadGoldenBoard();       // E-P1-2 黄金样本 57 看板
-                loadPValueCards();       // E-P1-3 p-value 显著性卡片
-            }
             if (targetId === 'tab-analytics') {
-                loadAnalyticsBoard();    // 埋点分布与实验
-                loadAdminGreySamples(null, true); // 灰测脱敏单据流
-                loadGoldenBoard();       // 黄金样本 57 看板
-                loadPValueCards();       // A/B p-value 显著性卡片
+                loadAnalyticsBoard();    // AI 效果观测与评测中心（按当前活跃子面板条件调度）
             }
             syncFeedbackVisibility();
             syncRecoveryVisibility();
@@ -6278,7 +6271,7 @@ function submitSaveEdited() {
             showToast('已保存当前照片，可在照片抽屉切换其它照片继续保存', 'success', TOAST_DURATION.guide);
         } else {
             // 单张：保存后清空界面回到上传卡片
-            showToast('已保存单据，请到「供应商与归档」完成审核', 'success', TOAST_DURATION.guide);
+            showToast('已保存单据，请到「归档对账」完成审核', 'success', TOAST_DURATION.guide);
 
             // 重置收据界面
             document.getElementById('receiptFile').value = '';
@@ -11476,16 +11469,19 @@ function applyDemoRoleColor(role) {
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
-    ['adminSidebarSection', 'adminEngineBtn', 'goldenBoardBtn', 'evalsetReviewBtn', 'analyticsBoardBtn'].forEach(id => {
+    ['adminSidebarSection', 'adminEngineBtn', 'analyticsBoardBtn'].forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.style.display = (isAdmin && id !== 'goldenBoardBtn' && id !== 'evalsetReviewBtn') ? '' : 'none';
+        if (el) el.style.display = isAdmin ? '' : 'none';
     });
     const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
     if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
+    // 店员隐藏数据导出中心（PRO 域，店员无导出场景）
+    const exportBtn = document.querySelector('.sidebar-btn[data-target="tab-export"]');
+    if (exportBtn) exportBtn.style.display = (role === 'staff') ? 'none' : '';
     // 当前停留在已隐藏的页签时回落到收据识别（admin 不受影响）
-    // T4：GT 抽检台（tab-evalset）与埋点观测台（tab-analytics）为 admin 专属入口（接口 403 兜底）
-    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-report', 'tab-analytics']
-                     : (role === 'owner') ? ['tab-engine', 'tab-golden', 'tab-evalset', 'tab-analytics'] : [];
+    // 评测中心（tab-analytics）为 admin 专属入口，黄金基准集与 GT 抽检确权均在其功能区 02/03 内
+    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-report', 'tab-analytics', 'tab-export']
+                     : (role === 'owner') ? ['tab-engine'] : [];
     const active = document.querySelector('.tab-content.active');
     if (active && hiddenTabs.indexOf(active.id) !== -1) {
         const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
@@ -11771,6 +11767,13 @@ function loadAdminEngineConfig() {
             setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
 
             // 自动展开抽屉（若对应功能启用）
+            const auditDrawer = document.getElementById('adminAuditCard');
+            if (auditDrawer) {
+                const auditExpanded = !!cfg.audit_enabled;
+                auditDrawer.classList.toggle('collapsed', !auditExpanded);
+                const h = auditDrawer.querySelector('.engine-drawer-header');
+                if (h) h.setAttribute('aria-expanded', auditExpanded ? 'true' : 'false');
+            }
             const parseDrawer = document.getElementById('adminParseDrawer');
             if (parseDrawer) {
                 const parseExpanded = !!cfg.parse_llm_enabled;
@@ -12338,6 +12341,16 @@ function greyBadgeHtml(useGrey) {
 }
 
 // -------------------------------------------------------------
+// F3：观测台加载器 stale-response 守卫（对齐 dailyConsumptionReqSeq 模式）。
+// 每个加载器独立计数：仅当响应仍属该加载器最新一次发起时才允许渲染/写选择器。
+const _analyticsLoadSeq = { recovery: 0, greySamples: 0, greyStatus: 0, experiments: 0, goldenBoard: 0 };
+function _analyticsSeq(key) {
+    _analyticsLoadSeq[key] = (_analyticsLoadSeq[key] || 0) + 1;
+    const seq = _analyticsLoadSeq[key];
+    return () => seq === _analyticsLoadSeq[key];
+}
+
+// -------------------------------------------------------------
 // Admin 灰测用户使用状态与脱敏样本观测逻辑
 // -------------------------------------------------------------
 let _adminGreySamplesCache = [];
@@ -12345,6 +12358,9 @@ let _adminGreySamplesCache = [];
 function loadAdminGreySamples(tenantId, isManual = false) {
     const tbody = document.getElementById('adminGreySamplesBody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666;">正在拉取脱敏单据流并执行 PII 过滤与 AI 效果评估...</td></tr>';
+
+    const noticeEl = document.getElementById('adminGreySampleLimitNotice');
+    if (noticeEl) noticeEl.style.display = 'none';
 
     const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
     const url = '/api/admin/grey-test/samples' + (tId && tId !== 'all' ? '?tenant_id=' + encodeURIComponent(tId) : '');
@@ -12356,6 +12372,7 @@ function loadAdminGreySamples(tenantId, isManual = false) {
             if (!isCurrent()) return;
             if (!res || res.status !== 'success' || !res.samples) {
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00;">拉取失败，请确认是否具备 admin 权限</td></tr>';
+                if (noticeEl) noticeEl.style.display = 'none';
                 return;
             }
             _adminGreySamplesCache = res.samples;
@@ -12378,13 +12395,24 @@ function loadAdminGreySamples(tenantId, isManual = false) {
             // avg_match_rate 只由有真实 AI 预填的样本贡献；无可比样本时如实显示「—」
             if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '—');
 
+            const totalCount = res.total_count || res.samples.length;
+            if (noticeEl) {
+                if (totalCount > 100) {
+                    noticeEl.textContent = `* 仅展示最新 100 条脱敏单据抽样观测记录，全量样本共 ${totalCount} 份`;
+                    noticeEl.style.display = 'block';
+                } else {
+                    noticeEl.style.display = 'none';
+                }
+            }
+
             if (res.samples.length === 0) {
                 if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999;">暂无单据样本</td></tr>';
                 return;
             }
 
+            const displaySamples = res.samples.slice(0, 100);
             let html = '';
-            res.samples.forEach((s, idx) => {
+            displaySamples.forEach((s, idx) => {
                 const statusBadge = s.is_approved
                     ? '<span class="badge" style="background:#d4edda; color:#155724;">老板已入库</span>'
                     : (s.is_user_edited
@@ -12403,14 +12431,14 @@ function loadAdminGreySamples(tenantId, isManual = false) {
                 html += `
                     <tr>
                         <td><strong>#${w2Escape(s.receipt_id)}</strong></td>
-                        <td><span style="color:#2f6b4f; font-weight:600;">${w2Escape(s.masked_vendor)}</span> <small style="color:#999;">(已脱敏)</small></td>
-                        <td><code>${w2Escape(s.doc_form)}</code></td>
-                        <td><code>${w2Escape(s.masked_total)}</code></td>
+                        <td class="cell-vendor"><span style="color:#2f6b4f; font-weight:600;">${w2Escape(s.masked_vendor)}</span> <small style="color:#999; margin-left:4px;">(已脱敏)</small></td>
+                        <td class="cell-doc-form"><code>${w2Escape(s.doc_form)}</code></td>
+                        <td class="cell-amount"><code>${w2Escape(s.masked_total)}</code></td>
                         <td>${engineBadge}</td>
                         <td>${statusBadge}</td>
                         <td>${feedbackBadge}</td>
-                        <td>
-                            <button class="btn btn-secondary" style="font-size:0.75rem; padding:3px 8px;" onclick="viewGreySampleDetail(${idx})">查看脱敏解析</button>
+                        <td class="cell-actions">
+                            <button class="btn btn-secondary" style="font-size:0.75rem; padding:3px 10px;" onclick="viewGreySampleDetail(${idx})">查看脱敏解析</button>
                         </td>
                     </tr>
                 `;
@@ -12640,58 +12668,156 @@ const GOLDEN_DOC_FORM_LABELS = {
     monthly_statement: '月结单',
 };
 
-function loadGoldenBoard() {
+let _goldenBoardScope = 'all';
+
+function loadGoldenBoard(scope) {
+    const VALID_SCOPES = ['all', 'golden', 'gt_confirmed', 'gt_pending'];
+    if (VALID_SCOPES.includes(scope)) _goldenBoardScope = scope;
+    const isCurrent = _analyticsSeq('goldenBoard');
+    const sel = document.getElementById('goldenScopeSelect');
+    if (sel && VALID_SCOPES.includes(scope)) sel.value = scope;
     const body = document.getElementById('goldenBoardBody');
-    const summary = document.getElementById('goldenBoardSummary');
-    if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">加载中</td></tr>';
-    apiFetch('/api/admin/golden-samples')
+    if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">加载中...</td></tr>';
+    apiFetch('/api/admin/golden-samples?scope=' + _goldenBoardScope)
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
+            if (!isCurrent()) return;
             if (!ret || ret.status !== 'success') {
                 if (toastHttpError(httpStatus, ret)) return;
-                if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:18px;">加载失败：' + w2Escape((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)) + '</td></tr>';
+                if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:24px;">加载失败：' + w2Escape((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)) + '</td></tr>';
                 return;
             }
-            const cov = ret.coverage || {};
-            const covParts = Object.keys(cov).map(k => {
-                const c = cov[k] || {};
-                const label = GOLDEN_DOC_FORM_LABELS[k] || k;
-                return label + ' ' + (c.actual || 0) + '/' + (c.target || 0);
-            });
-            if (summary) summary.textContent = '库内单据 ' + (ret.total || 0) + ' / 目标 57 张。形态覆盖：' + covParts.join(' · ');
             if (!body) return;
             const items = ret.items || [];
             if (items.length === 0) {
-                body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:18px;">暂无单据，可点击下方按钮导入黄金样本</td></tr>';
+                body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">暂无单据，可点击下方按钮导入黄金样本</td></tr>';
                 return;
             }
             let html = '';
             items.forEach(it => {
-                const statusBadge = it.status === 'approved'
-                    ? '<span class="badge badge-success">已入库</span>'
-                    : (it.status === 'edited' ? '<span class="badge badge-warning">待审核</span>'
-                        : '<span class="badge badge-secondary">' + w2Escape(it.status || '-') + '</span>');
+                // 1. 业务状态本地化
+                let statusBadge = '<span class="badge badge-secondary" style="font-size:0.72rem; padding:2px 6px;">已上传</span>';
+                if (it.status === 'approved') {
+                    statusBadge = '<span class="badge badge-success" style="font-size:0.72rem; padding:2px 6px;">已入库</span>';
+                } else if (it.status === 'edited') {
+                    statusBadge = '<span class="badge badge-warning" style="font-size:0.72rem; padding:2px 6px;">待审核</span>';
+                }
+
+                // 2. GT 确权治理列（唯一入口，直达确权台，消除操作列重复按钮）
+                let gtHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">—</span>';
+                if (it.gt_status === 'confirmed') {
+                    gtHtml = '<span class="badge badge-success" style="font-size:0.72rem; padding:2px 6px;" title="' + w2Escape(it.sample_id || '') + '">已确权' + (it.sample_id ? ' · ' + w2Escape(it.sample_id) : '') + '</span>';
+                } else if (it.gt_status === 'pending') {
+                    gtHtml = '<a href="/evalset" target="_blank" class="gt-pill-link pending" title="待抽检确认（点击直接进入确权台）">待抽检 ↗</a>';
+                } else if (it.gt_status === 'promoted') {
+                    gtHtml = '<a href="/evalset" target="_blank" class="gt-pill-link promoted" title="已晋升（点击查看确权台详情）">已晋升 ↗</a>';
+                } else if (it.gt_status === 'rejected') {
+                    gtHtml = '<span class="badge badge-danger" style="font-size:0.72rem; padding:2px 6px;">已驳回</span>';
+                }
+
+                // 3. 金额格式化（0 元优雅淡化）
+                const isZero = !it.total_amount || Number(it.total_amount) === 0;
+                const amountHtml = isZero
+                    ? '<span style="color:var(--text-muted); font-size:0.78rem;">HK$ 0.00</span>'
+                    : '<span style="font-family:var(--font-mono); font-weight:600;">' + currencySymbol(it.currency) + ' ' + fmtMoney(it.total_amount) + '</span>';
+
+                // 4. 基准集状态与操作融合成轻量级 Ghost 交互（彻底移除黑色实心大方块）
+                let goldenActionHtml = '';
+                if (it.is_golden_sample) {
+                    goldenActionHtml = '<span class="golden-member-indicator" title="当前样本已纳入黄金基准集">★ 基准</span>'
+                        + '<button class="btn-golden-ghost btn-remove-golden" onclick="toggleGoldenSample(' + Number(it.id) + ', false)" title="从基准集中移出此样本">移出</button>';
+                } else {
+                    goldenActionHtml = '<button class="btn-golden-ghost btn-add-golden" onclick="toggleGoldenSample(' + Number(it.id) + ', true)" title="将此样本收录进黄金基准集">+ 纳入基准</button>';
+                }
+                const detailBtn = '<button class="btn-golden-ghost" onclick="loadReceiptDetail(' + Number(it.id) + ')" title="查看单据完整识别结果与图片切片">详情</button>';
+
+                const actionHtml = '<div class="golden-actions-cell">'
+                    + goldenActionHtml
+                    + detailBtn
+                    + '</div>';
+
+                // 5. 8 列优雅工业级排版
                 html += '<tr>'
-                    + '<td>#' + Number(it.id) + '</td>'
-                    + '<td>' + w2Escape(it.supplier_name || '-') + '</td>'
-                    + '<td>' + w2Escape(it.receipt_date || '-') + '</td>'
-                    + '<td>' + w2Escape(GOLDEN_DOC_FORM_LABELS[it.doc_form] || it.doc_form || '-') + '</td>'
-                    + '<td class="col-right">' + currencySymbol(it.currency) + fmtMoney(it.total_amount) + '</td>'
+                    + '<td style="font-family:var(--font-mono); font-size:0.78rem; color:var(--text-muted-2);">#' + Number(it.id) + '</td>'
+                    + '<td class="cell-supplier" style="font-weight:500; color:var(--text-main);" title="' + w2Escape(it.supplier_name || '') + '">' + w2Escape(it.supplier_name || '—') + '</td>'
+                    + '<td style="color:var(--text-muted-2); font-size:0.78rem;">' + w2Escape(it.receipt_date || '—') + '</td>'
+                    + '<td><span style="font-size:0.75rem; color:var(--text-subtle);">' + w2Escape(GOLDEN_DOC_FORM_LABELS[it.doc_form] || it.doc_form || '—') + '</span></td>'
+                    + '<td class="col-right">' + amountHtml + '</td>'
                     + '<td>' + statusBadge + '</td>'
-                    + '<td><code>' + w2Escape(it.currency || 'HKD') + '</code></td>'
-                    + '<td><button class="btn btn-secondary" style="padding:2px 8px; font-size:0.72rem;" onclick="loadReceiptDetail(' + Number(it.id) + ')">详情</button></td>'
+                    + '<td>' + gtHtml + '</td>'
+                    + '<td class="col-right">' + actionHtml + '</td>'
                     + '</tr>';
             });
             body.innerHTML = html;
         })
         .catch(err => {
+            if (!isCurrent()) return;
             console.error('黄金样本看板加载失败', err);
-            if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:18px;">加载失败，请稍后重试</td></tr>';
+            if (body) body.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:24px;">加载失败，请稍后重试</td></tr>';
+        });
+}
+window.loadGoldenBoard = loadGoldenBoard;
+window.toggleGoldenSample = toggleGoldenSample;
+
+// 方案 A 重组：02 区推全深链——切到引擎配置 tab 并展开灰测抽屉，聚焦推全/回滚操作
+function gotoGreyPromote() {
+    const engineBtn = document.getElementById('adminEngineBtn');
+    if (engineBtn) engineBtn.click();
+    setTimeout(() => {
+        const drawer = document.getElementById('adminGreyDrawer');
+        if (drawer && drawer.classList.contains('collapsed') && typeof toggleEngineDrawer === 'function') {
+            toggleEngineDrawer('adminGreyDrawer');
+        }
+        if (drawer) drawer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 250);
+}
+
+// 方案 A 重组：03 区 GT 确权进度（各 split 的 draft/confirmed/missing 计数）
+function loadGTEvalsetStats() {
+    const el = document.getElementById('gtEvalsetStats');
+    if (!el) return;
+    apiFetch('/api/evalset/stats')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success' || !ret.data || !ret.data.splits) {
+                el.textContent = '评测集尚未构建（manifest 缺失，运行 build_evalset.py 后显示）';
+                return;
+            }
+            const parts = Object.keys(ret.data.splits).map(s => {
+                const b = ret.data.splits[s] || {};
+                return s + '：已确权 ' + (b.confirmed || 0) + ' / 草稿 ' + (b.draft || 0) + ' / 待补 ' + (b.missing || 0);
+            });
+            el.textContent = parts.length ? parts.join('；') : '评测集为空';
+        })
+        .catch(() => { el.textContent = '确权进度加载失败'; });
+}
+
+// 加入/移出黄金基准集（可逆策展标记；移出需二次确认）
+function toggleGoldenSample(receiptId, inSet) {
+    if (!inSet && !confirm('确认将单据 #' + receiptId + ' 移出黄金基准集？单据本体与审计记录不受影响，可随时重新加入。')) return;
+    apiFetch('/api/admin/golden-samples/' + Number(receiptId) + '/membership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ in_set: !!inSet })
+    })
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (!ret || ret.status !== 'success') {
+                if (toastHttpError(httpStatus, ret)) return;
+                showToast((inSet ? '加入' : '移出') + '基准集失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)), 'error');
+                return;
+            }
+            showToast(inSet ? '已加入黄金基准集' : '已移出黄金基准集', 'success');
+            loadGoldenBoard();
+        })
+        .catch(err => {
+            console.error('基准集成员操作失败', err);
+            showToast('请求失败，请稍后重试', 'error');
         });
 }
 
 function importGoldenSamples(limit) {
-    if (!confirm('确认导入 ' + limit + ' 张黄金样本？将按 manifest 去重，已导入的自动跳过。')) return;
+    if (!confirm('确认导入黄金样本（上限 ' + limit + ' 张）？将按 manifest 去重，已导入的自动跳过。')) return;
     showToast('正在导入黄金样本...', 'info');
     apiFetch('/api/admin/golden-samples/import?limit=' + Number(limit), { method: 'POST' })
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
@@ -12810,22 +12936,24 @@ function renderPValueCards(cards, lowConfidence) {
 // /api/admin/grey-test、/api/admin/experiments(+pvalue)，不重复造端点。
 // 可视化：HTML 表格 + CSS 进度条（复用 batch-progress 样式），不引图表库。
 // =====================================================================
-// F3：观测台加载器 stale-response 守卫（对齐 dailyConsumptionReqSeq 模式）。
-// 每个加载器独立计数：仅当响应仍属该加载器最新一次发起时才允许渲染/写选择器。
-const _analyticsLoadSeq = { recovery: 0, greySamples: 0, greyStatus: 0, experiments: 0 };
-function _analyticsSeq(key) {
-    _analyticsLoadSeq[key] = (_analyticsLoadSeq[key] || 0) + 1;
-    const seq = _analyticsLoadSeq[key];
-    return () => seq === _analyticsLoadSeq[key];
-}
 
 function loadAnalyticsBoard(tenantId) {
     const sel = document.getElementById('analyticsTenantSelect');
     const selectedTenant = tenantId || (sel ? sel.value : 'all') || 'all';
-    loadRecoverySummaryBlocks(selectedTenant);
-    loadAnalyticsGreyStatus();
-    loadAdminGreySamples(selectedTenant, false);
-    loadAnalyticsExperiments();
+    const activeBtn = document.querySelector('.analytics-segment-btn.active');
+    const activeView = activeBtn ? activeBtn.getAttribute('data-view') : 'sec-telemetry';
+    if (activeView === 'sec-telemetry') {
+        loadRecoverySummaryBlocks(selectedTenant);
+    } else if (activeView === 'sec-canary') {
+        loadAnalyticsGreyStatus();
+        loadAdminGreySamples(selectedTenant, false);
+    } else if (activeView === 'sec-experiment') {
+        loadAnalyticsExperiments();
+        loadPValueCards();
+    } else if (activeView === 'sec-eval') {
+        loadGoldenBoard();
+        loadGTEvalsetStats();
+    }
 }
 window.loadAnalyticsBoard = loadAnalyticsBoard;
 
@@ -12833,9 +12961,9 @@ window.onAnalyticsTenantChange = function(tId) {
     loadAnalyticsBoard(tId);
 };
 
-// AI 效果观测与评测中心：三大独立功能区分段切换器
+// AI 效果观测与评测中心：四大独立功能区分段切换器
 function switchAnalyticsSubView(targetViewId) {
-    const validViews = ['sec-telemetry', 'sec-canary', 'sec-eval'];
+    const validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval'];
     if (!validViews.includes(targetViewId)) {
         targetViewId = 'sec-telemetry';
     }
@@ -12848,7 +12976,7 @@ function switchAnalyticsSubView(targetViewId) {
         btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
     });
 
-    // 切换三大独立功能区子面板显示
+    // 切换四大独立功能区子面板显示
     validViews.forEach(viewId => {
         const panel = document.getElementById(viewId);
         if (panel) {
@@ -12862,7 +12990,7 @@ function switchAnalyticsSubView(targetViewId) {
         }
     });
 
-    // 针对激活的功能区触发专属刷新/加载
+    // 针对 4 大激活功能区触发专属刷新
     if (targetViewId === 'sec-telemetry') {
         const sel = document.getElementById('analyticsTenantSelect');
         const tId = sel ? sel.value : 'all';
@@ -12870,10 +12998,12 @@ function switchAnalyticsSubView(targetViewId) {
     } else if (targetViewId === 'sec-canary') {
         if (typeof loadAnalyticsGreyStatus === 'function') loadAnalyticsGreyStatus();
         if (typeof loadAdminGreySamples === 'function') loadAdminGreySamples(null, true);
-    } else if (targetViewId === 'sec-eval') {
-        if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
+    } else if (targetViewId === 'sec-experiment') {
         if (typeof loadAnalyticsExperiments === 'function') loadAnalyticsExperiments();
         if (typeof loadPValueCards === 'function') loadPValueCards();
+    } else if (targetViewId === 'sec-eval') {
+        if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
+        if (typeof loadGTEvalsetStats === 'function') loadGTEvalsetStats();
     }
 }
 window.switchAnalyticsSubView = switchAnalyticsSubView;
@@ -12943,9 +13073,65 @@ function loadRecoverySummaryBlocks(tenantId) {
         });
 }
 
+// 埋点事件码 -> 业务规范说明（对齐产品指标与 AI 治理工程标准定义）
+const TELEMETRY_EVENT_ALIASES = {
+    // 核心生命周期流（上传 → 解析 → 复核 → 审核 → 入库）
+    upload: '收据凭证上传与任务创建',
+    receipt_uploaded: '收据凭证上传与任务创建',
+    ocr_parse_started: 'AI 结构化解析流水线启动',
+    ocr_parsed: 'AI 结构化解析完成并产出字段',
+    parse_done: 'AI 结构化解析完成',
+    ocr_error: 'AI 解析执行异常或超时',
+    receipt_review_submitted: '人工复核确认并保存提交',
+    save_edited: '人工复核修改保存',
+    edit: '人工复核编辑保存',
+    field_edited: '明细行离散编辑（增删行/SKU映射）',
+    receipt_approved: '收据审核通过并确认入库',
+    approve: '收据审核通过并确认入库',
+    receipt_flagged: '标记单据异常并转人工处理',
+    inventory_in: '库存流水入库并更新现存量',
+
+    // 异常挽回与体验交互
+    image_replaced: '收据原图替换并触发重验',
+    retake_clicked: '触发单据重拍（图像质量归因）',
+    reparse_clicked: '触发重新解析（模型推理归因）',
+    reupload_after_fail: '异常单据重试上传',
+    feedback_received: '用户满意度体验反馈（赞/踩）',
+    parse_abandoned_for_manual: '解析等待中断并转手工录入',
+    manual_entry_start: '新建手工录入凭证',
+    manual_entry_started: '新建手工录入凭证',
+
+    // AI 治理护栏与知识增强
+    rag_hit: '供应商记忆库命中与上下文注入（RAG）',
+    math_guard_checked: '金额与数量计算一致性校验（数学护栏）',
+    contract_guard_checked: '字段完整性与 Schema 契约校验（契约护栏）',
+    price_anomaly_flagged: '采购单价波动超阈值告警',
+    reconciliation_completed: '供应商账期对账完成',
+};
+
+// 过滤非业务测试/探测事件（如 qa_*, *probe*, test_* 等），保持大盘纯净业务视角
+function _isExcludedTelemetryEvent(type) {
+    if (!type) return true;
+    const t = String(type).toLowerCase();
+    return t.startsWith('qa_') || t.includes('probe') || t.startsWith('test_') || t === 'totally_unknown_evt_zzz';
+}
+
+function _eventTypeAlias(code) {
+    if (TELEMETRY_EVENT_ALIASES[code]) return TELEMETRY_EVENT_ALIASES[code];
+    return '自定义业务事件';
+}
+
+// 最近触发时间格式化：去掉年份，展示「月-日 时:分」（2026-09-03T22:54:06 -> 09-03 22:54）
+function _fmtLastTs(ts) {
+    if (!ts) return '-';
+    const s = String(ts);
+    if (s.length < 16 || s.indexOf('-') < 0) return s;
+    return s.slice(5, 16).replace('T', ' ');
+}
+
 function renderEventDistribution(el, data) {
     if (!el) return;
-    const dist = data.event_distribution || [];
+    const dist = (data.event_distribution || []).filter(d => !_isExcludedTelemetryEvent(d.event_type));
     if (dist.length === 0) {
         el.innerHTML = '<span style="color:var(--text-muted);">暂无埋点事件。</span>';
         return;
@@ -12954,17 +13140,19 @@ function renderEventDistribution(el, data) {
         + '共 ' + Number(data.total_events || 0) + ' 条事件、' + dist.length + ' 类；占比条相对全量事件。'
         + (data.low_confidence ? '（样本 < 30，低置信度，仅作参考）' : '')
         + '</div>'
-        + '<div class="table-container"><table class="data-table">'
-        + '<thead><tr><th>事件类型</th><th class="col-right">计数</th><th style="width:34%;">占比</th><th>最近触发</th></tr></thead><tbody>';
+        + '<div class="table-container" style="overflow-x:auto;"><table class="data-table" style="min-width:880px;">'
+        + '<thead><tr><th style="white-space:nowrap; width:240px; min-width:240px;">事件类型</th><th style="min-width:240px;">说明</th><th class="col-right" style="white-space:nowrap; width:80px;">计数</th><th style="width:160px; min-width:140px; white-space:nowrap;">占比</th><th style="white-space:nowrap; width:130px;">最近触发</th></tr></thead><tbody>';
     dist.forEach(d => {
+        const alias = _eventTypeAlias(d.event_type);
         html += '<tr>'
-            + '<td><code>' + w2Escape(d.event_type) + '</code></td>'
-            + '<td class="col-right">' + Number(d.count) + '</td>'
+            + '<td style="white-space:nowrap; overflow:visible; text-overflow:clip;" title="' + w2Escape(d.event_type) + '"><code style="white-space:nowrap; font-size:0.8rem; display:inline-block;">' + w2Escape(d.event_type) + '</code></td>'
+            + '<td style="font-size:0.78rem; color:var(--text-muted);" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
+            + '<td class="col-right" style="white-space:nowrap;">' + Number(d.count) + '</td>'
             + '<td><div style="display:flex; align-items:center; gap:8px;">'
             + _analyticsBarHtml(d.share)
             + '<span style="font-size:0.75rem; color:var(--text-muted); font-variant-numeric:tabular-nums;">' + _analyticsPct(d.share) + '</span>'
             + '</div></td>'
-            + '<td style="font-size:0.78rem; color:var(--text-muted);">' + w2Escape(d.last_ts || '-') + '</td>'
+            + '<td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">' + w2Escape(_fmtLastTs(d.last_ts)) + '</td>'
             + '</tr>';
     });
     html += '</tbody></table></div>';
@@ -12994,23 +13182,25 @@ function renderRecoveryMetrics(el, data) {
     }
     html += '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">口径：挽回成功 = 点击后同单据出现更晚的保存/审核通过事件；点踩比与挽回点击比的分母（有反馈单据/解析成功）小于分子计数属正常，比值可>100%。</div>';
 
-    const events = data.recent_events || [];
+    const events = (data.recent_events || []).filter(ev => !_isExcludedTelemetryEvent(ev.event_type));
     html += '<div style="font-weight:600; font-size:0.85rem; margin:12px 0 6px;">最近事件流（最新 ' + events.length + ' 条）</div>';
     if (events.length === 0) {
         html += '<div style="color:var(--text-muted); font-size:0.8rem;">暂无事件。</div>';
     } else {
-        html += '<div class="table-container" style="max-height:260px; overflow:auto;"><table class="data-table">'
-            + '<thead><tr><th>时间</th><th>事件</th><th>单据</th><th>操作者</th><th>properties</th></tr></thead><tbody>';
+        html += '<div class="table-container" style="max-height:260px; overflow:auto;"><table class="data-table" style="min-width:980px;">'
+            + '<thead><tr><th style="white-space:nowrap; width:130px;">时间</th><th style="white-space:nowrap; width:240px; min-width:240px;">事件类型</th><th style="width:24%; min-width:180px;">说明</th><th style="white-space:nowrap; width:80px;">单据</th><th style="white-space:nowrap; width:100px;">操作者</th><th>properties</th></tr></thead><tbody>';
         events.forEach(ev => {
-            let propsText = '';
-            try { propsText = JSON.stringify(ev.properties || {}); } catch (e) { propsText = ''; }
-            if (propsText.length > 80) propsText = propsText.slice(0, 80) + '...';
+            let propsFull = '';
+            try { propsFull = JSON.stringify(ev.properties || {}); } catch (e) { propsFull = ''; }
+            const propsShow = propsFull.length > 80 ? propsFull.slice(0, 80) + '...' : propsFull;
+            const alias = _eventTypeAlias(ev.event_type || '');
             html += '<tr>'
                 + '<td style="font-size:0.75rem; white-space:nowrap;">' + w2Escape(ev.ts || '-') + '</td>'
-                + '<td><code>' + w2Escape(ev.event_type || '') + '</code></td>'
-                + '<td>' + (ev.receipt_id != null ? '#' + Number(ev.receipt_id) : '-') + '</td>'
-                + '<td style="font-size:0.75rem;">' + w2Escape(ev.account_id || '-') + '</td>'
-                + '<td style="font-size:0.72rem; color:var(--text-muted);">' + w2Escape(propsText) + '</td>'
+                + '<td style="white-space:nowrap; overflow:visible; text-overflow:clip;" title="' + w2Escape(ev.event_type || '') + '"><code style="white-space:nowrap; font-size:0.8rem; display:inline-block;">' + w2Escape(ev.event_type || '') + '</code></td>'
+                + '<td style="font-size:0.72rem; color:var(--text-muted);" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
+                + '<td style="white-space:nowrap;">' + (ev.receipt_id != null ? '#' + Number(ev.receipt_id) : '-') + '</td>'
+                + '<td style="font-size:0.75rem; white-space:nowrap;">' + w2Escape(ev.account_id || '-') + '</td>'
+                + '<td style="font-size:0.72rem; color:var(--text-muted);" title="' + w2Escape(propsFull) + '">' + w2Escape(propsShow) + '</td>'
                 + '</tr>';
         });
         html += '</tbody></table></div>';
@@ -13140,6 +13330,17 @@ function loadAnalyticsPValue(expId) {
             area.innerHTML = '<div style="font-size:0.78rem; color:var(--text-muted);">p 值加载失败，请稍后重试。</div>';
         });
 }
+
+function loadExperimentDetail(expId) {
+    if (expId) {
+        loadAnalyticsPValue(Number(expId));
+    } else {
+        loadAnalyticsExperiments();
+    }
+}
+window.loadExperimentDetail = loadExperimentDetail;
+window.loadAnalyticsExperiments = loadAnalyticsExperiments;
+
 
 // =====================================================================
 // F-P1-5 成本分摊（归档弹窗）：整单金额按部门比例分摊到明细行部门

@@ -26,3 +26,12 @@ def test_analytics_four_subviews_structure():
     assert soup.find("section", id="sec-canary") is not None
     assert soup.find("section", id="sec-experiment") is not None
     assert soup.find("section", id="sec-eval") is not None
+
+
+def test_js_switch_analytics_subview_supports_experiment():
+    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
+        js = f.read()
+    assert "'sec-experiment'" in js
+    assert "validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval']" in js or \
+           "validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval']" in js.replace('"', "'")
+
