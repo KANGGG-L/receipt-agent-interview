@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260907c">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260907d">
     <style>
         /* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
         .sidebar-btn { position: relative; }
@@ -1775,6 +1775,95 @@
                             </div>
                         </div>
 
+                        <!-- A/B 科学实验编排 高级抽屉 -->
+                        <div id="adminExperimentDrawer" class="engine-drawer collapsed" style="margin-top:14px;">
+                            <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminExperimentDrawer'); } else { document.getElementById('adminExperimentDrawer').classList.toggle('collapsed'); }">
+                                <div class="engine-drawer-title" title="A/B 科学实验编排：多模型对等双盲对照、假设设定、分流规则与状态控制">
+                                    <span style="color:#2563eb;">高级配置 · A/B 科学实验编排 (A/B Experimentation)</span>
+                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">(双盲对照实验、假设设定、50:50分流与科学决策)</span>
+                                </div>
+                                <div class="engine-drawer-indicator">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+                                </div>
+                            </div>
+                            <div class="engine-drawer-content">
+                                <!-- 实验选择与操作工具条 -->
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <span style="font-size:0.88rem; font-weight:700;">选择实验:</span>
+                                        <select id="adminExpSelect" class="form-control" style="width:auto; min-width:220px; padding:4px 8px; font-size:0.8rem;" onchange="if(typeof onAdminExpSelectChange==='function') onAdminExpSelectChange(this.value)">
+                                            <option value="">加载实验列表中...</option>
+                                        </select>
+                                        <span id="adminExpStatusBadge" class="badge badge-secondary">—</span>
+                                    </div>
+                                    <div style="display:flex; gap:8px;">
+                                        <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="if(typeof loadAdminExperimentsList==='function') loadAdminExperimentsList()">刷新实验</button>
+                                        <button type="button" class="btn btn-primary" style="font-size:0.8rem; padding:4px 12px; background:#2563eb; border-color:#2563eb;" onclick="if(typeof openCreateExperimentModal==='function') openCreateExperimentModal()">+ 新建 A/B 实验</button>
+                                    </div>
+                                </div>
+
+                                <!-- 当前实验详情面板 -->
+                                <div id="adminExpDetailCard" style="border:1px solid #e2e8f0; border-radius:8px; padding:14px; background:#f8fafc; margin-bottom:14px;">
+                                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
+                                        <div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">实验假设 (Hypothesis)</div>
+                                            <div id="adminExpHypothesis" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">—</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">主判定指标</div>
+                                            <div id="adminExpMetric" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">accuracy (准确率)</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">分流策略与配比</div>
+                                            <div id="adminExpTraffic" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">50% Control : 50% Treatment</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">最小统计样本量 (min_sample)</div>
+                                            <div id="adminExpMinSample" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">—</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Control 组 vs Treatment 组 模型配置对比卡片 -->
+                                    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-top:10px;">
+                                        <div style="border:1px solid #cbd5e1; border-radius:6px; padding:10px; background:#ffffff;">
+                                            <div style="font-size:0.78rem; font-weight:700; color:#475569; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                                <span>对照组 A (Control - 基线方案)</span>
+                                                <span class="badge" style="background:#f1f5f9; color:#475569;">生产主力</span>
+                                            </div>
+                                            <div style="font-size:0.8rem; color:#334155; line-height:1.6;">
+                                                <div>模型：<code id="adminExpCtrlModel">主力识别引擎</code></div>
+                                                <div style="color:var(--text-muted); font-size:0.75rem;">生产环境运行的基线方案 (50% 流量)</div>
+                                            </div>
+                                        </div>
+                                        <div style="border:1px solid #93c5fd; border-radius:6px; padding:10px; background:#eff6ff;">
+                                            <div style="font-size:0.78rem; font-weight:700; color:#1d4ed8; margin-bottom:6px; display:flex; justify-content:space-between;">
+                                                <span>实验组 B (Treatment - 候选方案)</span>
+                                                <span class="badge" style="background:#dbeafe; color:#1e40af;">实验候选</span>
+                                            </div>
+                                            <div style="font-size:0.8rem; color:#1e3a8a; line-height:1.6;">
+                                                <div>模型：<code id="adminExpTreatModel">待测对比模型</code></div>
+                                                <div style="color:var(--text-muted); font-size:0.75rem;">双盲对决的候选方案 (50% 流量)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 实验控制与闭环深链栏 -->
+                                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; padding:10px 14px; border:1px solid #bfdbfe; border-radius:8px; background:rgba(37,99,235,0.04);">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <button id="adminExpStartBtn" class="btn btn-primary" style="background:#2563eb; border-color:#2563eb; font-size:0.8rem; padding:4px 12px;" onclick="if(typeof startCurrentExperiment==='function') startCurrentExperiment()">启动实验</button>
+                                        <button id="adminExpStopBtn" class="btn btn-outline" style="border-color:#ef4444; color:#ef4444; font-size:0.8rem; padding:4px 12px;" onclick="if(typeof stopCurrentExperiment==='function') stopCurrentExperiment()">暂停实验</button>
+                                    </div>
+                                    <div>
+                                        <a href="javascript:void(0)" onclick="if(typeof gotoExperimentObservatory==='function') gotoExperimentObservatory()" class="btn btn-secondary" style="text-decoration:none; font-size:0.8rem; padding:4px 12px; display:inline-flex; align-items:center; gap:4px;">
+                                            <span>前往 A/B 科学实验台查看 p 值指标看板</span>
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- 引擎操作状态提示容器 -->
                         <div id="adminEngineStatus" class="engine-status-container" style="display:none; margin-top:14px;"></div>
 
@@ -3010,10 +3099,58 @@
         </div>
     </div>
 
+    <!-- 新建 A/B 实验弹窗 -->
+    <div id="createExperimentModal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="max-width:520px; border-radius:12px; padding:20px; background:#fff; margin:40px auto; position:relative;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h3 style="margin:0; font-size:1.1rem; color:#1e293b;">新建 A/B 科学实验</h3>
+                <button type="button" class="btn-close" style="border:none; background:transparent; font-size:1.4rem; cursor:pointer; line-height:1;" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">&times;</button>
+            </div>
+            <form id="createExperimentForm" onsubmit="event.preventDefault(); if(typeof submitCreateExperiment==='function') submitCreateExperiment();">
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="font-weight:600; font-size:0.82rem;">实验名称 <span style="color:#ef4444;">*</span></label>
+                    <input type="text" id="newExpName" class="form-control" placeholder="例: Qwen3-VL 准确率提升对比" required>
+                </div>
+                <div class="form-group" style="margin-bottom:12px;">
+                    <label style="font-weight:600; font-size:0.82rem;">实验假设 (Hypothesis)</label>
+                    <input type="text" id="newExpHypothesis" class="form-control" placeholder="例: 预期在香港手写餐饮单据上准确率提升 5pp">
+                </div>
+                <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
+                    <div class="form-group">
+                        <label style="font-weight:600; font-size:0.82rem;">主判定指标</label>
+                        <select id="newExpSuccessMetric" class="form-control">
+                            <option value="accuracy">accuracy (字段准确率)</option>
+                            <option value="hallucination_rate">hallucination_rate (幻觉率)</option>
+                            <option value="edit_rate">edit_rate (人工修改率)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight:600; font-size:0.82rem;">分流比例 (%)</label>
+                        <input type="number" id="newExpTargetPercent" class="form-control" value="50" min="10" max="90" step="5">
+                    </div>
+                </div>
+                <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+                    <div class="form-group">
+                        <label style="font-weight:600; font-size:0.82rem;">最小统计样本量 (N)</label>
+                        <input type="number" id="newExpMinSample" class="form-control" value="30" min="5" max="500">
+                    </div>
+                    <div class="form-group">
+                        <label style="font-weight:600; font-size:0.82rem;">实验组候选模型 (Treatment)</label>
+                        <input type="text" id="newExpTreatmentModel" class="form-control" placeholder="例: Qwen/Qwen3-VL-32B-Instruct">
+                    </div>
+                </div>
+                <div style="display:flex; justify-content:flex-end; gap:10px;">
+                    <button type="button" class="btn btn-secondary" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">取消</button>
+                    <button type="submit" class="btn btn-primary" style="background:#2563eb; border-color:#2563eb;">创建实验</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260907c"></script>
+    <script src="/static/js/main.js?v=20260907d"></script>
     <script src="/static/js/export_center.js?v=20260907a"></script>
 </body>
 </html>
