@@ -21,11 +21,6 @@
      - `Reviewer_Agent`：独立负责代码质量、安全沙箱、反向回归与体验一致性严格终审。
    - **所有 Subagent 的强制前置约束（每次派发必须原样携带并严格执行）**：
      ```
-     【CRITICAL INSTRUCTION】
-     Before running tests / starting work, you MUST read:
-     1. /Users/ethan/Documents/GitHub/receipt-agent-interview/docs/E2E_REPAIR_PLAN_U1_U14.md
-     2. /Users/ethan/Documents/GitHub/receipt-agent-interview/test_report.md
-
      【MANDATORY TESTING & EVALUATION REQUIREMENTS】
      1. 必须操作浏览器（Playwright）模拟真实店员用户的全流程操作体验。
      2. 除了功能契约与门禁核验外，必须深度评估 UI 与前端整洁度、易用性、交互流畅度。

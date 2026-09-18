@@ -2,7 +2,7 @@
 
 > **模块定位**：系统第一道人机协同门户。承载移动端/Web端多模态单据采集、弱光自适应增强、异步任务调度，以及核心的 **Side-by-Side 左右原图对照与生成式预填复核工作台**。  
 > **对标 14 步方案**：`step4-用户画像`、`step8-产品方案`、`step11-PRD定稿`、`step13-安全合规`。  
-> **实现代码**：[`api_receipts.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_receipts.py)、[`templates/index.html`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/templates/index.html) (Tab 1)、[`services/receipt_utils.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/receipt_utils.py)  
+> **实现代码**：[`api_receipts.py`](../../../demo/app/api_receipts.py)、[`templates/index.html`](../../../demo/templates/index.html) (Tab 1)、[`services/receipt_utils.py`](../../../demo/app/services/receipt_utils.py)  
 
 ---
 

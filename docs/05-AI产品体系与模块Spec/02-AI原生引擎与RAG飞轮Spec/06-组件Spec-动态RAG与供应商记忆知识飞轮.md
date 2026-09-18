@@ -2,7 +2,7 @@
 
 > **模块定位**：系统的核心数据壁垒与自进化飞轮。承载基于 Chroma 向量数据库的 `VendorMemory` 供应商知识图谱、多租户硬隔离先验检索、人工审批后的事实沉淀回写，以及针对香港餐饮方言、别名与习惯单位的动态 RAG Prompt 注入。  
 > **对标 14 步方案**：`step6-技术可行性`、`step8-产品方案`、`step9-AI技术方案`、`step13-安全合规`。  
-> **实现代码**：[`services/rag.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/rag.py)、[`prompts/extract/`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/prompts/extract/)  
+> **实现代码**：[`services/rag.py`](../../../demo/app/services/rag.py)、[`prompts/extract/`](../../../demo/app/prompts/extract/)  
 
 ---
 
@@ -69,7 +69,7 @@ flowchart TD
 
 ---
 
-## 4. 技术实现与多租户硬隔离 ([`services/rag.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/rag.py))
+## 4. 技术实现与多租户硬隔离 ([`services/rag.py`](../../../demo/app/services/rag.py))
 
 ### 4.1 租户硬隔离物理防线 (Tenant Isolation)
 为防止不同门店（租户）之间的进货协议底价或私有品名发生穿透泄露，VectorDB 检索强制执行命名空间硬隔离：

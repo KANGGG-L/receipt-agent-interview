@@ -64,20 +64,20 @@
 
 ## 四、工程化提示词资产库落地（Prompt Management Repository）
 
-系统已建立统一的提示词工程管理目录 `demo/app/prompts/`：
+提示词资产已统一收口于 `ai_registry/prompts/`（唯一来源 SSOT，各组件目录内置 `metadata.json` 版本注册表，支持 SemVer 版本拉取与 A/B 测试）；`demo/app/prompts/__init__.py` 保留 `get_prompt()` 兼容加载器并统一委托至该注册表：
 
 ```text
-demo/app/prompts/
-├── __init__.py               # 提示词注册表与动态拉取加载器 (支持 SemVer 版本拉取与 A/B 测试)
-├── README.md                 # 规范与测试基准
+ai_registry/prompts/
 ├── extract/                  # 1. OCR / VLM 识别提取组件
 │   ├── v1_0_0.py             # 基础通用识别（零系统上下文）
-│   └── v1_1_0_hk.py          # 香港街市 NCR 手写繁体专用优化版
+│   ├── v1_1_0_hk.py          # 香港街市 NCR 手写繁体专用优化版
+│   └── v1_2_0 ~ v1_3_0 系列  # SKU 清洗 / 防印章污染 / 防免责声明 / 费用防混淆 / 多包装 / 港式日期 / 划线备注 / 花码谦逊 / 防注入 / 证据链专项版本
 ├── audit/                    # 2. 审核 Agent 组件
 │   └── v2_0_0_reason.py      # 带自然语言原因生成 + 间接注入防御
 ├── review/                   # 3. 采购复盘与谈判策略 Agent
 │   └── v2_0_0_cards.py       # 4 步谈判推理 + 生成式 UI 卡片
-└── query/                    # 4. 对话问答 Agent
+├── parse/ · correct/ · memory/  # 4. 解析归一 / 纠错 / 供应商记忆组件
+└── query/                    # 5. 对话问答 Agent
     └── v1_0_0.py             # 带越权注入拦截的对话问答
 ```
 

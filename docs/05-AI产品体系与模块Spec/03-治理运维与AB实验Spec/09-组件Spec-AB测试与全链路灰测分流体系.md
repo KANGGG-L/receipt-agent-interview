@@ -2,7 +2,7 @@
 
 > **模块定位**：系统 AI 算法迭代与模型平滑升级的实验科学底座。承载多变量 A/B 实验管理、四级精细化流量分流路由（单据随机 / 供应商 Hash / 白名单 Allowlist / 租户分群）、实验组与对照组完全隔离设计、统计学假设检验（p-value & 置信区间），以及一键推全与秒级快照回滚机制。  
 > **对标 14 步方案**：`step7-指标体系`、`step9-AI技术方案`、`step12-测试验收`、`step14-上线迭代`。  
-> **实现代码**：[`app/models.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/models.py) (`EngineConfig`, `should_use_grey`)、[`app/api_admin.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_admin.py)、[`ai_registry/canary/`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/ai_registry/canary/)  
+> **实现代码**：[`app/models.py`](../../../demo/app/models.py) (`EngineConfig`, `should_use_grey`)、[`app/api_admin.py`](../../../demo/app/api_admin.py)、[`ai_registry/canary/`](../../../ai_registry/canary/)  
 
 ---
 
@@ -37,35 +37,62 @@
 
 ---
 
-## 3. 四级流量分流路由架构 (Traffic Routing Hierarchy)
+## 3. 引擎配置多规则优先级与流量仲裁矩阵 (Rule Priority & Routing Hierarchy)
+
+当系统中同时存在**运行中的 A/B 科学实验**、**开启的金丝雀灰度发布**、**常规生产引擎配置**、**审核引擎**、**解析 LLM** 以及**系统阈值规则**时，系统按照明确的优先级与阶段分工进行仲裁执行。
+
+### 3.1 流量路由仲裁层级 (Traffic Routing Hierarchy)
 
 ```mermaid
 flowchart TD
-    Req[进货单据识别请求<br/>入参: image_path, supplier_name, tenant_id] --> Step1{1. 是否开启灰测?<br/>grey_enabled == true}
+    Req[进货单据识别请求<br/>入参: image_path, supplier_name, receipt_id] --> CheckExp{1. 是否存在 running 状态的 A/B 实验?<br/>get_running_experiment}
     
-    Step1 -->|否| RouteA[分配至 对照组 A<br/>常规线上生产引擎]
+    CheckExp -->|存在运行中实验| RouteP0[【P0 最高优先级】A/B 科学实验<br/>· 强制优先接管分流<br/>· 按 target_percent 划分 Control/Treatment<br/>· 自动冻结金丝雀分流以防样本污染]
+    RouteP0 --> AssignDB[落库 experiment_assign 表<br/>写入 ai_decision_log(experiment_id, grp)]
     
-    Step1 -->|是| Step2{2. 是否命中供应商白名单?<br/>supplier_id in grey_supplier_ids}
-    Step2 -->|命中白名单| RouteB[强制分配至 实验组 B<br/>Canary 灰测新引擎]
+    CheckExp -->|无运行中实验| CheckGrey{2. 金丝雀灰度是否启用?<br/>grey_enabled == true}
     
-    Step2 -->|未命中| Step3{3. 判断灰度分流模式<br/>grey_assign_mode}
-    
-    Step3 -->|模式 A: receipt 单据概率| CalcRand[计算 random.random * 100]
+    CheckGrey -->|开启灰度| CheckMode{3. 灰度分配模式<br/>grey_assign_mode}
+    CheckMode -->|模式 A: receipt 单据随机| CalcRand[计算 random.random * 100]
     CalcRand --> CheckRand{数值 < grey_percent?}
-    CheckRand -->|是| RouteB
-    CheckRand -->|否| RouteA
+    CheckRand -->|是| RouteCanary[【P1 次高优先级】金丝雀灰测组<br/>执行灰测识别/审核/解析配置]
+    CheckRand -->|否| RouteProd[【P2 兜底基准】常规生产组<br/>执行生产主力引擎]
     
-    Step3 -->|模式 B: supplier 供应商Hash| CalcHash[计算 MD5(supplier_name) % 100]
+    CheckMode -->|模式 B: supplier 供应商Hash| CalcHash[计算 MD5 supplier_name % 100]
     CalcHash --> CheckHash{Hash桶位 < grey_percent?}
-    CheckHash -->|是| RouteB
-    CheckHash -->|否| RouteA
+    CheckHash -->|是| RouteCanary
+    CheckHash -->|否| RouteProd
+    
+    CheckGrey -->|未开启灰度| RouteProd
 ```
 
-#### 四级分流策略详述：
-1. **全局总控开关 (`grey_enabled`)**：一键开启或关闭灰测体系；
-2. **定向白名单模式 (`allowlist`)**：指定特定的种子供应商（如“新记蔬菜批发”）全量走灰测试验组，便于产研精准排查特定版式单据；
-3. **单据随机抽样模式 (`receipt`)**：每张上传单据独立执行随机数分配，适合大流量下无偏探索模型性能；
-4. **供应商 Hash 确定性模式 (`supplier`)**：将供应商名称哈希到 100 个桶，确保同一商户的单据始终走同一模型，消除历史上下文与 VendorMemory 记忆的抖动。
+#### 分流仲裁层级详述：
+1. **P0 最高优先级 · A/B 科学实验（A/B Experimentation - Running）**
+   - **生效条件**：管理员在后台启动了某个实验（数据库中状态为 `running`）。
+   - **分流机制**：基于 `receipt_id % 100` 或随机单据比例与 `target_percent` 比较，确定分配给 `control`（对照组基线）或 `treatment`（实验组候选）。
+   - **冲突裁决**：**强制优先并挂起金丝雀灰测分流**。避免双重概率叠加造成样本群体漂移，确保后续双侧 z 检验（p-value）具有纯净的统计学因果推断基础。
+2. **P1 次高优先级 · 金丝雀灰度发布（Canary Rollout）**
+   - **生效条件**：无运行中的 A/B 实验，且 `grey_enabled == true`。
+   - **分流机制**：支持单据随机抽样模式（`receipt`）或供应商 Hash 确定性模式（`supplier`）。
+   - **运维闭环**：支持与线上参数 Diff 对比、一键推全（Promote）及秒级快照回滚（Rollback）。
+3. **P2 兜底基准 · 常规生产识别引擎（Production Baseline）**
+   - **生效条件**：无处于运行态的实验，且未开启灰测（或未命中灰测流量）。
+   - **生效效果**：全量请求平稳路由至常规主力识别引擎（如 `gpt-4o-mini` 或已推全的主力多模态模型）。
+
+---
+
+### 3.2 单据流水线执行阶段协同矩阵 (Pipeline Execution Stages)
+
+不论单据命中哪个路由组别（实验组、灰测组或生产组），单张单据在后端处理管线中均严格按照如下 6 个阶段顺序协同流转：
+
+| 流水线阶段 | 对应配置项与门槛 | 触发时机与优先级 | 预期效果与冲突处理 |
+| :--- | :--- | :--- | :--- |
+| **Stage 0 预处理与极模糊质检** | `setPreprocessEnabled`<br/>`setBlurLaplacianThreshold` (缺省 30) | **最高前置优先级**，在发起任何 LLM API 调用前执行 | ① 预处理开启时先自动倾斜矫正与对比度增强；<br/>② 若 Laplacian 方差 < 30，**直接熔断拦截**，提示人工重拍。**零 Token 消耗、零模型费用**。 |
+| **Stage 1 动态 RAG 经验检索** | `setMemoryBudgetFactsTokens` (缺省 800)<br/>`setMemoryBudgetMaxItems` (缺省 6) | 模型推理前 | 检索该供应商历史纠偏先验，严格受字符数与条数上限约束，避免上下文超长与幻觉。 |
+| **Stage 2 多模态 VLM 主识别** | 由 P0~P2 仲裁出的具体模型标识与 Base URL | 前置门禁通过后 | 负责单据图像的整体排版解析与字段结构化抽取，输出不可信 JSON 草稿。 |
+| **Stage 3 二次解析 LLM 自愈** | `adminParseEnabled` / `grey_parse_enabled` | **条件触发**：主模型输出 JSON 格式截断或 Markdown 块异常时 | 仅在语法/结构异常且开关打开时触发解析 LLM 进行修复；格式正常时**自动跳过**，消除多余时延。 |
+| **Stage 4 交叉审核引擎复核** | `adminAuditEnabled` / `grey_audit_enabled`<br/>`setAuditDiscrepancySevereMinCount` (缺省 2) | 主识别/自愈完成后 | 调取独立的第二模型双盲校验单据总额与单价乘法。若严重分歧 $\ge 2$ 条，单据标记为黄色预警并扣减置信度。 |
+| **Stage 5 治理飞轮回流沉淀** | `setEvalCandidateLowConfidence` (缺省 0.6)<br/>`setFeedbackDistillThreshold` (缺省 3) | 结果持久化与用户交互后 | ① 整体置信度 < 0.6 自动进入 GT 抽检确权池；<br/>② 用户连续点踩 $\ge 3$ 次触发供应商记忆蒸馏候选，经人工批准后写入 RAG 库。 |
 
 ---
 

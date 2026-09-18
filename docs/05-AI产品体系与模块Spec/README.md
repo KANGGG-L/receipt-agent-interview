@@ -30,20 +30,25 @@ docs/05-AI产品体系与模块Spec/
 │   ├── 10-组件Spec-Admin端AB测试与脱敏观测大盘方案.md <-- 数据脱敏中间件、A/B 实时看板、显著性裁决、下钻抽样
 │   └── 11-组件Spec-全链路埋点与体验反馈体系.md       <-- step7 十一事件对齐、行级复核 diff、放弃解析度量、👍/👎 智能归属反馈
 │
-└── 04-OCR专项治理与面试攻防体系/
-    ├── 00-香港餐饮进货单OCR全链路与面试备战总览.md   <-- OCR 专项导航、核心成果一览表与面试通关路径
-    ├── 01-OCR全链路Workflow与架构全景Spec.md          <-- 6 阶段流水线、三层互不信任体系、线性 vs 图编排对比
-    ├── 02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md <-- 8 大 Gap + iPhone HEIC/EXIF + SKU 剥离深度复盘
-    ├── 03-AI产品经理OCR面试高频攻防与实战金句库.md   <-- 面试官必问 4 大考题、标准回答脚本与降维打击金句
-    ├── 04-OCR全链路Gap治理与逐项修复计划.md          <-- 8 大 Gap 逐轮闭环交付计划与实施历史留证
-    └── 05-阶段性产品方向回顾与架构校准报告.md         <-- 对标 FR-1~12 与 NFR-1~6 的阶段性产品架构校准审查
+├── 04-OCR专项治理与面试攻防体系/
+│   ├── 00-香港餐饮进货单OCR全链路与面试备战总览.md   <-- OCR 专项导航、核心成果一览表与面试通关路径
+│   ├── 01-OCR全链路Workflow与架构全景Spec.md          <-- 6 阶段流水线、三层互不信任体系、线性 vs 图编排对比
+│   ├── 02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md <-- 8 大 Gap + iPhone HEIC/EXIF + SKU 剥离深度复盘
+│   ├── 03-AI产品经理OCR面试高频攻防与实战金句库.md   <-- 面试官必问 4 大考题、标准回答脚本与降维打击金句
+│   ├── 04-OCR全链路Gap治理与逐项修复计划.md          <-- 8 大 Gap 逐轮闭环交付计划与实施历史留证
+│   └── 05-阶段性产品方向回顾与架构校准报告.md         <-- 对标 FR-1~12 与 NFR-1~6 的阶段性产品架构校准审查
+│
+└── 05-增量模块PRD与ACSpec/
+    ├── README.md                                     <-- 增量 Spec 子目录导航
+    ├── DISHE_MODULE_REPAIR_AC.md                     <-- 「餐品与消耗」模块缺陷修复 AC（AC-1.1~AC-8.5）
+    └── EXPORT_CENTER_PRD_AC_SPEC.md                  <-- 统一报表与数据导出中心 PRD & AC（AC-1~AC-12，14 套报表）
 ```
 
 ---
 
 ## 核心专题快速直达
 
-1. **想看完整产品 PRD 与需求架构**：直达 [`00-产品总纲与PRD主架构/00-AI产品体系总纲与产品PRD主架构.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/00-%E4%BA%A7%E5%93%81%E6%80%BB%E7%BA%B2%E4%B8%8EPRD%E4%B8%BB%E6%9E%B6%E6%9E%84/00-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E6%80%BB%E7%BA%B2%E4%B8%8E%E4%BA%A7%E5%93%81PRD%E4%B8%BB%E6%9E%B6%E6%9E%84.md)；
-2. **想看 OCR 技术架构与 6 阶段流水线**：直达 [`04-OCR专项治理与面试攻防体系/01-OCR全链路Workflow与架构全景Spec.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/04-OCR%E4%B8%93%E9%A1%B9%E6%B2%BB%E7%90%86%E4%B8%8E%E9%9D%A2%E8%AF%95%E6%94%BB%E9%98%B2%E4%BD%93%E7%B3%BB/01-OCR%E5%85%A8%E9%93%BE%E8%B7%AFWorkflow%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%85%A8%E6%99%AFSpec.md)；
-3. **想看 8 大 Bad Case 如何解决与量化提升**：直达 [`04-OCR专项治理与面试攻防体系/02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/04-OCR%E4%B8%93%E9%A1%B9%E6%B2%BB%E7%90%86%E4%B8%8E%E9%9D%A2%E8%AF%95%E6%94%BB%E9%98%B2%E4%BD%93%E7%B3%BB/02-OCR%E5%85%A8%E9%93%BE%E8%B7%AF8%E5%A4%A7Gap%E4%B8%8E%E9%9B%B6%E6%95%A3%E9%97%AE%E9%A2%98%E6%B7%B1%E5%BA%A6%E5%A4%8D%E7%9B%98%28STAR%E6%A8%A1%E5%BC%8F%29.md)；
-4. **想快速准备 AI 产品经理面试**：直达 [`04-OCR专项治理与面试攻防体系/03-AI产品经理OCR面试高频攻防与实战金句库.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/04-OCR%E4%B8%93%E9%A1%B9%E6%B2%BB%E7%90%86%E4%B8%8E%E9%9D%A2%E8%AF%95%E6%94%BB%E9%98%B2%E4%BD%93%E7%B3%BB/03-AI%E4%BA%A7%E5%93%81%E7%BB%8F%E7%90%86OCR%E9%9D%A2%E8%AF%95%E9%AB%98%E9%A2%91%E6%94%BB%E9%98%B2%E4%B8%8E%E5%AE%9E%E6%88%98%E9%87%91%E5%8F%A5%E5%BA%93.md)。
+1. **想看完整产品 PRD 与需求架构**：直达 [`00-产品总纲与PRD主架构/00-AI产品体系总纲与产品PRD主架构.md`](00-产品总纲与PRD主架构/00-AI产品体系总纲与产品PRD主架构.md)；
+2. **想看 OCR 技术架构与 6 阶段流水线**：直达 [`04-OCR专项治理与面试攻防体系/01-OCR全链路Workflow与架构全景Spec.md`](04-OCR专项治理与面试攻防体系/01-OCR全链路Workflow与架构全景Spec.md)；
+3. **想看 8 大 Bad Case 如何解决与量化提升**：直达 [`04-OCR专项治理与面试攻防体系/02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](04-OCR专项治理与面试攻防体系/02-OCR全链路8大Gap与零散问题深度复盘%28STAR模式%29.md)；
+4. **想快速准备 AI 产品经理面试**：直达 [`04-OCR专项治理与面试攻防体系/03-AI产品经理OCR面试高频攻防与实战金句库.md`](04-OCR专项治理与面试攻防体系/03-AI产品经理OCR面试高频攻防与实战金句库.md)。

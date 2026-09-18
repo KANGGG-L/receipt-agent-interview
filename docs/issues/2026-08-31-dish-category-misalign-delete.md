@@ -23,7 +23,7 @@
 4. 权限与回滚：仅 `owner` 可删除分类，`staff` 按钮隐藏；删除操作写 `audit_logs_json` 或前端 `toast` 可回溯
 5. 回归：`loadDishesList` / `saveDishModal` / `filterDishBomLibrary` 不回归，`orca` 内置浏览器 `Playwright` 级实测 + 高压低教育 UX 文案检查通过
 
-**关联**: `docs/E2E_REPAIR_PLAN_U1_U14.md` U-10 文案去技术化、U-01 角色隔离
+**关联**: E2E 体验修复方案的 U-10 文案去技术化、U-01 角色隔离
 **处置**: 已按四角色流程闭环（2026-08-31）
 
 ## 处置记录
@@ -36,4 +36,4 @@
 6. **Reviewer 复审通过**（approved:true, riskLevel:Low）；**QA Round-2 浏览器复验 10/10**：时区 0-8 点取本地日、1440/850/390 三档折行无溢出、等高 y 差 0、分类管理删除改写「其他」+同步刷新、staff 四类按钮隐藏、停用/删除 onclick 可点、空行跳过、403 内联映射、触控≥38px（最后修步进按钮 min-height 覆盖 44px）。
 7. **最终 Dev 收敛**：`.dish-step-btn{min-height:38px;height:38px!important}` + DELETE 分类空名 400 + 测试用例。
 
-**验证基线**：demo/tests 201 passed+1 skip、tests/ 183 passed、test_api_dishes+test_costing_fifo 14 passed、node --check OK、onclick 渲染 harness 6/6 + 16/16、orca 截图留证 `artifacts/dish_qa/` `artifacts/qa_round2/`。
+**验证基线**：demo/tests 201 passed+1 skip、tests/ 183 passed、test_api_dishes+test_costing_fifo 14 passed、node --check OK、onclick 渲染 harness 6/6 + 16/16、orca 截图留证。

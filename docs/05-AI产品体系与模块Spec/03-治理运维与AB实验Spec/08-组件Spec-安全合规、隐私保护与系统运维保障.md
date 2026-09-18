@@ -2,7 +2,7 @@
 
 > **模块定位**：系统的安全合规防护网与生产级可用性底座。承载香港《个人资料（私隐）条例》(PDPO) 实施细则、多租户硬隔离防线、OCR 敏感信息脱敏、防篡改审计日志，以及降级容灾与 MLOps 监控告警体系。  
 > **对标 14 步方案**：`step13-安全合规`、`step14-上线迭代`。  
-> **实现代码**：[`app/auth.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/auth.py)、[`app/db.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/db.py)、[`services/contract.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/contract.py)  
+> **实现代码**：[`app/auth.py`](../../../demo/app/auth.py)、[`app/db.py`](../../../demo/app/db.py)、[`services/contract.py`](../../../demo/app/services/contract.py)  
 
 ---
 

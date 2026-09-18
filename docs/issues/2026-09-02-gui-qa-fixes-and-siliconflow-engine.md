@@ -63,7 +63,3 @@
 - **AC-E 达标：真实上传解析 9 秒完成（原 108 秒），无「首选模型无响应」降级提示**。
 - 修复期间 GUI 回归曾发现 C2 提取的正则误吞 helper 自身函数体导致无限递归
   （revokeBakedPreviewUrl 自调用 -> RangeError），已修复并以「上传+双击旋转 0 pageerror」验证。
-
-## 遗留与建议
-- .env.bak-20260902（含密钥）与 demo/receipt_demo.backup-20260902-qa.db 为本机回滚资产，勿入库。
-- GUI 测试脚本存于 gui_qa/（21 个可复跑模块），截图证据存于 gui-test-screenshots/（不入库）。

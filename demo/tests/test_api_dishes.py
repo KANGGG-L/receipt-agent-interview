@@ -397,3 +397,266 @@ def test_delete_category_empty_name_returns_400():
         body = resp.json()
         assert body["status"] == "error"
         assert body["msg"] == "分类名称不能为空"
+
+
+def test_cross_tenant_dish_creation_and_update_isolation():
+    """[AC-2.1, AC-2.2] 跨租户创建与更新配方物理隔离阻断。"""
+    # 租户 A (tenant_a) 创建食材 SKU
+    headers_a = {"X-Role": "owner", "X-Email": "boss@tenant-a.hk", "X-Tenant-Id": "tenant_a"}
+    headers_b = {"X-Role": "owner", "X-Email": "boss@tenant-b.hk", "X-Tenant-Id": "tenant_b"}
+
+    resp_sku_a = client.post("/api/inventory/skus", json={"name": "租户A秘制酱汁", "base_unit": "kg"}, headers=headers_a)
+    assert resp_sku_a.status_code == 200, resp_sku_a.text
+    sku_a_id = resp_sku_a.json()["id"]
+    db.update_sku(sku_a_id, current_stock=10.0, last_unit_price=20.0)
+
+    # 1. 租户 B 尝试创建配方引用租户 A 的 SKU -> 400
+    create_payload_b = {
+        "name": "偷师菜品",
+        "category": "主菜",
+        "price": 50.0,
+        "ingredients": [{"sku_id": sku_a_id, "consumption_qty": 0.2, "unit": "kg"}],
+    }
+    resp_b = client.post("/api/dishes", json=create_payload_b, headers=headers_b)
+    assert resp_b.status_code == 400
+    err_data = resp_b.json()
+    assert err_data["status"] == "error"
+    assert err_data["code"] == "TENANT_SKU_NOT_FOUND"
+    assert f"配方中的食材 SKU #{sku_a_id} 不存在或无权使用" in err_data["msg"]
+
+    # 2. 租户 B 创建自己的正常菜品
+    resp_sku_b = client.post("/api/inventory/skus", json={"name": "租户B自制豆腐", "base_unit": "kg"}, headers=headers_b)
+    assert resp_sku_b.status_code == 200, resp_sku_b.text
+    sku_b_id = resp_sku_b.json()["id"]
+    db.update_sku(sku_b_id, current_stock=10.0, last_unit_price=5.0)
+
+    resp_dish_b = client.post("/api/dishes", json={
+        "name": "租户B家常豆腐",
+        "category": "热菜",
+        "price": 30.0,
+        "ingredients": [{"sku_id": sku_b_id, "consumption_qty": 0.5, "unit": "kg"}],
+    }, headers=headers_b)
+    assert resp_dish_b.status_code == 200
+    dish_b_id = resp_dish_b.json()["data"]["id"]
+
+    # 3. 租户 B 尝试更新配方追加租户 A 的 SKU -> 400
+    update_payload_b = {
+        "ingredients": [
+            {"sku_id": sku_b_id, "consumption_qty": 0.5, "unit": "kg"},
+            {"sku_id": sku_a_id, "consumption_qty": 0.1, "unit": "kg"},
+        ]
+    }
+    resp_update = client.put(f"/api/dishes/{dish_b_id}", json=update_payload_b, headers=headers_b)
+    assert resp_update.status_code == 400
+    assert resp_update.json()["code"] == "TENANT_SKU_NOT_FOUND"
+
+
+def test_cross_dimension_unit_rejection():
+    """[AC-5.1, AC-5.2] 配方建档与更新跨量纲单位前置拦截。"""
+    headers = _owner_headers()
+
+    # 创建重量基准的食材
+    resp_sku = client.post("/api/inventory/skus", json={"name": "测试五花肉", "base_unit": "kg"}, headers=headers)
+    assert resp_sku.status_code == 200, resp_sku.text
+    sku_id = resp_sku.json()["id"]
+    db.update_sku(sku_id, current_stock=20.0, last_unit_price=30.0)
+
+    # 1. 尝试用计件单位「份」配置重量单位「kg」的食材 -> 400
+    resp_create = client.post("/api/dishes", json={
+        "name": "跨量纲红烧肉",
+        "price": 48.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 1.0, "unit": "份"}],
+    }, headers=headers)
+    assert resp_create.status_code == 400
+    body = resp_create.json()
+    assert body["code"] == "UNIT_DIMENSION_MISMATCH"
+    assert "无法换算" in body["msg"]
+
+    # 2. 合法同量纲重量单位「g」建档 -> 200
+    resp_create_ok = client.post("/api/dishes", json={
+        "name": "合规红烧肉",
+        "price": 48.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 250.0, "unit": "g"}],
+    }, headers=headers)
+    assert resp_create_ok.status_code == 200
+    dish_id = resp_create_ok.json()["data"]["id"]
+
+    # 3. 尝试更新为体积单位「升」-> 400
+    resp_update = client.put(f"/api/dishes/{dish_id}", json={
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.5, "unit": "升"}],
+    }, headers=headers)
+    assert resp_update.status_code == 400
+    assert resp_update.json()["code"] == "UNIT_DIMENSION_MISMATCH"
+
+
+def test_negative_and_zero_quantity_rejection_in_batch():
+    """[AC-3.2] 后端餐品批量消耗负数与零份数拦截拒绝及原子性回滚。"""
+    headers_owner = _owner_headers()
+    headers_staff = _staff_headers()
+
+    sku_id, _ = db.create_sku("测试鸡胸肉", base_unit="kg")
+    db.update_sku(sku_id, current_stock=20.0, last_unit_price=20.0)
+
+    # 建立两个餐品
+    d1_resp = client.post("/api/dishes", json={
+        "name": "鸡胸肉沙拉", "price": 38.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.2, "unit": "kg"}]
+    }, headers=headers_owner).json()
+    d1_id = d1_resp["data"]["id"]
+
+    d2_resp = client.post("/api/dishes", json={
+        "name": "香煎鸡胸肉", "price": 42.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.3, "unit": "kg"}]
+    }, headers=headers_owner).json()
+    d2_id = d2_resp["data"]["id"]
+
+    # 1. 提交空 items 列表 -> 400
+    resp_empty = client.post("/api/dishes/daily_consumption/batch", json={"items": []}, headers=headers_staff)
+    assert resp_empty.status_code == 400
+    assert resp_empty.json()["code"] == "EMPTY_CONSUMPTION_ITEMS"
+
+    # 2. 负数消耗：d1 负数, d2 正数 -> 原子拒绝，d2 亦不被扣减
+    resp_neg = client.post("/api/dishes/daily_consumption/batch", json={
+        "date": "2026-08-25",
+        "items": [
+            {"dish_id": d1_id, "quantity": -2.0},
+            {"dish_id": d2_id, "quantity": 5.0},
+        ]
+    }, headers=headers_staff)
+    assert resp_neg.status_code == 400
+    body = resp_neg.json()
+    assert body["code"] == "INVALID_CONSUMPTION_QUANTITY"
+    assert "鸡胸肉沙拉" in body["msg"]
+    assert "不能填负数或 0" in body["msg"]
+
+    # 验证库存 20.0 毫厘未动
+    sku = db.get_sku(sku_id)
+    assert sku.current_stock == 20.0
+
+
+def test_decimal_half_portion_consumption():
+    """[AC-4.3, AC-4.4] 小数/半份（0.5 份）餐品消耗提交与后端无损接收回滚。"""
+    from app.services.costing_service import CostingService
+    headers_owner = _owner_headers()
+    headers_staff = _staff_headers()
+
+    session = db.get_session()
+    try:
+        sku_id, _ = db.create_sku("半份鲈鱼", base_unit="kg")
+        CostingService.record_inbound_batch(
+            session=session, sku_id=sku_id, qty=10.0, unit_price=60.0, unit="kg", date="2026-08-20"
+        )
+        sku = session.get(db._SkuRow, sku_id)
+        sku.current_stock = 10.0
+        session.commit()
+    finally:
+        session.close()
+
+    # 创建餐品：清蒸鲈鱼，每份用鲈鱼 0.6kg
+    dish_resp = client.post("/api/dishes", json={
+        "name": "清蒸鲈鱼",
+        "price": 88.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.6, "unit": "kg"}]
+    }, headers=headers_owner).json()
+    dish_id = dish_resp["data"]["id"]
+
+    # 售出 0.5 份 (半份)
+    resp_consume = client.post("/api/dishes/daily_consumption/batch", json={
+        "date": "2026-08-26",
+        "items": [{"dish_id": dish_id, "quantity": 0.5}]
+    }, headers=headers_staff)
+    assert resp_consume.status_code == 200, resp_consume.text
+    cons_id = resp_consume.json()["data"]["consumption_ids"][0]
+
+    # 验证消耗用量：0.6 * 0.5 = 0.3kg, 库存从 10.0 变 9.7kg
+    sku = db.get_sku(sku_id)
+    assert abs(sku.current_stock - 9.7) < 1e-4
+
+    # 验证主记录中的 quantity 值为 0.5
+    cons_list = client.get("/api/dishes/daily_consumption?date=2026-08-26", headers=headers_staff).json()["data"]["consumptions"]
+    assert len(cons_list) == 1
+    assert cons_list[0]["quantity"] == 0.5
+    assert cons_list[0]["details"][0]["qty_consumed"] == 0.3
+
+    # 冲销回滚验证
+    resp_void = client.post(f"/api/dishes/daily_consumption/{cons_id}/void", headers=headers_owner)
+    assert resp_void.status_code == 200
+    sku = db.get_sku(sku_id)
+    assert abs(sku.current_stock - 10.0) < 1e-4
+
+
+def test_zero_cost_and_estimated_batches_transparency():
+    """[AC-6.1, AC-6.2, AC-6.3] 零成本与超卖暂估批次透传及数据完整性预警。"""
+    headers_owner = _owner_headers()
+    headers_staff = _staff_headers()
+
+    # 创建一个没有任何进货单价和入库批次的食材 (库存=0, last_unit_price=0)
+    sku_id, _ = db.create_sku("新到野生菌", base_unit="kg")
+
+    dish_resp = client.post("/api/dishes", json={
+        "name": "野菌炖鸡",
+        "price": 128.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.2, "unit": "kg"}]
+    }, headers=headers_owner).json()
+    dish_id = dish_resp["data"]["id"]
+
+    # 消耗该餐品 1 份
+    resp_consume = client.post("/api/dishes/daily_consumption/batch", json={
+        "date": "2026-08-27",
+        "items": [{"dish_id": dish_id, "quantity": 1.0}]
+    }, headers=headers_staff)
+    assert resp_consume.status_code == 200
+
+    # 查询当日消耗
+    resp_daily = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=headers_staff)
+    assert resp_daily.status_code == 200
+    data = resp_daily.json()["data"]
+
+    summary = data["summary"]
+    assert summary["has_zero_cost_batch"] is True
+    assert summary["data_integrity_status"] == "zero_cost_alert"
+    assert "包含未录入进货价的食材" in summary["data_integrity_msg"]
+
+    detail_item = data["consumptions"][0]["details"][0]
+    assert detail_item["is_estimated"] == 1
+    assert detail_item["is_zero_cost"] is True
+
+
+def test_cost_analysis_cross_tenant_zero_leakage():
+    """[AC-2.4] 成本大盘分析跨租户零泄漏验证。"""
+    headers_a = {"X-Role": "owner", "X-Email": "boss@tenant-a.hk", "X-Tenant-Id": "tenant_a"}
+    headers_b = {"X-Role": "owner", "X-Email": "boss@tenant-b.hk", "X-Tenant-Id": "tenant_b"}
+
+    # 租户 A 建立食材与餐品并消耗
+    sku_a_id, _ = db.create_sku("租户A牛肉", base_unit="kg", tenant_id="tenant_a")
+    db.update_sku(sku_a_id, current_stock=10.0, last_unit_price=50.0)
+    dish_a = client.post("/api/dishes", json={
+        "name": "租户A牛肉饭", "price": 60.0,
+        "ingredients": [{"sku_id": sku_a_id, "consumption_qty": 0.3, "unit": "kg"}]
+    }, headers=headers_a).json()["data"]
+    client.post("/api/dishes/daily_consumption/batch", json={
+        "date": "2026-08-28", "items": [{"dish_id": dish_a["id"], "quantity": 2.0}]
+    }, headers=headers_a)
+
+    # 租户 B 建立食材与餐品并消耗
+    sku_b_id, _ = db.create_sku("租户B秘制烤鸭", base_unit="kg", tenant_id="tenant_b")
+    db.update_sku(sku_b_id, current_stock=10.0, last_unit_price=80.0)
+    dish_b = client.post("/api/dishes", json={
+        "name": "租户B烤鸭套餐", "price": 120.0,
+        "ingredients": [{"sku_id": sku_b_id, "consumption_qty": 0.5, "unit": "kg"}]
+    }, headers=headers_b).json()["data"]
+    client.post("/api/dishes/daily_consumption/batch", json={
+        "date": "2026-08-28", "items": [{"dish_id": dish_b["id"], "quantity": 3.0}]
+    }, headers=headers_b)
+
+    # 租户 A 查询成本大盘分析
+    resp_analysis_a = client.get("/api/dishes/cost_analysis?days=7", headers=headers_a)
+    assert resp_analysis_a.status_code == 200
+    data_a = resp_analysis_a.json()["data"]
+
+    # 验证仅包含租户 A 的餐品数据，绝对不包含租户 B
+    dishes_in_a = [d["name"] for d in data_a["dishes"]]
+    assert "租户A牛肉饭" in dishes_in_a
+    assert "租户B烤鸭套餐" not in dishes_in_a
+    assert data_a["summary"]["total_sold_quantity"] == 2.0
+

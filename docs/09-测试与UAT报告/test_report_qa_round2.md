@@ -4,7 +4,6 @@
 - **环境**：orca 内置浏览器（Electron, Chromium）· 服务 http://127.0.0.1:15010（uvicorn --reload 热载）
 - **角色**：localStorage `demo_role` = owner / staff 切换，随 `/api/` 请求带 `X-Role` 头
 - **测试数据**：临时餐品（QA回归验证餐品0827 / QA零引用测试 / QA回归消耗测试餐品 / QA回归验证餐品-TOAST）与临时消耗流水（#7/#8）——测后全部硬删/冲销清理，真实业务库仅剩招牌牛腩煲及其 08-27 历史流水
-- **截图证据**：`artifacts/qa_round2/screens/*.png`（16 张）
 
 > 评级口径：✅ Pass ｜ ⚠️ Pass-with-finding ｜ ❌ Fail
 
@@ -41,26 +40,10 @@
 | T-10 按钮高度 | 工具栏 5 按钮全部 38px；输入框 38px；步进按钮 44px |
 | 冒烟 FIFO | 批次 #19/#20 扣减与回滚正确；SKU#1 库存 42→40→42 |
 
-## 三、截图证据（artifacts/qa_round2/screens/）
-
-| 截图 | 内容 |
-|------|------|
-| T1_timezone.png | 每日消耗 Tab 日期输入框（05:26 时点显示本地 08-31） |
-| T2_responsive_390.png | 390px 视口下新建餐品弹窗 1 列布局无溢出 |
-| T3_equal_height_1440.png | 1440px 弹窗三列网格 + 等高控件 |
-| T4_category_manager_list.png | 分类管理弹窗（分类+引用数） |
-| T4_delete_confirm_referenced.png | 删除被引用分类确认弹窗（将影响 1 道餐品） |
-| T5_staff_role_view.png | staff 视角（新建/管理分类隐藏） |
-| T6_deactivate_confirm.png / T6_hard_delete_confirm.png | 停用确认 / 彻底删除确认弹窗 |
-| T7_empty_row_modal.png | 含空行的配方表单 |
-| T8_staff_403_inline.png | staff 保存 403 内联文案 |
-| T10_T11_step_btn_mismatch.png | 步进按钮 44px vs 输入框 38px 高度差证据 |
-| T10_fifo_trace_modal.png / T10_void_confirm.png / T10_voided_history_row.png | FIFO 溯源弹窗 / 冲销确认 / 已冲销流水行 |
-
-## 四、发现（Findings）
+## 三、发现（Findings）
 
 1. **⚠️ T-10/T-11 等高未完全达成（P2）**：份数步进按钮实测 44px，份数输入框 38px，差 6px。根因：内联 `height:38px` 被全局 `.btn { min-height:44px; height:45px }`（style.css:326）覆盖。虽触控目标均 ≥38px 达标，但「步进按钮与输入框等高」未满足，同列 `- + +5 +10` 与输入框基线不一致。建议给 `.dish-step-btn` 补 `min-height:38px; height:38px` 覆写。
 
-## 五、结论
+## 四、结论
 
 **D-1~D-11 全部修复项在真实浏览器中生效**：T-1~T-8 全部 ✅；T-10/T-11 触控目标高度达标、仅「步进按钮与输入框等高」存在 6px 视觉偏差（P2）；回归冒烟主链路（消耗→FIFO 溯源→冲销回滚、成本大盘 7/30 切换）✅。上轮 P1/P2 修复（确认按钮 onclick 畸形、403 内联人话文案、分类管理删除、空行跳过、角色按钮级隐藏、时区 0-8 点）均实测通过，无回归。测试临时数据已全部清理，业务库仅余真实餐品「招牌牛腩煲」及其历史流水。

@@ -417,3 +417,184 @@ def test_stock_log_and_receipt_inbound_hooks():
         assert batches[0].receipt_id == rid
     finally:
         session.close()
+
+
+def test_dual_track_manual_consume_and_waste():
+    """[AC-1.1, AC-1.2] 手动消耗与报损统一扣减批次池，确保双轨库存无漂移。"""
+    from app import db
+    from app.services.costing_service import CostingService
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    headers = {"X-Role": "owner", "X-Email": "boss@demo.hk"}
+
+    session = db.get_session()
+    try:
+        sku_id, _ = db.create_sku("双轨排骨", base_unit="kg")
+        # 批次 A: 5kg @ 40
+        CostingService.record_inbound_batch(
+            session=session, sku_id=sku_id, qty=5.0, unit_price=40.0, unit="kg", date="2026-08-20"
+        )
+        # 批次 B: 10kg @ 45
+        CostingService.record_inbound_batch(
+            session=session, sku_id=sku_id, qty=10.0, unit_price=45.0, unit="kg", date="2026-08-21"
+        )
+        sku = session.get(db._SkuRow, sku_id)
+        sku.current_stock = 15.0
+        session.commit()
+    finally:
+        session.close()
+
+    # 1. 手动消耗 7kg
+    resp_consume = client.post(f"/api/inventory/{sku_id}/consume", json={"quantity": 7.0, "note": "后厨领料"}, headers=headers)
+    assert resp_consume.status_code == 200, resp_consume.text
+    data_c = resp_consume.json()
+    assert data_c["status"] == "success"
+    assert data_c["data"]["current_stock"] == 8.0
+
+    session = db.get_session()
+    try:
+        batches = session.query(db._InventoryBatchRow).filter_by(sku_id=sku_id).order_by(db._InventoryBatchRow.id.asc()).all()
+        assert len(batches) == 2
+        # 批次 A 耗尽
+        assert batches[0].remaining_qty == 0.0
+        assert batches[0].is_closed == 1
+        # 批次 B 剩余 8.0kg
+        assert batches[1].remaining_qty == 8.0
+        assert batches[1].is_closed == 0
+
+        # 批次池总和与台账完全一致
+        batch_sum = sum(b.remaining_qty for b in batches if b.is_closed == 0)
+        sku = session.get(db._SkuRow, sku_id)
+        assert abs(sku.current_stock - batch_sum) < 1e-4
+    finally:
+        session.close()
+
+    # 2. 手动报损 1kg
+    resp_waste = client.post(f"/api/inventory/{sku_id}/waste", json={"quantity": 1.0, "reason": "过期变质"}, headers=headers)
+    assert resp_waste.status_code == 200, resp_waste.text
+    assert resp_waste.json()["data"]["current_stock"] == 7.0
+
+    session = db.get_session()
+    try:
+        batches = session.query(db._InventoryBatchRow).filter_by(sku_id=sku_id).order_by(db._InventoryBatchRow.id.asc()).all()
+        assert batches[1].remaining_qty == 7.0
+        sku = session.get(db._SkuRow, sku_id)
+        batch_sum = sum(b.remaining_qty for b in batches if b.is_closed == 0)
+        assert abs(sku.current_stock - 7.0) < 1e-4
+        assert abs(sku.current_stock - batch_sum) < 1e-4
+    finally:
+        session.close()
+
+
+def test_stocktake_deficit_and_surplus_batch_pool_sync():
+    """[AC-1.3, AC-1.4, AC-1.5] 盘点盘亏 FIFO 自动核销，盘盈自动生成调整批次，批次池与台账严格无漂移。"""
+    from app import db
+    from app.services.costing_service import CostingService
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    headers = {"X-Role": "owner", "X-Email": "boss@demo.hk"}
+
+    session = db.get_session()
+    try:
+        sku_id, _ = db.create_sku("盘点鸡肉", base_unit="kg")
+        CostingService.record_inbound_batch(
+            session=session, sku_id=sku_id, qty=8.0, unit_price=30.0, unit="kg", date="2026-08-20"
+        )
+        sku = session.get(db._SkuRow, sku_id)
+        sku.current_stock = 8.0
+        sku.last_unit_price = 30.0
+        session.commit()
+    finally:
+        session.close()
+
+    # 1. 盘亏：实际 5kg（亏 3kg）
+    resp_loss = client.post(f"/api/inventory/{sku_id}/stocktake", json={"actual_qty": 5.0, "reason": "自然损耗"}, headers=headers)
+    assert resp_loss.status_code == 200, resp_loss.text
+    assert resp_loss.json()["data"]["current_stock"] == 5.0
+
+    session = db.get_session()
+    try:
+        batches = session.query(db._InventoryBatchRow).filter_by(sku_id=sku_id).all()
+        assert len(batches) == 1
+        assert batches[0].remaining_qty == 5.0
+        sku = session.get(db._SkuRow, sku_id)
+        assert abs(sku.current_stock - 5.0) < 1e-4
+    finally:
+        session.close()
+
+    # 2. 盘盈：实际 9kg（盈 4kg）
+    resp_gain = client.post(f"/api/inventory/{sku_id}/stocktake", json={"actual_qty": 9.0, "reason": "此前少计"}, headers=headers)
+    assert resp_gain.status_code == 200, resp_gain.text
+    assert resp_gain.json()["data"]["current_stock"] == 9.0
+
+    session = db.get_session()
+    try:
+        batches = session.query(db._InventoryBatchRow).filter_by(sku_id=sku_id).order_by(db._InventoryBatchRow.id.asc()).all()
+        assert len(batches) == 2
+        # 新批次 initial_qty=4.0
+        assert batches[1].initial_qty == 4.0
+        assert batches[1].remaining_qty == 4.0
+        assert batches[1].unit_cost == 30.0
+
+        batch_sum = sum(b.remaining_qty for b in batches if b.is_closed == 0)
+        sku = session.get(db._SkuRow, sku_id)
+        assert abs(sku.current_stock - 9.0) < 1e-4
+        assert abs(sku.current_stock - batch_sum) < 1e-4
+    finally:
+        session.close()
+
+
+def test_negative_quantity_rejection_in_manual_inventory():
+    """[AC-3.1] 后端库存手动消耗与报损负数拦截拒绝。"""
+    from app import db
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    headers = {"X-Role": "owner", "X-Email": "boss@demo.hk"}
+
+    sku_id, _ = db.create_sku("拦截牛肉", base_unit="kg")
+    db.update_sku(sku_id, current_stock=10.0)
+
+    # 1. 负数消耗
+    resp1 = client.post(f"/api/inventory/{sku_id}/consume", json={"quantity": -5.0}, headers=headers)
+    assert resp1.status_code == 400
+    assert "消耗数量必须大于 0" in resp1.json()["msg"]
+
+    # 2. 零消耗
+    resp2 = client.post(f"/api/inventory/{sku_id}/consume", json={"quantity": 0.0}, headers=headers)
+    assert resp2.status_code == 400
+    assert "消耗数量必须大于 0" in resp2.json()["msg"]
+
+    # 3. 负数报损
+    resp3 = client.post(f"/api/inventory/{sku_id}/waste", json={"quantity": -2.0}, headers=headers)
+    assert resp3.status_code == 400
+    assert "报损数量必须大于 0" in resp3.json()["msg"]
+
+    # 验证库存未受任何污染
+    sku = db.get_sku(sku_id)
+    assert sku.current_stock == 10.0
+
+
+def test_cross_dimension_unit_conversion_runtime():
+    """[AC-5.3, AC-5.4] 跨量纲单位换算防穿透熔断与同量纲合法折算。"""
+    from app.services.costing_service import CostingService, check_unit_compatibility
+
+    # 1. 跨量纲熔断
+    compat, reason = check_unit_compatibility("份", "kg")
+    assert compat is False
+
+    with pytest.raises(ValueError) as excinfo:
+        CostingService.convert_unit_quantity(5, "份", "kg")
+    assert "跨量纲单位不可换算" in str(excinfo.value)
+
+    # 2. 同量纲合法折算
+    compat_ok, _ = check_unit_compatibility("g", "kg")
+    assert compat_ok is True
+    qty_kg = CostingService.convert_unit_quantity(500, "g", "kg")
+    assert qty_kg == 0.5
+

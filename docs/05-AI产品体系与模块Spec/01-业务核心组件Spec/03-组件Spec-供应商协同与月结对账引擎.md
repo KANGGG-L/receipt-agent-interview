@@ -2,7 +2,7 @@
 
 > **模块定位**：餐饮供应链连接与资金流出把关中枢。承载供应商全景档案建立、多称谓别名归一、红蓝“已付款/CASH”印章智能核销、应付账款（AP）全生命周期台账，以及核心的 **月结对账单 (Statement) 自动勾稽比对引擎**。  
 > **对标 14 步方案**：`step1-机会洞察`、`step8-产品方案`、`step11-PRD定稿`。  
-> **实现代码**：[`api_suppliers.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_suppliers.py)、[`templates/index.html`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/templates/index.html) (Tab 3)  
+> **实现代码**：[`api_suppliers.py`](../../../demo/app/api_suppliers.py)、[`templates/index.html`](../../../demo/templates/index.html) (Tab 3)  
 
 ---
 

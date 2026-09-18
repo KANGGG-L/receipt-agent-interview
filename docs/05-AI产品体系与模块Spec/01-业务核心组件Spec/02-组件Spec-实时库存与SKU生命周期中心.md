@@ -2,7 +2,7 @@
 
 > **模块定位**：餐饮后厨食材与资产流转中枢。承载品名核心词模糊匹配、新食材自动建档、Append-Only 只增不可篡改进销存台账、移动加权平均成本核算，以及 30 天食材价格异动风控预警。  
 > **对标 14 步方案**：`step5-MVP定义`、`step8-产品方案`、`step11-PRD定稿`。  
-> **实现代码**：[`api_inventory.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_inventory.py)、[`services/inventory.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/inventory.py)、[`templates/index.html`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/templates/index.html) (Tab 2)  
+> **实现代码**：[`api_inventory.py`](../../../demo/app/api_inventory.py)、[`services/inventory.py`](../../../demo/app/services/inventory.py)、[`templates/index.html`](../../../demo/templates/index.html) (Tab 2)  
 
 ---
 

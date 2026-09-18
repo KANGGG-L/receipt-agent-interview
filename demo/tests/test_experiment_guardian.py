@@ -213,5 +213,45 @@ def test_no_running_experiments_returns_empty():
     assert actions == []
 
 
+# -------------------------------------------------------------
+# 7. get_experiment_metrics p 值回归：erf 精确 Φ（旧近似曾把 p 算到 >1）
+# -------------------------------------------------------------
+def test_experiment_metrics_pvalue_range_and_sensitivity():
+    _db = _fresh_db()
+
+    def _log_group(exp_id, grp, n, adopted):
+        for i in range(n):
+            _db.log_ai_decision(
+                receipt_id=None, experiment_id=exp_id, grp=grp,
+                engine="openai", model="test-model", decision_type="extract",
+                ai_value={"status": "extract_ok"},
+                adopted=1 if i < adopted else 0,
+            )
+
+    # z≈2：control 0.40 vs treatment 0.50（n=200）→ p < 0.05
+    exp_sig = _mk_running_experiment(_db, name="p值显著实验")
+    _log_group(exp_sig["id"], "control", 200, 80)
+    _log_group(exp_sig["id"], "treatment", 200, 100)
+    m_sig = _db.get_experiment_metrics(exp_sig["id"])
+    t_sig = m_sig["tests"]["accuracy"]
+    assert t_sig is not None and 1.9 < t_sig["z"] < 2.1, t_sig
+    assert 0 < t_sig["p_value"] < 0.05, t_sig
+
+    # z≈1：control 0.40 vs treatment 0.45（n=200）→ p > 0.3
+    exp_ns = _mk_running_experiment(_db, name="p值不显著实验")
+    _log_group(exp_ns["id"], "control", 200, 80)
+    _log_group(exp_ns["id"], "treatment", 200, 90)
+    m_ns = _db.get_experiment_metrics(exp_ns["id"])
+    t_ns = m_ns["tests"]["accuracy"]
+    assert t_ns is not None and 0.9 < t_ns["z"] < 1.1, t_ns
+    assert t_ns["p_value"] > 0.3, t_ns
+
+    # 任何输出的 p 值都必须落在 [0, 1]
+    for m in (m_sig, m_ns):
+        for t in m["tests"].values():
+            if t:
+                assert 0.0 <= t["p_value"] <= 1.0, t
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

@@ -2,7 +2,7 @@
 
 > **模块定位**：面向 AI-PM 与算法工程师的**度量闭环基础设施**。在「三层互不信任」架构下，AI 只预填、人工背书——而预填到底好不好、人工改了多少、用户在哪里失去耐心，必须由一套**服务端权威、append-only、隐私合规**的埋点体系回答。本 Spec 将 `step7-指标体系` 定义的 11 个规范事件在单店落地版中对齐落库，补齐行级复核 diff、放弃解析、体验反馈等缺口事件，并提供聚合消费端点与右下角 👍/👎 即时反馈入口。
 > **对标 14 步方案**：`step7-指标体系`（四层金字塔 + 11 事件规范）、`step11-PRD定稿`（数据契约/字段字典）、`step13-安全合规`（PDPO 脱敏红线）、`step14-上线迭代`（数据驱动飞轮）。
-> **实现代码**：[`app/services/receipt_utils.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/services/receipt_utils.py)（解析生命周期 + `compute_review_diff`）、[`app/api_receipts.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_receipts.py)（`/api/track` + 复核/审批事件）、[`app/chains/supervisor.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/chains/supervisor.py)（门禁/RAG 事件）、[`app/api_admin.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_admin.py)（聚合端点）、`static/js/main.js` + `templates/index.html`（前端钩子与反馈悬浮层）。
+> **实现代码**：[`app/services/receipt_utils.py`](../../../demo/app/services/receipt_utils.py)（解析生命周期 + `compute_review_diff`）、[`app/api_receipts.py`](../../../demo/app/api_receipts.py)（`/api/track` + 复核/审批事件）、[`app/chains/supervisor.py`](../../../demo/app/chains/supervisor.py)（门禁/RAG 事件）、[`app/api_admin.py`](../../../demo/app/api_admin.py)（聚合端点）、`static/js/main.js` + `templates/index.html`（前端钩子与反馈悬浮层）。
 
 ---
 
@@ -61,7 +61,7 @@
 
 | # | 事件名称 | 触发时机 | 专属 Payload | 写入方 | 落地状态 |
 | :---: | :--- | :--- | :--- | :--- | :--- |
-| 1 | `receipt_uploaded` | 上传成功创建 Job | `batch_id, image_path, async` | 后端 | 已有（实现别名 `upload`，漏斗双计兼容） |
+| 1 | `receipt_uploaded` | 上传成功创建 Job | `batch_id, image_path, async, has_vendor_hint`（布尔位；**不落供应商提示原文**，见 §8） | 后端 | 已有（实现别名 `upload`，漏斗双计兼容） |
 | 2 | `ocr_parse_started` | Job 状态 uploaded→parsing | `job_id` | 后端（Job 状态机单点） | **本次实现** |
 | 3 | `ocr_parsed` | VLM 提取+门禁通过并落库 | `job_id, status:"done", elapsed_ms, attempts, gate_rejects, use_grey` | 后端 | **本次实现** |
 | 4 | `ocr_error` | 解析崩溃/超时/契约彻底失败 | `job_id, status:"error"\|"timeout", elapsed_ms, reason, attempts` | 后端 | **本次实现** |

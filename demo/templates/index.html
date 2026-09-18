@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/css/style.css?v=20260907d">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260907e">
     <style>
         /* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
         .sidebar-btn { position: relative; }
@@ -501,9 +501,9 @@
                                         <input type="file" id="retakeFile" accept="image/*" class="hide" style="display: none !important;" hidden>
                                         <span id="feedbackInline" class="feedback-inline" style="display:none;">
                                             <button type="button" class="feedback-btn feedback-btn-up"
-                                                    onclick="onFeedbackClick(1)" title="满意当前解析结果" aria-label="点赞">👍</button>
+                                                    onclick="onFeedbackClick(1)" title="满意当前解析结果" aria-label="点赞"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg></button>
                                             <button type="button" class="feedback-btn feedback-btn-down"
-                                                    onclick="onFeedbackClick(-1)" title="不满意当前解析结果" aria-label="点踩">👎</button>
+                                                    onclick="onFeedbackClick(-1)" title="不满意当前解析结果" aria-label="点踩"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg></button>
                                         </span>
                                     </div>
                                 </div>
@@ -1477,6 +1477,52 @@
                     <div class="card" style="max-width:960px; margin:0 auto;">
                         <div class="card-title" style="justify-content:center;"><span>引擎配置</span></div>
 
+                        <!-- 多引擎规则协同与优先级仲裁架构说明栏 (无 Emoji，纯文字标签) -->
+                        <div id="enginePriorityGuideCard" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="const el=document.getElementById('enginePriorityContent'); const icon=this.querySelector('.priority-toggle-icon'); if (el.style.display==='none'){ el.style.display='block'; icon.textContent='[收起]'; } else { el.style.display='none'; icon.textContent='[展开说明]'; }">
+                                <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                    <span style="font-weight:700; font-size:0.85rem; color:#1e293b;">引擎分流与规则优先级仲裁机制 (Rule Priority & Conflict Resolution)</span>
+                                    <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.7rem;">多规则同时开启生效规范</span>
+                                </div>
+                                <span class="priority-toggle-icon" style="font-size:0.75rem; color:#64748b;">[收起]</span>
+                            </div>
+                            <div id="enginePriorityContent" style="margin-top:10px; font-size:0.8rem; color:#334155; line-height:1.6;">
+                                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-bottom:8px;">
+                                    <!-- 分流层级优先级 -->
+                                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
+                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流量路由仲裁层级 (Traffic Routing Hierarchy)</div>
+                                        <div style="display:flex; flex-direction:column; gap:6px;">
+                                            <div style="display:flex; align-items:baseline; gap:6px;">
+                                                <span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.68rem; font-weight:700;">P0 最高</span>
+                                                <div><strong>A/B 科学实验 (Running)</strong>：当有实验处于运行中，优先接管分流（默认 50:50），暂停灰测分流以防统计样本污染。</div>
+                                            </div>
+                                            <div style="display:flex; align-items:baseline; gap:6px;">
+                                                <span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.68rem; font-weight:700;">P1 次高</span>
+                                                <div><strong>金丝雀灰度发布 (Canary)</strong>：无运行实验且启用灰测时生效，按单据随机或供应商哈希分流至新引擎，支持秒级回滚与一键推全。</div>
+                                            </div>
+                                            <div style="display:flex; align-items:baseline; gap:6px;">
+                                                <span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.68rem; font-weight:700;">P2 兜底</span>
+                                                <div><strong>生产基线引擎 (Production)</strong>：无实验且未命中灰测时，全量单据运行常规识别引擎。</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- 执行阶段优先级 -->
+                                    <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
+                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流水线阶段协同 (Pipeline Execution Stages)</div>
+                                        <div style="display:flex; flex-direction:column; gap:4px; font-size:0.76rem;">
+                                            <div><strong>Stage 0 预处理与质检</strong>：极模糊阈值 (Laplacian &lt; 30) 优先熔断拦截，零 Token 消耗。</div>
+                                            <div><strong>Stage 1 动态 RAG 检索</strong>：注入历史经验，受预算 (800字符/6条) 硬上限约束。</div>
+                                            <div><strong>Stage 2 多模态 VLM 识别</strong>：由 P0~P2 路由决策的模型执行结构化抽取。</div>
+                                            <div><strong>Stage 3 二次解析 LLM</strong>：仅在语法结构异常且开关打开时触发语义自愈。</div>
+                                            <div><strong>Stage 4 交叉审核引擎</strong>：审核开关打开时执行双盲复核、单价乘法校验与置信度评估。</div>
+                                            <div><strong>Stage 5 治理飞轮回流</strong>：低置信度 (&lt; 0.6) 自动沉淀评测集候选池，连续点踩触发记忆蒸馏。</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- 核心卡片：常规识别（审核引擎改为抽屉，模拟高级配置折叠样式） -->
                         <div class="engine-dual-grid" style="grid-template-columns:1fr;">
                             <!-- 识别引擎卡片 -->
@@ -2020,9 +2066,16 @@
                             </div>
                             <!-- 灰测现状与脱敏单据抽样观测 (Admin 专属) -->
                             <div class="card">
-                                <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                <div class="card-title" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
                                     <span>灰测现状与样本观测</span>
                                     <div style="display:flex; align-items:center; gap:8px;">
+                                        <select id="greySampleScopeSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.8rem;" onchange="loadAdminGreySamples(null, true)">
+                                            <option value="all">全部单据流</option>
+                                            <option value="grey_only">仅灰测组单据</option>
+                                            <option value="prod_only">仅常规生产组单据</option>
+                                            <option value="modified">仅有人工修正单据</option>
+                                            <option value="approved">仅已审批入库单据</option>
+                                        </select>
                                         <button class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px;" onclick="gotoGreyPromote()" title="前往系统与引擎配置的灰测抽屉执行推全/回滚">前往推全操作</button>
                                         <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAdminGreySamples(null, true)">刷新脱敏单据流</button>
                                     </div>
@@ -2058,6 +2111,39 @@
                                     </table>
                                 </div>
                             </div>
+
+                            <!-- 历史灰测履历与放量轨迹卡片 -->
+                            <div class="card" id="adminCanaryHistoryCard" style="margin-top:16px;">
+                                <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                    <span>历史灰度发布与放量履历</span>
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadCanaryHistory()">刷新灰测履历</button>
+                                    </div>
+                                </div>
+                                <div id="adminCanaryHistoryMetrics" style="display:flex; gap:12px; margin-bottom:12px; font-size:0.82rem; flex-wrap:wrap;">
+                                    <span class="badge" style="background:#f1f5f9; color:#334155;">历史变更总数: <b id="mCanaryHistoryTotal">0</b></span>
+                                    <span class="badge" style="background:#d4edda; color:#155724;">成功推全: <b id="mCanaryHistoryPromote">0</b> 次</span>
+                                    <span class="badge" style="background:#f8d7da; color:#721c24;">紧急回滚: <b id="mCanaryHistoryRollback">0</b> 次</span>
+                                    <span class="badge" style="background:#fff3cd; color:#856404;">累计灰测单据: <b id="mCanaryHistoryReceipts">0</b> 份</span>
+                                </div>
+                                <div class="table-container" style="max-height:320px; overflow-x:auto; overflow-y:auto; scrollbar-width:thin;">
+                                    <table class="data-table" id="adminCanaryHistoryTable" style="min-width:880px; width:100%;">
+                                        <thead>
+                                            <tr>
+                                                <th style="width:140px;">时间</th>
+                                                <th style="width:110px;">变更动作</th>
+                                                <th style="min-width:180px;">模型变更</th>
+                                                <th style="min-width:260px;">说明与策略</th>
+                                                <th style="width:110px;">操作人</th>
+                                                <th style="width:90px; text-align:right;">状态</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="adminCanaryHistoryBody">
+                                            <tr><td colspan="6" style="text-align:center; color:#999;">加载历史灰度发布履历...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
                         </section>
 
                         <!-- 功能区三：A/B 科学实验台 (独立视图) -->
@@ -2071,12 +2157,12 @@
                                     </div>
                                 </div>
                             </div>
-                            <!-- A/B 实验对比与组别表现 -->
+                            <!-- A/B 实验列表与大盘概览 -->
                             <div class="card">
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
-                                    <span>A/B 实验数据与组别指标对比</span>
+                                    <span>A/B 实验列表与运行概览</span>
                                     <div style="display:flex; gap:8px; align-items:center;">
-                                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAnalyticsExperiments()">刷新实验数据</button>
+                                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="loadAnalyticsExperiments()">刷新实验列表</button>
                                     </div>
                                 </div>
                                 <div id="analyticsExperimentsBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
@@ -2090,6 +2176,88 @@
                                         判定阈值：双侧双比例 z 检验，显著性水平 alpha = 0.05。p &lt; 0.05 视为显著；样本量 N &lt; 30 时标记低置信度，仅作参考不作为推全依据。
                                     </div>
                                     <div id="pvalueCardsContainer" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px;"></div>
+                                </div>
+                            </div>
+
+                            <!-- 选定 A/B 实验深度全景档案卡片 -->
+                            <div class="card" id="analyticsExpDetailCard" style="margin-top:18px;">
+                                <div class="card-title" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span>A/B 实验深度档案 · <span id="expDetailHeaderName" style="color:#2563eb; font-weight:600;">未选择</span></span>
+                                    </div>
+                                    <div style="display:flex; gap:8px; align-items:center;">
+                                        <label for="analyticsExpSelect" style="font-size:0.8rem; color:var(--text-muted); margin:0;">切换实验：</label>
+                                        <select id="analyticsExpSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.8rem;" onchange="inspectExperimentDetail(this.value)">
+                                            <option value="">加载实验列表中...</option>
+                                        </select>
+                                        <button class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="refreshCurrentExpDetail()">刷新详情</button>
+                                    </div>
+                                </div>
+
+                                <!-- 实验基础元数据横幅 -->
+                                <div id="expMetaDossier" style="background:#f8fafc; border:1px solid var(--border-color); border-radius:8px; padding:12px 16px; margin-bottom:16px; font-size:0.82rem; line-height:1.7;">
+                                    请在上方选择或点击实验以展开深度数据全景。
+                                </div>
+
+                                <!-- 组别指标 Side-by-Side 深度对比表 -->
+                                <div style="margin-bottom:18px;">
+                                    <div style="font-weight:600; font-size:0.88rem; margin-bottom:8px; color:var(--text-main);">组别核心指标深度对比（Control 对照组 vs Treatment 实验组）</div>
+                                    <div class="table-container" style="overflow-x:auto;">
+                                        <table class="data-table" id="expSideBySideTable" style="width:100%; min-width:700px;">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:180px;">评估维度</th>
+                                                    <th style="width:140px;">对照组 (Control)</th>
+                                                    <th style="width:140px;">实验组 (Treatment)</th>
+                                                    <th style="width:120px;">差异 (Delta)</th>
+                                                    <th style="min-width:180px;">统计推断 / 结论</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="expSideBySideBody">
+                                                <tr><td colspan="5" style="text-align:center; color:#999;">请选择实验以查看组别对比</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- 实验关联单据样本明细流 -->
+                                <div style="border-top:1px dashed var(--border-color); padding-top:14px; margin-top:14px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:8px;">
+                                        <span style="font-weight:600; font-size:0.88rem;">实验样本单据明细流（共 <b id="expSampleTotalCount">0</b> 份单据样本）</span>
+                                        <div style="display:flex; align-items:center; gap:8px;">
+                                            <select id="expSampleScopeSelect" class="form-control" style="width:auto; padding:3px 8px; font-size:0.78rem;" onchange="loadExpSamples(null)">
+                                                <option value="all">全部分组样本</option>
+                                                <option value="control">仅对照组 (Control)</option>
+                                                <option value="treatment">仅实验组 (Treatment)</option>
+                                            </select>
+                                            <button class="btn btn-secondary" style="font-size:0.78rem; padding:3px 8px;" onclick="loadExpSamples(null)">刷新样本</button>
+                                        </div>
+                                    </div>
+                                    <div class="table-container" style="max-height:300px; overflow-x:auto; overflow-y:auto; scrollbar-width:thin;">
+                                        <table class="data-table" id="expSampleTable" style="width:100%; min-width:850px;">
+                                            <thead>
+                                                <tr>
+                                                    <th style="width:70px;">单据 ID</th>
+                                                    <th style="width:110px;">实验组别</th>
+                                                    <th style="min-width:160px;">供应商</th>
+                                                    <th style="min-width:90px;">金额</th>
+                                                    <th style="min-width:120px;">测试模型</th>
+                                                    <th style="width:100px;">准确率</th>
+                                                    <th style="min-width:120px;">反馈比对</th>
+                                                    <th style="width:130px; text-align:right;">分配时间</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="expSampleTableBody">
+                                                <tr><td colspan="8" style="text-align:center; color:#999;">请选择实验查看单据样本明细</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <!-- 守护动作留痕与快照轨迹（若有） -->
+                                <div id="expGuardrailSection" style="display:none; border-top:1px dashed var(--border-color); padding-top:14px; margin-top:14px;">
+                                    <div style="font-weight:600; font-size:0.88rem; margin-bottom:8px; color:var(--text-main);">实验守护事件与方向性快照留痕</div>
+                                    <div id="expGuardrailBody" style="font-size:0.82rem; color:var(--text-muted);">暂无守护告警或回滚事件</div>
                                 </div>
                             </div>
                         </section>
@@ -3096,49 +3264,119 @@
         </div>
     </div>
 
-    <!-- 新建 A/B 实验弹窗 -->
-    <div id="createExperimentModal" class="modal-overlay" style="display:none;">
-        <div class="modal-content" style="max-width:520px; border-radius:12px; padding:20px; background:#fff; margin:40px auto; position:relative;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                <h3 style="margin:0; font-size:1.1rem; color:#1e293b;">新建 A/B 科学实验</h3>
-                <button type="button" class="btn-close" style="border:none; background:transparent; font-size:1.4rem; cursor:pointer; line-height:1;" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">&times;</button>
+    <!-- 新建 A/B 实验弹窗 (对齐全局 modal-backdrop 与 modal-card 规范) -->
+    <div id="createExperimentModal" class="modal-backdrop hide" style="z-index:10000; display:none;">
+        <div class="modal-card" style="max-width:620px; width:94%; max-height:88vh; overflow-y:auto; border-radius:12px; padding:18px 22px; background:#fff; position:relative; box-shadow:0 20px 40px rgba(0,0,0,0.18);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <h3 style="margin:0; font-size:1.05rem; color:#1e293b;">新建 A/B 科学实验</h3>
+                <button type="button" class="modal-close-btn" style="cursor:pointer; font-size:1.3rem; line-height:1;" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">&times;</button>
             </div>
             <form id="createExperimentForm" onsubmit="event.preventDefault(); if(typeof submitCreateExperiment==='function') submitCreateExperiment();">
-                <div class="form-group" style="margin-bottom:12px;">
-                    <label style="font-weight:600; font-size:0.82rem;">实验名称 <span style="color:#ef4444;">*</span></label>
-                    <input type="text" id="newExpName" class="form-control" placeholder="例: Qwen3-VL 准确率提升对比" required>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <label style="font-weight:600; font-size:0.78rem;">实验名称 <span style="color:#ef4444;">*</span></label>
+                    <input type="text" id="newExpName" class="form-control" style="font-size:0.8rem; padding:4px 8px;" placeholder="例: Qwen3-VL 准确率提升对比" required>
                 </div>
-                <div class="form-group" style="margin-bottom:12px;">
-                    <label style="font-weight:600; font-size:0.82rem;">实验假设 (Hypothesis)</label>
-                    <input type="text" id="newExpHypothesis" class="form-control" placeholder="例: 预期在香港手写餐饮单据上准确率提升 5pp">
+                <div class="form-group" style="margin-bottom:10px;">
+                    <label style="font-weight:600; font-size:0.78rem;">实验假设 (Hypothesis)</label>
+                    <input type="text" id="newExpHypothesis" class="form-control" style="font-size:0.8rem; padding:4px 8px;" placeholder="例: 预期在香港手写餐饮单据上准确率提升 5pp">
                 </div>
-                <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px;">
-                    <div class="form-group">
-                        <label style="font-weight:600; font-size:0.82rem;">主判定指标</label>
-                        <select id="newExpSuccessMetric" class="form-control">
+
+                <!-- 模仿灰度发布：A/B 对照组与实验组引擎参数配置卡片 -->
+                <div style="margin-bottom:10px; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; background:#f8fafc;">
+                    <div style="font-weight:700; font-size:0.82rem; color:#1e293b; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between;">
+                        <span>A/B 对比模型与网关参数设置</span>
+                        <span style="font-size:0.72rem; color:#64748b; font-weight:normal;">模仿灰度发布参数卡片 · 独立配置两组网关、模型与密钥</span>
+                    </div>
+
+                    <!-- 对照组 A 参数卡片 (基线方案) -->
+                    <div id="newExpCtrlBox" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:8px 10px; margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:0.78rem; font-weight:700; color:#475569;">对照组 A 识别参数</span>
+                                <span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.68rem; padding:1px 6px;">Control · 基线方案</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:0.72rem; color:var(--text-muted);">预设网关:</span>
+                                <select id="newExpCtrlPreset" class="form-control" style="font-size:0.72rem; padding:1px 6px; height:24px;" onchange="applyExpPreset('ctrl', this.value)">
+                                    <option value="current_prod" selected>当前系统生产主力引擎</option>
+                                    <option value="agnes">Agnes AI</option>
+                                    <option value="bailian">阿里云百炼 · DashScope</option>
+                                    <option value="siliconflow">SiliconFlow · 硅基流动</option>
+                                    <option value="">— 手动填写 —</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                            <div class="form-group" style="grid-column: span 2; margin-bottom:2px;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">Base URL</label>
+                                <input type="text" id="newExpCtrlBaseUrl" class="form-control" style="font-size:0.76rem; padding:3px 8px;" placeholder="https://your-gateway.com/v1">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">API Key</label>
+                                <input type="password" id="newExpCtrlApiKey" class="form-control" style="font-size:0.76rem; padding:3px 8px;" placeholder="留空则复用系统默认密钥">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">模型名 <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="newExpControlModel" class="form-control" style="font-size:0.76rem; padding:3px 8px; font-family:monospace;" placeholder="gpt-4o-mini" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 实验组 B 参数卡片 (候选方案) -->
+                    <div id="newExpTreatBox" style="background:#eff6ff; border:1px solid #93c5fd; border-radius:6px; padding:8px 10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:0.78rem; font-weight:700; color:#1d4ed8;">实验组 B 识别参数</span>
+                                <span class="badge badge-info" style="font-size:0.68rem; padding:1px 6px;">Treatment · 实验候选</span>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <span style="font-size:0.72rem; color:var(--text-muted);">预设网关:</span>
+                                <select id="newExpTreatPreset" class="form-control" style="font-size:0.72rem; padding:1px 6px; height:24px;" onchange="applyExpPreset('treat', this.value)">
+                                    <option value="siliconflow" selected>SiliconFlow · 硅基流动</option>
+                                    <option value="bailian">阿里云百炼 · DashScope</option>
+                                    <option value="agnes">Agnes AI</option>
+                                    <option value="">— 手动填写 —</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+                            <div class="form-group" style="grid-column: span 2; margin-bottom:2px;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">Base URL</label>
+                                <input type="text" id="newExpTreatBaseUrl" class="form-control" style="font-size:0.76rem; padding:3px 8px;" placeholder="https://api.siliconflow.cn/v1">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">API Key</label>
+                                <input type="password" id="newExpTreatApiKey" class="form-control" style="font-size:0.76rem; padding:3px 8px;" placeholder="留空则复用灰测/系统默认密钥">
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">模型名 <span style="color:#ef4444;">*</span></label>
+                                <input type="text" id="newExpTreatmentModel" class="form-control" style="font-size:0.76rem; padding:3px 8px; font-family:monospace;" placeholder="Qwen/Qwen2.5-VL-7B-Instruct" required>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="display:grid; grid-template-columns:1.2fr 1fr 1fr; gap:10px; margin-bottom:14px;">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-weight:600; font-size:0.78rem;">主判定指标</label>
+                        <select id="newExpSuccessMetric" class="form-control" style="font-size:0.78rem; padding:3px 6px;">
                             <option value="accuracy">accuracy (字段准确率)</option>
-                            <option value="hallucination_rate">hallucination_rate (幻觉率)</option>
-                            <option value="edit_rate">edit_rate (人工修改率)</option>
+                            <option value="hallucination_rate">hallucination (幻觉率)</option>
+                            <option value="edit_rate">edit_rate (修改率)</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label style="font-weight:600; font-size:0.82rem;">分流比例 (%)</label>
-                        <input type="number" id="newExpTargetPercent" class="form-control" value="50" min="10" max="90" step="5">
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-weight:600; font-size:0.78rem;">分流比例 (%)</label>
+                        <input type="number" id="newExpTargetPercent" class="form-control" value="50" min="10" max="90" step="5" style="font-size:0.78rem; padding:3px 6px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                        <label style="font-weight:600; font-size:0.78rem;">最小统计样本量 (N)</label>
+                        <input type="number" id="newExpMinSample" class="form-control" value="30" min="5" max="500" style="font-size:0.78rem; padding:3px 6px;">
                     </div>
                 </div>
-                <div class="form-grid" style="grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
-                    <div class="form-group">
-                        <label style="font-weight:600; font-size:0.82rem;">最小统计样本量 (N)</label>
-                        <input type="number" id="newExpMinSample" class="form-control" value="30" min="5" max="500">
-                    </div>
-                    <div class="form-group">
-                        <label style="font-weight:600; font-size:0.82rem;">实验组候选模型 (Treatment)</label>
-                        <input type="text" id="newExpTreatmentModel" class="form-control" placeholder="例: Qwen/Qwen3-VL-32B-Instruct">
-                    </div>
-                </div>
-                <div style="display:flex; justify-content:flex-end; gap:10px;">
-                    <button type="button" class="btn btn-secondary" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">取消</button>
-                    <button type="submit" class="btn btn-primary" style="background:#2563eb; border-color:#2563eb;">创建实验</button>
+                <div style="display:flex; justify-content:flex-end; gap:10px; padding-top:4px;">
+                    <button type="button" class="btn btn-secondary" style="font-size:0.82rem; padding:5px 14px;" onclick="if(typeof closeCreateExperimentModal==='function') closeCreateExperimentModal()">取消</button>
+                    <button type="submit" class="btn btn-primary" style="font-size:0.82rem; padding:5px 16px; background:#2563eb; border-color:#2563eb;">创建实验</button>
                 </div>
             </form>
         </div>
@@ -3147,7 +3385,7 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260907e"></script>
+    <script src="/static/js/main.js?v=20260908a"></script>
     <script src="/static/js/export_center.js?v=20260907a"></script>
 </body>
 </html>

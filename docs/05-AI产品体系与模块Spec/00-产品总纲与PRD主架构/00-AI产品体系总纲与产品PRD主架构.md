@@ -58,7 +58,7 @@
 
 ## 3. 用户画像与权限角色 (RBAC)
 
-系统针对香港餐饮前线与管理分工，构建 3 级 RBAC 权限体系（[`auth.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/auth.py)）：
+系统针对香港餐饮前线与管理分工，构建 3 级 RBAC 权限体系（[`auth.py`](../../../demo/app/auth.py)）：
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -193,19 +193,19 @@ sequenceDiagram
 
 | 组件文档编号与链接 | 模块名称 | 核心职责 |
 | :--- | :--- | :--- |
-| **[Spec 01](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/01-组件Spec-收据智能采集与Side-by-Side复核工作台.md)** | **收据采集与复核工作台** | 弱光连拍、Side-by-Side 左右联动、Smart Splitter、乐观锁并发控制 |
-| **[Spec 02](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/02-组件Spec-实时库存与SKU生命周期中心.md)** | **实时库存与 SKU 生命周期** | 核心词匹配算法、Append-Only 流水台账、移动加权成本、价格暴涨预警 |
-| **[Spec 03](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/03-组件Spec-供应商协同与月结对账引擎.md)** | **供应商协同与月结对账** | 供应商档案别名归一、红蓝印章付款检测、AP 应付账款、月结总单差异核销 |
-| **[Spec 04](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/04-组件Spec-部门成本核算与智能分析中心.md)** | **部门成本与智能分析** | 多部门花销自动归集、环比异动分析、AI 对话式查账 Agent (粤语/俗称) |
-| **[Spec 05](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/05-组件Spec-三层互不信任AI原生感知引擎与编排管线.md)** | **AI 感知引擎与编排管线** | 三层互不信任架构、Supervisor 线性编排、算术门禁自愈、交叉审核 Agent |
-| **[Spec 06](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/06-组件Spec-动态RAG与供应商记忆知识飞轮.md)** | **动态 RAG 与 VendorMemory** | 供应商知识图谱、Chroma 向量沉淀、租户硬隔离、越用越准数据飞轮 |
-| **[Spec 07](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/07-组件Spec-AI治理、多模型灰度发布与评测控制台.md)** | **AI 治理与评测控制台** | 引擎统一接口、单据概率/供应商 Hash 灰度分流、57 张黄金样本自动化评测 |
-| **[Spec 08](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/08-组件Spec-安全合规、隐私保护与系统运维保障.md)** | **安全合规与运维保障** | 香港 PDPO 合规、多租户物理/逻辑隔离、敏感数据脱敏、不可篡改审计日志 |
-| **[Spec 09](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/09-组件Spec-AB测试与全链路灰测分流体系.md)** | **A/B 测试与灰测分流体系** | 四级分流路由、参数物理隔离、统计显著性检验 (p-value)、一键推全与快照回滚 |
-| **[Spec 10](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/10-组件Spec-Admin端AB测试与脱敏观测大盘方案.md)** | **Admin A/B 测试脱敏观测大盘** | 数据脱敏中间件、A/B 实时看板、显著性裁决卡片、脱敏抽样下钻与秒级回滚 |
-| **[Spec 11](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/11-OCR全链路Gap治理与逐项修复计划.md)** | **OCR 全链路 8 大 Gap 治理计划** | 8 大 Gap 逐轮闭环交付计划、四角色标准工作流、实施历史与可观测留证 |
-| **[Spec 12](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/12-阶段性产品方向回顾与架构校准报告.md)** | **阶段性产品方向与架构审查报告** | 对标 FR-1~12 与 NFR-1~6 的产品架构深度校准、全景契合度审查与技术把关 |
-| **[Spec 13](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/13-OCR全链路Workflow与架构全景Spec.md)** | **OCR 全链路 Workflow 与架构全景** | 端到端 6 阶段流水线、三层互不信任架构体系、确定性线性编排对比图编排 |
-| **[Spec 14](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/14-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md)** | **OCR 8 大 Gap 与零散问题复盘 (STAR)** | 8 大 Gap + iPhone HEIC/EXIF + SKU 流水号剥离的 STAR 深度解构复盘 |
-| **[Spec 15](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/15-AI产品经理OCR面试高频攻防与实战金句库.md)** | **AI PM 面试高频攻防与实战金句库** | 面试官必问 4 大核心题、标准回答脚本、降维打击金句与业务深度解析 |
-| **[Spec 16](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI产品体系与模块Spec/16-香港餐饮进货单OCR全链路与面试备战总览.md)** | **OCR 全链路与面试备战总览** | 全模块文档矩阵导航、核心技术与业务成果一览表、面试通关学习路径 |
+| **[Spec 01](../01-业务核心组件Spec/01-组件Spec-收据智能采集与Side-by-Side复核工作台.md)** | **收据采集与复核工作台** | 弱光连拍、Side-by-Side 左右联动、Smart Splitter、乐观锁并发控制 |
+| **[Spec 02](../01-业务核心组件Spec/02-组件Spec-实时库存与SKU生命周期中心.md)** | **实时库存与 SKU 生命周期** | 核心词匹配算法、Append-Only 流水台账、移动加权成本、价格暴涨预警 |
+| **[Spec 03](../01-业务核心组件Spec/03-组件Spec-供应商协同与月结对账引擎.md)** | **供应商协同与月结对账** | 供应商档案别名归一、红蓝印章付款检测、AP 应付账款、月结总单差异核销 |
+| **[Spec 04](../01-业务核心组件Spec/04-组件Spec-部门成本核算与智能分析中心.md)** | **部门成本与智能分析** | 多部门花销自动归集、环比异动分析、AI 对话式查账 Agent (粤语/俗称) |
+| **[Spec 05](../02-AI原生引擎与RAG飞轮Spec/05-组件Spec-三层互不信任AI原生感知引擎与编排管线.md)** | **AI 感知引擎与编排管线** | 三层互不信任架构、Supervisor 线性编排、算术门禁自愈、交叉审核 Agent |
+| **[Spec 06](../02-AI原生引擎与RAG飞轮Spec/06-组件Spec-动态RAG与供应商记忆知识飞轮.md)** | **动态 RAG 与 VendorMemory** | 供应商知识图谱、Chroma 向量沉淀、租户硬隔离、越用越准数据飞轮 |
+| **[Spec 07](../03-治理运维与AB实验Spec/07-组件Spec-AI治理、多模型灰度发布与评测控制台.md)** | **AI 治理与评测控制台** | 引擎统一接口、单据概率/供应商 Hash 灰度分流、57 张黄金样本自动化评测 |
+| **[Spec 08](../03-治理运维与AB实验Spec/08-组件Spec-安全合规、隐私保护与系统运维保障.md)** | **安全合规与运维保障** | 香港 PDPO 合规、多租户物理/逻辑隔离、敏感数据脱敏、不可篡改审计日志 |
+| **[Spec 09](../03-治理运维与AB实验Spec/09-组件Spec-AB测试与全链路灰测分流体系.md)** | **A/B 测试与灰测分流体系** | 四级分流路由、参数物理隔离、统计显著性检验 (p-value)、一键推全与快照回滚 |
+| **[Spec 10](../03-治理运维与AB实验Spec/10-组件Spec-Admin端AB测试与脱敏观测大盘方案.md)** | **Admin A/B 测试脱敏观测大盘** | 数据脱敏中间件、A/B 实时看板、显著性裁决卡片、脱敏抽样下钻与秒级回滚 |
+| **[Spec 11](../04-OCR专项治理与面试攻防体系/04-OCR全链路Gap治理与逐项修复计划.md)** | **OCR 全链路 8 大 Gap 治理计划** | 8 大 Gap 逐轮闭环交付计划、四角色标准工作流、实施历史与可观测留证 |
+| **[Spec 12](../04-OCR专项治理与面试攻防体系/05-阶段性产品方向回顾与架构校准报告.md)** | **阶段性产品方向与架构审查报告** | 对标 FR-1~12 与 NFR-1~6 的产品架构深度校准、全景契合度审查与技术把关 |
+| **[Spec 13](../04-OCR专项治理与面试攻防体系/01-OCR全链路Workflow与架构全景Spec.md)** | **OCR 全链路 Workflow 与架构全景** | 端到端 6 阶段流水线、三层互不信任架构体系、确定性线性编排对比图编排 |
+| **[Spec 14](../04-OCR专项治理与面试攻防体系/02-OCR全链路8大Gap与零散问题深度复盘%28STAR模式%29.md)** | **OCR 8 大 Gap 与零散问题复盘 (STAR)** | 8 大 Gap + iPhone HEIC/EXIF + SKU 流水号剥离的 STAR 深度解构复盘 |
+| **[Spec 15](../04-OCR专项治理与面试攻防体系/03-AI产品经理OCR面试高频攻防与实战金句库.md)** | **AI PM 面试高频攻防与实战金句库** | 面试官必问 4 大核心题、标准回答脚本、降维打击金句与业务深度解析 |
+| **[Spec 16](../04-OCR专项治理与面试攻防体系/00-香港餐饮进货单OCR全链路与面试备战总览.md)** | **OCR 全链路与面试备战总览** | 全模块文档矩阵导航、核心技术与业务成果一览表、面试通关学习路径 |

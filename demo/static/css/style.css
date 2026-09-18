@@ -832,6 +832,306 @@ table.data-table tr:last-child td {
     text-align: center;
 }
 
+/* 埋点事件分布与最近事件流：事件类型列完整展示，防 overflow:hidden / ellipsis 截断 */
+#analyticsEventDistBody table.data-table td:first-child,
+#analyticsEventDistBody table.data-table td:first-child code,
+#analyticsRecoveryBody table.data-table td:nth-child(2),
+#analyticsRecoveryBody table.data-table td:nth-child(2) code {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+}
+
+/* =====================================================================
+   黄金基准集看板 (Enterprise SaaS Modern Redesign)
+   ===================================================================== */
+.golden-board-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+
+.golden-board-table th {
+    background: #f8fafc;
+    color: var(--text-muted-2, #64748b);
+    font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--border-color);
+}
+
+table.data-table.golden-board-table td {
+    padding: 8px 10px !important;
+    font-size: 0.81rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+}
+
+table.data-table.golden-board-table td.cell-supplier {
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    max-width: 200px;
+}
+
+.golden-board-table tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+.golden-board-table tbody tr:hover {
+    background-color: rgba(3, 36, 37, 0.025);
+}
+
+/* 优雅轻量 GT 确权徽章 (Subtle Tint & Link) */
+.gt-pill-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-decoration: none !important;
+    transition: all 0.15s ease;
+}
+.gt-pill-link.pending {
+    background: #fffbeb;
+    color: #b45309;
+    border: 1px solid #fde68a;
+}
+.gt-pill-link.pending:hover {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    transform: translateY(-0.5px);
+}
+.gt-pill-link.promoted {
+    background: #eef2ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+}
+.gt-pill-link.promoted:hover {
+    background: #e0e7ff;
+    border-color: #818cf8;
+    transform: translateY(-0.5px);
+}
+
+/* 现代操作组与微幽灵按钮 (Ghost Buttons) */
+.golden-actions-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    width: 100%;
+}
+
+.btn-golden-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 25px;
+    min-height: 25px;
+    padding: 0 8px;
+    font-size: 0.73rem;
+    font-weight: 500;
+    border-radius: 5px;
+    background: #ffffff;
+    color: var(--text-main, #1e2223);
+    border: 1px solid rgba(30, 34, 35, 0.15);
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    box-sizing: border-box;
+}
+
+.btn-golden-ghost:hover {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+/* 「+ 纳入基准」幽灵品牌微绿样式（取代笨重纯黑方块） */
+.btn-golden-ghost.btn-add-golden {
+    color: #047857;
+    background: #f0fdf4;
+    border-color: #bbf7d0;
+}
+.btn-golden-ghost.btn-add-golden:hover {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #065f46;
+}
+
+/* 「移出」基准集操作 */
+.btn-golden-ghost.btn-remove-golden {
+    color: #64748b;
+    background: #ffffff;
+    border-color: #e2e8f0;
+}
+.btn-golden-ghost.btn-remove-golden:hover {
+    color: #b91c1c;
+    background: #fef2f2;
+    border-color: #fca5a5;
+}
+
+/* 基准集成员轻印记 (In-set Indicator) */
+.golden-member-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: #047857;
+    margin-right: 4px;
+}
+
+/* 灰测现状与脱敏单据流观测表 (Canary Observation Table) */
+.canary-table-container,
+#sec-canary .table-container {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-height: 380px;
+    scrollbar-width: thin;
+}
+.canary-samples-table,
+#adminGreySamplesTable {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+    min-width: 980px;
+    table-layout: auto !important;
+}
+.canary-samples-table th,
+#adminGreySamplesTable th {
+    background: #f8fafc;
+    color: var(--text-muted-2, #64748b);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 10px 14px !important;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap !important;
+}
+table.data-table.canary-samples-table td,
+#adminGreySamplesTable td {
+    padding: 9px 14px !important;
+    font-size: 0.82rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    color: var(--text-main);
+}
+table.data-table.canary-samples-table td.cell-vendor,
+#adminGreySamplesTable td.cell-vendor {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+}
+table.data-table.canary-samples-table td.cell-doc-form code,
+#adminGreySamplesTable td.cell-doc-form code {
+    background: #f1f5f9;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.76rem;
+    color: #334155;
+    white-space: nowrap;
+}
+table.data-table.canary-samples-table td.cell-amount code,
+#adminGreySamplesTable td.cell-amount code {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: #0f172a;
+}
+table.data-table.canary-samples-table td.cell-actions,
+#adminGreySamplesTable td.cell-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+table.data-table.canary-samples-table tbody tr:hover td,
+#adminGreySamplesTable tbody tr:hover td {
+    background-color: #f8fafc;
+}
+
+/* 历史灰度发布与放量履历表 */
+#adminCanaryHistoryTable {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100% !important;
+    min-width: 880px;
+    table-layout: auto !important;
+}
+#adminCanaryHistoryTable th {
+    background: #f8fafc;
+    color: var(--text-muted-2, #64748b);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 10px 14px !important;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap !important;
+}
+#adminCanaryHistoryTable td {
+    padding: 9px 14px !important;
+    font-size: 0.82rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    color: var(--text-main);
+}
+#adminCanaryHistoryTable tbody tr:hover td {
+    background-color: #f8fafc;
+}
+
+/* A/B 深度对比与样本明细表 */
+#expSideBySideTable,
+#expSampleTable {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100% !important;
+    table-layout: auto !important;
+}
+#expSideBySideTable th,
+#expSampleTable th {
+    background: #f8fafc;
+    color: var(--text-muted-2, #64748b);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 10px 14px !important;
+    letter-spacing: 0.02em;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap !important;
+}
+#expSideBySideTable td,
+#expSampleTable td {
+    padding: 9px 14px !important;
+    font-size: 0.82rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
+    color: var(--text-main);
+}
+#expSideBySideTable td:first-child,
+#expSideBySideTable th:first-child {
+    font-weight: 600;
+    min-width: 200px !important;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+#expSideBySideTable tbody tr:hover td,
+#expSampleTable tbody tr:hover td {
+    background-color: #f8fafc;
+}
+
 /* 库存表所在 tab 在窄视口下承载横向滚动（替代被反压的 table overflow:hidden） */
 #tab-inventory {
     overflow-x: auto;
@@ -1024,7 +1324,8 @@ table.data-table td input {
 .sup-code-weak { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; }
 
 /* 弹窗与 Modal 样式 */
-.modal-backdrop {
+.modal-backdrop,
+.modal-overlay {
     position: fixed;
     top: 0;
     left: 0;
@@ -3903,6 +4204,7 @@ tr.evidence-row-active {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    min-width: 0;
 }
 .export-control-card {
     background: #fff;
@@ -4029,12 +4331,114 @@ tr.evidence-row-active {
     border: 1px solid var(--border-color, #e2e8f0);
     border-radius: 8px;
     padding: 16px;
+    min-width: 0;
+    max-width: 100%;
 }
-.export-table-preview-card table th,
+
+/* 导出表格外部容器：平滑横纵向滚动条支持 */
+.export-table-preview-card .table-container {
+    overflow-x: auto !important;
+    overflow-y: auto !important;
+    max-height: 480px;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f8fafc;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 6px;
+}
+.export-table-preview-card .table-container::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+.export-table-preview-card .table-container::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 4px;
+}
+.export-table-preview-card .table-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+.export-table-preview-card .table-container::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+/* 导出中心在线预览表格：解除 table-layout: fixed，自适应列宽并杜绝表头重叠挤压与单元格截断 */
+table.data-table.export-preview-table,
+#exportPreviewTable {
+    table-layout: auto !important;
+    width: 100% !important;
+    min-width: max-content !important;
+    border-collapse: collapse !important;
+}
+
+/* 表头高优先级样式 */
+table.data-table.export-preview-table th,
+#exportPreviewThead th,
+.export-table-preview-card table th {
+    white-space: nowrap !important;
+    padding: 10px 16px !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    background: #f8fafc !important;
+    color: var(--text-muted-2, #475569) !important;
+    border-bottom: 2px solid var(--border-color, #e2e8f0) !important;
+    vertical-align: middle !important;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+table.data-table.export-preview-table th.col-right,
+#exportPreviewThead th.col-right {
+    text-align: right !important;
+}
+
+table.data-table.export-preview-table th.col-center,
+#exportPreviewThead th.col-center {
+    text-align: center !important;
+}
+
+/* 表体单元格高优先级样式：消除截断，完整呈现 SKU、品名及财务金额 */
+table.data-table.export-preview-table td,
+#exportPreviewTbody td,
 .export-table-preview-card table td {
-    font-size: 0.88rem;
-    padding: 8px 10px;
-    color: #1e293b;
+    white-space: nowrap !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    padding: 10px 16px !important;
+    font-size: 0.85rem !important;
+    color: var(--text-main, #1e293b);
+    vertical-align: middle !important;
+    border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
+    font-variant-numeric: tabular-nums;
+    box-sizing: border-box;
+}
+
+table.data-table.export-preview-table td.col-right,
+#exportPreviewTbody td.col-right {
+    text-align: right !important;
+}
+
+table.data-table.export-preview-table td.col-center,
+#exportPreviewTbody td.col-center {
+    text-align: center !important;
+}
+
+table.data-table.export-preview-table tbody tr:hover td,
+#exportPreviewTbody tr:hover td {
+    background-color: #f1f5f9;
+}
+
+/* 徽章样式增强：防止挤压或溢出 */
+table.data-table.export-preview-table td .badge,
+#exportPreviewTbody td .badge {
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    line-height: 1.2;
+    border-radius: 4px;
 }
 
 /* ============================================================

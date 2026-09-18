@@ -28,11 +28,6 @@
 | `1600px` | 供应商与归档 | `0px` | [PASS]  PASS (0px) |
 | `1600px` | 部门花销报表 | `0px` | [PASS]  PASS (0px) |
 
-## 3. 界面截图对比清单
-
-- **收据识别与复核 (Tab 1)**: [`01_saas_homepage.png`](/Users/ethan/Documents/GitHub/receipt_agent/receipt_agent/eval/browser_screenshots/01_saas_homepage.png)
-- **实时库存与价格 (Tab 2)**: [`06_saas_tab_inventory.png`](/Users/ethan/Documents/GitHub/receipt_agent/receipt_agent/eval/browser_screenshots/06_saas_tab_inventory.png)
-- **供应商与归档 (Tab 3)**: [`07_saas_tab_archive.png`](/Users/ethan/Documents/GitHub/receipt_agent/receipt_agent/eval/browser_screenshots/07_saas_tab_archive.png)
-- **部门花销报表 (Tab 4)**: [`08_saas_tab_report.png`](/Users/ethan/Documents/GitHub/receipt_agent/receipt_agent/eval/browser_screenshots/08_saas_tab_report.png)
+## 3. 对比结论
 
 **结论**:  完美符合参考站 SaaS 调性标准与全视口无溢出标准！

@@ -27,7 +27,7 @@ from app import db
 from app.auth import require_role
 
 logger = logging.getLogger("dishes")
-from app.services.costing_service import CostingService, convert_unit_quantity
+from app.services.costing_service import CostingService, convert_unit_quantity, check_unit_compatibility
 
 router = APIRouter()
 
@@ -203,13 +203,17 @@ def get_cost_analysis(
         if dish_id is not None:
             query = query.filter(db._DailyConsumptionRow.dish_id == int(dish_id))
 
+        tenant_id = _tenant_id(request)
         consumptions = query.order_by(db._DailyConsumptionRow.date.asc(), db._DailyConsumptionRow.id.asc()).all()
+        # 行级租户过滤：使用 _consumption_tenant_ok 严格阻断跨租户流水透视
+        consumptions = [c for c in consumptions if _consumption_tenant_ok(session, c, tenant_id)]
 
         # 按 dish_id 聚合
         dish_map = {}
-        # 预查所有相关的 dish
+        # 预查所有相关的 dish (严格归属当前租户)
         dish_ids = list({c.dish_id for c in consumptions})
         all_dishes = session.query(db._DishRow).filter(db._DishRow.id.in_(dish_ids)).all() if dish_ids else []
+        all_dishes = [d for d in all_dishes if db._tenant_ok(d, tenant_id)]
         dish_obj_map = {d.id: d for d in all_dishes}
 
         # 统计每个餐品的数据
@@ -288,6 +292,32 @@ def get_cost_analysis(
         total_gp_all = round(total_rev_all - total_cost_all, 2)
         overall_gm = round(total_gp_all / total_rev_all * 100, 2) if total_rev_all > 0 else 0.0
 
+        has_zero_cost_batch = False
+        estimated_batches_count = 0
+        if consumptions:
+            cons_ids = [c.id for c in consumptions]
+            all_details = (
+                session.query(db._DailyConsumptionDetailRow)
+                .filter(db._DailyConsumptionDetailRow.consumption_id.in_(cons_ids))
+                .all()
+            )
+            for dt in all_details:
+                batch = session.get(db._InventoryBatchRow, dt.batch_id) if dt.batch_id else None
+                is_est = batch.is_estimated if batch else (1 if not dt.batch_id else 0)
+                if is_est == 1:
+                    estimated_batches_count += 1
+                if dt.unit_cost <= 0.0 or dt.total_cost <= 0.0:
+                    has_zero_cost_batch = True
+
+        data_integrity_status = "complete"
+        data_integrity_msg = "所有核算食材均基于真实采购批次完成，数据完整"
+        if has_zero_cost_batch:
+            data_integrity_status = "zero_cost_alert"
+            data_integrity_msg = "今日核算中包含未录入进货价的食材（暂估成本 $0）。当前毛利率可能偏高，请提醒老板尽快补录进货单据以还原真实利润。"
+        elif estimated_batches_count > 0:
+            data_integrity_status = "estimated_partial"
+            data_integrity_msg = "部分食材因库存不足采用了历史参考价暂估核算。"
+
         summary = {
             "total_sold_quantity": total_sold,
             "total_cost": total_cost_all,
@@ -295,6 +325,10 @@ def get_cost_analysis(
             "total_gross_profit": total_gp_all,
             "overall_gross_margin_rate": overall_gm,
             "active_dishes_count": len(dish_stats),
+            "has_zero_cost_batch": has_zero_cost_batch,
+            "estimated_batches_count": estimated_batches_count,
+            "data_integrity_status": data_integrity_status,
+            "data_integrity_msg": data_integrity_msg,
         }
 
         return {
@@ -364,6 +398,8 @@ def get_daily_consumption(
         total_quantity = 0.0
         total_cost = 0.0
         total_revenue = 0.0
+        has_zero_cost_batch = False
+        estimated_batches_count = 0
 
         for r in rows:
             dish = session.get(db._DishRow, r.dish_id)
@@ -380,6 +416,14 @@ def get_daily_consumption(
             details = []
             for dt in details_rows:
                 sku = session.get(db._SkuRow, dt.sku_id)
+                batch = session.get(db._InventoryBatchRow, dt.batch_id) if dt.batch_id else None
+                is_estimated = batch.is_estimated if batch else (1 if not dt.batch_id else 0)
+                is_zero_cost = (dt.unit_cost <= 0.0 or dt.total_cost <= 0.0)
+                if is_estimated == 1:
+                    estimated_batches_count += 1
+                if is_zero_cost:
+                    has_zero_cost_batch = True
+
                 details.append({
                     "id": dt.id,
                     "sku_id": dt.sku_id,
@@ -390,6 +434,8 @@ def get_daily_consumption(
                     "total_cost": dt.total_cost,
                     "batch_id": dt.batch_id,
                     "batch_date": dt.batch_date,
+                    "is_estimated": is_estimated,
+                    "is_zero_cost": is_zero_cost,
                 })
 
             item_rev = round(r.quantity * dish_price, 2)
@@ -423,6 +469,15 @@ def get_daily_consumption(
         gross_profit = round(total_revenue - total_cost, 2)
         gross_margin_rate = round(gross_profit / total_revenue * 100, 2) if total_revenue > 0 else 0.0
 
+        data_integrity_status = "complete"
+        data_integrity_msg = "所有核算食材均基于真实采购批次完成，数据完整"
+        if has_zero_cost_batch:
+            data_integrity_status = "zero_cost_alert"
+            data_integrity_msg = "今日核算中包含未录入进货价的食材（暂估成本 $0）。当前毛利率可能偏高，请提醒老板尽快补录进货单据以还原真实利润。"
+        elif estimated_batches_count > 0:
+            data_integrity_status = "estimated_partial"
+            data_integrity_msg = "部分食材因库存不足采用了历史参考价暂估核算。"
+
         summary = {
             "total_quantity": total_quantity,
             "total_cost": total_cost,
@@ -431,6 +486,10 @@ def get_daily_consumption(
             "gross_margin_rate": gross_margin_rate,
             "records_count": len(rows),
             "void_count": sum(1 for r in rows if r.is_void == 1),
+            "has_zero_cost_batch": has_zero_cost_batch,
+            "estimated_batches_count": estimated_batches_count,
+            "data_integrity_status": data_integrity_status,
+            "data_integrity_msg": data_integrity_msg,
         }
 
         return {
@@ -545,13 +604,34 @@ def create_dish(body: DishCreate, request: Request):
         sku_ids = set()
         for ing in (body.ingredients or []):
             if ing.sku_id in sku_ids:
-                return {"status": "error", "msg": "配方中存在重复的食材 SKU"}
+                return JSONResponse(status_code=400, content={"status": "error", "msg": "配方中存在重复的食材 SKU"})
             sku_ids.add(ing.sku_id)
-            sku = session.get(db._SkuRow, ing.sku_id)
+            sku = db.scoped(
+                session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
+                db._SkuRow,
+                tenant_id
+            ).first()
             if not sku:
-                return {"status": "error", "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在"}
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "code": "TENANT_SKU_NOT_FOUND",
+                        "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在或无权使用"
+                    }
+                )
             if ing.consumption_qty <= 0:
-                return {"status": "error", "msg": "食材单份消耗量必须大于 0"}
+                return JSONResponse(status_code=400, content={"status": "error", "msg": "食材单份消耗量必须大于 0"})
+            compat, reason = check_unit_compatibility(ing.unit, sku.base_unit)
+            if not compat:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "code": "UNIT_DIMENSION_MISMATCH",
+                        "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，与配方消耗单位「{ing.unit}」无法换算。请使用相匹配的单位（例如均为重量或同为体积），或前往库存管理调整该食材的基本单位。"
+                    }
+                )
 
         now_str = db.now_iso()
         dish = db._DishRow(
@@ -626,16 +706,38 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
 
         # 更新配方
         if body.ingredients is not None:
+            tenant_id = _tenant_id(request)
             sku_ids = set()
             for ing in body.ingredients:
                 if ing.sku_id in sku_ids:
-                    return {"status": "error", "msg": "配方中存在重复的食材 SKU"}
+                    return JSONResponse(status_code=400, content={"status": "error", "msg": "配方中存在重复的食材 SKU"})
                 sku_ids.add(ing.sku_id)
-                sku = session.get(db._SkuRow, ing.sku_id)
+                sku = db.scoped(
+                    session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
+                    db._SkuRow,
+                    tenant_id
+                ).first()
                 if not sku:
-                    return {"status": "error", "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在"}
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "status": "error",
+                            "code": "TENANT_SKU_NOT_FOUND",
+                            "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在或无权使用"
+                        }
+                    )
                 if ing.consumption_qty <= 0:
-                    return {"status": "error", "msg": "食材单份消耗量必须大于 0"}
+                    return JSONResponse(status_code=400, content={"status": "error", "msg": "食材单份消耗量必须大于 0"})
+                compat, reason = check_unit_compatibility(ing.unit, sku.base_unit)
+                if not compat:
+                    return JSONResponse(
+                        status_code=400,
+                        content={
+                            "status": "error",
+                            "code": "UNIT_DIMENSION_MISMATCH",
+                            "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，与配方消耗单位「{ing.unit}」无法换算。请使用相匹配的单位（例如均为重量或同为体积），或前往库存管理调整该食材的基本单位。"
+                        }
+                    )
 
             # 删除旧配方
             session.query(db._DishIngredientRow).filter(db._DishIngredientRow.dish_id == dish.id).delete()
@@ -693,20 +795,49 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
     """批量提交当日餐品消耗（原子 FIFO 批次扣减、生成流水、扣减库存）。"""
     require_role("staff")(request)
     if not body.items:
-        return {"status": "error", "msg": "消耗餐品列表不能为空"}
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "EMPTY_CONSUMPTION_ITEMS",
+                "msg": "请至少输入一种餐品的有效份数（份数大于 0）"
+            }
+        )
 
     date_str = (body.date or "").strip() or db.now_iso()[:10]
     tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
-        created_records = []
+        # 前置原子校验：所有餐品存在且份数必须大于 0
         for item in body.items:
-            if item.quantity <= 0:
-                continue
-
             dish = session.get(db._DishRow, int(item.dish_id))
             if not dish or not db._tenant_ok(dish, tenant_id):
-                raise ValueError(f"餐品 #{item.dish_id} 不存在")
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "code": "DISH_NOT_FOUND",
+                        "msg": f"找不到餐品 #{item.dish_id} 的信息，可能已被老板停用。请刷新页面重试。"
+                    }
+                )
+            if item.quantity <= 0:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "code": "INVALID_CONSUMPTION_QUANTITY",
+                        "msg": f"餐品「{dish.name}」输入的售出份数必须大于 0，不能填负数或 0",
+                        "detail": {
+                            "dish_id": item.dish_id,
+                            "rejected_value": item.quantity,
+                            "user_action_guide": "请修改为实际售出的正数（如 1 或 0.5）后再点击提交"
+                        }
+                    }
+                )
+
+        created_records = []
+        for item in body.items:
+            dish = session.get(db._DishRow, int(item.dish_id))
 
             ing_rows = (
                 session.query(db._DishIngredientRow)
@@ -719,9 +850,13 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
 
             for ing in ing_rows:
                 total_qty_needed = round(ing.consumption_qty * item.quantity, 4)
-                sku = session.get(db._SkuRow, ing.sku_id)
+                sku = db.scoped(
+                    session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
+                    db._SkuRow,
+                    tenant_id
+                ).first()
                 if not sku:
-                    continue
+                    raise ValueError(f"餐品「{dish.name}」配方中的食材 SKU #{ing.sku_id} 不存在或无权使用")
 
                 cost, details_list = CostingService.deduct_consumption_fifo(
                     session=session,
@@ -794,9 +929,36 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 "consumption_ids": created_records,
             },
         }
+    except ValueError as e:
+        session.rollback()
+        err_msg = str(e)
+        if "跨量纲单位不可换算" in err_msg:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "status": "error",
+                    "code": "UNIT_CONVERSION_ERROR",
+                    "msg": f"食材单位对不上（比如不能拿“份”换“斤”）。请统一改用重量或联系老板检查。详细：{err_msg}"
+                }
+            )
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "CONSUMPTION_FAILED",
+                "msg": err_msg
+            }
+        )
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"消耗扣减失败: {str(e)}"}
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": "SERVER_ERROR",
+                "msg": f"提交消耗失败: {str(e)}"
+            }
+        )
     finally:
         session.close()
 

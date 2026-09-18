@@ -48,12 +48,36 @@ UNIT_VOLUME_TO_L = {
     "毫升": 0.001,
 }
 
+DIMENSION_WEIGHT = set(UNIT_WEIGHT_TO_KG.keys())
+DIMENSION_VOLUME = set(UNIT_VOLUME_TO_L.keys())
+DIMENSION_COUNT = {
+    "份", "件", "个", "個", "只", "隻", "条", "條", "包", "瓶", "罐", "盒", "碗", "杯", "碟", "支", "粒"
+}
+
+
+def check_unit_compatibility(u1: str, u2: str) -> Tuple[bool, str]:
+    """校验两个单位是否同量纲可换算。"""
+    u1_norm = (u1 or "").strip().lower()
+    u2_norm = (u2 or "").strip().lower()
+    if not u1_norm or not u2_norm:
+        return False, "单位不能为空"
+    if u1_norm == u2_norm:
+        return True, ""
+    w1, w2 = u1_norm in UNIT_WEIGHT_TO_KG, u2_norm in UNIT_WEIGHT_TO_KG
+    if w1 and w2:
+        return True, ""
+    v1, v2 = u1_norm in UNIT_VOLUME_TO_L, u2_norm in UNIT_VOLUME_TO_L
+    if v1 and v2:
+        return True, ""
+    return False, f"单位「{u1}」与「{u2}」属于不同度量体系（如重量与计件），无法自动折算"
+
 
 def convert_unit_quantity(qty: float, from_unit: str, to_unit: str) -> float:
     """将数量从 from_unit 转换为 to_unit。
     
     若两个单位处于同一量纲（重量或体积），执行精准转换；
-    若单位相同或无法转换（如件、份等计件单位），保持原数值。
+    若单位完全相同，保持原数值；
+    若跨量纲或无法折算，抛出明确 ValueError。
     """
     if qty == 0.0:
         return 0.0
@@ -73,12 +97,14 @@ def convert_unit_quantity(qty: float, from_unit: str, to_unit: str) -> float:
         l_qty = qty * UNIT_VOLUME_TO_L[u_from]
         return round(l_qty / UNIT_VOLUME_TO_L[u_to], 6)
 
-    # 无法换算则原样返回
-    return float(qty)
+    # 跨量纲不可换算，坚决阻断
+    raise ValueError(f"跨量纲单位不可换算: {from_unit} -> {to_unit}")
 
 
 class CostingService:
     """FIFO 批次库存与成本核算服务。"""
+
+    convert_unit_quantity = staticmethod(convert_unit_quantity)
 
     @staticmethod
     def record_inbound_batch(

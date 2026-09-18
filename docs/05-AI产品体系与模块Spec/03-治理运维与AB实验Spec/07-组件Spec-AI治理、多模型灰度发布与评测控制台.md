@@ -2,7 +2,7 @@
 
 > **模块定位**：系统 AI 基础设施治理与质量保证控制台。承载多模型引擎热插拔适配（本地 CLI / 云端网关）、精细化灰度发布分流路由（按单据概率 / 按供应商 Hash），以及基于 57 张香港真实复杂单据的 **黄金样本基准评测中心**。  
 > **对标 14 步方案**：`step6-技术可行性`、`step9-AI技术方案`、`step12-测试验收`、`step14-上线迭代`。  
-> **实现代码**：[`api_admin.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_admin.py)、[`app/llm.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/llm.py)、[`templates/admin.html`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/templates/admin.html)  
+> **实现代码**：[`api_admin.py`](../../../demo/app/api_admin.py)、[`app/llm.py`](../../../demo/app/llm.py)、[`templates/index.html`](../../../demo/templates/index.html)（Admin 控制台内嵌于主界面 Tab）  
 
 ---
 
@@ -17,7 +17,7 @@
 
 ---
 
-## 2. 模型引擎可插拔统一抽象 ([`app/llm.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/llm.py))
+## 2. 模型引擎可插拔统一抽象 ([`app/llm.py`](../../../demo/app/llm.py))
 
 所有接入模型全部继承自 LangChain 的 `BaseChatModel`，对编排管线暴露统一的 `invoke` 接口：
 
@@ -37,31 +37,42 @@
 
 ---
 
-## 3. 灰度发布分流机制 (Canary Routing Spec)
+## 3. 灰度发布分流机制与优先级仲裁 (Routing & Priority Spec)
 
-系统在管理后台提供常规生产组（Production）与灰测组（Canary）的完全参数隔离，支持两种分流策略：
+系统在管理后台提供常规生产组（Production）、灰测金丝雀组（Canary）以及 A/B 科学实验组（A/B Experiment）的分流体系。为了防止多套路由规则同时开启时产生流量冲突与统计学污染，系统严格遵循 **P0 > P1 > P2 分流优先级仲裁机制**：
 
 ```mermaid
 flowchart TD
-    Req[进货单据解析请求] --> CheckEnable{后台是否开启灰度?<br/>grey_enabled == true}
+    Req[进货单据解析请求] --> CheckAB{P0 仲裁: 是否存在运行态 A/B 实验?<br/>status == 'running'}
     
-    CheckEnable -->|否| RouteProd[100% 走常规组引擎]
-    CheckEnable -->|是| CheckMode{灰度分配模式 grey_assign_mode}
+    CheckAB -->|是| RouteAB[P0 优先: 进入 A/B 实验科学分组<br/>按 target_percent 划入 Control / Treatment<br/>*强制挂起金丝雀灰测，避免样本群体污染*]
+    CheckAB -->|否| CheckCanary{P1 仲裁: 是否开启金丝雀灰度?<br/>grey_enabled == true}
     
-    CheckMode -->|模式1: receipt (单据概率)| Rand[生成随机数 random.random * 100]
-    Rand --> HitRand{随机数 < 设定概率%?}
-    HitRand -->|是| RouteGrey[命中灰测组引擎]
-    HitRand -->|否| RouteProd
+    CheckCanary -->|是| CheckMode{灰度分配模式 grey_assign_mode}
+    CheckMode -->|模式1: receipt 单据概率| Rand[生成随机数 random.random * 100]
+    Rand --> HitRand{随机数 < grey_percent?}
+    HitRand -->|是| RouteGrey[P1 命中: 灰测组金丝雀引擎]
+    HitRand -->|否| RouteProd[P2 兜底: 常规组生产引擎]
     
-    CheckMode -->|模式2: supplier (供应商Hash)| HashCalc[计算 md5(supplier_name) % 100]
-    HashCalc --> HitHash{Hash桶位 < 设定概率%?}
+    CheckMode -->|模式2: supplier 供应商Hash| HashCalc[计算 md5 supplier_name % 100]
+    HashCalc --> HitHash{Hash桶位 < grey_percent?}
     HitHash -->|是| RouteGrey
     HitHash -->|否| RouteProd
+    
+    CheckCanary -->|否| RouteProd
 ```
 
-#### 双模式设计考量：
-1. **单据随机模式 (`receipt`)**：适合大流量下无偏探索模型性能，评估全品类泛化能力；
-2. **供应商 Hash 模式 (`supplier`)**：保证同一供应商的历史单据始终由同一组模型处理，保证识别习惯与 VendorMemory 的稳定性与连贯性。
+#### 分流仲裁与规则优先级规范：
+1. **P0 绝对优先 · 运行态 A/B 科学实验**：
+   - 当后台存在状态为 `running` 的 A/B 实验时，流量分配完全由该实验的 `target_percent` 决定，划分为 Control（对照组）或 Treatment（实验组）。
+   - **金丝雀灰测挂起约束**：A/B 实验进行期间，金丝雀灰测分流被强制挂起。这是为了保证科学实验的双样本统计因果推断（双侧 z 检验）不受外部灰度扰动污染。
+2. **P1 次高优先级 · 金丝雀灰度发布 (Canary Rollout)**：
+   - 仅在无运行态 A/B 实验且管理员开启 `grey_enabled` 时生效。
+   - **单据随机模式 (`receipt`)**：适合大流量下无偏探索模型性能，评估全品类泛化能力；
+   - **供应商 Hash 模式 (`supplier`)**：保证同一供应商的历史单据始终由同一组模型处理，保证识别习惯与 VendorMemory 的稳定性与连贯性。
+3. **P2 兜底基准 · 常规生产引擎 (Production Baseline)**：
+   - 未命中任何实验或灰度规则时，单据走稳定版本常规生产引擎。
+
 
 ---
 

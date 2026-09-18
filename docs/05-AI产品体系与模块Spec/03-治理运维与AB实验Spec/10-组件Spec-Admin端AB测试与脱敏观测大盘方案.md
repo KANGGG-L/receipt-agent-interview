@@ -2,7 +2,7 @@
 
 > **模块定位**：面向平台管理员（Admin）与算法工程师的实验观测与决策控制台。在严格遵循香港《个人资料（私隐）条例》(PDPO) 与多租户商业数据隔离的前提下，提供**端到端数据脱敏（Data Desensitization/Masking）、A/B 实验组指标实时对比、统计学显著性判定、单据抽样下钻以及一键推全/秒级回滚控制台**。  
 > **对标 14 步方案**：`step7-指标体系`、`step8-产品方案`、`step9-AI技术方案`、`step13-安全合规`、`step14-上线迭代`。  
-> **实现代码**：[`app/api_admin.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_admin.py)、[`ai_registry/canary/`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/ai_registry/canary/)、`templates/index.html` (Admin A/B 实验大盘视图)  
+> **实现代码**：[`app/api_admin.py`](../../../demo/app/api_admin.py)、[`ai_registry/canary/`](../../../ai_registry/canary/)、`templates/index.html` (Admin A/B 实验大盘视图)  
 
 ---
 
@@ -101,12 +101,45 @@ flowchart LR
 
 | 方法 | 路径 | 入参 | 返回内容 (全部经过脱敏过滤) | 鉴权 |
 | :--- | :--- | :--- | :--- | :--- |
-| `GET` | `/api/admin/canary/experiments` | 无 | 获取所有实验列表、当前状态与流量分配比例 | **Admin 独占** |
+| `GET` | `/api/admin/canary/history` | 无 | 获取历史灰度发布与放量履历（含推全、回滚、灰度配置调整等审计记录与单据统计） | **Admin 独占** |
+| `GET` | `/api/admin/grey-test/samples` | `scope: str` (`all`/`grey_only`/`prod_only`/`modified`/`approved`) | 灰测单据流样本观测列表及过滤后统计 | **Admin 独占** |
+| `GET` | `/api/admin/experiments` | 无 | 获取所有 A/B 科学实验列表（含状态、假设、胜出指标、组别配比与生命周期时间戳） | **Admin 独占** |
+| `GET` | `/api/admin/experiments/{id}` | `id: int` | 获取单个实验全景档案（含元数据、守护规则告警 events 与配置快照 snapshots） | **Admin 独占** |
+| `GET` | `/api/admin/experiments/{id}/samples` | `scope: str` (`all`/`control`/`treatment`) | 实验关联单据样本明细流（单据 ID、组别、模型、准确率、反馈比对、分配时间） | **Admin 独占** |
 | `GET` | `/api/admin/canary/experiments/{id}/stats` | `id: str` | 对照组 vs 实验组指标汇总、Delta、p-value 及统计结论 | **Admin 独占** |
-| `GET` | `/api/admin/canary/experiments/{id}/samples` | `page: int, limit: int` | 获取脱敏后的单据抽样对比列表（含脱敏切片与两组结果） | **Admin 独占** |
 | `POST` | `/api/admin/canary/experiments/{id}/traffic` | `percent: int, mode: str` | 动态无级调整灰度比例 (0~100%) 与分流策略 | **Admin 独占** |
 | `POST` | `/api/admin/canary/experiments/{id}/promote` | `id: str` | **一键推全**：自动备份当前配置快照并将灰测组推至生产 | **Admin 独占** |
 | `POST` | `/api/admin/canary/experiments/{id}/rollback` | 无 | **秒级回滚**：从最近一次快照恢复生产参数 (<50ms) | **Admin 独占** |
+
+---
+
+## 4.1 历史灰度与 A/B 深度档案观测机制
+
+为满足管理员与算法科学家全生命周期复盘需求，系统在「AI 效果观测与评测中心」提供两套深度观测组件：
+
+### 1. 历史灰度发布与放量履历 (Canary Lifecycle Timeline)
+- **数据源**：聚合系统审计日志 `system_audit_log` 中所有灰度生命周期动作（`promote_grey_config`、`rollback_engine_config`、`set_engine_config`），结合 `ai_decision_log` 实时联查灰度分流单据与决策统计。
+- **展示指标**：
+  - 累计发布事件总数 (Total Events)
+  - 推全发布次数 (Promote Count)
+  - 紧急回滚次数 (Rollback Count)
+  - 承载灰度单据总量 (Total Grey Receipts)
+- **履历明细表**：展示动作时间、操作事件类别、操作人账号、变更前后配置核心参数（模型、灰度比例、分流策略）、生效单据数与安全状态标签。
+
+### 2. A/B 实验深度全景档案 (A/B Deep Dossier & Ledger)
+- **元数据全景**：展示实验假设、目标胜出指标、目标分流比例、最小有效样本量 ($N \ge 30$)、开始/结束时间、归档人与归档原因。
+- **组别指标 Side-by-Side 深度对比**：
+  - 关联单据量 (Receipts)
+  - 决策样本量 (Decisions N)
+  - 综合抽取准确率 (Accuracy)
+  - 人工复核修改率 (Edit Rate)
+  - 幻觉/未收录率 (Hallucination Rate)
+  - 审核采纳率 (Audit Adoption Rate)
+  - 样本充分性校验 ($N \ge 30$) 与双侧假设检验置信度标识
+- **单据级样本明细流 (Experiment Sample Ledger)**：
+  - 支持按全部分组、仅对照组 (Control)、仅实验组 (Treatment) 细分过滤。
+  - 列出单据编号、分配组别、脱敏供应商、金额、生效模型、解析准确率、人工反馈标签与分流分配时间戳。
+- **守护告警与快照留痕**：实时记录实验运行期间触发的置信度门禁拦截、自动保护回滚或快照存储。
 
 ---
 

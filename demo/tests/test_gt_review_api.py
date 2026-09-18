@@ -28,7 +28,11 @@ import sys
 os.environ.setdefault("DB_PATH", "/tmp/receipt_demo_gt_review.db")
 os.environ.setdefault("AUTH_ENABLED", "0")
 
-DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_candidates = [
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..")),
+    os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo")),
+]
+DEMO_DIR = next(c for c in _candidates if os.path.isfile(os.path.join(c, "templates", "index.html")))
 SCRIPTS_DIR = os.path.join(DEMO_DIR, "scripts")
 for _p in (SCRIPTS_DIR, DEMO_DIR):
     if _p not in sys.path:
@@ -481,7 +485,7 @@ def test_confirm_blank_total_with_explicit_flag_succeeds(evalset_env, client):
 # 8. 批量确认按钮：风险显式化（前端静态断言，模式同 tests/test_u10）
 # ------------------------------------------------------------------
 def test_batch_confirm_ui_discloses_unreviewed_risk():
-    demo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    demo_dir = DEMO_DIR
     with open(os.path.join(demo_dir, "templates", "evalset.html"), encoding="utf-8") as f:
         html = f.read()
     with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
@@ -510,7 +514,7 @@ def test_batch_confirm_ui_discloses_unreviewed_risk():
 # 9. 显式翻页按钮：必须走 IIFE 内的包装函数（inline onclick 拿不到局部 pos）
 # ------------------------------------------------------------------
 def test_explicit_paging_buttons_use_wrapper_functions():
-    demo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    demo_dir = DEMO_DIR
     with open(os.path.join(demo_dir, "templates", "evalset.html"), encoding="utf-8") as f:
         html = f.read()
     with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
@@ -530,7 +534,7 @@ def test_explicit_paging_buttons_use_wrapper_functions():
 #     与店员界面不一致），单张确认唯一入口是工作台 /evalset/workbench/<sid>
 # ------------------------------------------------------------------
 def test_evalset_queue_page_is_navigation_only_single_edit_surface():
-    demo_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    demo_dir = DEMO_DIR
     with open(os.path.join(demo_dir, "templates", "evalset.html"), encoding="utf-8") as f:
         html = f.read()
     with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
@@ -756,26 +760,22 @@ def _read_demo_file(rel_path):
 
 
 def test_workbench_embedding_does_not_duplicate_app_shell():
-    """工作台内嵌不得重复画一套应用外壳（用户反馈：GT 抽检里核对会冒出第二个 sider）。
+    """工作台内嵌与闭环融合：不得重复画一套应用外壳（用户反馈：GT 抽检里核对会冒出第二个 sider）。
 
-    三处约束缺一不可：
-      1. tab-evalset 的 iframe 懒加载——写死 src="/evalset" 时，复用 index.html 的工作台
-         会在每一层嵌套里再加载一个 /evalset，形成 iframe 递归；
+    Task 3 闭环约束：
+      1. 移除全局内嵌 iframe 递归风险，通过直达链接在新标签页独立打开 /evalset；
       2. 适配器隐藏 .sidebar 与 .breadcrumb-bar；
-      3. 激活该页签时把内框重置回 /evalset 列表——工作台会在同一 iframe 内导航走列表，
-         没有这条就没有返回路径。
+      3. 灰测样本观测卡片与 Modal 均支持直接跳转 GT 标注工作台；
+      4. main.js 动态组装 mModalWorkbenchLink 单据标注工作台链接。
     """
     html = _read_demo_file("templates/index.html")
-    seg = html[html.index('id="tab-evalset"'):]
-    iframe_tag = seg[:seg.index(">", seg.index("<iframe")) + 1]
-    assert 'src="about:blank"' in iframe_tag, \
-        "内嵌 iframe 必须懒加载，否则每层工作台都会递归再加载 /evalset"
-    assert 'data-src="/evalset"' in iframe_tag, "真实地址须放在 data-src 供激活时载入"
+    assert 'id="mModalWorkbenchLink"' in html, "Modal 须提供跳转 GT 标注工作台链接"
+    assert 'href="/evalset"' in html, "观测台须提供直接打开 GT 抽检台入口"
+    assert '<iframe src="about:blank" data-src="/evalset"' not in html, "已移除冗余内嵌 iframe"
 
     adapter = _read_demo_file("static/js/eval_workbench.js")
     assert "'.app-wrapper > .sidebar'" in adapter, "工作台须隐藏复用来的侧边栏"
     assert "'.breadcrumb-bar'" in adapter, "工作台须隐藏复用来的顶部面包屑"
 
     main_js = _read_demo_file("static/js/main.js")
-    guard = main_js[main_js.index("targetId === 'tab-evalset'"):]
-    assert "data-src" in guard[:500], "缺少「再点 GT 抽检回到列表」的重置逻辑"
+    assert "mModalWorkbenchLink" in main_js, "Modal 打开时须动态组装单据工作台链接"

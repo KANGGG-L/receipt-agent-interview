@@ -2,7 +2,7 @@
 
 > **模块定位**：餐饮经营管理者的决策大脑。承载进货成本按部门/成本中心自动拆解归集、月度采购支出趋势下钻分析、TOP 采购品类环比波动监控，以及基于自然语言对话（支持粤语/俗称）的 **AI 智能查账与经营决策 Agent**。  
 > **对标 14 步方案**：`step4-用户画像`、`step8-产品方案`、`step11-PRD定稿`。  
-> **实现代码**：[`api_finance.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/api_finance.py)、[`chains/query_chain.py`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/app/chains/query_chain.py)、[`templates/index.html`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/demo/templates/index.html) (Tab 4)  
+> **实现代码**：[`api_finance.py`](../../../demo/app/api_finance.py)、[`chains/query_chain.py`](../../../demo/app/chains/query_chain.py)、[`templates/index.html`](../../../demo/templates/index.html) (Tab 4)  
 
 ---
 

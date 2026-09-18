@@ -8,11 +8,11 @@
 
 | 编号 | 文档名称 | 核心内容定位 |
 | :--- | :--- | :--- |
-| **Spec 11** | [`11-OCR全链路Gap治理与逐项修复计划.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/11-OCR%E5%85%A8%E9%93%BE%E8%B7%AFGap%E6%B2%BB%E7%90%86%E4%B8%8E%E9%80%90%E9%A1%B9%E4%BF%AE%E5%A4%8D%E8%AE%A1%E5%88%92.md) | 8 大 Gap 逐轮闭环交付计划与实施历史留证 |
-| **Spec 12** | [`12-阶段性产品方向回顾与架构校准报告.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/12-%E9%98%B6%E6%AE%B5%E6%80%A7%E4%BA%A7%E5%93%81%E6%96%B9%E5%90%91%E5%9B%9E%E9%A1%BE%E4%B8%8E%E6%9E%B6%E6%9E%84%E6%A0%A1%E5%87%86%E6%8A%A5%E5%91%8A.md) | 对标 FR-1~12 与 NFR-1~6 的产品架构校准审查 |
-| **Spec 13** | [`13-OCR全链路Workflow与架构全景Spec.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/13-OCR%E5%85%A8%E9%93%BE%E8%B7%AFWorkflow%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%85%A8%E6%99%AFSpec.md) | 端到端 6 阶段流水线、三层互不信任体系、线性编排 |
-| **Spec 14** | [`14-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/14-OCR%E5%85%A8%E9%93%BE%E8%B7%AF8%E5%A4%A7Gap%E4%B8%8E%E9%9B%B6%E6%95%A3%E9%97%AE%E9%A2%98%E6%B7%B1%E5%BA%A6%E5%A4%8D%E7%9B%98%28STAR%E6%A8%A1%E5%BC%8F%29.md) | 8 大 Gap + HEIC/SKU 零散问题的 STAR 深度解构 |
-| **Spec 15** | [`15-AI产品经理OCR面试高频攻防与实战金句库.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/15-AI%E4%BA%A7%E5%93%81%E7%BB%8F%E7%90%86OCR%E9%9D%A2%E8%AF%95%E9%AB%98%E9%A2%91%E6%94%BB%E9%98%B2%E4%B8%8E%E5%AE%9E%E6%88%98%E9%87%91%E5%8F%A5%E5%BA%93.md) | 面试官高频 4 大必问考题、回答结构与降维打击金句 |
+| **Spec 11** | [`04-OCR全链路Gap治理与逐项修复计划.md`](04-OCR全链路Gap治理与逐项修复计划.md) | 8 大 Gap 逐轮闭环交付计划与实施历史留证 |
+| **Spec 12** | [`05-阶段性产品方向回顾与架构校准报告.md`](05-阶段性产品方向回顾与架构校准报告.md) | 对标 FR-1~12 与 NFR-1~6 的产品架构校准审查 |
+| **Spec 13** | [`01-OCR全链路Workflow与架构全景Spec.md`](01-OCR全链路Workflow与架构全景Spec.md) | 端到端 6 阶段流水线、三层互不信任体系、线性编排 |
+| **Spec 14** | [`02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](02-OCR全链路8大Gap与零散问题深度复盘%28STAR模式%29.md) | 8 大 Gap + HEIC/SKU 零散问题的 STAR 深度解构 |
+| **Spec 15** | [`03-AI产品经理OCR面试高频攻防与实战金句库.md`](03-AI产品经理OCR面试高频攻防与实战金句库.md) | 面试官高频 4 大必问考题、回答结构与降维打击金句 |
 
 ---
 
@@ -35,6 +35,6 @@
 
 ## 备战面试推荐学习顺序
 
-1. **第一步（整体架构）**：精读 [`13-OCR全链路Workflow与架构全景Spec.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/13-OCR%E5%85%A8%E9%93%BE%E8%B7%AFWorkflow%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%85%A8%E6%99%AFSpec.md)，掌握三层互不信任体系（Zero-Trust）与为什么选择确定性线性编排；
-2. **第二步（项目深挖与踩坑案例）**：精读 [`14-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E4%BD%93%E7%B3%BB%E4%B8%8E%E6%A8%A1%E5%9D%97Spec/14-OCR%E5%85%A8%E9%93%BE%E8%B7%AF8%E5%A4%A7Gap%E4%B8%8E%E9%9B%B6%E6%95%A3%E9%97%AE%E9%A2%98%E6%B7%B1%E5%BA%A6%E5%A4%8D%E7%9B%98%28STAR%E6%A8%A1%E5%BC%8F%29.md)，挑选 2-3 个最典型的案例（如 SKU 流水号剥离、折让押金算术升级、花码置信度压降）作为面试深挖亮点；
-3. **第三步（回答技巧与金句演练）**：背诵 [`15-AI产品经理OCR面试高频攻防与实战金句库.md`](file:///Users/ethan/Documents/GitHub/receipt-agent-interview/docs/05-AI%E4%BA%A7%E5%93%81%E7%BB%8F%E7%90%86OCR%E9%9D%A2%E8%AF%95%E9%AB%98%E9%A2%91%E6%94%BB%E9%98%B2%E4%B8%8E%E5%AE%9E%E6%88%98%E9%87%91%E5%8F%A5%E5%BA%93.md) 中的 4 大核心金句与标准问答结构。
+1. **第一步（整体架构）**：精读 [`01-OCR全链路Workflow与架构全景Spec.md`](01-OCR全链路Workflow与架构全景Spec.md)，掌握三层互不信任体系（Zero-Trust）与为什么选择确定性线性编排；
+2. **第二步（项目深挖与踩坑案例）**：精读 [`02-OCR全链路8大Gap与零散问题深度复盘(STAR模式).md`](02-OCR全链路8大Gap与零散问题深度复盘%28STAR模式%29.md)，挑选 2-3 个最典型的案例（如 SKU 流水号剥离、折让押金算术升级、花码置信度压降）作为面试深挖亮点；
+3. **第三步（回答技巧与金句演练）**：背诵 [`03-AI产品经理OCR面试高频攻防与实战金句库.md`](03-AI产品经理OCR面试高频攻防与实战金句库.md) 中的 4 大核心金句与标准问答结构。

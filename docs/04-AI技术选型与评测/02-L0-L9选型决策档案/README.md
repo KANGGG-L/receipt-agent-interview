@@ -9,16 +9,16 @@
 
 | 阶梯 | 架构路径 | 评测状态 | 决策结论 | 核心指标 | 决策文档 |
 | :---: | :--- | :---: | :---: | :---: | :--- |
-| **L0** | Tesseract + 正则规则 | [PASS]  已测 | [ALERT]  **否决** | 成功率 3.1% / 无法处理复杂手写版面 | [L0-传统OCR-Tesseract(否决).md](L0-传统OCR-Tesseract(否决).md) |
-| **L1** | PaddleOCR + 文本 LLM | [PASS]  已测 | [PASS]  **离线备选** | 成功率 84.0% / 零出网本地部署方案 | [L1-本地PaddleOCR-LLM(备选).md](L1-本地PaddleOCR-LLM(备选).md) |
+| **L0** | Tesseract + 正则规则 | [PASS]  已测 | [ALERT]  **否决** | 成功率 3.1% / 无法处理复杂手写版面 | [L0-传统OCR-Tesseract(否决).md](L0-传统OCR-Tesseract%28否决%29.md) |
+| **L1** | PaddleOCR + 文本 LLM | [PASS]  已测 | [PASS]  **离线备选** | 成功率 84.0% / 零出网本地部署方案 | [L1-本地PaddleOCR-LLM(备选).md](L1-本地PaddleOCR-LLM%28备选%29.md) |
 | **L2** | PaddleOCR + Prompt 调优 | [PASS]  已测 | [WARN]  **可优化** | 成功率 87.7% / 耗时 30.9s | [L2-PaddleOCR-Prompt调优.md](L2-PaddleOCR-Prompt调优.md) |
-| **L3** | 商业云 OCR + LLM | [FAIL]  未测 |  **规划中** | Textract / Azure DI | [L3-商业云OCR(规划).md](L3-商业云OCR(规划).md) |
-| **L4** | **云端多模态 VLM 直识** | [PASS]  已测 | [PASS]  **定稿冠军** | **成功率 100% / P50 9.0s / 成本 HK$0.40** | [L4-多模态VLM直识(定稿冠军).md](L4-多模态VLM直识(定稿冠军).md) |
-| **L5** | 多模态 + 3 模板路由 | [PASS]  已测 | [ALERT]  **否决** | 成功率 78.5% / 引入两轮调用级联错误 | [L5-多模态3模板路由(否决).md](L5-多模态3模板路由(否决).md) |
-| **L6** | 多模态 + 交叉审核 Agent | [PASS]  已测 | [WARN]  **条件启用** | 成功率 82.2% / Token翻倍，仅高疑点触发 | [L6-多模态交叉审核Agent(条件启用).md](L6-多模态交叉审核Agent(条件启用).md) |
-| **L7** | 看想分离（OCR 读图 + LLM） | [PASS]  已测 | [ALERT]  **否决** | 成功率 26.4% / 丢失版面空间语义 | [L7-看想分离架构(否决).md](L7-看想分离架构(否决).md) |
-| **L8** | 端侧本地 VLM | [WARN]  部分 |  **探索中** | CodeBuddy CLI / 离线大模型 | [L8-端侧本地VLM(探索).md](L8-端侧本地VLM(探索).md) |
-| **L9** | 版面感知 OCR-Free | [FAIL]  未测 |  **规划中** | Donut / LayoutLMv3 | [L9-版面感知OCR-Free(规划).md](L9-版面感知OCR-Free(规划).md) |
+| **L3** | 商业云 OCR + LLM | [FAIL]  未测 |  **规划中** | Textract / Azure DI | [L3-商业云OCR(规划).md](L3-商业云OCR%28规划%29.md) |
+| **L4** | **云端多模态 VLM 直识** | [PASS]  已测 | [PASS]  **定稿冠军** | **成功率 100% / P50 9.0s / 成本 HK$0.40** | [L4-多模态VLM直识(定稿冠军).md](L4-多模态VLM直识%28定稿冠军%29.md) |
+| **L5** | 多模态 + 3 模板路由 | [PASS]  已测 | [ALERT]  **否决** | 成功率 78.5% / 引入两轮调用级联错误 | [L5-多模态3模板路由(否决).md](L5-多模态3模板路由%28否决%29.md) |
+| **L6** | 多模态 + 交叉审核 Agent | [PASS]  已测 | [WARN]  **条件启用** | 成功率 82.2% / Token翻倍，仅高疑点触发 | [L6-多模态交叉审核Agent(条件启用).md](L6-多模态交叉审核Agent%28条件启用%29.md) |
+| **L7** | 看想分离（OCR 读图 + LLM） | [PASS]  已测 | [ALERT]  **否决** | 成功率 26.4% / 丢失版面空间语义 | [L7-看想分离架构(否决).md](L7-看想分离架构%28否决%29.md) |
+| **L8** | 端侧本地 VLM | [WARN]  部分 |  **探索中** | CodeBuddy CLI / 离线大模型 | [L8-端侧本地VLM(探索).md](L8-端侧本地VLM%28探索%29.md) |
+| **L9** | 版面感知 OCR-Free | [FAIL]  未测 |  **规划中** | Donut / LayoutLMv3 | [L9-版面感知OCR-Free(规划).md](L9-版面感知OCR-Free%28规划%29.md) |
 
 ---
 

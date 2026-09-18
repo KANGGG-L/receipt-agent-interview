@@ -94,8 +94,11 @@ def main():
             skipped += 1
             continue
 
-        # 去重：同供应商同日期已导入 → 跳过
+        # 去重：同供应商同日期已导入 → 跳过（幂等补标基准集成员，支持看板恢复标记）
         if (supplier, date) in dedup_keys:
+            for r in db.list_receipt_rows(tenant_id=tenant_id):
+                if r.supplier_name == supplier and (r.receipt_date or "") == date:
+                    db.set_golden_sample(r.id, 1, tenant_id)
             skipped += 1
             continue
 
@@ -112,6 +115,7 @@ def main():
         # 建收据（edited；P3-5：携带目标租户）
         rid = db.create_receipt(supplier_name=supplier, status="edited",
                                 tenant_id=tenant_id)
+        db.set_golden_sample(rid, 1, tenant_id)  # 黄金基准集成员标记
         manifest_row = meta.get(img, {})
         doc_form = DOC_FORM_MAP.get(manifest_row.get("doc_form", ""), "printed_delivery_note")
         layout = manifest_row.get("layout_type", "")

@@ -49,7 +49,7 @@
   2. **Chroma 租户硬隔离 RAG**：向量检索强制注入 `{"$and": [{"tenant_id": Tid}]}` 物理过滤，跨租户向量零命中；
   3. **最小权限数据投影**：审核 Agent 仅下发当前单据字段与本店同物料均价；
   4. **反向渗透白名单过滤器**：Pydantic 契约白名单过滤非 Schema 字段，阻断敏感关键词。
-- **R (结果)**：通过越权矩阵回归测试（`test_tenant_overreach_matrix.py`），跨租户数据泄漏零风险。
+- **R (结果)**：通过越权矩阵回归测试（`tests/test_tenant_isolation.py`），跨租户数据泄漏零风险。
 
 ---
 

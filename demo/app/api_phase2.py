@@ -201,6 +201,14 @@ def _parse_props(raw):
         return {}
 
 
+def _is_telemetry_probe_event(event_type: str) -> bool:
+    """过滤自动化测试探针、会话探测等非业务行为事件，确保业务观测大盘口径纯净。"""
+    if not event_type:
+        return True
+    et = str(event_type).lower()
+    return et.startswith("qa_") or "probe" in et or et.startswith("test_") or et == "totally_unknown_evt_zzz"
+
+
 @router.get("/api/analytics/recovery-summary")
 def recovery_summary(request: Request, tenant_id: Optional[str] = None):
     require_admin(request)
@@ -231,6 +239,8 @@ def recovery_summary(request: Request, tenant_id: Optional[str] = None):
             rows = [r for r in all_rows if (getattr(r, "tenant_id", None) or "default") == effective_tenant]
         else:
             rows = all_rows
+        # 排除非业务探测/测试探针事件（如 qa_fe_probe, verify_session_probe 等）
+        rows = [r for r in rows if not _is_telemetry_probe_event(r.event_type)]
     finally:
         s.close()
 

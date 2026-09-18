@@ -171,22 +171,60 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+# 识别腿默认 provider：阿里云百炼 DashScope（OpenAI 兼容通道，与 llm.DASHSCOPE_COMPATIBLE_URL 一致）。
+# 用户决策（2026-09-15）：识别腿默认切至 DashScope qwen3.5-omni-flash；
+# 审核腿保持 SiliconFlow GLM-4.5V（跨厂商异构，Gap A3 不变）。
+# 必须锁 recognition_engine="openai"：模型名以 qwen 开头，引擎类型非 openai 时
+# 会被 llm._resolve_engine 判去 QwenChatModel 原生 SDK 通道。
+DASHSCOPE_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+DASHSCOPE_DEFAULT_REC_MODEL = "qwen3.5-omni-flash"
+
+
+def _rec_provider_env() -> tuple:
+    """识别腿 (base_url, api_key) 的 .env 成对解析。
+
+    成对返回是为了避免 base 与 key 跨 provider 错配（取到 A 家地址 + B 家密钥必然 401）。
+    优先级：
+      1. DASHSCOPE_BASE_URL + DASHSCOPE_API_KEY（显式 DashScope）
+      2. OPENAI_REC_BASE_URL + OPENAI_REC_API_KEY / OPENAI_API_KEY（显式识别腿覆盖）
+      3. 仅有 DASHSCOPE_API_KEY → DashScope 官方 base（默认 provider）
+      4. OPENAI_BASE_URL + OPENAI_API_KEY（历史兼容）
+      5. 无任何密钥 → DashScope 官方 base 占位
+    """
+    ds_base = (os.environ.get("DASHSCOPE_BASE_URL") or "").strip()
+    ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+    rec_base = (os.environ.get("OPENAI_REC_BASE_URL") or "").strip()
+    rec_key = (os.environ.get("OPENAI_REC_API_KEY") or "").strip()
+    oa_base = (os.environ.get("OPENAI_BASE_URL") or "").strip()
+    oa_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+
+    if ds_base:
+        return ds_base, ds_key
+    if rec_base:
+        return rec_base, (rec_key or oa_key)
+    if ds_key:
+        return DASHSCOPE_DEFAULT_BASE_URL, ds_key
+    if oa_base:
+        return oa_base, oa_key
+    return DASHSCOPE_DEFAULT_BASE_URL, ""
+
 
 class EngineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # ---- 常规引擎配置 ----
     # 识别引擎（优先从 .env 读取）。用户决策（2026-09-02）：opencode 已过期，
-    # 默认引擎全面走 SiliconFlow openai 兼容通道；OPENCODE 枚举仅为存量 DB 兼容保留。
+    # 默认引擎全面走 OpenAI 兼容通道；OPENCODE 枚举仅为存量 DB 兼容保留。
+    # 用户决策（2026-09-15）：默认识别 provider = 阿里云百炼 DashScope（见文件头常量）。
     recognition_engine: EngineKind = Field(
         default_factory=lambda: EngineKind(os.environ.get("RECOGNITION_ENGINE", "openai").lower())
         if os.environ.get("RECOGNITION_ENGINE", "openai").lower() in [e.value for e in EngineKind]
         else EngineKind.OPENAI
     )
     recognition_model: str = Field(
-        default_factory=lambda: os.environ.get("RECOGNITION_MODEL", "Qwen/Qwen3-VL-32B-Instruct"),
-        description="识别腿模型（生成器）。SiliconFlow 非思考型 Qwen3-VL-32B-Instruct：适配 60s 高压上限"
-                    "（Thinking 型实测复杂单据 >60s 必触发降级，禁止作为默认）。",
+        default_factory=lambda: os.environ.get("RECOGNITION_MODEL", DASHSCOPE_DEFAULT_REC_MODEL),
+        description="识别腿模型（生成器）。默认 DashScope qwen3.5-omni-flash（全模态，支持图片输入）。"
+                    "注意模型名以 qwen 开头，若 recognition_engine 非 openai 会被判去 QwenChatModel 原生 SDK 通道。",
     )
     # 识别 transport：subprocess(默认，CLI 快路径) | persistent(常驻进程，需显式开启)
     recognition_transport: str = "subprocess"
@@ -213,14 +251,11 @@ class EngineConfig(BaseModel):
     # 审核 transport：subprocess(默认) | persistent
     audit_transport: str = "subprocess"
     # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数，优先从 .env 读取）
-    openai_rec_base_url: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_REC_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
-    )
-    openai_rec_api_key: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_REC_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
-    )
+    # 识别腿默认 DashScope（见 _rec_provider_env 成对解析）；审核腿默认仍为 SiliconFlow。
+    openai_rec_base_url: str = Field(default_factory=lambda: _rec_provider_env()[0])
+    openai_rec_api_key: str = Field(default_factory=lambda: _rec_provider_env()[1])
     openai_rec_model: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_REC_MODEL", os.environ.get("OPENAI_MODEL", ""))
+        default_factory=lambda: os.environ.get("OPENAI_REC_MODEL", DASHSCOPE_DEFAULT_REC_MODEL)
     )
     openai_aud_base_url: str = Field(
         default_factory=lambda: os.environ.get("OPENAI_AUD_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))

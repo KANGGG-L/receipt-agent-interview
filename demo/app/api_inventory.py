@@ -4,11 +4,13 @@
 import re
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from app import db
 from app.auth import require_role
+from app.services.costing_service import CostingService
 
 # B-P0-1 流水号后缀正则（FR-7 品名归一）与归一辅助
 _SERIAL_RE = re.compile(r"_\d{10}$")
@@ -241,11 +243,81 @@ class StocktakeBody(BaseModel):
 @router.post("/api/inventory/{sku_id}/stocktake")
 def stocktake(sku_id: int, body: StocktakeBody, request: Request):
     require_role("owner")(request)
-    if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
-        return {"status": "error", "msg": "SKU 不存在"}
-    db.stocktake_sku(sku_id, body.actual_qty, body.note,
-                     tenant_id=_tenant_id(request))
-    return {"status": "success", "msg": "盘点已记录"}
+    if body.actual_qty < 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "INVALID_STOCKTAKE_QUANTITY",
+                "msg": "盘点实际库存不能为负数",
+            }
+        )
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        sku = session.get(db._SkuRow, int(sku_id))
+        if not sku or not db._tenant_ok(sku, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "SKU 不存在"})
+
+        diff = round(body.actual_qty - sku.current_stock, 4)
+        now_date = db.now_iso()[:10]
+        cost = 0.0
+
+        if diff < 0:
+            # 盘亏：走 FIFO 核销批次池
+            cost, _ = CostingService.deduct_consumption_fifo(
+                session=session,
+                sku_id=sku.id,
+                qty_needed=abs(diff),
+                unit_needed=sku.base_unit,
+                date=now_date,
+            )
+        elif diff > 0:
+            # 盘盈：生成盘盈调整批次
+            unit_cost = sku.last_unit_price if (sku.last_unit_price and sku.last_unit_price > 0) else 0.0
+            if unit_cost == 0.0:
+                last_b = session.query(db._InventoryBatchRow).filter(
+                    db._InventoryBatchRow.sku_id == sku.id,
+                    db._InventoryBatchRow.unit_cost > 0
+                ).order_by(db._InventoryBatchRow.id.desc()).first()
+                if last_b:
+                    unit_cost = last_b.unit_cost
+            CostingService.record_inbound_batch(
+                session=session,
+                sku_id=sku.id,
+                qty=diff,
+                unit_price=unit_cost,
+                unit=sku.base_unit,
+                date=now_date,
+                receipt_id=None,
+            )
+            cost = round(diff * unit_cost, 2)
+
+        stock_log = db._StockLogRow(
+            sku_id=sku.id,
+            name=sku.name,
+            qty=diff,
+            unit=sku.base_unit,
+            amount=round(cost, 2),
+            vendor="",
+            date=now_date,
+            receipt_id=None,
+            kind="stocktake",
+            note=body.note or ("盘点盘盈入库调整" if diff > 0 else "盘点盘亏核销"),
+            created_at=db.now_iso(),
+            tenant_id=tenant_id,
+        )
+        session.add(stock_log)
+        sku.current_stock = round(body.actual_qty, 4)
+        session.commit()
+        return {
+            "status": "success",
+            "msg": "盘点已记录",
+            "current_stock": sku.current_stock,
+            "data": {"current_stock": sku.current_stock},
+        }
+    finally:
+        session.close()
 
 
 class ConsumeBody(BaseModel):
@@ -256,27 +328,111 @@ class ConsumeBody(BaseModel):
 @router.post("/api/inventory/{sku_id}/consume")
 def consume(sku_id: int, body: ConsumeBody, request: Request):
     require_role("owner")(request)
-    sku = db.get_sku(sku_id, tenant_id=_tenant_id(request))
-    if sku is None:
-        return {"status": "error", "msg": "SKU 不存在"}
-    db.apply_stock_log(sku_id=sku.id, name=sku.name, qty=body.quantity,
-                       unit=sku.base_unit, amount=0, vendor="", date="",
-                       receipt_id=None, kind="consume", note=body.notes,
-                       tenant_id=_tenant_id(request))
-    return {"status": "success", "msg": "已消耗"}
+    if body.quantity <= 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "INVALID_CONSUMPTION_QUANTITY",
+                "msg": "消耗数量必须大于 0，不可输入负数或零",
+            }
+        )
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        sku = session.get(db._SkuRow, int(sku_id))
+        if not sku or not db._tenant_ok(sku, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "SKU 不存在"})
+
+        now_date = db.now_iso()[:10]
+        cost, details = CostingService.deduct_consumption_fifo(
+            session=session,
+            sku_id=sku.id,
+            qty_needed=body.quantity,
+            unit_needed=sku.base_unit,
+            date=now_date,
+        )
+        sku.current_stock = round(sku.current_stock - body.quantity, 4)
+        stock_log = db._StockLogRow(
+            sku_id=sku.id,
+            name=sku.name,
+            qty=body.quantity,
+            unit=sku.base_unit,
+            amount=round(cost, 2),
+            vendor="",
+            date=now_date,
+            receipt_id=None,
+            kind="consume",
+            note=body.notes or "手动消耗",
+            created_at=db.now_iso(),
+            tenant_id=tenant_id,
+        )
+        session.add(stock_log)
+        session.commit()
+        return {
+            "status": "success",
+            "msg": "已消耗",
+            "cost": round(cost, 2),
+            "current_stock": sku.current_stock,
+            "data": {"current_stock": sku.current_stock, "cost": round(cost, 2)},
+        }
+    finally:
+        session.close()
 
 
 @router.post("/api/inventory/{sku_id}/waste")
 def waste(sku_id: int, body: ConsumeBody, request: Request):
     require_role("owner")(request)
-    sku = db.get_sku(sku_id, tenant_id=_tenant_id(request))
-    if sku is None:
-        return {"status": "error", "msg": "SKU 不存在"}
-    db.apply_stock_log(sku_id=sku.id, name=sku.name, qty=body.quantity,
-                       unit=sku.base_unit, amount=0, vendor="", date="",
-                       receipt_id=None, kind="waste", note=body.notes,
-                       tenant_id=_tenant_id(request))
-    return {"status": "success", "msg": "已损耗"}
+    if body.quantity <= 0:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "status": "error",
+                "code": "INVALID_CONSUMPTION_QUANTITY",
+                "msg": "报损数量必须大于 0，不可输入负数或零",
+            }
+        )
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        sku = session.get(db._SkuRow, int(sku_id))
+        if not sku or not db._tenant_ok(sku, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "SKU 不存在"})
+
+        now_date = db.now_iso()[:10]
+        cost, details = CostingService.deduct_consumption_fifo(
+            session=session,
+            sku_id=sku.id,
+            qty_needed=body.quantity,
+            unit_needed=sku.base_unit,
+            date=now_date,
+        )
+        sku.current_stock = round(sku.current_stock - body.quantity, 4)
+        stock_log = db._StockLogRow(
+            sku_id=sku.id,
+            name=sku.name,
+            qty=body.quantity,
+            unit=sku.base_unit,
+            amount=round(cost, 2),
+            vendor="",
+            date=now_date,
+            receipt_id=None,
+            kind="waste",
+            note=body.notes or "损耗",
+            created_at=db.now_iso(),
+            tenant_id=tenant_id,
+        )
+        session.add(stock_log)
+        session.commit()
+        return {
+            "status": "success",
+            "msg": "已损耗",
+            "cost": round(cost, 2),
+            "current_stock": sku.current_stock,
+            "data": {"current_stock": sku.current_stock, "cost": round(cost, 2)},
+        }
+    finally:
+        session.close()
 
 
 @router.get("/api/price_history/{sku_id}")

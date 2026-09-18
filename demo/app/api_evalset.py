@@ -335,6 +335,10 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
 
     # 保留候选溯源字段，状态流转为 confirmed
     saved = dict(gt)
+    existing_gt = _load_gt(evalset_dir, sample_id) or {}
+    for trace_key in ("source_candidate_id", "source_receipt_id"):
+        if trace_key in existing_gt and trace_key not in saved:
+            saved[trace_key] = existing_gt[trace_key]
     saved["gt_status"] = "confirmed"
     saved.setdefault("gt_source_model", row.get("gt_source_model") or "human")
     saved["gt_reviewed_by"] = account.get("email", "admin@demo.hk")
@@ -349,6 +353,28 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
     if not row.get("gt_source_model"):
         row["gt_source_model"] = saved["gt_source_model"]
     _save_manifest(evalset_dir, rows)
+
+    # 确权联动：确保关联单据并置位黄金基准集标记
+    rid = saved.get("source_receipt_id")
+    if not rid:
+        try:
+            from app.services.evalset_linkage import link_or_create_receipt_for_sample
+            rid = link_or_create_receipt_for_sample(evalset_dir, sample_id, row, saved)
+            if rid:
+                saved["source_receipt_id"] = rid
+                with open(exp_path, "w", encoding="utf-8") as f:
+                    json.dump(saved, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning("[evalset] auto-link receipt for %s failed: %s", sample_id, e)
+
+    if rid:
+        try:
+            rid_int = int(rid)
+            receipt = db.get_receipt_row(rid_int)
+            tenant = getattr(receipt, "tenant_id", "default") if receipt else "default"
+            db.set_golden_sample(rid_int, 1, tenant_id=tenant)
+        except Exception as e:
+            logger.warning("[evalset] auto-promote receipt %s to golden failed: %s", rid, e)
 
     return {"status": "success", "data": {
         "sample_id": sample_id,

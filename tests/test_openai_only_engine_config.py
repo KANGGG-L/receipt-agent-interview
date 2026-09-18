@@ -173,7 +173,7 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
     assert 'id="adminAuditCard"' in html
     assert 'id="adminParseDrawer"' in html
     assert 'id="adminGreyDrawer"' in html
-    assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 2
+    assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 3
 
     # 断言保留必须的 OpenAI 输入项与预设选择
     assert 'id="adminOpenaiRecBaseUrl"' in html
