@@ -254,8 +254,8 @@ python -m pytest tests/            # 全量：225 passed + 1 条件 skip（评�
 - **前端行为**（`POST /api/track`，静默不阻塞）：`parse_abandoned_for_manual`（没等解析转手工单）、
   `manual_entry_start`、`field_edited`（增/删行、SKU 绑定）、`reupload_after_fail`（失败态重新上传、回到标准上传流程）
 - **聚合消费**：`GET /api/analytics/recognition-summary`（admin）—— 解析成功率、耗时 P50/P95、门禁拦截、
-  行 diff 分布、放弃率、FER、👍/ 分布、灰测组对比；漏斗 `/api/admin/funnel` 已扩展规范步骤
-- **👍/ 反馈按钮**：内联于复核操作行「确认上传单据」右侧，只评价识别结果——仅「收据识别」Tab
+  行 diff 分布、放弃率、FER、满意/不满意分布、灰测组对比；漏斗 `/api/admin/funnel` 已扩展规范步骤
+- **满意/不满意反馈按钮**：内联于复核操作行「确认上传单据」右侧，只评价识别结果——仅「收据识别」Tab
   且已有识别结果时出现（hover：满意/不满意当前解析结果），反馈绑定当前单据走
   `/api/receipt/{id}/feedback`（喂 VendorMemory 飞轮）
 

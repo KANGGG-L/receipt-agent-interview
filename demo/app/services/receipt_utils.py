@@ -6,13 +6,17 @@
 - build_row(receipt_row): 收据行 → /api/receipts 列表行
 """
 
+import hmac
 import json
+import os
 import re
 import threading
 import time
+from urllib.parse import quote
 
 from app import db
 from app.models import EngineConfig
+from app.services import image_web
 from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool as _S
 
 # B-P0-1 专用：流水号后缀正则 (FR-7 品名归一) —— 有机菜心_1787140420→有机菜心, 本地新鲜菜心_1787140411→本地新鲜菜心
@@ -104,11 +108,44 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
 
         try:
             cfg = db.get_engine_config()
+            experiment_id = None
+            try:
+                running_exp = db.get_running_experiment()
+                if running_exp:
+                    experiment_id = running_exp["id"]
+                    target_pct = int(running_exp.get("target_percent") or 50)
+                    bucket = (int(receipt_id) % 100) if receipt_id else 0
+                    grp = "treatment" if bucket < target_pct else "control"
+                    db.add_assignment(experiment_id, receipt_id, grp)
+                    snap = running_exp.get("grey_snapshot") or {}
+                    if isinstance(snap, str):
+                        try:
+                            snap = json.loads(snap)
+                        except Exception:
+                            snap = {}
+                    if grp == "treatment":
+                        if snap.get("treatment_model"):
+                            cfg.openai_rec_model = snap["treatment_model"]
+                        if snap.get("treatment_base_url"):
+                            cfg.openai_rec_base_url = snap["treatment_base_url"]
+                        if snap.get("treatment_api_key"):
+                            cfg.openai_rec_api_key = snap["treatment_api_key"]
+                    else:
+                        if snap.get("control_model"):
+                            cfg.openai_rec_model = snap["control_model"]
+                        if snap.get("control_base_url"):
+                            cfg.openai_rec_base_url = snap["control_base_url"]
+                        if snap.get("control_api_key"):
+                            cfg.openai_rec_api_key = snap["control_api_key"]
+            except Exception as exp_err:
+                logging.getLogger("receipt_utils").warning(f"解析运行中 A/B 实验路由失败: {exp_err}")
+
             from app.chains import supervisor
             result = supervisor.run_pipeline(
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
                 receipt_id=receipt_id,  # U-2: 透传 receipt_id，AI 决策履历落库关联单据
+                experiment_id=experiment_id,
                 on_event=_on_event,
             )
             data = result.get("data")
@@ -133,6 +170,22 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 return
 
             detail = save_parsed_data(receipt_id, data, result)
+            # 提为局部变量：原实现的 image_url/version/quality_warnings 三处各查一次，
+            # 既冗余又可能在同一结果里读到不同快照
+            done_row = db.get_receipt_row(receipt_id)
+            # why：save_parsed_data 与 get_receipt_row 之间单据可能被删除/软删，
+            # 此时 done_row 为 None。所有取自 done_row 的字段都必须纳入同一守卫，
+            # 否则 version / quality_warnings_json 会抛 AttributeError，
+            # 且原先只有 image_url 行有 else 分支，会让人误以为 None 已被处理。
+            if done_row:
+                image_url = public_image_url(receipt_id, done_row.image_path,
+                                             getattr(done_row, "tenant_id", None))
+                version = done_row.version
+                quality_warnings = json.loads(done_row.quality_warnings_json or "[]")
+            else:
+                image_url = ""
+                version = ""
+                quality_warnings = []
             with JOBS_LOCK:
                 JOBS[job_id].update({
                     "job_status": "done",
@@ -140,9 +193,9 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "status": "success",
                         "receipt_id": receipt_id,
                         "data": detail,
-                        "image_url": "/uploads/" + (db.get_receipt_row(receipt_id).image_path.split("/")[-1] if db.get_receipt_row(receipt_id) else ""),
-                        "version": db.get_receipt_row(receipt_id).version,
-                        "quality_warnings": json.loads(db.get_receipt_row(receipt_id).quality_warnings_json or "[]"),
+                        "image_url": image_url,
+                        "version": version,
+                        "quality_warnings": quality_warnings,
                         "fallback_triggered": result.get("fallback_triggered", False),
                         "fallback_reason": result.get("fallback_reason", ""),
                         "fallback_from": result.get("fallback_from", ""),
@@ -213,7 +266,8 @@ def get_job(job_id):
     if job.get("job_status") == "done":
         row = db.get_receipt_row(job["receipt_id"])
         if row:
-            job["image_url"] = "/uploads/" + (row.image_path.split("/")[-1] if row.image_path else "")
+            job["image_url"] = public_image_url(job["receipt_id"], row.image_path,
+                                                getattr(row, "tenant_id", None))
             if not job.get("result"):
                 job["result"] = {"status": "success", "receipt_id": job["receipt_id"],
                                  "data": build_detail(row), "version": row.version}
@@ -502,6 +556,95 @@ def _patch_audit_reason(audit_result):
     return audit_result
 
 
+# -------------------------------------------------------------
+# 原图 URL：按格式分流 + HMAC 签名防枚举
+# -------------------------------------------------------------
+def _sign_tenant(tenant_id):
+    """签名与 URL 共用的租户归一：空 / None → default。
+
+    why: build_row 传 row.tenant_id（可能为 None），端点传解析后的 query/header 值
+    （非空，默认 default）；两侧必须归一到同一字面量，否则签名必然对不上。
+    """
+    return str(tenant_id or "").strip() or "default"
+
+
+def preview_image_signature(receipt_id, stem, tenant_id="default"):
+    """原图预览 URL 的 HMAC 签名：绑定 单据 id + 文件名主体 + 租户。
+
+    why: 该端点匿名可取图（`<img src>` 无法携带请求头），而 receipt_id 自增可枚举；
+    签名让「URL 由后端签发」成为取图前提，堵住遍历 id 的横向枚举。复用 app.auth
+    的 _sign / _TOKEN_SECRET，不新造密钥：轮换 DEMO_TOKEN_SECRET 即让旧签名全部失效。
+    """
+    from app.auth import _sign
+    payload = "%d|%s|%s" % (int(receipt_id), stem, _sign_tenant(tenant_id))
+    return _sign(payload)
+
+
+def verify_preview_image_signature(receipt_id, stem, tenant_id, sig):
+    """常量时间比对预览签名；缺签名 / 篡改 / 参数非法一律 False。"""
+    if not sig:
+        return False
+    try:
+        expected = preview_image_signature(receipt_id, stem, tenant_id)
+    except (TypeError, ValueError):
+        return False
+    return hmac.compare_digest(expected, str(sig))
+
+
+def _quote_query_value(value):
+    """查询参数值编码：只编码值本身，不编码整个 URL。
+
+    why: stem/tenant 当前恒为十六进制与 default，实测编码前后逐字节相同（live 库
+    432 条非空 URL 全量比对一致）；但 legacy 数据或手工导入可能带 空格/&/# 等字符，
+    不编码会把 URL 从中间截断或让端点解不出原值。safe="" 让 "/" 也参与编码（它是
+    值而非路径分隔符）。签名仍基于未编码的原值计算——端点的 query 解析会自动解回
+    原值，故签名值不因编码而变，编码仅作用于 URL 字面量。
+    """
+    return quote(str(value or ""), safe="")
+
+
+def public_image_url(receipt_id, image_path, tenant_id="default"):
+    """收据原图对外 URL：Web 格式沿用 /uploads 静态地址，非 Web 格式走转码端点。
+
+    why: `.heic/.tiff` 经 StaticFiles 返回 text/plain，浏览器不渲染；非 Web 格式
+    改指 GET /api/receipt/{id}/image 按需转码。Web 格式保持 `/uploads/<basename>`
+    逐字节不变（1490 张 jpg/png 零回归）。
+    `?v=<stem>` 兼作版本参数：replace-image 换图后 receipt_id 不变，不带版本参数
+    会命中旧图的浏览器/HTTP 缓存。
+    `&sig=<HMAC(id|stem|租户)>` 是该端点的取图凭证（端点为浏览器原生发起、带不了
+    请求头，故不能靠 RBAC）；签名随 URL 由后端签发，前端零改动，见
+    verify_preview_image_signature。
+
+    URL 只对查询参数值做 percent 编码（见 _quote_query_value）：签名基于未编码的
+    原值，端点由 query 解析自动解回原值，故签名与取图行为不受编码影响。
+
+    行为变更（相对旧实现，显式记录）：旧实现是
+    `"/uploads/" + (image_path.split("/")[-1] if image_path else "")`，即
+    image_path 为空时返回 `"/uploads/"` —— 一个指向目录、浏览器打不开的无效 URL
+    （live 库有 238 条空 image_path 单据走这条分支）。本函数对空 image_path 返回
+    `""`，语义为「无图」，由消费方按空值降级处理（前端须有 `if (url)` /
+    `|| fallback` 守卫，见 main.js 归档弹窗）。
+    """
+    if not image_path:
+        # 空路径 = 无图：返回空串（不是 "/uploads/"），避免调用方拿到无效 URL
+        return ""
+    name = str(image_path).split("/")[-1]
+    if not image_web.is_non_web_image_path(name):
+        return "/uploads/" + name
+    # 非 Web 格式：receipt_id 缺失/非法时退回静态地址，保持旧行为不退化为坏 URL
+    try:
+        rid = int(receipt_id)
+    except (TypeError, ValueError):
+        return "/uploads/" + name
+    stem = image_web.preview_stem(name)
+    tenant = _sign_tenant(tenant_id)
+    url = "/api/receipt/%d/image?v=%s&sig=%s" % (
+        rid, _quote_query_value(stem), preview_image_signature(rid, stem, tenant))
+    if tenant != "default":
+        url += "&tenant_id=" + _quote_query_value(tenant)
+    return url
+
+
 def build_row(row):
     """收据行 → /api/receipts 列表行（含付款派生字段）。"""
     payment_status = "unknown"
@@ -517,14 +660,12 @@ def build_row(row):
     elif row.settlement_type == "cash":
         payment_status = "paid_at_delivery"
 
-    # 红章补充：列表视图也补充 payment_mark 避免漏检（单一来源：contract.payment_mark_from_image）
+    # W2 列表性能修复：列表行不再逐条读图补红章，直接返回已落库的 payment_mark。
+    # why: 旧实现对本行 payment_mark 为空时调 contract.payment_mark_from_image →
+    # detect_red_stamp 解码图片，配合 list_receipts 的同类补充形成每请求上千次读图
+    # （详见 api_receipts.list_receipts）。红章补充改由详情视图承担
+    # （build_detail 与本文件的 detail 路径）。
     payment_mark_val = row.payment_mark or ""
-    if not payment_mark_val:
-        try:
-            from app.services.contract import payment_mark_from_image
-            payment_mark_val = payment_mark_from_image(row.image_path or "", llm_marked=False)
-        except Exception:
-            pass
 
     import json as _json
     quality_warnings = _json.loads(row.quality_warnings_json or "[]") if getattr(row, "quality_warnings_json", None) else []
@@ -534,7 +675,8 @@ def build_row(row):
         "id": row.id,
         "supplier_name": row.supplier_name or "",
         "supplier_code": row.supplier_code or "",
-        "image_url": "/uploads/" + (row.image_path.split("/")[-1] if row.image_path else ""),
+        "image_url": public_image_url(row.id, row.image_path,
+                                      getattr(row, "tenant_id", None)),
         "status": row.status,
         "total_amount": row.total_amount or 0.0,
         "department_name": "",

@@ -578,7 +578,7 @@ def get_engine_presets(request: Request):
             "label": "阿里云百炼 · DashScope",
             "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
             "api_key": dashscope_key,
-            "rec_model": "qwen3-vl-flash",
+            "rec_model": "qwen3.5-omni-flash",
             "aud_model": "qwen3-vl-plus",
         },
         "siliconflow": {
@@ -1011,6 +1011,78 @@ def grey_test_status(request: Request):
     }}
 
 
+@router.get("/api/admin/canary/history")
+def canary_history(request: Request):
+    """返回历史灰度发布、放量变更、推全与回滚履历。"""
+    require_admin(request)
+    raw_logs = db.read_system_audit_log()
+    history = []
+    promote_count = 0
+    rollback_count = 0
+
+    for l in reversed(raw_logs):
+        act = l.get("action", "")
+        fld = l.get("field", "")
+        old_val = str(l.get("old", ""))
+        new_val = str(l.get("new", ""))
+        ts = l.get("ts", "")
+        who = l.get("who", "admin@demo.hk")
+
+        if act == "promote_grey_config":
+            promote_count += 1
+            history.append({
+                "ts": ts,
+                "action": "promote",
+                "action_label": "推全上线",
+                "badge_class": "badge-success",
+                "description": "灰测配置全量推全至常规生产组（生成回滚快照）",
+                "models": f"{old_val} -> {new_val}",
+                "operator": who,
+                "status": "已推全",
+            })
+        elif act == "rollback_engine_config":
+            rollback_count += 1
+            history.append({
+                "ts": ts,
+                "action": "rollback",
+                "action_label": "紧急回滚",
+                "badge_class": "badge-danger",
+                "description": "从前次推全快照快速回滚常规生产配置",
+                "models": f"{old_val} -> {new_val}",
+                "operator": who,
+                "status": "已回滚",
+            })
+        elif "grey" in old_val or "grey" in fld or act == "set_canary_config":
+            history.append({
+                "ts": ts,
+                "action": "config_update",
+                "action_label": "灰度放量/参数变更",
+                "badge_class": "badge-primary",
+                "description": f"更新灰度分流策略或放量参数: {old_val[:50]}",
+                "models": new_val,
+                "operator": who,
+                "status": "配置生效",
+            })
+
+    s = db.get_session()
+    try:
+        total_grey_receipts = s.query(db._ReceiptRow).filter(db._ReceiptRow.use_grey == 1).count()
+        total_decision_grey = s.query(db._DecisionLogRow).filter(db._DecisionLogRow.use_grey == 1).count()
+    finally:
+        s.close()
+
+    return {
+        "status": "success",
+        "total_records": len(history),
+        "promote_count": promote_count,
+        "rollback_count": rollback_count,
+        "total_grey_receipts": total_grey_receipts,
+        "total_grey_decisions": total_decision_grey,
+        "items": history,
+    }
+
+
+
 @router.get("/api/admin/trash")
 def trash_list(request: Request):
     """回收站：软删除单据列表。"""
@@ -1122,7 +1194,9 @@ def get_grey_test_samples(request: Request):
     """Admin 在前端拉取灰测中用户的使用状态、被解析的图片与解析结果（全量过滤敏感信息）。"""
     require_admin(request)
     import re
-    from app.api_receipts import _mask_sensitive
+    from app.api_receipts import _mask_sensitive, _resolve_upload_file
+    # 惰性 import 避免 api_admin 与 receipt_utils/api_receipts 顶层循环依赖
+    from app.services.receipt_utils import public_image_url
 
     def mask_vendor(name: str) -> str:
         if not name:
@@ -1278,6 +1352,17 @@ def get_grey_test_samples(request: Request):
             feedback_badge_color = "#383d41"
             feedback_badge_bg = "#e2e3e5"
 
+        # W8：历史 pytest 污染单据的 image_path 指向已被清理的临时测试文件
+        # （如 /uploads/img_2.png、/uploads/eval_reflow_src_*.png），public_image_url
+        # 仍会按其 basename 生成 URL，前端打开即 404 破图。展示层兜底：源文件不存在
+        # 时返回空串（字段保留、响应结构不变，前端按 if(url) 降级）；不删任何历史数据行。
+        image_url = public_image_url(r.id, r.image_path,
+                                     getattr(r, "tenant_id", None)) if r.id else ""
+        if image_url:
+            _src = _resolve_upload_file(getattr(r, "image_path", ""))
+            if _src is None or not _src.is_file():
+                image_url = ""
+
         samples.append({
             "receipt_id": r.id,
             "masked_vendor": user_vendor,
@@ -1287,7 +1372,7 @@ def get_grey_test_samples(request: Request):
             "user_status": r.status,  # uploaded, parsed, edited, approved, flagged
             "use_grey": use_grey,
             "engine": _label_grey if use_grey else _label_reg,
-            "image_url": f"/api/receipt/{r.id}/image" if r.id else "",
+            "image_url": image_url,
             "masked_items": masked_items,
             "is_user_edited": r.status in ["edited", "approved"],
             "is_approved": r.status == "approved",
@@ -1317,9 +1402,23 @@ def get_grey_test_samples(request: Request):
     rates = [e["match_rate"] for e in comparable if e["match_rate"] is not None]
     avg_match_rate = round(sum(rates) / len(rates), 1) if rates else None
 
+    scope = request.query_params.get("scope", "all")
+    if scope == "grey_only":
+        filtered_samples = [s for s in samples if s["use_grey"]]
+    elif scope == "prod_only":
+        filtered_samples = [s for s in samples if not s["use_grey"]]
+    elif scope == "modified":
+        filtered_samples = [s for s in samples if s["effect_evaluation"]["feedback_type"] in ("thumbs_down", "modified") or s["effect_evaluation"]["modified_fields"] > 0]
+    elif scope == "approved":
+        filtered_samples = [s for s in samples if s["is_approved"]]
+    else:
+        filtered_samples = samples
+
     return {
         "status": "success",
-        "total_count": len(samples),
+        "scope": scope,
+        "total_count": len(filtered_samples),
+        "all_count": len(samples),
         "grey_count": sum(1 for s in samples if s["use_grey"]),
         "user_approved_count": sum(1 for s in samples if s["is_approved"]),
         "user_edited_count": sum(1 for s in samples if s["is_user_edited"]),
@@ -1327,7 +1426,7 @@ def get_grey_test_samples(request: Request):
         "positive_feedback_count": positive_count,
         "modified_feedback_count": modified_count,
         "avg_match_rate": avg_match_rate,
-        "samples": samples
+        "samples": filtered_samples
     }
 
 
@@ -1571,6 +1670,11 @@ class AdminExpCreateBody(BaseModel):
     target_percent: int = 50
     min_sample: int = 30
     treatment_model: Optional[str] = None
+    control_model: Optional[str] = None
+    treatment_base_url: Optional[str] = None
+    control_base_url: Optional[str] = None
+    treatment_api_key: Optional[str] = None
+    control_api_key: Optional[str] = None
 
 
 @router.get("/api/admin/experiments")
@@ -1591,13 +1695,24 @@ def create_experiment_admin(body: AdminExpCreateBody, request: Request):
         guardrail_metrics=[],
         target_supplier_ids=[],
     )
-    if body.treatment_model:
+    if body.treatment_model or body.control_model or body.treatment_base_url or body.control_base_url:
         s = db.get_session()
         try:
             row = s.get(db._ExperimentRow, int(created["id"]))
             if row:
                 snap = db._parse_json(row.grey_snapshot)
-                snap["treatment_model"] = body.treatment_model
+                if body.treatment_model:
+                    snap["treatment_model"] = body.treatment_model
+                if body.control_model:
+                    snap["control_model"] = body.control_model
+                if body.treatment_base_url:
+                    snap["treatment_base_url"] = body.treatment_base_url
+                if body.control_base_url:
+                    snap["control_base_url"] = body.control_base_url
+                if body.treatment_api_key:
+                    snap["treatment_api_key"] = body.treatment_api_key
+                if body.control_api_key:
+                    snap["control_api_key"] = body.control_api_key
                 row.grey_snapshot = db._safe_json(snap)
                 s.commit()
         finally:
@@ -1635,7 +1750,98 @@ def get_experiment_admin(exp_id: int, request: Request):
         return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
     metrics = db.get_experiment_metrics(exp_id)
     detail = db.experiment_detail(exp_id)
-    return {"status": "success", "experiment": row, "metrics": metrics, "detail": detail}
+    guardrail_events = db.list_guardrail_events(exp_id) if hasattr(db, "list_guardrail_events") else []
+    snapshots = db.list_experiment_snapshots(exp_id, limit=5) if hasattr(db, "list_experiment_snapshots") else []
+    return {
+        "status": "success",
+        "experiment": row,
+        "metrics": metrics,
+        "detail": detail,
+        "guardrail_events": guardrail_events,
+        "snapshots": snapshots,
+    }
+
+
+@router.get("/api/admin/experiments/{exp_id}/samples")
+def get_experiment_samples(exp_id: int, request: Request):
+    """返回分配至指定 A/B 实验的详细单据与决策样本明细。"""
+    require_admin(request)
+    from app.api_receipts import _mask_sensitive
+    scope = request.query_params.get("scope", "all")
+
+    s = db.get_session()
+    try:
+        assigns = s.query(db._ExperimentAssignRow).filter(
+            db._ExperimentAssignRow.experiment_id == int(exp_id)).all()
+        assign_map = {a.receipt_id: a.grp for a in assigns}
+
+        dec_rows = s.query(db._DecisionLogRow).filter(
+            db._DecisionLogRow.experiment_id == int(exp_id)).all()
+        for dr in dec_rows:
+            if dr.receipt_id and dr.receipt_id not in assign_map:
+                assign_map[dr.receipt_id] = dr.grp or "control"
+
+        rids = list(assign_map.keys())
+        receipts = s.query(db._ReceiptRow).filter(db._ReceiptRow.id.in_(rids)).all() if rids else []
+        receipt_map = {r.id: r for r in receipts}
+
+        dec_by_rid = {}
+        for dr in dec_rows:
+            if dr.receipt_id not in dec_by_rid:
+                dec_by_rid[dr.receipt_id] = []
+            dec_by_rid[dr.receipt_id].append(dr)
+
+        items = []
+        for rid, grp in assign_map.items():
+            r = receipt_map.get(rid)
+            decs = dec_by_rid.get(rid, [])
+
+            model_name = decs[0].model if decs else ("mimo-v3" if grp == "treatment" else "mimo-v2.5")
+            engine_name = decs[0].engine if decs else "openai"
+            adopted_count = sum(1 for d in decs if d.adopted == 1)
+            hallu_count = sum(1 for d in decs if d.is_hallucination == 1)
+            is_match = (adopted_count == len(decs)) if decs else True
+
+            supplier = _mask_sensitive(r.supplier_name) if r and r.supplier_name else f"食材供应商_#V{rid}"
+            total_amt = f"HK$ {r.total_amount:.2f}" if (r and r.total_amount) else "HK$ 1**.**"
+            status = r.status if r else "parsed"
+
+            item_data = {
+                "receipt_id": rid,
+                "grp": grp,
+                "grp_label": "对照组 (Control)" if grp == "control" else "实验组 (Treatment)",
+                "supplier_name": supplier,
+                "total_amount": total_amt,
+                "status": status,
+                "engine": engine_name,
+                "model": model_name,
+                "decision_count": len(decs),
+                "adopted_count": adopted_count,
+                "hallu_count": hallu_count,
+                "is_match": is_match,
+                "accuracy": round(adopted_count / len(decs), 4) if decs else 1.0,
+                "feedback_label": "完全采纳" if is_match else "人工修正",
+                "assigned_at": decs[0].ts if decs and decs[0].ts else "",
+            }
+
+            if scope == "control" and grp != "control":
+                continue
+            if scope == "treatment" and grp != "treatment":
+                continue
+            items.append(item_data)
+
+        items.sort(key=lambda x: x["receipt_id"], reverse=True)
+        return {
+            "status": "success",
+            "experiment_id": exp_id,
+            "total_samples": len(items),
+            "control_count": sum(1 for it in items if it["grp"] == "control"),
+            "treatment_count": sum(1 for it in items if it["grp"] == "treatment"),
+            "samples": items,
+        }
+    finally:
+        s.close()
+
 
 
 @router.get("/api/admin/experiments/{exp_id}/pvalue")

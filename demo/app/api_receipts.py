@@ -3,6 +3,8 @@
 
 import io
 import json
+import logging
+import mimetypes
 import os
 import re
 from pathlib import Path
@@ -10,14 +12,16 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app import db
 from app.auth import require_role
+from app.services import image_web
 from app.services.contract import payment_mark_from_image
 from app.services.receipt_utils import (
-    build_detail, build_row, compute_review_diff, get_job, start_recognition_job,
+    build_detail, build_row, compute_review_diff, get_job, public_image_url,
+    start_recognition_job, verify_preview_image_signature,
 )
 
 
@@ -76,6 +80,56 @@ UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 ALLOWED_EXT = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".tif", ".tiff"}
+
+
+def _resolve_upload_file(raw):
+    """把 DB 里的 image_path 归一到 uploads 目录内的绝对路径；越界返回 None。
+
+    why: 原图预览端点不经请求头鉴权对外暴露，必须防 `../` 路径穿越与绝对路径注入。
+    先 basename 归一（丢弃任何目录成分），再 resolve 后校验父目录链落在模块级
+    UPLOAD_DIR 内（resolve 同时穿透符号链接）。用模块级 UPLOAD_DIR 以便测试
+    monkeypatch 到临时目录。
+    """
+    if not raw:
+        return None
+    name = os.path.basename(str(raw).strip())
+    if not name:
+        return None
+    base = Path(UPLOAD_DIR).resolve()
+    try:
+        candidate = (base / name).resolve()
+    except OSError:
+        return None
+    if base not in candidate.parents:
+        return None
+    return candidate
+
+
+def _cleanup_unreferenced_preview_cache(image_path) -> bool:
+    """安全清理某个源文件对应的 `<stem>_web.jpg` 预览缓存（源原图一律不动）。
+
+    why: replace-image 换图后用新的 `db.new_id()` 文件名落盘，旧源文件的预览缓存再无
+    请求路径可达（预览端点只会按 image_path 定位源文件），不清理会随重拍次数长期在
+    uploads 累积。
+
+    删除前必须证明「已无任何单据引用该源文件」，且引用判定不能只看当前单据：软删单据
+    可经回收站恢复、恢复后仍要展示原图，故不得过滤 deleted_at；同理不做租户过滤
+    （跨租户引用同名源文件同样构成引用）。引用判定失败时保守跳过 —— 宁留缓存不误删。
+    Web 格式不生成缓存副本，直接 no-op（顺带避免无谓的全表引用查询）。
+
+    返回是否真的删除了缓存。
+    """
+    if not image_path or not image_web.is_non_web_image_path(image_path):
+        return False
+    try:
+        referenced = image_web.referenced_preview_stems(db.list_all_image_paths())
+    except Exception as e:
+        logging.getLogger("api_receipts").warning(
+            f"[WARN] 预览缓存引用判定失败，跳过清理: {e}")
+        return False
+    if image_web.preview_stem(image_path) in referenced:
+        return False
+    return image_web.remove_preview_cache(image_path)
 
 
 def _version_error(payload_version, row, action):
@@ -215,38 +269,122 @@ async def convert_image(
     request: Request,
     file: UploadFile = File(...),
 ):
-    """将 HEIC/HEIF/TIFF 等浏览器无法直接预览的图片即时转换为标准高质量 JPEG。"""
+    """将 HEIC/HEIF/TIFF 等浏览器无法直接预览的图片即时转换为标准高质量 JPEG。
+
+    why 复用 image_web.transcode_bytes_to_jpeg：旧实现在此处自写一份转码体，会
+    `except Exception: pass` 静默吞掉 pillow_heif 注册失败，并硬编码 quality=92、
+    不套 MAX_PREVIEW_SIDE，与 /api/receipt/{id}/image 的预览转码路径行为漂移。
+    统一入口后两条路径共享同一套解码/EXIF 矫正/RGB 归一/缩放语义。
+    """
     try:
         content = await file.read()
         if not content:
             return JSONResponse(status_code=400, content={"status": "error", "msg": "上传文件为空"})
 
-        try:
-            import pillow_heif
-            pillow_heif.register_heif_opener()
-        except Exception:
-            pass
-
-        from PIL import Image, ImageOps
-        import io
-
-        with Image.open(io.BytesIO(content)) as img:
-            # 依 EXIF 矫正拍摄朝向
-            try:
-                img = ImageOps.exif_transpose(img)
-            except Exception:
-                pass
-
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            out_buf = io.BytesIO()
-            img.save(out_buf, format="JPEG", quality=92, optimize=True)
-            jpeg_bytes = out_buf.getvalue()
+        jpeg_bytes = image_web.transcode_bytes_to_jpeg(content)
 
         from fastapi.responses import Response
         return Response(content=jpeg_bytes, media_type="image/jpeg")
     except Exception as e:
+        logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+
+
+# -------------------------------------------------------------
+# 单据原图预览：非 Web 格式（HEIC/TIFF）按需转 JPEG
+# -------------------------------------------------------------
+def _image_not_found(receipt_id, msg):
+    """原图不可用统一 404 响应（code 固定 IMAGE_NOT_FOUND，便于前端/测试断言）。"""
+    if receipt_id is not None:
+        msg = f"单据 {receipt_id} 的{msg}"
+    return JSONResponse(status_code=404,
+                        content={"status": "error", "code": "IMAGE_NOT_FOUND", "msg": msg})
+
+
+def _image_forbidden(receipt_id, msg):
+    """原图签名校验失败统一 403（与 IMAGE_NOT_FOUND 同风格，便于前端/测试断言）。"""
+    if receipt_id is not None:
+        msg = f"单据 {receipt_id} 的{msg}"
+    return JSONResponse(status_code=403,
+                        content={"status": "error", "code": "IMAGE_SIGNATURE_INVALID",
+                                 "msg": msg})
+
+
+def _preview_media_type(src, preview) -> str:
+    """按实际返回文件判定 content-type，避免 PNG 谎报为 JPEG。
+
+    why: 端点曾硬编码 media_type="image/jpeg"，但 web_preview_path() 对 Web 格式
+    （png/webp/gif）是原样返回源路径、并未转码，于是 PNG 单据的响应头会说
+    image/jpeg 而 body 魔数是 89504e47（PNG），类型与内容不符。
+
+    - 源为非 Web 格式（HEIC/TIFF）→ 已转码为 JPEG，固定 image/jpeg；
+    - 源为 Web 格式 → 原样透传，按目标文件扩展名给出真实类型；
+    - 扩展名无法判定 → 回落 application/octet-stream（不作无根据的猜测）。
+    """
+    if image_web.is_non_web_image_path(src):
+        return "image/jpeg"
+    guessed, _ = mimetypes.guess_type(str(preview))
+    return guessed or "application/octet-stream"
+
+
+@router.get("/api/receipt/{receipt_id}/image")
+def get_receipt_image(receipt_id: int, request: Request):
+    """返回单据原图，非 Web 格式按需转码为 JPEG。
+
+    why 刻意不加 require_role：`<img src>` / `<a target=_blank>` 由浏览器原生发起，
+    无法携带 X-Role / Authorization 等请求头，加请求头 RBAC 会让所有图片请求 401、
+    功能直接不可用。防护改为四重业务校验：单据存在 + 未软删 + 租户归属 +
+    文件落在 uploads 目录内（后者防路径穿越）。暴露面不大于既有的 /uploads 静态挂载
+    （后者零鉴权零租户校验）。
+
+    W7 追加签名门槛：receipt_id 自增可枚举，四重校验只挡越权、挡不住遍历 id 扫描
+    （租户隔离是「知道 tenant 才能过」的知识型约束）。URL 必须带 public_image_url
+    签发的 `sig`（HMAC 绑定 单据 id + 文件名主体 + 租户）；签名在 query 里随 URL
+    传递、不依赖请求头，故前端零改动、浏览器匿名取图仍成立。
+    """
+    # 租户：query 优先（图片 URL 由后端生成时带入），回落请求头，再回落 default
+    tenant = (request.query_params.get("tenant_id") or "").strip() or _tenant_id(request)
+    # 签名校验置于任何 DB 访问之前：对 receipt_id 的未签名扫描不应产生查询开销
+    stem = (request.query_params.get("v") or "").strip()
+    if not stem or not verify_preview_image_signature(
+            receipt_id, stem, tenant, request.query_params.get("sig")):
+        return _image_forbidden(receipt_id, "原图链接签名无效或缺失")
+
+    row = db.get_receipt_row(receipt_id, tenant_id=tenant)
+    # get_receipt_row 不过滤软删，需显式判 deleted_at
+    if row is None or getattr(row, "deleted_at", None):
+        return _image_not_found(receipt_id, "原图不存在")
+
+    src = _resolve_upload_file(getattr(row, "image_path", ""))
+    if src is None:
+        return _image_not_found(receipt_id, "原图路径非法或不在上传目录内")
+    # 签名主体必须等于当前原图的文件名主体：replace-image 换图后旧 URL 立即失效，
+    # 避免用一张旧图的合法签名取到换图后的新图（签名与真实资源始终同一份）。
+    if stem != image_web.preview_stem(src.name):
+        return _image_forbidden(receipt_id, "原图链接已失效（原图已被更换）")
+    if not src.is_file():
+        return _image_not_found(receipt_id, "原图文件缺失")
+
+    try:
+        preview = image_web.web_preview_path(src)
+    except Exception as e:
+        # 转码失败：返回 500 明确 code，绝不返回半截字节
+        logging.getLogger("api_receipts").warning(
+            f"[WARN] 单据 {receipt_id} 原图转码失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "code": "IMAGE_TRANSCODE_FAILED",
+                     "msg": f"原图转码失败: {str(e)}"})
+
+    resp = FileResponse(preview, media_type=_preview_media_type(src, preview))
+    # 开发期与静态挂载同口径：no-store 避免换图后浏览器仍用旧图缓存
+    try:
+        from app.main import DEV_MODE as _dev_mode
+    except Exception:
+        _dev_mode = False
+    if _dev_mode:
+        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
+    return resp
 
 
 # -------------------------------------------------------------
@@ -307,10 +445,11 @@ async def upload_receipt(
         image_path, vendor_hint=vendor_hint or "",
         tenant_id=_tenant_id(request))  # P0-1: 上传链路租户透传
 
-    image_url = "/uploads/" + os.path.basename(image_path)
+    image_url = public_image_url(receipt_id, image_path, _tenant_id(request))
+    # PDPO 红线（11-组件Spec §8）：vendor_hint 是用户输入明文，只落布尔位，禁落原文
     _track_event(account, getattr(request.state, "session_id", job_id),
                  "upload", receipt_id=receipt_id,
-                 properties={"engine_hint": vendor_hint or "",
+                 properties={"has_vendor_hint": bool(vendor_hint),
                              "image_path": os.path.basename(image_path),
                              "async": async_.lower() == "true"},
                  grp="treatment" if codebuddy.lower() == "true" else "control")
@@ -413,7 +552,7 @@ async def upload_batch(
         queue_pos += 1
         results.append({
             "status": "queued", "receipt_id": receipt_id,
-            "image_url": "/uploads/" + os.path.basename(image_path),
+            "image_url": public_image_url(receipt_id, image_path, _tenant_id(request)),
             "engine_used": None,
             "quality_warnings": photo_warnings,
             "version": row.version if row else None,
@@ -452,16 +591,80 @@ def _mask_sensitive(text: str) -> str:
     return text
 
 
+def _image_url_target_exists(image_path) -> bool:
+    """image_path 的 basename 在 uploads 目录下是否真有对应文件（纯存在性探测）。
+
+    why: 列表每行都要判一次，必须只做一次 os.stat —— 不复用 `_resolve_upload_file`
+    是因为它会 `Path.resolve()`（realpath 逐段 lstat），实测 1362 行要 268ms，而本
+    探测只需 11ms。差异仅在「uploads 内的符号链接指向目录外」这一种情形：端点
+    会拒绝、此处会放行，但列表只输出 URL 不打开文件，且 `/uploads` 静态挂载本身
+    同样跟随符号链接，不构成新的可达面。
+
+    刻意不做进程内缓存：11ms 远低于噪声；加缓存要么引入 TTL 失效语义（新上传
+    的图可能被短暂判为不存在），要么需要按 UPLOAD_DIR 失效（测试会 monkeypatch
+    该目录），复杂度不划算。
+    """
+    name = os.path.basename(str(image_path or "").strip())
+    if not name or name in (".", ".."):
+        return False
+    return os.path.isfile(os.path.join(str(UPLOAD_DIR), name))
+
+
+def _blank_unreachable_image_url(image_url, image_path):
+    """单条 URL 的死链兜底：目标文件不存在则返回空串，否则原样返回。
+
+    why: 详情接口（GET /api/receipt/{id}）与列表接口共用同一「文件是否真在
+    uploads 下」判据，避免两处各写一套 os.stat 逻辑再各自漂移。空 URL 直接透传
+    （空 image_path 的单据本就无图，见 public_image_url 的行为变更说明）。
+    """
+    if not image_url:
+        return image_url
+    if not _image_url_target_exists(image_path):
+        return ""
+    return image_url
+
+
+def _blank_unreachable_image_urls(rows, data):
+    """X1 展示层兜底：列表行里指向不存在文件的 image_url 一律置空。
+
+    why: live 库存在 928 条历史 pytest 污染单据（image_path 形如
+    '/uploads/img_2.png'、'/uploads/eval_reflow_src_*.png' 或已删除的 pytest 临时
+    绝对路径），其 basename 在 uploads/ 下没有对应文件，`public_image_url` 仍会按其
+    basename 产出 `/uploads/<name>`（非 Web 格式则产出转码端点 URL），前端渲染即
+    404 破图。这里只做展示层兜底：文件不存在时返回空串，字段保留、响应结构不变，
+    不删历史数据行、不改 image_path。非 Web 格式源的判据同为「basename 是否有
+    文件」—— 端点转码读的就是这个 src，文件缺失时端点必 404。
+
+    性能：只做路径归一 + os.stat，绝不打开/解码图片；且只在 image_url 非空时执行，
+    空 image_path 的行（live 库 238 条）零开销。
+
+    刻意不放进 build_row / public_image_url：那两处被详情、上传、Job 回写等路径共用，
+    改动会波及「Web 格式 URL 逐字节不变」的既有契约；死链治理只针对展示层（列表入口
+    与本文件 get_receipt 详情入口，后者见 Y1），故收在入口。
+
+    逐行逻辑复用 _blank_unreachable_image_url，列表与详情两侧判据保证同源。
+    """
+    for row, d in zip(rows, data):
+        d["image_url"] = _blank_unreachable_image_url(
+            d.get("image_url"), getattr(row, "image_path", ""))
+    return data
+
+
 @router.get("/api/receipts")
 def list_receipts(request: Request):
     # 列表查看对店员开放（上传/复核需要看到列表）；导出仍限 owner
     require_role("staff")(request)
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
     rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
-    # 印章判定补红章：列表视图在 build_row 前补充，避免 LLM 漏检导致 payment_mark 空
-    for r in rows:
-        if not (r.payment_mark or "").strip():
-            r.payment_mark = _supplement_payment_mark(r)
+    # W2 列表性能修复：列表不再逐条读图补红章，直接返回已落库的 payment_mark。
+    # why: 旧实现对本条 payment_mark 为空的单据调 _supplement_payment_mark →
+    # contract.payment_mark_from_image → detect_red_stamp，会逐条打开并解码图片；
+    # live 库 1600 条中 1487 条为空，一次列表请求触发上千次读图（实测 >2 分 28 秒
+    # 未返回，并发时打满线程池连 /api/health 都超时），且前端筛选不减少后端开销。
+    # 红章补充是「LLM 漏检的补丁」，语义上属详情级信息：保留在详情接口
+    # （GET /api/receipt/{id} 的 _supplement_payment_mark 与 build_detail）。
+    # 列表不消费 payment_mark（归档列表「付款」列走 payment_status，付款标记由
+    # 详情弹窗从 /api/receipt/{id} 取），故返回已落库值不构成语义退化。
     data = [build_row(r) for r in rows]
     if desensitized:
         for row in rows:
@@ -476,6 +679,8 @@ def list_receipts(request: Request):
             d["raw_llm"] = row.raw_llm
             d["payment_mark"] = row.payment_mark
             data.append(d)
+    # X1：展示层剔除死链（文件不存在的 image_url 置空），两条分支统一收口
+    data = _blank_unreachable_image_urls(rows, data)
     return {"status": "success", "data": data}
 
 
@@ -534,8 +739,15 @@ def get_receipt(receipt_id: int, request: Request):
         # data_only 显式开启时补充未持久化字段的提示
         if not data.get("rag_context"):
             data["rag_context"] = getattr(row, "rag_context_json", None) or ""
+    # Y1 详情侧死链兜底：live 库 928 条历史 pytest 污染单据「DB 有行、磁盘无文件」，
+    # 详情仍会产出 /uploads/<name>（非 Web 格式则产出转码端点 URL），归档弹窗打开时
+    # 404 破图/死链（前端只有空值守卫，挡不住非空死链）。判据与 X1 列表侧同源
+    # （_blank_unreachable_image_url → _image_url_target_exists，只 os.stat 不解码）。
+    # 单条查询，一次 stat 开销可忽略；文件存在时 URL 逐字节不变（含 HEIC 的签名 URL）。
+    image_url = _blank_unreachable_image_url(
+        public_image_url(row.id, row.image_path, _tenant_id(request)), row.image_path)
     return {"status": "success", "receipt_id": row.id,
-            "image_url": "/uploads/" + (row.image_path.split("/")[-1] if row.image_path else ""),
+            "image_url": image_url,
             "data": data}
 
 
@@ -1003,6 +1215,11 @@ async def replace_receipt_image(
     new_image_name = os.path.basename(image_path)
     # 换图落库（旧图文件保留不删，可审计）+ 审计 + 埋点，随后复用原单据重跑识别
     db.update_receipt(receipt_id, image_path=image_path)
+    # W5：旧源文件的预览缓存已无请求路径可达，定向清理（旧源原图本身按设计保留可
+    # 审计，绝不删除）；仅当确认已无任何单据（含软删）引用该源文件时才删缓存。
+    old_src = _resolve_upload_file(old_image_path)
+    if old_src is not None:
+        _cleanup_unreferenced_preview_cache(str(old_src))
     db.append_audit_log(receipt_id, who, "replace_image", "image_path",
                         old_image_name, new_image_name)
     _track_event(account, getattr(request.state, "session_id", ""),
@@ -1013,7 +1230,7 @@ async def replace_receipt_image(
                                       tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version,
-            "image_url": "/uploads/" + new_image_name}
+            "image_url": public_image_url(receipt_id, image_path, _tenant_id(request))}
 
 
 @router.post("/api/receipt/{receipt_id}/convert_manual")
@@ -1033,7 +1250,7 @@ def convert_manual(receipt_id: int, request: Request):
     db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
     row = db.get_receipt_row(receipt_id)
     return {"status": "success", "receipt_id": receipt_id,
-            "image_url": "/uploads/" + (row.image_path.split("/")[-1] if row.image_path else ""),
+            "image_url": public_image_url(row.id, row.image_path, _tenant_id(request)),
             "version": row.version,
             "data": build_detail(row),
             "msg": f"单据 #{receipt_id} 已转为手工录入，请补全明细后保存"}
@@ -1054,6 +1271,8 @@ def discard_receipt(receipt_id: int, request: Request):
                      "msg": "该单据已审核确认并入账，无法直接放弃删除；请使用冲销功能修正。"},
             status_code=409)
     # 软删除：保留单据（含原图），进入回收站
+    # W5：此处刻意不清理 `<stem>_web.jpg` 预览缓存 —— 软删单据仍持有 image_path，
+    # 经回收站恢复后仍要展示原图，缓存依旧被引用；真正的无主缓存由启动期兜底扫描回收。
     db.soft_delete_receipt(receipt_id)
     db.append_audit_log(receipt_id, who, "discard_receipt", "deleted_at", None, "now")
     return {"status": "success", "receipt_id": receipt_id,
@@ -1302,6 +1521,7 @@ def list_feedback(receipt_id: int, request: Request):
 class TrackBody(BaseModel):
     event_type: str
     receipt_id: Optional[int] = None
+    session_id: Optional[str] = None  # Spec §3.0 公共上下文字段：前端 localStorage 生成
     properties: Optional[dict] = None
 
 
@@ -1311,7 +1531,7 @@ def track_event(body: TrackBody, request: Request):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
     tenant_id = _tenant_id(request)
-    _track_event(account, getattr(request.state, "session_id", ""),
+    _track_event(account, body.session_id or getattr(request.state, "session_id", ""),
                  body.event_type, receipt_id=body.receipt_id,
                  properties=body.properties or {},
                  tenant_id=tenant_id)

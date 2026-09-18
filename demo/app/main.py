@@ -26,6 +26,7 @@ from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
 from app.api_dishes import router as dishes_router
 from app.api_evalset import router as evalset_router
+from app.api_export import router as export_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
 from app.api_memory import router as memory_router
@@ -44,6 +45,7 @@ app.include_router(admin_router)
 app.include_router(phase2_router)
 app.include_router(evalset_router)
 app.include_router(memory_router)
+app.include_router(export_router)
 
 
 @app.on_event("startup")
@@ -85,6 +87,71 @@ def _start_experiment_guardian():
         import logging
         logging.getLogger("startup").warning(
             f"[guardian] 实验守护线程启动失败(不阻断): {e}")
+
+
+@app.on_event("startup")
+def _sync_evalset_receipts_startup():
+    """启动自愈：自动同步 GT 评测集与单据库关联（补齐 source_receipt_id 与黄金基准集标记）。"""
+    try:
+        from app.services.evalset_linkage import sync_evalset_receipts_linkage
+        stats = sync_evalset_receipts_linkage()
+        if stats and stats.get("linked"):
+            import logging
+            logging.getLogger("startup").info(f"[evalset_linkage] startup sync completed: {stats}")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"[evalset_linkage] startup sync failed (non-blocking): {e}")
+
+
+@app.on_event("startup")
+def _sweep_orphan_preview_caches():
+    """启动自愈：清理 uploads 下无主的 `<stem>_web.jpg` 预览缓存（幂等，源原图不删）。
+
+    why: 换图（replace-image）的定向清理只覆盖「请求正常走完」的路径；换图后进程崩溃、
+    外部直接改库/删文件等情况仍会留下无主缓存，长期在 uploads 累积。这里兜底扫描：
+    源文件已不存在、或该源文件已不被任何单据（含软删）引用 → 删缓存。
+    只删 `*_web.jpg` 缓存副本，任何源原图（.heic/.jpg/.png 等）一律不碰；引用集合与
+    uploads 目录无交集时（库/目录不匹配、测试临时库等）退化为仅按源文件存在性清理，
+    绝不误删可能仍有效的缓存。
+    """
+    try:
+        from app.services import image_web
+        referenced = image_web.referenced_preview_stems(db.list_all_image_paths())
+        removed = image_web.sweep_orphan_previews(UPLOAD_DIR, referenced)
+        if removed:
+            import logging
+            logging.getLogger("startup").info(
+                f"[preview_cache] 清理无主预览缓存 {len(removed)} 个")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(
+            f"[preview_cache] 启动清理失败(不阻断): {e}")
+
+
+@app.on_event("startup")
+def _warn_weak_token_secret():
+    """生产环境缺 DEMO_TOKEN_SECRET 时启动告警（不拒绝启动）。
+
+    why: 预览端点匿名可取图，靠 HMAC 签名（复用 app.auth._TOKEN_SECRET）防 id 枚举；
+    生产不设该环境变量就会用仓库内置默认值签名，防枚举等同混淆。这里选择「告警而非
+    拒绝启动」：拒绝启动会把「已上线但漏配环境变量」直接变成服务全不可用，影响面远大于
+    该签名本身的强度问题（密钥只护预览 URL，不是认证凭据）。开发/演示环境（非
+    production）保持既有行为，缺密钥照常启动。
+    """
+    if DEV_MODE:
+        return
+    try:
+        from app import auth
+        if auth.token_secret_is_weak():
+            import logging
+            logging.getLogger("startup").warning(
+                "[auth] 生产环境未设置 DEMO_TOKEN_SECRET（或仍是默认值）："
+                "单据原图预览 URL 的 HMAC 签名将使用仓库内置默认密钥，"
+                "防 id 枚举强度等同混淆。请在部署环境显式设置一个随机长字符串。"
+                "注意：密钥变更会使既有已签发的预览 URL 立即失效（重新拉取列表即可）。")
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(f"[auth] 密钥强度检查失败(不阻断): {e}")
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent

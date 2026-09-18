@@ -43,7 +43,12 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "../receipt_demo.db"))
+_default_db_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../receipt_demo.db"))
+_raw_db_path = os.environ.get("DB_PATH", "").strip()
+if not _raw_db_path or _raw_db_path in ("./receipt_demo.db", "receipt_demo.db"):
+    DB_PATH = _default_db_path
+else:
+    DB_PATH = _raw_db_path
 
 _engine = None
 _SessionLocal = None
@@ -110,6 +115,7 @@ def _make_engine():
         # 审计日志
         audit_logs_json = Column(Text, default="[]")
         use_grey = Column(Integer, default=0)              # 灰测组标记（阶段 1 持久化）
+        is_golden_sample = Column(Integer, default=0)      # 黄金基准集成员标记（可逆策展层，不改动单据本体）
         rag_context_json = Column(Text, default="")        # RAG 检索上下文（data_only 调试开关可见）
         currency = Column(String, default="HKD")           # 多币种（F-P1-3）
         # Gap 9 / Gap 6 店员可修正字段（识别直出 + save_edited 覆写，双写同列）
@@ -496,6 +502,11 @@ def _make_engine():
     _apply_migration_ddl(
         _engine,
         "ALTER TABLE receipts ADD COLUMN use_grey INTEGER DEFAULT 0",
+    )
+    # SQLite 迁移：黄金基准集成员标记（看板可加入/移出，策展层可逆，不动审计主数据）
+    _apply_migration_ddl(
+        _engine,
+        "ALTER TABLE receipts ADD COLUMN is_golden_sample INTEGER DEFAULT 0",
     )
     # SQLite 迁移：RAG 上下文 + 多币种（P1 治理）
     for _ddl in (
@@ -991,6 +1002,28 @@ def create_receipt(supplier_name="", status="uploaded", tenant_id="default"):
         s.close()
 
 
+def create_receipt_record(**kwargs):
+    """创建完整字段的收据记录并持久化，返回 receipt_id。"""
+    if _ReceiptRow is None:
+        _make_engine()
+    s = get_session()
+    try:
+        tenant_id = kwargs.pop("tenant_id", "default")
+        if "created_at" not in kwargs or not kwargs["created_at"]:
+            kwargs["created_at"] = now_iso()
+        if "updated_at" not in kwargs or not kwargs["updated_at"]:
+            kwargs["updated_at"] = now_iso()
+        valid_fields = {c.name for c in _ReceiptRow.__table__.columns}
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_fields}
+        row = _ReceiptRow(tenant_id=str(tenant_id or "default"), **filtered_kwargs)
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return row.id
+    finally:
+        s.close()
+
+
 def get_receipt_row(receipt_id, tenant_id=None):
     """按 id 取单据。tenant_id 非空时校验归属，跨租户视为不存在（返回 None）。"""
     s = get_session()
@@ -1200,6 +1233,23 @@ def read_system_audit_log():
         _s.close()
 
 
+def list_all_image_paths():
+    """列出全部单据（含软删）的 image_path 原始值，只取该单列。
+
+    why: 预览转码缓存（uploads/<stem>_web.jpg）的清理必须先证明「已无任何单据引用该
+    源文件」。软删单据可经回收站恢复、恢复后仍需展示原图，故不得过滤 deleted_at；
+    同理不做租户过滤 —— 跨租户引用同名源文件同样构成引用，漏判即误删缓存。
+    只查单列（不加载整行 ORM 对象），供一次引用判定覆盖全部单据。
+    """
+    if _ReceiptRow is None:
+        return []
+    _s = get_session()
+    try:
+        return [row[0] or "" for row in _s.query(_ReceiptRow.image_path).all()]
+    finally:
+        _s.close()
+
+
 def list_trash_receipts(tenant_id=None):
     """返回软删除单据列表（含 deleted_at），按 id 倒序。"""
     _s = get_session()
@@ -1208,6 +1258,32 @@ def list_trash_receipts(tenant_id=None):
         return q.filter(
             _ReceiptRow.deleted_at.isnot(None)
         ).order_by(_ReceiptRow.id.desc()).all()
+    finally:
+        _s.close()
+
+
+def set_golden_sample(receipt_id, flag=1, tenant_id="default"):
+    """标记/取消黄金基准集成员（幂等，可逆；仅改标记列，不动单据本体与审计链）。
+
+    真幂等：仅当目标 flag 与库中现值不同时才写库。
+    启动自愈 sync_evalset_receipts_linkage 每次 uvicorn --reload 重启都会调用本函数，
+    若无条件 UPDATE updated_at，会导致黄金样本的时间戳被无业务含义地刷新。
+    """
+    if receipt_id is None or _ReceiptRow is None:
+        return False
+    _s = get_session()
+    try:
+        row = _s.get(_ReceiptRow, int(receipt_id))
+        if row is None or not _tenant_ok(row, tenant_id):
+            return False
+        target = 1 if flag else 0
+        # 现值可能是 None（历史空值），按 0 处理，避免 None != 0 造成假变更
+        if (row.is_golden_sample or 0) == target:
+            return True
+        row.is_golden_sample = target
+        row.updated_at = now_iso()
+        _s.commit()
+        return True
     finally:
         _s.close()
 
@@ -1230,6 +1306,25 @@ def get_receipt_items(receipt_id, tenant_id=None):
         return [_row_to_item(r) for r in rows]
     finally:
         s.close()
+
+
+def get_receipt_items_multi(receipt_ids=None, tenant_id=None):
+    if receipt_ids is not None and len(receipt_ids) == 0:
+        return {}
+    s = get_session()
+    try:
+        q = scoped(s.query(_ItemRow), _ItemRow, tenant_id)
+        if receipt_ids is not None:
+            int_ids = [int(rid) for rid in receipt_ids]
+            q = q.filter(_ItemRow.receipt_id.in_(int_ids))
+        rows = q.all()
+        result = {}
+        for r in rows:
+            result.setdefault(r.receipt_id, []).append(_row_to_item(r))
+        return result
+    finally:
+        s.close()
+
 
 
 def update_item_sku(item_id, sku_id):
@@ -1364,13 +1459,10 @@ def find_sku_by_name(name, tenant_id=None):
 
 def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     kind, note="", tenant_id="default"):
-    """写库存流水 + 更新 SKU 当前库存 + 挂载入库批次生成钩子。"""
+    """写库存流水 + 更新 SKU 当前库存 + 挂载入库/消耗批次处理钩子。"""
     s = get_session()
     try:
-        s.add(_StockLogRow(sku_id=sku_id, name=name, qty=qty, unit=unit, amount=amount,
-                           vendor=vendor, date=date, receipt_id=receipt_id,
-                           kind=kind, note=note, created_at=now_iso(),
-                           tenant_id=str(tenant_id or "default")))
+        log_amount = amount
         if sku_id:
             sku = s.get(_SkuRow, int(sku_id))
             if sku:
@@ -1379,7 +1471,17 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     if kind == "in" and amount > 0:
                         sku.last_unit_price = amount / qty if qty else sku.last_unit_price
                 elif kind in ("consume", "waste"):
-                    sku.current_stock -= qty
+                    sku.current_stock = round(sku.current_stock - qty, 4)
+                    from app.services.costing_service import CostingService
+                    fifo_cost, _ = CostingService.deduct_consumption_fifo(
+                        session=s,
+                        sku_id=sku.id,
+                        qty_needed=qty,
+                        unit_needed=unit or sku.base_unit,
+                        date=date or now_iso()[:10],
+                    )
+                    if (log_amount == 0 or log_amount is None) and fifo_cost > 0:
+                        log_amount = round(fifo_cost, 2)
             # 批次入库钩子：kind == 'in' 时自动记录入库批次
             if kind == "in" and qty > 0:
                 unit_price = (amount / qty) if qty > 0 else (sku.last_unit_price if sku else 0.0)
@@ -1393,6 +1495,10 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     date=date or now_iso()[:10],
                     receipt_id=receipt_id,
                 )
+        s.add(_StockLogRow(sku_id=sku_id, name=name, qty=qty, unit=unit, amount=log_amount,
+                           vendor=vendor, date=date, receipt_id=receipt_id,
+                           kind=kind, note=note, created_at=now_iso(),
+                           tenant_id=str(tenant_id or "default")))
         s.commit()
     finally:
         s.close()
@@ -1404,12 +1510,43 @@ def stocktake_sku(sku_id, actual_qty, note="", tenant_id="default"):
         sku = s.get(_SkuRow, int(sku_id))
         if sku is None:
             return None
-        diff = actual_qty - sku.current_stock
+        diff = round(actual_qty - sku.current_stock, 4)
+        now_date = now_iso()[:10]
+        cost = 0.0
+        from app.services.costing_service import CostingService
+        if diff < 0:
+            cost, _ = CostingService.deduct_consumption_fifo(
+                session=s,
+                sku_id=sku.id,
+                qty_needed=abs(diff),
+                unit_needed=sku.base_unit,
+                date=now_date,
+            )
+        elif diff > 0:
+            unit_cost = sku.last_unit_price if (sku.last_unit_price and sku.last_unit_price > 0) else 0.0
+            if unit_cost == 0.0:
+                last_b = s.query(_InventoryBatchRow).filter(
+                    _InventoryBatchRow.sku_id == sku.id,
+                    _InventoryBatchRow.unit_cost > 0
+                ).order_by(_InventoryBatchRow.id.desc()).first()
+                if last_b:
+                    unit_cost = last_b.unit_cost
+            CostingService.record_inbound_batch(
+                session=s,
+                sku_id=sku.id,
+                qty=diff,
+                unit_price=unit_cost,
+                unit=sku.base_unit,
+                date=now_date,
+                receipt_id=None,
+            )
+            cost = round(diff * unit_cost, 2)
+
         s.add(_StockLogRow(sku_id=sku.id, name=sku.name, qty=diff, unit=sku.base_unit,
-                           amount=0, vendor="", date=now_iso()[:10], receipt_id=None,
-                           kind="stocktake", note=note or "盘点", created_at=now_iso(),
+                           amount=round(cost, 2), vendor="", date=now_date, receipt_id=None,
+                           kind="stocktake", note=note or ("盘点盘盈入库调整" if diff > 0 else "盘点盘亏核销"), created_at=now_iso(),
                            tenant_id=str(tenant_id or "default")))
-        sku.current_stock = actual_qty
+        sku.current_stock = round(actual_qty, 4)
         s.commit()
         return sku
     finally:
@@ -2324,6 +2461,21 @@ def get_engine_config():
         # 旧 grey_mode → grey_percent（cross_audit 旧语义 = 开启审核，保留审核开关）
         if "grey_mode" in stored:
             stored.pop("grey_mode", None)
+        # 清理历史已保存的 opencode / codebuddy CLI 引擎与模型配置
+        from app.models import EngineKind
+        for eng_field, mod_field, def_model in (
+            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
+            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
+            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
+            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
+            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
+            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
+        ):
+            if str(stored.get(eng_field) or "").lower() in ("opencode", "codebuddy"):
+                stored[eng_field] = EngineKind.OPENAI
+            m_val = str(stored.get(mod_field) or "")
+            if m_val.startswith("opencode") or m_val.startswith("codebuddy") or m_val == "minimax-m3-pay":
+                stored[mod_field] = def_model
         return EngineConfig(**stored)
     finally:
         s.close()
@@ -2332,6 +2484,24 @@ def get_engine_config():
 def set_engine_config(cfg):
     s = get_session()
     try:
+        from app.models import EngineKind
+        # 写入前确保不残留 opencode / codebuddy 引擎及模型
+        for eng_field, mod_field, def_model in (
+            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
+            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
+            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
+            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
+            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
+            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
+        ):
+            val = getattr(cfg, eng_field, None)
+            val_str = str(getattr(val, "value", val) or "").lower()
+            if val_str in ("opencode", "codebuddy"):
+                setattr(cfg, eng_field, EngineKind.OPENAI)
+            m_val = str(getattr(cfg, mod_field, None) or "")
+            if m_val.startswith("opencode") or m_val.startswith("codebuddy") or m_val == "minimax-m3-pay":
+                setattr(cfg, mod_field, def_model)
+
         row = s.get(_AppSettingRow, "engine_config")
         if row is None:
             row = _AppSettingRow(key="engine_config")
@@ -2350,90 +2520,129 @@ def _is_placeholder_key(key) -> bool:
 
 
 def hydrate_engine_config_from_env():
-    """启动装配：SiliconFlow 为默认 provider（用户决策 2026-08-30），识别与审核双腿强制装配。
+    """启动装配：识别腿默认 DashScope，审核腿默认 SiliconFlow（用户决策 2026-09-15）。
 
-    每次重启都把双腿装配回 SiliconFlow 通道——即使 DB 已存其他引擎配置，
+    每次重启都按 .env 重新装配双腿——即使 DB 已存其他引擎配置，
     管理台的临时切换在重启后不保留。
-    识别腿：SF Qwen-VL 系（OPENAI_MODEL）；审核腿：SF GLM-4.5V（SILICONFLOW_AUDIT_MODEL，
-    视觉模型支持 text/vlm/ondemand 审核，与识别腿跨厂商异构，Gap A3）。
-    用户决策（2026-09-02）：opencode 已过期——灰测/解析腿若仍为 opencode（历史遗留默认值），
-    一并归一为 SF 通道（沿用主腿 base/key，模型用标准 SF 模型，业务开关保持原值）。
-    SiliconFlow 健康检查失败自动降级 DashScope（识别 qwen3-vl / 审核 qwen3-max，降级期间
-    双腿同家族、异构性弱化，日志提示）；两者皆不可用则保持现有配置不动。幂等，可每次启动安全执行。
+    识别腿：DashScope OpenAI 兼容通道 qwen3.5-omni-flash（QWEN_VL_MODEL 可覆盖），
+            base 取 DASHSCOPE_BASE_URL，缺省官方 compatible-mode/v1；不依赖 SF 健康检查。
+    审核腿：SiliconFlow zai-org/GLM-4.5V（SILICONFLOW_AUDIT_MODEL，视觉模型支持
+            text/vlm/ondemand 审核，与识别腿跨厂商异构，Gap A3）。
+    某侧密钥缺失或健康检查失败时，该侧降级到另一家（降级期间双腿同家族、异构性弱化，日志提示）；
+    两者皆不可用则保持现有配置不动。用户决策（2026-09-02）：opencode 已过期——
+    灰测/解析腿若仍为 opencode（历史遗留默认值）一并归一，业务开关保持原值。
+    幂等，可每次启动安全执行。
     """
     import logging
     log = logging.getLogger("startup")
     try:
         from dotenv import load_dotenv
+        from app.models import EngineKind, DASHSCOPE_DEFAULT_BASE_URL, DASHSCOPE_DEFAULT_REC_MODEL
         load_dotenv()
         cfg = get_engine_config()
+
+        def _clean_base(raw: str, fallback: str) -> str:
+            """容错：有人会把 /chat/completions 一并填进 base_url，协议层会自动追加，需去重。"""
+            b = (raw or fallback).strip()
+            if b.endswith("/chat/completions"):
+                b = b[:-len("/chat/completions")]
+            return b
+
+        ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
         sf_key = (os.environ.get("SILICONFLOW_API_KEY")
                   or os.environ.get("OPENAI_REC_API_KEY")
                   or os.environ.get("OPENAI_API_KEY") or "").strip()
-        ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
-        if sf_key and not _is_placeholder_key(sf_key) and _openai_gateway_healthy(sf_key):
-            cfg.recognition_engine = "openai"
-            base = (os.environ.get("SILICONFLOW_BASE_URL")
-                    or os.environ.get("OPENAI_BASE_URL")
-                    or "https://api.siliconflow.cn/v1").strip()
-            # 容错：有人会把 /chat/completions 一并填进 base_url，协议层会自动追加，需去重
-            if base.endswith("/chat/completions"):
-                base = base[:-len("/chat/completions")]
-            cfg.openai_rec_base_url = base
-            cfg.openai_rec_api_key = sf_key
-            # 强制语义：模型解析不读 DB 旧值（env → 内置默认），管理台临时切换不跨重启
-            cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
-                                    or os.environ.get("OPENAI_MODEL")
-                                    or _SF_DEFAULT_REC_MODEL)
-            # 审核腿：SF GLM-4.5V（与识别 Qwen 系跨厂商异构），禁止回落 opencode
-            cfg.audit_engine = "openai"
-            cfg.openai_aud_base_url = base
-            cfg.openai_aud_api_key = sf_key
-            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                    or "zai-org/GLM-4.5V")
-            cfg.audit_model = cfg.openai_aud_model
-            source = "SILICONFLOW/OPENAI（默认 provider，重启双腿强制装配）"
-        elif ds_key and not _is_placeholder_key(ds_key):
-            cfg.recognition_engine = "openai"
-            base = (os.environ.get("DASHSCOPE_BASE_URL")
-                    or "https://dashscope.aliyuncs.com/compatible-mode/v1")
-            cfg.openai_rec_base_url = base
-            cfg.openai_rec_api_key = ds_key
-            cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
-                                    or cfg.openai_rec_model or "qwen3-vl-flash")
-            # 审核腿降级：DashScope 文本模型；与识别腿同为 Qwen 家族，异构性弱化（日志提示）
-            cfg.audit_engine = "openai"
-            cfg.openai_aud_base_url = base
-            cfg.openai_aud_api_key = ds_key
-            cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
-                                    or "qwen3-vl-plus")
-            cfg.audit_model = cfg.openai_aud_model
-            source = "DASHSCOPE_API_KEY（SiliconFlow 不可用，降级装配；降级期间双腿同家族）"
-        else:
+        ds_ok = bool(ds_key) and not _is_placeholder_key(ds_key)
+        sf_ok = bool(sf_key) and not _is_placeholder_key(sf_key)
+
+        if not ds_ok and not sf_ok:
             log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），仅归一遗留 opencode 配置")
             _normalize_legacy_cli_engines(cfg, log)
             set_engine_config(cfg)
             return
-        _normalize_legacy_cli_engines(cfg, log, sf_base=cfg.openai_rec_base_url,
-                                      sf_key=cfg.openai_rec_api_key)
+
+        ds_base = _clean_base(os.environ.get("DASHSCOPE_BASE_URL"), DASHSCOPE_DEFAULT_BASE_URL)
+        sf_base = _clean_base(os.environ.get("SILICONFLOW_BASE_URL")
+                              or os.environ.get("OPENAI_BASE_URL"),
+                              "https://api.siliconflow.cn/v1")
+
+        # ---- 识别腿：DashScope 优先；DS 密钥缺失时降级 SF Qwen3-VL ----
+        cfg.recognition_engine = EngineKind.OPENAI
+        if ds_ok:
+            cfg.openai_rec_base_url = ds_base
+            cfg.openai_rec_api_key = ds_key
+            # 强制语义：模型解析不读 DB 旧值（env → 内置默认），管理台临时切换不跨重启
+            cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
+                                    or DASHSCOPE_DEFAULT_REC_MODEL)
+            rec_src = f"DashScope {ds_base} / {cfg.openai_rec_model}"
+        else:
+            cfg.openai_rec_base_url = sf_base
+            cfg.openai_rec_api_key = sf_key
+            cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
+                                    or os.environ.get("OPENAI_MODEL")
+                                    or _SF_DEFAULT_REC_MODEL)
+            rec_src = f"SiliconFlow（DashScope 密钥缺失，识别腿降级）{sf_base} / {cfg.openai_rec_model}"
+            log.warning("[engine-env] 无可用 DashScope 密钥，识别腿降级 SiliconFlow")
+        cfg.recognition_model = cfg.openai_rec_model
+
+        # ---- 审核腿：SF GLM-4.5V 优先；SF 不可用时降级 DashScope（异构性弱化） ----
+        cfg.audit_engine = EngineKind.OPENAI
+        if sf_ok and _openai_gateway_healthy(sf_key, sf_base):
+            cfg.openai_aud_base_url = sf_base
+            cfg.openai_aud_api_key = sf_key
+            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
+                                    or _SF_DEFAULT_AUD_MODEL)
+            aud_src = f"SiliconFlow {sf_base} / {cfg.openai_aud_model}"
+        elif ds_ok:
+            cfg.openai_aud_base_url = ds_base
+            cfg.openai_aud_api_key = ds_key
+            cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
+                                    or "qwen3-vl-plus")
+            aud_src = f"DashScope（SiliconFlow 不可用，审核腿降级）{ds_base} / {cfg.openai_aud_model}"
+            log.warning("[engine-env] SiliconFlow 健康检查未通过，审核腿降级 DashScope；"
+                        "降级期间双腿同家族、异构性弱化（Gap A3）")
+        else:
+            # SF 密钥存在但 /models 探针未通过，且无 DashScope 可用：仍按 .env 保底装配 SF
+            cfg.openai_aud_base_url = sf_base
+            cfg.openai_aud_api_key = sf_key
+            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
+                                    or _SF_DEFAULT_AUD_MODEL)
+            aud_src = f"SiliconFlow（健康探针未通过，保底装配）{sf_base} / {cfg.openai_aud_model}"
+            log.warning("[engine-env] 审核腿 SiliconFlow 健康探针未通过且无 DashScope 可用，按 .env 保底装配")
+        cfg.audit_model = cfg.openai_aud_model
+
+        # 灰测识别腿跟随识别腿 provider；灰测审核腿与解析腿跟随审核腿 provider
+        _normalize_legacy_cli_engines(
+            cfg, log,
+            rec_base=cfg.openai_rec_base_url, rec_key=cfg.openai_rec_api_key,
+            rec_model=cfg.openai_rec_model,
+            aud_base=cfg.openai_aud_base_url, aud_key=cfg.openai_aud_api_key,
+        )
         set_engine_config(cfg)
-        log.info(f"[engine-env] 已从 .env {source}: 识别 {cfg.openai_rec_base_url} / {cfg.openai_rec_model}；审核 {cfg.openai_aud_model}")
+        log.info(f"[engine-env] 已从 .env 装配：识别 {rec_src}；审核 {aud_src}")
     except Exception as e:
         log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
 
 
-# 默认 SF 模型：识别/解析用非思考型 Qwen3-VL（适配 60s 高压上限，Thinking 型实测必超时），
-# 审核用 GLM-4.5V（与识别 Qwen 系跨厂商异构）。
+# 默认模型常量：
+# - _REC_DEFAULT_MODEL：识别腿（含灰测识别腿）默认模型，走 DashScope 通道（用户决策 2026-09-15）。
+#   单一事实源取自 app.models，避免字面量重复漂移。
+# - _SF_DEFAULT_REC_MODEL：SiliconFlow 通道的识别/解析默认模型。
+#   识别腿在 DashScope 密钥缺失时降级用它；解析腿的 base 仍属 SF 通道，恒用此值。
+# - _SF_DEFAULT_AUD_MODEL：审核腿与灰测审核腿默认模型（与识别腿跨厂商异构）。
 # 注意 Qwen2.5-VL-7B-Instruct 已下架 SiliconFlow 目录（2026-09 实测），禁止再作为默认。
+from app.models import DASHSCOPE_DEFAULT_REC_MODEL as _REC_DEFAULT_MODEL  # noqa: E402
 _SF_DEFAULT_REC_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
 _SF_DEFAULT_AUD_MODEL = "zai-org/GLM-4.5V"
 
 
-def _normalize_legacy_cli_engines(cfg, log, sf_base: str = "", sf_key: str = "") -> None:
-    """归一历史遗留的 opencode 引擎配置（灰测/解析腿）。幂等；业务开关一律不动。
+def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "",
+                                  rec_model: str = "", aud_base: str = "", aud_key: str = "") -> None:
+    """归一历史遗留的 opencode / codebuddy CLI 引擎配置。幂等；业务开关一律不动。
 
-    引擎值 opencode → openai；模型 opencode/* → 标准 SF 模型；灰测 openai 参数为空时
-    沿用主腿 base/key（llm._build 对灰测腿不回退主腿参数，必须显式填充）。
+    引擎值 opencode/codebuddy → openai；模型 opencode/* / codebuddy/* / minimax-m3-pay → 标准模型；
+    灰测识别腿沿用识别腿 provider（rec_base/rec_key/rec_model，缺失时回落 SF 默认），
+    灰测审核腿与解析腿沿用审核腿 provider（aud_base/aud_key）。
     """
     changed = []
 
@@ -2441,56 +2650,90 @@ def _normalize_legacy_cli_engines(cfg, log, sf_base: str = "", sf_key: str = "")
         # EngineKind 等枚举字段的字符串取值（str(enum) 是 "EngineKind.X" 形态，不能直接比较）
         return str(getattr(v, "value", v) or "").lower()
 
-    if _enum_str(getattr(cfg, "parse_llm_engine", "")) == "opencode":
-        cfg.parse_llm_engine = "openai"
-        if str(cfg.parse_llm_model or "").startswith("opencode"):
+    def _is_cli(eng, mod):
+        e = _enum_str(eng)
+        m = str(mod or "")
+        return e in ("opencode", "codebuddy") or m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay"
+
+    # 主识别腿
+    if _is_cli(getattr(cfg, "recognition_engine", ""), getattr(cfg, "recognition_model", "")):
+        cfg.recognition_engine = EngineKind.OPENAI
+        m = str(cfg.recognition_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+            cfg.recognition_model = _SF_DEFAULT_REC_MODEL
+        changed.append("rec")
+
+    # 主审核腿
+    if _is_cli(getattr(cfg, "audit_engine", ""), getattr(cfg, "audit_model", "")):
+        cfg.audit_engine = EngineKind.OPENAI
+        m = str(cfg.audit_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+            cfg.audit_model = _SF_DEFAULT_AUD_MODEL
+        changed.append("aud")
+
+    # 解析腿
+    if _is_cli(getattr(cfg, "parse_llm_engine", ""), getattr(cfg, "parse_llm_model", "")):
+        cfg.parse_llm_engine = EngineKind.OPENAI
+        m = str(cfg.parse_llm_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
             cfg.parse_llm_model = _SF_DEFAULT_REC_MODEL
         changed.append("parse")
 
-    if _enum_str(getattr(cfg, "grey_recognition_engine", "")) == "opencode":
-        cfg.grey_recognition_engine = "openai"
-        if str(cfg.grey_recognition_model or "").startswith("opencode"):
-            cfg.grey_recognition_model = _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_rec_base_url", "") and sf_base:
-            cfg.grey_openai_rec_base_url = sf_base
-        if not getattr(cfg, "grey_openai_rec_api_key", "") and sf_key:
-            cfg.grey_openai_rec_api_key = sf_key
+    # 灰测识别腿
+    if _is_cli(getattr(cfg, "grey_recognition_engine", ""), getattr(cfg, "grey_recognition_model", "")):
+        cfg.grey_recognition_engine = EngineKind.OPENAI
+        m = str(cfg.grey_recognition_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+            # 跟随识别腿模型（否则会出现 DashScope base + SF 模型名的错配）
+            cfg.grey_recognition_model = rec_model or _SF_DEFAULT_REC_MODEL
+        if not getattr(cfg, "grey_openai_rec_base_url", "") and rec_base:
+            cfg.grey_openai_rec_base_url = rec_base
+        if not getattr(cfg, "grey_openai_rec_api_key", "") and rec_key:
+            cfg.grey_openai_rec_api_key = rec_key
         if not getattr(cfg, "grey_openai_rec_model", ""):
-            cfg.grey_openai_rec_model = _SF_DEFAULT_REC_MODEL
+            cfg.grey_openai_rec_model = rec_model or _SF_DEFAULT_REC_MODEL
         changed.append("grey_rec")
 
-    if _enum_str(getattr(cfg, "grey_audit_engine", "")) == "opencode":
-        cfg.grey_audit_engine = "openai"
-        if str(cfg.grey_audit_model or "").startswith("opencode"):
+    # 灰测审核腿
+    if _is_cli(getattr(cfg, "grey_audit_engine", ""), getattr(cfg, "grey_audit_model", "")):
+        cfg.grey_audit_engine = EngineKind.OPENAI
+        m = str(cfg.grey_audit_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
             cfg.grey_audit_model = _SF_DEFAULT_AUD_MODEL
-        if not getattr(cfg, "grey_openai_aud_base_url", "") and sf_base:
-            cfg.grey_openai_aud_base_url = sf_base
-        if not getattr(cfg, "grey_openai_aud_api_key", "") and sf_key:
-            cfg.grey_openai_aud_api_key = sf_key
+        if not getattr(cfg, "grey_openai_aud_base_url", "") and aud_base:
+            cfg.grey_openai_aud_base_url = aud_base
+        if not getattr(cfg, "grey_openai_aud_api_key", "") and aud_key:
+            cfg.grey_openai_aud_api_key = aud_key
         if not getattr(cfg, "grey_openai_aud_model", ""):
             cfg.grey_openai_aud_model = _SF_DEFAULT_AUD_MODEL
         changed.append("grey_aud")
 
-    if _enum_str(getattr(cfg, "grey_parse_llm_engine", "")) == "opencode":
-        cfg.grey_parse_llm_engine = "openai"
-        if str(cfg.grey_parse_llm_model or "").startswith("opencode"):
+    # 灰测解析腿
+    if _is_cli(getattr(cfg, "grey_parse_llm_engine", ""), getattr(cfg, "grey_parse_llm_model", "")):
+        cfg.grey_parse_llm_engine = EngineKind.OPENAI
+        m = str(cfg.grey_parse_llm_model or "")
+        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
             cfg.grey_parse_llm_model = _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_parse_base_url", "") and sf_base:
-            cfg.grey_openai_parse_base_url = sf_base
-        if not getattr(cfg, "grey_openai_parse_api_key", "") and sf_key:
-            cfg.grey_openai_parse_api_key = sf_key
+        if not getattr(cfg, "grey_openai_parse_base_url", "") and aud_base:
+            cfg.grey_openai_parse_base_url = aud_base
+        if not getattr(cfg, "grey_openai_parse_api_key", "") and aud_key:
+            cfg.grey_openai_parse_api_key = aud_key
         if not getattr(cfg, "grey_openai_parse_model", ""):
             cfg.grey_openai_parse_model = _SF_DEFAULT_REC_MODEL
         changed.append("grey_parse")
 
     if changed:
-        log.info("[engine-env] 已归一遗留 opencode 配置 → SiliconFlow: %s", ",".join(changed))
+        log.info("[engine-env] 已归一遗留 opencode/codebuddy CLI 配置 → OpenAI 兼容通道: %s", ",".join(changed))
 
 
-def _openai_gateway_healthy(api_key: str) -> bool:
-    """轻量健康检查：GET {OPENAI/SILICONFLOW base}/models，200 即健康；异常/超时返回 False。"""
+def _openai_gateway_healthy(api_key: str, base_url: str = "") -> bool:
+    """轻量健康检查：GET {base_url}/models，200 即健康；异常/超时返回 False。
+
+    base_url 留空时回落 OPENAI/SILICONFLOW base（历史调用兼容）；显式传入可避免
+    「探 SF 端点却用于判断 DashScope」这类误判。
+    """
     import urllib.request
-    base = (os.environ.get("SILICONFLOW_BASE_URL")
+    base = (base_url or os.environ.get("SILICONFLOW_BASE_URL")
             or os.environ.get("OPENAI_BASE_URL")
             or "https://api.siliconflow.cn/v1").strip()
     if base.endswith("/chat/completions"):
@@ -3452,6 +3695,16 @@ def list_experiments():
         s.close()
 
 
+def get_running_experiment():
+    """获取当前处于运行状态的 A/B 科学实验（若有）。"""
+    s = get_session()
+    try:
+        row = s.query(_ExperimentRow).filter(_ExperimentRow.status == "running").order_by(_ExperimentRow.id.desc()).first()
+        return _exp_to_dict(row) if row else None
+    finally:
+        s.close()
+
+
 # -------------------------------------------------------------
 # T9（Gap C3 + D4）：实验守护——事件留痕 / 方向性快照 / 冻结
 # -------------------------------------------------------------
@@ -3664,15 +3917,12 @@ def get_experiment_metrics(exp_id):
             return None
         denom = sqrt(denom_sq)
         z = (p2 - p1) / denom
-        # 近似正态 CDF（Horner）
+        # 标准正态 CDF：math.erf 精确实现（旧 Abramowitz 近似把 erf 系数配了 e^(-x²/2) 指数，
+        # 导致 Φ 失真、p 值可 >1，如 z=1.491 时算出 1.1064）
         def _phi(x):
-            ax = abs(x)
-            a1 = 0.254829592; a2 = -0.284496736; a3 = 1.421413741
-            a4 = -1.453152027; a5 = 1.061405429; p = 0.3275911
-            t = 1.0 / (1.0 + p * ax)
-            y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * _math.exp(-ax * ax / 2.0)
-            return 0.5 * y if x >= 0 else 1.0 - 0.5 * y
-        pval = 2.0 * (1.0 - _phi(z))
+            return 0.5 * (1.0 + _math.erf(x / _math.sqrt(2.0)))
+        # 双侧 p 按 |z| 计算：treatment 低于 control（z<0）同样成立
+        pval = 2.0 * (1.0 - _phi(abs(z)))
         return {"z": round(z, 6), "p_value": round(pval, 8),
                 "effect_size_pp": round((p2 - p1) * 100, 4)}
 

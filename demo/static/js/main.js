@@ -7646,8 +7646,20 @@ function loadReceiptDetail(receiptId) {
         const data = ret.data;
 
         document.getElementById('archiveModalTitle').innerText = ` 历史收据明细校对 - 单据 #${ret.receipt_id}`;
-        document.getElementById('archivePreviewImg').src = ret.image_url;
-        document.getElementById('btnArchiveOpenRaw').href = ret.image_url;
+        // 空 image_url（image_path 为空的历史单据）不得直接赋值：写空串会让浏览器
+        // 回落到向当前页面发请求，且「查看大图」会指向空 URL。URL 为空时清空属性并隐藏入口。
+        const archiveImageUrl = ret.image_url || '';
+        const archivePreviewImg = document.getElementById('archivePreviewImg');
+        const archiveOpenRawBtn = document.getElementById('btnArchiveOpenRaw');
+        if (archiveImageUrl) {
+            archivePreviewImg.src = archiveImageUrl;
+            archiveOpenRawBtn.href = archiveImageUrl;
+            archiveOpenRawBtn.classList.remove('hide');
+        } else {
+            archivePreviewImg.removeAttribute('src');
+            archiveOpenRawBtn.removeAttribute('href');
+            archiveOpenRawBtn.classList.add('hide');
+        }
         resetArchiveImgTransform();
 
         renderArchiveForm(data);
@@ -9921,7 +9933,9 @@ function retryPhotoFromSider(idx) {
                 if (r && r.status === 'parsed') {
                     photo.status = 'parsed';
                     photo.receiptId = r.receipt_id;
-                    photo.imageUrl = r.image_url;
+                    // 空 image_path 的单据 image_url 为 ''：归一成 null（与 photo 初始化一致），
+                    // 避免空串在后续 p.imageUrl || ... 链里被误判为「有值」
+                    photo.imageUrl = r.image_url || null;
                     photo.data = r.data;
                     captureResultVersion(r);
                     renderSider();
@@ -11572,7 +11586,7 @@ const OPENAI_PRESETS = {
         label: '阿里云百炼 · DashScope',
         base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
         api_key: '',
-        rec_model: 'qwen3-vl-flash',
+        rec_model: 'qwen3.5-omni-flash',
         aud_model: 'qwen3-vl-plus',
     },
     siliconflow: {
@@ -12325,13 +12339,15 @@ function onAdminExpSelectChange(expId) {
 
     // 模型信息
     const baseRecModInput = document.getElementById('adminOpenaiRecModel');
-    const baselineModel = (baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : '生产主力引擎';
-    if (ctrlEl) ctrlEl.textContent = baselineModel;
-
     let snapshot = exp.grey_snapshot;
     if (typeof snapshot === 'string') {
         try { snapshot = JSON.parse(snapshot); } catch (e) { snapshot = {}; }
     }
+    const baselineModel = (snapshot && snapshot.control_model)
+        ? snapshot.control_model
+        : ((baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : '生产主力引擎');
+    if (ctrlEl) ctrlEl.textContent = baselineModel;
+
     const treatmentModel = (snapshot && snapshot.treatment_model) ? snapshot.treatment_model : '待测对比模型';
     if (treatEl) treatEl.textContent = treatmentModel;
 
@@ -12388,27 +12404,108 @@ async function stopCurrentExperiment() {
     }
 }
 
+function applyExpPreset(side, val) {
+    const isCtrl = (side === 'ctrl');
+    const baseUrlEl = document.getElementById(isCtrl ? 'newExpCtrlBaseUrl' : 'newExpTreatBaseUrl');
+    const apiKeyEl = document.getElementById(isCtrl ? 'newExpCtrlApiKey' : 'newExpTreatApiKey');
+    const modelEl = document.getElementById(isCtrl ? 'newExpControlModel' : 'newExpTreatmentModel');
+
+    if (val === 'current_prod') {
+        const baseRecModInput = document.getElementById('adminOpenaiRecModel');
+        const baseRecUrlInput = document.getElementById('adminOpenaiRecBaseUrl');
+        if (modelEl) modelEl.value = (baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : 'gpt-4o-mini';
+        if (baseUrlEl) baseUrlEl.value = (baseRecUrlInput && baseRecUrlInput.value.trim()) ? baseRecUrlInput.value.trim() : 'https://apihub.agnes-ai.com/v1';
+        if (apiKeyEl) apiKeyEl.placeholder = '复用当前生产环境密钥';
+        return;
+    }
+
+    if (!val) {
+        // 手动填写
+        return;
+    }
+
+    // 优先检查 OPENAI_PRESETS
+    if (typeof OPENAI_PRESETS !== 'undefined' && OPENAI_PRESETS[val]) {
+        const p = OPENAI_PRESETS[val];
+        if (baseUrlEl) baseUrlEl.value = p.base_url || '';
+        if (modelEl) modelEl.value = p.rec_model || '';
+        if (apiKeyEl) {
+            apiKeyEl.placeholder = '请输入 ' + (p.label || '').split(' ·')[0] + ' 密钥（留空则复用系统密钥）';
+        }
+        return;
+    }
+
+    // 兼容直接传入模型名
+    if (modelEl) modelEl.value = val;
+}
+
+function onExpModelPresetChange(side, val) {
+    applyExpPreset(side, val);
+}
+
 function openCreateExperimentModal() {
     const modal = document.getElementById('createExperimentModal');
-    if (modal) modal.style.display = 'block';
+    if (modal) {
+        modal.classList.remove('hide');
+        modal.style.display = 'flex';
+        // 绑定点击遮罩关闭事件（仅首次绑定）
+        if (!modal._hasBackdropListener) {
+            modal._hasBackdropListener = true;
+            modal.addEventListener('click', function(e) {
+                if (e.target === modal) closeCreateExperimentModal();
+            });
+        }
+        // 自动装配对照组（继承当前生产主力引擎配置）
+        const ctrlPreset = document.getElementById('newExpCtrlPreset');
+        if (ctrlPreset) ctrlPreset.value = 'current_prod';
+        applyExpPreset('ctrl', 'current_prod');
+
+        // 自动装配实验组（默认选用 SiliconFlow / 候选模型）
+        const treatPreset = document.getElementById('newExpTreatPreset');
+        if (treatPreset && !treatPreset.value) {
+            treatPreset.value = 'siliconflow';
+        }
+        if (treatPreset && treatPreset.value) {
+            applyExpPreset('treat', treatPreset.value);
+        }
+        setTimeout(() => {
+            const nameEl = document.getElementById('newExpName');
+            if (nameEl) nameEl.focus();
+        }, 50);
+    }
 }
 
 function closeCreateExperimentModal() {
     const modal = document.getElementById('createExperimentModal');
-    if (modal) modal.style.display = 'none';
+    if (modal) {
+        modal.classList.add('hide');
+        modal.style.display = 'none';
+    }
 }
 
 async function submitCreateExperiment() {
     const nameEl = document.getElementById('newExpName');
     const hypEl = document.getElementById('newExpHypothesis');
+    const ctrlEl = document.getElementById('newExpControlModel');
+    const treatEl = document.getElementById('newExpTreatmentModel');
+    const ctrlBaseUrlEl = document.getElementById('newExpCtrlBaseUrl');
+    const treatBaseUrlEl = document.getElementById('newExpTreatBaseUrl');
+    const ctrlApiKeyEl = document.getElementById('newExpCtrlApiKey');
+    const treatApiKeyEl = document.getElementById('newExpTreatApiKey');
     const metricEl = document.getElementById('newExpSuccessMetric');
     const pctEl = document.getElementById('newExpTargetPercent');
     const minSampleEl = document.getElementById('newExpMinSample');
-    const treatEl = document.getElementById('newExpTreatmentModel');
 
     const name = nameEl ? nameEl.value.trim() : '';
     if (!name) {
         showToast('请输入实验名称', 'warning');
+        return;
+    }
+
+    const controlModel = ctrlEl ? ctrlEl.value.trim() : '';
+    const treatmentModel = treatEl ? treatEl.value.trim() : '';
+    if (!treatmentModel) {
+        showToast('请输入实验组候选模型标识 (Treatment Model)', 'warning');
         return;
     }
 
@@ -12418,7 +12515,12 @@ async function submitCreateExperiment() {
         success_metric: metricEl ? metricEl.value : 'accuracy',
         target_percent: pctEl ? parseInt(pctEl.value, 10) || 50 : 50,
         min_sample: minSampleEl ? parseInt(minSampleEl.value, 10) || 30 : 30,
-        treatment_model: treatEl ? treatEl.value.trim() : ''
+        control_model: controlModel,
+        treatment_model: treatmentModel,
+        control_base_url: ctrlBaseUrlEl ? ctrlBaseUrlEl.value.trim() : '',
+        treatment_base_url: treatBaseUrlEl ? treatBaseUrlEl.value.trim() : '',
+        control_api_key: ctrlApiKeyEl ? ctrlApiKeyEl.value.trim() : '',
+        treatment_api_key: treatApiKeyEl ? treatApiKeyEl.value.trim() : ''
     };
 
     try {
@@ -12433,7 +12535,6 @@ async function submitCreateExperiment() {
             closeCreateExperimentModal();
             if (nameEl) nameEl.value = '';
             if (hypEl) hypEl.value = '';
-            if (treatEl) treatEl.value = '';
             if (data.id) {
                 const sel = document.getElementById('adminExpSelect');
                 if (sel) sel.setAttribute('data-selected-id', String(data.id));
@@ -12466,6 +12567,8 @@ window.openCreateExperimentModal = openCreateExperimentModal;
 window.closeCreateExperimentModal = closeCreateExperimentModal;
 window.submitCreateExperiment = submitCreateExperiment;
 window.gotoExperimentObservatory = gotoExperimentObservatory;
+window.onExpModelPresetChange = onExpModelPresetChange;
+window.applyExpPreset = applyExpPreset;
 
 /* =============================================================
    T10 Gap E3：系统配置（阈值规则配置化 + 预处理纠偏开关）
@@ -12620,8 +12723,13 @@ function loadAdminGreySamples(tenantId, isManual = false) {
     const noticeEl = document.getElementById('adminGreySampleLimitNotice');
     if (noticeEl) noticeEl.style.display = 'none';
 
+    const scopeSel = document.getElementById('greySampleScopeSelect');
+    const scope = scopeSel ? scopeSel.value : 'all';
     const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
-    const url = '/api/admin/grey-test/samples' + (tId && tId !== 'all' ? '?tenant_id=' + encodeURIComponent(tId) : '');
+    let url = '/api/admin/grey-test/samples?scope=' + encodeURIComponent(scope);
+    if (tId && tId !== 'all') {
+        url += '&tenant_id=' + encodeURIComponent(tId);
+    }
     const isCurrent = _analyticsSeq('greySamples');
 
     apiFetch(url)
@@ -12913,6 +13021,56 @@ if (typeof window !== 'undefined') {
     window.closeGreySampleModal = closeGreySampleModal;
 }
 
+// 历史灰度发布与放量履历
+function loadCanaryHistory() {
+    const tbody = document.getElementById('adminCanaryHistoryBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#666; padding:16px;">加载历史灰度发布履历中...</td></tr>';
+    apiFetch('/api/admin/canary/history')
+        .then(r => r.json())
+        .then(res => {
+            if (!res || res.status !== 'success') {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#c00; padding:16px;">加载灰测履历失败</td></tr>';
+                return;
+            }
+            const mTotal = document.getElementById('mCanaryHistoryTotal');
+            const mPromote = document.getElementById('mCanaryHistoryPromote');
+            const mRollback = document.getElementById('mCanaryHistoryRollback');
+            const mReceipts = document.getElementById('mCanaryHistoryReceipts');
+            if (mTotal) mTotal.textContent = res.total_records || 0;
+            if (mPromote) mPromote.textContent = res.promote_count || 0;
+            if (mRollback) mRollback.textContent = res.rollback_count || 0;
+            if (mReceipts) mReceipts.textContent = res.total_grey_receipts || 0;
+
+            const items = res.items || [];
+            if (items.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#999; padding:16px;">暂无历史灰测变更记录</td></tr>';
+                return;
+            }
+            let html = '';
+            items.forEach(it => {
+                const badgeClass = it.badge_class || 'badge-secondary';
+                html += '<tr>'
+                    + '<td style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted);">' + w2Escape(it.ts || '-') + '</td>'
+                    + '<td><span class="badge ' + badgeClass + '" style="font-size:0.72rem; padding:2px 6px;">' + w2Escape(it.action_label || it.action) + '</span></td>'
+                    + '<td><code style="font-size:0.75rem;">' + w2Escape(it.models || '-') + '</code></td>'
+                    + '<td style="font-size:0.78rem; color:var(--text-main);">' + w2Escape(it.description || '-') + '</td>'
+                    + '<td style="font-size:0.78rem; color:var(--text-muted);">' + w2Escape(it.operator || 'admin') + '</td>'
+                    + '<td style="text-align:right;"><span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.72rem; padding:2px 6px;">' + w2Escape(it.status || '归档') + '</span></td>'
+                    + '</tr>';
+            });
+            tbody.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('加载灰度历史失败', err);
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#c00; padding:16px;">加载历史履历异常</td></tr>';
+        });
+}
+if (typeof window !== 'undefined') {
+    window.loadCanaryHistory = loadCanaryHistory;
+}
+
+
 // =====================================================================
 // E-P1-2 黄金样本 57 看板（Admin）
 // =====================================================================
@@ -12982,7 +13140,7 @@ function loadGoldenBoard(scope) {
                 // 4. 基准集状态与操作融合成轻量级 Ghost 交互（彻底移除黑色实心大方块）
                 let goldenActionHtml = '';
                 if (it.is_golden_sample) {
-                    goldenActionHtml = '<span class="golden-member-indicator" title="当前样本已纳入黄金基准集">★ 基准</span>'
+                    goldenActionHtml = '<span class="golden-member-indicator" title="当前样本已纳入黄金基准集">[基准]</span>'
                         + '<button class="btn-golden-ghost btn-remove-golden" onclick="toggleGoldenSample(' + Number(it.id) + ', false)" title="从基准集中移出此样本">移出</button>';
                 } else {
                     goldenActionHtml = '<button class="btn-golden-ghost btn-add-golden" onclick="toggleGoldenSample(' + Number(it.id) + ', true)" title="将此样本收录进黄金基准集">+ 纳入基准</button>';
@@ -13274,9 +13432,11 @@ function switchAnalyticsSubView(targetViewId) {
     } else if (targetViewId === 'sec-canary') {
         if (typeof loadAnalyticsGreyStatus === 'function') loadAnalyticsGreyStatus();
         if (typeof loadAdminGreySamples === 'function') loadAdminGreySamples(null, true);
+        if (typeof loadCanaryHistory === 'function') loadCanaryHistory();
     } else if (targetViewId === 'sec-experiment') {
         if (typeof loadAnalyticsExperiments === 'function') loadAnalyticsExperiments();
         if (typeof loadPValueCards === 'function') loadPValueCards();
+        if (typeof refreshCurrentExpDetail === 'function') refreshCurrentExpDetail();
     } else if (targetViewId === 'sec-eval') {
         if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
         if (typeof loadGTEvalsetStats === 'function') loadGTEvalsetStats();
@@ -13544,30 +13704,289 @@ function loadAnalyticsExperiments() {
                 return;
             }
             const STATUS_LABELS = { draft: '草稿', running: '进行中', stopped: '已停止', concluded: '已结题' };
+            const STATUS_BADGES = {
+                draft: 'background:#f1f5f9; color:#475569;',
+                running: 'background:#dbeafe; color:#1e40af;',
+                stopped: 'background:#fee2e2; color:#991b1b;',
+                concluded: 'background:#dcfce7; color:#166534;'
+            };
+
+            // 填充顶部下拉切换框
+            const expSelect = document.getElementById('analyticsExpSelect');
+            if (expSelect) {
+                let optHtml = '';
+                exps.forEach(e => {
+                    optHtml += `<option value="${e.id}">#${e.id} ${w2Escape(e.name || '实验')} (${STATUS_LABELS[e.status] || e.status})</option>`;
+                });
+                expSelect.innerHTML = optHtml;
+            }
+
             let html = '<div class="table-container"><table class="data-table">'
-                + '<thead><tr><th>编号</th><th>名称</th><th>状态</th><th>主指标</th><th>目标流量</th><th>最小样本</th><th>结论</th></tr></thead><tbody>';
+                + '<thead><tr><th style="width:70px;">编号</th><th style="min-width:160px;">实验名称</th><th style="width:90px;">状态</th><th style="min-width:110px;">主指标</th><th style="width:90px;" class="col-right">目标流量</th><th style="width:90px;" class="col-right">最小样本</th><th style="min-width:100px;">结论</th><th style="width:110px; text-align:right;">操作</th></tr></thead><tbody>';
             exps.forEach(e => {
                 html += '<tr>'
-                    + '<td>#' + Number(e.id) + '</td>'
+                    + '<td><strong>#' + Number(e.id) + '</strong></td>'
                     + '<td>' + w2Escape(e.name || '-') + '</td>'
-                    + '<td>' + w2Escape(STATUS_LABELS[e.status] || e.status || '-') + '</td>'
+                    + '<td><span class="badge" style="' + (STATUS_BADGES[e.status] || '') + ' font-size:0.72rem; padding:2px 6px;">' + w2Escape(STATUS_LABELS[e.status] || e.status || '-') + '</span></td>'
                     + '<td><code>' + w2Escape(e.success_metric || '-') + '</code></td>'
                     + '<td class="col-right">' + Number(e.target_percent || 0) + '%</td>'
                     + '<td class="col-right">' + Number(e.min_sample || 0) + '</td>'
                     + '<td>' + w2Escape(e.conclusion || '-') + '</td>'
+                    + '<td style="text-align:right;"><button class="btn btn-secondary" style="font-size:0.75rem; padding:3px 8px;" onclick="inspectExperimentDetail(' + Number(e.id) + ')">查看深度档案</button></td>'
                     + '</tr>';
             });
             html += '</tbody></table></div>';
             el.innerHTML = html;
-            // 联动刷新下方的 p 值卡片
+
+            // 确定当前待检查的实验 ID
             const running = exps.find(e => e.status === 'running') || exps[0];
             const pvalSel = document.getElementById('pvalueExperimentSelect');
-            const targetId = (pvalSel && pvalSel.value) ? Number(pvalSel.value) : (running ? Number(running.id) : null);
-            if (typeof loadPValueCards === 'function') loadPValueCards(targetId);
+            let targetId = (pvalSel && pvalSel.value) ? Number(pvalSel.value) : (running ? Number(running.id) : null);
+            if (_currentInspectedExpId && exps.some(e => Number(e.id) === Number(_currentInspectedExpId))) {
+                targetId = _currentInspectedExpId;
+            }
+            if (targetId) {
+                inspectExperimentDetail(targetId);
+            }
         })
         .catch(err => {
             console.error('实验列表加载失败', err);
             el.innerHTML = '<span style="color:#c00;">实验列表加载失败，请稍后重试</span>';
+        });
+}
+
+let _currentInspectedExpId = null;
+
+function inspectExperimentDetail(expId) {
+    if (!expId) return;
+    _currentInspectedExpId = Number(expId);
+
+    const sel = document.getElementById('analyticsExpSelect');
+    if (sel && sel.value !== String(expId)) sel.value = String(expId);
+
+    const pvalSel = document.getElementById('pvalueExperimentSelect');
+    if (pvalSel && pvalSel.value !== String(expId)) pvalSel.value = String(expId);
+
+    const titleEl = document.getElementById('expDetailHeaderName');
+    const metaEl = document.getElementById('expMetaDossier');
+    const sbsBody = document.getElementById('expSideBySideBody');
+
+    if (titleEl) titleEl.textContent = `实验 #${expId}`;
+    if (metaEl) metaEl.innerHTML = '正在拉取实验元数据与全链路指标...';
+    if (sbsBody) sbsBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:#666; padding:16px;">计算 Control vs Treatment 组别深度指标中...</td></tr>';
+
+    apiFetch(`/api/admin/experiments/${expId}`)
+        .then(r => r.json())
+        .then(res => {
+            if (!res || res.status !== 'success' || !res.experiment) {
+                if (metaEl) metaEl.innerHTML = '<span style="color:#c00;">获取实验详情失败</span>';
+                return;
+            }
+            const exp = res.experiment;
+            const metrics = res.metrics || {};
+            const detail = res.detail || {};
+            const STATUS_MAP = { draft: '草稿', running: '进行中', stopped: '已停止', concluded: '已结题' };
+            const STATUS_COLORS = {
+                draft: 'background:#f1f5f9; color:#475569;',
+                running: 'background:#dbeafe; color:#1e40af;',
+                stopped: 'background:#fee2e2; color:#991b1b;',
+                concluded: 'background:#dcfce7; color:#166534;'
+            };
+
+            if (titleEl) {
+                titleEl.innerHTML = `<strong>#${exp.id} ${w2Escape(exp.name)}</strong> <span class="badge" style="${STATUS_COLORS[exp.status] || ''} font-size:0.72rem; padding:2px 6px; margin-left:6px;">${STATUS_MAP[exp.status] || exp.status}</span>`;
+            }
+
+            // 元数据横幅
+            let metaHtml = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">'
+                + '<div><b>实验名称：</b><strong style="color:#2563eb;">' + w2Escape(exp.name || '-') + '</strong></div>'
+                + '<div><b>科学假设：</b>' + w2Escape(exp.hypothesis || '未设定假设') + '</div>'
+                + '<div><b>主成功指标：</b><code>' + w2Escape(exp.success_metric || 'accuracy') + '</code></div>'
+                + '<div><b>目标流量比例：</b>' + Number(exp.target_percent || 0) + '% (Control : Treatment = ' + (100 - Number(exp.target_percent || 0)) + ' : ' + Number(exp.target_percent || 0) + ')</div>'
+                + '<div><b>样本门槛：</b>最小 ' + Number(exp.min_sample || 30) + ' 样本</div>'
+                + '<div><b>起止周期：</b>' + w2Escape(exp.start_ts || '未记录启动时间') + ' ~ ' + w2Escape(exp.end_ts || (exp.status === 'running' ? '持续运行中' : '未记录')) + '</div>';
+
+            if (exp.conclusion) {
+                const CONCLUSION_LABELS = { promote: '推全实验组', rollback: '回滚对照组', inconclusive: '不显著/无差异' };
+                metaHtml += '<div style="grid-column: 1 / -1; background:#fff; border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; margin-top:4px;">'
+                    + '<b>结题结论：</b><span class="badge badge-success" style="margin-right:8px;">' + w2Escape(CONCLUSION_LABELS[exp.conclusion] || exp.conclusion) + '</span>'
+                    + '<span style="color:var(--text-muted);">结题人：' + w2Escape(exp.concluded_by || 'admin') + ' · ' + w2Escape(exp.concluded_at || '-') + '</span>'
+                    + (exp.conclusion_reason ? '<div style="margin-top:4px; color:var(--text-main);"><b>结题依据：</b>' + w2Escape(exp.conclusion_reason) + '</div>' : '')
+                    + '</div>';
+            }
+            metaHtml += '</div>';
+            if (metaEl) metaEl.innerHTML = metaHtml;
+
+            // 组别指标 Side-by-Side 深度对比表
+            const ctrl = (detail.groups && detail.groups.control) || metrics.control || {};
+            const treat = (detail.groups && detail.groups.treatment) || metrics.treatment || {};
+            const assigns = detail.assignments || {};
+            const tests = metrics.tests || {};
+
+            const fmtPct = (val) => (val != null ? (Number(val) * 100).toFixed(2) + '%' : '—');
+            const fmtDiff = (cVal, tVal, isHigherBetter = true) => {
+                if (cVal == null || tVal == null) return '—';
+                const diff = (Number(tVal) - Number(cVal)) * 100;
+                const sign = diff > 0 ? '+' : '';
+                const isGood = isHigherBetter ? diff > 0 : diff < 0;
+                const color = diff === 0 ? 'var(--text-muted)' : (isGood ? '#166534' : '#991b1b');
+                return `<span style="font-weight:600; color:${color};">${sign}${diff.toFixed(2)} pp</span>`;
+            };
+
+            const rowsData = [
+                {
+                    dim: '归属单据量 (Receipts)',
+                    c: (assigns.control != null ? assigns.control : '—') + ' 单',
+                    t: (assigns.treatment != null ? assigns.treatment : '—') + ' 单',
+                    diff: '—',
+                    note: '按流量比例分配'
+                },
+                {
+                    dim: '决策样本量 (Decisions N)',
+                    c: (ctrl.n || ctrl.sample_size || 0) + ' 决策',
+                    t: (treat.n || treat.sample_size || 0) + ' 决策',
+                    diff: '—',
+                    note: ((ctrl.n || ctrl.sample_size || 0) >= 30 && (treat.n || treat.sample_size || 0) >= 30)
+                        ? '<span class="badge badge-success" style="font-size:0.72rem;">样本充分 (N≥30)</span>'
+                        : '<span class="badge badge-warning" style="font-size:0.72rem;">样本量较小 (N<30)</span>'
+                },
+                {
+                    dim: '字段提取准确率 (Accuracy)',
+                    c: fmtPct(ctrl.accuracy),
+                    t: fmtPct(treat.accuracy),
+                    diff: fmtDiff(ctrl.accuracy, treat.accuracy, true),
+                    note: tests.accuracy && tests.accuracy.p_value != null
+                        ? `p = ${tests.accuracy.p_value} (${tests.accuracy.p_value < 0.05 ? '显著' : '不显著'})`
+                        : '待累积检验'
+                },
+                {
+                    dim: '人工修正率 (Edit Rate)',
+                    c: fmtPct(ctrl.edit_rate),
+                    t: fmtPct(treat.edit_rate),
+                    diff: fmtDiff(ctrl.edit_rate, treat.edit_rate, false),
+                    note: tests.edit_rate && tests.edit_rate.p_value != null
+                        ? `p = ${tests.edit_rate.p_value} (${tests.edit_rate.p_value < 0.05 ? '显著' : '不显著'})`
+                        : '待累积检验'
+                },
+                {
+                    dim: '模型幻觉率 (Hallucination Rate)',
+                    c: fmtPct(ctrl.hallucination_rate),
+                    t: fmtPct(treat.hallucination_rate),
+                    diff: fmtDiff(ctrl.hallucination_rate, treat.hallucination_rate, false),
+                    note: tests.hallucination_rate && tests.hallucination_rate.p_value != null
+                        ? `p = ${tests.hallucination_rate.p_value} (${tests.hallucination_rate.p_value < 0.05 ? '显著' : '不显著'})`
+                        : '待累积检验'
+                },
+                {
+                    dim: '审核采纳率 (Audit Adoption)',
+                    c: fmtPct(ctrl.audit_adoption_rate),
+                    t: fmtPct(treat.audit_adoption_rate),
+                    diff: fmtDiff(ctrl.audit_adoption_rate, treat.audit_adoption_rate, true),
+                    note: '双模型复核一致性'
+                }
+            ];
+
+            let sbsHtml = '';
+            rowsData.forEach(r => {
+                sbsHtml += '<tr>'
+                    + '<td style="font-weight:600; color:var(--text-main);">' + r.dim + '</td>'
+                    + '<td><code style="font-size:0.82rem;">' + r.c + '</code></td>'
+                    + '<td><code style="font-size:0.82rem; color:#2563eb;">' + r.t + '</code></td>'
+                    + '<td>' + r.diff + '</td>'
+                    + '<td style="font-size:0.78rem; color:var(--text-muted);">' + r.note + '</td>'
+                    + '</tr>';
+            });
+            if (sbsBody) sbsBody.innerHTML = sbsHtml;
+
+            // 守护事件展示
+            const gEvents = res.guardrail_events || [];
+            const gSec = document.getElementById('expGuardrailSection');
+            const gBody = document.getElementById('expGuardrailBody');
+            if (gSec && gBody) {
+                if (gEvents.length > 0) {
+                    gSec.style.display = 'block';
+                    let gHtml = '<div style="display:flex; flex-direction:column; gap:8px;">';
+                    gEvents.forEach(ev => {
+                        gHtml += '<div style="background:#fff; border:1px solid var(--border-color); border-radius:6px; padding:8px 12px;">'
+                            + '<span class="badge badge-danger" style="margin-right:8px;">' + w2Escape(ev.action) + '</span>'
+                            + '<span style="font-size:0.75rem; color:var(--text-muted); margin-right:12px;">' + w2Escape(ev.ts) + '</span>'
+                            + '<span>' + w2Escape(ev.reason || '守护策略触发') + '</span>'
+                            + '</div>';
+                    });
+                    gHtml += '</div>';
+                    gBody.innerHTML = gHtml;
+                } else {
+                    gSec.style.display = 'none';
+                }
+            }
+
+            // 同步刷新 p-value 卡片和实验关联单据样本
+            if (typeof loadPValueCards === 'function') loadPValueCards(expId);
+            loadExpSamples(expId);
+        })
+        .catch(err => {
+            console.error('加载实验详情异常', err);
+            if (metaEl) metaEl.innerHTML = '<span style="color:#c00;">加载实验详情异常</span>';
+        });
+}
+
+function refreshCurrentExpDetail() {
+    if (_currentInspectedExpId) {
+        inspectExperimentDetail(_currentInspectedExpId);
+    } else {
+        const sel = document.getElementById('analyticsExpSelect');
+        if (sel && sel.value) inspectExperimentDetail(sel.value);
+    }
+}
+
+function loadExpSamples(expId) {
+    const targetExpId = expId || _currentInspectedExpId;
+    if (!targetExpId) return;
+    const tbody = document.getElementById('expSampleTableBody');
+    const countEl = document.getElementById('expSampleTotalCount');
+    const scopeSel = document.getElementById('expSampleScopeSelect');
+    const scope = scopeSel ? scopeSel.value : 'all';
+
+    if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#666; padding:16px;">加载实验关联单据样本明细流中...</td></tr>';
+
+    apiFetch(`/api/admin/experiments/${targetExpId}/samples?scope=${encodeURIComponent(scope)}`)
+        .then(r => r.json())
+        .then(res => {
+            if (!res || res.status !== 'success') {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:16px;">拉取实验单据样本失败</td></tr>';
+                return;
+            }
+            if (countEl) countEl.textContent = res.total_samples || 0;
+            const samples = res.samples || [];
+            if (samples.length === 0) {
+                if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#999; padding:16px;">暂无该组别的单据样本明细</td></tr>';
+                return;
+            }
+            let html = '';
+            samples.forEach(s => {
+                const grpBadge = s.grp === 'treatment'
+                    ? '<span class="badge" style="background:#ede7f6; color:#512da8; font-size:0.72rem; padding:2px 6px;">实验组 Treatment</span>'
+                    : '<span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.72rem; padding:2px 6px;">对照组 Control</span>';
+                const matchBadge = s.is_match
+                    ? '<span class="badge badge-success" style="font-size:0.72rem; padding:2px 6px;">完全采纳</span>'
+                    : '<span class="badge badge-warning" style="font-size:0.72rem; padding:2px 6px;">人工修正</span>';
+
+                html += '<tr>'
+                    + '<td><strong>#' + Number(s.receipt_id) + '</strong></td>'
+                    + '<td>' + grpBadge + '</td>'
+                    + '<td><span style="color:#2f6b4f; font-weight:600;">' + w2Escape(s.supplier_name) + '</span></td>'
+                    + '<td><code style="font-weight:600;">' + w2Escape(s.total_amount) + '</code></td>'
+                    + '<td><code>' + w2Escape(s.model || '-') + '</code></td>'
+                    + '<td><b>' + (s.accuracy != null ? (s.accuracy * 100).toFixed(1) + '%' : '—') + '</b></td>'
+                    + '<td>' + matchBadge + '</td>'
+                    + '<td style="font-family:var(--font-mono); font-size:0.75rem; text-align:right; color:var(--text-muted);">' + w2Escape(s.assigned_at || '-') + '</td>'
+                    + '</tr>';
+            });
+            if (tbody) tbody.innerHTML = html;
+        })
+        .catch(err => {
+            console.error('加载实验样本明细流失败', err);
+            if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:16px;">加载样本异常</td></tr>';
         });
 }
 
@@ -13582,13 +14001,19 @@ function loadAnalyticsPValue(expId) {
 
 function loadExperimentDetail(expId) {
     if (expId) {
-        if (typeof onPValueExperimentChange === 'function') onPValueExperimentChange(expId);
+        inspectExperimentDetail(expId);
     } else {
         loadAnalyticsExperiments();
     }
 }
-window.loadExperimentDetail = loadExperimentDetail;
-window.loadAnalyticsExperiments = loadAnalyticsExperiments;
+
+if (typeof window !== 'undefined') {
+    window.loadExperimentDetail = loadExperimentDetail;
+    window.loadAnalyticsExperiments = loadAnalyticsExperiments;
+    window.inspectExperimentDetail = inspectExperimentDetail;
+    window.refreshCurrentExpDetail = refreshCurrentExpDetail;
+    window.loadExpSamples = loadExpSamples;
+}
 
 
 // =====================================================================
@@ -15684,15 +16109,21 @@ function onRetakeClick() {
         const f = fi.files && fi.files[0];
         fi.value = '';
         fi.onchange = null;
-        if (f) submitRetakeImage(rid, f);
+        if (f) submitRetakeImage(rid, f).catch(err => console.error('重拍提交异常', err));
     };
     fi.click();
 }
 window.onRetakeClick = onRetakeClick;
 
-// 重拍提交：FormData POST replace-image（字段名与 /api/upload 一致），
-// 成功后先刷左图（新图）再轮询识别结果；失败仅 toast，保留当前界面不破坏
-function submitRetakeImage(receiptId, file) {
+// 重拍提交：先按需转码非 Web 格式（HEIC/TIFF），再 FormData POST replace-image
+// （字段名与 /api/upload 一致）；成功后先刷左图（新图）再轮询识别结果；
+// 失败仅 toast，保留当前界面不破坏
+async function submitRetakeImage(receiptId, file) {
+    // 治本：重拍与「选择文件」共用同一转码通道，避免 iPhone HEIC 原样落库成新的 .heic 单据。
+    // 转码失败时 ensureWebDisplayableImageFile 降级返回原文件，不阻断；仅在文件选择代次变化时返回 null
+    file = await ensureWebDisplayableImageFile(file);
+    if (!file) return;
+
     const fd = new FormData();
     fd.append('receipt', file);
     // 作废在途轮询，防并发双击（后端 parsing 409 兜底）

@@ -28,8 +28,23 @@ ACCOUNTS = {
 
 ROLE_RANK = {"admin": 3, "owner": 2, "staff": 1}
 
-_TOKEN_SECRET = os.environ.get("DEMO_TOKEN_SECRET", "demo-token-secret-dev-only")
+# 仓库内置的开发默认密钥。生产不设 DEMO_TOKEN_SECRET 就等同于用公开值签名，
+# 防枚举强度退化为混淆；但故意不在此处改动默认值本身——改了会让既有已签发的
+# 预览 URL / 令牌全部失效，只能靠启动告警提示运维补齐环境变量（见
+# token_secret_is_weak 与 app/main.py 的 _warn_weak_token_secret）。
+_DEFAULT_TOKEN_SECRET = "demo-token-secret-dev-only"
+_TOKEN_SECRET = os.environ.get("DEMO_TOKEN_SECRET", _DEFAULT_TOKEN_SECRET)
 _TOKEN_TTL = 12 * 3600  # 12h
+
+
+def token_secret_is_weak():
+    """是否仍在使用仓库内置默认密钥（未设 DEMO_TOKEN_SECRET，或设成了同一个值）。
+
+    why: 生产部署若忘设该环境变量，预览端点签名等于公开常量，任何知道默认值的
+    人都能自行伪造 sig 遍历单据 id。启动阶段据此告警；开发/演示环境不受影响。
+    """
+    raw = (os.environ.get("DEMO_TOKEN_SECRET") or "").strip()
+    return raw == "" or raw == _DEFAULT_TOKEN_SECRET
 
 
 def auth_enabled():
@@ -48,10 +63,18 @@ def issue_token(email: str, role: str) -> str:
 
 
 def parse_token(token: str):
-    """验签解析 token → (email, role) | None。"""
+    """验签解析 token → (email, role) | None。
+
+    why 从右侧切分：payload 结构是 email.role.exp，而本项目预置账号全是
+    `xx@demo.hk`（邮箱本身含点），旧的 payload.split(".") 会切出 4 段导致
+    解包 ValueError、被 except 静默吞掉，parse_token 恒返回 None（Bearer 链路
+    实际不可用）。role 是已知枚举（admin/owner/staff）、exp 是纯数字，都不含点，
+    故 rsplit(".", 2) 从右侧切两段可把点安全地留在 email 段内。
+    注意：token 生成格式（issue_token）刻意不改，改了会让既有已签发 token 失效。
+    """
     try:
         payload, sig = token.rsplit(".", 1)
-        email, role, exp = payload.split(".")
+        email, role, exp = payload.rsplit(".", 2)
         if hmac.compare_digest(_sign(payload), sig) and int(exp) > int(time.time()):
             if email in ACCOUNTS and ACCOUNTS[email][1] == role:
                 return email, role
