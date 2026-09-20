@@ -1,70 +1,4 @@
 
-// 内置弹窗组件（替代 window.prompt 与 window.confirm）
-function showCustomInputModal({ title, message, defaultValue, placeholder, onConfirm, onCancel }) {
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-backdrop';
-    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:99999; display:flex; align-items:center; justify-content:center;';
-    
-    const card = document.createElement('div');
-    card.className = 'card';
-    card.style.cssText = 'width:420px; max-width:90vw; background:var(--card-bg, #fff); border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.2); animation:modalFadeIn 0.2s ease;';
-
-    const titleEl = document.createElement('h4');
-    titleEl.style.cssText = 'margin:0 0 10px 0; font-size:1.1rem; color:var(--text-main, #333); font-weight:600;';
-    titleEl.textContent = title || '请输入';
-    card.appendChild(titleEl);
-
-    if (message) {
-        const msgEl = document.createElement('div');
-        msgEl.style.cssText = 'font-size:0.85rem; color:var(--text-secondary, #666); margin-bottom:12px; white-space:pre-wrap; line-height:1.4;';
-        msgEl.textContent = message;
-        card.appendChild(msgEl);
-    }
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'form-control';
-    input.style.cssText = 'width:100%; box-sizing:border-box; margin-bottom:16px; font-size:0.9rem; padding:8px 10px;';
-    input.value = defaultValue || '';
-    if (placeholder) input.placeholder = placeholder;
-    card.appendChild(input);
-
-    const btnRow = document.createElement('div');
-    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'btn btn-secondary';
-    cancelBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
-    cancelBtn.textContent = '取消';
-
-    const confirmBtn = document.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.className = 'btn btn-primary';
-    confirmBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
-    confirmBtn.textContent = '确定';
-
-    btnRow.appendChild(cancelBtn);
-    btnRow.appendChild(confirmBtn);
-    card.appendChild(btnRow);
-    overlay.appendChild(card);
-    document.body.appendChild(overlay);
-
-    input.focus();
-    input.select();
-
-    function close() {
-        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
-    }
-
-    cancelBtn.onclick = () => { close(); if (onCancel) onCancel(); };
-    confirmBtn.onclick = () => { const val = input.value; close(); if (onConfirm) onConfirm(val); };
-    input.onkeydown = (e) => {
-        if (e.key === 'Enter') { confirmBtn.click(); }
-        else if (e.key === 'Escape') { cancelBtn.click(); }
-    };
-}
-
 function showCustomConfirmModal({ title, message, confirmText = '确定', cancelText = '取消', onConfirm, onCancel }) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-backdrop custom-modal-overlay';
@@ -1250,47 +1184,6 @@ function openReceiptFromDrilldown(receiptId) {
     loadReceiptDetail(receiptId);
 }
 
-function exportCostReportCSV() {
-    if (!lastCostReportData || !lastCostReportData.departments) {
-        showToast('暂无报表数据可导出', 'warning');
-        return;
-    }
-    const d = lastCostReportData;
-    const label = (d.period && d.period.label) ? d.period.label : (d.month || 'cost_report');
-    let csvContent = '\uFEFF';
-    csvContent += '部门,本期进货,上期对照,变化\n';
-
-    (d.departments || []).forEach(dep => {
-        const name = dep.name + (Number(dep.active) === 1 ? '' : ' 已停用');
-        const prev = Number(dep.prev_total || 0).toFixed(2);
-        const deltaVal = Number(dep.delta) || 0;
-        const deltaStr = (deltaVal >= 0 ? '+' : '') + deltaVal.toFixed(2);
-        csvContent += `"${name.replace(/"/g, '""')}",${Number(dep.total || 0).toFixed(2)},${prev},${deltaStr}\n`;
-    });
-
-    const unalloc = d.unallocated || {};
-    const unName = '未分配';
-    const unPrev = Number(unalloc.prev_total || 0).toFixed(2);
-    const unDeltaVal = Number(unalloc.delta) || 0;
-    const unDeltaStr = (unDeltaVal >= 0 ? '+' : '') + unDeltaVal.toFixed(2);
-    csvContent += `"${unName}",${(Number(unalloc.total) || 0).toFixed(2)},${unPrev},${unDeltaStr}\n`;
-
-    const totPrev = Number(d.prev_total || 0).toFixed(2);
-    const totDeltaVal = Number(d.delta) || 0;
-    const totDeltaStr = (totDeltaVal >= 0 ? '+' : '') + totDeltaVal.toFixed(2);
-    csvContent += `"合计",${(Number(d.month_total) || 0).toFixed(2)},${totPrev},${totDeltaStr}\n`;
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `部门花销报表_${label}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-}
-
 function initDeptAdminDetails() {
     const details = document.getElementById('deptAdminDetails');
     if (!details) return;
@@ -1305,8 +1198,9 @@ function initDeptAdminDetails() {
  document.addEventListener('DOMContentLoaded', () => {
      initDemoRoleSwitch();       // demo：无密码 RBAC 角色下拉
      probeAuthAndEnter(false);   // P1-12: 启动鉴权探测（401 → 登录面板；AUTH_ENABLED=0 直通）
-    initTabs();
-    initUpload();
+     initTabs();
+     populateReceiptStatusFilter();  // 归档「单据状态」筛选下拉由 RECEIPT_STATUSES 生成
+     initUpload();
     restoreBatchFromManifest(); // 刷新浏览器不丢失解析进度（从 manifest 恢复单据及解析状态）
     initFocalZoomAndCrop();
     initAutoAnalyzeSetting();
@@ -1859,6 +1753,7 @@ function pollReceiptJob(jobId, onSettled, opts) {
                         fallback_triggered: job.fallback_triggered,
                         fallback_failed: job.fallback_failed,
                         fallback_reason: job.fallback_reason,
+                        experiment_override: job.experiment_override,
                     });
                 } else if (job && job.status === 'error') {
                     // HTTP 级错误（如 404 任务不存在）
@@ -1951,6 +1846,20 @@ function notifyEngineFallbackProgress(fb) {
 }
 window.notifyEngineFallbackProgress = notifyEngineFallbackProgress;
 
+// P5：A/B 实验覆盖管理台引擎配置的可见化提示。后端在识别结果里透传
+// experiment_override={experiment_id, grp, model, base_url}，这里把「本次识别
+// 实际用的是实验配置」明确告知用户，避免管理员误判「改了引擎没生效」。
+// 返回是否真的弹了提示：批量路径据此去重（同一批量内只提示一次，避免逐张重复弹）。
+function notifyExperimentOverrideIfApplied(ret) {
+    const ov = (ret && ret.experiment_override)
+        || (ret && ret.data && ret.data.experiment_override);
+    if (!ov || !ov.experiment_id) return false;
+    const grpLabel = ov.grp === 'treatment' ? '实验组' : '对照组';
+    showToast(`本次识别由实验 #${ov.experiment_id} 的${grpLabel}配置覆盖`, 'warning', 6000);
+    return true;
+}
+window.notifyExperimentOverrideIfApplied = notifyExperimentOverrideIfApplied;
+
 // 自动降级全局弹出通知
 function notifyFallbackIfTriggered(ret) {
     if (!ret) return;
@@ -2013,12 +1922,6 @@ function formatQualityWarning(w) {
         title: '系统提示',
         tip: raw.replace(/^提示[：:]\s*/, '')
     };
-}
-
-// 辅助纯函数供测试断言
-function buildReshootGuideItems(warnings) {
-    const list = Array.isArray(warnings) ? warnings : [];
-    return list.map(formatQualityWarning).filter(Boolean).map(item => item.tip);
 }
 
 function showQualityWarnings(warnings) {
@@ -2151,7 +2054,7 @@ function triggerAnalysisNow(forceFlag = false) {
     formData.append('receipt', selectedFile);
     formData.append('force', isForce ? 'true' : 'false');
 
-    const useCodebuddy = document.getElementById('chkCodebuddy').checked;
+    const useTreatment = document.getElementById('chkTreatment').checked;
 
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('errorCard').classList.add('hide');
@@ -2166,7 +2069,7 @@ function triggerAnalysisNow(forceFlag = false) {
     singlePollToken = { cancelled: false };
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${isForce ? 'true' : 'false'}`, {
+    apiFetch(`/api/upload?treatment=${useTreatment}&async=true&force=${isForce ? 'true' : 'false'}`, {
         method: 'POST',
         body: formData
     })
@@ -2300,6 +2203,7 @@ function triggerAnalysisNow(forceFlag = false) {
         // Q29: 顶层 quality_warnings（含 duplicate_warning）多条可见
         showQualityWarnings(collectQualityWarnings(ret));
         notifyFallbackIfTriggered(ret);
+        notifyExperimentOverrideIfApplied(ret);
         // Q34: 同步成功路径的重复关联动作（queued 路径在轮询发起前已提示）
         offerDuplicateAction(ret);
         document.getElementById('prefillFormCard').classList.remove('hide');
@@ -2737,6 +2641,7 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     // Q29: 质量预检警告多条可见
     showQualityWarnings(collectQualityWarnings(ret));
     notifyFallbackIfTriggered(ret);
+    notifyExperimentOverrideIfApplied(ret);
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('errorCard').classList.add('hide');
     document.getElementById('prefillFormCard').classList.remove('hide');
@@ -3343,12 +3248,6 @@ function applyCropSelection() {
     }, 'image/jpeg', 0.95);
 }
 
-function zoomImg(delta) {
-    currentZoom = Math.max(0.5, Math.min(4.0, currentZoom + delta));
-    applyImgTransform();
-    updateToolbarButtonStates();
-}
-
 /**
  * 将当前 visual 旋转（currentRotation）烤入文件，避免仅 CSS 导致上传仍是原文件。
  * - 按 0°/180° 保持 w/h，90°/270° 交换 w/h 创建 canvas
@@ -3697,17 +3596,6 @@ function registerNewUnitsFromRows(rowElements) {
 // -------------------------------------------------------------
 let availableSuppliers = [];
 
-function loadSuppliersData() {
-    apiFetch('/api/suppliers')
-    .then(res => res.json())
-    .then(ret => {
-        if (ret.status === 'success') {
-            availableSuppliers = ret.data || [];
-        }
-    })
-    .catch(err => { if (!window.__roleSwitchPending) console.error("加载供应商列表失败:", err); });
-}
-
 let isSelectingSupplier = false;
 
 function openSupplierMenu(inputElem) {
@@ -3884,62 +3772,8 @@ function smartSplitItemName(rawText) {
     return null;
 }
 
-// 行内触发智能剥离魔棒
-function triggerSmartSplitRow(btnElem) {
-    const tr = btnElem.closest('tr');
-    if (!tr) return;
-    const nameInput = tr.querySelector('.inp-name');
-    if (!nameInput) return;
-    const rawVal = nameInput.value || '';
-    const res = smartSplitItemName(rawVal);
-    if (!res) {
-        showToast('未在品名中检测到明确的数量与单位', 'info');
-        return;
-    }
-
-    nameInput.value = res.cleanName;
-    const qtyInput = tr.querySelector('.inp-qty');
-    const unitInput = tr.querySelector('.inp-unit');
-    if (qtyInput) qtyInput.value = res.quantity;
-    if (unitInput) unitInput.value = res.unit;
-
-    // 自动重算单价 (unit_price = amount / quantity)
-    const amtInput = tr.querySelector('.inp-amount');
-    const priceInput = tr.querySelector('.inp-price');
-    const amt = parseFloat(amtInput ? amtInput.value : 0) || 0;
-    if (amt > 0 && res.quantity > 0 && priceInput) {
-        priceInput.value = (amt / res.quantity).toFixed(2);
-    }
-
-    tr.dataset.manual = '1';
-    showToast(`已成功分离：【${res.cleanName}】 数量：${res.quantity} ${res.unit}`, 'success');
-}
-
 // 明细行内联快捷新建 SKU
 let activeInlineSkuInput = null;
-
-function openInlineAddSkuModal(prefillName, inputElem) {
-    activeInlineSkuInput = inputElem;
-    openAddSkuModal();
-    const nameInput = document.getElementById('skuModalName');
-    if (nameInput) nameInput.value = prefillName || '';
-    const unitInput = document.getElementById('skuModalUnit');
-    const tr = inputElem ? inputElem.closest('tr') : null;
-    const rowUnit = tr ? (tr.querySelector('.inp-unit')?.value || '') : '';
-    if (unitInput && rowUnit) unitInput.value = rowUnit;
-}
-
-// 代理行内快捷新建点击
-function triggerInlineAddSkuFromMenu(itemElem) {
-    isSelectingSku = true;
-    const wrap = itemElem.closest('.sku-combobox-wrap');
-    const skuInput = wrap ? wrap.querySelector('.inp-sku') : null;
-    const name = itemElem.getAttribute('data-prefill-name') || '';
-    const menu = wrap ? wrap.querySelector('.unit-dropdown-menu') : null;
-    if (menu) menu.classList.add('hide');
-    openInlineAddSkuModal(name, skuInput);
-    setTimeout(() => { isSelectingSku = false; }, 300);
-}
 
 // -------------------------------------------------------------
 // 5.6 明细行 SKU 内联指定（D19：复核当场指定 SKU，保存后自动学别称）
@@ -4092,11 +3926,6 @@ function onItemNameInput(inputElem) {
 }
 window.onItemNameInput = onItemNameInput;
 
-function skuMenuOf(inputElem) {
-    const wrap = inputElem && inputElem.closest ? inputElem.closest('.sku-combobox-wrap') : null;
-    return wrap && wrap.querySelector ? wrap.querySelector('.unit-dropdown-menu') : null;
-}
-
 function mergeSkuCandidates(primary, secondary) {
     const seen = {};
     const out = [];
@@ -4237,14 +4066,6 @@ function quickCreateAndBindSku(itemElem) {
     });
 }
 window.quickCreateAndBindSku = quickCreateAndBindSku;
-
-function formatSkuScore(score) {
-    if (score == null) return '';
-    const n = Number(score);
-    if (!isFinite(n) || n <= 0) return '';
-    if (n <= 1) return ' 匹配' + Math.round(n * 100) + '%';
-    return ' 相似度' + Math.round(n) + '%';
-}
 
 function buildSkuDropdownItemsHtml(inputElem, candidates) {
     const query = (inputElem.__skuSearchQuery !== undefined ? inputElem.__skuSearchQuery : (inputElem.value || '')).trim();
@@ -4407,10 +4228,21 @@ function renderEditForm(data) {
     });
 
     const alertBanner = document.getElementById('alertBanner');
+    // 整单级提示条：判据走 receiptReviewReasons（手写单 / 门禁未通过），
+    // 与行级角标严格分层——此处只提示「整单需要人工复核」，不给任何行刷标记。
+    const reviewReasons = receiptReviewReasons(data);
+    if (reviewReasons.length > 0) {
+        alertBanner.innerText = '[需人工复核] ' + reviewReasons.join('；')
+            + '。已为您自动填入已识别信息，请对照左侧原图重点核对或补录。';
+        alertBanner.classList.remove('hide');
+    } else {
+        alertBanner.classList.add('hide');
+    }
+
+    // 门禁/花码整单警告：保留原有 toast 提示与字段级高亮（仅在有 math_warnings 时触发，
+    // 手写单本身不弹 toast，避免每次打开都打扰店员）。
     if (data.math_warnings && data.math_warnings.length > 0) {
         const warnText = data.math_warnings.map(humanizeGateMsg).join("；");
-        alertBanner.innerText = '[单据核对提示] 具体问题：' + warnText + '。已为您自动填入已识别信息，请对照左侧原图重点核对或补录。';
-        alertBanner.classList.remove('hide');
         showToast('【单据复核提示】AI 已完成解析，但检测到：' + warnText + '，请核对', 'warning', 7000);
 
         // 针对具体问题精确定位高亮
@@ -4439,8 +4271,6 @@ function renderEditForm(data) {
                 el.style.backgroundColor = 'rgba(217, 119, 6, 0.08)';
             }
         }
-    } else {
-        alertBanner.classList.add('hide');
     }
 
     const tbody = document.getElementById('itemTableBody');
@@ -5222,6 +5052,126 @@ const toast = {
     dismissAll: () => { Array.from(_toastLive.keys()).forEach(k => _toastDismiss(k)); },
 };
 
+// 明细行「待核验」判定的唯一实现——复核台（appendTableRow）与归档弹窗
+// （appendArcTableRow）共用同一份逻辑，避免「同一根因多份实现」导致两处口径漂移。
+//
+// 触发依据是**确定性信号**，不再依赖模型自报置信度：实测真实读数集中在 0.85~0.98，
+// 旧阈值 0.40 永不触发；而抬到 0.50 又会让整表历史兜底值（0.5）全部标黄，
+// 0.40~0.49 之间没有任何可用的中间档——阈值这条路解决不了问题。
+// 当前行级确定性信号：unit_conversion_warning —— 解析链路上 huama_evaluator 确定性
+// 命中街市花码（苏州码子）时写入「包含街市花码，需人工核验」，随行落库并透传到前端。
+// 返回空数组表示该行无需额外核验提示。
+function itemReviewFlags(item) {
+    const flags = [];
+    if (!item) return flags;
+    const ucw = (item.unit_conversion_warning != null)
+        ? String(item.unit_conversion_warning).trim() : '';
+    if (ucw) {
+        flags.push({
+            key: 'unit_conversion_warning',
+            label: /花码/.test(ucw) ? '花码待核验' : '单位待核验',
+            reason: ucw,
+        });
+    }
+    return flags;
+}
+
+// 行级待核验角标 HTML（无标记时返回空串）：样式 class 与 P11 抽出的共用实现保持一致，
+// 复核台与归档弹窗看到的是同一个角标，不另造第二套。
+// conf 仅作参考信息附在 title 里（不再参与触发判定）：置信度保留但不再决定是否标记。
+function itemReviewBadgeHtml(flags, conf) {
+    if (!Array.isArray(flags) || flags.length === 0) return '';
+    const titleParts = flags.map(f => f.reason).filter(Boolean);
+    if (typeof conf === 'number' && isFinite(conf)) {
+        titleParts.push('识别置信度 ' + conf.toFixed(2) + '（仅供参考，不作为复核触发依据）');
+    }
+    return '<span class="item-conf-badge" title="' + w2Escape(titleParts.join('；'))
+        + '，请对照原图逐行核验">' + w2Escape(flags[0].label) + '</span>';
+}
+
+// 整单级确定性信号的取值与判据——只有这一处定义，复核台提示条、归档详情提示条、
+// 归档列表黄底三处共用，避免「街市手写单」这四个字被抄成多份实现。
+// HANDWRITTEN_DOC_FORM 与后端 DocForm.ncr_handwritten 同源。
+const HANDWRITTEN_DOC_FORM = 'ncr_handwritten';
+
+// 单据状态唯一事实源：标签/徽章样式/悬停说明/聚合分组/筛选项文案集中在此，
+// 归档徽章（renderStatusBadge）、归档聚合过滤（STATUS_GROUP_MAP）、
+// 待办条计数（updateTodoBar）、筛选下拉（populateReceiptStatusFilter）四处共用。
+// 新增一个状态只需在此登记一次，不再出现「改了三处漏一处」的漂移。
+// review=true 表示「尚未经过人工核对」，供黄底/复核提示判定使用（区别于聚合分组的 pending）。
+const RECEIPT_STATUSES = {
+    uploaded:             { label: '已上传',           cls: 'badge-warning', title: '已上传', group: 'pending', filter: '已上传',           review: true  },
+    parsing:              { label: '解析中',           cls: 'badge-warning', title: '解析中', group: 'pending', filter: '解析中',           review: true  },
+    parsed:               { label: '待核对',           cls: 'badge-warning', title: 'AI自动识别落库', group: 'pending', filter: '待核对 (AI自动入库)', review: true },
+    parsed_with_warnings: { label: '待核对(门禁警告)', cls: 'badge-warning', title: 'AI 已解析但门禁校验未通过（算术/契约/明细为空），请重点核对', group: 'pending', filter: '待核对 (门禁警告)', review: true },
+    edited:               { label: '已修改',           cls: 'badge-info',    title: '店员手工修改保存', group: 'pending', filter: '已修改 (店员人工保存)' },
+    approved:             { label: '已入账',           cls: 'badge-success', title: '老板审核通过', group: 'posted', filter: '已入账 (老板审核通过)' },
+    flagged:              { label: '有问题',           cls: 'badge-danger',  title: '已标记', group: 'problem', filter: '有问题 (已标记)' },
+    error:                { label: '失败',             cls: 'badge-danger',  title: '失败', group: 'failed', filter: '失败' },
+};
+
+// 「还没经过人工核对」的状态白名单（由 RECEIPT_STATUSES.review 派生，顺序与定义一致）
+const RECEIPT_PENDING_REVIEW_STATES = Object.keys(RECEIPT_STATUSES)
+    .filter(k => RECEIPT_STATUSES[k].review);
+
+// 状态聚合映射（UI 口语，D-SUP-10 / 4.3）——由 RECEIPT_STATUSES.group 派生，避免手工维护第二份清单
+const STATUS_GROUP_MAP = Object.keys(RECEIPT_STATUSES).reduce((acc, key) => {
+    const g = RECEIPT_STATUSES[key].group;
+    (acc[g] || (acc[g] = [])).push(key);
+    return acc;
+}, {});
+
+function isHandwrittenReceipt(data) {
+    return String((data && data.doc_form) || '') === HANDWRITTEN_DOC_FORM;
+}
+
+function isReceiptPendingHumanReview(status) {
+    return RECEIPT_PENDING_REVIEW_STATES.indexOf(String(status || '')) !== -1;
+}
+
+// 整单级「需人工复核」判定的唯一实现——识别复核台（renderEditForm 的 alertBanner）
+// 与归档详情（applyArchiveDetail 的 archiveMathWarnBanner）共用。
+// 只收确定性信号，且严格与行级分层：整单信号只出现在整单级提示条上，
+// 绝不贴到每一行（否则就是「全表标黄」的同类问题）。
+// 当前整单级信号：① 街市手写单（doc_form=ncr_handwritten）；
+//               ② 门禁未通过 / 花码整单校准警告（math_warnings 非空）。
+function receiptReviewReasons(data) {
+    const reasons = [];
+    if (!data) return reasons;
+    if (isHandwrittenReceipt(data)) {
+        reasons.push('街市手写单（NCR）：手写字迹与花码易误读，建议逐行对照原图');
+    }
+    const mw = Array.isArray(data.math_warnings) ? data.math_warnings : [];
+    mw.forEach(m => {
+        const t = humanizeGateMsg(m);
+        if (t && reasons.indexOf(t) === -1) reasons.push(t);
+    });
+    return reasons;
+}
+
+// 读取整单级复核信号（图像质量预检 / 交叉审核分歧）——供明细行黄底提示使用。
+// 返回值：对象 = 读取成功；null = 读取失败。
+//
+// why：原实现把这两次读取整段包在 `try { ... } catch (e) {}` 里，一旦抛错就静默
+// 让「质量预检 / 重点复核」从该单据的**每一行**上消失，且不留任何痕迹——本仓高发的
+// 第三类缺陷（异常被静默吞掉 → 功能静默失效）。现在：异常必须可观测（console.warn）
+// 且 fail-visible（调用方把该行标成「待核验」），绝不允许继续静默消失。
+function readReceiptLevelReviewSignals() {
+    try {
+        const cur = (typeof currentReceiptData !== 'undefined') ? currentReceiptData : null;
+        if (!cur) return { hasQualityWarning: false, highReviewPriority: false };
+        const qws = Array.isArray(cur.quality_warnings) ? cur.quality_warnings : null;
+        const rps = (typeof cur.review_priority_score === 'number') ? cur.review_priority_score : null;
+        return {
+            hasQualityWarning: !!(qws && qws.length > 0),
+            highReviewPriority: (rps != null && rps > 0.6),
+        };
+    } catch (e) {
+        console.warn('[review-flag] 读取整单级复核信号失败，按「待核验」fail-visible 处理：', e);
+        return null;
+    }
+}
+
 function appendTableRow(item = {}) {
     const tbody = document.getElementById('itemTableBody');
 
@@ -5235,26 +5185,40 @@ function appendTableRow(item = {}) {
     const actualQtyVal = (item.actual_qty != null && item.actual_qty !== '') ? String(item.actual_qty) : '';
 
     const rowWarnings = [];
-    if (typeof item.confidence === 'number' && item.confidence <= 0.40) {
-        rowWarnings.push('低置信度');
+    // 行级待核验判据（确定性信号，见 itemReviewFlags）：命中即角标 + 黄底。
+    // itemConfRaw 为原始置信度读数（保存时随行回传，仅作参考，不参与触发判定）。
+    const itemConfRaw = (typeof item.confidence === 'number' && isFinite(item.confidence)) ? item.confidence : null;
+    let itemFlags = itemReviewFlags(item);
+    const _receiptSignals = readReceiptLevelReviewSignals();
+    if (_receiptSignals === null) {
+        // fail-visible：整单级信号读取异常时不能静默让角标消失 —— 明确标成「待核验」
+        // （异常本身已由 readReceiptLevelReviewSignals 输出 console 警告留痕）。
+        itemFlags = itemFlags.concat([{
+            key: 'receipt_signal_unreadable',
+            label: '待核验',
+            reason: '整单复核信号读取失败（已输出 console 警告），请对照原图核对该行',
+        }]);
     }
-    if (item.unit_conversion_warning) {
-        rowWarnings.push('单位不可折算');
+    if (itemFlags.length) {
+        rowWarnings.push(itemFlags[0].label);
     }
+    // 置信度不再触发标记，但保留为参考信息：挂在品名输入的 title 上（不占版面、不新增列），
+    // 与 tr.dataset.confidence（保存回传）两处同源。
+    const itemConfRefTitle = (itemConfRaw !== null)
+        ? '识别置信度 ' + itemConfRaw.toFixed(2) + '（仅供参考，不作为复核触发依据）' : '';
     if (item.matched === false && !item.sku_id) {
         rowWarnings.push('SKU未匹配');
     }
 
-    try {
-        const _qws = (typeof currentReceiptData !== 'undefined' && currentReceiptData && Array.isArray(currentReceiptData.quality_warnings)) ? currentReceiptData.quality_warnings : null;
-        if (_qws && _qws.length > 0) {
+    // 整单级信号 → 行内黄底提示（读取失败时已按「待核验」处理，此处不再重复标记）
+    if (_receiptSignals !== null) {
+        if (_receiptSignals.hasQualityWarning) {
             rowWarnings.push('质量预检');
         }
-        const _rps = (typeof currentReceiptData !== 'undefined' && currentReceiptData && typeof currentReceiptData.review_priority_score === 'number') ? currentReceiptData.review_priority_score : null;
-        if (_rps != null && _rps > 0.6) {
+        if (_receiptSignals.highReviewPriority) {
             rowWarnings.push('重点复核');
         }
-    } catch (e) {}
+    }
 
     const rowWarnClass = rowWarnings.length ? ' row-warning' : '';
     const tr = document.createElement('tr');
@@ -5312,6 +5276,7 @@ function appendTableRow(item = {}) {
             <div class="item-name-sku-stack sku-combobox-wrap" style="position: relative;">
                 <input type="text" class="inp-name form-control" value="${w2Escape(finalRawName)}" placeholder="品名(如走地鸡)" autocomplete="off"
                        onfocus="openSkuMenuForNameInput(this)" onclick="openSkuMenuForNameInput(this)" oninput="onItemNameInput(this)" onblur="closeSkuMenuDelay(this)"
+                       ${itemConfRefTitle ? 'title="' + w2Escape(itemConfRefTitle) + '"' : ''}
                        ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
                 <input type="hidden" class="inp-sku" value="${w2Escape(skuName)}">
                 <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
@@ -5346,6 +5311,7 @@ function appendTableRow(item = {}) {
         </td>
         <td style="text-align:center;">
             <div class="row-actions">
+                ${itemReviewBadgeHtml(itemFlags, itemConfRaw)}
                 ${isVoidMain ? '<span class="badge badge-secondary" title="票面划线行：不计入总额与入库" style="margin-right:4px;">作废</span>' : ''}
                 <button type="button" class="btn-evidence" onclick="highlightItemEvidence(this.closest('tr'), document.getElementById('previewImg'))" title="在原图上高亮该行的识别证据">证据</button>
                 <button type="button" class="btn-action-delete" onclick="removeRow(this)" title="删除此明细行">删除</button>
@@ -5358,6 +5324,11 @@ function appendTableRow(item = {}) {
     // 无证据的行点击不报错（人话提示）。input/select/button 等交互控件不受影响。
     tr.dataset.evidence = item.evidence ? JSON.stringify(item.evidence) : '';
     if (item.evidence) tr.classList.add('evidence-row');
+    // P11/T5：item 级置信度与单位换算警告同样挂到行 dataset——复核保存由 DOM 采集，
+    // 不挂行的话 collectReviewFormData 拿不到这两列，落库时被后端兜底值（0.5/空串）抹平。
+    tr.dataset.confidence = (itemConfRaw !== null) ? String(itemConfRaw) : '';
+    tr.dataset.unitConversionWarning = item.unit_conversion_warning
+        ? String(item.unit_conversion_warning) : '';
     tr.addEventListener('click', (e) => {
         if (e.target.closest('input, select, button, a, .unit-dropdown-menu, .sku-dropdown-floating')) return;
         highlightItemEvidence(tr, document.getElementById('previewImg'));
@@ -5733,59 +5704,6 @@ function _postFeedback(receiptId, likeVal, comment, itemIndex) {
     }).then(r => Promise.all([r.status, r.json().catch(() => null)])).then(([s, j]) => ({ status: s, body: j }));
 }
 
-function handleRowFeedback(btn, likeVal) {
-    const cell = btn.closest('.feedback-cell');
-    if (!cell) return;
-    _applyOptimisticLike(btn, likeVal);
-    // 仅切换选中态，不自动提交；用户可在 textarea 补充后点提交反馈
-    const textarea = cell.querySelector('.feedback-comment');
-    if (textarea && likeVal === -1) textarea.focus();
-}
-
-function submitRowFeedback(btn) {
-    const cell = btn.closest('.feedback-cell');
-    if (!cell) return;
-    const wrap = btn.closest('tr');
-    const rowIdx = cell.dataset.rowIndex != null ? Number(cell.dataset.rowIndex) : null;
-    const textarea = cell.querySelector('.feedback-comment');
-    const comment = textarea ? String(textarea.value || '').trim() : '';
-    const likeVal = cell.dataset.like ? Number(cell.dataset.like) : null;
-    const receiptId = currentReceiptId || (currentReceiptData && currentReceiptData.receipt_id) || (currentReceiptData && currentReceiptData.id);
-    if (!receiptId) {
-        showToast('请先完成识别或保存后再反馈', 'warning');
-        return;
-    }
-    if (likeVal == null && !comment) {
-        showToast('请选择点赞或点踩，或填写反馈原因', 'warning');
-        return;
-    }
-    const statusEl = cell.querySelector('.feedback-status');
-    const prevStatus = statusEl ? statusEl.textContent : '';
-    if (statusEl) statusEl.textContent = '提交中...';
-    btn.disabled = true;
-    _postFeedback(receiptId, likeVal, comment, rowIdx).then(({ status, body }) => {
-        btn.disabled = false;
-        if (status >= 200 && status < 300 && body && body.status === 'success') {
-            if (statusEl) statusEl.textContent = likeVal === 1 ? '已点赞' : (likeVal === -1 ? '已点踩' : '已提交');
-            showToast('反馈已提交', 'success');
-            _qualityWarningsLink(comment, likeVal);
-            if (body.distilled) {
-                showToast('已记入待确认记忆队列（连续3次纠偏触发，管理员确认后生效）', 'info', TOAST_DURATION.long);
-            }
-        } else {
-            if (statusEl) statusEl.textContent = prevStatus || '提交失败';
-            _revertOptimisticLike(cell);
-            const msg = (body && body.msg) ? body.msg : ('HTTP ' + status);
-            showToast('反馈提交失败：' + msg, 'error');
-        }
-    }).catch(err => {
-        btn.disabled = false;
-        if (statusEl) statusEl.textContent = prevStatus || '提交失败';
-        _revertOptimisticLike(cell);
-        showToast('反馈提交异常' + toastFailDetail(err), 'error');
-    });
-}
-
 function handleArcFeedback(btn, likeVal) {
     const cell = btn.closest('.feedback-cell');
     if (!cell) return;
@@ -5899,6 +5817,15 @@ function collectReviewFormData() {
                 ? JSON.parse(tr.dataset.evidence) : null;
             if (rowEvidence && typeof rowEvidence === 'object') item.evidence = rowEvidence;
         } catch (e) { /* 坏证据降级：不带证据保存，不阻断 */ }
+        // P11/T5：item 级置信度（数值型才带）与单位换算警告（非空才带）随行透传。
+        // 缺失时不携带键，后端兜底 0.5 / 空串语义不变（旧单据无这两列不会上浮）；
+        // 渲染期由 appendTableRow 写入 dataset（见 tr.dataset.confidence / unitConversionWarning）。
+        const rowConfRaw = tr.dataset ? tr.dataset.confidence : '';
+        if (rowConfRaw !== '' && rowConfRaw != null && isFinite(Number(rowConfRaw))) {
+            item.confidence = Number(rowConfRaw);
+        }
+        const rowUcwRaw = tr.dataset ? tr.dataset.unitConversionWarning : '';
+        if (rowUcwRaw) item.unit_conversion_warning = String(rowUcwRaw);
         // D19：行内显式指定 SKU → 携带 sku_id；未指定（保持未关联）→ 缺省不传
         const skuIdInput = tr.querySelector('.inp-sku-id');
         const skuIdVal = skuIdInput && String(skuIdInput.value || '').trim();
@@ -5978,6 +5905,18 @@ function buildSavePayloadFromData(data, receiptId) {
             // T7（Gap E1）：字段级证据透传——自动保存/归档保存回环不丢证据
             if (it.evidence && typeof it.evidence === 'object') {
                 itemPayload.evidence = it.evidence;
+            }
+            // P11/T5：item 级置信度（数值型才带）与单位换算警告（非空才带）随行透传。
+            // 自动保存（source=auto）此前不带这两列，落库被 /api/save_edited 的兜底值
+            // （confidence 0.5 / unit_conversion_warning 空串）覆盖，低置信与花码提示丢失。
+            // 条件跟 evidence/sku_id 一致：缺失不携带键 → 后端兜底语义与修复前完全一致。
+            if (it.confidence != null && String(it.confidence).trim() !== ''
+                && isFinite(Number(it.confidence))) {
+                itemPayload.confidence = Number(it.confidence);
+            }
+            if (it.unit_conversion_warning != null
+                && String(it.unit_conversion_warning).trim() !== '') {
+                itemPayload.unit_conversion_warning = String(it.unit_conversion_warning);
             }
             // D19：行内显式指定的 sku_id 透传（未指定不携带，后端走安全精确匹配）
             if (it.sku_id != null && String(it.sku_id).trim() !== ''
@@ -6061,13 +6000,13 @@ function handleVersionConflictReload(receiptId, localData, reloadFn) {
     }
 }
 
-// D34: 放弃上传/放弃解析——彻底从数据库物理删除未审核单据并从侧栏/前端移除
+// D34: 放弃上传/放弃解析——软删除未审核单据（移入回收站，可在管理后台恢复）并从侧栏/前端移除
 async function discardCurrentReceipt() {
     const photo = typeof getActivePhoto === 'function' ? getActivePhoto() : null;
     const targetReceiptId = (photo && photo.receiptId) || currentReceiptId;
     const displayName = photo ? (photo.fileName || (photo.file ? photo.file.name : null) || `单据 #${targetReceiptId || ''}`) : (targetReceiptId ? `单据 #${targetReceiptId}` : '当前单据');
 
-    if (!confirm(`确定要放弃上传并彻底删除「${displayName}」的解析结果吗？\n\n放弃后该单据将从系统及数据库中彻底物理删除，且在归档与历史中无法再查询到。`)) {
+    if (!confirm(`确定要放弃上传「${displayName}」吗？\n\n放弃后该单据将移入回收站（可在管理后台恢复），并从上传侧栏移除，不再出现在归档与历史列表中。`)) {
         return;
     }
 
@@ -6079,14 +6018,14 @@ async function discardCurrentReceipt() {
             const res = await apiFetch(`/api/receipt/${targetReceiptId}/discard`, { method: 'POST' });
             const ret = await res.json().catch(() => null);
             if (!res.ok && res.status !== 404) {
-                const errorMsg = (ret && ret.msg) || `物理删除单据失败 HTTP ${res.status}`;
+                const errorMsg = (ret && ret.msg) || `放弃单据失败 HTTP ${res.status}`;
                 showToast(errorMsg, 'error');
                 if (btnDiscard) btnDiscard.disabled = false;
                 return;
             }
         }
 
-        // 成功删除，开始从前端列表移除
+        // 放弃成功，开始从前端列表移除
         const idx = photo ? BatchUploader.photos.indexOf(photo) : -1;
         if (idx >= 0) {
             if (photo.pollToken) photo.pollToken.cancelled = true;
@@ -6130,7 +6069,7 @@ async function discardCurrentReceipt() {
             resetManualEntryMode();   // D12：放弃手工单草稿 → 恢复左栏/标题
         }
 
-        showToast('已放弃并彻底删除单据解析结果', 'info');
+        showToast('已放弃该单据，已移入回收站（可在管理后台恢复）', 'info');
     } catch (err) {
         console.error('放弃单据异常:', err);
         showToast('放弃单据请求失败，请检查网络设置', 'error');
@@ -6657,11 +6596,6 @@ function toggleInventoryMoreMenu(btn, skuTarget) {
         };
         document.addEventListener('click', closeHandler);
     }, 10);
-}
-
-function closeInvMoreMenu() {
-    const menu = document.getElementById('invMoreMenu');
-    if (menu) menu.classList.add('hide');
 }
 
 function openAddSkuModal() {
@@ -7343,28 +7277,30 @@ function resetArchiveFilters() {
     applyArchiveFilters();
 }
 
+// 归档状态徽章——文案/样式/悬停说明全部取自 RECEIPT_STATUSES（单一事实源），
+// 未知状态回落显示原始值。
 function renderStatusBadge(st) {
-    const _SUB_LABEL = {
-        uploaded: '已上传', parsing: '解析中', parsed: '待核对',
-        edited: '已修改', flagged: '有问题', approved: '已入账', error: '失败',
-    };
-    if (st === 'uploaded' || st === 'parsing') {
-        return '<span class="badge badge-warning" title="' + w2Escape(_SUB_LABEL[st] || st) + '">' + w2Escape(_SUB_LABEL[st] || '待处理') + '</span>';
-    } else if (st === 'parsed') {
-        return '<span class="badge badge-warning" title="AI自动识别落库">待核对</span>';
-    } else if (st === 'edited') {
-        return '<span class="badge badge-info" title="店员手工修改保存">已修改</span>';
-    } else if (st === 'approved') {
-        return '<span class="badge badge-success" title="老板审核通过">已入账</span>';
-    } else if (st === 'flagged') {
-        return '<span class="badge badge-danger" title="已标记">有问题</span>';
-    } else if (st === 'error') {
-        return '<span class="badge badge-danger" title="失败">失败</span>';
-    } else {
+    const spec = RECEIPT_STATUSES[String(st || '')];
+    if (!spec) {
         return '<span class="badge badge-secondary">' + w2Escape(st) + '</span>';
     }
+    return '<span class="badge ' + spec.cls + '" title="' + w2Escape(spec.title) + '">'
+        + w2Escape(spec.label) + '</span>';
 }
 window.renderStatusBadge = renderStatusBadge;
+
+// 按 RECEIPT_STATUSES 定义顺序生成归档「单据状态」筛选下拉（保留「全部状态」占位项），
+// 避免 index.html 与 JS 各维护一份状态清单。
+function populateReceiptStatusFilter() {
+    const sel = document.getElementById('fltStatus');
+    if (!sel) return;
+    const current = sel.value;
+    sel.innerHTML = '<option value="">全部状态</option>'
+        + Object.keys(RECEIPT_STATUSES).map(k =>
+            '<option value="' + w2Escape(k) + '">' + w2Escape(RECEIPT_STATUSES[k].filter) + '</option>'
+        ).join('');
+    sel.value = current;
+}
 
 // 渲染归档表格逻辑（锁高防抖动与焦点恢复优化）
 function renderArchiveTable(receipts) {
@@ -7412,12 +7348,31 @@ function renderArchiveTable(receipts) {
             const recDate = renderDateCell(r.receipt_date);
 
             // P1-2：黄底 row-warning 绑定 quality_warnings / review_priority>0.6
+            // P14/P15：parsed_with_warnings（门禁带警告）同样标黄，并在状态徽章上标出门禁问题
             const _hasQw = Array.isArray(r.quality_warnings) && r.quality_warnings.length > 0;
             const _rps = typeof r.review_priority_score === 'number' ? r.review_priority_score : 0;
-            const _rowWarn = (_hasQw || _rps > 0.6) ? ' class="row-warning"' : '';
+            const _hasGateWarn = st === 'parsed_with_warnings';
+            // 确定性复核信号（整单级）：街市手写单。黄底只给「尚未人工核对」的状态
+            // （RECEIPT_PENDING_REVIEW_STATES）——已修改/已入账的单据不再刷黄，
+            // 避免把「已完成的工作」重复标成待办；而供应商名旁的「手写单」来源徽标
+            // 在任何状态都显示（它描述的是单据来源事实，不是待办状态）。
+            // 判据 isHandwrittenReceipt / isReceiptPendingHumanReview 与详情页提示条同源。
+            const _isHandwritten = isHandwrittenReceipt(r);
+            const _isHandwrittenPending = _isHandwritten && isReceiptPendingHumanReview(st);
+            const _rowWarn = (_hasQw || _hasGateWarn || _isHandwrittenPending || _rps > 0.6) ? ' class="row-warning"' : '';
+            const _mathWarnLines = (Array.isArray(r.math_warnings) && r.math_warnings.length)
+                ? r.math_warnings.map(humanizeGateMsg).join('；') : '';
+            const _reviewReasonLines = _mathWarnLines
+                || (_isHandwrittenPending ? '街市手写单（NCR），需逐行对照原图核对' : '');
+            const statusBadgeCell = ((_hasGateWarn || _isHandwrittenPending) && _reviewReasonLines)
+                ? statusBadgeHTML + '<div class="gate-warn-text" style="font-size:0.68rem; color:var(--warning); margin-top:2px; max-width:200px; white-space:normal; line-height:1.3;">' + w2Escape(_reviewReasonLines) + '</div>'
+                : statusBadgeHTML;
+            const handwrittenBadge = _isHandwritten
+                ? '<span class="badge badge-secondary" style="font-size:0.72rem; margin-left:4px;" title="街市手写单（NCR）：手写字迹与花码易误读，建议逐行对照原图">手写单</span>'
+                : '';
             html += '<tr' + _rowWarn + '>' +
                 '<td style="vertical-align:middle;">#' + rid + '</td>' +
-                '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + greyBadgeHtml(r.use_grey) + '</td>' +
+                '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + handwrittenBadge + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:#60a5fa;">' + editDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + recDate + '</span></td>' +
@@ -7426,7 +7381,7 @@ function renderArchiveTable(receipts) {
                 '<td class="col-center" style="vertical-align:middle;">' + (r.department_name
                     ? '<span class="badge badge-secondary" style="font-size:0.75rem;">' + w2Escape(r.department_name) + '</span>'
                     : '<span style="color:var(--text-muted); font-size:0.75rem;">未分配</span>') + '</td>' +
-                '<td class="col-center" style="vertical-align:middle;">' + statusBadgeHTML + '</td>' +
+                '<td class="col-center" style="vertical-align:middle;">' + statusBadgeCell + '</td>' +
                 '<td class="col-center" style="vertical-align:middle;">' + payStatusLiteBadgeHtml(r) + '</td>' +
                 '<td class="col-center" style="vertical-align:middle; white-space:nowrap; padding-right:4px;">' + actionBtns + '</td>' +
             '</tr>';
@@ -7698,7 +7653,7 @@ function closeArchiveModal(force = false) {
 // P3/R5：归档履历徽章按真实 action_type 映射，消除"upload/其余一律校对编辑"
 // 的二分失真（approve/flag/retry 等曾被误标为"校对编辑"）。未知类型回退显示
 // 原始值，保证徽章语义不失真。
-const AUDIT_ACTION_BADGES = {
+const ACTION_BADGES = {
     'upload':           { label: '初始上传',   cls: 'badge-secondary' },
     'auto_save':        { label: 'AI自动入库', cls: 'badge-warning' },
     'save_edited':      { label: '店员人工修改', cls: 'badge-info' },
@@ -7722,14 +7677,31 @@ const AUDIT_ACTION_BADGES = {
     'feedback':         { label: '用户反馈',   cls: 'badge-secondary' },
     'feedback_distilled': { label: '先验提炼', cls: 'badge-secondary' },
     'timeout':          { label: '识别超时',   cls: 'badge-danger' },
+    // AI 决策履历专有：decision_type=extract 时真实结果在 props.status，无法直映射类型
+    'extract_ok':       { label: '识别完成',   cls: 'badge-success' },
+    'gate_reject':      { label: '门禁拦截',   cls: 'badge-danger' },
+    'extract_fail':     { label: '识别失败',   cls: 'badge-secondary' },
 };
 
-function auditActionBadge(actionType) {
-    const spec = AUDIT_ACTION_BADGES[actionType];
+// 唯一徽章入口：归档履历（原 auditActionBadge）与 AI 决策履历（原 aiDecisionBadge）共用。
+// 新增 action_type / 决策结果只需在 ACTION_BADGES 登记一次，两个调用点自动一致。
+// props 仅 AI 决策履历提供（承载 status/reason）；fallback 供两处保留各自的兜底文案。
+function actionBadge(type, props, fallback) {
+    const t = String(type == null ? '' : type);
+    const p = (props && typeof props === 'object') ? props : {};
+    // 交叉审核：需看该轮是否被跳过（audit_disabled / audit_error 或显式 skipped）
+    if (t === 'audit') {
+        const skipped = !!(p.skipped || /^audit_(disabled|error)/.test(String(p.reason || '')));
+        if (skipped) {
+            return `<span class="badge badge-secondary">${w2Escape('审核跳过')}</span>`;
+        }
+        return `<span class="badge" style="background:#cce5ff; color:#004085;">${w2Escape('交叉审核')}</span>`;
+    }
+    const spec = ACTION_BADGES[t] || ACTION_BADGES[String(p.status || '')];
     if (spec) {
         return `<span class="badge ${spec.cls}">${w2Escape(spec.label)}</span>`;
     }
-    return `<span class="badge badge-secondary">${w2Escape(String(actionType || '未知'))}</span>`;
+    return `<span class="badge badge-secondary">${w2Escape(String(t || fallback || '未知'))}</span>`;
 }
 
 function renderArchiveForm(data) {
@@ -7747,6 +7719,21 @@ function renderArchiveForm(data) {
     const inpCur = document.getElementById('inpCurrency');
     if (inpCur && data.currency) inpCur.value = (data.currency || 'HKD').toUpperCase();
     renderCurrencySymbol();
+
+    // P14/P15 + 确定性复核：整单级提示条覆盖「门禁未通过」与「街市手写单」两类
+    // 需人工复核的确定性信号（判据与复核台共用 receiptReviewReasons，口径不分岔）。
+    const arcWarnBanner = document.getElementById('archiveMathWarnBanner');
+    if (arcWarnBanner) {
+        const _reasons = receiptReviewReasons(data);
+        if (_reasons.length > 0) {
+            arcWarnBanner.innerText = '[需人工复核] ' + _reasons.join('；')
+                + '。请对照左侧原图逐项核对后再保存或入账。';
+            arcWarnBanner.classList.remove('hide');
+        } else {
+            arcWarnBanner.innerText = '';
+            arcWarnBanner.classList.add('hide');
+        }
+    }
 
     // E-P1-1 灰测 Tag：标题旁徽标
     const titleEl = document.getElementById('archiveModalTitle');
@@ -7802,7 +7789,7 @@ function renderArchiveForm(data) {
             logs.forEach(l => {
                 // P3/R5：按真实 action_type 映射徽章（消除二分失真）
                 const actionType = l.action_type || l.action;
-                const typeBadge = auditActionBadge(actionType);
+                const typeBadge = actionBadge(actionType);
                 const operator = l.operator || l.who || 'unknown';
                 const ts = l.timestamp || l.ts || '';
                 let details = l.details;
@@ -7835,27 +7822,6 @@ function renderArchiveForm(data) {
     renderArcAiDecisions(data.ai_decisions);
 }
 
-// U-2：AI 决策履历徽章映射
-// extract_ok→绿「识别完成」/ gate_reject→红「门禁拦截」/ extract_fail→灰「识别失败」
-// audit→蓝「交叉审核」/ 审核跳过→「审核跳过」/ auto_save→黄「AI自动入库」
-function aiDecisionBadge(decisionType, p) {
-    if (decisionType === 'audit') {
-        const skipped = !!(p && (p.skipped || /^audit_(disabled|error)/.test(String(p.reason || ''))));
-        if (skipped) {
-            return `<span class="badge badge-secondary">${w2Escape('审核跳过')}</span>`;
-        }
-        return `<span class="badge" style="background:#cce5ff; color:#004085;">${w2Escape('交叉审核')}</span>`;
-    }
-    if (decisionType === 'auto_save') {
-        return `<span class="badge badge-warning">${w2Escape('AI自动入库')}</span>`;
-    }
-    const status = String((p && p.status) || '');
-    if (status === 'extract_ok') return `<span class="badge badge-success">${w2Escape('识别完成')}</span>`;
-    if (status === 'gate_reject') return `<span class="badge badge-danger">${w2Escape('门禁拦截')}</span>`;
-    if (status === 'extract_fail') return `<span class="badge badge-secondary">${w2Escape('识别失败')}</span>`;
-    return `<span class="badge badge-secondary">${w2Escape(String(decisionType || 'AI 决策'))}</span>`;
-}
-
 // U-2：AI 决策履历渲染（arcAiDecisionsContainer）
 // 安全纪律（AC-D3 阻断级）：所有动态文本一律 w2Escape 后再插 innerHTML
 function renderArcAiDecisions(decisions) {
@@ -7875,7 +7841,7 @@ function renderArcAiDecisions(decisions) {
             if (typeof p === 'string') p = JSON.parse(p);
         } catch (e) { p = {}; }
         if (!p || typeof p !== 'object') p = {};
-        const badge = aiDecisionBadge(d.decision_type, p);
+        const badge = actionBadge(d.decision_type, p, 'AI 决策');
         let summary;
         if (d.decision_type === 'audit') {
             summary = [w2Escape(String(d.engine || '')), w2Escape(String(p.reason || ''))]
@@ -7926,10 +7892,16 @@ function appendArcTableRow(item = {}) {
     const isVoid = !!(item.is_void);
     const actualQtyArc = (item.actual_qty != null && item.actual_qty !== '') ? String(item.actual_qty) : '';
     if (isVoid) tr.style.opacity = '0.55';
+    // 归档是只读校对视角，同样要让确定性待核验行可见——复用复核台同一套判定与角标
+    // （itemReviewFlags / itemReviewBadgeHtml 与 appendTableRow 完全同源，不另造样式或文案）。
+    // itemConfRaw 原样写入 dataset，便于归档侧也保留每行置信度读数（仅作参考）。
+    const itemConfRaw = (typeof item.confidence === 'number' && isFinite(item.confidence)) ? item.confidence : null;
+    const itemFlags = itemReviewFlags(item);
     // P0-2：归档弹窗明细行与 Tab1 同口径——品名/单位属性插值过 w2Escape
     tr.innerHTML = `
         <td>
             <input type="text" class="inp-name" value="${w2Escape(rawName)}" placeholder="品名" oninput="markArcDirty()" style="${isVoid ? 'text-decoration:line-through; color:#6c757d;' : ''}">
+            ${itemReviewBadgeHtml(itemFlags, itemConfRaw)}
             ${skuId ? `<span class="badge badge-success">已关联</span>` : ''}
             ${isVoid ? `<span class="badge badge-secondary" title="划线作废，不计入总额">作废</span>` : ''}
         </td>
@@ -7967,6 +7939,8 @@ function appendArcTableRow(item = {}) {
         </td>
     `;
     tr.dataset.isVoid = isVoid ? '1' : '0';
+    // P11：与复核台同口径挂行 dataset（归档保存不采集该列，仅作只读读数与核验依据）
+    tr.dataset.confidence = (itemConfRaw !== null) ? String(itemConfRaw) : '';
     tbody.appendChild(tr);
 
     // T7（Gap E1）：归档行证据挂载（与 Tab1 同机制，目标为归档弹窗原图）
@@ -8238,14 +8212,6 @@ function applyArchiveImgTransform() {
 // -------------------------------------------------------------
 // var：便于 node vm 逻辑测读取；与 code_engine.check_price_anomaly 阈值一致
 var PRICE_ANOMALY_THRESHOLD = 0.10;
-
-/** 解析 YYYY-MM-DD；非标准标签返回 null */
-function parsePriceHistoryDate(dateStr) {
-    const s = String(dateStr || '').trim();
-    if (s.length < 10 || s[4] !== '-' || s[7] !== '-') return null;
-    const d = new Date(s.slice(0, 10) + 'T00:00:00');
-    return Number.isNaN(d.getTime()) ? null : d;
-}
 
 /**
  * 从价格点序列计算看板摘要（与后端 summary 同语义，前端可独立重算/回退）。
@@ -8707,7 +8673,7 @@ function mapServerStatus(serverStatus) {
     if (s === 'parsing' || s === 'uploaded') {
         return 'uploading';
     }
-    if (s === 'parsed') {
+    if (s === 'parsed' || s === 'parsed_with_warnings') {
         return 'parsed';
     }
     if (s === 'edited' || s === 'approved' || s === 'saved' || s === 'flagged') {
@@ -9115,13 +9081,13 @@ function uploadSinglePhoto(idx) {
     const formData = new FormData();
     formData.append('receipt', photo.file);
     formData.append('force', photo.force ? 'true' : 'false');
-    const useCodebuddy = document.getElementById('chkCodebuddy').checked;
+    const useTreatment = document.getElementById('chkTreatment').checked;
 
     showLoadingCard();
     startBatchTimer();
 
     // Wave 3（T9）：async=true 立即返回 job_id，再轮询 /api/job/{id}
-    apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+    apiFetch(`/api/upload?treatment=${useTreatment}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
         .then(res => res.json())
         .then(ret => {
             if (ret.status === 'queued') {
@@ -9155,6 +9121,8 @@ function uploadSinglePhoto(idx) {
         stopBatchTimer();
         hideLoadingCard();
         const curIdx = findPhotoIndex(photo);
+        // N5：本路径（批量模式下只分析 1 张）此前是提示盲区，与批量路径统一补上
+        notifyExperimentOverrideIfApplied(ret);
         if (ret.status !== 'success') {
             photo.status = 'error';
             photo.errorMsg = ret.msg || '识别失败';
@@ -9194,7 +9162,7 @@ function uploadBatch(batchPhotos) {
     // P1-14: 入参为 photo 对象数组；settle 闭包捕获 photo 对象引用并以 localId
     // 校验是否仍在列表中——解析中删照片不再因索引漂移把结果写错对象，
     // 照片已移除则直接丢弃结果。
-    const useCodebuddy = document.getElementById('chkCodebuddy').checked;
+    const useTreatment = document.getElementById('chkTreatment').checked;
 
     const targets = (batchPhotos || []).filter(p => p && isPhotoInBatch(p));
     targets.forEach(photo => {
@@ -9208,13 +9176,17 @@ function uploadBatch(batchPhotos) {
     startBatchTimer();
 
     let pending = targets.length;
+    // N5：批量识别同样要告知「本次识别由实验配置覆盖」。实验是整批共用的同一份
+    // 配置，故本批只提示一次（复用单张路径的 notifyExperimentOverrideIfApplied，
+    // 不另造一套文案/机制）。
+    let experimentOverrideNotified = false;
 
     targets.forEach(photo => {
         const formData = new FormData();
         formData.append('receipt', photo.file);
         formData.append('force', photo.force ? 'true' : 'false');
 
-        apiFetch(`/api/upload?codebuddy=${useCodebuddy}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+        apiFetch(`/api/upload?treatment=${useTreatment}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'queued') {
@@ -9243,6 +9215,11 @@ function uploadBatch(batchPhotos) {
             return;
         }
         const idx = findPhotoIndex(photo);
+        // N5：成功与失败都提示（失败响应同样带 experiment_override，实验配置可能
+        // 正是失败原因），但同一批量内只提示一次。
+        if (!experimentOverrideNotified) {
+            experimentOverrideNotified = notifyExperimentOverrideIfApplied(ret);
+        }
         if (ret.status === 'success' || ret.status === 'parsed') {
             photo.status = 'parsed';
             photo.receiptId = ret.receipt_id;
@@ -9916,13 +9893,13 @@ function retryPhotoFromSider(idx) {
         photo.errorMsg = null;
         renderSider();
         updateSelectionUI();
-        const useCodebuddy = document.getElementById('chkCodebuddy').checked;
+        const useTreatment = document.getElementById('chkTreatment').checked;
         const formData = new FormData();
         formData.append('files', photo.file);
         formData.append('force', photo.force ? 'true' : 'false');
         showLoadingCard();
         startBatchTimer();
-        apiFetch(`/api/upload_batch?codebuddy=${useCodebuddy}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
+        apiFetch(`/api/upload_batch?treatment=${useTreatment}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 stopBatchTimer();
@@ -10072,51 +10049,6 @@ function fmtMoney(v) {
     return n.toFixed(2);
 }
 
-// ---- CSV 导出（D20/M6）：按当前归档筛选条件透传 ----
-function exportArchiveCsv() {
-    const params = new URLSearchParams();
-    const supplier = (document.getElementById('fltSupplier')?.value || '').trim();
-    const status = (document.getElementById('fltStatus')?.value || '').trim();
-    if (supplier) params.set('supplier', supplier);
-    if (status) params.set('status', status);
-
-    const pairs = [
-        ['fltReceiptDateFrom', 'receipt_date_from'], ['fltReceiptDateTo', 'receipt_date_to'],
-        ['fltUploadDateFrom', 'upload_date_from'], ['fltUploadDateTo', 'upload_date_to'],
-        ['fltUpdateDateFrom', 'update_date_from'], ['fltUpdateDateTo', 'update_date_to'],
-    ];
-    pairs.forEach(([elId, key]) => {
-        const v = (document.getElementById(elId)?.value || '').trim();
-        if (v) params.set(key, v);
-    });
-    const min = document.getElementById('fltAmountMin')?.value;
-    const max = document.getElementById('fltAmountMax')?.value;
-    if (min !== undefined && min !== '') params.set('amount_min', min);
-    if (max !== undefined && max !== '') params.set('amount_max', max);
-
-    // P1-12：改 fetch+blob 下载——window.open 不携带 Authorization，AUTH=1 时会 401
-    showToast('正在按当前筛选条件导出 CSV…', 'info');
-    apiFetch(`/api/receipts/export?${params.toString()}`)
-        .then(res => {
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            return res.blob();
-        })
-        .then(blob => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'receipts_export.csv';
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-        })
-        .catch(err => {
-            console.error('CSV 导出失败:', err);
-            showToast('CSV 导出失败，请稍后重试', 'error');
-        });
-}
-
 // ---- 支付与对账面板（Wave 1 升级：跨供应商应付清单，03 章） ----
 const finState = {
     suppliers: [],
@@ -10186,7 +10118,8 @@ function isPayableRow(r) {
     if (st !== 'credit' && st !== 'cash') return false;
     if (r.doc_form === 'statement') return false;
     const s = r.status || '';
-    return s === 'parsed' || s === 'edited' || s === 'approved';
+    // parsed_with_warnings（门禁带警告）仍是有效待核对态，计入应付口径
+    return s === 'parsed' || s === 'parsed_with_warnings' || s === 'edited' || s === 'approved';
 }
 
 // Wave 1 付款状态徽章（契约①五态）；未知值兜底过 w2Escape（P0 硬规则）
@@ -10862,14 +10795,6 @@ function confirmReconTask() {
 const SupplierUI = { q: '', includeInactive: false };
 const ArchiveUI = { q: '', statusGroup: '', quickRange: '' };
 
-// 状态聚合映射（UI 口语，D-SUP-10 / 4.3）
-const STATUS_GROUP_MAP = {
-    pending: ['uploaded', 'parsing', 'parsed', 'edited'],
-    posted:  ['approved'],
-    problem: ['flagged'],
-    failed:  ['error'],
-};
-
 function loadSupplierAdmin() {
     // 与库存档案对称：从 checkbox 同步 includeInactive，避免「显示已停用」勾了却不带 query
     const chkInc = document.getElementById('supShowInactive');
@@ -11150,7 +11075,7 @@ function updateTodoBar() {
     let pending = 0, failed = 0, overdue = 0;
     recs.forEach(r => {
         const st = r.status || 'uploaded';
-        if (['uploaded', 'parsing', 'parsed', 'edited'].includes(st)) pending++;
+        if (STATUS_GROUP_MAP.pending.includes(st)) pending++;
         else if (st === 'error') failed++;
         if (r.payment_status === 'overdue') overdue++;
     });
@@ -11593,8 +11518,8 @@ const OPENAI_PRESETS = {
         label: 'SiliconFlow · 硅基流动',
         base_url: 'https://api.siliconflow.cn/v1',
         api_key: '',
-        rec_model: 'Qwen/Qwen2.5-VL-7B-Instruct',
-        aud_model: 'Qwen/Qwen2.5-VL-7B-Instruct',
+        rec_model: 'Qwen/Qwen3-VL-32B-Instruct',
+        aud_model: 'zai-org/GLM-4.5V',
     },
 };
 
@@ -11696,6 +11621,7 @@ function loadAdminEngineConfig() {
                 return;
             }
             const cfg = body.data;
+            renderAdminEngineConfigSource(cfg.config_source);
 
             // 常规识别 OpenAI 参数
             const recBase = document.getElementById('adminOpenaiRecBaseUrl');
@@ -11903,6 +11829,8 @@ function saveAdminEngineConfig() {
             .then(ret => {
                 if (ret && ret.status === 'success') {
                     showToast('配置已成功保存', 'success');
+                    // T1：管理台保存后来源置 manual（后端强制），重启不再被 .env 覆盖
+                    renderAdminEngineConfigSource('manual');
                     if (ret.data) {
                         const d = ret.data;
                         if (d.openai_rec_api_key) {
@@ -12020,6 +11948,48 @@ function saveAdminEngineConfig() {
                 }
             });
         });
+}
+
+function renderAdminEngineConfigSource(source) {
+    // 配置来源展示（T1）：manual=管理台保存（重启保留）；auto=.env 启动装配（重启重装）
+    const isManual = String(source || 'auto') === 'manual';
+    const badge = document.getElementById('adminEngineConfigSource');
+    const hint = document.getElementById('adminEngineConfigSourceHint');
+    const resetBtn = document.getElementById('adminResetEngineConfigBtn');
+    if (badge) {
+        badge.textContent = isManual ? '管理台手工配置' : '.env 默认装配';
+        badge.className = 'badge ' + (isManual ? 'badge-warning' : 'badge-secondary');
+    }
+    if (hint) {
+        hint.textContent = isManual
+            ? '重启后保留，不会被 .env 覆盖'
+            : '重启后按 .env 重新装配';
+    }
+    if (resetBtn) resetBtn.disabled = !isManual;
+}
+
+// 复位为 .env 默认装配：POST /api/admin/engine-config/reset（T1）
+function resetAdminEngineConfig() {
+    showCustomConfirmModal({
+        title: '复位为 .env 默认装配',
+        message: '确认复位吗？\n\n复位将：\n① 把配置来源改回 .env 自动装配\n② 立即按 .env 重新装配识别腿与审核腿\n③ 当前管理台手工保存的引擎参数将被 .env 值覆盖',
+        confirmText: '确认复位',
+        cancelText: '取消',
+        onConfirm: () => {
+            apiFetch('/api/admin/engine-config/reset', { method: 'POST' })
+                .then(r => r.json())
+                .then(ret => {
+                    if (!ret || ret.status !== 'success') {
+                        showToast((ret && (ret.msg || ret.detail)) || '复位失败', 'error');
+                        return;
+                    }
+                    showToast('已复位为 .env 默认装配', 'success');
+                    loadAdminEngineConfig();
+                })
+                .catch(err => { showToast('复位请求异常', 'error'); console.error(err); });
+        },
+        onCancel: () => { showToast('已取消复位', 'info'); }
+    });
 }
 
 function updateAuditDisabledState() {
@@ -12227,6 +12197,30 @@ function rollbackEngineConfig() {
 /* =============================================================
    A/B 科学实验编排抽屉交互控制 (A/B Experimentation Drawer)
    ============================================================= */
+// A/B 实验状态唯一事实源：label=展示名，cls=徽章类（管理抽屉），style=内联配色（大盘/详情）。
+// draft/running/stopped/concluded 与后端 db.py Experiment.status 取值同源；
+// 文案跟随操作按钮（index.html「暂停实验」）与说明文案（「实验处于运行中」）口径。
+const EXP_STATUS = {
+    draft:     { label: '草稿',   cls: 'badge-secondary', style: 'background:#f1f5f9; color:#475569;' },
+    running:   { label: '运行中', cls: 'badge-success',   style: 'background:#dbeafe; color:#1e40af;' },
+    stopped:   { label: '已暂停', cls: 'badge-warning',   style: 'background:#fee2e2; color:#991b1b;' },
+    concluded: { label: '已结题', cls: 'badge-info',      style: 'background:#dcfce7; color:#166534;' },
+};
+
+// 取实验状态展示名；未知状态回落显示原始值（与后端不一致时可肉眼发现），
+// 原始值也为空时用 fallback（各调用点保留自己的占位符）。
+function expStatusLabel(s, fallback) {
+    const spec = EXP_STATUS[String(s || '')];
+    if (spec) return spec.label;
+    return String(s || fallback || '未知');
+}
+
+// 取实验状态内联配色；未知状态返回空串（调用点 style 属性保持原样）
+function expStatusStyle(s) {
+    const spec = EXP_STATUS[String(s || '')];
+    return spec ? spec.style : '';
+}
+
 let _adminExperimentsList = [];
 
 async function loadAdminExperimentsList() {
@@ -12243,16 +12237,10 @@ async function loadAdminExperimentsList() {
                 onAdminExpSelectChange('');
                 return;
             }
-            const STATUS_MAP = {
-                draft: '草稿',
-                running: '运行中',
-                stopped: '已暂停',
-                concluded: '已结题'
-            };
             _adminExperimentsList.forEach(exp => {
                 const opt = document.createElement('option');
                 opt.value = exp.id;
-                const statusLabel = STATUS_MAP[exp.status] || exp.status || '未知';
+                const statusLabel = expStatusLabel(exp.status);
                 opt.innerHTML = `#${exp.id}: ${w2Escape(exp.name || '未命名')} (${statusLabel})`;
                 sel.appendChild(opt);
             });
@@ -12317,24 +12305,15 @@ function onAdminExpSelectChange(expId) {
     const ctrlPct = 100 - treatPct;
     if (trafficEl) trafficEl.textContent = `${ctrlPct}% Control : ${treatPct}% Treatment`;
 
-    if (minSampleEl) minSampleEl.textContent = exp.min_sample ? `${exp.min_sample} 样本/组` : '30 样本/组';
+    // S2：min_sample=0（不做样本量门槛）是合法值，不能因 0 是 falsy 而显示成 30
+    if (minSampleEl) minSampleEl.textContent = (exp.min_sample != null) ? `${exp.min_sample} 样本/组` : '30 样本/组';
 
-    // 状态徽标与操作控制
+    // 状态徽标与操作控制（文案/样式取自 EXP_STATUS；未知状态按草稿处理，与后端默认值一致）
     const status = exp.status || 'draft';
     if (badgeEl) {
-        if (status === 'running') {
-            badgeEl.className = 'badge badge-success';
-            badgeEl.textContent = '运行中';
-        } else if (status === 'stopped') {
-            badgeEl.className = 'badge badge-warning';
-            badgeEl.textContent = '已暂停';
-        } else if (status === 'concluded') {
-            badgeEl.className = 'badge badge-info';
-            badgeEl.textContent = '已结题';
-        } else {
-            badgeEl.className = 'badge badge-secondary';
-            badgeEl.textContent = '草稿';
-        }
+        const spec = EXP_STATUS[status] || EXP_STATUS.draft;
+        badgeEl.className = 'badge ' + spec.cls;
+        badgeEl.textContent = spec.label;
     }
 
     // 模型信息
@@ -12509,12 +12488,22 @@ async function submitCreateExperiment() {
         return;
     }
 
+    // P2：target_percent=0（全部走对照组）是合法值，不能因 0 是 falsy 而被 `|| 50`
+    // 静默改成 50。仅当输入为空/非数字时才回落默认 50。
+    const pctParsed = pctEl ? parseInt(pctEl.value, 10) : NaN;
+    const targetPercent = Number.isNaN(pctParsed) ? 50 : pctParsed;
+
+    // S2：min_sample=0（不做样本量门槛）同属合法值，不能因 0 是 falsy 而被
+    // `|| 30` 静默改成 30。仅当输入为空/非数字时才回落默认 30。
+    const sampleParsed = minSampleEl ? parseInt(minSampleEl.value, 10) : NaN;
+    const minSample = Number.isNaN(sampleParsed) ? 30 : sampleParsed;
+
     const payload = {
         name: name,
         hypothesis: hypEl ? hypEl.value.trim() : '',
         success_metric: metricEl ? metricEl.value : 'accuracy',
-        target_percent: pctEl ? parseInt(pctEl.value, 10) || 50 : 50,
-        min_sample: minSampleEl ? parseInt(minSampleEl.value, 10) || 30 : 30,
+        target_percent: targetPercent,
+        min_sample: minSample,
         control_model: controlModel,
         treatment_model: treatmentModel,
         control_base_url: ctrlBaseUrlEl ? ctrlBaseUrlEl.value.trim() : '',
@@ -13232,26 +13221,6 @@ function toggleGoldenSample(receiptId, inSet) {
         });
 }
 
-function importGoldenSamples(limit) {
-    if (!confirm('确认导入黄金样本（上限 ' + limit + ' 张）？将按 manifest 去重，已导入的自动跳过。')) return;
-    showToast('正在导入黄金样本...', 'info');
-    apiFetch('/api/admin/golden-samples/import?limit=' + Number(limit), { method: 'POST' })
-        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
-        .then(([httpStatus, ret]) => {
-            if (!ret || ret.status !== 'success') {
-                if (toastHttpError(httpStatus, ret)) return;
-                showToast('导入失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus)), 'error');
-                return;
-            }
-            showToast('导入完成', 'success', TOAST_DURATION.long);
-            loadGoldenBoard();
-        })
-        .catch(err => {
-            console.error('导入黄金样本失败', err);
-            showToast('导入请求失败，请稍后重试', 'error');
-        });
-}
-
 // =====================================================================
 // E-P1-3 p-value 卡片（A/B 显著性检验）
 // 阈值说明：双侧双比例 z 检验，alpha=0.05；p<0.05 显著；N<30 低置信度
@@ -13703,20 +13672,12 @@ function loadAnalyticsExperiments() {
                 el.innerHTML = '<span style="color:var(--text-muted);">暂无 A/B 实验。灰测开启后可在实验管理创建，样本回流后此处展示指标与 p 值。</span>';
                 return;
             }
-            const STATUS_LABELS = { draft: '草稿', running: '进行中', stopped: '已停止', concluded: '已结题' };
-            const STATUS_BADGES = {
-                draft: 'background:#f1f5f9; color:#475569;',
-                running: 'background:#dbeafe; color:#1e40af;',
-                stopped: 'background:#fee2e2; color:#991b1b;',
-                concluded: 'background:#dcfce7; color:#166534;'
-            };
-
             // 填充顶部下拉切换框
             const expSelect = document.getElementById('analyticsExpSelect');
             if (expSelect) {
                 let optHtml = '';
                 exps.forEach(e => {
-                    optHtml += `<option value="${e.id}">#${e.id} ${w2Escape(e.name || '实验')} (${STATUS_LABELS[e.status] || e.status})</option>`;
+                    optHtml += `<option value="${e.id}">#${e.id} ${w2Escape(e.name || '实验')} (${expStatusLabel(e.status)})</option>`;
                 });
                 expSelect.innerHTML = optHtml;
             }
@@ -13727,7 +13688,7 @@ function loadAnalyticsExperiments() {
                 html += '<tr>'
                     + '<td><strong>#' + Number(e.id) + '</strong></td>'
                     + '<td>' + w2Escape(e.name || '-') + '</td>'
-                    + '<td><span class="badge" style="' + (STATUS_BADGES[e.status] || '') + ' font-size:0.72rem; padding:2px 6px;">' + w2Escape(STATUS_LABELS[e.status] || e.status || '-') + '</span></td>'
+                    + '<td><span class="badge" style="' + expStatusStyle(e.status) + ' font-size:0.72rem; padding:2px 6px;">' + w2Escape(expStatusLabel(e.status, '-')) + '</span></td>'
                     + '<td><code>' + w2Escape(e.success_metric || '-') + '</code></td>'
                     + '<td class="col-right">' + Number(e.target_percent || 0) + '%</td>'
                     + '<td class="col-right">' + Number(e.min_sample || 0) + '</td>'
@@ -13785,16 +13746,8 @@ function inspectExperimentDetail(expId) {
             const exp = res.experiment;
             const metrics = res.metrics || {};
             const detail = res.detail || {};
-            const STATUS_MAP = { draft: '草稿', running: '进行中', stopped: '已停止', concluded: '已结题' };
-            const STATUS_COLORS = {
-                draft: 'background:#f1f5f9; color:#475569;',
-                running: 'background:#dbeafe; color:#1e40af;',
-                stopped: 'background:#fee2e2; color:#991b1b;',
-                concluded: 'background:#dcfce7; color:#166534;'
-            };
-
             if (titleEl) {
-                titleEl.innerHTML = `<strong>#${exp.id} ${w2Escape(exp.name)}</strong> <span class="badge" style="${STATUS_COLORS[exp.status] || ''} font-size:0.72rem; padding:2px 6px; margin-left:6px;">${STATUS_MAP[exp.status] || exp.status}</span>`;
+                titleEl.innerHTML = `<strong>#${exp.id} ${w2Escape(exp.name)}</strong> <span class="badge" style="${expStatusStyle(exp.status)} font-size:0.72rem; padding:2px 6px; margin-left:6px;">${w2Escape(expStatusLabel(exp.status))}</span>`;
             }
 
             // 元数据横幅
@@ -13803,7 +13756,7 @@ function inspectExperimentDetail(expId) {
                 + '<div><b>科学假设：</b>' + w2Escape(exp.hypothesis || '未设定假设') + '</div>'
                 + '<div><b>主成功指标：</b><code>' + w2Escape(exp.success_metric || 'accuracy') + '</code></div>'
                 + '<div><b>目标流量比例：</b>' + Number(exp.target_percent || 0) + '% (Control : Treatment = ' + (100 - Number(exp.target_percent || 0)) + ' : ' + Number(exp.target_percent || 0) + ')</div>'
-                + '<div><b>样本门槛：</b>最小 ' + Number(exp.min_sample || 30) + ' 样本</div>'
+                + '<div><b>样本门槛：</b>最小 ' + (exp.min_sample != null ? Number(exp.min_sample) : 30) + ' 样本</div>'
                 + '<div><b>起止周期：</b>' + w2Escape(exp.start_ts || '未记录启动时间') + ' ~ ' + w2Escape(exp.end_ts || (exp.status === 'running' ? '持续运行中' : '未记录')) + '</div>';
 
             if (exp.conclusion) {
@@ -13988,15 +13941,6 @@ function loadExpSamples(expId) {
             console.error('加载实验样本明细流失败', err);
             if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#c00; padding:16px;">加载样本异常</td></tr>';
         });
-}
-
-function loadAnalyticsPValue(expId) {
-    if (!expId) return;
-    if (typeof onPValueExperimentChange === 'function') {
-        onPValueExperimentChange(expId);
-    } else if (typeof loadPValueCardsFor === 'function') {
-        loadPValueCardsFor(expId);
-    }
 }
 
 function loadExperimentDetail(expId) {
@@ -14251,6 +14195,25 @@ function switchDishSubtab(subtabId) {
 // --------------------------------------------------------------------------
 // 1. 餐品 BOM 配方库管理
 // --------------------------------------------------------------------------
+
+// 毛利率分档口径（全文件唯一事实源）：>=60 优 / >=40 中 / 其余 差。
+// 徽章样式与文字颜色共用同一分档函数，阈值不再散落在各处硬编码。
+const MARGIN_GOOD = 60;
+const MARGIN_WARN = 40;
+const MARGIN_CLASS = { good: 'badge-success', warn: 'badge-warning', bad: 'badge-danger' };
+const MARGIN_COLOR = { good: 'var(--success, #16a34a)', warn: 'var(--warning, #eab308)', bad: 'var(--danger, #dc2626)' };
+
+function marginTier(v) {
+    return v >= MARGIN_GOOD ? 'good' : (v >= MARGIN_WARN ? 'warn' : 'bad');
+}
+
+function marginClass(v) {
+    return MARGIN_CLASS[marginTier(v)];
+}
+
+function marginTextColor(v) {
+    return MARGIN_COLOR[marginTier(v)];
+}
 
 /**
  * 加载餐品库全量列表
@@ -14530,7 +14493,7 @@ function renderDishCards(dishes) {
             : '';
 
         const marginRate = Number(d.gross_margin_rate || 0);
-        const marginBadgeClass = marginRate >= 60 ? 'badge-success' : (marginRate >= 40 ? 'badge-warning' : 'badge-danger');
+        const marginBadgeClass = marginClass(marginRate);
 
         // 配方食材简述标签
         let ingredientsHtml = '';
@@ -14609,7 +14572,7 @@ function renderDishTable(dishes) {
     dishes.forEach(d => {
         const isActive = d.status === 'active';
         const marginRate = Number(d.gross_margin_rate || 0);
-        const marginBadgeClass = marginRate >= 60 ? 'badge-success' : (marginRate >= 40 ? 'badge-warning' : 'badge-danger');
+        const marginBadgeClass = marginClass(marginRate);
 
         const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
 
@@ -14964,7 +14927,7 @@ function calcDishModalTheoryCost() {
     }
     if (marginEl) {
         marginEl.innerText = grossMarginRate.toFixed(1) + '%';
-        marginEl.className = 'badge ' + (grossMarginRate >= 60 ? 'badge-success' : (grossMarginRate >= 40 ? 'badge-warning' : 'badge-danger'));
+        marginEl.className = 'badge ' + marginClass(grossMarginRate);
     }
 }
 
@@ -15261,7 +15224,7 @@ function renderDailyKPI(summary) {
     if (marginEl) {
         const gm = Number(summary.gross_margin_rate || 0);
         marginEl.innerText = gm.toFixed(1) + '%';
-        marginEl.style.color = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        marginEl.style.color = marginTextColor(gm);
     }
     if (countEl) {
         const validCount = Math.max(0, (summary.records_count || 0) - (summary.void_count || 0));
@@ -15336,7 +15299,7 @@ function refreshDishKpiEstimates() {
     if (marginEl) {
         const gm = totalRevenue > 0 ? (totalRevenue - totalCost) / totalRevenue * 100 : 0;
         marginEl.innerText = gm.toFixed(1) + '%';
-        marginEl.style.color = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        marginEl.style.color = marginTextColor(gm);
     }
     if (badgeEl) {
         if (pendingQty > 0) {
@@ -15605,7 +15568,7 @@ function renderDailyHistoryTable(consumptions) {
             : '<span class="badge badge-success" style="font-size:0.75rem;">正常</span>';
 
         const gm = Number(r.gross_margin_rate || 0);
-        const gmBadgeClass = gm >= 60 ? 'badge-success' : (gm >= 40 ? 'badge-warning' : 'badge-danger');
+        const gmBadgeClass = marginClass(gm);
 
         html += '<tr style="' + (isVoid ? 'opacity:0.55; text-decoration:line-through;' : '') + '">'
             + '<td style="font-family:monospace; font-weight:600;">#' + r.id + '</td>'
@@ -15852,7 +15815,7 @@ function renderDishCostAnalysisDashboard(data) {
     const overallMargin = Number(summary.overall_gross_margin_rate || 0);
     if (avgMarginEl) {
         avgMarginEl.innerText = overallMargin.toFixed(1) + '%';
-        avgMarginEl.style.color = overallMargin >= 60 ? 'var(--success, #16a34a)' : (overallMargin >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        avgMarginEl.style.color = marginTextColor(overallMargin);
     }
     if (totalCostEl) totalCostEl.innerText = '$' + fmtMoney(summary.total_cost || 0);
 
@@ -15907,7 +15870,7 @@ function renderDishCostComparisonGrid(dishes) {
         }
 
         const marginRate = hasSales ? Number(d.avg_gross_margin_rate || 0) : 0;
-        const marginColor = marginRate >= 60 ? 'var(--success, #16a34a)' : (marginRate >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        const marginColorVal = marginTextColor(marginRate);
 
         html += '<div class="card dish-cost-compare-card" style="border-left:4px solid ' + (variance > 0.05 ? 'var(--danger, #dc2626)' : 'var(--primary, #0f766e)') + ';">'
             + '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">'
@@ -15929,10 +15892,10 @@ function renderDishCostComparisonGrid(dishes) {
             + '</div>'
             + '<div style="display:flex; justify-content:space-between; align-items:center; font-size:0.78rem; color:var(--text-secondary); margin-bottom:4px;">'
             + '  <span>累计售出: <strong>' + d.total_sold_quantity + ' 份</strong> (营收 $' + fmtMoney(d.total_revenue) + ')</span>'
-            + '  <span>实际毛利率: <strong style="color:' + marginColor + ';">' + marginRate.toFixed(1) + '%</strong></span>'
+            + '  <span>实际毛利率: <strong style="color:' + marginColorVal + ';">' + marginRate.toFixed(1) + '%</strong></span>'
             + '</div>'
             + '<div style="height:6px; background:var(--border-color); border-radius:3px; overflow:hidden;">'
-            + '  <div style="width:' + Math.min(100, Math.max(0, marginRate)) + '%; height:100%; background:' + marginColor + '; border-radius:3px;"></div>'
+            + '  <div style="width:' + Math.min(100, Math.max(0, marginRate)) + '%; height:100%; background:' + marginColorVal + '; border-radius:3px;"></div>'
             + '</div>'
             + '</div>';
     });
@@ -15958,7 +15921,7 @@ function renderDishMarginRanking(dishes) {
     let html = '<div class="ranking-list">';
     sorted.forEach((d, idx) => {
         const gm = Number(d.avg_gross_margin_rate || 0);
-        const gmColor = gm >= 60 ? 'var(--success, #16a34a)' : (gm >= 40 ? 'var(--warning, #eab308)' : 'var(--danger, #dc2626)');
+        const gmColor = marginTextColor(gm);
         const rankMedal = '#' + (idx + 1);
 
         html += '<div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border-color);">'

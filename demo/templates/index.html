@@ -145,7 +145,7 @@
                         <div class="upload-icon"></div>
                         <h3 style="margin-bottom: 16px;">上传/拖拽收据</h3>
                         <div style="margin-bottom: 20px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
-                            <input type="checkbox" id="chkCodebuddy" checked class="hide">
+                            <input type="checkbox" id="chkTreatment" checked class="hide">
                             <label style="font-size: 0.9rem; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--primary);">
                                 <input type="checkbox" id="chkAutoAnalyze"> 无需编辑图片，即刻开始分析
                             </label>
@@ -493,7 +493,7 @@
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
                                     <button id="btnAddRow" class="btn btn-secondary" onclick="addEmptyRow()">+ 新增明细行</button>
                                     <div style="display:flex; gap:12px; align-items:center;">
-                                        <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果并彻底删除单据">放弃上传</button>
+                                        <button id="btnDiscardReceipt" class="btn btn-danger" onclick="discardCurrentReceipt()" title="放弃本次解析结果（移入回收站，可在管理后台恢复）">放弃上传</button>
                                         <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
                                         <!-- 挽回动作栏（复核工作台 Spec 2.3）：解析完成后常驻，与点踩/编辑保存并存 -->
                                         <button id="btnReparse" class="btn btn-secondary" style="display:none;" onclick="onReparseClick()" title="复用原图重新识别（怀疑模型解析错了）">重新解析</button>
@@ -1061,18 +1061,12 @@
                                 </div>
 
                                 <!-- 状态 -->
-                                <!-- Q30: 补齐 7 态（与 T6 状态机一致），文案与归档徽章一致 -->
+                                <!-- 选项由 main.js 的 populateReceiptStatusFilter() 按 RECEIPT_STATUSES 生成，
+                                     避免 HTML 与 JS 各维护一份状态清单（新增状态只改 RECEIPT_STATUSES） -->
                                 <div class="form-group" style="margin-bottom:0; min-width:0;">
                                     <label style="font-size:0.8rem; margin-bottom:4px;">单据状态</label>
                                     <select id="fltStatus" class="form-control" style="font-size:0.85rem; padding:6px 10px; width:100%;" onchange="applyArchiveFilters()">
                                         <option value="">全部状态</option>
-                                        <option value="uploaded">已上传</option>
-                                        <option value="parsing">解析中</option>
-                                        <option value="parsed">待核对 (AI自动入库)</option>
-                                        <option value="edited">已修改 (店员人工保存)</option>
-                                        <option value="approved">已入账 (老板审核通过)</option>
-                                        <option value="flagged">有问题 (已标记)</option>
-                                        <option value="error">失败</option>
                                     </select>
                                 </div>
 
@@ -1913,13 +1907,22 @@
                         <!-- 引擎操作状态提示容器 -->
                         <div id="adminEngineStatus" class="engine-status-container" style="display:none; margin-top:14px;"></div>
 
-                        <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; margin-top:18px;">
-                            <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
-                                <input type="checkbox" id="adminSkipModelTest" style="cursor:pointer;">
-                                <span>跳过连通性测试直接保存</span>
-                            </label>
-                            <button class="btn btn-primary" id="adminSaveEngineBtn" onclick="saveAdminEngineConfig()">保存配置</button>
-                            <button id="btnSaveAdminEngine" style="display:none;" onclick="saveAdminEngineConfig()"></button>
+                        <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap;">
+                            <!-- 配置来源（T1）：manual=管理台保存，重启保留；auto=.env 启动装配，重启会重装 -->
+                            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                                <span style="font-size:0.85rem; color:var(--text-secondary, #666);">配置来源:</span>
+                                <span id="adminEngineConfigSource" class="badge badge-secondary">—</span>
+                                <span id="adminEngineConfigSourceHint" style="font-size:0.75rem; color:var(--text-muted, #888);"></span>
+                                <button type="button" class="btn btn-outline" id="adminResetEngineConfigBtn" style="font-size:0.8rem; padding:4px 10px;" onclick="resetAdminEngineConfig()">复位为 .env 默认</button>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
+                                    <input type="checkbox" id="adminSkipModelTest" style="cursor:pointer;">
+                                    <span>跳过连通性测试直接保存</span>
+                                </label>
+                                <button class="btn btn-primary" id="adminSaveEngineBtn" onclick="saveAdminEngineConfig()">保存配置</button>
+                                <button id="btnSaveAdminEngine" style="display:none;" onclick="saveAdminEngineConfig()"></button>
+                            </div>
                         </div>
                     </div>
 
@@ -2449,6 +2452,8 @@
                             <span> 单据归档字段校对</span>
                             <span class="badge badge-success">归档记录明细</span>
                         </div>
+                        <!-- P14/P15：门禁带警告（parsed_with_warnings）单据在详情醒目标出门禁问题 -->
+                        <div id="archiveMathWarnBanner" class="alert-banner hide" style="margin:8px 0;"></div>
 
                         <div class="form-grid">
                             <div class="form-group" style="grid-column: span 2;">
@@ -3350,7 +3355,7 @@
                             </div>
                             <div class="form-group" style="margin-bottom:0;">
                                 <label style="font-size:0.72rem; color:var(--text-muted); margin-bottom:1px;">模型名 <span style="color:#ef4444;">*</span></label>
-                                <input type="text" id="newExpTreatmentModel" class="form-control" style="font-size:0.76rem; padding:3px 8px; font-family:monospace;" placeholder="Qwen/Qwen2.5-VL-7B-Instruct" required>
+                                <input type="text" id="newExpTreatmentModel" class="form-control" style="font-size:0.76rem; padding:3px 8px; font-family:monospace;" placeholder="Qwen/Qwen3-VL-32B-Instruct" required>
                             </div>
                         </div>
                     </div>

@@ -117,29 +117,6 @@ body {
     border-radius: 6px;
 }
 
-.brand-logo-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: var(--accent);
-    color: var(--accent-ink);
-    border-radius: 8px;
-    font-weight: 800;
-    font-size: 0.95rem;
-    font-family: var(--font-display);
-}
-
-.sidebar-section-label {
-    font-size: 0.72rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    letter-spacing: 0.06em;
-    margin-bottom: 10px;
-    padding-left: 8px;
-}
 
 .sidebar-nav {
     display: flex;
@@ -188,28 +165,6 @@ body {
     margin-top: 8px;
 }
 
-.sidebar-footer {
-    padding-top: 16px;
-    border-top: 1px solid var(--border-color);
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--success);
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-
-.status-indicator .dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--success);
-}
 
 /* 右侧 Main Wrapper — 带有软 Finsaro 极淡黄绿光晕 */
 .main-wrapper {
@@ -1474,20 +1429,7 @@ table.data-table td input {
 }
 
 /* 智能剥离小魔棒与新建 SKU 徽章 */
-.btn-magic-split {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1rem;
-    padding: 0 4px;
-    opacity: 0.8;
-    transition: transform 0.15s ease, opacity 0.15s ease;
-}
 
-.btn-magic-split:hover {
-    opacity: 1;
-    transform: scale(1.2) rotate(15deg);
-}
 
 .sku-quick-add-item {
     background: rgba(3, 36, 37, 0.04);
@@ -1500,12 +1442,6 @@ table.data-table td input {
     background: rgba(3, 36, 37, 0.08) !important;
 }
 
-.unit-calc-tooltip {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    margin-top: 2px;
-    white-space: nowrap;
-}
 
 /* ==========================================================================
    Loading 识别中 4 阶段进度条
@@ -1664,11 +1600,6 @@ table.data-table td input {
     border-top: 1px solid var(--border-color);
     background: #ffffff;
 }
-.fees-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-}
 /* 动态费用行（按需添加，替代固定六宫格） */
 .fees-empty-row {
     color: var(--text-muted);
@@ -1800,27 +1731,8 @@ table.data-table.receipt-item-table td {
     position: relative;
     min-width: 0;
 }
-.item-name-top {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    width: 100%;
-}
-.item-name-top .inp-name {
-    width: 100%;
-    font-weight: 500;
-    box-sizing: border-box;
-}
-.sku-capsule-wrapper {
-    display: contents !important;
-}
 .sku-pill {
     display: none !important;
-}
-.sku-pill-arrow {
-    font-size: 0.65rem;
-    opacity: 0.7;
-    flex-shrink: 0;
 }
 .sku-dropdown-floating {
     position: absolute;
@@ -1850,25 +1762,6 @@ table.data-table.receipt-item-table td {
     align-items: center;
     justify-content: center;
     gap: 6px;
-}
-.btn-action-void {
-    padding: 4px 8px;
-    font-size: 0.78rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-strong);
-    background: #ffffff;
-    color: var(--text-subtle);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-.btn-action-void:hover {
-    background: var(--bg-hover);
-    color: var(--text-main);
-}
-.btn-action-void.is-void {
-    background: #f1f5f9;
-    color: #94a3b8;
-    border-color: #cbd5e1;
 }
 .btn-action-delete {
     padding: 4px 8px;
@@ -2331,35 +2224,7 @@ table.data-table.receipt-item-table td {
 }
 
 /* 缩略图右上角删除按钮：默认隐藏，hover item 时浮现 */
-.thumb-remove {
-    position: absolute;
-    top: -6px;
-    right: -6px;
-    width: 20px;
-    height: 20px;
-    border-radius: 50%;
-    background: var(--danger);
-    color: #fff;
-    border: 2px solid var(--bg-card);
-    cursor: pointer;
-    font-size: 0.7rem;
-    line-height: 1;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    transition: transform 0.15s, background 0.15s;
-    z-index: 2;
-}
 
-.thumb-remove:hover {
-    background: #dc2626;
-    transform: scale(1.15);
-}
-
-.photo-sider-item:hover .thumb-remove {
-    display: flex;
-}
 
 .photo-sider-item .meta {
     flex: 1;
@@ -2459,6 +2324,21 @@ table.data-table.receipt-item-table td {
     background-color: #fef3c7 !important;
 }
 
+/* P11：明细行 item 级置信度角标 —— 低置信行在黄底之上再给出具体数值，
+   便于店员按行定位「哪一条不准」（白底以保证在黄底行上仍然可读）。 */
+.item-conf-badge {
+    display: inline-block;
+    margin-right: 4px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+    line-height: 1.5;
+    white-space: nowrap;
+    color: var(--warning, #b45309);
+    background: #ffffff;
+    border: 1px solid rgba(180, 83, 9, 0.35);
+}
+
 .photo-sider-item.error .thumb {
     border-color: var(--danger);
 }
@@ -2480,17 +2360,6 @@ table.data-table.receipt-item-table td {
     50% { opacity: 0.55; }
 }
 
-.sider-footer {
-    padding: 8px 14px;
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.sider-hint {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-    line-height: 1.4;
-}
 
 @media (max-width: 1280px) {
     .photo-sider-drawer { width: 210px; }
@@ -3323,12 +3192,6 @@ table.data-table tr.inv-row-low-stock td {
     flex-wrap: wrap;
 }
 
-.price-history-footnote {
-    margin: 0;
-    font-size: 0.72rem;
-    line-height: 1.45;
-    color: var(--text-muted);
-}
 
 @media (max-width: 640px) {
     .price-history-metrics {
@@ -3347,22 +3210,8 @@ table.data-table tr.inv-row-low-stock td {
 
 /* -------------------------------------------------------------
    阶段 1：AI 可见性与信任
-   （PM 反馈：.audit-reason-banner 差异横幅与 .ai-compare 对照面板已随组件移除）
-   - .ai-insights-card     首页"AI 发现"卡片
    - .badge-grey           灰测组标签
    ------------------------------------------------------------- */
-.ai-insights-card {
-    border-left: 3px solid #f59e0b;
-}
-.ai-insights-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-.ai-insights-row:last-child { border-bottom: none; }
-.ai-insights-price { color: #f59e0b; font-weight: 600; }
 
 .badge-grey {
     display: inline-block;
@@ -3440,9 +3289,6 @@ table.data-table tr.inv-row-low-stock td {
     vertical-align: middle;
 }
 
-.dish-consume-row-active {
-    background-color: rgba(37, 99, 235, 0.03) !important;
-}
 
 .dish-qty-control {
     display: flex;
@@ -3451,48 +3297,6 @@ table.data-table tr.inv-row-low-stock td {
     justify-content: center;
 }
 
-.inp-dish-consume-qty {
-    width: 80px;
-    text-align: center;
-    font-weight: 700;
-    font-size: 1rem;
-    padding: 6px 8px;
-    border-radius: 8px;
-    border: 1.5px solid var(--border-color);
-    background: #fff;
-    color: var(--primary);
-    font-variant-numeric: tabular-nums;
-}
-
-.inp-dish-consume-qty:focus {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 3px rgba(3, 36, 37, 0.1);
-}
-
-.dish-qty-shortcuts {
-    display: flex;
-    gap: 4px;
-    margin-top: 4px;
-    justify-content: center;
-}
-
-.btn-step-qty {
-    padding: 2px 6px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    border-radius: 4px;
-    border: 1px solid var(--border-color);
-    background: var(--bg-card);
-    color: var(--text-subtle);
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-
-.btn-step-qty:hover {
-    background: var(--bg-hover);
-    border-color: var(--primary);
-    color: var(--primary);
-}
 
 /* 底部提交栏 */
 .dish-submit-bar {
@@ -3568,104 +3372,6 @@ table.data-table tr.inv-row-low-stock td {
     background: var(--bg-main);
 }
 
-.dish-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 10px;
-    margin-bottom: 12px;
-}
-
-.dish-card-title {
-    font-family: var(--font-display);
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: var(--text-main);
-    line-height: 1.3;
-}
-
-.dish-card-category {
-    font-size: 0.75rem;
-    padding: 2px 8px;
-    border-radius: var(--radius-pill);
-    background: var(--bg-hover);
-    color: var(--text-muted);
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.dish-card-body {
-    flex: 1;
-    margin-bottom: 16px;
-}
-
-.dish-card-desc {
-    font-size: 0.82rem;
-    color: var(--text-muted);
-    margin-bottom: 12px;
-    line-height: 1.4;
-}
-
-.dish-bom-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-bottom: 12px;
-}
-
-.bom-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.76rem;
-    padding: 3px 8px;
-    background: var(--bg-input);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-main);
-}
-
-.bom-tag .qty {
-    font-weight: 600;
-    color: var(--primary);
-}
-
-.dish-cost-metrics {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: var(--bg-sidebar);
-    padding: 10px 12px;
-    border-radius: 8px;
-    margin-top: 8px;
-}
-
-.dish-metric-group {
-    display: flex;
-    flex-direction: column;
-}
-
-.dish-metric-lbl {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    font-weight: 500;
-}
-
-.dish-metric-val {
-    font-size: 1.05rem;
-    font-weight: 700;
-    color: var(--text-main);
-    font-variant-numeric: tabular-nums;
-}
-
-.dish-card-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-top: 1px solid var(--border-color);
-    padding-top: 12px;
-    margin-top: 8px;
-}
 
 /* 弹窗实时理论成本预览栏 */
 .dish-calc-preview-bar {
@@ -3735,40 +3441,6 @@ table.data-table tr.inv-row-low-stock td {
     padding-right: 4px;
 }
 
-.trace-ingredient-card {
-    background: #fff;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 14px 16px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-}
-
-.trace-ingredient-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
-    border-bottom: 1px dashed var(--border-color);
-}
-
-.trace-ingredient-title {
-    font-weight: 700;
-    font-size: 0.95rem;
-    color: var(--text-main);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.trace-batch-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-left: 14px;
-    border-left: 2px solid var(--border-strong);
-    margin-left: 8px;
-}
 
 .trace-batch-item {
     display: flex;
@@ -3780,28 +3452,6 @@ table.data-table tr.inv-row-low-stock td {
     border-radius: 6px;
 }
 
-.trace-batch-meta {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-}
-
-.trace-batch-id {
-    font-family: var(--font-mono);
-    font-weight: 700;
-    color: var(--primary);
-    font-size: 0.8rem;
-    background: rgba(3, 36, 37, 0.08);
-    padding: 1px 6px;
-    border-radius: 4px;
-}
-
-.trace-batch-cost {
-    font-weight: 700;
-    color: var(--text-main);
-    font-variant-numeric: tabular-nums;
-}
 
 /* 成本大盘与对比卡片 */
 .dish-period-selector {
@@ -3815,58 +3465,6 @@ table.data-table tr.inv-row-low-stock td {
     gap: 16px;
 }
 
-.cost-comparison-card {
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius);
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.cost-comparison-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.cost-comparison-body {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    background: var(--bg-input);
-    padding: 10px;
-    border-radius: 8px;
-    font-size: 0.85rem;
-}
-
-.cost-diff-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 2px 6px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    border-radius: 4px;
-}
-
-.cost-diff-badge.up {
-    background: var(--danger-bg);
-    color: var(--danger);
-    border: 1px solid rgba(216, 13, 13, 0.2);
-}
-
-.cost-diff-badge.down {
-    background: var(--success-bg);
-    color: var(--success);
-    border: 1px solid rgba(47, 107, 79, 0.2);
-}
-
-.cost-diff-badge.neutral {
-    background: var(--bg-muted);
-    color: var(--text-muted);
-}
 
 /* 毛利排行榜与预警容器 */
 .dish-ranking-container {
@@ -3875,15 +3473,6 @@ table.data-table tr.inv-row-low-stock td {
     gap: 10px;
 }
 
-.dish-ranking-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 8px 12px;
-    border-radius: 8px;
-    background: var(--bg-input);
-    font-size: 0.88rem;
-}
 
 .dish-anomaly-alerts {
     display: flex;
@@ -3891,25 +3480,6 @@ table.data-table tr.inv-row-low-stock td {
     gap: 10px;
 }
 
-.dish-anomaly-card {
-    border-left: 3px solid #f59e0b;
-    background: var(--bg-card);
-    border-top: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
-    border-bottom: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 12px 14px;
-}
-
-.dish-anomaly-title {
-    font-weight: 600;
-    font-size: 0.9rem;
-    color: var(--text-main);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
-}
 
 /* ==========================================================================
    复核操作行内联反馈按钮（11-组件Spec-全链路埋点与体验反馈体系 §5）
@@ -3942,10 +3512,6 @@ table.data-table tr.inv-row-low-stock td {
 .feedback-btn:active { transform: scale(0.95); }
 .feedback-btn-up:hover { background: var(--success-bg); }
 .feedback-btn-down:hover { background: var(--danger-bg); }
-
-
-
-
 
 
 /* ==========================================================================
@@ -4068,20 +3634,6 @@ tr.evidence-row-active {
 /* ==========================================================================
    统一报表与数据导出中心 (Export & Reporting Center) 专用样式
    ========================================================================== */
-.export-hero-card {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-    color: #fff;
-    border-radius: 10px;
-    padding: 20px 24px;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-.export-preset-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-    gap: 12px;
-    margin-top: 14px;
-}
 .export-preset-btn {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -4099,10 +3651,6 @@ tr.evidence-row-active {
     background: rgba(255, 255, 255, 0.18);
     transform: translateY(-2px);
     border-color: rgba(255, 255, 255, 0.35);
-}
-.export-preset-icon {
-    font-size: 1.8rem;
-    flex-shrink: 0;
 }
 .export-category-bar {
     display: flex;
