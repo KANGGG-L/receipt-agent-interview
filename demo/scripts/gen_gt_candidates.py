@@ -70,20 +70,17 @@ DASHSCOPE_DEFAULT_GT_MODEL = "qwen3-vl-plus"
 DASHSCOPE_FALLBACK_GT_MODELS = ["qwen3-vl-flash"]
 
 
-def _settings_value(key, default):
-    """T10：app_settings 缺省读取；脚本离线跑/依赖缺失时回退默认值。"""
-    try:
-        if DEMO_DIR not in sys.path:
-            sys.path.insert(0, DEMO_DIR)
-        from app.services import settings_service
-        return settings_service.get(key, default)
-    except Exception:
-        return default
+# app_settings 缺省读取收敛到 scripts/_settings.py 单一实现
+# （本文件原与 build_evalset.py 各复制一份 `except Exception: return default`，脚本在别的
+#  cwd 跑/依赖缺失时阈值会静默退回硬编码默认值，构建出的 GT 与库内设置不一致且无任何提示）
+import _settings
 
+# 布尔字段归一收敛到 scripts/eval_norm.py 单一实现（本文件原与 run_eval 各一份且已分叉）
+import eval_norm
 
-MIN_SHORT_SIDE = int(_settings_value("gt_min_short_side", 1000))        # 短边下限，低于此值影响小字识别（与 build_evalset 一致）
-PREVIEW_LONG_SIDE = int(_settings_value("gt_preview_long_side", 1600))  # API payload 上限：长边压到 1600（4:3 时短边约 1200）
-JPEG_QUALITY = int(_settings_value("gt_jpeg_quality", 85))
+MIN_SHORT_SIDE = int(_settings.get("gt_min_short_side", 1000))        # 短边下限，低于此值影响小字识别（与 build_evalset 一致）
+PREVIEW_LONG_SIDE = int(_settings.get("gt_preview_long_side", 1600))  # API payload 上限：长边压到 1600（4:3 时短边约 1200）
+JPEG_QUALITY = int(_settings.get("gt_jpeg_quality", 85))
 MAX_ATTEMPTS = 3             # 每个模型最多尝试次数（1 次原始 + 2 次重试）
 RETRY_BACKOFF_SECONDS = (5, 15)   # 429/5xx 退避
 CHAT_TIMEOUT_SECONDS = 300
@@ -275,24 +272,23 @@ GT_FEE_FIELDS = ("discount_amount", "deposit_amount", "delivery_fee",
                  "service_fee", "tax_amount", "rounding_adjustment")
 
 
-def _coerce_bool(v):
-    """宽容布尔归一（仅用于生成侧容忍模型输出）：bool 原样；常见字面量映射；其余 None。"""
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)) and v in (0, 1):
-        return bool(v)
-    s = str(v or "").strip().lower()
-    if s in ("true", "1", "yes", "y", "已付款", "paid"):
-        return True
-    if s in ("false", "0", "no", "n", "未付款", "unpaid", "none", ""):
-        return False
-    return None
+# 宽容布尔归一（用于容忍模型输出）：口径收敛到 eval_norm.coerce_payment_marked。
+# why: 本文件与 run_eval 原先各有一份实现且已分叉 —— 生成侧接受 "y"/"n" 并把 `""` 折成
+# False，评分侧不接受 "y"/"n" 且把 `""` 判为未知。同一份模型输出被写入侧与评分侧解释
+# 不同，`"Y"` 在评分侧永远对不上。直接别名，杜绝再次分叉。
+_coerce_bool = eval_norm.coerce_payment_marked
 
 
 def normalize_gt_items(gt):
     """items 内 quantity → qty 键归一（存储/表单层统一用 qty，与 run_eval 消费口径对齐）；
     v2 字段同步归一：payment_marked 宽容转布尔、费用缺省 0、币种缺省 HKD、
     注记/证据缺省空。模型即使仍返回 quantity 也会在落盘前被转换。
+
+    payment_marked 不可判读（空串/无法识别）时**保留 None，不再折成 False**：
+    该字段会成为 GT 真值参与打分（run_eval.compare 只要 GT 有该字段就比对），折成
+    False 等于凭空造出「未付款」的负标签，而且恰好让既有必填/布尔校验（validate_gt）
+    通过 —— 属「用看起来合法的值掩盖缺陷」。保留 None 会让该候选在校验阶段显式失败、
+    不进语料，既不伪造也不静默。
     """
     if isinstance(gt, dict) and isinstance(gt.get("items"), list):
         normalized = []
@@ -307,8 +303,8 @@ def normalize_gt_items(gt):
         gt["items"] = normalized
     if isinstance(gt, dict):
         if "payment_marked" in gt:
-            coerced = _coerce_bool(gt.get("payment_marked"))
-            gt["payment_marked"] = coerced if coerced is not None else False
+            # 不可判读 → 保留 None，交由 validate_gt 显式判失败（不做 False 折算）
+            gt["payment_marked"] = _coerce_bool(gt.get("payment_marked"))
         for key in GT_FEE_FIELDS:
             v = gt.get(key)
             try:

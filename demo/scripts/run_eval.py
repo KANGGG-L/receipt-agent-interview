@@ -6,8 +6,8 @@
 
 用法：
     python run_eval.py --split test --prompt v1_2_0_sku_clean
-    python run_eval.py --split test --prompt v1_2_8_anti_injection --engine opencode \\
-                       --model opencode/mimo-v2.5-free --limit 20
+    python run_eval.py --split test --prompt v1_2_8_anti_injection --engine openai \\
+                       --model qwen3.5-omni-flash --limit 20
     python run_eval.py --split val --prompt v1_2_0_sku_clean --engine stub   # harness 自检（离线）
 
 `--engine stub` 直接回读 expected 作为预测，**仅用于验证 harness 通路，严禁用于出分**；
@@ -31,9 +31,12 @@ from datetime import datetime
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEMO_DIR = os.path.abspath(os.path.join(_HERE, ".."))
 REPO_ROOT = os.path.abspath(os.path.join(DEMO_DIR, ".."))
-for _p in (DEMO_DIR, REPO_ROOT):
+for _p in (_HERE, DEMO_DIR, REPO_ROOT):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+# 付款标记等字段的归一收敛到 scripts/eval_norm.py 单一实现（与 GT 生成侧同口径）
+import eval_norm  # noqa: E402
 
 DEFAULT_EVALSET_DIR = os.path.join(DEMO_DIR, "evalsets")
 DEFAULT_REPORT_DIR = os.path.join(REPO_ROOT, "ai_registry", "benchmarks", "eval_runs")
@@ -89,18 +92,11 @@ def _norm_num(v, ndigits=2):
         return None
 
 
-def _norm_payment_marked(v):
-    """付款标记归一：bool/常见字面量 → bool；缺失或不可判 → None（不参与比对）。"""
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)) and v in (0, 1):
-        return bool(v)
-    s = str(v or "").strip().lower()
-    if s in ("true", "1", "yes", "已付款", "paid"):
-        return True
-    if s in ("false", "0", "no", "未付款", "unpaid", "none"):
-        return False
-    return None
+# 付款标记归一：bool/常见字面量 → bool；缺失或不可判 → None（不参与比对）。
+# 口径收敛到 eval_norm.coerce_payment_marked（与 GT 生成侧同一实现）。why: 旧实现各自维护
+# 字面量表，评分侧漏了 "y"/"n" —— 预测写 "Y"/"N" 时被判为不可判而直接跳过比对，
+# payment_marked 实际上永远没被比过（指标静默缺失）。直接别名，杜绝再次分叉。
+_norm_payment_marked = eval_norm.coerce_payment_marked
 
 
 def normalize(payload):
@@ -375,7 +371,7 @@ def _real_predictor(engine, model, prompt_version):
 # ------------------------------------------------------------------
 # 主流程
 # ------------------------------------------------------------------
-def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="opencode", model=None,
+def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", model=None,
              limit=None, evalset_dir=None, report_dir=None, predictor=None,
              require_confirmed=None):
     """跑一个 split 的评测，返回 EvalReport（dict）。
@@ -564,9 +560,9 @@ def main():
     ap = argparse.ArgumentParser(description="可复现评测 harness（train/val/test 三分法）")
     ap.add_argument("--split", required=True, choices=["train", "val", "test"], help="评测集分片")
     ap.add_argument("--prompt", default=DEFAULT_PROMPT_VERSION, help="extract prompt 版本")
-    ap.add_argument("--engine", default="opencode",
-                    help="识别引擎：%s / stub（harness 自检，不出分）" % "/".join(
-                        ["codebuddy", "opencode", "openai"]))
+    ap.add_argument("--engine", default="openai",
+                    help="识别引擎通道：openai / stub（harness 自检，不出分）。"
+                         "历史注记：本机 CLI 引擎 opencode / codebuddy 已于 2026-09-02 弃用删除")
     ap.add_argument("--model", default=None, help="识别模型名（覆盖引擎默认）")
     ap.add_argument("--limit", type=int, default=None, help="只跑前 N 张（按 manifest 顺序）")
     ap.add_argument("--evalset-dir", default=None, help="评测集目录（默认 demo/evalsets）")

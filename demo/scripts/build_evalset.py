@@ -29,23 +29,12 @@ import shutil
 import subprocess
 import sys
 
+# app_settings 缺省读取收敛到 scripts/_settings.py 单一实现（失败回落默认值并 WARN 一次）
+from _settings import get as _settings_value
+
 # ---- 分层与配比（T10 收口：走 app_settings 读取，缺省值即迁移前现值）----
 DEFAULT_SEED = 20260828
 SPLIT_NAMES = ("train", "val", "test")
-
-
-def _settings_value(key, default):
-    """T10：app_settings 实时缺省读取；脚本离线跑/依赖缺失时回退默认值。"""
-    try:
-        _demo = os.path.abspath(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-        if _demo not in sys.path:
-            sys.path.insert(0, _demo)
-        from app.services import settings_service
-        return settings_service.get(key, default)
-    except Exception:
-        return default
-
 
 SPLIT_RATIOS = (
     float(_settings_value("evalset_split_train", 0.55)),

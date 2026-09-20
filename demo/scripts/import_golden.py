@@ -141,7 +141,9 @@ def main():
                 "unit": it.get("unit", "") or "", "raw_unit": it.get("unit", "") or "",
                 "unit_price": float(it.get("unit_price", 0) or 0),
                 "amount": float(it.get("amount", 0) or 0),
-                "sku_id": None, "cost_center_id": None, "confidence": 0.95,
+                # P11：GT 明细由人工确认，本就不存在「模型对该行的把握」这一读数，
+                # 故落 NULL 而不是伪造一个 0.95（同一根因的第三处兜底）。
+                "sku_id": None, "cost_center_id": None, "confidence": None,
                 "matched": 0, "price_anomaly": 0, "price_anomaly_direction": "",
                 "price_diff_percent": 0.0, "unit_conversion_warning": "",
                 "fuzzy_candidates": [], "entity_candidates": [],

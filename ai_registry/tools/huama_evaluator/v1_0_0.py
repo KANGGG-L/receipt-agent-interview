@@ -53,6 +53,21 @@ class HuamaEvaluatorTool:
                 res.append(char)
         return "".join(res), True
 
+    @staticmethod
+    def _safe_confidence(value: Any, default: float = 0.40) -> float:
+        """把 LLM 可能给出的非数值置信度（"high"/""/None）安全归一为浮点。
+
+        why：本工具被白名单之后调用，若此处 float() 抛异常，异常会被 extract_chain
+        的外层 except 吞掉并跳过整段后处理（Gap1-9 静默失效）。宁可回落默认值也不能抛。
+        """
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return default
+        if v != v:  # NaN
+            return default
+        return v
+
     def calibrate_confidence_and_flags(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
         全面扫描单据 payload，若检测到花码或草书，强制压降置信度并打上复核警示标记。
@@ -69,7 +84,7 @@ class HuamaEvaluatorTool:
                 has_any_huama = True
                 it["contains_huama"] = True
                 # 强制压降置信度至 0.40（触发前端 low_confidence 警示底色）
-                it["confidence"] = min(float(it.get("confidence", 0.40)), 0.40)
+                it["confidence"] = min(self._safe_confidence(it.get("confidence")), 0.40)
                 it["unit_conversion_warning"] = "包含街市花码，需人工核验"
                 # 尝试辅助翻译品名中的花码
                 trans_name, _ = self.translate_huama_digits(name)
@@ -78,9 +93,16 @@ class HuamaEvaluatorTool:
         if has_any_huama:
             payload["contains_huama"] = True
             # 整单置信度压降至 <= 0.40
-            payload["confidence"] = min(float(payload.get("confidence", 0.40)), 0.40)
-            # 添加全局待复核警告
-            warnings = payload.get("math_warnings", [])
+            payload["confidence"] = min(self._safe_confidence(payload.get("confidence")), 0.40)
+            # 添加全局待复核警告。math_warnings 已进契约白名单，LLM 可能给字符串，
+            # 必须先归一为 list，否则 append 抛异常会让整段后处理静默失效。
+            warnings = payload.get("math_warnings")
+            if isinstance(warnings, str):
+                warnings = [warnings] if warnings.strip() else []
+            elif not isinstance(warnings, list):
+                warnings = []
+            else:
+                warnings = list(warnings)
             if "检测到街市花码（苏州码子），已强制降权并推送人工复核" not in warnings:
                 warnings.append("检测到街市花码（苏州码子），已强制降权并推送人工复核")
             payload["math_warnings"] = warnings
