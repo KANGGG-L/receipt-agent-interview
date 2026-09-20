@@ -4,7 +4,7 @@
 - 目标：原 43 张 items=[] 占位 → AI 转录草稿
 - **成功：43 / 43**（现 expected 含 items 合计 57/57）
 - **失败：0**
-- 引擎统计：qwen-vl-plus 主路径 ≈41；statement 模板直调 2（pipeline 返空明细时回退）；codebuddy 兜底未写入成功样张
+- 引擎统计（2026-08-04 历史快照）：qwen-vl-plus 主路径 ≈41；statement 模板直调 2（pipeline 返空明细时回退）；codebuddy 兜底未写入成功样张
 
 ## 契约与算术
 

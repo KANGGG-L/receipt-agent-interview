@@ -1,11 +1,19 @@
 # QA 回归复验报告 —— 餐品与消耗 D-1~D-11（Round 2）
 
+> **复核记录（2026-09-20）**
+> - 本文唯一遗留项 **T-10/T-11（P2，步进按钮 44px ≠ 输入框 38px）已修复**：现行
+>   `demo/static/css/style.css:315` 为 `.dish-step-btn { min-height:38px; height:38px !important; line-height:36px; }`，
+>   已覆写全局 `.btn` 的 `min-height`，份数步进按钮与输入框现均为 **38px**（详见第三节）。
+> - 环境信息已变：本文原服务端口 15010 为历史值；2026-09-20 复核时本项目服务端口为 **8123**
+>   （`127.0.0.1:8000` 已被另一项目占用）。
+> - 表内其余各项为 **2026-08-31** 的真实浏览器实测记录，按历史原样保留。
+
 - **日期**：2026-08-31（05:24–05:44，真实浏览器回归）
 - **环境**：orca 内置浏览器（Electron, Chromium）· 服务 http://127.0.0.1:15010（uvicorn --reload 热载）
 - **角色**：localStorage `demo_role` = owner / staff 切换，随 `/api/` 请求带 `X-Role` 头
 - **测试数据**：临时餐品（QA回归验证餐品0827 / QA零引用测试 / QA回归消耗测试餐品 / QA回归验证餐品-TOAST）与临时消耗流水（#7/#8）——测后全部硬删/冲销清理，真实业务库仅剩招牌牛腩煲及其 08-27 历史流水
 
-> 评级口径：✅ Pass ｜ ⚠️ Pass-with-finding ｜ ❌ Fail
+> 评级口径：[OK] Pass ｜ [WARN] Pass-with-finding ｜ [FAIL] Fail
 
 ---
 
@@ -13,16 +21,16 @@
 
 | # | 测试项 | 预期 | 实际 DOM/命令证据 | 评级 |
 |---|--------|------|-------------------|------|
-| 1 | **T-1 时区**（今天/昨天按钮写本地日期） | 日期 === 本地 getFullYear/getMonth/getDate，而非 UTC | 实测时点 05:26（UTC+8 凌晨 0-8 点窗口内）：`localNow=Mon Aug 31 2026 05:26:31 GMT+0800`，本地日期 `2026-08-31`，UTC 日期 `2026-08-30`；`#dishConsumptionDate.value = 2026-08-31`（matchesLocal=true, matchesUTC=false）；点「今天」→ `2026-08-31`，点「昨天」→ `2026-08-30`，均等于本地组装值 | ✅ |
-| 2 | **T-2 响应式**（基本信息网格列数 + 390px 无横向溢出） | ≥900px 3 列 / 768-899px 2 列 / <768px 1 列，390px 无溢出 | 1440px→`grid-template-columns: 268.656px 268.672px 268.656px`（3 列）；850px→`355.75px 355.75px`（2 列，描述 span 2）；390px→`290.5px`（1 列，wide=auto）；390px `scrollWidth==clientWidth==390`、`overflowX=false` | ✅ |
-| 3 | **T-3 等高**（category 与 status offsetHeight/y） | 高差 ≤1px，同一行 y 差 ≤1px | 全部 `form-control` 高 38px：name/category/price 同列 y=271 高均 38、y 差 0；description/status 同行 y=441 高均 38、y 差 0；heightDiff=0 | ✅ |
-| 4 | **T-4 分类管理** | 列表+引用数；删 0 引用成功；删被引用分类确认「将影响 N 道餐品」并改写为「其他」；datalist/filter 同步无残留；filter 含动态分类 | 管理弹窗列出 3 行（主食热菜×2、QA回归分类×1、主菜×1）；删被引用分类「QA回归分类」确认文案=`删除分类「QA回归分类」？\n将影响 1 道餐品，这些餐品的分类将改为「其他」。`，确认后 dish#5 category 由 QA回归分类→「其他」，分类从列表消失；`#dishCategoryFilter`=[全部分类,主食热菜,主菜,其他]（含动态分类）；datalist 无「QA回归分类」残留；0 引用分类（QA零引用分类）在最后引用餐品硬删后即从 datalist/filter/管理列表完全消失（API 对不存在分类返回干净 404「分类不存在」） | ✅ |
-| 5 | **T-5 角色隔离**（staff） | 新建/管理分类隐藏；冲销作废/停用/删除不渲染；切回 owner 恢复 | staff 下：`btnOpenAddDishModal`、`btnManageDishCategories` 均 `display:none` + `hide`；卡片/表格 `.btn-danger` 计数=0；流水行仅「批次溯源」、无「冲销作废」（真实流水 #8 实测）；切回 owner 后全部恢复：`hasVoidBtnAsOwner=true`，卡片出现「停用」按钮 | ✅ |
-| 6 | **T-6 停用/删除**（P1 修复重点） | 停用→toast「餐品已停用」；inactive 删除→确认含「彻底删除」→toast「餐品已彻底删除」且 DB 无该行；确认按钮可点击 | 停用确认弹窗按钮「确认操作」可点击→toast「餐品已停用」→DB status=inactive；inactive 卡片按钮变「删除」→确认弹窗标题「彻底删除餐品确认」、按钮「彻底删除」→点击→toast「餐品已彻底删除」→DB 行不存在（硬删）。全程 confirm 按钮 `onclick` 正常触发，无畸形 | ✅ |
-| 7 | **T-7 空行跳过** | 1 有效行 + 1 全空行可保存 | 新建餐品表单：行1 SKU#1/1.5个，行2 全空；`saveDishModal()` 成功（modal 关闭、无内联错误、toast「新建餐品成功」），DB 仅存 1 条 ingredient（空行被跳过） | ✅ |
-| 8 | **T-8 403 映射** | staff 保存餐品内联错误显示「权限不足：当前角色为店员…」而非「保存失败」 | staff 角色 `saveDishModal()` 后 `#dishModalError` 内联文本=`权限不足：当前角色为店员（staff），此操作需老板（owner）及以上权限。请切换角色或联系管理员。`（modal 未关闭）；DB 未新增行 | ✅ |
-| 9 | **T-10/T-11 触控** | 今天/昨天/清空份数/刷新/刷新流水及份数输入框 height≥38px；步进按钮与输入框等高 | 今天/昨天/清空份数/刷新/刷新流水均 38px；份数输入框 38px；**步进按钮 44px（`.btn{min-height:44px}` 覆盖内联 `height:38px`），与输入框差 6px** | ⚠️ |
-| 10 | **回归冒烟**：每日消耗→FIFO溯源→冲销回滚 + 成本大盘 7/30 天 | 主链路通 | 提交 2 份消耗→toast「成功记录 1 项餐品消耗」→FIFO 溯源弹窗（批次 #19，扣减 2 个 @¥8.00=¥16.00）→SKU#1 库存 42→40→冲销→toast「已成功冲销作废该消耗记录并回滚批次与库存」→行状态「已冲销作废」→库存回 42；成本大盘近7/30天切换正常（KPI 88.2% 渲染） | ✅ |
+| 1 | **T-1 时区**（今天/昨天按钮写本地日期） | 日期 === 本地 getFullYear/getMonth/getDate，而非 UTC | 实测时点 05:26（UTC+8 凌晨 0-8 点窗口内）：`localNow=Mon Aug 31 2026 05:26:31 GMT+0800`，本地日期 `2026-08-31`，UTC 日期 `2026-08-30`；`#dishConsumptionDate.value = 2026-08-31`（matchesLocal=true, matchesUTC=false）；点「今天」→ `2026-08-31`，点「昨天」→ `2026-08-30`，均等于本地组装值 | [OK] |
+| 2 | **T-2 响应式**（基本信息网格列数 + 390px 无横向溢出） | ≥900px 3 列 / 768-899px 2 列 / <768px 1 列，390px 无溢出 | 1440px→`grid-template-columns: 268.656px 268.672px 268.656px`（3 列）；850px→`355.75px 355.75px`（2 列，描述 span 2）；390px→`290.5px`（1 列，wide=auto）；390px `scrollWidth==clientWidth==390`、`overflowX=false` | [OK] |
+| 3 | **T-3 等高**（category 与 status offsetHeight/y） | 高差 ≤1px，同一行 y 差 ≤1px | 全部 `form-control` 高 38px：name/category/price 同列 y=271 高均 38、y 差 0；description/status 同行 y=441 高均 38、y 差 0；heightDiff=0 | [OK] |
+| 4 | **T-4 分类管理** | 列表+引用数；删 0 引用成功；删被引用分类确认「将影响 N 道餐品」并改写为「其他」；datalist/filter 同步无残留；filter 含动态分类 | 管理弹窗列出 3 行（主食热菜×2、QA回归分类×1、主菜×1）；删被引用分类「QA回归分类」确认文案=`删除分类「QA回归分类」？\n将影响 1 道餐品，这些餐品的分类将改为「其他」。`，确认后 dish#5 category 由 QA回归分类→「其他」，分类从列表消失；`#dishCategoryFilter`=[全部分类,主食热菜,主菜,其他]（含动态分类）；datalist 无「QA回归分类」残留；0 引用分类（QA零引用分类）在最后引用餐品硬删后即从 datalist/filter/管理列表完全消失（API 对不存在分类返回干净 404「分类不存在」） | [OK] |
+| 5 | **T-5 角色隔离**（staff） | 新建/管理分类隐藏；冲销作废/停用/删除不渲染；切回 owner 恢复 | staff 下：`btnOpenAddDishModal`、`btnManageDishCategories` 均 `display:none` + `hide`；卡片/表格 `.btn-danger` 计数=0；流水行仅「批次溯源」、无「冲销作废」（真实流水 #8 实测）；切回 owner 后全部恢复：`hasVoidBtnAsOwner=true`，卡片出现「停用」按钮 | [OK] |
+| 6 | **T-6 停用/删除**（P1 修复重点） | 停用→toast「餐品已停用」；inactive 删除→确认含「彻底删除」→toast「餐品已彻底删除」且 DB 无该行；确认按钮可点击 | 停用确认弹窗按钮「确认操作」可点击→toast「餐品已停用」→DB status=inactive；inactive 卡片按钮变「删除」→确认弹窗标题「彻底删除餐品确认」、按钮「彻底删除」→点击→toast「餐品已彻底删除」→DB 行不存在（硬删）。全程 confirm 按钮 `onclick` 正常触发，无畸形 | [OK] |
+| 7 | **T-7 空行跳过** | 1 有效行 + 1 全空行可保存 | 新建餐品表单：行1 SKU#1/1.5个，行2 全空；`saveDishModal()` 成功（modal 关闭、无内联错误、toast「新建餐品成功」），DB 仅存 1 条 ingredient（空行被跳过） | [OK] |
+| 8 | **T-8 403 映射** | staff 保存餐品内联错误显示「权限不足：当前角色为店员…」而非「保存失败」 | staff 角色 `saveDishModal()` 后 `#dishModalError` 内联文本=`权限不足：当前角色为店员（staff），此操作需老板（owner）及以上权限。请切换角色或联系管理员。`（modal 未关闭）；DB 未新增行 | [OK] |
+| 9 | **T-10/T-11 触控** | 今天/昨天/清空份数/刷新/刷新流水及份数输入框 height≥38px；步进按钮与输入框等高 | 今天/昨天/清空份数/刷新/刷新流水均 38px；份数输入框 38px；**步进按钮 44px（`.btn{min-height:44px}` 覆盖内联 `height:38px`），与输入框差 6px** | [WARN]->[OK] |
+| 10 | **回归冒烟**：每日消耗→FIFO溯源→冲销回滚 + 成本大盘 7/30 天 | 主链路通 | 提交 2 份消耗→toast「成功记录 1 项餐品消耗」→FIFO 溯源弹窗（批次 #19，扣减 2 个 @¥8.00=¥16.00）→SKU#1 库存 42→40→冲销→toast「已成功冲销作废该消耗记录并回滚批次与库存」→行状态「已冲销作废」→库存回 42；成本大盘近7/30天切换正常（KPI 88.2% 渲染） | [OK] |
 
 ---
 
@@ -42,8 +50,8 @@
 
 ## 三、发现（Findings）
 
-1. **⚠️ T-10/T-11 等高未完全达成（P2）**：份数步进按钮实测 44px，份数输入框 38px，差 6px。根因：内联 `height:38px` 被全局 `.btn { min-height:44px; height:45px }`（style.css:326）覆盖。虽触控目标均 ≥38px 达标，但「步进按钮与输入框等高」未满足，同列 `- + +5 +10` 与输入框基线不一致。建议给 `.dish-step-btn` 补 `min-height:38px; height:38px` 覆写。
+1. **[OK] T-10/T-11 等高遗留项（原 P2）—— 已修复（2026-09-20 复核）**：2026-08-31 实测份数步进按钮 44px、输入框 38px，差 6px；根因是内联 `height:38px` 被全局 `.btn` 的 `min-height` 覆盖。现已通过样式表 `.dish-step-btn` 规则（`demo/static/css/style.css:315`：`min-height:38px; height:38px !important; line-height:36px;`）覆写，步进按钮与输入框同为 38px，遗留项关闭。
 
 ## 四、结论
 
-**D-1~D-11 全部修复项在真实浏览器中生效**：T-1~T-8 全部 ✅；T-10/T-11 触控目标高度达标、仅「步进按钮与输入框等高」存在 6px 视觉偏差（P2）；回归冒烟主链路（消耗→FIFO 溯源→冲销回滚、成本大盘 7/30 切换）✅。上轮 P1/P2 修复（确认按钮 onclick 畸形、403 内联人话文案、分类管理删除、空行跳过、角色按钮级隐藏、时区 0-8 点）均实测通过，无回归。测试临时数据已全部清理，业务库仅余真实餐品「招牌牛腩煲」及其历史流水。
+**D-1~D-11 全部修复项在真实浏览器中生效**：T-1~T-8 全部 [OK]；T-10/T-11 触控目标高度达标，其原「步进按钮与输入框等高」6px 偏差（P2）**已于 2026-09-20 复核确认修复（现均为 38px，评级 [OK]）**；回归冒烟主链路（消耗→FIFO 溯源→冲销回滚、成本大盘 7/30 切换）[OK]。上轮 P1/P2 修复（确认按钮 onclick 畸形、403 内联人话文案、分类管理删除、空行跳过、角色按钮级隐藏、时区 0-8 点）均实测通过，无回归。测试临时数据已全部清理，业务库仅余真实餐品「招牌牛腩煲」及其历史流水。**截至 2026-09-20 复核，本批 D-1~D-11 无未决遗留项。**

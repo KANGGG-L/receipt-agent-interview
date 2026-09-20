@@ -71,7 +71,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 ### 3.3 平台能力
 
 - **三层 RBAC**：admin / owner / staff，无密码下拉切换，权限即时生效
-- **引擎可插拔**：opencode CLI / CodeBuddy CLI / 任意 OpenAI 兼容接口（自填 base_url + api_key + 模型名）
+- **引擎可插拔**：百炼 DashScope Qwen 系（识别腿）/ SiliconFlow GLM-4.5V（审核腿）/ 任意 OpenAI 兼容接口（自填 base_url + api_key + 模型名）；历史注记：opencode CLI / CodeBuddy CLI 两个本机 CLI 引擎已于 2026-09-02 弃用
 - **灰度发布**：分组测试按概率 0-100% 随机分配，常规与灰测组引擎完全隔离；支持按单据/按供应商分配
 - **解析 LLM**：VLM 识别后可选交给 LLM 规范化（可开关，常规/灰测独立）
 - **AI 复盘**：价格异动检测 + 供应商洞察 + 采购建议
@@ -193,9 +193,11 @@ run_pipeline(image_path, config)
 
 | 引擎 | 类 | 特点 |
 | :--- | :--- | :--- |
-| opencode CLI | `OpencodeChatModel` | 本机免费，MiMo-V2.5 Free 可读图，`opencode run` 子进程 |
-| CodeBuddy CLI | `CodeBuddyChatModel` | 本机免费，minimax-m3-pay 视觉 |
+| 百炼 DashScope（识别腿） | `OpenAIChatModel` | OpenAI 兼容通道，默认模型 qwen3.5-omni-flash |
+| SiliconFlow（审核腿） | `OpenAIChatModel` | OpenAI 兼容通道，默认模型 zai-org/GLM-4.5V，与识别腿跨厂商异构（Gap A3） |
 | OpenAI 兼容 | `OpenAIChatModel` | 任意网关，base_url + api_key + model，支持多模态 |
+| opencode CLI（已弃用） | `OpencodeChatModel` | 本机 CLI，历史候选；已于 2026-09-02 弃用，类仅保留存量兼容 |
+| CodeBuddy CLI（已弃用） | `CodeBuddyChatModel` | 本机 CLI，历史候选；已于 2026-09-02 弃用，类仅保留存量兼容 |
 
 `build_recognition_model(cfg, use_grey)` 工厂按 `EngineConfig` 路由到对应引擎——
 识别管线只依赖 `BaseChatModel` 接口，**换引擎不改管线代码**。
@@ -250,7 +252,7 @@ demo/app/
 
 ```bash
 cd demo
-cp .env.example .env        # 默认 opencode 免费模型，零配置可跑
+cp .env.example .env        # 默认识别腿百炼 DashScope qwen3.5-omni-flash，零配置可跑
 pip install -r requirements.txt
 
 ./demo.sh run               # 启动 http://127.0.0.1:15010
@@ -265,7 +267,7 @@ pip install -r requirements.txt
 
 - **LangChain**：模型层抽象（多模态封装/可插拔引擎/Chroma 向量检索）+ 确定性编排
 - **FastAPI + SQLite**：98 个 API 端点匹配完整版前端契约
-- **多模型通道**：opencode（MiMo-V2.5 Free 免费）、CodeBuddy、OpenAI 兼容（SiliconFlow Qwen3-VL 等）
+- **多模型通道**：百炼 DashScope（识别腿 qwen3.5-omni-flash）、SiliconFlow（审核腿 GLM-4.5V）、OpenAI 兼容；历史注记：opencode / CodeBuddy 两个本机 CLI 引擎曾作为选型候选评估，已于 2026-09-02 弃用
 - **Pydantic**：输出契约门禁（拒绝 schema 外字段）
 - **前端**：完整版产品 UI（纯静态，4 Tab）
 

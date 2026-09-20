@@ -2,7 +2,7 @@
 
 > 状态：**[PASS]  已定稿（主选路径；batch1 三模型对比评测完成）**
 > 依据：`../ai/02-方案.md` §12.2 `L4 多模态VLM直识(云端) R3 模态升级价值 主选`
-> 代码：`eval/adapters/r3_multimodal.py`；生产链路 `services/ocr_service.py` + `services/codebuddy_runner.py`
+> 代码：`eval/adapters/r3_multimodal.py`；生产链路 `services/ocr_service.py` + `services/codebuddy_runner.py`（历史，该 CLI 适配已随 2026-09-02 opencode/CodeBuddy 弃用移除）
 
 ## 评测记录（batch1 真实 163 张 · 三模型对比）
 

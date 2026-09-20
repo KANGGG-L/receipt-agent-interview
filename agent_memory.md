@@ -56,12 +56,12 @@
 | `image_path` | string | 原图路径（截断 500） |
 | `supplier` | string | 识别供应商（截断 120，`ReceiptData.vendor`） |
 | `doc_form` | string | 单据形态枚举（`DocForm` 7 种，截断 60） |
-| `engine` | string | 真实引擎 kind（`opencode`/`codebuddy`/`openai`/`qwen`，`demo/app/llm.py:build_recognition_model` 透传 `model.kind`） |
+| `engine` | string | 真实引擎 kind（`openai`/`qwen` 为现行；`opencode`/`codebuddy` 为 2026-09-02 已弃用历史引擎，`demo/app/llm.py:build_recognition_model` 透传 `model.kind`） |
 | `model` | string | 模型名（`EngineConfig.recognition_model` / `grey_*`） |
 | `tokens_prompt` | int | 输入 tokens（OpenAI `usage.prompt_tokens` 或 `input_tokens`） |
 | `tokens_completion` | int | 输出 tokens（`completion_tokens` / `output_tokens`） |
 | `tokens_total` | int | 总 tokens（`total_tokens` 或 prompt+completion） |
-| `cost_hkd` | float | 按成本表计费：输入 ¥0.15/1M + 输出 ¥1.50/1M（`L4` qwen3-vl-flash 单张约 ¥0.0022，`docs/03-评测平台/02-163张真实收据成本核算.md:17,40`）；本地 CLI 无 token 记 0 |
+| `cost_hkd` | float | 按 token 单价计费，**按引擎区分档位**（`demo/app/llm.py: _calc_cost_hkd`）：qwen3.5-omni-flash（2026-09 起默认识别引擎）输入 ¥2.2/1M + 输出 ¥13.3/1M，单张约 ¥0.025；qwen3-vl-flash（旧默认）输入 ¥0.15/1M + 输出 ¥1.50/1M，单张约 ¥0.0022（`docs/04-AI技术选型与评测/03-评测平台与基准测试/02-163张真实收据成本核算.md`）；未传 model 按 omni 档计，本地 CLI 无 token 记 0 |
 | `elapsed_ms` | object | `{extract, parse, rag, audit, total}`，单位 ms（`demo/app/chains/supervisor.py:202 elapsed_ms` `358 _finalize`） |
 | `success` | bool | 解析是否成功（`data != None` 且门禁通过） |
 | `error_msg` | string | 失败原因（截断 500，`contract_error`/`last_error`） |
@@ -69,7 +69,7 @@
 
 ### 3. 代码埋点
 
-- `demo/app/llm.py:154 CodeBuddyChatModel._run_cli` / `~260 OpencodeChatModel` / `371 OpenAIChatModel._generate`：返回 `ChatResult` 前提取 `response.json().usage`，存入 `ChatGeneration.message.response_metadata['token_usage']`（归一 `prompt_tokens/completion_tokens/total_tokens`，本地 0）。
+- `demo/app/llm.py:154 CodeBuddyChatModel._run_cli` / `~260 OpencodeChatModel`（两者为 2026-09-02 已弃用历史 CLI 引擎类，仅存量兼容）/ `371 OpenAIChatModel._generate`：返回 `ChatResult` 前提取 `response.json().usage`，存入 `ChatGeneration.message.response_metadata['token_usage']`（归一 `prompt_tokens/completion_tokens/total_tokens`，本地 0）。
 - `demo/app/chains/extract_chain.py:262 vlm_elapsed` `300 elapsed_ms`：捕获 `token_usage` 存 `result["token_usage"]` 并透传 `cost_hkd`。
 - `demo/app/chains/supervisor.py:92 _log_extract_decision`：增加 `tokens_total/cost_hkd/elapsed_ms/success` 入 `ai_value` 与 `extra`；`_finalize:357` 打印 `RECEIPT_LATENCY` 同时追加 `TOKENS` 行；落盘 `artifacts/memory/parse_log.jsonl`（`threading.Lock`）。
 - `demo/app/db.py:1845 log_ai_decision`：`extra` 为 `Text` 已支持长 JSON；`list_ai_decisions` 解析 `extra` 暴露 `tokens_total/cost_hkd`。
@@ -95,7 +95,7 @@ curl -s http://127.0.0.1:15010/api/admin/metrics -H X-Role:owner | grep avg_toke
 
 0. **默认 Provider 策略（用户决策 2026-08-30，随 L4 红灯与两次服务拖死事故确立）**：
    - **SiliconFlow 是本项目的默认 provider**：服务每次重启，识别腿（SF Qwen-VL 系）与审核腿（SF GLM-4.5V，视觉模型——审核 text/vlm/ondemand 三模式都需要；用户指定，因 DeepSeek-V3.2 非视觉模型）都被 `hydrate_engine_config_from_env` 强制装配回 SiliconFlow 通道——管理台对双腿的临时切换不跨重启保留（灰测组配置不受影响）
-   - **opencode/CLI 引擎从默认路径移除**：仅作显式选择。依据：opencode CLI 两次挂起拖死 uvicorn 线程池（首页超时），且元评测 audit 模式 25 项中 8 次 30s 超时——CLI 稳定性不足以承担默认链路
+   - **opencode/CLI 引擎从默认路径移除**：仅作显式选择。依据：opencode CLI 两次挂起拖死 uvicorn 线程池（首页超时），且元评测 audit 模式 25 项中 8 次 30s 超时——CLI 稳定性不足以承担默认链路。**后续收口（2026-09-02）**：opencode 与 CodeBuddy 两个本机 CLI 引擎正式弃用，不再作为默认或可选项（枚举/类仅保留存量兼容）
    - **异构纪律（Gap A3）**：识别腿 Qwen 系 ↔ 审核腿 DeepSeek 系跨厂商；降级链（SF 不可用 → DashScope）期间双腿同家族，异构性弱化必须日志提示
    - 环境变量：`SILICONFLOW_AUDIT_MODEL`（默认 zai-org/GLM-4.5V）覆盖审核模型；`DASHSCOPE_AUDIT_MODEL`（默认 qwen3-vl-plus）覆盖降级审核模型
 

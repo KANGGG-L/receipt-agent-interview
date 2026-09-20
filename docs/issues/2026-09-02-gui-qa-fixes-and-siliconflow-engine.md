@@ -3,6 +3,7 @@
 - 日期：2026-09-02
 - 来源：GUI 黑盒全组件探索测试（19 脚本/52 截图）+ Commit `1a0f0eb` 代码审查 + 用户决策「opencode 已过期，全面使用 SiliconFlow」
 - 状态：已批准（用户指令）
+- 历史注记（2026-09-02 后补）：本工单即 opencode 引擎弃用与全面 SiliconFlow 化的切换记录。opencode / CodeBuddy 两个本机 CLI 引擎自此弃用，不再作为默认或可选项；下文所有 opencode 措辞均为该次切换的历史记录。
 
 ## 用户决策（产品输入）
 

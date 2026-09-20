@@ -1,6 +1,6 @@
 # L8 · 本地自托管 VLM（Qwen2.5-VL / MiniCPM-V / vLLM）
 
-> 状态：**[WARN]  部分（主路径 CodeBuddy CLI 已是"本地零成本多模态"，但非自托管权重）**
+> 状态：**[WARN]  部分（历史上主路径 CodeBuddy CLI 曾提供"本地零成本多模态"，该 CLI 已于 2026-09-02 弃用；L8 自托管权重仍未建）**
 > 依据：`../ai/02-方案.md` §12.2 `L8 本地VLM(Qwen2.5-VL/MiniCPM-V) [外部] 隐私/离线优先替换`；§12.5 P2
 > 代码：`r_local_vlm` adapter 未建
 
@@ -16,8 +16,8 @@
 | 可维护 | 3 | 需 vLLM 部署/模型升级运维 |
 | 可校准 | 1 | 同 VLM 通病 |
 
-- **与现状的关系**：CodeBuddy CLI 已是"本地零成本多模态"，L8 是更可控变体——但需 GPU 且要自担部署运维。当前无 GPU 约束下，CodeBuddy CLI 已覆盖其价值。
-- 触发条件：隐私红线（数据不得出网给第三方）或 CodeBuddy CLI 不可用（路径硬编码 D1 / 换机）。
+- **与现状的关系**：CodeBuddy CLI 曾是"本地零成本多模态"路径（已于 2026-09-02 弃用），L8 是其更可控的自托管变体——但需 GPU 且要自担部署运维。现行为云端 VLM（识别腿 DashScope Qwen 系 / 审核腿 SiliconFlow GLM-4.5V）；无 GPU 约束下 L8 仍未落地。
+- 触发条件：隐私红线（数据不得出网给第三方）；原触发条件之一"CodeBuddy CLI 不可用（路径硬编码 D1 / 换机）"已于 2026-09-02 因该 CLI 弃用而成立。
 
 ## 评测记录
 
@@ -27,6 +27,6 @@
 
 ## 决策
 
-- [ ] 若隐私要求出现或 CodeBuddy CLI 失效 → 建 `r_local_vlm` adapter（vLLM + Qwen2.5-VL-7B）
+- [ ] 若隐私要求出现 → 建 `r_local_vlm` adapter（vLLM + Qwen2.5-VL-7B）（历史触发条件"CodeBuddy CLI 失效"已随 2026-09-02 弃用成立）
 - [ ] C 阶段模型敏感性：若 7B 在质量地板内（黄金集 F1 降幅 ≤5%）→ 采纳为离线替换
-- **定论**：当前为备用替换项。不做的前提是 CodeBuddy CLI 稳定可用；其为单点依赖（路径硬编码）是风险，纳入 D1 技术债。
+- **定论**：当前为备用替换项。原前提（CodeBuddy CLI 稳定可用）已随 2026-09-02 该 CLI 弃用而失效；现行链路改用云端 VLM，L8 仍为未落地备用项。

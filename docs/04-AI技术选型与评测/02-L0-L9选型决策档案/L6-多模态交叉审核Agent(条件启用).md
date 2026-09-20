@@ -8,7 +8,7 @@
 
 - L5 的增量：生成器-审核器——输入原图 + 识别结果，输出逐字段一致性判定 + 分歧清单
 - 验证命题：**审核的价值**（R5 vs R4 的 Δ = 降幻觉贡献）
-- 落地价值：分歧进 D27 复合复核优先级分；探索期每单必审 + 交叉引擎（codebuddy↔qwen）
+- 落地价值：分歧进 D27 复合复核优先级分；探索期每单必审 + 交叉引擎（历史为 codebuddy↔qwen；2026-09-02 起为 DashScope Qwen 系 ↔ SiliconFlow GLM-4.5V，Gap A3）
 - 设计约束：位置口径 R5——S3 契约门禁之后、S4 算术门禁之前；契约不过不进审核
 
 ## 评测记录（batch1 真实 163 张 · qwen3-vl-flash-2026-01-22）
@@ -41,5 +41,5 @@
 ## 决策
 
 - **定论**：审核 Agent 生产默认开（降幻觉价值 > 成本），但**应条件审**（仅无表格/低分/高额单据），避免全量审核的 token 翻倍。
-- 交叉引擎（codebuddy↔qwen）在 codebuddy 无法看图时不可用——生产同引擎审核或换支持图的多模态作交叉。
+- 历史结论：交叉引擎（codebuddy↔qwen）在 codebuddy 无法看图时不可用（codebuddy CLI 已于 2026-09-02 弃用）；现行交叉审核为 DashScope Qwen 系 ↔ SiliconFlow GLM-4.5V。
 - 评测校准（LLM-as-judge vs 人工）待标注 GT 后补。

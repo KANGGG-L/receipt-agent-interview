@@ -129,7 +129,7 @@
 | # | 事件名称 (Event Name) | 触发时机 | 公共上下文参数 (Common Context) | 专属业务 Payload 字段定义 | 支撑的核心指标 |
 |:---:|:---|:---|:---|:---|:---|
 | **1** | `receipt_uploaded` | 移动端单张/批量单据上传成功 | `tenant_id`, `account_id`, `device_os`, `timestamp` | `batch_id`, `batch_size`, `upload_source` (camera/album), `file_size_kb` | 漏斗起点、批量渗透率 |
-| **2** | `ocr_parse_started` | 后端 Worker 从 Job 队列取出单据启动解析 | 同上 | `receipt_id`, `retry_attempt` (1/2), `selected_engine` (codebuddy/qwen) | 队列排队延迟 |
+| **2** | `ocr_parse_started` | 后端 Worker 从 Job 队列取出单据启动解析 | 同上 | `receipt_id`, `retry_attempt` (1/2), `selected_engine` (openai/qwen) | 队列排队延迟 |
 | **3** | `ocr_parsed` | 多模态 VLM 提取完成并生成结构化草稿 | 同上 | `receipt_id`, `doc_form`, `duration_ms`, `tokens_used`, `cost_hkd`, `pass_at_1` | 算法准确率、Token 成本、P95 延迟 |
 | **4** | `ocr_error` | VLM 解析崩溃、超时或契约校验彻底失败 | 同上 | `receipt_id`, `error_type` (timeout/format/schema), `fallback_engine` | 系统故障率、降级触发率 |
 | **5** | `math_guard_checked` | 代码层算术守恒校验执行完毕 | 同上 | `receipt_id`, `is_arithmetic_valid` (bool), `delta_amount`, `auto_fixed` (bool) | 门禁拦截率、算术自洽率 |

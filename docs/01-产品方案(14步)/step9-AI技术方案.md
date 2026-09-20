@@ -55,7 +55,7 @@ class BaseModelAdapter(ABC):
 
 - **DashScope 适配器 (Qwen3-VL-Flash)**：线上生产环境主路径，高并发、低延迟（~9s）、单张成本仅 ~HK$0.015；
 - **OpenAI 兼容适配器 (GPT-4o / Qwen-Max)**：高难度单据重试轮或离线黄金评测基准引擎；
-- **本地 CodeBuddy / PaddleOCR 适配器**：支持零出网、零 API 费用的本地降级运行。
+- **本地 PaddleOCR 适配器**：支持零出网、零 API 费用的本地降级运行（历史注记：曾评估本地 CodeBuddy CLI 适配器，该 CLI 已于 2026-09-02 弃用）。
 
 ---
 

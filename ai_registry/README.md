@@ -50,7 +50,7 @@ ai_registry/
 │   └── configs/                   # MCP 配置文件与环境变量映射
 │
 ├── plugins/                       # 5. 扩展插件库 (Plugin Architecture)
-│   ├── vlm_engines/               # 多模态引擎插件 (Opencode, CodeBuddy, OpenAI, Ollama)
+│   ├── vlm_engines/               # 多模态引擎插件 (OpenAI 兼容, Ollama 等；Opencode/CodeBuddy 为已弃用历史引擎)
 │   ├── notification/              # 异动通知插件 (WhatsApp/Telegram/Email)
 │   └── pos_connectors/            # POS 销项数据打通插件 (Eats365, StoreHub)
 │
@@ -110,7 +110,7 @@ python -m ai_registry.eval_reporter --diff --type prompt --name extract --v1 v1_
    - 提取类 Prompt：在 57 张黄金样本集上的准确率 $\ge 95\%$，CER $\le 4.0\%$；
    - 门禁类 Tool：对算术差错拦截率必须达到 $100.0\%$，单次执行时延 $\le 10\text{ms}$；
    - 技能 Skill：需具备标准 `SKILL.md`，并通过结构化自愈用例回归。
-3. **生成器-评估器强制异构（Gap A3）**：审核腿（评估器，`audit_engine`/`audit_model`）必须与识别腿（生成器，`recognition_engine`/`recognition_model`）**跨厂商异构**，禁止同引擎同家族——识别腿为 Qwen/GLM 系时审核腿必须走 opencode 等异构系；识别腿为 opencode 系时审核腿必须换 Qwen/GLM 系。灰测组 `grey_audit_model` 同此约束。**GT 生成腿例外（经用户决策）**：GT 生成腿可用百炼 Qwen 系（与识别腿同家族），异构性由人工抽检兜底——候选 GT 逐张经人工确认后方可作为评测基准；`gt_source_model` 必须照实记录，不得虚标。
+3. **生成器-评估器强制异构（Gap A3）**：审核腿（评估器，`audit_engine`/`audit_model`）必须与识别腿（生成器，`recognition_engine`/`recognition_model`）**跨厂商异构**，禁止同引擎同家族——识别腿为 Qwen 系时审核腿必须走 SiliconFlow GLM-4.5V 等其他厂商异构系（历史曾用 opencode 作异构系，该 CLI 已于 2026-09-02 弃用）；识别腿为 GLM 系时审核腿必须换 Qwen 系。灰测组 `grey_audit_model` 同此约束。**GT 生成腿例外（经用户决策）**：GT 生成腿可用百炼 Qwen 系（与识别腿同家族），异构性由人工抽检兜底——候选 GT 逐张经人工确认后方可作为评测基准；`gt_source_model` 必须照实记录，不得虚标。
 4. **评估调用 temperature=0（Gap A4）**：审核/评估调用必须以 temperature=0 执行（`demo/app/llm.py` 的 `_build(side="aud")` 已强制注入），保证评估结论确定性、可复现；禁止在调用侧覆盖为非零采样。
 5. **上线前必跑元评测集（Gap A4）**：任何引擎/模型/Prompt 变更上线前，必须运行 `python demo/scripts/run_meta_eval.py`（真实模型用 `--judge audit` 显式触发），且报告结论 `evaluator_trustworthy=true`（对「绝对正确」样本判对率 100% 且对「绝对错误」样本判错率 100%）方可准入；报告落盘 `benchmarks/meta_eval_runs/` 留档。注意：mock judge 仅用于离线自检 harness 本身，**生产准入必须跑 `--judge audit` 模式（真实异构审核模型）并以该模式的报告为准**。
 

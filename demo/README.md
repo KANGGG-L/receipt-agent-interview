@@ -38,10 +38,10 @@ admin 通过「引擎配置 · 灰测」弹窗（侧边栏  按钮，仅 admin �
 
 ```json
 {
-  "recognition_engine": "opencode",
-  "recognition_model": "opencode/mimo-v2.5-free",
-  "audit_engine": "opencode",
-  "audit_model": "opencode/mimo-v2.5-free"
+  "recognition_engine": "openai",
+  "recognition_model": "qwen3.5-omni-flash",
+  "audit_engine": "openai",
+  "audit_model": "zai-org/GLM-4.5V"
 }
 ```
 
@@ -52,8 +52,8 @@ admin 通过「引擎配置 · 灰测」弹窗（侧边栏  按钮，仅 admin �
   "grey_enabled": true,
   "grey_percent": 30,
   "grey_assign_mode": "receipt",
-  "grey_recognition_engine": "codebuddy",
-  "grey_recognition_model": "minimax-m3-pay",
+  "grey_recognition_engine": "openai",
+  "grey_recognition_model": "qwen3-vl-plus",
   "grey_audit_engine": "openai",
   "grey_audit_model": "gpt-4o-mini"
 }
@@ -67,10 +67,9 @@ admin 通过「引擎配置 · 灰测」弹窗（侧边栏  按钮，仅 admin �
   与常规完全隔离——命中灰测的单据整单走灰测配置，其余走常规
 - 灰测 = 新模型按概率小流量试跑，识别率达标后再全量切换
 
-**三种引擎通道**（常规/灰测各自可选）：
-- `opencode`：本机 opencode CLI，视觉模型（默认 MiMo-V2.5 Free 可读图）
-- `codebuddy`：本机 CodeBuddy CLI（minimax-m3-pay 视觉）
-- `openai`：**任意 OpenAI 兼容接口**——admin 填写 `base_url + api_key + 模型名`（如自建网关 / Qwen / 各家中转）
+**引擎通道**（常规/灰测各自可选）：
+- `openai`：**任意 OpenAI 兼容接口**——admin 填写 `base_url + api_key + 模型名`（如自建网关 / Qwen / 各家中转）；现行默认识别腿走百炼 DashScope（qwen3.5-omni-flash），审核腿走 SiliconFlow（zai-org/GLM-4.5V）
+- 历史注记：`opencode`（本机 opencode CLI）与 `codebuddy`（本机 CodeBuddy CLI）两个本机 CLI 引擎曾作为候选评估，已于 2026-09-02 弃用并从可选引擎中移除
 
 ## 三、架构
 
@@ -102,7 +101,7 @@ demo/
 │   ├── db.py                # SQLite + SQLAlchemy（轻量幂等迁移：租户/治理/评测资产）
 │   ├── models.py            # Pydantic 领域模型
 │   ├── auth.py              # 三层 RBAC + HMAC token
-│   ├── llm.py               # LangChain 模型封装（opencode/CodeBuddy/Qwen 备选）
+│   ├── llm.py               # LangChain 模型封装（OpenAI 兼容：DashScope/SiliconFlow；opencode/CodeBuddy 为已弃用历史引擎）
 │   ├── chains/
 │   │   ├── extract_chain.py # VLM 识别链
 │   │   ├── audit_chain.py   # 交叉审核 Agent
@@ -136,7 +135,7 @@ demo/
 
 ```bash
 cd demo
-cp .env.example .env        # 默认 opencode 免费模型，零配置可跑
+cp .env.example .env        # 默认识别腿百炼 DashScope qwen3.5-omni-flash，零配置可跑
 pip install -r requirements.txt
 ./demo.sh run               # 启动 http://127.0.0.1:15010（浏览器打开）
 ```
@@ -202,7 +201,7 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 ### 7.4 测试口径
 
 - **确定性逻辑**：契约门禁 / 算术门禁 / RBAC / 乐观锁 / 幂等入库 / 租户隔离 / 记忆治理 —— pytest，秒级
-- **AI 链路**：免费模型（opencode/mimo-v2.5-free）真实跑，40s~4min
+- **AI 链路**：真实模型（DashScope qwen3.5-omni-flash）跑通，40s~4min
 - **黄金样本（历史导入口径）**：57 张真实单据 + 人工标注，导入平台做回归；现行评测走 7.5 节评测集三分法
 
 ## 八、测试

@@ -1,5 +1,14 @@
 # 食材品名与流水号/条形码剥离及纯净性工程评测报告
 
+> **复核记录（2026-09-20）**
+> - **复跑命令**：`python -m pytest -q tests/test_sku_cleaning_benchmark.py`（`DB_PATH` 指向临时库）
+> - **复跑结果**：**4 passed**。品名纯净率 **100.0%（38/38）**、编号召回率 **100.0%（25/25）**、
+>   误删率 **0.0%（0/13）** 的结论**维持不变**。
+> - **资产活动版本已演进**（本文评测对象为 2026-08-21 时的版本，详见第 6 节）：解析 Prompt 仍为
+>   `v2_1_0_sku_clean`；提取 Prompt 的活动版本已升为 `v1_2_8_anti_injection`；SmartSplitter 的活动
+>   版本已升为 `v1_2_0_multi_pack`（`v1_1_0_sku_clean` 置 deprecated）。
+> - 本文原始实测数据按历史原样保留，仅补注当前活动版本与复核结论。
+
 ## 1. 业务背景与问题定义
 
 在餐饮（F&B）供应链及生鲜进货单据流转中，供应商打印单与手写单常将打印流水号、时间戳、机器批次号、条形码或系统货号直接拼接到食材品名之后或之前。
@@ -110,17 +119,23 @@
 
 ## 6. 资产版本与工程落地状态
 
-1. **Prompt 资产更新**：
-   - 提取 Prompt：`ai_registry/prompts/extract/v1_2_0_sku_clean.py`（已激活为 Production）
-   - 解析 Prompt：`ai_registry/prompts/parse/v2_1_0_sku_clean.py`（已激活为 Production）
+1. **Prompt 资产**（评测时激活版本，及 2026-09-20 复核现状）：
+   - 提取 Prompt：评测对象为 `ai_registry/prompts/extract/v1_2_0_sku_clean.py`（评测时激活为 Production）。
+     - 现状：`extract/metadata.json` 的 `active_version` 已为 `v1_2_8_anti_injection`，`v1_2_0_sku_clean` 转为 archived。
+   - 解析 Prompt：`ai_registry/prompts/parse/v2_1_0_sku_clean.py`（激活为 Production）。
+     - 现状：`parse/metadata.json` 的 `active_version` 仍为 `v2_1_0_sku_clean`（production），未变。
    - 元数据登记：`ai_registry/prompts/extract/metadata.json` 与 `ai_registry/prompts/parse/metadata.json` 已同步更新。
 
-2. **Tool 资产更新**：
-   - 工具文件：`ai_registry/tools/smart_splitter/v1_1_0_sku_clean.py`（已激活为 Production）
+2. **Tool 资产**（评测时激活版本，及 2026-09-20 复核现状）：
+   - 工具文件：评测对象为 `ai_registry/tools/smart_splitter/v1_1_0_sku_clean.py`（评测时激活为 Production）。
+     - 现状：`smart_splitter/metadata.json` 的 `active_version` 已为 `v1_2_0_multi_pack`，`v1_1_0_sku_clean` 置 deprecated
+       （其复合包装解耦与计件单位保护能力由 v1_2_0 覆盖并扩展）。本文 38 例基准仍针对 v1_1_0 复核通过。
    - 元数据登记：`ai_registry/tools/smart_splitter/metadata.json` 已同步更新。
 
-3. **业务管线接入**：
+3. **业务管线接入**（2026-09-20 复核）：
    - `demo/app/chains/extract_chain.py` 与 `demo/app/services/receipt_utils.py` 已接入纯净品名规则与确定性 Sanitizer 工具，实现端到端闭环。
+   - 当前管线实际引用：识别 Prompt 走 `v1_2_8_anti_injection`（`extract_chain.py:144` 注释）；
+     Sanitizer 工具为 `ai_registry.tools.smart_splitter.v1_2_0_multi_pack`（`extract_chain.py:939`、`receipt_utils.py:21`）。
 
 4. **基准测试与自动化评测**：
    - 评测脚本：`tests/test_sku_cleaning_benchmark.py` 全量通过（4/4 测试套件，38 个用例 100% 覆盖通过）。
@@ -132,3 +147,7 @@
 
 本次品名纯净性规范与流水号剥离升级已达到投产要求，显著提升了 F&B 进货单据在真实业务场景下的结构化纯净度与对账鲁棒性。
 后续建议在供应商 RAG 上下文中进一步沉淀各供应商特有的流水号编码习惯，持续巩固识别稳定性。
+
+**复核结论（2026-09-20）**：`tests/test_sku_cleaning_benchmark.py` 复跑 **4 passed**，本文第 4 节的
+基线/优化对比指标（纯净率 36.8% → 100.0%、编号召回 0.0% → 100.0%、误删率 0.0%）**仍然成立**；
+管线活动版本已演进（见第 6 节），结论方向不变。

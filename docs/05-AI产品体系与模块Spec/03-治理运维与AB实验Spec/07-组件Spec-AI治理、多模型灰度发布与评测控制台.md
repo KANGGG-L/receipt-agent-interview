@@ -35,6 +35,8 @@
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+> 历史注记（2026-09-02）：图中 `OpencodeChatModel` / `CodeBuddyChatModel` 为历史本机 CLI 引擎，已于 2026-09-02 弃用（仅保留存量兼容类）；当前生产实际走 `OpenAIChatModel` 的 OpenAI 兼容通道——识别腿百炼 DashScope `qwen3.5-omni-flash`、审核腿 SiliconFlow `zai-org/GLM-4.5V`。
+
 ---
 
 ## 3. 灰度发布分流机制与优先级仲裁 (Routing & Priority Spec)

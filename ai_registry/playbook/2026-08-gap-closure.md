@@ -24,7 +24,7 @@
 | :--- | :--- | :--- | :--- |
 | T12 registry SSOT 收敛 | 治理 | 完成 | `tests/test_registry_ssot.py`；chains 全部经 `registry.get_prompt` 取词 |
 | T4 GT 异构生成 + 抽检台 | A2 | 完成（人工确认进行中） | `gen_gt_candidates.py`、`/evalset` 队列页 + `/evalset/workbench` 店员同款工作台；GT 仍为 draft/confirmed 混合，**对外数字只允许引用 confirmed** |
-| T5 评估器异构 + 元评测 | A3+A4 | 完成（含一条已知遗留） | 元评测集 25 条（`benchmarks/meta_eval_set.json`）；mock judge 判对/判错率 100%；**遗留：纯默认（无 env）时识别/审核模型同为 opencode 系**，生产运行配置已异构（识别=SiliconFlow Qwen 系，审核=opencode 系），见计划文档 T5 口径注记 |
+| T5 评估器异构 + 元评测 | A3+A4 | 完成（含一条已知遗留，已于 2026-09-02 收口） | 元评测集 25 条（`benchmarks/meta_eval_set.json`）；mock judge 判对/判错率 100%；**遗留（当时口径）：纯默认（无 env）时识别/审核模型同为 opencode 系**，当时生产运行配置已异构（识别=SiliconFlow Qwen 系，审核=opencode 系）；该遗留已随 2026-09-02 opencode 弃用收口（现行识别=DashScope Qwen 系，审核=SiliconFlow GLM-4.5V），见计划文档 T5 口径注记 |
 | T6 低置信样本回流 | A5 | 完成 | `eval_candidate` 表 + 四类钩子 + 候选池卫生（上限/去重）；`demo/tests/test_eval_reflow.py`、`test_eval_candidate_hygiene.py` |
 
 ### Wave C：可信产物与写入闸门

@@ -7,6 +7,8 @@
 > 审视对象：`demo/`（可运行系统）+ `ai_registry/`（资产与评测中心）+ `docs/04-AI技术选型与评测/`（评测与样本库规范）
 >
 > 分析日期：2026-08-28　方法：逐条要求 → 代码/文档实证 → 判定覆盖度。判定均给出 `file:line` 证据。
+>
+> 历史注记（2026-09-02 后补）：本文为 2026-08-28 的 Gap 快照。文中"默认 `opencode` / `opencode/mimo-v2.5-free`"等现状描述为当时口径；`opencode` / `CodeBuddy` 两个本机 CLI 引擎已于 2026-09-02 弃用，Gap A3（评估器与生成器强制异构）已按跨厂商异构（识别腿 DashScope Qwen 系 / 审核腿 SiliconFlow GLM-4.5V）落地。
 
 ---
 
@@ -62,7 +64,7 @@
 ### Gap A3　审核腿（评估器）与识别腿未强制分离（P1）
 
 - **要求**：让 Agent 评价自己的输出会触发自洽偏差，需独立模型实例或不同模型；评估 temperature 设 0；输出结构化；分维度独立评估。
-- **现状**：`audit_engine` / `audit_model` 与 `recognition_engine` / `recognition_model` 结构上**已经分开配置**（这点设计是对的），但默认值是**同一个引擎同一个模型**（`opencode` / `opencode/mimo-v2.5-free`）；且 `audit_mode` 默认 `text`（纯文本确定性校验，不重读原图）。
+- **现状**（2026-08-28 当时口径）：`audit_engine` / `audit_model` 与 `recognition_engine` / `recognition_model` 结构上**已经分开配置**（这点设计是对的），但当时默认值是**同一个引擎同一个模型**（`opencode` / `opencode/mimo-v2.5-free`；该 CLI 已于 2026-09-02 弃用）；且当时 `audit_mode` 默认 `text`（纯文本确定性校验，不重读原图）。
 - **证据**：`demo/app/models.py:167-183`（`audit_engine` 默认 `opencode`，`audit_model` 默认与识别同源）；`demo/app/chains/supervisor.py:112-121`。
 - **风险**：默认配置下 = 同模型自评。且 text 模式看不到版面，抓不到"字段抄对了但抄错行"这类错误 —— 恰好是 VLM 相对优势所在的场景。
 - **建议**：把生产默认改为**跨厂商异构**（识别用 A 厂 VLM、审核用 B 厂 VLM），并把"评估器异构 + temperature=0"写进 `ai_registry/README.md` 的生产准入规则。
