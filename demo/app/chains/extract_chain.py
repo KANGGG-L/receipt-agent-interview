@@ -19,13 +19,18 @@ from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 
-from app.llm import build_parse_model, build_recognition_model
+from app.llm import (
+    _engine_error_category,
+    build_parse_model,
+    build_recognition_model,
+)
 from app.models import ReceiptData
 from app.services.rag import retrieve_context
 from app.services.canary_guard import (
     CANARY_FIELD,
     generate_canary_token,
     inject_canary_instructions,
+    verify_canary_in_text,
     verify_canary_token,
 )
 
@@ -75,25 +80,65 @@ def _extract_token_usage(msg) -> dict:
                 }
                 from app.llm import _normalize_token_usage
                 return _normalize_token_usage(mapped)
-            except Exception:
-                pass
-    except Exception:
-        pass
+            except Exception as e:
+                logging.getLogger("extract_chain").warning(
+                    "token 用量(usage_metadata 对象)解析失败，回落全 0：%s", e)
+    except Exception as e:
+        logging.getLogger("extract_chain").warning(
+            "token 用量提取失败，回落全 0（成本将不可用，审计与护栏据此失真）：%s", e)
     return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
 
-def _cost_from_tokens(tu: dict) -> float:
-    """按成本表计算 HKD 成本：qwen3-vl-flash 输入 0.15/1M 输出 1.50/1M，无 token 记 0。"""
+def _model_cost_tier_name(model) -> str:
+    """取模型对象上真正生效的模型名，供成本档位解析。
+
+    why：单价必须按当时生效的模型分档（omni / vl-flash / GLM 差 10 倍量级），
+    不传模型名时 _calc_cost_hkd 会走默认档，导致 vl-flash 生产路径被按 omni 高估。
+    模型对象的 .model 是 _build 时实际下发的名字，比 config 字段更贴近真实调用
+    （降级回退后也正确）。
+    """
+    return str(getattr(model, "model", "") or "")
+
+
+def _cost_from_tokens_ex(tu: dict, model: str = ""):
+    """按成本表计算 HKD 成本，并回传「该值是否为估算」的标记。
+
+    返回 (cost, estimated, reason)：
+    - estimated=False：成本由 _calc_cost_hkd 按该模型真实档位算出，可直接用于护栏与大盘；
+    - estimated=True + reason=price_table_fallback：_calc_cost_hkd 失败，退化为「仅按该模型
+      输入单价 x total_tokens」的估算。该估算忽略输出单价、也忽略模型间输出价差，在
+      A/B 两腿用不同模型时会抹平真实涨跌（实测：omni vs vl-flash 的真实涨幅 839% 会被
+      估成 0%），因此必须标记为估算，不能当作精确成本喂给 guardian 的成本护栏。
+    - estimated=True + reason=cost_unavailable：连单价表都取不到，成本记 0。
+    """
     try:
         from app.llm import _calc_cost_hkd
-        return _calc_cost_hkd(tu)
-    except Exception:
-        # 兜底：总 token *0.15/1M
+        return _calc_cost_hkd(tu, model=model), False, ""
+    except Exception as e:
+        # 失败不得静默：成本是 guardian 成本护栏与大盘的唯一输入，
+        # 静默降级会让「真实成本上涨」在大盘与护栏上完全不可见。
+        logging.getLogger("extract_chain").warning(
+            "成本计算失败(model=%s tokens=%s)，转单价表兜底估算：%s", model, tu, e)
         try:
+            from app.llm import _resolve_token_price
             total = int((tu or {}).get("total_tokens", 0) or 0)
-            return round(total * 0.15 / 1_000_000, 6)
-        except Exception:
-            return 0.0
+            return (round(total * _resolve_token_price(model)[0] / 1_000_000, 6),
+                    True, "price_table_fallback")
+        except Exception as e2:
+            logging.getLogger("extract_chain").warning(
+                "成本单价表兜底同样失败(model=%s)，本次成本记 0（该值不可用于护栏判定）：%s",
+                model, e2)
+            return 0.0, True, "cost_unavailable"
+
+
+def _cost_from_tokens(tu: dict, model: str = "") -> float:
+    """按成本表计算 HKD 成本，单价按 model 对应档位（omni / vl-flash / GLM），无 token 记 0。
+
+    model 由调用方传当时生效的模型名；缺省走 _calc_cost_hkd 的默认档（omni），
+    不再套用已废止的 vl-flash 旧价 0.15/1.50。
+    需要「是否为估算」的调用方请用 `_cost_from_tokens_ex`。
+    """
+    return _cost_from_tokens_ex(tu, model)[0]
 
 # ---- Prompt 唯一事实源：一律经 ai_registry 加载（T12 SSOT 收敛）----
 # 1) 主链路 VLM 识别：active 版本（v1_2_8_anti_injection，Gap1-8 聚合版）
@@ -135,38 +180,111 @@ PARSE_SYSTEM_PROMPT = ai_registry.get_prompt("parse", "v2_2_0_structured_json")
 CORRECT_SYSTEM_PROMPT = ai_registry.get_prompt("correct", "v1_0_0")
 
 
-def _image_data_url(image_path: str) -> str:
-    """图片 → data URL（LangChain 多模态标准格式）。长单 7-15 行 PIL max_side 1000 已做。"""
-    # 长单优化：超大图限边 1000（与 demo/app/api_receipts.py:112 对齐），减少 base64 体积与 VLM 时延
+# Web 格式（jpg/jpeg/png/webp）：浏览器与 VLM 均原生支持，mime 由扩展名即可确定，
+# 原文件回退是安全的。
+# 非 Web 格式：本地通常缺 pillow-heif / TIFF 解码器，原文件回退会把二进制冒充成
+# image/jpeg 发给上游（见下方 _image_data_url 的 why）。
+_NON_WEB_IMAGE_EXTS = ("heic", "heif", "tif", "tiff")
+_WEB_IMAGE_MIME = {
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "png": "image/png",
+    "webp": "image/webp",
+}
+# 发送给 VLM 的最长边（与 demo/app/api_receipts.py 预览限边对齐），减少 base64 体积与识别时延
+_MAX_IMAGE_SIDE = 1000
+# 本地解码失败后按原文件回退的体积上限：超过则拒绝，避免把超大原图全量 base64
+# （体积再膨胀约 1/3）塞进请求体，拖垮上游或触发 4xx/5xx。
+_MAX_RAW_FALLBACK_BYTES = 8 * 1024 * 1024
+
+
+class ImageDecodeError(Exception):
+    """图片无法解码成可发送给识别模型的格式（P2）。
+
+    why：调用方（Job 层）据此把单据置 error 并给出可读原因，而不是把原始二进制
+    冒充 JPEG 发给 VLM、再由上游 400/500 反馈回来——那类失败会被误读成
+    "模型能力不行"。
+    """
+
+
+def _pil_jpeg_data_url(image_path: str, relax_pixel_limit: bool = False) -> str:
+    """PIL 解码 → 最长边限到 _MAX_IMAGE_SIDE → JPEG → data URL。
+
+    解码/编码失败一律向上抛出，由 _image_data_url 按格式分流处理。
+    relax_pixel_limit=True：临时关闭 Pillow 的像素总数上限（DecompressionBombError），
+    让"合法但超大"的原图仍能走限边重编码；无论成败都在 finally 还原全局值，
+    避免污染同进程其它 PIL 使用方（前置处理、HEIC 预览转码）。
+    """
+    from PIL import Image, ImageOps
+    import io
+    prev_pixel_limit = Image.MAX_IMAGE_PIXELS
+    if relax_pixel_limit:
+        Image.MAX_IMAGE_PIXELS = None
     try:
-        from PIL import Image, ImageOps
-        import io
         with Image.open(image_path) as img:
             try:
                 img = ImageOps.exif_transpose(img)
             except Exception:
                 pass
-            max_side = max(img.size) if img.size[0] and img.size[1] else 0
-            if max_side > 1000:
-                scale = 1000.0 / max_side
-                new_w = max(1, int(img.size[0] * scale))
-                new_h = max(1, int(img.size[1] * scale))
-                img = img.resize((new_w, new_h), Image.BILINEAR)
+            longest = max(img.size) if img.size[0] and img.size[1] else 0
+            if longest > _MAX_IMAGE_SIDE:
+                scale = float(_MAX_IMAGE_SIDE) / longest
+                img = img.resize(
+                    (max(1, int(img.size[0] * scale)), max(1, int(img.size[1] * scale))),
+                    Image.BILINEAR,
+                )
             if img.mode not in ("RGB", "L"):
                 img = img.convert("RGB")
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=85, optimize=True)
-            b64 = base64.b64encode(buf.getvalue()).decode()
-            return "data:image/jpeg;base64," + b64
-    except Exception:
-        pass
+        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    finally:
+        Image.MAX_IMAGE_PIXELS = prev_pixel_limit
+
+
+def _image_data_url(image_path: str) -> str:
+    """图片 → data URL（LangChain 多模态标准格式）。长单限边 _MAX_IMAGE_SIDE 已做。
+
+    why（P2）：原实现把 PIL 整段包在 try 里，任何异常都 `except: pass` 后直接
+    base64(原文件) 并按其扩展名猜 mime。对 heic/tif 这类非 Web 格式，本机通常
+    没有 pillow-heif / TIFF 解码器，于是把原始二进制冒充 image/jpeg 发给 VLM，
+    触发上游 400/500，且这类失败会伪装成"模型能力不行"。现在：
+      1) 非 Web 格式解码失败 → 抛 ImageDecodeError（附可读原因），不再发送损坏数据；
+      2) Web 格式（mime 可信）保留原文件回退，但先尝试放宽像素上限做一次限边重编码，
+         仍失败才原样回退，并受体积上限约束，避免超大原图全量 base64。
+    """
     ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpg"
-    if ext in ("heic", "heif"):
-        ext = "jpg"  # 简化：真实版会转码；demo 直接用 jpg 样本
-    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
-    with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}"
+    try:
+        return _pil_jpeg_data_url(image_path)
+    except Exception as first_err:
+        reason = f"{type(first_err).__name__}: {first_err}"
+        if ext in _NON_WEB_IMAGE_EXTS:
+            raise ImageDecodeError(
+                f"图片解码失败，已阻止向识别模型发送损坏数据：{os.path.basename(image_path)}"
+                f"（.{ext} 属非 Web 格式，需安装 pillow-heif / TIFF 解码器）。原因：{reason}"
+            ) from first_err
+        # Web 格式：mime 由扩展名即可确定，原文件回退是安全的；先补一次限边重试，
+        # 让"合法但超大/超像素上限"的原图仍以小 JPEG 发送，而不是全量 base64。
+        try:
+            return _pil_jpeg_data_url(image_path, relax_pixel_limit=True)
+        except Exception:
+            pass
+        try:
+            size = os.path.getsize(image_path)
+        except OSError as stat_err:
+            raise ImageDecodeError(
+                f"图片解码失败且原文件不可读：{os.path.basename(image_path)}。"
+                f"原因：{stat_err}"
+            ) from first_err
+        if size > _MAX_RAW_FALLBACK_BYTES:
+            raise ImageDecodeError(
+                f"图片解码失败且原文件过大（{size} 字节 > {_MAX_RAW_FALLBACK_BYTES} 字节上限），"
+                f"已阻止全量 base64 回退：{os.path.basename(image_path)}。原因：{reason}"
+            ) from first_err
+        mime = _WEB_IMAGE_MIME.get(ext, "image/jpeg")
+        with open(image_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        return f"data:{mime};base64,{b64}"
 
 
 def _sandbox_prior(prior_text: str) -> str:
@@ -235,6 +353,121 @@ def build_prompt(image_path: str, vendor_context: str = "") -> list:
     ]
 
 
+def _image_decode_error_result(error, priors, rag_ms, model, config, use_grey) -> dict:
+    """图片不可解码的确定性失败结果（N3）。
+
+    why：ImageDecodeError 是本地确定性错误——图片根本解不开，换任何引擎都没用。
+    若把它当成"引擎调用异常"处理，会（1）把问题伪装成模型/引擎故障，误导排查方向；
+    （2）白跑一次备用引擎（浪费一个 60s 超时，且可能计费）。这里返回与其它 error
+    返回同构的 dict（data=None / raw="" / error=可读文案 / 计时 / token / 成本），
+    让 Job 层直接按可读原因把单据置 error，并保持调用方"extract_receipt 只返回 dict、
+    不抛异常"的契约。
+
+    deterministic_error=True（N4）：显式标记"本地确定性失败，重试/换引擎都不可能成功"，
+    供 supervisor 直接结束重试阶梯（否则会白跑 MAX_RETRY-1 轮、打重复日志）。
+    仅此确定性分支携带该键；真正的引擎调用失败不带，既有重试语义不受影响。
+
+    error_category="decode"：与引擎失败的 upstream / auth / param 归类对齐（P9），
+    使返回结构与其它 error 返回保持同构，调用方无需为解码失败单开分支。
+    """
+    return {
+        "data": None,
+        "raw": "",
+        "error": str(error),
+        "error_category": "decode",
+        "deterministic_error": True,
+        "elapsed_ms": round(rag_ms, 1),
+        "extract_ms": round(rag_ms, 1),
+        "rag_ms": round(rag_ms, 1),
+        "engine": getattr(model, "kind", "unknown"),
+        "vendor_context": _merge_priors(priors),
+        # 未发生降级：这是本地确定性失败，与"引擎调用异常后回退"是两类事实
+        "fallback_triggered": False,
+        "fallback_reason": "",
+        "fallback_from": "",
+        "fallback_engine": "",
+        "parse_llm": {
+            "enabled": _parse_enabled(config, use_grey),
+            "model": "",
+            "elapsed_ms": 0,
+        },
+        "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "vlm_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "cost_hkd": 0.0,
+        # 本地确定性失败、根本没发起模型调用 -> 0 成本是「真实测量到的 0」，
+        # 不是估算（两条失败路径的 result 形状必须一致，见
+        # tests/test_image_data_url_decode_failure.py::test_decode_failure_result_shape_matches_engine_failure）。
+        "cost_estimated": 0,
+        "cost_estimated_reason": "",
+    }
+
+
+# 引擎失败归因文案（P9）：按 llm 归类给出正确的人话说明。
+# why：上游 5xx / DashScope 50507 是服务商侧临时故障，鉴权/参数错误是配置问题，
+# 三者不能用同一句「调用异常」糊过去——否则用户会把上游故障当成"模型不行"，
+# 排查方向也跟着错（这正是 50507 误导性归因要修的现象）。
+_ENGINE_FAILURE_LABEL = {
+    "upstream": "上游服务故障（服务商侧临时故障，非模型能力问题，建议稍后重试或切换引擎）",
+    "auth": "鉴权失败（API 密钥无效或已过期，请到引擎配置填入该服务商的真实密钥）",
+    "param": "请求参数错误（模型名 / base_url 等配置不符合该服务商要求，重试同一引擎无效）",
+}
+
+
+def _describe_engine_failure(engine_name, exc, category: str) -> str:
+    """生成降级原因文案：按错误归类给出归因，未归类才回落「调用异常」。"""
+    label = _ENGINE_FAILURE_LABEL.get(category, "调用异常")
+    return (f"识别引擎 [{engine_name}] {label} ({str(exc)[:150]})，"
+            f"已自动降级回退至 DashScope 官方通道重试")
+
+
+def _primary_rec_base_url(config, use_grey: bool) -> str:
+    """当前识别腿在用的 base_url（兜底是否需要触发，靠它判断是否同通道）。"""
+    if config is None:
+        return ""
+    if use_grey:
+        return (getattr(config, "grey_openai_rec_base_url", "") or "").strip()
+    return (getattr(config, "openai_rec_base_url", "") or "").strip()
+
+
+def _dashscope_fallback_available(config, use_grey: bool) -> bool:
+    """识别腿是否有可用的「DashScope 官方通道」兜底。
+
+    两种情况判定兜底无意义，直接不做：
+      1) 环境里没有 DASHSCOPE_API_KEY —— 没有可用的兜底凭据；
+      2) 首选本就是 DashScope 官方通道 —— 同通道重试的判定结果必然相同，只会白烧
+         一次调用与延迟（原先兜底是本机 CLI，天然是另一个通道，故不需要这个判据）。
+
+    历史注记：本兜底原先是「回退到本机 CodeBuddy CLI 引擎」（_build("codebuddy", …)）。
+    两个 CLI 引擎已于 2026-09-02 弃用并从代码中删除，兜底目标改为 DashScope 官方通道。
+    """
+    from app.llm import DASHSCOPE_COMPATIBLE_URL
+    key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+    if not key:
+        return False
+    return (_primary_rec_base_url(config, use_grey).rstrip("/")
+            != DASHSCOPE_COMPATIBLE_URL.rstrip("/"))
+
+
+def _build_dashscope_fallback(config, use_grey: bool):
+    """构建 DashScope 官方通道兜底模型（内置默认识别模型）。
+
+    调用前须先过 _dashscope_fallback_available；此处不再重复判断。
+    走 OpenAIChatModel 而非 QwenChatModel：模型名 qwen3.5-omni-flash 属全模态，
+    需要走 OpenAI 兼容通道（与 hydrate 里识别腿的装配口径一致）。
+    """
+    import os as _os
+
+    from app.llm import DASHSCOPE_COMPATIBLE_URL, OpenAIChatModel, _resolve_timeout
+    from app.models import DASHSCOPE_DEFAULT_REC_MODEL
+    return OpenAIChatModel(
+        base_url=DASHSCOPE_COMPATIBLE_URL,
+        api_key=(_os.environ.get("DASHSCOPE_API_KEY") or "").strip(),
+        model=DASHSCOPE_DEFAULT_REC_MODEL,
+        call_timeout=_resolve_timeout(config),
+    )
+
+
 def extract_receipt(image_path: str, vendor_hint: str = "",
                     model=None, config=None, retry_feedback: str = "",
                     use_grey: bool = False, vendor_prior: str = "",
@@ -280,7 +513,18 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         _exec.shutdown(wait=False)
 
     effective_hint = vendor_ctx or vendor_hint
-    prompt = build_prompt(image_path, effective_hint)
+    try:
+        prompt = build_prompt(image_path, effective_hint)
+    except ImageDecodeError as decode_err:
+        # N3：图片在组装 prompt（本地解码）阶段就失败 → 确定性错误，直接短路。
+        # 此处是 ImageDecodeError 的唯一真实发生点（_image_data_url 只被 build_prompt
+        # 调用），必须在这里拦住，否则异常会穿透 extract_receipt（既绕过统一的 error
+        # 结构，也会让上层按"未知异常"归因）。
+        logging.getLogger("extract_chain").error(
+            f"[IMAGE_DECODE] 图片不可解码，直接失败不降级：{decode_err}")
+        if effective_hint:
+            priors.append(("hint", effective_hint))
+        return _image_decode_error_result(decode_err, priors, rag_ms, model, config, use_grey)
     if effective_hint:
         priors.append(("hint", effective_hint))
 
@@ -309,7 +553,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     if enable_canary and canary:
         prompt = inject_canary_instructions(prompt, canary)
 
-    # 透传真实引擎 kind（opencode/codebuddy/openai/qwen），修正此前硬编码 "codebuddy" 的误导标签
+    # 透传真实引擎通道 kind（openai/qwen），修正此前硬编码 "codebuddy" 的误导标签
     engine = getattr(model, "kind", "unknown")
 
     def _extract_text(obj):
@@ -329,20 +573,43 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     fallback_reason = ""
     fallback_from = ""
     fallback_engine = ""
+    # 成本链路估算原因收集（见 _cost_from_tokens_ex）：非空表示本次成本不是按真实档位算出的，
+    # 必须随 result 透传给 supervisor，再落进 extra 供大盘/护栏区分「实测」与「估算」。
+    _cost_flags = []
+
+    def _cost_meta():
+        return {"cost_estimated": 1 if _cost_flags else 0,
+                "cost_estimated_reason": _cost_flags[0] if _cost_flags else ""}
     try:
         result = model.invoke(prompt)
         raw = _extract_text(result)
         vlm_elapsed = round((time.time() - start) * 1000, 1)
         # 提取 VLM token 消耗（DashScope qwen3-vl-flash 从 response_metadata['token_usage']；本地记 0）
         vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        vlm_cost = _cost_from_tokens(vlm_token)
+        vlm_cost, _c_est, _c_why = _cost_from_tokens_ex(vlm_token, _model_cost_tier_name(model))
+        if _c_est:
+            _cost_flags.append(_c_why)
     except Exception as e:
-        # 自动降级回退机制：当首选引擎（如 OpenAI 兼容接口 / 远程 API / opencode）调用异常时，自动回退到 CodeBuddy 本地引擎重试
-        if engine != "codebuddy":
+        # N3 兜底防线：图片不可解码属本地确定性错误，无论它从哪一层冒出来，都不得
+        # 被当成"引擎调用异常"去降级重试（会多打一次无效引擎调用 + 误导归因）。
+        # 当前真实发生点在上方 build_prompt 的 except 分支；这里保留同款短路，防止
+        # 后续把图片解码挪进 invoke 路径时又退化成"伪装成引擎异常"。
+        if isinstance(e, ImageDecodeError):
+            logging.getLogger("extract_chain").error(
+                f"[IMAGE_DECODE] 图片不可解码（invoke 阶段兜底），直接失败不降级：{e}")
+            return _image_decode_error_result(e, priors, rag_ms, model, config, use_grey)
+        # P9：读取引擎异常归类（upstream / auth / param，未归类为空串）。
+        # 上游 5xx / DashScope 50507 是服务商侧临时故障，不是模型能力问题；
+        # 后续降级原因与错误文案据此归因，而不是一律写「调用异常」。
+        err_category = _engine_error_category(e)
+        # 自动降级回退机制：首选识别引擎（OpenAI 兼容接口 / 远程 API）调用异常时，
+        # 自动回退到 DashScope 官方通道重试一次。
+        # 历史注记：原先回退目标是本机 CodeBuddy CLI 引擎（已于 2026-09-02 弃用并删除）。
+        if _dashscope_fallback_available(config, use_grey):
             fallback_triggered = True
             fallback_from = engine
-            fallback_engine = "codebuddy"
-            fallback_reason = f"识别引擎 [{fallback_from}] 调用异常 ({str(e)[:150]})，已自动降级回退至 CodeBuddy 本地引擎完成识别"
+            fallback_engine = "dashscope"
+            fallback_reason = _describe_engine_failure(fallback_from, e, err_category)
             logging.getLogger("extract_chain").warning(
                 f"[FALLBACK] {fallback_reason}..."
             )
@@ -360,33 +627,36 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                 except Exception:
                     pass
             try:
-                from app.llm import _build
-                fallback_model = _build("codebuddy", os.environ.get("CODEBUDDY_MODEL", "opencode/mimo-v2.5-free"), cfg=config, side="rec", use_grey=use_grey)
+                fallback_model = _build_dashscope_fallback(config, use_grey)
                 fb_start = time.time()
                 result = fallback_model.invoke(prompt)
                 raw = _extract_text(result)
                 vlm_elapsed = round((time.time() - fb_start) * 1000, 1)
                 vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-                vlm_cost = _cost_from_tokens(vlm_token)
-                engine = "codebuddy"
+                vlm_cost, _c_est, _c_why = _cost_from_tokens_ex(vlm_token, _model_cost_tier_name(fallback_model))
+                if _c_est:
+                    _cost_flags.append(_c_why)
+                engine = fallback_engine
                 model = fallback_model
             except Exception as fb_err:
-                logging.getLogger("extract_chain").error(f"[FALLBACK_FAIL] 回退至 CodeBuddy 仍然失败: {fb_err}")
+                logging.getLogger("extract_chain").error(
+                    f"[FALLBACK_FAIL] 回退至 DashScope 官方通道仍然失败: {fb_err}")
                 vlm_elapsed = round((time.time() - start) * 1000, 1)
                 vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
                 vlm_cost = 0.0
                 raw = ""
-                err_msg = f"VLM 调用失败 (首选引擎 [{engine}]: {e}; 降级 CodeBuddy: {fb_err})"
+                err_msg = f"VLM 调用失败 (首选引擎 [{engine}]: {e}; 降级 DashScope: {fb_err})"
                 total_token = dict(vlm_token)
                 total_cost = float(vlm_cost or 0)
                 return {
                     "data": None,
                     "raw": raw,
                     "error": err_msg,
+                    "error_category": err_category,
                     "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
                     "extract_ms": round(vlm_elapsed + rag_ms, 1),
                     "rag_ms": round(rag_ms, 1),
-                    "engine": "codebuddy (fallback failed)",
+                    "engine": f"{fallback_engine} (fallback failed)",
                     "vendor_context": _merge_priors(priors),
                     "fallback_triggered": True,
                     "fallback_reason": fallback_reason,
@@ -401,6 +671,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                     "vlm_token_usage": vlm_token,
                     "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                     "cost_hkd": round(total_cost, 6),
+        **_cost_meta(),
                 }
         else:
             vlm_elapsed = round((time.time() - start) * 1000, 1)
@@ -414,6 +685,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                 "data": None,
                 "raw": raw,
                 "error": err_msg,
+                "error_category": err_category,
                 "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
                 "extract_ms": round(vlm_elapsed + rag_ms, 1),
                 "rag_ms": round(rag_ms, 1),
@@ -432,6 +704,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                 "vlm_token_usage": vlm_token,
                 "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
                 "cost_hkd": round(total_cost, 6),
+        **_cost_meta(),
             }
 
     # 阶段 4：解析 LLM 规范化解析（可选，默认关闭；开启时纯文本任务）
@@ -452,7 +725,9 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             raw = _extract_text(p_result)
             parse_elapsed = round((time.time() - p_start) * 1000, 1)
             parse_token = _extract_token_usage(p_result) if not isinstance(p_result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-            parse_cost = _cost_from_tokens(parse_token)
+            parse_cost, _c_est, _c_why = _cost_from_tokens_ex(parse_token, parse_model_name)
+            if _c_est:
+                _cost_flags.append(_c_why)
         except Exception:
             parse_elapsed = 0
             parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -490,6 +765,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         "vlm_token_usage": vlm_token,
         "parse_token_usage": parse_token,
         "cost_hkd": total_cost,
+        **_cost_meta(),
     }
 
 
@@ -533,19 +809,38 @@ def _build_correction_prompt(raw_vlm: str, feedback: str) -> list:
     ]
 
 
-def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey: bool = False) -> Optional[str]:
+def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey: bool = False,
+                                  enable_canary: bool = True) -> Optional[str]:
     """解析级修正（Layer 2.2）：把门禁反馈喂给一次纯文本 parse LLM，返回修正后的 JSON 文本。
 
     不重读原图（零 VLM 推理），显著低于整图重识别成本。未开启解析或异常时返回 None，
     由调用方回退到整图重试。
+
+    Canary（T8，堵 P12）：本调用点是全仓 6 个 provider 调用点中此前既无注入也无校验的
+    之一——被污染的 provider 可返回任意 JSON 直接骗过门禁进入审核。现与识别腿一致：
+    每次调用动态生成 token 双重锚定注入，输出根节点缺失/不匹配即 fail-closed（返回
+    None），由调用方按"修正未通过"回退整图重试，不产生任何被污染的采纳结果。
     """
     if not _parse_enabled(config, use_grey) or not raw:
         return None
+    canary = generate_canary_token() if enable_canary else ""
     try:
         parse_model = build_parse_model(cfg=config, use_grey=use_grey)
-        result = parse_model.invoke(_build_correction_prompt(raw, feedback))
+        msgs = _build_correction_prompt(raw, feedback)
+        if canary:
+            msgs = inject_canary_instructions(msgs, canary)
+        result = parse_model.invoke(msgs)
         corrected = result.content if not isinstance(result, str) else result
-        return corrected.strip() if corrected else None
+        corrected = corrected.strip() if corrected else None
+        if not corrected:
+            return None
+        if canary:
+            ok, canary_err = verify_canary_in_text(corrected, canary)
+            if not ok:
+                logging.getLogger("extract_chain").warning(
+                    f"[SECURITY_ALERT] 修正腿 Canary Token 握手失败: {canary_err}")
+                return None
+        return corrected
     except Exception as e:
         logging.getLogger("extract_chain").warning(f"解析级修正失败: {e}")
         return None
@@ -594,7 +889,8 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
             payload["total"] = payload.pop("total_amount")
         if "is_paid" in payload and "payment_marked" not in payload:
             payload["payment_marked"] = bool(payload.pop("is_paid"))
-        for _k in ["receipt_no", "payment_method", "contains_huama", "supplier_name", "total_amount", "is_paid"]:
+        # contains_huama 已进契约（Gap 7），不再从此处丢弃；其余非契约键继续 pop。
+        for _k in ["receipt_no", "payment_method", "supplier_name", "total_amount", "is_paid"]:
             payload.pop(_k, None)
         if "doc_form" not in payload or not payload.get("doc_form"):
             payload["doc_form"] = "printed_delivery_note"
@@ -608,13 +904,29 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
                     _code = _it.pop("item_code")
                     if _code and not _it.get("raw_name"):
                         _it["raw_name"] = str(_code)
-                for _ik in ["contains_huama", "confidence", "item_code", "quantity"]:
+                for _ik in ["item_code", "quantity"]:
                     _it.pop(_ik, None)
-                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty", "evidence"}
+                # P11：item 级置信度必须保留（原实现把它整体 pop 丢弃，导致落库永远是默认 0.5，
+                # 「哪一行不准」无法按行定位）。但 LLM 可能输出 "high"/"低" 这类非数值，
+                # 这里先归一为 [0,1] 浮点，非法/越界一律丢弃——否则 huama_evaluator 的
+                # float() 会抛异常，被外层 except 吞掉后整段后处理（Gap1-9）静默失效。
+                if "confidence" in _it:
+                    try:
+                        _conf = float(_it.get("confidence"))
+                    except (TypeError, ValueError):
+                        _conf = None
+                    if _conf is None or not (0.0 <= _conf <= 1.0):
+                        _it.pop("confidence", None)
+                    else:
+                        _it["confidence"] = _conf
+                # Gap 7：contains_huama / unit_conversion_warning 由 huama_evaluator 写入，
+                # 必须在白名单与契约内，否则 extra="forbid" 会把整单打回。
+                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty", "evidence", "confidence", "contains_huama", "unit_conversion_warning"}
                 for _k in list(_it.keys()):
                     if _k not in _allowed_item:
                         _it.pop(_k, None)
-        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence"}
+        # Gap 7：math_warnings 同理由 huama_evaluator 写入（整单警告），必须放行。
+        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence", "contains_huama", "math_warnings"}
         for _k in list(payload.keys()):
             if _k not in _allowed_top:
                 payload.pop(_k, None)

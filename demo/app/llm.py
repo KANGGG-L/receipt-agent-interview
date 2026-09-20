@@ -1,23 +1,26 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
-"""LangChain 模型封装：CodeBuddy / opencode CLI 包装为 BaseChatModel + OpenAI 兼容。
+"""LangChain 模型封装：OpenAI 兼容 / DashScope 原生 SDK 两条通道。
 
 设计：
 - 面试叙事「模型可插拔」：Supervisor 只依赖 LangChain ChatModel 接口，
-  识别引擎换 CodeBuddy / opencode / 任何 OpenAI 兼容模型都不改管线代码。
-- CodeBuddyChatModel：包装本机 `codebuddy -p` 子进程（免费多模态，读图）。
-- OpencodeChatModel：包装本机 `opencode run` 子进程（支持任意 opencode 模型，
-  视觉模型如 MiMo-V2.5 Free 可读图）。
-- OpenAIChatModel：自定义 OpenAI 兼容接口（base_url + api_key + model），
-  支持多模态图片（data URL）。由 admin 在引擎配置界面填写。
+  识别引擎换任何 OpenAI 兼容模型都不改管线代码。
+- OpenAIChatModel：OpenAI 兼容接口（base_url + api_key + model），支持多模态
+  图片（data URL）。由 admin 在引擎配置界面填写。
+- QwenChatModel：DashScope 原生 SDK 通道（仅当模型名以 qwen 开头且引擎类型被
+  显式声明为非 openai 时才会走，见 _resolve_engine 的 P6 告警）。
+
+历史注记：本模块原先还包装了两个本机 CLI 引擎（CodeBuddyChatModel 包装
+`codebuddy -p`、OpencodeChatModel 包装 `opencode run`），以及配套的常驻进程
+transport（app/engine_runtime.py）。两个 CLI 引擎已于 2026-09-02 弃用，
+相关类、二进制路径常量、transport 与常驻进程管理器均已删除。
 """
 
 import base64
 import json
 import logging
 import os
-import subprocess
-import time
+import re
 
 import requests
 from dotenv import load_dotenv
@@ -31,11 +34,16 @@ from langchain_core.messages import (
 )
 from langchain_core.outputs import ChatGeneration, ChatResult
 
+# 超时硬上限的唯一事实源在 app.models：llm 运行期钳制、db.hydrate 存量归一、
+# api_admin 保存归一三处共用同一常量，避免同一个 60 在多文件各写一份而漂移
+# （本项目高发「修了 A 漏了 B」）。识别腿内置默认模型同理，从 models 引，勿在本文件另立副本。
+from app.models import (  # noqa: E402
+    DASHSCOPE_DEFAULT_REC_MODEL as _REC_DEFAULT_MODEL,
+    MAX_CALL_TIMEOUT_SECONDS as CALL_TIMEOUT_SECONDS,
+)
+
 load_dotenv()
 
-CODEBUDDY_DEFAULT_BIN = "/Users/ethan/.nvm/versions/node/v24.16.0/bin/codebuddy"
-OPENCODE_DEFAULT_BIN = "/Users/ethan/.opencode/bin/opencode"
-CALL_TIMEOUT_SECONDS = 60  # 高压后厨禁止长期空转：本地兜底硬上限60s（原240已废弃，不符合两分钟/高压标准）
 DEFAULT_CALL_TIMEOUT = 30   # 高压标准缺省30s快速失败（qwen3-vl-flash 9s足够，本地超30s即转手工）
 DASHSCOPE_COMPATIBLE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
@@ -64,20 +72,23 @@ def _is_valid_dashscope_config(base_url: str, api_key: str) -> bool:
 def _resolve_timeout(cfg=None):
     """解析单引擎调用超时（秒）。
 
-    高压禁止长期空转：本地硬上限60s，超过即杀进程转手工；qwen3-vl-flash 9s足够，缺省30s快速失败。
+    高压禁止长期空转：本地硬上限 CALL_TIMEOUT_SECONDS(60s)，超过即杀进程转手工；
+    qwen3-vl-flash 9s足够，缺省30s快速失败。
     优先级：EngineConfig.call_timeout_seconds（钳制≤60） > env ENGINE_CALL_TIMEOUT（钳制≤60） > 30s 缺省。
     240s已废弃，不符合两分钟/高压后厨标准。
+    口径说明（与 models.clamp_call_timeout 一致）：非法值 None/0/负值 视为「未设置」，
+    继续往下一优先级回落，而不是改写成 60。
     """
     if cfg is not None:
         v = getattr(cfg, "call_timeout_seconds", None)
         if isinstance(v, int) and v > 0:
-            return min(int(v), 60)
+            return min(int(v), CALL_TIMEOUT_SECONDS)
     env = os.environ.get("ENGINE_CALL_TIMEOUT")
     if env:
         try:
             iv = int(env)
             if iv > 0:
-                return min(iv, 60)
+                return min(iv, CALL_TIMEOUT_SECONDS)
         except (ValueError, TypeError):
             pass
     return DEFAULT_CALL_TIMEOUT
@@ -87,7 +98,6 @@ def get_timeout_advice(cfg=None) -> str:
     """高压禁止长期空转显式提示：超过60s即不达标，需转手工或热切qwen3-vl-flash 9s。"""
     if cfg is None:
         return ""
-    ct = _resolve_timeout(cfg)
     engine = str(getattr(cfg, "recognition_engine", "") or "").lower()
     if hasattr(cfg.recognition_engine, "value"):
         engine = str(cfg.recognition_engine.value).lower()
@@ -95,307 +105,119 @@ def get_timeout_advice(cfg=None) -> str:
         getattr(cfg, "openai_rec_base_url", ""),
         getattr(cfg, "openai_rec_api_key", ""),
     )
-    if engine in ("opencode", "codebuddy") and not has_valid_qwen:
-        return ("高压告警：本地引擎 opencode/codebuddy 实测60s内超时（IMG_5809需165s），禁止长期空转；"
-                "已钳制硬上限60s，超30s即显式转手工（保留原图，终止轮询，零等待），"
-                "需热切至 qwen3-vl-flash 9s P50（PUT /api/admin/engine-config 有效sk-）方可达 step12 P95≤12s")
+    # 用「配置里的原始值」判断，而不是钳制后的 ct —— ct 恒 ≤ 上限，拿它比较会永远是死分支
+    # （此前 ct > 60 不可达，管理台填 90 时不会收到任何提示，正是「显示 90 实际 60」的误导来源）。
+    raw_ct = getattr(cfg, "call_timeout_seconds", None)
+    if isinstance(raw_ct, int) and not isinstance(raw_ct, bool) and raw_ct > CALL_TIMEOUT_SECONDS:
+        return (f"call_timeout_seconds={raw_ct} 超过硬上限 {CALL_TIMEOUT_SECONDS}s，"
+                f"已归一为 {CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待（高压禁止长期空转）")
     if engine == "openai" and not has_valid_qwen:
         return ("无有效DashScope凭证：openai引擎将超时60s≠9s，需配置dashscope+sk-以达9s")
-    if ct > 60:
-        return "call_timeout >60已钳制至60，高压禁止240s空转"
     return ""
 
 
-def _get_codebuddy_bin():
-    return os.environ.get("CODEBUDDY_BIN", CODEBUDDY_DEFAULT_BIN)
-
-
-def _get_opencode_bin():
-    return os.environ.get("OPENCODE_BIN", OPENCODE_DEFAULT_BIN)
-
-
 # -------------------------------------------------------------
-# 长驻进程 transport（Layer 3, §3.2）：仅当模型 transport=persistent 时启用，
-# 调用 engine_runtime.PersistentEngineManager；任何不可用都回退 subprocess。
-# 默认 transport=subprocess，本函数不会被触发，保证零影响、向后兼容。
+# 引擎调用错误归类（P9）
+# why：上游服务故障（5xx / DashScope 服务端码 50507）、鉴权失败（401/403）、
+# 请求参数错误（400）的处置方式完全不同——前者是服务商侧临时故障，稍后重试或
+# 切换引擎即可；后者是密钥/配置问题，重试同一引擎毫无意义。此前统一抛 RuntimeError、
+# 由调用方截字符串猜，于是上游 50507 被当成「模型能力不行」，用户与排查方向双双被误导。
+# 归类挂在异常对象的 category 属性上（机器可读），调用方据此决定降级/重试策略。
 # -------------------------------------------------------------
-def _invoke_persistent(model, messages):
-    """transport=persistent 时走常驻进程；异常一律回退 subprocess 子进程模式。
 
-    model 须提供：_runtime_kind(str)、_bin()、model、call_timeout、
-    _messages_to_prompt(messages)、_run_cli(prompt)。
+# DashScope 服务端故障码白名单：50507 为 2026-09 实测 SF 转发链路返回的
+# 500 code=50507 Request failed: Unknown error，属服务商侧故障而非调用方配置错误。
+_UPSTREAM_ERROR_CODES = frozenset({"50507"})
+
+
+class EngineCallError(RuntimeError):
+    """OpenAI 兼容引擎调用失败的可归类异常基类（category 为机器可读归类）。"""
+
+    category = "engine_error"
+
+    def __init__(self, message, *, status_code=None, code=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+
+
+class EngineAuthError(EngineCallError):
+    """鉴权失败（HTTP 401/403）：密钥无效或已过期，重试同一引擎无意义，换引擎可绕过。"""
+
+    category = "auth"
+
+
+class EngineParamError(EngineCallError):
+    """请求参数错误（HTTP 400）：模型名 / base_url / 请求体不符合服务商要求，属配置问题。"""
+
+    category = "param"
+
+
+class UpstreamServiceError(EngineCallError):
+    """上游服务故障（HTTP 5xx 或 DashScope code=50507）：服务商侧临时故障，非模型能力问题。"""
+
+    category = "upstream"
+
+
+def _extract_error_code(text) -> str:
+    """从错误响应体提取服务商错误码（取不到返回空串）。
+
+    兼容两种形态：JSON 体的 error.code / code（DashScope 规范），
+    以及纯文本里的 code=50507 / "code": "50507"（SDK 包装成字符串后的形态）。
     """
-    from app.engine_runtime import get_persistent_manager, PersistentEngineUnavailable
-
-    logger = logging.getLogger("llm")
-    mgr = get_persistent_manager()
-    # 仅在未启用时才 configure，避免每次调用都重建常驻进程
-    if not mgr.enabled:
-        mgr.configure(
-            enabled=True,
-            kind=getattr(model, "_runtime_kind", "opencode"),
-            bin_path=model._bin(),
-            request_timeout=model.call_timeout,
-        )
+    if not text:
+        return ""
+    raw = str(text)[:2000]
     try:
-        openai_msgs = [_lc_to_openai(m) for m in messages]
-        content = mgr.complete(openai_msgs, model=model.model, timeout=model.call_timeout)
-    except PersistentEngineUnavailable as exc:
-        logger.warning("[llm] 长驻进程不可用，回退 subprocess: %s", exc)
-        return model._run_cli(model._messages_to_prompt(messages))
-    # 风险与回退（§3.3）：常驻进程返回空/空白内容视为不可用，回退子进程模式，
-    # 避免静默降级——保证可用性绝不劣于现状的 subprocess 路径。
-    if not content or not content.strip():
-        logger.warning("[llm] 长驻进程返回空内容，回退 subprocess")
-        return model._run_cli(model._messages_to_prompt(messages))
-    return content
+        obj = json.loads(raw)
+    except Exception:
+        obj = None
+    if isinstance(obj, dict):
+        err = obj.get("error") if isinstance(obj.get("error"), dict) else {}
+        for cand in (err.get("code"), obj.get("code")):
+            if cand not in (None, ""):
+                return str(cand)
+    m = re.search(r"code['\"]?\s*[:=]\s*['\"]?([0-9]{4,6})", raw, re.IGNORECASE)
+    return m.group(1) if m else ""
 
 
-class CodeBuddyChatModel(BaseChatModel):
-    """把本机 CodeBuddy CLI 包装为 LangChain ChatModel。
+def _classify_http_error(status_code, text) -> EngineCallError:
+    """按 HTTP 状态码 + 错误体归类 OpenAI 兼容接口失败，返回对应异常实例（不抛出）。
 
-    支持多模态：HumanMessage 可携带 image_url（data URL / 本地绝对路径）。
-    图片传本地路径时由 CLI 读图（绕过 LangChain 的 base64 解码限制）。
+    归类优先级：鉴权（401/403）> 参数（400）> 上游（5xx 或 code=50507）> 其它。
+    why 返回实例而非直接 raise：便于单测直接断言归类与文案，也便于调用方复用。
     """
-
-    model: str = "minimax-m3-pay"
-    temperature: float = 0.01
-    session_id: str = None  # 复用长会话，加速 + 上下文累计
-    call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build 注入
-    transport: str = "subprocess"  # subprocess(默认) | persistent(常驻进程)
-
-    @property
-    def _llm_type(self):
-        return "codebuddy_cli"
-
-    @property
-    def _runtime_kind(self):
-        return "codebuddy"
-
-    @property
-    def _identifying_params(self):
-        return {"model": self.model}
-
-    def _generate(
-        self,
-        messages: list[BaseMessage],
-        stop=None,
-        run_manager=None,
-        **kwargs,
-    ) -> ChatResult:
-        # 本地 CLI 无 token 回传，统一记 0 并存入 response_metadata['token_usage']（最严格记忆落盘）
-        _zero_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        if self.transport == "persistent":
-            try:
-                content = _invoke_persistent(self, messages)
-            except Exception as exc:
-                # 任何意外异常都回退 subprocess，保证可用性不劣化
-                logging.getLogger("llm").warning(
-                    "[llm] persistent 分支异常，回退 subprocess: %s", exc
-                )
-                content = self._run_cli(self._messages_to_prompt(messages))
-            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content, response_metadata={"token_usage": _zero_usage, "model": self.model}))])
-        prompt = self._messages_to_prompt(messages)
-        output = self._run_cli(prompt)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=output, response_metadata={"token_usage": _zero_usage, "model": self.model}))])
-
-    def _run_cli(self, prompt: str) -> str:
-        cmd = [self._bin(), "--print"]
-        if self.model:
-            cmd += ["--model", self.model]
-        if self.session_id:
-            cmd += ["--session-id", self.session_id]
-        perm = os.environ.get("CODEBUDDY_PERMISSION_MODE", "").strip()
-        if perm:
-            cmd += ["--permission-mode", perm]
-        cmd.append(prompt)
-
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self.call_timeout
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"CodeBuddy 超时（>{self.call_timeout}s）")
-
-        if result.returncode != 0:
-            raise RuntimeError(f"CodeBuddy 非零退出 rc={result.returncode}: {result.stderr[:500]}")
-        output = (result.stdout or "").strip()
-        if not output:
-            raise RuntimeError("CodeBuddy 空输出")
-        return output
-
-    def _bin(self):
-        return _get_codebuddy_bin()
-
-    def _messages_to_prompt(self, messages):
-        """把 LangChain messages 序列化为 codebuddy CLI 可读的 prompt 文本。"""
-        parts = []
-        for msg in messages:
-            if isinstance(msg, SystemMessage):
-                parts.append(f"<system>\n{msg.content}\n</system>")
-            elif isinstance(msg, HumanMessage):
-                parts.append(self._human_message_text(msg))
-            elif isinstance(msg, AIMessage):
-                parts.append(f"<assistant>\n{msg.content}\n</assistant>")
-            else:
-                parts.append(str(msg.content))
-        return "\n\n".join(parts)
-
-    def _human_message_text(self, msg):
-        content = msg.content
-        if isinstance(content, str):
-            return content
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                t = block.get("type")
-                if t == "text":
-                    parts.append(block.get("text", ""))
-                elif t == "image_url":
-                    url = block.get("image_url", {})
-                    img_url = url.get("url", "")
-                    parts.append(self._image_ref(img_url))
-        return "\n".join(parts)
-
-    def _image_ref(self, url):
-        """图片引用：data URL 解码写临时文件；本地路径直接给 CLI（CLI 读图）。
-
-        对齐现有项目：用自然语言句子引用图片路径（CodeBuddy 自己检测并读图），
-        不编造 [IMAGE:] 标记。
-        """
-        if url.startswith("data:"):
-            header, b64 = url.split(",", 1)
-            ext = "jpg"
-            if "png" in header:
-                ext = "png"
-            elif "webp" in header:
-                ext = "webp"
-            tmp = f"/tmp/cb_img_{int(time.time()*1000)}.{ext}"
-            with open(tmp, "wb") as f:
-                f.write(base64.b64decode(b64))
-            return f"请分析位于以下路径的收据图片：{tmp}"
-        # 本地路径：CodeBuddy CLI 自己读图
-        return f"请分析位于以下路径的收据图片：{url}"
+    code = _extract_error_code(text)
+    snippet = str(text or "")[:300]
+    if status_code in (401, 403):
+        return EngineAuthError(
+            f"OpenAI 兼容接口鉴权失败（HTTP {status_code}）：API 密钥无效或已过期，"
+            f"请在引擎配置中填入该服务商的真实密钥。原始返回: {snippet}",
+            status_code=status_code, code=code)
+    if status_code == 400:
+        return EngineParamError(
+            f"OpenAI 兼容接口请求参数错误（HTTP 400）：模型名 / base_url / 请求体不符合该服务商要求，"
+            f"重试同一引擎无效，请检查引擎配置。原始返回: {snippet}",
+            status_code=status_code, code=code)
+    if status_code >= 500 or code in _UPSTREAM_ERROR_CODES:
+        code_txt = f"（{code}）" if code else ""
+        return UpstreamServiceError(
+            f"上游服务故障{code_txt}（HTTP {status_code}）：这是服务商侧临时故障，"
+            f"并非密钥或参数错误、也不是模型能力问题，建议稍后重试或切换引擎。原始返回: {snippet}",
+            status_code=status_code, code=code)
+    return EngineCallError(
+        f"OpenAI 兼容接口失败 {status_code}: {snippet}",
+        status_code=status_code, code=code)
 
 
-class OpencodeChatModel(BaseChatModel):
-    """把本机 opencode CLI 包装为 LangChain ChatModel。
+def _engine_error_category(exc) -> str:
+    """读取引擎异常归类（str），未归类返回空串。
 
-    用法：`opencode run -m <provider/model> "prompt" --auto`。
-    视觉模型（如 opencode/mimo-v2.5-free）可读图：prompt 里引用图片路径，
-    agent 用 Read 工具实际打开文件。
+    why 用属性取值而非 isinstance：extract_chain 与 llm 存在循环依赖，
+    调用方惰性导入本函数；对非本模块异常（如 requests 抛出的网络异常）安全返回空串。
     """
-
-    model: str = "opencode/mimo-v2.5-free"
-    temperature: float = 0.01
-    call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build 注入
-    transport: str = "subprocess"  # subprocess(默认) | persistent(常驻进程)
-
-    @property
-    def _llm_type(self):
-        return "opencode_cli"
-
-    @property
-    def _runtime_kind(self):
-        return "opencode"
-
-    @property
-    def _identifying_params(self):
-        return {"model": self.model}
-
-    def _generate(
-        self,
-        messages: list[BaseMessage],
-        stop=None,
-        run_manager=None,
-        **kwargs,
-    ) -> ChatResult:
-        # 本地 CLI 无 token 回传，统一记 0 并存入 response_metadata['token_usage']
-        _zero_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-        if self.transport == "persistent":
-            try:
-                content = _invoke_persistent(self, messages)
-            except Exception as exc:
-                # 任何意外异常都回退 subprocess，保证可用性不劣化
-                logging.getLogger("llm").warning(
-                    "[llm] persistent 分支异常，回退 subprocess: %s", exc
-                )
-                content = self._run_cli(self._messages_to_prompt(messages))
-            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content, response_metadata={"token_usage": _zero_usage, "model": self.model}))])
-        prompt = self._messages_to_prompt(messages)
-        output = self._run_cli(prompt)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=output, response_metadata={"token_usage": _zero_usage, "model": self.model}))])
-
-    def _run_cli(self, prompt: str) -> str:
-        cmd = [self._bin(), "run", "-m", self.model, "--auto"]
-        cmd.append(prompt)
-        try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=self.call_timeout
-            )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"opencode 超时（>{self.call_timeout}s）")
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"opencode 非零退出 rc={result.returncode}: {(result.stderr or result.stdout or '')[-500:]}"
-            )
-        output = (result.stdout or "").strip()
-        # 剥掉终端 ANSI 颜色码（opencode 输出带 \x1b[0m 等）
-        output = _strip_ansi(output)
-        if not output:
-            raise RuntimeError("opencode 空输出")
-        return output
-
-    def _bin(self):
-        return _get_opencode_bin()
-
-    def _messages_to_prompt(self, messages):
-        parts = []
-        for msg in messages:
-            if isinstance(msg, SystemMessage):
-                parts.append(f"<system>\n{msg.content}\n</system>")
-            elif isinstance(msg, HumanMessage):
-                parts.append(self._human_message_text(msg))
-            elif isinstance(msg, AIMessage):
-                parts.append(f"<assistant>\n{msg.content}\n</assistant>")
-            else:
-                parts.append(str(msg.content))
-        return "\n\n".join(parts)
-
-    def _human_message_text(self, msg):
-        content = msg.content
-        if isinstance(content, str):
-            return content
-        parts = []
-        for block in content:
-            if isinstance(block, str):
-                parts.append(block)
-            elif isinstance(block, dict):
-                t = block.get("type")
-                if t == "text":
-                    parts.append(block.get("text", ""))
-                elif t == "image_url":
-                    url = block.get("image_url", {})
-                    parts.append(self._image_ref(url.get("url", "")))
-        return "\n".join(parts)
-
-    def _image_ref(self, url):
-        """图片引用：data URL 解码写临时文件；本地路径给 opencode agent（Read 工具读图）。"""
-        if url.startswith("data:"):
-            header, b64 = url.split(",", 1)
-            ext = "jpg"
-            if "png" in header:
-                ext = "png"
-            elif "webp" in header:
-                ext = "webp"
-            tmp = f"/tmp/op_img_{int(time.time()*1000)}.{ext}"
-            with open(tmp, "wb") as f:
-                f.write(base64.b64decode(b64))
-            return f"请用 Read 工具查看这张收据图片的内容：{tmp}"
-        return f"请用 Read 工具查看这张收据图片的内容：{url}"
+    cat = getattr(exc, "category", "")
+    return str(cat) if isinstance(cat, str) else ""
 
 
 class OpenAIChatModel(BaseChatModel):
@@ -464,13 +286,11 @@ class OpenAIChatModel(BaseChatModel):
             timeout=self.call_timeout,
             allow_redirects=False,
         )
-        if resp.status_code in (401, 403):
-            raise RuntimeError(
-                f"OpenAI 兼容接口鉴权失败（HTTP {resp.status_code}）：API 密钥无效或已过期，"
-                f"请在引擎配置中填入该服务商的真实密钥。原始返回: {resp.text[:200]}"
-            )
         if resp.status_code != 200:
-            raise RuntimeError(f"OpenAI 兼容接口失败 {resp.status_code}: {resp.text[:300]}")
+            # P9：按响应归类抛出。5xx / DashScope 50507 归为「上游服务故障」并与
+            # 鉴权失败、参数错误区分，调用方凭 exc.category 决定降级/重试策略，
+            # 不再把上游故障当普通失败截字符串归因。
+            raise _classify_http_error(resp.status_code, resp.text)
         data = resp.json()
         content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
         # 从 OpenAI 兼容响应提取 token 消耗（DashScope qwen3-vl-flash 返回 usage.prompt_tokens/completion_tokens/total_tokens）
@@ -479,16 +299,11 @@ class OpenAIChatModel(BaseChatModel):
         return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
 
 
-def _strip_ansi(text):
-    import re
-    return re.sub(r"\x1b\[[0-9;]*m", "", text)
-
-
 def _normalize_token_usage(usage) -> dict:
     """归一化 token 消耗：兼容 prompt_tokens/completion_tokens 与 input/output 命名。
 
     输入可为 OpenAI/DashScope 的 usage dict，输出统一 {prompt_tokens, completion_tokens, total_tokens}。
-    非法或缺失时返回 0 值，本地 CLI 引擎无 token 时记 0。
+    非法或缺失时返回 0 值。
     """
     if not isinstance(usage, dict):
         return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -499,6 +314,11 @@ def _normalize_token_usage(usage) -> dict:
             try:
                 return int(float(v or 0))
             except Exception:
+                # 给了非空值却解析不出来：静默变 0 会让成本按 0 记账（护栏与大盘据此失真），
+                # 必须可观测。None / "" / 0 属于「本来就没有」，不告警。
+                if v not in (None, "", 0):
+                    logging.getLogger("llm").warning(
+                        "token 用量字段无法解析为整数，按 0 记（成本将不可用）: %r", v)
                 return 0
     prompt = usage.get("prompt_tokens", usage.get("input_tokens", usage.get("prompt", 0)))
     completion = usage.get("completion_tokens", usage.get("output_tokens", usage.get("completion", 0)))
@@ -511,23 +331,57 @@ def _normalize_token_usage(usage) -> dict:
     return {"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total}
 
 
-def _calc_cost_hkd(token_usage: dict) -> float:
-    """按 docs/04-AI技术选型与评测/02-L0-L9选型决策档案/L4-多模态VLM直识(定稿冠军).md:21 与成本核算表计费。
+# 识别腿 / 审核腿 token 单价档位（单位：人民币元/百万 token，来源为各 provider 官方刊例价，
+# 2026-09-19 核实）。键为模型名匹配子串（小写）：omni 为当前默认识别引擎，vl-flash 为 2026-09
+# 切换前的默认识别引擎，glm-4.5v 为当前默认审核模型。
+# why 必须按模型分档：识别腿与审核腿跑的是不同 provider 的不同模型，
+# 用一套单价通吃会静默错档——拿 vl-flash 旧价算 omni 低估约 10-15 倍
+# （历史 ¥0.0022/张 的由来），拿 omni 价算 GLM 审核腿则高估约 2.2 倍。
+_REC_TOKEN_PRICE_TIERS = (
+    ("omni", 2.2, 13.3),       # 阿里云百炼 qwen3.5-omni-flash：输入 ¥2.2/1M、输出 ¥13.3/1M
+    ("vl-flash", 0.15, 1.50),  # 阿里云百炼 qwen3-vl-flash：输入 ¥0.15/1M、输出 ¥1.50/1M（历史成本表口径）
+    ("glm-4.5v", 1.0, 6.0),    # SiliconFlow zai-org/GLM-4.5V（默认审核腿）：输入 ¥1.0/1M、输出 ¥6.0/1M
+)
+# 未传 model 或模型未知（如灰测 SF 模型）时回落到当前默认识别引擎档位：
+# 宁可高估不可低估，且绝不静默套用已废止的 vl-flash 旧价去算 omni。
+_REC_TOKEN_PRICE_DEFAULT = (2.2, 13.3)
 
-    qwen3-vl-flash ≤32k: 输入 ¥0.15/1M，输出 ¥1.50/1M；单张约 ¥0.0022。成本按 token 单价计算，本地 0 token 时 0。
-    返回 HKD 数值（与 RMB 近似 1:1 标注，按 HKD 计）。
+
+def _resolve_token_price(model: str = ""):
+    """按模型名选择 token 单价档位，返回 (输入单价, 输出单价)，单位人民币元/百万 token。
+
+    调用方必须传「当时真正生效的模型名」：识别腿传识别模型、审核腿传审核模型。
+    不传（或传未收录的模型）会回落到当前默认识别引擎（omni-flash）档位——
+    这是显式的默认档，不是静默错档；但用 vl-flash / GLM 时仍应传名，否则高估。
+    """
+    name = str(model or "").lower()
+    for key, in_price, out_price in _REC_TOKEN_PRICE_TIERS:
+        if key in name:
+            return in_price, out_price
+    return _REC_TOKEN_PRICE_DEFAULT
+
+
+def _calc_cost_hkd(token_usage: dict, model: str = "") -> float:
+    """按 token 消耗估算成本，返回 HKD 数值（沿用项目约定 RMB≈HKD 1:1 记账）。
+
+    单价按模型区分（见 _REC_TOKEN_PRICE_TIERS，来源各 provider 官方刊例价）：
+    - qwen3.5-omni-flash（2026-09 起的默认识别引擎）：输入 ¥2.2/1M、输出 ¥13.3/1M，
+      单张约 ¥0.02-0.04；旧口径 ¥0.0022/张 是 qwen3-vl-flash 价，对 omni 低估约 10-15 倍。
+    - qwen3-vl-flash（切换前默认）：输入 ¥0.15/1M、输出 ¥1.50/1M，单张约 ¥0.0022。
+    - zai-org/GLM-4.5V（默认审核腿，SiliconFlow）：输入 ¥1.0/1M、输出 ¥6.0/1M。
+    - 未传 model 或模型未知：按 omni-flash 档位计（显式默认档，宁可高估不可低估）。
+    model 必须由调用方传「当时生效的模型名」，否则 vl-flash / GLM 会被按 omni 档高估。
     """
     if not token_usage:
         return 0.0
     tu = _normalize_token_usage(token_usage)
     prompt = tu.get("prompt_tokens", 0) or 0
     completion = tu.get("completion_tokens", 0) or 0
-    cost = prompt * 0.15 / 1_000_000 + completion * 1.50 / 1_000_000
-    # 无详细拆分但有总 token 时，按有效单价近似（取 0.15/1M 兜底，避免 0 成本误导）
+    in_price, out_price = _resolve_token_price(model)
+    cost = prompt * in_price / 1_000_000 + completion * out_price / 1_000_000
+    # 无详细拆分但有总 token 时，按输入单价近似（取较低者，不虚增成本）
     if cost == 0 and tu.get("total_tokens", 0) > 0:
-        cost = tu["total_tokens"] * 0.15 / 1_000_000
-        # 若按张计费更贴近实测（单张 ¥0.0022），当 total 在 1500-5000 区间时约 0.0022，取 max 以体现下限
-        cost = max(cost, 0.0022) if tu["total_tokens"] > 1000 else cost
+        cost = tu["total_tokens"] * in_price / 1_000_000
     return round(float(cost), 6)
 
 
@@ -558,36 +412,22 @@ def _lc_to_openai(msg):
 
 
 def _path_to_data_url(path):
-    """本地路径 → data URL（OpenAI 协议需 base64）。长单 7-15 行优化：PIL max_side 1000 压缩。"""
-    # 优先 PIL 限边 1000 压缩（减少 token 与时延，支撑 P50 9s）
-    try:
-        from PIL import Image, ImageOps
-        import io
-        with Image.open(path) as img:
-            try:
-                img = ImageOps.exif_transpose(img)
-            except Exception:
-                pass
-            max_side = max(img.size) if img.size[0] and img.size[1] else 0
-            if max_side > 1000:
-                scale = 1000.0 / max_side
-                new_w = max(1, int(img.size[0] * scale))
-                new_h = max(1, int(img.size[1] * scale))
-                img = img.resize((new_w, new_h), Image.BILINEAR)
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=85, optimize=True)
-            b64 = base64.b64encode(buf.getvalue()).decode()
-            return "data:image/jpeg;base64," + b64
-    except Exception:
-        pass
-    ext = os.path.splitext(path)[1].lstrip(".").lower() or "jpg"
-    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png",
-            "webp": "image/webp", "gif": "image/gif"}.get(ext, "image/jpeg")
-    with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}"
+    """本地路径 → data URL（OpenAI 兼容协议需要 base64）。
+
+    why（P2 第三份副本）：本函数原先是与 extract_chain._image_data_url 同根因的第三份
+    裸实现——PIL 整段包在 try 里、任何异常都 `except: pass` 后直接 base64(原文件) 并按
+    扩展名猜 mime（.heic 被归到 image/jpeg）。本机通常没有 pillow-heif / TIFF 解码器，
+    于是 OpenAIChatModel 这条腿会把不可解码的原始二进制冒充 JPEG 发给上游（400/500），
+    而且这类失败会被误读成"模型能力不行"。
+    现统一复用 app.chains.extract_chain._image_data_url（单一实现、单一修复），使识别腿 /
+    审核腿 / OpenAI 兼容转 data URL 三条路径对同一输入行为一致：非 Web 格式解码失败一律
+    抛 ImageDecodeError，Web 格式才允许按原文件回退（且受限边与体积上限约束）。
+
+    注：extract_chain 在模块级 import app.llm，存在循环依赖，故此处函数内延迟导入；
+    并且按属性取值调用，保证 monkeypatch extract_chain._image_data_url 时同样生效。
+    """
+    from app.chains import extract_chain
+    return extract_chain._image_data_url(path)
 
 
 class QwenChatModel(BaseChatModel):
@@ -663,7 +503,7 @@ def _lc_to_dashscope(msg):
 # 模型工厂（按 EngineConfig 选择识别/审核引擎；use_grey 命中灰测组）
 # -------------------------------------------------------------
 # 轻量模型对象缓存（Layer 1, 1.4）：避免每次 build 都重新构造实例。
-# CLI 类（Opencode/CodeBuddy/Qwen）无状态可安全复用；OpenAIChatModel（HTTP）
+# QwenChatModel（本地 SDK 客户端）无状态可安全复用；OpenAIChatModel（HTTP）
 # 也复用实例。key 含 (kind, model, base_url, api_key, call_timeout)，PUT engine-config
 # 变更任意一项（含 call_timeout_seconds）时自然产生新 key，旧实例自动失效。
 _MODEL_CACHE: dict = {}
@@ -673,15 +513,37 @@ def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=Non
     return (kind, model_name, base_url, api_key, call_timeout)
 
 
+# P6：模型名以 qwen 开头 + 引擎类型非 openai 时，会静默落到 QwenChatModel 原生 SDK
+# 通道 —— 该通道不读 EngineConfig 的 base_url/api_key（凭据只取环境变量
+# DASHSCOPE_API_KEY），call_timeout_seconds 也不生效。这是「换个配置入口就悄悄换
+# 通道」的高风险点，故显式 warning 点出会走哪条通道、哪些配置被忽略。
+# 同一 (模型, 引擎类型) 组合每进程只告警一次，避免每条单据刷屏（同 _HOMOGENEITY_WARNED 思路）。
+_QWEN_NATIVE_CHANNEL_WARNED: set = set()
+
+_QWEN_NATIVE_CHANNEL_MSG = (
+    "模型名「%s」以 qwen 开头，但引擎类型为「%s」（非 openai）：将走 DashScope 原生 SDK "
+    "通道（QwenChatModel），EngineConfig 里配置的 base_url / api_key / call_timeout_seconds "
+    "全部被忽略，凭据只从环境变量 DASHSCOPE_API_KEY 读取。如需走配置的 OpenAI 兼容接口，"
+    "请把引擎类型设为 openai（recognition_engine / audit_engine 等）。"
+)
+
+
 def _resolve_engine(model_name: str, engine_kind: str, cfg=None, side="rec", use_grey=False):
     """按模型名/引擎类型解析真实引擎与模型名。
 
     返回 (kind, model_name)：
-    - opencode/xxx → (OPENCODE, xxx)
-    - qwen* → (QWEN, xxx)
-    - 其余 → (CODEBUDDY, xxx)
-    - 引擎类型为 openai → (OPENAI, side 对应 openai_model)
+    - 引擎类型为 openai → ("openai", side 对应 openai_model)
+    - qwen* → ("qwen", xxx)（DashScope 原生 SDK 通道，见下方 P6 告警）
+    - 其余 → ("openai", xxx)：一律走配置的 OpenAI 兼容通道
     use_grey=True 时从灰测组配置取值（grey_*）。
+
+    历史注记：本函数原先还有 opencode/xxx → ("opencode", …) 与兜底 → ("codebuddy", …)
+    两条本机 CLI 引擎分支。两个 CLI 引擎已于 2026-09-02 弃用并从代码中删除，
+    故现在不存在任何 CLI 分支；非 qwen 的模型名统一按 OpenAI 兼容通道解释。
+
+    P6：qwen 前缀 + 显式声明了非 openai 的引擎类型时，会走 QwenChatModel 原生 SDK
+    通道并忽略 EngineConfig 的 base_url/api_key/超时，此处显式 warning 提示（不阻断）。
+    engine_kind 为空（如 cfg=None 的裸调用）时不告警——此时并无 EngineConfig 配置被忽略。
     """
     name = (model_name or "").strip()
 
@@ -690,12 +552,16 @@ def _resolve_engine(model_name: str, engine_kind: str, cfg=None, side="rec", use
         model = _openai_model_for(cfg, side, use_grey) or name
         return "openai", model
 
-    if name.lower().startswith("opencode"):
-        # 保留完整 provider/model（opencode 需要 -m opencode/mimo-v2.5-free 全名）
-        return "opencode", name
     if name.lower().startswith("qwen"):
+        kind_text = str(getattr(engine_kind, "value", engine_kind) or "").strip().lower()
+        if kind_text and kind_text != "openai":
+            key = (name.lower(), kind_text)
+            if key not in _QWEN_NATIVE_CHANNEL_WARNED:
+                _QWEN_NATIVE_CHANNEL_WARNED.add(key)
+                logging.getLogger("llm").warning(
+                    _QWEN_NATIVE_CHANNEL_MSG, name, kind_text)
         return "qwen", name
-    return "codebuddy", name
+    return "openai", name
 
 
 def _openai_model_for(cfg, side, use_grey):
@@ -710,17 +576,6 @@ def _engine_kind_for(cfg, side, use_grey):
     else:
         raw = cfg.recognition_engine if side == "rec" else cfg.audit_engine
     return raw.value if hasattr(raw, "value") else str(raw)
-
-
-def _transport_for(cfg, side, use_grey):
-    """解析每引擎 transport（subprocess/persistent），缺省 subprocess。"""
-    if cfg is None:
-        return "subprocess"
-    if use_grey:
-        raw = cfg.grey_recognition_transport if side == "rec" else cfg.grey_audit_transport
-    else:
-        raw = cfg.recognition_transport if side == "rec" else cfg.audit_transport
-    return raw if raw else "subprocess"
 
 
 def _model_name_for(cfg, side, use_grey):
@@ -746,6 +601,9 @@ def _leg_identity(cfg, side, use_grey):
 # 生成器-评估器异构（ai_registry 准入规则 3）运行时告警：每次进程对同一
 # (kind, model, base_url, use_grey) 组合只告警一次，防刷屏；不阻断任何调用。
 _HOMOGENEITY_WARNED: set = set()
+# 同源检查自身失败也要留痕：静默 return 会让这条准入护栏「看起来存在、实际从未运行」。
+# 按 (use_grey, 异常类型) 去重，避免每条单据刷屏。
+_HOMOGENEITY_FAIL_WARNED: set = set()
 
 _HOMOGENEITY_MSG = ("识别腿与审核腿同源（%s/%s），违反 ai_registry 准入规则 3，"
                     "请在引擎配置切换异构审核模型")
@@ -764,8 +622,15 @@ def check_leg_homogeneity(cfg=None, use_grey=False):
     try:
         rec = _leg_identity(cfg, "rec", use_grey)
         aud = _leg_identity(cfg, "aud", use_grey)
-    except Exception:
-        return  # 配置字段缺失等异常场景静默跳过，绝不影响构建路径
+    except Exception as e:
+        # 不阻断构建路径，但必须留痕：否则「双腿同源告警」这条准入护栏会静默失效。
+        key = (bool(use_grey), type(e).__name__)
+        if key not in _HOMOGENEITY_FAIL_WARNED:
+            _HOMOGENEITY_FAIL_WARNED.add(key)
+            logging.getLogger("llm").warning(
+                "双腿同源检查(use_grey=%s)执行失败，本次未能判定识别/审核腿是否同源: %s",
+                bool(use_grey), e)
+        return
     if rec == aud:
         key = (rec[0], rec[1], rec[2], bool(use_grey))
         if key in _HOMOGENEITY_WARNED:
@@ -778,22 +643,23 @@ def build_recognition_model(model_name=None, cfg=None, use_grey=False):
     """按 EngineConfig 构建识别用多模态模型。use_grey=True 走灰测组。"""
     engine_kind = _engine_kind_for(cfg, "rec", use_grey) if cfg is not None else ""
     default = _model_name_for(cfg, "rec", use_grey) if cfg is not None else "Qwen/Qwen3-VL-32B-Instruct"
-    name = model_name or (default or os.environ.get("CODEBUDDY_MODEL", "Qwen/Qwen3-VL-32B-Instruct"))
+    name = model_name or default or _REC_DEFAULT_MODEL
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=use_grey)
     check_leg_homogeneity(cfg, use_grey=use_grey)
-    return _build(kind, resolved, cfg, side="rec", use_grey=use_grey,
-                   transport=_transport_for(cfg, "rec", use_grey))
+    return _build(kind, resolved, cfg, side="rec", use_grey=use_grey)
 
 
 def build_audit_model(model_name=None, cfg=None, use_grey=False):
     """构建审核模型（交叉审核，与识别模型不同家族）。use_grey=True 走灰测组。"""
     engine_kind = _engine_kind_for(cfg, "aud", use_grey) if cfg is not None else ""
     default = _model_name_for(cfg, "aud", use_grey) if cfg is not None else "zai-org/GLM-4.5V"
-    name = model_name or (default or os.environ.get("AUDIT_MODEL", "zai-org/GLM-4.5V"))
+    # 历史注记：此处原先把 AUDIT_MODEL 环境变量当作兜底。该键已是 EngineConfig 层的
+    # 历史回退别名（见 models.env_model_or_default），且 cfg 存在时 default 恒非空，
+    # 该 env 读取实际不可达，故一并移除，避免第二个配置入口。
+    name = model_name or default or "zai-org/GLM-4.5V"
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="aud", use_grey=use_grey)
     check_leg_homogeneity(cfg, use_grey=use_grey)
-    return _build(kind, resolved, cfg, side="aud", use_grey=use_grey,
-                   transport=_transport_for(cfg, "aud", use_grey))
+    return _build(kind, resolved, cfg, side="aud", use_grey=use_grey)
 
 
 def build_parse_model(model_name=None, cfg=None, use_grey=False):
@@ -816,8 +682,6 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
 
     name = model_name or default
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=False)
-    parse_transport = cfg.grey_parse_transport if use_grey else cfg.parse_transport
-    parse_transport = parse_transport or "subprocess"
     if kind == "openai":
         from app.services.security_guard import validate_safe_external_url
         is_safe, reason = validate_safe_external_url(base_url)
@@ -826,24 +690,23 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
         m = OpenAIChatModel(base_url=base_url, api_key=api_key,
                             model=openai_model or resolved,
                             call_timeout=_resolve_timeout(cfg))
-    elif kind == "opencode":
-        m = OpencodeChatModel(model=resolved, call_timeout=_resolve_timeout(cfg),
-                              transport=parse_transport)
     elif kind == "qwen":
         m = QwenChatModel(model=resolved)
     else:
-        m = CodeBuddyChatModel(model=resolved, call_timeout=_resolve_timeout(cfg),
-                               transport=parse_transport)
+        raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     object.__setattr__(m, "kind", kind)
     return m
 
 
-def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="subprocess"):
+def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
     """按 kind 构建模型对象，并透传真实引擎 kind（供日志/AI 决策履历反映真实引擎）。
 
     用 object.__setattr__ 挂载 kind，不修改任何模型类定义（OpenAIChatModel 完全不动）。
     模型对象按 (kind, model, base_url, api_key, call_timeout, side) 缓存复用，避免每次构造的重复开销。
-    transport 透传给 Opencode/CodeBuddy（subprocess 默认；persistent 走常驻进程）。
+
+    历史注记：签名原有的 transport 形参（subprocess/persistent）与两个 CLI 模型类
+    已于 2026-09-02 随 CLI 引擎弃用一并删除；现存通道（OpenAI 兼容 / DashScope 原生 SDK）
+    都不使用 transport。
 
     Gap A3/A4 约定：side="aud"（审核腿/评估器）时 temperature 强制为 0.0——
     评估必须确定性可复现，与识别腿（0.01）区分。缓存 key 含 side，避免同一模型
@@ -852,6 +715,12 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
     call_timeout = _resolve_timeout(cfg)
     base_url, api_key = "", ""
     if kind == "openai":
+        if cfg is None:
+            # cfg=None（单测/工具脚本的裸调用）解析不出 base_url/api_key。原先这类调用
+            # 会落到 codebuddy CLI 分支所以不报错；CLI 删除后必须显式拒绝，否则会在
+            # 下面 cfg.openai_rec_base_url 处抛 AttributeError（归因误导）。
+            raise ValueError(
+                "kind=openai 需要 EngineConfig 才能解析 base_url/api_key（cfg=None 无法构建）")
         if side == "rec":
             if use_grey:
                 base_url = cfg.grey_openai_rec_base_url
@@ -875,24 +744,20 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False, transport="su
     m = _MODEL_CACHE.get(key)
     if m is not None:
         object.__setattr__(m, "kind", kind)
-        object.__setattr__(m, "transport", transport)
         object.__setattr__(m, "call_timeout", call_timeout)
         if side == "aud":
             object.__setattr__(m, "temperature", 0.0)
         return m
 
-    if kind == "opencode":
-        m = OpencodeChatModel(model=model_name, call_timeout=call_timeout, transport=transport)
-    elif kind == "qwen":
+    if kind == "qwen":
         m = QwenChatModel(model=model_name)
     elif kind == "openai":
         m = OpenAIChatModel(base_url=base_url, api_key=api_key, model=model_name,
                             call_timeout=call_timeout)
     else:
-        m = CodeBuddyChatModel(model=model_name, call_timeout=call_timeout, transport=transport)
+        raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     _MODEL_CACHE[key] = m
     object.__setattr__(m, "kind", kind)
-    object.__setattr__(m, "transport", transport)
     if side == "aud":
         # 审核腿（评估器）temperature 必须 0：评估确定性、可复现（Gap A3/A4）
         object.__setattr__(m, "temperature", 0.0)

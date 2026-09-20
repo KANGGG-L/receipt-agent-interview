@@ -91,12 +91,24 @@ def _start_experiment_guardian():
 
 @app.on_event("startup")
 def _sync_evalset_receipts_startup():
-    """启动自愈：自动同步 GT 评测集与单据库关联（补齐 source_receipt_id 与黄金基准集标记）。"""
+    """启动自愈：自动同步 GT 评测集与单据库关联（补齐 source_receipt_id 与黄金基准集标记）。
+
+    why 只在「活动库 == 部署默认库」时执行：评测集语料（demo/evalsets/，gitignore 的本地
+    语料）与默认库是成对的，而 source_receipt_id 是「库内 id」。测试会把 DB_PATH 指到
+    临时库（见 demo/conftest.py 的 autouse 隔离），此时自愈会为语料样本在临时库里新建
+    单据、并把临时库的 id 回写进真实语料；临时库一丢，语料里的引用就全成了悬空脏数据。
+    绑定到非默认库时跳过自愈，避免污染共享语料。
+    """
     try:
+        import logging
+        # 非默认库（测试临时库等）不回写共享语料，理由见 docstring
+        if os.path.abspath(str(db.DB_PATH)) != os.path.abspath(str(db._default_db_path)):
+            logging.getLogger("startup").info(
+                "[evalset_linkage] 跳过启动自愈：活动库非部署默认库（DB_PATH=%s）", db.DB_PATH)
+            return
         from app.services.evalset_linkage import sync_evalset_receipts_linkage
         stats = sync_evalset_receipts_linkage()
         if stats and stats.get("linked"):
-            import logging
             logging.getLogger("startup").info(f"[evalset_linkage] startup sync completed: {stats}")
     except Exception as e:
         import logging
@@ -267,13 +279,6 @@ def health():
             return size_bytes, False, f"WAL 体积 {size_bytes} 字节 > 64MB（checkpoint 异常）"
         return size_bytes, True, None
 
-    def _cli_available(path):
-        if not path:
-            return False
-        if os.path.exists(path):
-            return True
-        return shutil.which(path) is not None
-
     def _engine_health():
         from app import llm
         cfg = db.get_engine_config()
@@ -285,11 +290,11 @@ def health():
         except Exception:
             valid_qwen = False
         return {
-            "opencode": _cli_available(llm._get_opencode_bin()),
-            "codebuddy": _cli_available(llm._get_codebuddy_bin()),
+            # 历史注记：原有 "opencode" / "codebuddy" 两个本机 CLI 引擎的可用性探测，
+            # 随 CLI 引擎弃用（2026-09-02）一并删除；现存通道只有 OpenAI 兼容。
             "openai": bool(base and key),
             "openai_valid_qwen": valid_qwen,
-            "perf_baseline": "qwen3-vl-flash P50 9.0s P95 12s (L4 定稿) / 本地硬上限60s 禁止240空转",
+            "perf_baseline": "qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本）/ 本地硬上限60s 禁止240空转",
             "timeout_policy": "高压禁止长期空转：缺省30s 硬上限60s 超即杀进程转手工",
             "timeout_advice": llm.get_timeout_advice(cfg) if hasattr(llm, "get_timeout_advice") else "",
         }
