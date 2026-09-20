@@ -35,40 +35,23 @@ def _tenant_id(request: Request) -> str:
     return (request.headers.get("X-Tenant-Id")
             or request.headers.get("x-tenant-id") or "default").strip() or "default"
 
-# 复用 currency_unit_converter 标准换算（司马斤 0.6048 kg）
-try:
-    from ai_registry.tools.currency_unit_converter.v1_0_0 import CurrencyUnitConverterTool
-    _kg_converter = CurrencyUnitConverterTool()
-except Exception:
-    _kg_converter = None
+# 单位换算走 services.unit_factors 单一事实源（SSOT）：与成本层同源同系数。
+from app.services import unit_factors
 
 
 def _standard_kg(current_stock, base_unit):
-    """严格仅对重量单位折算 kg；计件单位返回 None（绝不假装折算）。"""
-    if _kg_converter is None:
-        return None
+    """严格仅对重量单位折算 kg；计件 / 体积 / 空单位返回 None（绝不假装折算）。
+
+    折算系数取自 unit_factors（与成本层同源）。「斤」按本表唯一定义 0.5 kg 折算；
+    港式司马斤请使用显式单位「司马斤 / 港斤」（0.6048）。
+    """
     u = (base_unit or "").strip()
     if not u:
         return None
-    # 仅重量单位参与折算（保持与 converter UNIT_TO_KG 的严格语义一致）
-    weight_units = set(_kg_converter.UNIT_TO_KG.keys())
-    # 兼容部分写法（如 Kg 大小写已在 converter 内部处理，但这里按 lower 判断）
-    if u not in weight_units and u.lower() not in [k.lower() for k in weight_units]:
-        # 尝试 lower 匹配（如 KG / Kg）
-        low = u.lower()
-        matched = None
-        for k in weight_units:
-            if k.lower() == low:
-                matched = k
-                break
-        if matched is None:
-            return None
-        u = matched
-    try:
-        kg_qty, _ = _kg_converter.convert_weight_to_standard_kg(float(current_stock or 0), u)
-        return round(kg_qty, 4)
-    except Exception:
+    factor = unit_factors.unit_to_kg_factor(u)
+    if factor is None:
         return None
+    return round(float(current_stock or 0) * factor, 4)
 
 
 def _compute_vs_avg_and_anomaly(sku_id, threshold_pct=None):

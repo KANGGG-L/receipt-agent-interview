@@ -36,6 +36,7 @@ demo/evalsets/
 .omo/
 .codegraph
 .pi-glla/
+.commandcode/
 
 # 本地运行/实验/QA 产物（绝不提交）
 artifacts/

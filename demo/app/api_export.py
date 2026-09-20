@@ -16,6 +16,7 @@ from app import db
 from app.api_receipts import _mask_sensitive
 from app.auth import require_role, resolve_account
 from app.services.costing_service import CostingService
+from app.services.recipe_cost import compute_recipe_theory
 
 router = APIRouter()
 
@@ -548,6 +549,7 @@ class ExportDataProcessor:
                 "餐品分类",
                 "在售标价(元)",
                 "配方食材",
+                "组件类型",
                 "单份用量",
                 "用量单位",
                 "食材进价(元)",
@@ -559,23 +561,9 @@ class ExportDataProcessor:
             rows = []
 
             for d in dishes:
-                ing_rows = (
-                    session.query(db._DishIngredientRow)
-                    .filter(db._DishIngredientRow.dish_id == d.id)
-                    .all()
-                )
-
-                theoretical_cost = 0.0
-                ing_details = []
-                for ing in ing_rows:
-                    sku = session.get(db._SkuRow, ing.sku_id)
-                    sku_name = sku.name if sku else "未知食材"
-                    unit_p = sku.last_unit_price if sku else 0.0
-                    ing_cost = round(ing.consumption_qty * (unit_p or 0.0), 2)
-                    theoretical_cost += ing_cost
-                    ing_details.append(
-                        (sku_name, ing.consumption_qty, ing.unit, unit_p, ing_cost)
-                    )
+                # 成本口径走 recipe_cost 唯一实现（含单位换算、出成率、多级子配方）
+                theoretical_cost, ing_details = compute_recipe_theory(
+                    session, d.id, tenant_id)
 
                 margin_pct = (
                     round((d.price - theoretical_cost) / d.price * 100, 1)
@@ -594,23 +582,30 @@ class ExportDataProcessor:
                             "-",
                             "-",
                             "-",
+                            "-",
                             0.0,
                             f"{margin_pct}%",
                             "在售" if d.status == "active" else "停用",
                         ]
                     )
                 else:
-                    for i, (s_name, q_val, u, up, c) in enumerate(ing_details):
+                    for i, ing in enumerate(ing_details):
+                        is_dish = ing.get("component_type") == "dish"
+                        comp_label = ing.get("component_name") or ing.get("sku_name") or "未知食材"
+                        unit_p = ing.get("sku_last_unit_price") or 0.0
+                        # 子配方组件以整包成本呈现，不出「食材进价」单价
+                        unit_p_disp = "-" if is_dish else round(unit_p, 2)
                         rows.append(
                             [
                                 d.name if i == 0 else "",
-                                d.category or "其他" if i == 0 else "",
+                                (d.category or "其他") if i == 0 else "",
                                 round(d.price, 2) if i == 0 else "",
-                                s_name,
-                                round(q_val, 3),
-                                u,
-                                round(up, 2),
-                                round(c, 2),
+                                comp_label,
+                                "子配方" if is_dish else "食材",
+                                round(ing.get("consumption_qty") or 0.0, 3),
+                                ing.get("unit") or "",
+                                unit_p_disp,
+                                round(ing.get("ingredient_cost") or 0.0, 2),
                                 round(theoretical_cost, 2) if i == 0 else "",
                                 f"{margin_pct}%" if i == 0 else "",
                                 ("在售" if d.status == "active" else "停用")
@@ -686,17 +681,9 @@ class ExportDataProcessor:
                 margin = round(sales - act_cost, 2)
                 margin_pct = round(margin / sales * 100, 1) if sales > 0 else 0.0
 
-                # 算单品理论成本
-                ing_rows = (
-                    session.query(db._DishIngredientRow)
-                    .filter(db._DishIngredientRow.dish_id == c.dish_id)
-                    .all()
-                )
-                theo_unit_c = 0.0
-                for ing in ing_rows:
-                    sku = session.get(db._SkuRow, ing.sku_id)
-                    up = sku.last_unit_price if sku else 0.0
-                    theo_unit_c += ing.consumption_qty * (up or 0.0)
+                # 算单品理论成本（与详情/其它报表共用 recipe_cost 唯一实现）
+                theo_unit_c, _ing_detail = compute_recipe_theory(
+                    session, c.dish_id, tenant_id)
 
                 theo_cost = round(theo_unit_c * c.quantity, 2)
                 diff = round(act_cost - theo_cost, 2)
@@ -764,16 +751,9 @@ class ExportDataProcessor:
             rows = []
 
             for d in dishes:
-                ing_rows = (
-                    session.query(db._DishIngredientRow)
-                    .filter(db._DishIngredientRow.dish_id == d.id)
-                    .all()
-                )
-                theo_cost = 0.0
-                for ing in ing_rows:
-                    sku = session.get(db._SkuRow, ing.sku_id)
-                    up = sku.last_unit_price if sku else 0.0
-                    theo_cost += ing.consumption_qty * (up or 0.0)
+                # 理论成本口径与详情/其它报表一致（recipe_cost 唯一实现）
+                theo_cost, _ing_detail = compute_recipe_theory(
+                    session, d.id, tenant_id)
 
                 # 统计周期内实际消耗 (d 已经由 tenant_id 隔离)
                 cq = session.query(db._DailyConsumptionRow).filter(

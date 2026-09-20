@@ -657,8 +657,9 @@ let startMouseX = 0;
 let startMouseY = 0;
 
 // 可复用的计量单位池 (预置香港餐饮常用单位)
+// 「斤」按统一口径 0.5 kg（等同市斤）；港式司马斤请选用显式「司马斤」。
 let availableUnits = [
-    "kg", "g", "司马斤", "斤", "两", "磅",
+    "kg", "g", "司马斤", "市斤", "斤", "两", "磅",
     "箱", "包", "件", "罐", "隻", "只", "瓶", "盒", "桶", "扎", "把", "袋"
 ];
 
@@ -6466,15 +6467,21 @@ function loadInventoryData() {
             const activeBadge = !isActive
                 ? `<span class="badge badge-secondary">已停用</span>`
                 : '';
-            // kg 列：仅重量单位显示折算（司马斤 0.6048），计件单位显示 -
+            // kg 列：仅重量单位显示折算（系数与后端 unit_factors 同源）；计件单位显示 -
             let kgCell = '<span style="color:var(--text-muted);">-</span>';
             if (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg))) {
                 const kgVal = Number(sku.standard_kg);
                 kgCell = `${kgVal.toFixed(3)} kg`;
-                // 司马斤特殊提示：若原单位含斤/两/磅则 hover 显示换算率
-                const weightHint = (sku.base_unit === '斤' || sku.base_unit === '司马斤' || sku.base_unit === '司馬斤')
-                    ? ' title="司马斤 x 0.6048 = kg"'
-                    : '';
+                // hover 提示按实际单位显示换算率
+                const unitHintMap = {
+                    '司马斤': '司马斤 x 0.6048 = kg', '司馬斤': '司马斤 x 0.6048 = kg',
+                    '港斤': '港斤 x 0.6048 = kg',
+                    '市斤': '市斤 x 0.5 = kg', '斤': '斤 x 0.5 = kg',
+                    '两': '两 x 0.05 = kg', '市两': '市两 x 0.05 = kg',
+                    '磅': '磅 x 0.4536 = kg', 'lb': '磅 x 0.4536 = kg', 'lbs': '磅 x 0.4536 = kg'
+                };
+                const unitHint = unitHintMap[sku.base_unit] || '';
+                const weightHint = unitHint ? ` title="${unitHint}"` : '';
                 kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
             }
             tr.innerHTML = `
@@ -14717,7 +14724,7 @@ function openDishModal(dishId) {
 
                 if (Array.isArray(dish.ingredients) && dish.ingredients.length > 0) {
                     dish.ingredients.forEach(ing => {
-                        addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes);
+                        addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes, ing.component_type || 'sku', (ing.component_id != null ? ing.component_id : ing.sku_id), ing.yield_rate);
                     });
                 } else {
                     addDishIngredientRow();
@@ -14743,7 +14750,7 @@ function openDishModal(dishId) {
 
                         if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
                             d.ingredients.forEach(ing => {
-                                addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes);
+                                addDishIngredientRow(ing.sku_id, ing.consumption_qty, ing.unit, ing.notes, ing.component_type || 'sku', (ing.component_id != null ? ing.component_id : ing.sku_id), ing.yield_rate);
                             });
                         } else {
                             addDishIngredientRow();
@@ -14777,36 +14784,79 @@ function openDishModal(dishId) {
 }
 
 /**
- * 动态向配方表格添加一行食材
+ * 构建配方组件下拉（食材 SKU + 子配方餐品两个分组）。
+ * option value 编码为 "sku:<id>" / "dish:<id>"，与后端 component_type/component_id 对应。
  */
-function addDishIngredientRow(skuId, qty, unit, notes) {
-    const tbody = document.getElementById('dishIngredientRowsBody');
-    if (!tbody) return;
-
-    const tr = document.createElement('tr');
-    tr.className = 'dish-ing-row';
-
-    // 构建 SKU 下拉框选项
-    let optionsHtml = '<option value="">-- 请选择食材 SKU --</option>';
-    let selectedSku = null;
-
-    dishAvailableSkus.forEach(s => {
-        const isSel = (skuId != null && Number(s.id) === Number(skuId));
-        if (isSel) selectedSku = s;
-        optionsHtml += '<option value="' + s.id + '"'
+function dishComponentOptionsHtml(selectedValue) {
+    let skuOpts = '';
+    (dishAvailableSkus || []).forEach(s => {
+        const val = 'sku:' + s.id;
+        const isSel = (selectedValue === val);
+        skuOpts += '<option value="' + val + '"'
             + (isSel ? ' selected' : '')
             + ' data-unit="' + w2Escape(s.base_unit || '') + '"'
             + ' data-price="' + (s.last_unit_price || 0) + '"'
+            + ' data-type="sku"'
             + ' data-stock="' + (s.current_stock || 0) + '"'
             + ' data-category="' + w2Escape(s.category || '') + '">'
             + w2Escape(s.name) + ' (' + (s.category || '通用') + ' ｜ 库存: ' + (s.current_stock || 0) + (s.base_unit || '') + ' ｜ $' + fmtMoney(s.last_unit_price) + '/' + (s.base_unit || '') + ')'
             + '</option>';
     });
 
+    const selfId = Number((document.getElementById('dishModalId') || {}).value || 0) || null;
+    let dishOpts = '';
+    (dishLibraryCache || []).forEach(d => {
+        if (selfId != null && Number(d.id) === selfId) return;   // 自引用禁止
+        const val = 'dish:' + d.id;
+        const isSel = (selectedValue === val);
+        dishOpts += '<option value="' + val + '"'
+            + (isSel ? ' selected' : '')
+            + ' data-unit="份"'
+            + ' data-price="' + (d.theoretical_cost || 0) + '"'
+            + ' data-type="dish"'
+            + ' data-category="子配方">'
+            + w2Escape(d.name) + ' (子配方 ｜ 单份理论成本 $' + fmtMoney(d.theoretical_cost) + ')'
+            + '</option>';
+    });
+
+    return '<option value="">-- 请选择食材 / 子配方 --</option>'
+        + '<optgroup label="食材 (SKU)">' + skuOpts + '</optgroup>'
+        + '<optgroup label="子配方 (餐品)">' + dishOpts + '</optgroup>';
+}
+
+/**
+ * 动态向配方表格添加一行组件（食材 SKU 或子配方餐品）。
+ * 兼容旧签名 addDishIngredientRow(skuId, qty, unit, notes)：
+ * 传 componentType='dish' + componentId 即子配方行。
+ */
+function addDishIngredientRow(skuId, qty, unit, notes, componentType, componentId, yieldRate) {
+    const tbody = document.getElementById('dishIngredientRowsBody');
+    if (!tbody) return;
+
+    const tr = document.createElement('tr');
+    tr.className = 'dish-ing-row';
+
+    const ctype = (componentType || 'sku');
+    const cid = (componentId != null ? componentId : skuId);
+    const selectedValue = (cid != null && cid !== '') ? (ctype + ':' + cid) : '';
+    const optionsHtml = dishComponentOptionsHtml(selectedValue);
+
+    const selectedOpt = (function () {
+        const tmp = document.createElement('div');
+        tmp.innerHTML = optionsHtml;
+        const sel = tmp.querySelector('option[value="' + selectedValue + '"]');
+        return sel;
+    })();
+    const initUnit = unit != null
+        ? unit
+        : (selectedOpt ? (selectedOpt.getAttribute('data-unit') || '') : '');
     const initQty = qty != null ? qty : '';
-    const initUnit = unit != null ? unit : (selectedSku ? selectedSku.base_unit : '');
-    const initNotes = notes != null ? notes : '';
-    const refPriceText = selectedSku ? ('$' + fmtMoney(selectedSku.last_unit_price) + '/' + (selectedSku.base_unit || '')) : '-';
+    const initYield = (yieldRate != null && yieldRate !== '') ? yieldRate : 1;
+    const initRefPrice = selectedOpt
+        ? ('$' + fmtMoney(parseFloat(selectedOpt.getAttribute('data-price')) || 0)
+           + '/' + (selectedOpt.getAttribute('data-unit') || ''))
+        : '-';
+    const typeLabel = ctype === 'dish' ? '子配方' : (selectedValue ? '食材' : '-');
     const isOwner = isOwnerRoleNow();
 
     tr.innerHTML = '<td>'
@@ -14814,14 +14864,20 @@ function addDishIngredientRow(skuId, qty, unit, notes) {
         + optionsHtml
         + '  </select>'
         + '</td>'
+        + '<td class="col-center">'
+        + '  <span class="ing-type-label badge badge-secondary" style="font-size:0.72rem;">' + w2Escape(typeLabel) + '</span>'
+        + '</td>'
         + '<td>'
         + '  <input type="number" step="0.0001" min="0.0001" class="form-control ing-qty-input col-right" placeholder="0.00" value="' + initQty + '" oninput="calcDishModalTheoryCost()"' + (!isOwner ? ' disabled' : '') + '>'
         + '</td>'
         + '<td>'
         + '  <input type="text" class="form-control ing-unit-input col-center" placeholder="单位" value="' + w2Escape(initUnit) + '" oninput="calcDishModalTheoryCost()"' + (!isOwner ? ' disabled' : '') + '>'
         + '</td>'
+        + '<td>'
+        + '  <input type="number" step="0.0001" min="0.0001" max="1" class="form-control ing-yield-input col-right" placeholder="1.0" value="' + initYield + '" title="出成率 0-1；有效领料量 = 配方用量 / 出成率" oninput="calcDishModalTheoryCost()"' + (!isOwner ? ' disabled' : '') + '>'
+        + '</td>'
         + '<td class="col-right">'
-        + '  <span class="ing-ref-price" style="font-size:0.85rem; color:var(--text-muted);">' + refPriceText + '</span>'
+        + '  <span class="ing-ref-price" style="font-size:0.85rem; color:var(--text-muted);">' + initRefPrice + '</span>'
         + '</td>'
         + '<td class="col-right">'
         + '  <span class="ing-item-cost" style="font-weight:600; color:var(--primary, #0f766e);">$0.00</span>'
@@ -14835,7 +14891,7 @@ function addDishIngredientRow(skuId, qty, unit, notes) {
 }
 
 /**
- * 删除一行配方食材
+ * 删除一行配方组件
  */
 function removeDishIngredientRow(btn) {
     const tr = btn.closest('tr');
@@ -14846,7 +14902,7 @@ function removeDishIngredientRow(btn) {
 }
 
 /**
- * 监听配方行 SKU 切换
+ * 监听配方行组件切换（食材 / 子配方）
  */
 function onDishIngredientSkuChange(selectEl) {
     const tr = selectEl.closest('tr');
@@ -14855,25 +14911,28 @@ function onDishIngredientSkuChange(selectEl) {
     const opt = selectEl.selectedOptions[0];
     const unitInput = tr.querySelector('.ing-unit-input');
     const refPriceSpan = tr.querySelector('.ing-ref-price');
+    const typeLabel = tr.querySelector('.ing-type-label');
 
     if (opt && opt.value) {
         const baseUnit = opt.getAttribute('data-unit') || '';
         const lastPrice = parseFloat(opt.getAttribute('data-price')) || 0;
-        if (unitInput && !unitInput.value.trim()) {
-            unitInput.value = baseUnit;
-        }
+        const isDish = opt.getAttribute('data-type') === 'dish';
+        if (unitInput) unitInput.value = baseUnit;
         if (refPriceSpan) {
             refPriceSpan.innerText = '$' + fmtMoney(lastPrice) + '/' + (baseUnit || '');
         }
+        if (typeLabel) typeLabel.innerText = isDish ? '子配方' : '食材';
     } else {
         if (refPriceSpan) refPriceSpan.innerText = '-';
+        if (typeLabel) typeLabel.innerText = '-';
     }
 
     calcDishModalTheoryCost();
 }
 
 /**
- * 计算建档/编辑弹窗内的理论成本与毛利率
+ * 计算建档/编辑弹窗内的理论成本与毛利率（与后端 recipe_cost 同口径：
+ * 有效领料量 = 配方用量 / 出成率；子配方按单份理论成本 × 份数折算）
  */
 function calcDishModalTheoryCost() {
     const rows = document.querySelectorAll('#dishIngredientRowsBody tr.dish-ing-row');
@@ -14883,24 +14942,34 @@ function calcDishModalTheoryCost() {
         const sel = tr.querySelector('.ing-sku-select');
         const qtyInp = tr.querySelector('.ing-qty-input');
         const unitInp = tr.querySelector('.ing-unit-input');
+        const yieldInp = tr.querySelector('.ing-yield-input');
         const costSpan = tr.querySelector('.ing-item-cost');
         const refPriceSpan = tr.querySelector('.ing-ref-price');
+        const typeLabel = tr.querySelector('.ing-type-label');
 
         if (!sel || !qtyInp) return;
         const opt = sel.selectedOptions[0];
         const rawQty = parseFloat(qtyInp.value) || 0;
         const ingUnit = (unitInp ? unitInp.value : '').trim();
+        let yr = parseFloat(yieldInp ? yieldInp.value : 1);
+        if (!(yr > 0) || yr > 1) yr = 1;
 
         if (opt && opt.value && rawQty > 0) {
-            const skuBaseUnit = opt.getAttribute('data-unit') || '';
-            const skuPrice = parseFloat(opt.getAttribute('data-price')) || 0;
+            const baseUnit = opt.getAttribute('data-unit') || '';
+            const unitPrice = parseFloat(opt.getAttribute('data-price')) || 0;
+            const isDish = opt.getAttribute('data-type') === 'dish';
+            if (typeLabel) typeLabel.innerText = isDish ? '子配方' : '食材';
 
             if (refPriceSpan) {
-                refPriceSpan.innerText = '$' + fmtMoney(skuPrice) + '/' + (skuBaseUnit || '');
+                refPriceSpan.innerText = '$' + fmtMoney(unitPrice) + '/' + (baseUnit || '');
             }
 
-            const convertedQty = convertUnitQtyFrontend(rawQty, ingUnit || skuBaseUnit, skuBaseUnit);
-            const rowCost = Math.round(convertedQty * skuPrice * 100) / 100;
+            // 子配方以「份」计量：成本 = 单份理论成本 × 份数 / 出成率
+            const effectiveQty = isDish ? (rawQty / yr) : null;
+            const convertedQty = isDish
+                ? effectiveQty
+                : convertUnitQtyFrontend(rawQty / yr, ingUnit || baseUnit, baseUnit);
+            const rowCost = Math.round(convertedQty * unitPrice * 100) / 100;
             totalTheoreticalCost += rowCost;
 
             if (costSpan) costSpan.innerText = '$' + fmtMoney(rowCost);
@@ -14966,52 +15035,71 @@ function saveDishModal() {
     }
     const price = parseFloat(priceVal);
 
-    // 收集配方行
+    // 收集配方行（食材 SKU 与子配方两类组件）
     const rows = document.querySelectorAll('#dishIngredientRowsBody tr.dish-ing-row');
     const ingredients = [];
-    const seenSkus = new Set();
+    const seenComps = new Set();
 
     for (let i = 0; i < rows.length; i++) {
         const tr = rows[i];
         const sel = tr.querySelector('.ing-sku-select');
         const qtyInp = tr.querySelector('.ing-qty-input');
         const unitInp = tr.querySelector('.ing-unit-input');
+        const yieldInp = tr.querySelector('.ing-yield-input');
 
-        const skuVal = sel ? sel.value : '';
+        const compVal = sel ? sel.value : '';
         const qtyRaw = qtyInp ? qtyInp.value : '';
         const qtyNum = parseFloat(qtyRaw);
         const qtyVal = isNaN(qtyNum) ? 0 : qtyNum;
         const qtyFilled = qtyRaw.trim() !== '' && !isNaN(qtyNum) && qtyNum > 0;
         const unitVal = (unitInp ? unitInp.value : '').trim();
+        let yieldVal = parseFloat(yieldInp ? yieldInp.value : 1);
+        if (isNaN(yieldVal)) yieldVal = 1;
 
-        // D-7：全空行（未选 SKU 且 份数无效/空）直接跳过；部分填写仍按下方人话文案拦截
-        if (!skuVal && !qtyFilled) continue;
+        // D-7：全空行（未选组件且 用量无效/空）直接跳过；部分填写仍按下方人话文案拦截
+        if (!compVal && !qtyFilled) continue;
 
-        if (!skuVal) {
-            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材配方未选择 SKU'; errEl.classList.remove('hide'); }
+        if (!compVal) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行配方未选择食材 SKU 或子配方'; errEl.classList.remove('hide'); }
             return;
         }
-        const skuId = parseInt(skuVal);
-        if (seenSkus.has(skuId)) {
-            if (errEl) { errEl.innerText = '配方中存在重复的食材 SKU，请合并为一行'; errEl.classList.remove('hide'); }
+        // value 编码 "sku:<id>" / "dish:<id>"
+        const parts = compVal.split(':');
+        const ctype = parts[0] === 'dish' ? 'dish' : 'sku';
+        const cid = parseInt(parts[1], 10);
+        if (!cid || cid <= 0) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行组件无效，请重新选择'; errEl.classList.remove('hide'); }
             return;
         }
-        seenSkus.add(skuId);
+        const compKey = ctype + ':' + cid;
+        if (seenComps.has(compKey)) {
+            if (errEl) { errEl.innerText = '配方中存在重复的组件（食材 SKU / 子配方），请合并为一行'; errEl.classList.remove('hide'); }
+            return;
+        }
+        seenComps.add(compKey);
 
         if (qtyVal <= 0 || isNaN(qtyVal)) {
-            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材单份用量必须大于 0'; errEl.classList.remove('hide'); }
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行单份用量必须大于 0'; errEl.classList.remove('hide'); }
+            return;
+        }
+
+        if (yieldVal <= 0 || yieldVal > 1) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行出成率必须满足 0 < 出成率 <= 1'; errEl.classList.remove('hide'); }
             return;
         }
 
         if (!unitVal) {
-            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行食材单位不能为空'; errEl.classList.remove('hide'); }
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行单位不能为空'; errEl.classList.remove('hide'); }
             return;
         }
 
         ingredients.push({
-            sku_id: skuId,
+            sku_id: (ctype === 'sku' ? cid : null),
+            component_type: ctype,
+            component_id: cid,
             consumption_qty: qtyVal,
             unit: unitVal,
+            yield_rate: yieldVal,
             notes: ''
         });
     }
@@ -15024,6 +15112,12 @@ function saveDishModal() {
         status: status,
         ingredients: ingredients
     };
+
+    // WS2 乐观锁：编辑时带上当前版本号，服务端不一致返回 409 VERSION_CONFLICT
+    if (dishId) {
+        const cached = (dishLibraryCache || []).find(d => Number(d.id) === Number(dishId));
+        if (cached && cached.version != null) payload.expected_version = cached.version;
+    }
 
     if (saveBtn) {
         saveBtn.disabled = true;
@@ -15066,6 +15160,118 @@ function saveDishModal() {
         console.error('saveDishModal error:', err);
         if (errEl) { errEl.innerText = '网络请求异常，请稍后重试'; errEl.classList.remove('hide'); }
         showToast('网络请求异常', 'error');
+    });
+}
+
+/**
+ * WS2：打开 BOM 版本历史抽屉（列表 + 回滚）
+ */
+function openDishVersionHistory() {
+    const idInput = document.getElementById('dishModalId');
+    const dishId = (idInput ? idInput.value : '').trim();
+    const body = document.getElementById('dishVersionListBody');
+    const cur = document.getElementById('dishVersionCurrent');
+    const titleEl = document.getElementById('dishVersionModalTitle');
+    if (!dishId) {
+        showToast('请先保存餐品后再查看版本历史', 'warning');
+        return;
+    }
+    const cached = (dishLibraryCache || []).find(d => Number(d.id) === Number(dishId));
+    if (titleEl) titleEl.innerText = 'BOM 版本历史 - ' + ((cached && cached.name) || ('#' + dishId));
+    if (cur) cur.innerText = '加载中...';
+    if (body) body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">加载中...</div>';
+    openModalById('dishVersionModal');
+
+    apiFetch('/api/dishes/' + dishId + '/versions')
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success') {
+                if (body) body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">' + w2Escape(ret.msg || '加载版本历史失败') + '</div>';
+                return;
+            }
+            const data = ret.data || {};
+            if (cur) cur.innerText = '当前版本 v' + (data.current_version || 1) + '（共 ' + ((data.versions || []).length) + ' 个历史版本）';
+            renderDishVersionList(data.current_version, data.versions || []);
+        })
+        .catch(err => {
+            console.error('openDishVersionHistory error:', err);
+            if (body) body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">网络异常，无法加载版本历史</div>';
+        });
+}
+
+/**
+ * 渲染版本历史列表：版本号 + 时间 + 操作人 + 摘要 + 回滚按钮（owner）
+ */
+function renderDishVersionList(currentVersion, versions) {
+    const body = document.getElementById('dishVersionListBody');
+    if (!body) return;
+    if (!versions.length) {
+        body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">暂无版本快照</div>';
+        return;
+    }
+    const isOwner = isOwnerRoleNow();
+    let html = '';
+    versions.forEach(v => {
+        const isCurrent = Number(v.version) === Number(currentVersion);
+        html += '<div class="dish-version-row" data-version="' + v.version + '"'
+            + ' style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:8px;">'
+            + '  <div style="display:flex; flex-direction:column; gap:4px;">'
+            + '    <div style="display:flex; align-items:center; gap:8px;">'
+            + '      <span class="badge ' + (isCurrent ? 'badge-success' : 'badge-info') + '" style="font-size:0.8rem;">v' + v.version + (isCurrent ? ' 当前' : '') + '</span>'
+            + '      <span style="font-size:0.8rem; color:var(--text-muted);">' + w2Escape(v.changed_at || '') + ' ｜ ' + w2Escape(v.changed_by || 'unknown') + '</span>'
+            + '    </div>'
+            + '    <span style="font-size:0.82rem;">' + w2Escape(v.change_summary || '（无摘要）') + '</span>'
+            + '  </div>'
+            + (isOwner ? '  <button type="button" class="btn btn-secondary btn-restore-dish-version" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;" data-version="' + v.version + '">回滚到此版本</button>' : '')
+            + '</div>';
+    });
+    body.innerHTML = html;
+    body.onclick = (e) => {
+        const btn = e.target && e.target.closest ? e.target.closest('.btn-restore-dish-version') : null;
+        if (!btn) return;
+        rollbackDishVersion(parseInt(btn.getAttribute('data-version'), 10));
+    };
+}
+
+/**
+ * WS2：回滚到指定版本（恢复为新版本，不改写历史）
+ */
+function rollbackDishVersion(version) {
+    const idInput = document.getElementById('dishModalId');
+    const dishId = (idInput ? idInput.value : '').trim();
+    if (!dishId || !version) return;
+    showCustomConfirmModal({
+        title: '回滚配方版本确认',
+        message: '确定将餐品「' + ((document.getElementById('dishModalName') || {}).value || '')
+            + '」回滚到 v' + version + '？\n回滚会覆盖当前配方并生成一个新版本，历史版本不会丢失。',
+        confirmText: '确认回滚',
+        cancelText: '取消',
+        onConfirm: () => {
+            apiFetch('/api/dishes/' + dishId + '/versions/' + version + '/restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })
+                .then(res => res.json())
+                .then(ret => {
+                    if (ret.status !== 'success') {
+                        showToast(ret.msg || '回滚失败', 'error');
+                        return;
+                    }
+                    showToast(ret.msg || '已回滚并生成新版本', 'success');
+                    closeModalById('dishVersionModal');
+                    loadDishesList();
+                    if (ret.data) {
+                        // 回滚后同步刷新编辑弹窗内容（版本与配方已变）
+                        closeModalById('dishEditModal');
+                        openDishModal(ret.data.id);
+                    }
+                })
+                .catch(err => {
+                    console.error('rollbackDishVersion error:', err);
+                    showToast('网络异常，无法回滚版本', 'error');
+                });
+        }
     });
 }
 
@@ -15516,7 +15722,14 @@ function submitDailyConsumptionBatch() {
             return;
         }
 
-        showToast(ret.body.msg || '消耗扣减成功！已完成 FIFO 批次精确计价', 'success');
+        // WS5：同 (日期, 餐品) 二次提交后端会合并累加，merged=true 时明确提示，
+        // 避免店员误以为新建了重复记录（份数为合并后的累计值）。
+        const respData = ret.body.data || {};
+        const baseMsg = ret.body.msg || '消耗扣减成功！已完成 FIFO 批次精确计价';
+        const successMsg = respData.merged
+            ? (baseMsg + '（已合并至当日同餐品记录，累计 ' + respData.quantity + ' 份）')
+            : baseMsg;
+        showToast(successMsg, 'success');
 
         // 仅在成功后清空输入框
         const inputs = document.querySelectorAll('.dish-consume-qty-input');

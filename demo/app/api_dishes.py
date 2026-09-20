@@ -15,21 +15,33 @@
 
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy import or_
 
 import logging
 
 from app import db
-from app.auth import require_role
+from app.auth import require_role, resolve_account
 
 logger = logging.getLogger("dishes")
 from app.services.costing_service import CostingService, convert_unit_quantity, check_unit_compatibility
+from app.services.recipe_expand import expand_recipe
 
 router = APIRouter()
+
+
+def _actor(request: Request) -> str:
+    """操作人标识（BOM 版本快照 changed_by）：优先账号邮箱，其次角色名。"""
+    try:
+        acct = resolve_account(request) or {}
+    except Exception:
+        acct = {}
+    return (acct.get("email") or acct.get("role")
+            or request.headers.get("X-Role") or "unknown")
 
 
 def _tenant_id(request: Request) -> str:
@@ -42,9 +54,12 @@ def _tenant_id(request: Request) -> str:
 # Pydantic 模型
 # -------------------------------------------------------------
 class DishIngredientItem(BaseModel):
-    sku_id: int
+    sku_id: Optional[int] = None
+    component_type: Optional[str] = "sku"      # sku | dish（子配方）
+    component_id: Optional[int] = None
     consumption_qty: float
     unit: str
+    yield_rate: Optional[float] = 1.0          # 出成率；损耗率派生为 1 - yield_rate
     notes: Optional[str] = ""
 
 
@@ -64,6 +79,11 @@ class DishUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     ingredients: Optional[List[DishIngredientItem]] = None
+    expected_version: Optional[int] = None     # 乐观锁：不一致返回 409 VERSION_CONFLICT
+
+
+class DishRestoreBody(BaseModel):
+    change_summary: Optional[str] = ""
 
 
 class DailyConsumptionItem(BaseModel):
@@ -81,42 +101,16 @@ class DailyConsumptionBatchCreate(BaseModel):
 # -------------------------------------------------------------
 # 辅助函数
 # -------------------------------------------------------------
-def _dish_to_dict(session, dish_row) -> Dict:
-    """序列化餐品对象并计算理论成本与毛利率。"""
-    ing_rows = (
-        session.query(db._DishIngredientRow)
-        .filter(db._DishIngredientRow.dish_id == dish_row.id)
-        .all()
-    )
+def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None) -> Dict:
+    """序列化餐品对象并计算理论成本与毛利率。
 
-    ingredients = []
-    theoretical_cost = 0.0
+    成本口径走 `services.recipe_cost.compute_recipe_theory` 唯一实现
+    （与导出报表、日消耗扣减共用），含单位换算、出成率与多级子配方展开。
+    """
+    from app.services.recipe_cost import compute_recipe_theory
 
-    for ing in ing_rows:
-        sku = session.get(db._SkuRow, ing.sku_id)
-        sku_name = sku.name if sku else ""
-        sku_category = sku.category if sku else ""
-        sku_base_unit = sku.base_unit if sku else ""
-        sku_current_stock = sku.current_stock if sku else 0.0
-        sku_last_unit_price = sku.last_unit_price if sku else 0.0
-
-        converted_qty = convert_unit_quantity(ing.consumption_qty, ing.unit, sku_base_unit) if sku else ing.consumption_qty
-        ing_cost = round(converted_qty * sku_last_unit_price, 2)
-        theoretical_cost += ing_cost
-
-        ingredients.append({
-            "id": ing.id,
-            "sku_id": ing.sku_id,
-            "sku_name": sku_name,
-            "sku_category": sku_category,
-            "sku_base_unit": sku_base_unit,
-            "sku_current_stock": sku_current_stock,
-            "sku_last_unit_price": sku_last_unit_price,
-            "consumption_qty": ing.consumption_qty,
-            "unit": ing.unit,
-            "notes": ing.notes or "",
-            "ingredient_cost": ing_cost,
-        })
+    theoretical_cost, ingredients = compute_recipe_theory(
+        session, dish_row.id, tenant_id)
 
     theoretical_cost = round(theoretical_cost, 2)
     price = round(dish_row.price or 0.0, 2)
@@ -130,6 +124,7 @@ def _dish_to_dict(session, dish_row) -> Dict:
         "price": price,
         "description": dish_row.description or "",
         "status": dish_row.status or "active",
+        "version": int(dish_row.version or 1),
         "created_at": dish_row.created_at or "",
         "updated_at": dish_row.updated_at or "",
         "ingredients": ingredients,
@@ -137,6 +132,100 @@ def _dish_to_dict(session, dish_row) -> Dict:
         "gross_profit": gross_profit,
         "gross_margin_rate": gross_margin_rate,
     }
+
+
+def _component_field(ing, key, default=None):
+    """组件字段读取：同时支持 Pydantic 模型对象与快照回滚传入的 dict。"""
+    if isinstance(ing, dict):
+        return ing.get(key, default)
+    return getattr(ing, key, default)
+
+
+def _normalize_component(ing):
+    """归一组件三元组：兼容旧客户端（仅传 sku_id）默认 component_type='sku'。"""
+    ctype = (_component_field(ing, "component_type") or "sku")
+    ctype = str(ctype).strip() or "sku"
+    cid = _component_field(ing, "component_id")
+    if cid is None:
+        cid = _component_field(ing, "sku_id")
+    return ctype, cid
+
+
+def _validate_recipe_payload(session, tenant_id, ingredients, dish_id=None):
+    """建档/更新配方统一校验。
+
+    返回 (error_body, status_code, normalized)：校验通过时 error_body 为 None
+    且 normalized 为可直接落库的组件列表；失败时 normalized 为 None。
+    覆盖：组件类型/重复、用量>0、出成率区间、SKU/子配方存在且属本租户、
+    单位同量纲、多级无环且深度合规。入参兼容 Pydantic 模型与 dict（快照回滚）。
+    """
+    from app.services.recipe_expand import validate_recipe_components
+
+    normalized = []
+    seen = set()
+    for ing in ingredients or []:
+        ctype, cid = _normalize_component(ing)
+        if ctype not in ("sku", "dish"):
+            return {"status": "error", "code": "INVALID_COMPONENT_TYPE",
+                    "msg": f"配方组件类型非法：{ctype}（仅支持食材 sku 或子配方 dish）"}, 400, None
+        if cid is None:
+            return {"status": "error", "code": "INVALID_COMPONENT",
+                    "msg": "配方组件不能为空"}, 400, None
+        key = (ctype, int(cid))
+        if key in seen:
+            return {"status": "error",
+                    "msg": "配方中存在重复的组件（食材 SKU / 子配方）"}, 400, None
+        seen.add(key)
+
+        qty = _component_field(ing, "consumption_qty")
+        if qty is None or float(qty) <= 0:
+            return {"status": "error",
+                    "msg": "食材单份消耗量必须大于 0"}, 400, None
+        try:
+            yr_raw = _component_field(ing, "yield_rate", 1.0)
+            yr = 1.0 if yr_raw is None else float(yr_raw)
+        except (TypeError, ValueError):
+            return {"status": "error", "code": "INVALID_YIELD_RATE",
+                    "msg": "出成率必须是 0 到 1 之间的数值"}, 400, None
+        if not (0 < yr <= 1):
+            return {"status": "error", "code": "INVALID_YIELD_RATE",
+                    "msg": "出成率必须满足 0 < 出成率 <= 1（损耗率由 1 - 出成率 派生）"}, 400, None
+
+        unit = (_component_field(ing, "unit") or "").strip()
+        if ctype == "sku":
+            sku = db.scoped(
+                session.query(db._SkuRow).filter(db._SkuRow.id == int(cid)),
+                db._SkuRow, tenant_id).first()
+            if not sku:
+                return {"status": "error", "code": "TENANT_SKU_NOT_FOUND",
+                        "msg": f"配方中的食材 SKU #{cid} 不存在或无权使用"}, 400, None
+            compat, _reason = check_unit_compatibility(unit, sku.base_unit)
+            if not compat:
+                return {"status": "error", "code": "UNIT_DIMENSION_MISMATCH",
+                        "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，"
+                               f"与配方消耗单位「{unit}」无法换算。请使用相匹配的单位"
+                               f"（例如均为重量或同为体积），或前往库存管理调整该食材的基本单位。"}, 400, None
+        else:
+            sub = session.get(db._DishRow, int(cid))
+            if not sub or not db._tenant_ok(sub, tenant_id):
+                return {"status": "error", "code": "TENANT_DISH_NOT_FOUND",
+                        "msg": f"子配方 #{cid} 不存在或无权使用"}, 400, None
+
+        normalized.append({
+            "component_type": ctype,
+            "component_id": int(cid),
+            "consumption_qty": round(float(qty), 4),
+            "unit": unit,
+            "yield_rate": yr,
+            "notes": (_component_field(ing, "notes") or "").strip(),
+        })
+
+    try:
+        validate_recipe_components(session, dish_id, normalized, tenant_id)
+    except ValueError as e:
+        return {"status": "error", "code": "RECIPE_GRAPH_INVALID",
+                "msg": str(e)}, 400, None
+    return None, None, normalized
 
 
 # -------------------------------------------------------------
@@ -170,7 +259,7 @@ def list_dishes(
                 cat_clean = (r.category or "").lower()
                 if q_clean not in name_clean and q_clean not in cat_clean:
                     continue
-            out.append(_dish_to_dict(session, r))
+            out.append(_dish_to_dict(session, r, _tenant_id(request)))
 
         return {"status": "success", "data": out}
     finally:
@@ -204,6 +293,7 @@ def get_cost_analysis(
             query = query.filter(db._DailyConsumptionRow.dish_id == int(dish_id))
 
         tenant_id = _tenant_id(request)
+        query = _consumption_tenant_scope(query, tenant_id)
         consumptions = query.order_by(db._DailyConsumptionRow.date.asc(), db._DailyConsumptionRow.id.asc()).all()
         # 行级租户过滤：使用 _consumption_tenant_ok 严格阻断跨租户流水透视
         consumptions = [c for c in consumptions if _consumption_tenant_ok(session, c, tenant_id)]
@@ -219,7 +309,7 @@ def get_cost_analysis(
         # 统计每个餐品的数据
         dish_stats = {}
         for d_id, d_obj in dish_obj_map.items():
-            dish_dict = _dish_to_dict(session, d_obj)
+            dish_dict = _dish_to_dict(session, d_obj, tenant_id)
             dish_stats[d_id] = {
                 "id": d_id,
                 "name": d_obj.name,
@@ -346,16 +436,21 @@ def get_cost_analysis(
 
 
 def _consumption_tenant_ok(session, cons, tenant_id) -> bool:
-    """Gap E2 收尾（Wave A F3）：daily_dish_consumptions 行级租户归属校验。
+    """daily_dish_consumptions 行级租户归属校验。
 
-    该表无 tenant_id 列（不新建列/不改 schema），归属经 join 关联数据判定：
-    1. 首选关联 dish 的 tenant_id（消耗提交时 dish 已按租户校验，为权威归属）；
-    2. dish 行缺失（被彻底删除）时，退回扣减明细关联 SKU 的 tenant_id；
-    3. 两者皆无法归属时视为不匹配（宁可漏见，不跨租户泄漏）。
+    WS4：该表已补 tenant_id 列，写入侧显式落租户，归属优先按行自身列判定；
+    仅历史空值行回退 join 关联数据（dish → SKU）判定，保证既有数据可见性不变：
+    1. 首选行自身 tenant_id（权威归属）；
+    2. 空值时回退关联 dish 的 tenant_id（消耗提交时 dish 已按租户校验）；
+    3. dish 行缺失（被彻底删除）时，退回扣减明细关联 SKU 的 tenant_id；
+    4. 皆无法归属时视为不匹配（宁可漏见，不跨租户泄漏）。
     tenant_id 为 None/空 不过滤（向后兼容）。
     """
     if tenant_id is None or not str(tenant_id).strip():
         return True
+    row_tenant = getattr(cons, "tenant_id", None)
+    if row_tenant:
+        return str(row_tenant) == str(tenant_id)
     dish = session.get(db._DishRow, cons.dish_id)
     if dish is not None:
         return db._tenant_ok(dish, tenant_id)
@@ -374,6 +469,19 @@ def _consumption_tenant_ok(session, cons, tenant_id) -> bool:
     return any(db._tenant_ok(sku, tenant_id) for sku in sku_rows)
 
 
+def _consumption_tenant_scope(query, tenant_id):
+    """WS4 查询侧列过滤：命中本租户行，或 tenant_id 为空的历史行（交由行级回退判定）。"""
+    if tenant_id is None or not str(tenant_id).strip():
+        return query
+    return query.filter(
+        or_(
+            db._DailyConsumptionRow.tenant_id == str(tenant_id),
+            db._DailyConsumptionRow.tenant_id.is_(None),
+            db._DailyConsumptionRow.tenant_id == "",
+        )
+    )
+
+
 @router.get("/api/dishes/daily_consumption")
 def get_daily_consumption(
     request: Request,
@@ -386,12 +494,14 @@ def get_daily_consumption(
     session = db.get_session()
     try:
         rows = (
-            session.query(db._DailyConsumptionRow)
-            .filter(db._DailyConsumptionRow.date == target_date)
+            _consumption_tenant_scope(
+                session.query(db._DailyConsumptionRow)
+                .filter(db._DailyConsumptionRow.date == target_date),
+                tenant_id)
             .order_by(db._DailyConsumptionRow.id.desc())
             .all()
         )
-        # Gap E2 收尾：按行归属租户过滤（经关联 dish / SKU 判定，无租户列）
+        # Gap E2 收尾 + WS4：按行归属租户过滤（行 tenant_id 优先，历史空值回退 join）
         rows = [r for r in rows if _consumption_tenant_ok(session, r, tenant_id)]
 
         consumptions = []
@@ -574,7 +684,7 @@ def get_dish(dish_id: int, request: Request):
         dish = session.get(db._DishRow, int(dish_id))
         if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
-        return {"status": "success", "data": _dish_to_dict(session, dish)}
+        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
     finally:
         session.close()
 
@@ -600,38 +710,13 @@ def create_dish(body: DishCreate, request: Request):
         if existing:
             return {"status": "error", "msg": f"餐品「{name}」已存在"}
 
-        # 校验 ingredients
-        sku_ids = set()
-        for ing in (body.ingredients or []):
-            if ing.sku_id in sku_ids:
-                return JSONResponse(status_code=400, content={"status": "error", "msg": "配方中存在重复的食材 SKU"})
-            sku_ids.add(ing.sku_id)
-            sku = db.scoped(
-                session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
-                db._SkuRow,
-                tenant_id
-            ).first()
-            if not sku:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "status": "error",
-                        "code": "TENANT_SKU_NOT_FOUND",
-                        "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在或无权使用"
-                    }
-                )
-            if ing.consumption_qty <= 0:
-                return JSONResponse(status_code=400, content={"status": "error", "msg": "食材单份消耗量必须大于 0"})
-            compat, reason = check_unit_compatibility(ing.unit, sku.base_unit)
-            if not compat:
-                return JSONResponse(
-                    status_code=400,
-                    content={
-                        "status": "error",
-                        "code": "UNIT_DIMENSION_MISMATCH",
-                        "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，与配方消耗单位「{ing.unit}」无法换算。请使用相匹配的单位（例如均为重量或同为体积），或前往库存管理调整该食材的基本单位。"
-                    }
-                )
+        # 校验 ingredients（组件类型/用量/出成率/归属/单位/无环/深度）。
+        # 新建时 dish_id=None：校验以「新餐品」为虚拟根（depth=1）对被引用子配方跑环/深度 DFS，
+        # 与 update/restore 传 dish.id 的语义一致（越界/成环返回 400 RECIPE_GRAPH_INVALID）。
+        err_body, err_status, normalized = _validate_recipe_payload(
+            session, tenant_id, body.ingredients or [], None)
+        if err_body:
+            return JSONResponse(status_code=err_status, content=err_body)
 
         now_str = db.now_iso()
         dish = db._DishRow(
@@ -640,6 +725,7 @@ def create_dish(body: DishCreate, request: Request):
             price=round(float(body.price), 2),
             description=(body.description or "").strip(),
             status=body.status or "active",
+            version=1,
             created_at=now_str,
             updated_at=now_str,
             tenant_id=tenant_id,
@@ -647,19 +733,26 @@ def create_dish(body: DishCreate, request: Request):
         session.add(dish)
         session.flush()
 
-        for ing in (body.ingredients or []):
+        for comp in normalized:
             ing_row = db._DishIngredientRow(
                 dish_id=dish.id,
-                sku_id=ing.sku_id,
-                consumption_qty=round(float(ing.consumption_qty), 4),
-                unit=(ing.unit or "").strip(),
-                notes=(ing.notes or "").strip(),
+                sku_id=(comp["component_id"] if comp["component_type"] == "sku" else None),
+                component_type=comp["component_type"],
+                component_id=comp["component_id"],
+                consumption_qty=comp["consumption_qty"],
+                unit=comp["unit"],
+                yield_rate=comp["yield_rate"],
+                notes=comp["notes"],
             )
             session.add(ing_row)
 
+        session.flush()
+        # WS2：写入 v1 配方快照（版本可回溯）
+        db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+                                summary="创建餐品（初始版本）")
         session.commit()
         session.refresh(dish)
-        return {"status": "success", "data": _dish_to_dict(session, dish)}
+        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
     except Exception as e:
         session.rollback()
         return {"status": "error", "msg": f"创建餐品失败: {str(e)}"}
@@ -676,6 +769,22 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
         dish = session.get(db._DishRow, int(dish_id))
         if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+
+        tenant_id = _tenant_id(request)
+
+        # WS2 乐观锁：expected_version 与当前 version 不一致即 409（防并发覆盖）
+        if body.expected_version is not None \
+                and int(body.expected_version) != int(dish.version or 1):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "status": "error",
+                    "code": "VERSION_CONFLICT",
+                    "msg": f"该餐品配方已被他人更新（当前版本 v{int(dish.version or 1)}，"
+                           f"你提交的是 v{int(body.expected_version)}）。请刷新后重试。",
+                    "current_version": int(dish.version or 1),
+                }
+            )
 
         if body.name is not None:
             new_name = body.name.strip()
@@ -704,58 +813,39 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
         if body.status is not None:
             dish.status = body.status
 
-        # 更新配方
+        # 更新配方（版本号自增 + 写快照，历史不可改写）
         if body.ingredients is not None:
-            tenant_id = _tenant_id(request)
-            sku_ids = set()
-            for ing in body.ingredients:
-                if ing.sku_id in sku_ids:
-                    return JSONResponse(status_code=400, content={"status": "error", "msg": "配方中存在重复的食材 SKU"})
-                sku_ids.add(ing.sku_id)
-                sku = db.scoped(
-                    session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
-                    db._SkuRow,
-                    tenant_id
-                ).first()
-                if not sku:
-                    return JSONResponse(
-                        status_code=400,
-                        content={
-                            "status": "error",
-                            "code": "TENANT_SKU_NOT_FOUND",
-                            "msg": f"配方中的食材 SKU #{ing.sku_id} 不存在或无权使用"
-                        }
-                    )
-                if ing.consumption_qty <= 0:
-                    return JSONResponse(status_code=400, content={"status": "error", "msg": "食材单份消耗量必须大于 0"})
-                compat, reason = check_unit_compatibility(ing.unit, sku.base_unit)
-                if not compat:
-                    return JSONResponse(
-                        status_code=400,
-                        content={
-                            "status": "error",
-                            "code": "UNIT_DIMENSION_MISMATCH",
-                            "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，与配方消耗单位「{ing.unit}」无法换算。请使用相匹配的单位（例如均为重量或同为体积），或前往库存管理调整该食材的基本单位。"
-                        }
-                    )
+            err_body, err_status, normalized = _validate_recipe_payload(
+                session, tenant_id, body.ingredients, dish.id)
+            if err_body:
+                return JSONResponse(status_code=err_status, content=err_body)
 
             # 删除旧配方
             session.query(db._DishIngredientRow).filter(db._DishIngredientRow.dish_id == dish.id).delete()
             # 插入新配方
-            for ing in body.ingredients:
+            for comp in normalized:
                 ing_row = db._DishIngredientRow(
                     dish_id=dish.id,
-                    sku_id=ing.sku_id,
-                    consumption_qty=round(float(ing.consumption_qty), 4),
-                    unit=(ing.unit or "").strip(),
-                    notes=(ing.notes or "").strip(),
+                    sku_id=(comp["component_id"] if comp["component_type"] == "sku" else None),
+                    component_type=comp["component_type"],
+                    component_id=comp["component_id"],
+                    consumption_qty=comp["consumption_qty"],
+                    unit=comp["unit"],
+                    yield_rate=comp["yield_rate"],
+                    notes=comp["notes"],
                 )
                 session.add(ing_row)
+            # 版本自增（BOM 版本化 + 乐观锁基线）
+            dish.version = int(dish.version or 1) + 1
 
         dish.updated_at = db.now_iso()
+        session.flush()
+        if body.ingredients is not None:
+            db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+                                    summary="更新餐品配方")
         session.commit()
         session.refresh(dish)
-        return {"status": "success", "data": _dish_to_dict(session, dish)}
+        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
     except Exception as e:
         session.rollback()
         return {"status": "error", "msg": f"更新餐品失败: {str(e)}"}
@@ -783,6 +873,129 @@ def delete_dish(dish_id: int, request: Request, hard: int = 0):
             dish.updated_at = db.now_iso()
             session.commit()
             return {"status": "success", "action": "DEACTIVATED", "msg": "餐品已停用"}
+    finally:
+        session.close()
+
+
+# -------------------------------------------------------------
+# WS2：BOM 版本历史 / 回滚
+# -------------------------------------------------------------
+@router.get("/api/dishes/{dish_id}/versions")
+def list_dish_versions(dish_id: int, request: Request):
+    """查询餐品 BOM 版本历史（元数据列表，按版本倒序）。"""
+    require_role("staff")(request)
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish or not db._tenant_ok(dish, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+        return {
+            "status": "success",
+            "data": {
+                "dish_id": dish.id,
+                "dish_name": dish.name,
+                "current_version": int(dish.version or 1),
+                "versions": db.list_dish_recipe_versions(dish.id, tenant_id),
+            },
+        }
+    finally:
+        session.close()
+
+
+@router.get("/api/dishes/{dish_id}/versions/{version}")
+def get_dish_version(dish_id: int, version: int, request: Request):
+    """查询指定版本完整快照（菜品字段 + 配方）。"""
+    require_role("staff")(request)
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish or not db._tenant_ok(dish, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+        snapshot = db.get_dish_recipe_version(dish.id, int(version), tenant_id)
+        if snapshot is None:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": f"版本 v{int(version)} 不存在"})
+        return {"status": "success", "data": snapshot}
+    finally:
+        session.close()
+
+
+@router.post("/api/dishes/{dish_id}/versions/{version}/restore")
+def restore_dish_version(dish_id: int, version: int, request: Request,
+                         body: Optional[DishRestoreBody] = None):
+    """将历史快照恢复为**新版本**（不改写历史，版本号自增）。"""
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    session = db.get_session()
+    try:
+        dish = session.get(db._DishRow, int(dish_id))
+        if not dish or not db._tenant_ok(dish, tenant_id):
+            return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
+        snap = db.get_dish_recipe_version(dish.id, int(version), tenant_id)
+        if snap is None:
+            return JSONResponse(status_code=404, content={"status": "error", "msg": f"版本 v{int(version)} 不存在"})
+
+        snapshot = snap.get("snapshot") or {}
+        snap_dish = snapshot.get("dish") or {}
+        comps = snapshot.get("ingredients") or []
+
+        # 校验快照组件（子配方可能已被删除/改名 → 明确报错，不静默降级）
+        err_body, err_status, normalized = _validate_recipe_payload(
+            session, tenant_id, comps, dish.id)
+        if err_body:
+            return JSONResponse(status_code=err_status, content=err_body)
+
+        # 回滚菜品字段（status 保持现状：不因回滚静默重新上架/停用）
+        new_name = (snap_dish.get("name") or dish.name or "").strip()
+        if new_name and new_name != dish.name:
+            clash = db.scoped(
+                session.query(db._DishRow).filter(
+                    db._DishRow.name == new_name, db._DishRow.id != dish.id),
+                db._DishRow, tenant_id).first()
+            if clash:
+                return JSONResponse(
+                    status_code=409,
+                    content={"status": "error", "code": "DISH_NAME_CONFLICT",
+                             "msg": f"回滚目标名称「{new_name}」已被其他餐品占用"})
+            dish.name = new_name
+        if snap_dish.get("category") is not None:
+            dish.category = (snap_dish.get("category") or "").strip()
+        if snap_dish.get("price") is not None:
+            dish.price = round(float(snap_dish.get("price") or 0.0), 2)
+        if snap_dish.get("description") is not None:
+            dish.description = (snap_dish.get("description") or "").strip()
+
+        # 覆盖配方 + 版本自增 + 写新快照（历史不可改写）
+        session.query(db._DishIngredientRow).filter(
+            db._DishIngredientRow.dish_id == dish.id).delete()
+        for comp in normalized:
+            session.add(db._DishIngredientRow(
+                dish_id=dish.id,
+                sku_id=(comp["component_id"] if comp["component_type"] == "sku" else None),
+                component_type=comp["component_type"],
+                component_id=comp["component_id"],
+                consumption_qty=comp["consumption_qty"],
+                unit=comp["unit"],
+                yield_rate=comp["yield_rate"],
+                notes=comp["notes"],
+            ))
+        dish.version = int(dish.version or 1) + 1
+        dish.updated_at = db.now_iso()
+        summary = ((body.change_summary if body else "") or "").strip() \
+            or f"回滚到 v{int(version)}"
+        session.flush()
+        db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+                                summary=summary)
+        session.commit()
+        session.refresh(dish)
+        data = _dish_to_dict(session, dish, tenant_id)
+        data["restored_from_version"] = int(version)
+        return {"status": "success", "msg": f"已从 v{int(version)} 回滚并生成 v{dish.version}",
+                "data": data}
+    except Exception as e:
+        session.rollback()
+        return {"status": "error", "msg": f"回滚餐品配方失败: {str(e)}"}
     finally:
         session.close()
 
@@ -835,41 +1048,79 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                     }
                 )
 
-        created_records = []
+        # WS5：批内同一餐品先合并累加份数，避免同请求重复行
+        merged_items: "OrderedDict[int, Dict]" = OrderedDict()
         for item in body.items:
-            dish = session.get(db._DishRow, int(item.dish_id))
+            key = int(item.dish_id)
+            if key in merged_items:
+                merged_items[key]["quantity"] = round(
+                    merged_items[key]["quantity"] + float(item.quantity), 4)
+                if (item.notes or "").strip():
+                    merged_items[key]["notes"] = (item.notes or "").strip()
+            else:
+                merged_items[key] = {
+                    "dish_id": key,
+                    "quantity": float(item.quantity),
+                    "notes": (item.notes or "").strip(),
+                }
 
-            ing_rows = (
-                session.query(db._DishIngredientRow)
-                .filter(db._DishIngredientRow.dish_id == dish.id)
-                .all()
+        created_records = []
+        result_items = []
+        any_merged = False
+        total_quantity = 0.0
+
+        for key, mitem in merged_items.items():
+            dish = session.get(db._DishRow, int(key))
+            quantity = round(float(mitem["quantity"]), 4)
+
+            # WS5：同 (日期, 餐品) 已有活跃记录则合并累加，不新建
+            existing = (
+                session.query(db._DailyConsumptionRow)
+                .filter(
+                    db._DailyConsumptionRow.date == date_str,
+                    db._DailyConsumptionRow.dish_id == dish.id,
+                    db._DailyConsumptionRow.is_void == 0,
+                )
+                .order_by(db._DailyConsumptionRow.id.asc())
+                .first()
             )
+            is_merge = existing is not None
+            log_note = (f"餐品消耗(合并): {dish.name} x {quantity}份"
+                        if is_merge else f"餐品消耗: {dish.name} x {quantity}份")
+
+            # WS6：多级 BOM 展开为 {sku_id: {qty, unit}}，逐层应用 yield_rate；
+            # 每个 SKU 聚合后只跑一次 FIFO（避免子配方重复扣减）。
+            expanded = expand_recipe(session, dish.id, quantity, tenant_id)
 
             dish_total_cost = 0.0
             dish_details = []
 
-            for ing in ing_rows:
-                total_qty_needed = round(ing.consumption_qty * item.quantity, 4)
+            for sku_id, info in expanded.items():
+                qty_needed = round(float(info.get("qty") or 0.0), 4)
+                unit_needed = info.get("unit") or ""
+                if qty_needed <= 0:
+                    continue
                 sku = db.scoped(
-                    session.query(db._SkuRow).filter(db._SkuRow.id == ing.sku_id),
+                    session.query(db._SkuRow).filter(db._SkuRow.id == int(sku_id)),
                     db._SkuRow,
                     tenant_id
                 ).first()
                 if not sku:
-                    raise ValueError(f"餐品「{dish.name}」配方中的食材 SKU #{ing.sku_id} 不存在或无权使用")
+                    raise ValueError(
+                        f"餐品「{dish.name}」配方展开出的食材 SKU #{sku_id} 不存在或无权使用")
 
                 cost, details_list = CostingService.deduct_consumption_fifo(
                     session=session,
-                    sku_id=ing.sku_id,
-                    qty_needed=total_qty_needed,
-                    unit_needed=ing.unit,
+                    sku_id=int(sku_id),
+                    qty_needed=qty_needed,
+                    unit_needed=unit_needed,
                     date=date_str,
                 )
                 dish_total_cost += cost
                 dish_details.extend(details_list)
 
                 # 扣减 SKU 当前库存
-                qty_in_sku_unit = convert_unit_quantity(total_qty_needed, ing.unit, sku.base_unit)
+                qty_in_sku_unit = convert_unit_quantity(qty_needed, unit_needed, sku.base_unit)
                 sku.current_stock = round(sku.current_stock - qty_in_sku_unit, 4)
 
                 # 写入 inventory_log
@@ -883,27 +1134,40 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                     date=date_str,
                     receipt_id=None,
                     kind="consume",
-                    note=f"餐品消耗: {dish.name} x {item.quantity}份",
+                    note=log_note,
                     created_at=db.now_iso(),
                     tenant_id=tenant_id,
                 )
                 session.add(stock_log)
 
             dish_total_cost = round(dish_total_cost, 2)
-            unit_cost = round(dish_total_cost / item.quantity, 4) if item.quantity > 0 else 0.0
 
-            cons_row = db._DailyConsumptionRow(
-                date=date_str,
-                dish_id=dish.id,
-                quantity=round(float(item.quantity), 4),
-                total_cost=dish_total_cost,
-                unit_cost=unit_cost,
-                notes=(item.notes or body.notes or "").strip(),
-                is_void=0,
-                created_at=db.now_iso(),
-            )
-            session.add(cons_row)
-            session.flush()
+            if is_merge:
+                # 增量份数已按 FIFO 扣减，台账累加并重算均价；明细追挂到原记录
+                existing.quantity = round(float(existing.quantity or 0.0) + quantity, 4)
+                existing.total_cost = round(float(existing.total_cost or 0.0) + dish_total_cost, 2)
+                existing.unit_cost = (
+                    round(existing.total_cost / existing.quantity, 4)
+                    if existing.quantity > 0 else 0.0)
+                if mitem["notes"]:
+                    existing.notes = mitem["notes"]
+                cons_row = existing
+                any_merged = True
+            else:
+                unit_cost = round(dish_total_cost / quantity, 4) if quantity > 0 else 0.0
+                cons_row = db._DailyConsumptionRow(
+                    date=date_str,
+                    dish_id=dish.id,
+                    quantity=quantity,
+                    total_cost=dish_total_cost,
+                    unit_cost=unit_cost,
+                    notes=(mitem["notes"] or body.notes or "").strip(),
+                    is_void=0,
+                    created_at=db.now_iso(),
+                    tenant_id=tenant_id,
+                )
+                session.add(cons_row)
+                session.flush()
 
             for dt in dish_details:
                 dt_row = db._DailyConsumptionDetailRow(
@@ -919,6 +1183,14 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 session.add(dt_row)
 
             created_records.append(cons_row.id)
+            total_quantity = round(total_quantity + float(cons_row.quantity or 0.0), 4)
+            result_items.append({
+                "dish_id": dish.id,
+                "consumption_id": cons_row.id,
+                "quantity": round(float(cons_row.quantity or 0.0), 4),
+                "total_cost": round(float(cons_row.total_cost or 0.0), 2),
+                "merged": is_merge,
+            })
 
         session.commit()
         return {
@@ -927,6 +1199,9 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
             "data": {
                 "date": date_str,
                 "consumption_ids": created_records,
+                "merged": any_merged,
+                "quantity": total_quantity,
+                "items": result_items,
             },
         }
     except ValueError as e:

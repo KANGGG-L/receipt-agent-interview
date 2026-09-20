@@ -63,6 +63,7 @@ _PendingMemoryRow = None
 _EvalCandidateRow = None
 _GuardrailEventRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
+_DishRecipeVersionRow = None
 
 
 def _make_engine():
@@ -75,6 +76,7 @@ def _make_engine():
     global _EvalCandidateRow
     global _GuardrailEventRow
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
+    global _DishRecipeVersionRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -419,21 +421,46 @@ def _make_engine():
         price = Column(Float, default=0.0)
         description = Column(String, default="")
         status = Column(String, default="active")          # active/inactive
+        version = Column(Integer, default=1)               # BOM 版本号（乐观锁基线）
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
         # Gap E2：租户隔离键
         tenant_id = Column(String(64), default="default", index=True)
 
     class DishIngredientRow(Base):
-        """餐品 BOM 配方明细表（带 dish_id, sku_id 唯一约束）。"""
+        """餐品 BOM 配方明细表（支持 sku 食材与 dish 子配方两类组件）。
+
+        - component_type='sku'：component_id 即 SKU id，并回填 sku_id 保持兼容；
+        - component_type='dish'：component_id 为子餐品 id，sku_id 置空；
+        唯一约束按 (dish_id, component_type, component_id)，同一餐品下同一
+        组件只允许一行（sku_id 换组件类型后可重复出现于不同组件）。
+        yield_rate 为出成率：有效领料量 = 配方用量 / yield_rate，损耗率派生为 1 - yield_rate。
+        """
         __tablename__ = "dish_ingredients"
         id = Column(Integer, primary_key=True, autoincrement=True)
         dish_id = Column(Integer, index=True, nullable=False)
-        sku_id = Column(Integer, index=True, nullable=False)
+        sku_id = Column(Integer, index=True, nullable=True)
+        component_type = Column(String(16), default="sku")     # sku | dish
+        component_id = Column(Integer, index=True, nullable=True)
         consumption_qty = Column(Float, default=0.0)
         unit = Column(String, default="")
+        yield_rate = Column(Float, default=1.0)
         notes = Column(String, default="")
-        __table_args__ = (UniqueConstraint("dish_id", "sku_id"),)
+        __table_args__ = (
+            UniqueConstraint("dish_id", "component_type", "component_id"),
+        )
+
+    class DishRecipeVersionRow(Base):
+        """餐品配方版本快照（BOM 版本化 + 乐观锁 + 可回滚）。"""
+        __tablename__ = "dish_recipe_versions"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        dish_id = Column(Integer, index=True, nullable=False)
+        version = Column(Integer, default=1)
+        snapshot_json = Column(Text, default="{}")
+        change_summary = Column(String, default="")
+        changed_by = Column(String, default="")
+        changed_at = Column(String, default="")
+        tenant_id = Column(String(64), default="default", index=True)
 
     class EvalCandidateRow(Base):
         """线上低置信样本回流候选（Gap A5 / T6）。
@@ -485,6 +512,8 @@ def _make_engine():
         notes = Column(String, default="")
         is_void = Column(Integer, default=0)               # 0=normal, 1=voided
         created_at = Column(String, default="")
+        # WS4：租户归属列（归属不再仅靠 join 推断）
+        tenant_id = Column(String(64), default="default", index=True)
 
     class DailyConsumptionDetailRow(Base):
         """每日餐品消耗食材 FIFO 批次扣减穿透溯源明细。"""
@@ -670,7 +699,73 @@ def _make_engine():
         _apply_migration_ddl(_engine, _ddl)
 
     # -----------------------------------------------------------------
-    # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus 两表）：
+    # BOM / 库存消耗整改迁移（WS1/WS2/WS4/WS6）：
+    # 幂等口径同前（先查再执行；仅 ADD COLUMN / CREATE TABLE / CREATE INDEX）；
+    # dish_ingredients 的组件列变更（唯一约束变更）走下方数据保全式重建。
+    # -----------------------------------------------------------------
+    for _ddl in (
+        # WS2：BOM 版本号（乐观锁基线）
+        "ALTER TABLE dishes ADD COLUMN version INTEGER DEFAULT 1",
+        # WS1：出成率（有效领料量 = 配方用量 / yield_rate）
+        "ALTER TABLE dish_ingredients ADD COLUMN yield_rate REAL DEFAULT 1.0",
+        # WS4：daily_dish_consumptions 补 tenant_id 列（归属不再仅靠 join 推断）
+        "ALTER TABLE daily_dish_consumptions ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_daily_dish_consumptions_tenant_id"
+        " ON daily_dish_consumptions (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_dish_ingredients_component"
+        " ON dish_ingredients (component_type, component_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # WS2：BOM 版本快照表（CREATE TABLE IF NOT EXISTS 兜底覆盖裸库场景）
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS dish_recipe_versions ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " dish_id INTEGER NOT NULL,"
+        " version INTEGER DEFAULT 1,"
+        " snapshot_json TEXT DEFAULT '{}',"
+        " change_summary VARCHAR DEFAULT '',"
+        " changed_by VARCHAR DEFAULT '',"
+        " changed_at TEXT DEFAULT '',"
+        " tenant_id VARCHAR(64) DEFAULT 'default')",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_dish_recipe_versions_dish_id"
+        " ON dish_recipe_versions (dish_id)",
+        "CREATE INDEX IF NOT EXISTS idx_dish_recipe_versions_tenant_id"
+        " ON dish_recipe_versions (tenant_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # WS4：一次性幂等回填 —— 存量消耗行按关联 dish 补 tenant_id。
+    # 判据（关键修正）：ADD COLUMN ... DEFAULT 'default' 会把存量行填成占位值
+    # 'default'（而非 NULL），故待回填集合必须含 NULL / '' / 占位 'default' 三种；
+    # 且仅在关联 dish 的 tenant_id 是真实非 default 值时才改写（避免空转与误改）。
+    # 改写后行值即等于 dish 租户，不再命中判据 —— 二次 import 零动作（幂等）。
+    # 依赖 dishes 行存在（硬删菜品的历史消耗无法回填，读取侧保留 join 回退）。
+    try:
+        from sqlalchemy import text as _sa_text_tc
+        with _engine.connect() as _c:
+            _c.execute(_sa_text_tc(
+                "UPDATE daily_dish_consumptions "
+                "SET tenant_id = (SELECT tenant_id FROM dishes "
+                "                 WHERE dishes.id = daily_dish_consumptions.dish_id) "
+                "WHERE (tenant_id IS NULL OR tenant_id = '' OR tenant_id = 'default') "
+                "  AND dish_id IN (SELECT id FROM dishes) "
+                "  AND COALESCE((SELECT tenant_id FROM dishes "
+                "                WHERE dishes.id = daily_dish_consumptions.dish_id), '') "
+                "      NOT IN ('', 'default')"
+            ))
+            _c.commit()
+    except Exception as _e:
+        logger.warning("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
+
+    # -----------------------------------------------------------------
+    # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / dish_ingredients）：
     # SQLite 无法 ALTER 主键/唯一约束，检测到旧物理形态时做数据保全式标准
     # 重建（CREATE 新表 → 按列拷贝 → 校验行数 → DROP 旧表 → RENAME，最后补索引）。
     # 铁律：新形态库零动作；拷贝保全全部列（缺失列按默认值填充）；失败只告警
@@ -678,6 +773,7 @@ def _make_engine():
     # -----------------------------------------------------------------
     _rebuild_legacy_vendor_memory(_engine)
     _rebuild_legacy_skus_name_unique(_engine)
+    _rebuild_legacy_dish_ingredients(_engine)
 
     _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow = ReceiptRow, ItemRow, SkuRow, StockLogRow
     _SupplierRow, _DeptRow, _PaymentRow = SupplierRow, DeptRow, PaymentRow
@@ -692,6 +788,7 @@ def _make_engine():
     _EvalCandidateRow = EvalCandidateRow
     _GuardrailEventRow = GuardrailEventRow
     _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
+    _DishRecipeVersionRow = DishRecipeVersionRow
     _InventoryBatchRow = InventoryBatchRow
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
     return Base
@@ -947,6 +1044,81 @@ def _rebuild_legacy_skus_name_unique(engine):
                 logger.warning("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
         logger.warning("[migrate] skus legacy rebuild skipped: %s", e)
+        _drop_rebuild_tmp_table(engine, tmp)
+
+
+def _rebuild_legacy_dish_ingredients(engine):
+    """WS6：dish_ingredients 旧形态物理重建（单层 sku → 支持 sku/dish 两级组件）。
+
+    旧形态唯一约束为 (dish_id, sku_id)，且无 component_type / component_id 列，
+    无法表达「餐品含子配方」。检测到新列缺失或唯一约束未覆盖组件三元组即做
+    数据保全式重建：sku_id 非空行回填 component_id=sku_id、component_type='sku'。
+    """
+    table, tmp = "dish_ingredients", "dish_ingredients__rebuild"
+    try:
+        from sqlalchemy import text as _t
+        with engine.begin() as conn:
+            cols = _table_columns(conn, table)
+            if not cols:
+                return  # 表不存在（全新库由 create_all 建出正确形态）
+            uniques = _table_unique_index_columns(conn, table)
+            new_form = (["dish_id", "component_type", "component_id"] in uniques)
+            if "component_type" in cols and "component_id" in cols and new_form:
+                return  # 已是新形态：零动作
+            target_cols = [
+                ("id", None), ("dish_id", None), ("sku_id", None),
+                ("component_type", "'sku'"),
+                ("consumption_qty", "0"), ("unit", "''"),
+                ("yield_rate", "1.0"), ("notes", "''"),
+            ]
+            # component_id：新库已有该列则直接沿用，旧库由 sku_id 派生
+            has_component_id = "component_id" in cols
+            conn.execute(_t(f"DROP TABLE IF EXISTS {tmp}"))
+            conn.execute(_t(
+                f"CREATE TABLE {tmp} ("
+                " id INTEGER NOT NULL, dish_id INTEGER NOT NULL, sku_id INTEGER,"
+                " component_type VARCHAR(16), component_id INTEGER,"
+                " consumption_qty FLOAT, unit VARCHAR, yield_rate FLOAT,"
+                " notes VARCHAR, PRIMARY KEY (id),"
+                " UNIQUE (dish_id, component_type, component_id))"
+            ))
+            select_exprs = []
+            for col, default in target_cols:
+                select_exprs.append(f'"{col}"' if col in cols else default)
+            select_exprs.append(
+                '"component_id"' if has_component_id else '"sku_id"')
+            conn.execute(_t(
+                f"INSERT INTO {tmp} ({', '.join(c for c, _d in target_cols)},"
+                f" component_id) SELECT {', '.join(select_exprs)} FROM {table}"
+            ))
+            new_cnt = conn.execute(_t(f"SELECT COUNT(*) FROM {tmp}")).scalar()
+            old_cnt = conn.execute(_t(f"SELECT COUNT(*) FROM {table}")).scalar()
+            if int(new_cnt or 0) != int(old_cnt or 0):
+                raise RuntimeError(
+                    f"row count mismatch old={old_cnt} new={new_cnt}")
+            # 拷贝完成且校验通过后才允许 drop 旧表
+            conn.execute(_t(f"DROP TABLE {table}"))
+            conn.execute(_t(f"ALTER TABLE {tmp} RENAME TO {table}"))
+        logger.warning(
+            "[migrate] dish_ingredients legacy single-level schema rebuilt to "
+            "sku/dish component schema (rows=%s)", new_cnt)
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS ix_dish_ingredients_dish_id"
+            " ON dish_ingredients (dish_id)",
+            "CREATE INDEX IF NOT EXISTS ix_dish_ingredients_sku_id"
+            " ON dish_ingredients (sku_id)",
+            "CREATE INDEX IF NOT EXISTS ix_dish_ingredients_component_id"
+            " ON dish_ingredients (component_id)",
+            "CREATE INDEX IF NOT EXISTS idx_dish_ingredients_component"
+            " ON dish_ingredients (component_type, component_id)",
+        ):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(_t(ddl))
+            except Exception as e:
+                logger.warning("[migrate] %s skipped: %s", ddl, e)
+    except Exception as e:
+        logger.warning("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
 
 
@@ -1660,12 +1832,16 @@ def stocktake_sku(sku_id, actual_qty, note="", tenant_id="default"):
 
 def delete_sku(sku_id, tenant_id=None):
     """安全删除/停用 SKU：
-    - 若无库存流水引用：直接物理删除并返回 (True, 'DELETED')
-    - 若有库存流水引用：标记停用 active=0 并返回 (True, 'DEACTIVATED')
+    - 若无任何引用（库存流水 / 收据明细 / BOM 配方）：物理删除并返回 (True, 'DELETED')
+    - 有任一引用：标记停用 active=0 并返回 (True, 'DEACTIVATED')
     - 若不存在：返回 (False, 'NOT_FOUND')
     - 租户防御（Wave A F2）：tenant_id 非空时校验 SKU 归属，跨租户视为
       不存在（返回 (False, 'NOT_FOUND')，与不存在同形态）；None=不过滤
       （向后兼容内部脚本与既有测试路径）。
+
+    WS3：BOM 引用保护 —— 被 dish_ingredients 引用的 SKU 不得物理删除
+    （否则配方出现悬空行）。引用计数含 sku 组件（component_id=sku_id）与旧库
+    回填前的 sku_id 直连行，与既有 DEACTIVATED 形态一致。
     """
     s = get_session()
     try:
@@ -1674,7 +1850,15 @@ def delete_sku(sku_id, tenant_id=None):
             return False, "NOT_FOUND"
         log_count = s.query(_StockLogRow).filter(_StockLogRow.sku_id == int(sku_id)).count()
         item_count = s.query(_ItemRow).filter(_ItemRow.sku_id == int(sku_id)).count()
-        if log_count == 0 and item_count == 0:
+        bom_count = (
+            s.query(_DishIngredientRow)
+            .filter(
+                (_DishIngredientRow.sku_id == int(sku_id))
+                | (_DishIngredientRow.component_id == int(sku_id))
+            )
+            .count()
+        )
+        if log_count == 0 and item_count == 0 and bom_count == 0:
             s.delete(row)
             s.commit()
             return True, "DELETED"
@@ -1918,6 +2102,161 @@ def deduplicate_skus_by_canonical(tenant_id=None):
         if reports or has_residual:
             s.commit()
         return reports
+    finally:
+        s.close()
+
+
+def snapshot_dish_recipe(session, dish, changed_by="", summary=""):
+    """写入 BOM 版本快照（含菜品字段 + 完整配方）。
+
+    调用方负责 commit（与菜品/配方变更同一事务）；同 (dish, version) 已存在
+    则跳过，保证重试幂等、历史不可改写。
+    返回新增的快照行；跳过时返回已有行。
+    """
+    existing = (
+        session.query(_DishRecipeVersionRow)
+        .filter(
+            _DishRecipeVersionRow.dish_id == int(dish.id),
+            _DishRecipeVersionRow.version == int(dish.version or 1),
+        )
+        .first()
+    )
+    if existing is not None:
+        return existing
+
+    ing_rows = (
+        session.query(_DishIngredientRow)
+        .filter(_DishIngredientRow.dish_id == int(dish.id))
+        .order_by(_DishIngredientRow.id.asc())
+        .all()
+    )
+    ingredients = []
+    for ing in ing_rows:
+        ctype = getattr(ing, "component_type", None) or "sku"
+        cid = getattr(ing, "component_id", None)
+        if cid is None:
+            cid = getattr(ing, "sku_id", None)
+        ingredients.append({
+            "component_type": ctype,
+            "component_id": cid,
+            "sku_id": getattr(ing, "sku_id", None),
+            "consumption_qty": ing.consumption_qty,
+            "unit": ing.unit,
+            "yield_rate": getattr(ing, "yield_rate", 1.0),
+            "notes": ing.notes or "",
+        })
+
+    snapshot = {
+        "dish": {
+            "id": dish.id,
+            "name": dish.name,
+            "category": dish.category or "",
+            "price": dish.price,
+            "description": dish.description or "",
+            "status": dish.status or "active",
+            "tenant_id": getattr(dish, "tenant_id", None) or "default",
+            "version": int(dish.version or 1),
+        },
+        "ingredients": ingredients,
+        "captured_at": now_iso(),
+    }
+    row = _DishRecipeVersionRow(
+        dish_id=int(dish.id),
+        version=int(dish.version or 1),
+        snapshot_json=json.dumps(snapshot, ensure_ascii=False),
+        change_summary=(summary or "").strip(),
+        changed_by=(changed_by or "").strip(),
+        changed_at=now_iso(),
+        tenant_id=getattr(dish, "tenant_id", None) or "default",
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def backfill_dish_recipe_snapshots():
+    """存量餐品版本快照回填：为「零快照」餐品补写当前版本的初始快照。
+
+    幂等：仅处理 `dish_recipe_versions` 中尚无任何行的餐品，二次调用零动作；
+    单条异常仅告警不抛出（不阻断调用方）。返回实际补写的餐品数。
+    """
+    s = get_session()
+    try:
+        covered = {
+            row[0] for row in s.query(_DishRecipeVersionRow.dish_id).distinct().all()
+            if row[0] is not None
+        }
+        created = 0
+        for dish in s.query(_DishRow).all():
+            if dish.id in covered:
+                continue
+            snapshot_dish_recipe(
+                s, dish,
+                changed_by="system:backfill",
+                summary="存量餐品初始版本回填",
+            )
+            created += 1
+        if created:
+            s.commit()
+        return created
+    except Exception as e:
+        s.rollback()
+        logger.warning("[migrate] dish recipe snapshot backfill skipped: %s", e)
+        return 0
+    finally:
+        s.close()
+
+
+def list_dish_recipe_versions(dish_id, tenant_id=None):
+    """列出某餐品的版本快照元数据（按版本倒序），不含快照正文。"""
+    s = get_session()
+    try:
+        rows = scoped(
+            s.query(_DishRecipeVersionRow), _DishRecipeVersionRow, tenant_id
+        ).filter(_DishRecipeVersionRow.dish_id == int(dish_id)) \
+         .order_by(_DishRecipeVersionRow.version.desc()).all()
+        return [
+            {
+                "id": r.id,
+                "dish_id": r.dish_id,
+                "version": r.version,
+                "change_summary": r.change_summary or "",
+                "changed_by": r.changed_by or "",
+                "changed_at": r.changed_at or "",
+                "tenant_id": r.tenant_id or "default",
+            }
+            for r in rows
+        ]
+    finally:
+        s.close()
+
+
+def get_dish_recipe_version(dish_id, version, tenant_id=None):
+    """取某餐品指定版本的完整快照（dict）；不存在返回 None。"""
+    s = get_session()
+    try:
+        row = scoped(
+            s.query(_DishRecipeVersionRow), _DishRecipeVersionRow, tenant_id
+        ).filter(
+            _DishRecipeVersionRow.dish_id == int(dish_id),
+            _DishRecipeVersionRow.version == int(version),
+        ).first()
+        if row is None:
+            return None
+        try:
+            snapshot = json.loads(row.snapshot_json or "{}")
+        except Exception:
+            snapshot = {}
+        return {
+            "id": row.id,
+            "dish_id": row.dish_id,
+            "version": row.version,
+            "change_summary": row.change_summary or "",
+            "changed_by": row.changed_by or "",
+            "changed_at": row.changed_at or "",
+            "tenant_id": row.tenant_id or "default",
+            "snapshot": snapshot,
+        }
     finally:
         s.close()
 
@@ -4610,3 +4949,10 @@ def set_eval_candidate_status(candidate_id, status, tenant_id=None):
         return row, None
     finally:
         s.close()
+
+
+# -----------------------------------------------------------------
+# WS2 收尾：存量餐品版本快照回填（模块加载末尾执行一次）。
+# 幂等：仅补「零快照」餐品，二次 import 零动作；失败仅告警不阻断。
+# -----------------------------------------------------------------
+backfill_dish_recipe_snapshots()
