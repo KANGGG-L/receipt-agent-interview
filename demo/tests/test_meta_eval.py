@@ -161,11 +161,30 @@ def test_degraded_judge_unparseable_verdict_is_untrustworthy():
 # 评估器确定性约定：审核腿 temperature 必须 0（Gap A4）
 # -------------------------------------------------------------
 def test_audit_leg_temperature_is_zero():
-    """build_audit_model 产出的审核模型 temperature 强制 0；识别腿不受污染。"""
-    from app.llm import build_audit_model, build_recognition_model
+    """build_audit_model 产出的审核模型 temperature 强制 0；识别腿不受污染。
 
-    aud = build_audit_model()
-    rec = build_recognition_model()
+    前置说明（2026-09 修订）：CLI 引擎（opencode/codebuddy）删除后，openai 通道的
+    构建不再有 CLI 兜底分支，`llm._build` 对 cfg=None 显式抛
+    ValueError（"kind=openai 需要 EngineConfig"）——原先 `build_audit_model()` 裸调用
+    能过，只是因为当时会落到 codebuddy CLI 分支。为恢复「审核腿 temperature 强制 0 /
+    识别腿不受污染 / 二者非同一缓存对象」的真实覆盖，这里显式构造一份**最小假配置**：
+    base_url 用公网 IP 字面量（security_guard 直接按 IP 判定，不做 DNS 解析，保证离线
+    确定性），api_key 用明显假值。构造过程不发起任何网络调用，仅驱动 temperature 逻辑。
+    """
+    from app.llm import build_audit_model, build_recognition_model
+    from app.models import EngineConfig
+
+    cfg = EngineConfig(
+        recognition_engine="openai",
+        audit_engine="openai",
+        openai_rec_base_url="https://93.184.216.34/v1",
+        openai_rec_api_key="fake-rec-api-key",
+        openai_aud_base_url="https://93.184.216.34/v1",
+        openai_aud_api_key="fake-aud-api-key",
+    )
+
+    aud = build_audit_model(cfg=cfg)
+    rec = build_recognition_model(cfg=cfg)
     assert getattr(aud, "temperature", None) == 0.0, "审核腿（评估器）temperature 必须 0"
     # 缓存按 side 隔离：识别腿保持类默认采样参数，不被审核腿的 0 覆盖
     assert rec is not aud

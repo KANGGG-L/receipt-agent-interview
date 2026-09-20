@@ -93,6 +93,37 @@ def test_dns_resolution_rebinding(monkeypatch):
     assert valid3
 
 
+def test_unresolved_domain_is_rejected_by_default(monkeypatch):
+    """回归守卫：DNS 解析失败必须 fail-closed（拒绝），不得静默当成「安全」放行。
+
+    历史缺陷：security_guard 曾用 `except socket.gaierror: pass` + `except Exception: pass`
+    吞掉解析失败，随后落到 `return True, None`，使 SSRF 网关在无法确认目标 IP 时反而放行。
+    """
+    def raise_gaierror(host, port, *args, **kwargs):
+        raise socket.gaierror(-2, "Name or service not known")
+
+    monkeypatch.setattr(socket, "getaddrinfo", raise_gaierror)
+
+    valid, reason = validate_safe_external_url("http://offline.invalid/v1")
+    assert valid is False, "解析失败时不得放行（fail-closed）"
+    assert "无法解析" in reason
+
+
+def test_unresolved_domain_allowed_only_when_explicitly_enabled():
+    """显式开关：allow_unresolved=True 时，无法解析的域名才放行（离线/内网自测场景）。"""
+    import pytest as _pytest
+
+    with _pytest.MonkeyPatch.context() as mp:
+        def raise_gaierror(host, port, *args, **kwargs):
+            raise socket.gaierror(-2, "Name or service not known")
+
+        mp.setattr(socket, "getaddrinfo", raise_gaierror)
+        valid, reason = validate_safe_external_url(
+            "http://offline.invalid/v1", allow_unresolved=True)
+        assert valid is True
+        assert reason is None
+
+
 def test_mask_secret_key():
     assert mask_secret_key("") == ""
     assert mask_secret_key(None) == ""

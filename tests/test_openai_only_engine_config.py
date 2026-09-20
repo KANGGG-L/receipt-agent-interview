@@ -173,7 +173,9 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
     assert 'id="adminAuditCard"' in html
     assert 'id="adminParseDrawer"' in html
     assert 'id="adminGreyDrawer"' in html
-    assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 3
+    # 抽屉数量 4：识别/审核/解析/灰测之外，模板后加了 adminExperimentDrawer（A/B 实验抽屉）。
+    # 该断言同步于 2026-09-19，此前写死 3 已过期（HEAD 版本实际即为 4）。
+    assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 4
 
     # 断言保留必须的 OpenAI 输入项与预设选择
     assert 'id="adminOpenaiRecBaseUrl"' in html

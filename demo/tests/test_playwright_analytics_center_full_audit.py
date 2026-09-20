@@ -10,9 +10,90 @@ Exhaustive Playwright Audit of EVERY component in 'AI 效果观测与评测中�
 import os
 import pytest
 from playwright.sync_api import sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010")
 SCREENSHOT_DIR = "demo/gui-test-screenshots"
+
+
+def _fetch_pvalue_cards(page, exp_ids):
+    """只读取回每个实验的 p-value 卡片数据（页面自身的端点与请求出口，仅发 GET）。"""
+    return page.evaluate(
+        """async (ids) => {
+            const out = {};
+            for (const id of ids) {
+                try {
+                    const res = await window.apiFetch('/api/admin/experiments/' + id + '/pvalue');
+                    const ret = await res.json();
+                    out[String(id)] = (ret && ret.status === 'success' && ret.cards) ? ret.cards : null;
+                } catch (e) {
+                    out[String(id)] = null;
+                }
+            }
+            return out;
+        }""",
+        exp_ids,
+    )
+
+
+def _fetch_golden_scope(page, scope):
+    """只读取回黄金基准集看板在指定 scope 下的统计口径（页面自身的端点，仅发 GET）。"""
+    return page.evaluate(
+        """async (scope) => {
+            try {
+                const res = await window.apiFetch('/api/admin/golden-samples?scope=' + scope);
+                const ret = await res.json();
+                if (!ret || ret.status !== 'success') return null;
+                return {
+                    total: ret.total,
+                    golden_total: ret.golden_total,
+                    gt_confirmed_total: ret.gt_confirmed_total,
+                    gt_pending_total: ret.gt_pending_total
+                };
+            } catch (e) {
+                return null;
+            }
+        }""",
+        scope,
+    )
+
+
+def _expected_view(cards):
+    """把卡片数据折算成 DOM 上「必须出现」的判据（main.js renderPValueCards 的渲染口径）。"""
+    p_values = []
+    badges = set()
+    for card in cards or []:
+        if card.get("p_value") is None:
+            p_values.append(None)
+            badges.add("无法判定")
+        else:
+            p_values.append("%.4f" % float(card["p_value"]))
+            badges.add("显著 (p <" if card.get("significant") else "不显著 (p >=")
+    return {"p_values": p_values, "badges": badges}
+
+
+def _wait_cards_render_as(page, cards, timeout=10000):
+    """等待卡片容器渲染成 cards 对应的样子，返回是否成功（失败时由调用方给出可读断言）。"""
+    view = _expected_view(cards)
+    non_null = [p for p in view["p_values"] if p]
+    try:
+        page.wait_for_function(
+            """(exp) => {
+                const el = document.getElementById('pvalueCardsContainer');
+                if (!el) return false;
+                const txt = el.innerText || '';
+                if (txt.indexOf('p-value：') === -1) return false;
+                for (const p of exp.nonNull) { if (txt.indexOf(p) === -1) return false; }
+                for (const b of exp.badges) { if (txt.indexOf(b) === -1) return false; }
+                const rendered = (txt.match(/\\d+\\.\\d{4}/g) || []).length;
+                return rendered === exp.nonNull.length;
+            }""",
+            arg={"nonNull": non_null, "badges": sorted(view["badges"])},
+            timeout=timeout,
+        )
+        return True
+    except PlaywrightTimeoutError:
+        return False
 
 
 def test_analytics_center_every_component_audit():
@@ -175,42 +256,93 @@ def test_analytics_center_every_component_audit():
         print(f"A/B experiment rows: {ab_rows.count()}")
         assert ab_rows.count() >= 2, "Should have at least 2 experiments (#1, #2)"
 
-        # 3.2 检查“刷新实验数据”按钮
-        refresh_exp_btn = page.locator("#sec-experiment button:has-text('刷新实验数据')")
-        assert refresh_exp_btn.is_visible()
+        # 3.2 检查“刷新实验列表”按钮
+        #     按行为（onclick 绑定的处理函数）定位而非按文案：该按钮文案曾由
+        #     “刷新实验数据”改为“刷新实验列表”，按 ::has-text 定位的旧断言因此
+        #     长期失效（HEAD 起就不匹配），按 handler 定位可免受文案演变影响。
+        refresh_exp_btn = page.locator(
+            "#sec-experiment button[onclick*='loadAnalyticsExperiments']"
+        )
+        assert refresh_exp_btn.is_visible(), "刷新实验列表按钮必须可见"
         refresh_exp_btn.click()
-        page.wait_for_timeout(400)
+        page.wait_for_function(
+            """() => {
+                const ab = document.getElementById('analyticsExperimentsBody');
+                return ab && !ab.innerText.includes('加载中') && ab.querySelector('table');
+            }""",
+            timeout=10000
+        )
 
         # 3.3 检查显著性实验选择器切换与卡片联动
+        #     数据无关：实验 id 与 p-value 数值都随库中数据变化（清理测试单据后默认
+        #     选中项就会变），故不写死任何 id 或数值；改以页面自身的只读端点
+        #     /api/admin/experiments/{id}/pvalue 作为「该实验应渲染成什么样」的口径，
+        #     交叉核对卡片内容确实属于当前选中项（这是「不串台」的硬证据）。
         pval_sel = page.locator("#pvalueExperimentSelect")
         assert pval_sel.is_visible()
-        assert pval_sel.input_value() == "2", "Default selected should be 2"
-
         pval_cards = page.locator("#pvalueCardsContainer")
-        assert "0.1360" in pval_cards.inner_text(), "Exp #2 p-value 0.1360 must be displayed"
 
-        # 切换到实验 1
-        pval_sel.select_option("1")
+        # 刷新实验列表后选择器会被重建，等它稳定下来再读取默认选中项
         page.wait_for_function(
             """() => {
-                const pval = document.getElementById('pvalueCardsContainer');
-                return pval && !pval.innerText.includes('0.1360');
+                const sel = document.getElementById('pvalueExperimentSelect');
+                return sel && sel.options.length >= 2 && sel.value !== '';
             }""",
-            timeout=5000
+            timeout=10000
         )
-        assert pval_sel.input_value() == "1", "Select must hold value 1"
-        assert "无法判定" in pval_cards.inner_text()
+        pval_option_values = [
+            v for v in pval_sel.locator("option").evaluate_all("els => els.map(e => e.value)") if v
+        ]
+        assert len(pval_option_values) >= 2, "显著性实验选择器至少应有 2 个实验可选"
 
-        # 切回实验 2
-        pval_sel.select_option("2")
-        page.wait_for_function(
-            """() => {
-                const pval = document.getElementById('pvalueCardsContainer');
-                return pval && pval.innerText.includes('0.1360');
-            }""",
-            timeout=5000
+        default_exp = pval_sel.input_value()
+        assert default_exp in pval_option_values, f"选择器默认值 '{default_exp}' 不是有效实验"
+        print(f"显著性卡片默认选中实验: {default_exp}")
+
+        pval_expected = _fetch_pvalue_cards(page, pval_option_values)
+        assert pval_expected.get(default_exp), f"实验 #{default_exp} 的 p-value 数据不可用"
+        assert _wait_cards_render_as(page, pval_expected[default_exp]), (
+            f"默认实验 #{default_exp} 的卡片未渲染出对应内容，实际渲染:\n{pval_cards.inner_text()}"
         )
-        assert pval_sel.input_value() == "2", "Select must hold value 2"
+        default_text = pval_cards.inner_text()
+        # 卡片区必须渲染 3 个指标卡片，且每张都带 p-value 行与显著性角标
+        assert default_text.count("p-value：") == 3, f"应渲染 3 张指标卡片，实际:\n{default_text}"
+        assert any(b in default_text for b in ("无法判定", "显著 (p <", "不显著 (p >=")), (
+            f"卡片必须带显著性角标，实际:\n{default_text}"
+        )
+
+        # 选一个「渲染结果与默认项不同」的实验来验证联动（不写死 id）；若所有实验
+        # 渲染结果一致（例如全库实验都无样本），退化为任取另一项并只验证内容与选中项一致
+        other_exp = None
+        for v in reversed(pval_option_values):
+            if v == default_exp:
+                continue
+            if pval_expected.get(v) and pval_expected[v] != pval_expected[default_exp]:
+                other_exp = v
+                break
+        if other_exp is None:
+            other_exp = next(v for v in pval_option_values if v != default_exp)
+            print("提示：所有实验的卡片渲染结果一致，本次只验证「内容与选中项一致」")
+
+        # 切换到另一个实验：内容必须变成「该实验」的，且选择值不能被重置
+        print(f"显著性卡片切换到实验: {other_exp}")
+        pval_sel.select_option(other_exp)
+        assert _wait_cards_render_as(page, pval_expected[other_exp]), (
+            f"切到实验 #{other_exp} 后卡片内容与该实验数据不一致，实际渲染:\n{pval_cards.inner_text()}"
+        )
+        assert pval_sel.input_value() == other_exp, (
+            f"切换后被重置：期望 '{other_exp}'，实际 '{pval_sel.input_value()}'"
+        )
+
+        # 切回默认实验：内容必须复原，值与初值一致
+        pval_sel.select_option(default_exp)
+        assert _wait_cards_render_as(page, pval_expected[default_exp]), (
+            f"切回实验 #{default_exp} 后卡片内容未复原，实际渲染:\n{pval_cards.inner_text()}"
+        )
+        assert pval_sel.input_value() == default_exp, (
+            f"切回后被重置：期望 '{default_exp}'，实际 '{pval_sel.input_value()}'"
+        )
+        assert pval_cards.inner_text() == default_text, "切回默认实验后卡片内容与初值不一致（串台）"
 
         # 截屏功能区 03
         shot_03 = os.path.join(SCREENSHOT_DIR, "audit_03_experiment_board.png")
@@ -243,12 +375,24 @@ def test_analytics_center_every_component_audit():
         assert evalset_link.is_visible(), "Link to /evalset must be visible"
 
         # 4.2 检查黄金基准集范围选择器过滤
+        #     数据无关：各范围内的样本条数随库中数据变化（曾写死「已 GT 确权 >= 5」，
+        #     那 5 条恰好来自与被清理测试单据 1–5 绑定的确权样本，清理后必然假失败），
+        #     故改为「DOM 行数 == 页面自身只读端点返回的条数」这一交叉核对。
+        #     端点 items 上限 500、空结果渲染 1 行占位，故行数 = total>0 ? min(total,500) : 1。
         scope_sel = page.locator("#goldenScopeSelect")
         assert scope_sel.is_visible()
+
+        def expected_row_count(scope_name):
+            data = _fetch_golden_scope(page, scope_name)
+            assert data is not None, f"scope={scope_name} 的看板数据不可用"
+            total = int(data["total"])
+            return (min(total, 500) if total > 0 else 1), data
+
         golden_rows = page.locator("#goldenBoardBody tr")
+        all_expected, all_data = expected_row_count("all")
         total_all_rows = golden_rows.count()
-        print(f"Golden board 'all' rows count: {total_all_rows}")
-        assert total_all_rows > 0
+        print(f"Golden board 'all' rows: {total_all_rows} (接口 total={all_data['total']})")
+        assert total_all_rows == all_expected
 
         def wait_golden_loaded():
             page.wait_for_function(
@@ -263,22 +407,29 @@ def test_analytics_center_every_component_audit():
         scope_sel.select_option("golden")
         wait_golden_loaded()
         assert scope_sel.input_value() == "golden"
+        golden_expected, golden_data = expected_row_count("golden")
         golden_member_rows = page.locator("#goldenBoardBody tr").count()
-        print(f"Golden member rows: {golden_member_rows}")
-        assert golden_member_rows > 0
+        print(f"Golden member rows: {golden_member_rows} (接口 total={golden_data['total']})")
+        assert golden_member_rows == golden_expected
+        assert int(golden_data["golden_total"]) > 0, "基准集成员数应大于 0"
 
         # 切换范围至仅已 GT 确权
         scope_sel.select_option("gt_confirmed")
         wait_golden_loaded()
         assert scope_sel.input_value() == "gt_confirmed"
+        confirmed_expected, confirmed_data = expected_row_count("gt_confirmed")
         confirmed_rows = page.locator("#goldenBoardBody tr").count()
-        print(f"GT confirmed rows: {confirmed_rows}")
-        assert confirmed_rows >= 5, "At least 5 confirmed GT samples should appear"
+        print(f"GT confirmed rows: {confirmed_rows} (接口 total={confirmed_data['total']})")
+        assert confirmed_rows == confirmed_expected
 
         # 切换范围至待确权候选池
         scope_sel.select_option("gt_pending")
         wait_golden_loaded()
         assert scope_sel.input_value() == "gt_pending"
+        pending_expected, pending_data = expected_row_count("gt_pending")
+        pending_rows = page.locator("#goldenBoardBody tr").count()
+        print(f"GT pending rows: {pending_rows} (接口 total={pending_data['total']})")
+        assert pending_rows == pending_expected
 
         # 切回全部
         scope_sel.select_option("all")

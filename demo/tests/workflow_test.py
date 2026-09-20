@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""完整 Workflow 测试（免费模型 opencode/mimo-v2.5-free）。
+"""完整 Workflow 测试（默认识别模型 DashScope qwen3.5-omni-flash）。
 
 模拟前端真实操作流程：
   上传收据 → 异步识别 → 人工复核(save_edited) → owner approve → 库存/供应商
@@ -70,7 +70,7 @@ def call_form(path, fields):
 
 def main():
     print("=" * 60)
-    print("WORKFLOW 测试（免费模型 opencode/mimo-v2.5-free）")
+    print("WORKFLOW 测试（默认识别模型 DashScope qwen3.5-omni-flash）")
     print("=" * 60)
 
     # 0. 前置数据：建 SKU + 供应商 + 部门

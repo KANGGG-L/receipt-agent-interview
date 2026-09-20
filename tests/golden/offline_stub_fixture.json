@@ -22,6 +22,7 @@
       "data": {
         "adjustment_notes": [],
         "confidence": 0.8,
+        "contains_huama": false,
         "currency": "HKD",
         "date": "2026-08-06",
         "delivery_fee": 0.0,
@@ -33,15 +34,19 @@
           {
             "actual_qty": null,
             "amount": 20.0,
+            "confidence": null,
+            "contains_huama": false,
             "is_void": false,
             "name": "菜心",
             "qty": 3.0,
             "raw_name": "菜心 [SKU:882910]",
             "unit": "斤",
             "unit_price": 5.0,
+            "unit_conversion_warning": null,
             "evidence": null
           }
         ],
+        "math_warnings": [],
         "payment_marked": false,
         "payment_evidence": "",
         "rounding_adjustment": 0.0,

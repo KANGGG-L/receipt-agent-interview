@@ -88,7 +88,7 @@ def test_blur_img_5895_rejected_within_1s():
             "/api/upload",
             files={"receipt": ("IMG_5895.jpg", f, "image/jpeg")},
             headers={"X-Role": "staff"},
-            data={"codebuddy": "true", "async": "true"},
+            data={"treatment": "true", "async": "true"},
         )
         elapsed = time.time() - start
 
@@ -146,7 +146,7 @@ def test_clear_image_not_blocked_by_blur_guard():
             "/api/upload",
             files={"receipt": ("clear_sample.jpg", f, "image/jpeg")},
             headers={"X-Role": "staff"},
-            data={"codebuddy": "true", "async": "true"},
+            data={"treatment": "true", "async": "true"},
         )
     assert resp.status_code == 200
     body = resp.json()
@@ -168,7 +168,7 @@ def test_blur_img_forced_proceeds_with_warning():
             "/api/upload",
             files={"receipt": ("IMG_5895.jpg", f, "image/jpeg")},
             headers={"X-Role": "staff"},
-            data={"codebuddy": "true", "async": "true", "force": "true"},
+            data={"treatment": "true", "async": "true", "force": "true"},
         )
 
     assert resp.status_code == 200, resp.text

@@ -14,6 +14,8 @@
 
 import os
 import sys
+from datetime import datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -23,6 +25,17 @@ from app.main import app
 from app import db
 
 client = TestClient(app)
+
+
+def _recent_date(days_ago: int) -> str:
+    """返回距今 days_ago 天的日期字符串（YYYY-MM-DD）。
+
+    why：/api/dishes/cost_analysis 以 datetime.now() 反推「近 N 天」窗口
+    （start = now - (days-1)）。用例若写死绝对日期，当前日期一旦越过窗口，
+    消耗记录就落不进查询范围，断言随日期推移必然失败（时间炸弹）。
+    改为按当前时间相对构造，任何日期运行都落在窗口内。
+    """
+    return (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d")
 
 # 使用临时数据库隔离测试
 @pytest.fixture(autouse=True)
@@ -271,13 +284,15 @@ def test_cost_analysis_endpoint():
     from app.services.costing_service import CostingService
 
     # 1. 准备食材与 3 个不同日期的进货与消耗
+    # 日期一律按当前时间相对构造，保证落在 cost_analysis 的近 30 天窗口内，
+    # 且保持「进货 → 消耗 → 进货 → 消耗 → 进货」的相对先后顺序（FIFO 口径不变）。
     sku_id, _ = db.create_sku("三文鱼", base_unit="kg")
     session = db.get_session()
     try:
         # 3 个进货批次 (进价上涨)
-        CostingService.record_inbound_batch(session, sku_id, 10.0, 100.0, "kg", date="2026-08-20")
-        CostingService.record_inbound_batch(session, sku_id, 10.0, 120.0, "kg", date="2026-08-22")
-        CostingService.record_inbound_batch(session, sku_id, 10.0, 150.0, "kg", date="2026-08-25")
+        CostingService.record_inbound_batch(session, sku_id, 10.0, 100.0, "kg", date=_recent_date(27))
+        CostingService.record_inbound_batch(session, sku_id, 10.0, 120.0, "kg", date=_recent_date(25))
+        CostingService.record_inbound_batch(session, sku_id, 10.0, 150.0, "kg", date=_recent_date(22))
         session.commit()
     finally:
         session.close()
@@ -291,15 +306,15 @@ def test_cost_analysis_endpoint():
     }, headers=_owner_headers())
     dish_id = dish_resp.json()["data"]["id"]
 
-    # 第 1 天 (8-21): 消耗 10 份 (2kg @100 = 200元, 单份 20元)
+    # 第 1 天: 消耗 10 份 (2kg @100 = 200元, 单份 20元)
     client.post("/api/dishes/daily_consumption/batch", json={
-        "date": "2026-08-21",
+        "date": _recent_date(26),
         "items": [{"dish_id": dish_id, "quantity": 10}],
     }, headers=_staff_headers())
 
-    # 第 2 天 (8-23): 消耗 45 份 (9kg: 8kg @100 + 1kg @120 = 800 + 120 = 920元, 单份 20.44元)
+    # 第 2 天: 消耗 45 份 (9kg: 8kg @100 + 1kg @120 = 800 + 120 = 920元, 单份 20.44元)
     client.post("/api/dishes/daily_consumption/batch", json={
-        "date": "2026-08-23",
+        "date": _recent_date(24),
         "items": [{"dish_id": dish_id, "quantity": 45}],
     }, headers=_staff_headers())
 
@@ -634,8 +649,11 @@ def test_cost_analysis_cross_tenant_zero_leakage():
         "name": "租户A牛肉饭", "price": 60.0,
         "ingredients": [{"sku_id": sku_a_id, "consumption_qty": 0.3, "unit": "kg"}]
     }, headers=headers_a).json()["data"]
+    # 消耗日期按「今天」相对构造：cost_analysis 以近 7 天窗口过滤，写死绝对日期
+    # 会随当前日期越过窗口而失败（时间炸弹）。
+    consume_date = _recent_date(0)
     client.post("/api/dishes/daily_consumption/batch", json={
-        "date": "2026-08-28", "items": [{"dish_id": dish_a["id"], "quantity": 2.0}]
+        "date": consume_date, "items": [{"dish_id": dish_a["id"], "quantity": 2.0}]
     }, headers=headers_a)
 
     # 租户 B 建立食材与餐品并消耗
@@ -646,7 +664,7 @@ def test_cost_analysis_cross_tenant_zero_leakage():
         "ingredients": [{"sku_id": sku_b_id, "consumption_qty": 0.5, "unit": "kg"}]
     }, headers=headers_b).json()["data"]
     client.post("/api/dishes/daily_consumption/batch", json={
-        "date": "2026-08-28", "items": [{"dish_id": dish_b["id"], "quantity": 3.0}]
+        "date": consume_date, "items": [{"dish_id": dish_b["id"], "quantity": 3.0}]
     }, headers=headers_b)
 
     # 租户 A 查询成本大盘分析

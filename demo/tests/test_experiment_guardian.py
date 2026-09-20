@@ -36,6 +36,38 @@ import app.db as db  # noqa: E402
 from app.services import guardian  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _restore_db_state():
+    """每个用例结束后还原 db 模块级状态，避免污染同一 pytest 进程内的后续文件。
+
+    why：本文件用 importlib.reload(db) 把 DB_PATH 切到独立临时库（见 _fresh_db），
+    但此前既不还原路径、也不清理遗留的 running 实验。于是同一进程内后续测试文件
+    会落在该临时库上：demo/conftest.py 的 _isolate_test_db 只在「生效的 db.DB_PATH
+    仍等于 live」时才兜底隔离，检测到非 live 就整体跳过，后续用例便读到本文件遗留
+    的 running 实验（test_engine_rule_priority.py 同跑必挂的根因）。
+
+    还原顺序：先停掉本轮遗留的 running 实验（仍写在本轮的临时库上）→ 再还原
+    DB_PATH 与 env → 重建引擎。这样每个用例结束时 db.DB_PATH / os.environ 都回到
+    进入本用例时的值，不再泄漏给其它测试文件。
+    """
+    before_path = db.DB_PATH
+    before_env = os.environ.get("DB_PATH")
+    yield
+    try:
+        for exp in db.list_experiments():
+            if exp.get("status") == "running":
+                db.stop_experiment(exp["id"])
+    except Exception:
+        # 用例可能在建立临时库前就失败：此时无可清理，直接跳过
+        pass
+    if before_env is None:
+        os.environ.pop("DB_PATH", None)
+    else:
+        os.environ["DB_PATH"] = before_env
+    db.DB_PATH = before_path
+    db._make_engine()
+
+
 def _fresh_db():
     os.environ["DB_PATH"] = os.path.join(_TMP, f"gd_{uuid.uuid4().hex[:8]}.db")
     importlib.reload(db)
