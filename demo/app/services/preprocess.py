@@ -50,11 +50,13 @@ def _imread(image_path):
     """
     # PIL 主路径：自带 exif_transpose，覆盖 HEIC 与 EXIF 正交
     try:
-        try:
-            import pillow_heif
-            pillow_heif.register_heif_opener()
-        except Exception:
-            pass
+        # HEIF 注册统一走 image_web._register_heif_opener（加锁、失败只 WARN 一次并记录
+        # 原因），不再此处自写裸注册。why: 旧写法 `except Exception: pass` 让 pillow-heif
+        # 缺失/不兼容时的解码失败不可观测，预处理链路整体静默降级成 no-op，用户只看到
+        # 「识别不准」而日志里毫无线索。函数内局部 import：preprocess 由 api_receipts
+        # 按需导入，局部导入可避免将来模块级成环。
+        from app.services import image_web
+        image_web._register_heif_opener()
         import numpy as np
         from PIL import Image, ImageOps
         with Image.open(image_path) as pil:

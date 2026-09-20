@@ -8,6 +8,7 @@ from __future__ import annotations
 3. 校验上游模型输出根节点中的安全握手令牌，阻断未经授权的篡改。
 """
 
+import json
 import secrets
 from typing import Any, Dict, Optional, Tuple
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -146,3 +147,45 @@ def verify_canary_token(data: Dict[str, Any], expected_token: str) -> Tuple[bool
         return False, f"安全握手令牌不匹配（预期 {expected_token}，实际 {actual}）"
 
     return True, None
+
+
+def _json_payload_from_text(raw_text: Any) -> Optional[dict]:
+    """从 LLM 文本输出中提取 JSON 对象（剥 markdown 围栏 + 配对截取首个 { ... } 块）。
+
+    why：文本通道（修正腿）的模型输出常带 ```json 围栏或前后缀说明，直接 json.loads
+    会失败；若据此拒绝，就把"格式噪声"误判成"token 被剥离"。提取规则与
+    extract_chain._parse_to_receipt 的容错次序保持一致，避免两处判据漂移。
+    """
+    if raw_text is None:
+        return None
+    text = str(raw_text).strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        start_i = text.find("{")
+        end_i = text.rfind("}")
+        if start_i == -1 or end_i == -1 or end_i <= start_i:
+            return None
+        try:
+            payload = json.loads(text[start_i:end_i + 1])
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return payload if isinstance(payload, dict) else None
+
+
+def verify_canary_in_text(raw_text: Any, expected_token: str) -> Tuple[bool, Optional[str]]:
+    """校验纯文本 LLM 输出中的 Canary Token 握手信号（文本通道专用）。
+
+    why：verify_canary_token 要求 dict 入参，而修正腿这类文本通道返回的是模型原始
+    文本。本函数按与 _parse_to_receipt 一致的容错规则先提取 JSON，再委托
+    verify_canary_token，使"文本通道"与"结构化通道"共用同一套判据与错误文案。
+    提取不出 JSON 对象一律 fail-closed（无法证明握手，即视为被剥离）。
+    """
+    payload = _json_payload_from_text(raw_text)
+    if payload is None:
+        return False, "上游响应不是可解析的 JSON 对象，无法完成安全握手校验"
+    return verify_canary_token(payload, expected_token)

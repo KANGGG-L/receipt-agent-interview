@@ -8,6 +8,7 @@
 
 import hmac
 import json
+import logging
 import os
 import re
 import threading
@@ -47,6 +48,35 @@ def _track_internal(event_type, receipt_id=None, properties=None):
         pass
 
 
+def _db_path_switched(job_id, stage):
+    """后台 Job 跨库写入前哨：库路径在任务执行期间被切换 → 放弃写入并置可辨失败态。
+
+    why：识别 Job 跑在后台线程，写库时读的是「当时的」db.DB_PATH。若任务执行期间
+    DB_PATH 被切到另一个库（测试夹具收尾还原、外部调用切换），晚到的 Job 会把结果
+    写进新库 —— 这正是历史「测试污染 live 库」的机制。db 层的
+    `_guard_job_db_write` 已兜住一切写库调用（含 supervisor 的决策日志/埋点/回流），
+    这里负责在关键节点提前放弃，并给 Job 一个前端可辨别的失败态，避免前端误以为成功。
+
+    返回 True 表示已放弃（调用方应直接 return）。绝不抛异常：Job 外层被异常打断会把
+    「库被切换」伪装成识别失败，也会让线程状态失控。
+    """
+    mismatch = db.job_db_path_mismatch()
+    if mismatch is None:
+        return False
+    bound, current = mismatch
+    msg = ("库路径在识别任务执行期间被切换（任务库=%s → 当前库=%s），"
+           "已放弃写入以避免污染新库" % (bound, current))
+    logging.getLogger("receipt_utils").warning(
+        "识别 Job %s 在 %s 阶段放弃写入：%s", job_id, stage, msg)
+    with JOBS_LOCK:
+        JOBS[job_id].update({
+            "job_status": "error",
+            "error_code": "db_path_changed",
+            "error_msg": msg,
+        })
+    return True
+
+
 def _job_elapsed_ms(job_id):
     with JOBS_LOCK:
         started = JOBS.get(job_id, {}).get("started_ts")
@@ -79,6 +109,9 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     向后兼容；必须在派发后台线程前捕获为局部变量，Job 线程内不得读 request。
     """
     job_id = db.new_id()
+    # R1：捕获任务创建时的库路径，随后台线程一起带走。每次写库前校验生效的
+    # db.DB_PATH 是否仍等于它；不一致说明库已被切换，宁可放弃写入也不能污染新库。
+    job_db_path = db.DB_PATH
     _tenant = str(tenant_id or "default").strip() or "default"
     if receipt_id is None:
         receipt_id = db.create_receipt(status="uploaded", tenant_id=_tenant)
@@ -90,6 +123,14 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     _track_internal("ocr_parse_started", receipt_id, {"job_id": job_id})
 
     def _run():
+        # R1：把任务库路径绑定到本线程（线程级），db 层写入闸门据此拦下跨库写入；
+        # 绑定本身失败不得打断 Job（否则线程异常逃逸），降级为「无闸门」并告警。
+        try:
+            db.bind_job_db_path(job_db_path, job_id)
+        except Exception as bind_err:
+            logging.getLogger("receipt_utils").warning(
+                "识别 Job %s 绑定任务库路径失败，跨库写入闸门未生效: %s",
+                job_id, bind_err)
         with JOBS_LOCK:
             JOBS[job_id]["job_status"] = "running"
 
@@ -107,13 +148,22 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 pass
 
         try:
+            # 线程启动到真正开工之间库可能已被切换：提前放弃，省掉无谓的引擎调用
+            if _db_path_switched(job_id, "start"):
+                return
             cfg = db.get_engine_config()
             experiment_id = None
+            # P5：实验覆盖管理台配置的事实必须可追溯。覆盖语义保持不变（实验本就该覆盖），
+            # 但要把「哪条实验、哪个组、覆盖成了哪个模型」透传给 Job 与前端；
+            # 否则管理员只看到「改了引擎没生效」，无从得知是实验在起作用。
+            experiment_override = None
             try:
                 running_exp = db.get_running_experiment()
                 if running_exp:
                     experiment_id = running_exp["id"]
-                    target_pct = int(running_exp.get("target_percent") or 50)
+                    # P2：target_percent=0（"全部走对照组"）必须被尊重为 0，
+                    # 不能用 `or 50` 把它静默当成 50；归一逻辑见 db.coerce_int。
+                    target_pct = db.coerce_int(running_exp.get("target_percent"), 50)
                     bucket = (int(receipt_id) % 100) if receipt_id else 0
                     grp = "treatment" if bucket < target_pct else "control"
                     db.add_assignment(experiment_id, receipt_id, grp)
@@ -123,24 +173,47 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                             snap = json.loads(snap)
                         except Exception:
                             snap = {}
+                    # 只在快照真的改写了 model/base_url 时才算「覆盖发生」；
+                    # 空快照的 running 实验仅做分组，不应误报成覆盖。
+                    _applied = {}
                     if grp == "treatment":
                         if snap.get("treatment_model"):
                             cfg.openai_rec_model = snap["treatment_model"]
+                            _applied["model"] = cfg.openai_rec_model
                         if snap.get("treatment_base_url"):
                             cfg.openai_rec_base_url = snap["treatment_base_url"]
+                            _applied["base_url"] = cfg.openai_rec_base_url
                         if snap.get("treatment_api_key"):
                             cfg.openai_rec_api_key = snap["treatment_api_key"]
                     else:
                         if snap.get("control_model"):
                             cfg.openai_rec_model = snap["control_model"]
+                            _applied["model"] = cfg.openai_rec_model
                         if snap.get("control_base_url"):
                             cfg.openai_rec_base_url = snap["control_base_url"]
+                            _applied["base_url"] = cfg.openai_rec_base_url
                         if snap.get("control_api_key"):
                             cfg.openai_rec_api_key = snap["control_api_key"]
+                    if _applied:
+                        experiment_override = {
+                            "experiment_id": experiment_id,
+                            "grp": grp,
+                            "model": cfg.openai_rec_model,
+                            "base_url": cfg.openai_rec_base_url,
+                        }
+                        logging.getLogger("receipt_utils").warning(
+                            "A/B 实验 #%s(%s) 已覆盖管理台引擎配置：model=%s base_url=%s",
+                            experiment_id, grp, cfg.openai_rec_model,
+                            cfg.openai_rec_base_url)
             except Exception as exp_err:
                 logging.getLogger("receipt_utils").warning(f"解析运行中 A/B 实验路由失败: {exp_err}")
+            # Job 级透传：错误/进行中轮询也能看到本次是否被实验覆盖
+            with JOBS_LOCK:
+                JOBS[job_id]["experiment_override"] = experiment_override
 
             from app.chains import supervisor
+            if _db_path_switched(job_id, "before_pipeline"):
+                return
             result = supervisor.run_pipeline(
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
@@ -150,6 +223,8 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             )
             data = result.get("data")
             if data is None:
+                if _db_path_switched(job_id, "error_writeback"):
+                    return
                 db.update_receipt(receipt_id, status="error")
                 with JOBS_LOCK:
                     JOBS[job_id].update({
@@ -169,7 +244,12 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 })
                 return
 
+            if _db_path_switched(job_id, "before_save"):
+                return
             detail = save_parsed_data(receipt_id, data, result)
+            # 极端窄窗（save 内部被切换）：写库已被 db 层拦下，不能把空壳结果报成 done
+            if _db_path_switched(job_id, "after_save"):
+                return
             # 提为局部变量：原实现的 image_url/version/quality_warnings 三处各查一次，
             # 既冗余又可能在同一结果里读到不同快照
             done_row = db.get_receipt_row(receipt_id)
@@ -200,16 +280,33 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "fallback_reason": result.get("fallback_reason", ""),
                         "fallback_from": result.get("fallback_from", ""),
                         "fallback_engine": result.get("fallback_engine", ""),
+                        "experiment_override": experiment_override,
                     },
                 })
+            # R4：看板口径修复。该事件此前只带 Job 生命周期的 status="done"，
+            # 而看板（api_admin.recognition_summary）直接按事件条数计 parse_success，
+            # 于是门禁失败、仅"带警告通过"的单据在看板维度仍是干净成功（P14 的
+            # 虚假成功信号残留）。这里显式带上管线结果状态与门禁警告，供看板单列。
+            _parse_status = str(result.get("status") or "").strip()
+            if _parse_status not in ("parsed", "parsed_with_warnings"):
+                # 兜底：调用方未标注 status 时，按门禁警告有无推断，避免把带警告
+                # 单据漏计成干净成功；两者皆无则维持原有"成功"口径。
+                _parse_status = ("parsed_with_warnings"
+                                 if result.get("gate_warnings") else "parsed")
             _track_internal("ocr_parsed", receipt_id, {
                 "job_id": job_id, "status": "done",
+                "parse_status": _parse_status,
+                "gate_warnings": [str(w)[:200]
+                                  for w in (result.get("gate_warnings") or [])][:5],
                 "elapsed_ms": _job_elapsed_ms(job_id),
                 "attempts": _log_max_attempt(result),
                 "gate_rejects": _log_gate_rejects(result),
                 "use_grey": int(bool(result.get("use_grey"))),
             })
         except Exception as e:
+            # 库被切换时优先按「放弃写入」收口，不要把 db_path_changed 伪装成识别错误
+            if _db_path_switched(job_id, "exception"):
+                return
             db.update_receipt(receipt_id, status="error")
             with JOBS_LOCK:
                 JOBS[job_id].update({"job_status": "error", "error_msg": str(e)})
@@ -218,6 +315,8 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 "elapsed_ms": _job_elapsed_ms(job_id),
                 "reason": str(e)[:300],
             })
+        finally:
+            db.unbind_job_db_path()
 
     threading.Thread(target=_run, daemon=True).start()
     return job_id, receipt_id
@@ -293,6 +392,27 @@ def canonical_sku_name(name: str) -> str:
     return strip_serial_suffix(name)
 
 
+def _merge_math_warnings(problems, warnings):
+    """保序去重合并两类门禁警告：管线的 math_problems 在前，校准写入的 math_warnings 在后。
+
+    why：花码/单位折算等整单警告由 huama_evaluator 写入 data.math_warnings，而门禁
+    （算术/契约/总额）警告写在 result["math_problems"]。落库只取后者会让整单花码警告
+    永远进不了 math_warnings_json，本批次新增的门禁横幅对这类单据永不生效。
+    去重保留首次出现顺序，避免同一警告（门禁与校准同时命中）在列里重复展示。
+    """
+    merged = []
+    for src in (problems, warnings):
+        if not src:
+            continue
+        if not isinstance(src, (list, tuple)):
+            src = [src]
+        for w in src:
+            if w is None or w in merged:
+                continue
+            merged.append(w)
+    return merged
+
+
 def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
     from app.services.contract import sanitize_nan, normalize_evidence
@@ -325,9 +445,17 @@ def save_parsed_data(receipt_id, data, result):
             "name": clean_name, "raw_name": it.name,
             "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
             "unit_price": sanitize_nan(it.unit_price), "amount": sanitize_nan(it.amount),
-            "sku_id": None, "cost_center_id": None, "confidence": it.confidence if hasattr(it, 'confidence') else 0.5,
+            "sku_id": None, "cost_center_id": None,
+            # P11：item 级置信度落库（低置信行可按行定位）。契约新增该字段后
+            # 从 LLM 输出一路带到这里；LLM 未给出则**保留 None**（不再兜底 0.5）——
+            # 「未给出」与「给了 0.5」是两回事，兜底会把无数据伪装成中等置信度，
+            # 而 0.5 又高于前端低置信阈值 0.40，等于让「无从判断」的行永远不被提示复核。
+            "confidence": sanitize_nan(getattr(it, "confidence", None), default=None),
             "matched": 0, "price_anomaly": 0, "price_anomaly_direction": "",
-            "price_diff_percent": 0.0, "unit_conversion_warning": "",
+            # Gap 7：花码/单位不可折算提示必须落库并传前端（原实现硬编码空串，
+            # 导致 huama_evaluator 写入的警示在详情接口消失）。
+            "price_diff_percent": 0.0,
+            "unit_conversion_warning": str(getattr(it, "unit_conversion_warning", None) or ""),
             "fuzzy_candidates": [], "entity_candidates": [],
             "is_void": int(bool(getattr(it, "is_void", False))),
             "actual_qty": getattr(it, "actual_qty", None),
@@ -370,9 +498,14 @@ def save_parsed_data(receipt_id, data, result):
         rag_ctx_str = json.dumps(rag_ctx, ensure_ascii=False)
     else:
         rag_ctx_str = str(rag_ctx or "")
+    # P15：按管线返回的最终状态落库，不再无条件写 parsed——门禁带警告的单据
+    # （state["status"]="parsed_with_warnings"）必须如实落库，否则"解析成功"的假象仍在。
+    _final_status = str(result.get("status") or "").strip() or "parsed"
+    if _final_status not in ("parsed", "parsed_with_warnings"):
+        _final_status = "parsed"
     db.update_receipt(
         receipt_id,
-        status="parsed",
+        status=_final_status,
         supplier_name=data.vendor,
         receipt_date=data.date,
         sheet_name=(data.date or "")[:7],
@@ -383,7 +516,10 @@ def save_parsed_data(receipt_id, data, result):
         raw_llm=result.get("raw", ""),
         audit_json=json.dumps(audit_res, ensure_ascii=False),
         ai_prefill_json=json.dumps(data.model_dump(), ensure_ascii=False),
-        math_warnings_json=json.dumps(result.get("math_problems", []), ensure_ascii=False),
+        math_warnings_json=json.dumps(
+            _merge_math_warnings(result.get("math_problems", []),
+                                 getattr(data, "math_warnings", [])),
+            ensure_ascii=False),
         use_grey=use_grey,
         review_priority_score=review_priority_score,
         rag_context_json=rag_ctx_str,
@@ -669,6 +805,8 @@ def build_row(row):
 
     import json as _json
     quality_warnings = _json.loads(row.quality_warnings_json or "[]") if getattr(row, "quality_warnings_json", None) else []
+    # P14/P15：列表行透出门禁警告，供前端对 parsed_with_warnings 醒目标出
+    math_warnings = _json.loads(row.math_warnings_json or "[]") if getattr(row, "math_warnings_json", None) else []
     review_priority = getattr(row, "review_priority_score", 0.0) or 0.0
 
     return {
@@ -694,6 +832,7 @@ def build_row(row):
         "use_grey": row.use_grey or 0,
         "payment_mark": payment_mark_val,
         "quality_warnings": quality_warnings,
+        "math_warnings": math_warnings,
         "review_priority_score": review_priority,
         "currency": getattr(row, "currency", None) or "HKD",
     }

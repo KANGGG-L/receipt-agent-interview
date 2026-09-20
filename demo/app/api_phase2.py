@@ -6,8 +6,6 @@ ai_decision_log / ai_metric_snapshot / user_event / experiment / experiment_assi
 本模块只写查询 + 写入逻辑，owner-protected。
 """
 
-from datetime import datetime
-from math import sqrt
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -334,128 +332,10 @@ def recovery_summary(request: Request, tenant_id: Optional[str] = None):
 # -------------------------------------------------------------
 # 2.4 A/B 实验
 # -------------------------------------------------------------
-class ExpCreateBody(BaseModel):
-    name: str
-    hypothesis: str = ""
-    success_metric: str = "accuracy"
-    guardrail_metrics: list = []
-    target_percent: int = 0
-    target_supplier_ids: list = []
-    min_sample: int = 100
-
-
 class ExpConcludeBody(BaseModel):
     conclusion: str  # promote|rollback|inconclusive
     conclusion_reason: str
     concluded_by: str
-
-
-def _z_test(n1: int, x1: int, n2: int, x2: int) -> Optional[dict]:
-    """双比例 z 检验（treatment vs control）。n1=control, n2=treatment。"""
-    if n1 < 2 or n2 < 2:
-        return {"p": None, "z": None, "insufficient": True}
-    p1, p2 = x1 / n1, x2 / n2
-    pp = (x1 + x2) / (n1 + n2)
-    denom = pp * (1 - pp) * (1 / n1 + 1 / n2)
-    if denom <= 0:
-        return {"p": None, "z": None, "insufficient": True}
-    z = (p2 - p1) / sqrt(denom)
-    # 标准正态双尾 p 值（近似）
-    p = _norm_cdf_two_tail(abs(z))
-    return {"p": round(p, 5), "z": round(z, 4), "insufficient": False}
-
-
-def _norm_cdf_two_tail(x: float) -> float:
-    """|Z| 双尾 p 值近似（Abramowitz & Stegun）。"""
-    t = 1.0 / (1.0 + 0.2316419 * x)
-    d = 0.3989422804014327  # 1/sqrt(2pi)
-    p_one = d * exp(-x * x / 2) * (t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429)))))
-    return 2 * p_one
-
-
-from math import exp  # 供 _norm_cdf_two_tail
-
-
-@router.post("/api/admin/experiments")
-def create_experiment(body: ExpCreateBody, request: Request):
-    require_role("owner")(request)
-    _s = db.get_session()
-    try:
-        row = db._ExperimentRow(
-            name=body.name, hypothesis=body.hypothesis,
-            success_metric=body.success_metric,
-            guardrail_metrics=json.dumps(body.guardrail_metrics),
-            status="draft", target_percent=body.target_percent,
-            target_supplier_ids=json.dumps(body.target_supplier_ids),
-            min_sample=body.min_sample,
-        )
-        _s.add(row)
-        _s.commit()
-        return {"status": "success", "id": row.id}
-    finally:
-        _s.close()
-
-
-@router.post("/api/admin/experiments/{exp_id}/start")
-def start_experiment(exp_id: int, request: Request):
-    require_role("owner")(request)
-    _s = db.get_session()
-    try:
-        row = _s.query(db._ExperimentRow).get(exp_id)
-        if not row:
-            return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
-        row.status = "running"
-        row.start_ts = db.now_iso()
-        _s.commit()
-        return {"status": "success", "id": row.id, "start_ts": row.start_ts}
-    finally:
-        _s.close()
-
-
-@router.get("/api/admin/experiments")
-def list_experiments(request: Request):
-    require_role("owner")(request)
-    _s = db.get_session()
-    try:
-        rows = _s.query(db._ExperimentRow).order_by(db._ExperimentRow.id.desc()).all()
-    finally:
-        _s.close()
-    return {"status": "success", "data": [_exp_to_dict(r) for r in rows]}
-
-
-@router.get("/api/admin/experiments/{exp_id}")
-def get_experiment(exp_id: int, request: Request):
-    require_role("owner")(request)
-    _s = db.get_session()
-    try:
-        exp = _s.query(db._ExperimentRow).get(exp_id)
-        if not exp:
-            return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
-        # 分组指标对比 + z 检验
-        logs = _s.query(db._DecisionLogRow).filter(
-            db._DecisionLogRow.experiment_id == exp_id
-        ).all()
-        assigns = _s.query(db._ExperimentAssignRow).filter(
-            db._ExperimentAssignRow.experiment_id == exp_id
-        ).all()
-    finally:
-        _s.close()
-    ctrl = [l for l in logs if l.grp == "control"]
-    treat = [l for l in logs if l.grp == "treatment"]
-    cd = _compute_metrics(ctrl)
-    td = _compute_metrics(treat)
-    # 用 accuracy 做主指标 z 检验：x = 正确数, n = decided 数
-    z = None
-    if cd["sample_size"] > 0 and td["sample_size"] > 0:
-        # accuracy 已是比例，反推：x = accuracy * n（近似）
-        x1 = round((cd.get("accuracy") or 0) * cd["sample_size"])
-        x2 = round((td.get("accuracy") or 0) * td["sample_size"])
-        z = _z_test(cd["sample_size"], x1, td["sample_size"], x2)
-    return {"status": "success", "data": {
-        **_exp_to_dict(exp),
-        "control": cd, "treatment": td,
-        "assignments": len(assigns), "z_test": z,
-    }}
 
 
 @router.post("/api/admin/experiments/{exp_id}/conclude")
@@ -473,8 +353,13 @@ def conclude_experiment(exp_id: int, body: ExpConcludeBody, request: Request):
             db._DecisionLogRow.experiment_id == exp_id
         ).all()
         n = len([l for l in logs if l.grp == "treatment"])
-        if n < exp.min_sample:
-            return JSONResponse(status_code=400, content={"status": "error", "msg": f"样本量不足：treatment={n} < min_sample={exp.min_sample}"})
+        # min_sample 为 NULL（raw SQL 直插等）时不能直接比较：TypeError → 500。
+        # 口径与守护门/落库侧一致（guardian.py 与 create_experiment 均用
+        # db.coerce_int(min_sample, 100)）：NULL 回落设计默认 100，显式 0 保留为
+        # 「不做样本量门槛」，不在此处自创语义。
+        min_sample = db.coerce_int(exp.min_sample, 100)
+        if n < min_sample:
+            return JSONResponse(status_code=400, content={"status": "error", "msg": f"样本量不足：treatment={n} < min_sample={min_sample}"})
         exp.conclusion = body.conclusion
         exp.conclusion_reason = body.conclusion_reason
         exp.concluded_by = body.concluded_by
@@ -486,17 +371,3 @@ def conclude_experiment(exp_id: int, body: ExpConcludeBody, request: Request):
                 "sample_size_treatment": n}
     finally:
         _s.close()
-
-
-def _exp_to_dict(r) -> dict:
-    import json
-    return {
-        "id": r.id, "name": r.name, "hypothesis": r.hypothesis,
-        "success_metric": r.success_metric,
-        "guardrail_metrics": json.loads(r.guardrail_metrics or "[]"),
-        "status": r.status, "target_percent": r.target_percent,
-        "target_supplier_ids": json.loads(r.target_supplier_ids or "[]"),
-        "min_sample": r.min_sample, "start_ts": r.start_ts, "end_ts": r.end_ts,
-        "conclusion": r.conclusion, "conclusion_reason": r.conclusion_reason,
-        "concluded_by": r.concluded_by, "concluded_at": r.concluded_at,
-    }

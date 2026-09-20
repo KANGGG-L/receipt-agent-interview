@@ -997,6 +997,7 @@ class ExportDataProcessor:
         status_map = {
             "approved": "已入账",
             "parsed": "待核对",
+            "parsed_with_warnings": "待核对(门禁警告)",
             "edited": "已修改",
             "flagged": "有问题",
             "error": "失败",
@@ -1163,7 +1164,9 @@ class ExportDataProcessor:
                     name,
                     s.supplier_code or f"SUP-{s.id}",
                     phone,
-                    s.payment_terms_days or 30,
+                    # 账期 0 天是合法值（现结），不能用 `or 30` 吞成 30 天；
+                    # 仅未设置（None）才回落 30。前端同口径：非 null 即按原值显示。
+                    s.payment_terms_days if s.payment_terms_days is not None else 30,
                     round(unpaid, 2),
                     stats.get("unpaid_credit_count", 0),
                     0.0,  # 逾期金额

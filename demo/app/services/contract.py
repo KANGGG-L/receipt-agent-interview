@@ -124,8 +124,12 @@ def _format_validation_error(e: ValidationError) -> str:
     return "契约校验失败: " + "; ".join(errors)
 
 
-def sanitize_nan(value: Any, default: float = 0.0) -> float:
-    """AI 可能输出 NaN/Infinity → 拒绝（完整版 A1：库存入参拒绝 Infinity）。"""
+def sanitize_nan(value: Any, default: Optional[float] = 0.0) -> Optional[float]:
+    """AI 可能输出 NaN/Infinity → 拒绝（完整版 A1：库存入参拒绝 Infinity）。
+
+    default 允许传 None：调用方要「缺失即缺失」时用 default=None（例如 item 级
+    confidence——把「模型未给出」落成 NULL，而不是伪造一个 0.5 的中等置信度）。
+    """
     if value is None:
         return default
     try:

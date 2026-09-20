@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from app import db
 from app.auth import require_role
 from app.services import image_web
-from app.services.contract import payment_mark_from_image
+from app.services.contract import payment_mark_from_image, sanitize_nan
 from app.services.receipt_utils import (
     build_detail, build_row, compute_review_diff, get_job, public_image_url,
     start_recognition_job, verify_preview_image_signature,
@@ -194,10 +194,11 @@ def _assert_retryable(row, action, verb):
     返回 None 表示放行。
     """
     old_status = row.status
-    if old_status not in ("uploaded", "parsed", "edited", "error"):
+    # P14/P15：parsed_with_warnings（门禁带警告）与 parsed 同属有效待核对态，须一并放行
+    if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "edited", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许{action}：仅 uploaded/parsed/edited/error 单据可{verb}"
+                     "msg": f"当前状态 [{old_status}] 不允许{action}：仅 uploaded/parsed/parsed_with_warnings/edited/error 单据可{verb}"
                             f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
             status_code=409)
     if (row.doc_form or "") == "manual_entry":
@@ -219,11 +220,12 @@ def _blur_threshold() -> float:
 def _laplacian_variance(image_path: str):
     """计算图像 Laplacian 方差（清晰度指标），<30 视为极模糊。失败回 None（不阻断）。"""
     try:
-        try:
-            import pillow_heif  # noqa: F401
-            pillow_heif.register_heif_opener()
-        except Exception:
-            pass
+        # HEIF 注册统一走 image_web._register_heif_opener（加锁、只注册 HEIF、失败只 WARN
+        # 一次并记录原因），不再此处自写裸注册。why: 旧写法的 `except Exception: pass` 会让
+        # pillow-heif 缺失/版本不兼容时 HEIC 打不开的失败完全不可观测 —— 随后 Image.open
+        # 抛错被本函数外层 except 吞掉 → 返回 None → 「极模糊前置拦截」对 HEIC 静默失效，
+        # 而非 HEIC 输入一切正常，表现为「只有 HEIC 不被拦截」的隐蔽差异。
+        image_web._register_heif_opener()
         from PIL import Image, ImageOps
         with Image.open(image_path) as img:
             try:
@@ -390,11 +392,24 @@ def get_receipt_image(receipt_id: int, request: Request):
 # -------------------------------------------------------------
 # 上传 + Job 轮询
 # -------------------------------------------------------------
+def _resolve_treatment(request: Request, form_value: str) -> str:
+    """解析「灰测分组」开关（treatment/control），返回原始字符串。
+
+    why: 前端把该开关放在**查询串**（`/api/upload?treatment=false`），而端点的形参声明
+    是 Form —— FastAPI 的 Form 只读表单体、不读查询串，于是形参恒为默认值 "true"，
+    勾选被静默忽略（本文件的 `force` 正因如此才显式兼读了 query_params）。这里统一
+    「查询串优先、否则用形参」，让单张与批量共用同一口径，避免再出现「一处读 query、
+    一处读 Form」的分叉。缺省仍为 "true"（与本仓既有默认一致）。
+    """
+    raw = request.query_params.get("treatment")
+    return form_value if raw is None else raw
+
+
 @router.post("/api/upload")
 async def upload_receipt(
     request: Request,
     receipt: UploadFile = File(...),
-    codebuddy: str = Form("true"),
+    treatment: str = Form("true"),
     async_: str = Form("true"),
     vendor_hint: str = Form(""),
     force: str = Form("false"),  # true → 用户已确认继续，跳过极模糊硬拦截
@@ -412,7 +427,7 @@ async def upload_receipt(
             "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
             ["image_empty_or_corrupted"])
 
-    # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进 opencode 管线）
+    # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进识别管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断
     blur_score = _laplacian_variance(image_path)
     quality_warnings = []
@@ -446,13 +461,15 @@ async def upload_receipt(
         tenant_id=_tenant_id(request))  # P0-1: 上传链路租户透传
 
     image_url = public_image_url(receipt_id, image_path, _tenant_id(request))
+    # 灰测分组标签（与批量上传同一口径，见 _resolve_treatment）
+    grp = "treatment" if _resolve_treatment(request, treatment).lower() == "true" else "control"
     # PDPO 红线（11-组件Spec §8）：vendor_hint 是用户输入明文，只落布尔位，禁落原文
     _track_event(account, getattr(request.state, "session_id", job_id),
                  "upload", receipt_id=receipt_id,
                  properties={"has_vendor_hint": bool(vendor_hint),
                              "image_path": os.path.basename(image_path),
                              "async": async_.lower() == "true"},
-                 grp="treatment" if codebuddy.lower() == "true" else "control")
+                 grp=grp)
     # async=true → queued + job_id（前端轮询）；否则等同步结果
     if async_.lower() == "true":
         return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
@@ -484,10 +501,13 @@ def job_status(job_id: str):
 async def upload_batch(
     request: Request,
     files: list[UploadFile] = File(...),
-    codebuddy: str = Form("true"),
+    treatment: str = Form("true"),
     force: str = Form("false"),
 ):
     require_role("staff")(request)
+    account = getattr(request.state, "account", {})
+    # 灰测分组标签：与单张上传同一口径（此前该形参在批量链路里零使用，勾选被静默忽略）
+    grp = "treatment" if _resolve_treatment(request, treatment).lower() == "true" else "control"
     # C5：批量限流 — 单次≤20张
     if len(files) > 20:
         return JSONResponse(
@@ -548,6 +568,12 @@ async def upload_batch(
         # P0-1: 批量上传链路租户透传（在派发 Job 线程前捕获，线程内不读 request）
         job_id, receipt_id = start_recognition_job(
             image_path, tenant_id=_tenant_id(request))
+        # 埋点与单张上传同口径（漏斗按 receipt_id 去重；批量此前完全不上报 upload 事件，
+        # 灰测分组标签也随之丢失）
+        _track_event(account, getattr(request.state, "session_id", job_id),
+                     "upload", receipt_id=receipt_id,
+                     properties={"mode": "batch"},
+                     grp=grp)
         row = db.get_receipt_row(receipt_id)
         queue_pos += 1
         results.append({
@@ -863,6 +889,10 @@ def save_edited(body: SaveEditedBody, request: Request):
         if ver_err is not None:
             return ver_err
         old_status = row.status
+        # P14/P15：解析后自动保存（source=auto）是识别主链路的正常回写，不得把
+        # 门禁带警告的 parsed_with_warnings 静默降级为 parsed，否则新状态刚落库就被抹掉。
+        if is_auto and old_status == "parsed_with_warnings":
+            target_status = "parsed_with_warnings"
         old_items = db.get_receipt_items(rid, tenant_id=tenant_id)
         db.append_audit_log(rid, who, action_type, "status", old_status, target_status, details=action_details)
 
@@ -879,7 +909,9 @@ def save_edited(body: SaveEditedBody, request: Request):
             "unit_price": float(it.get("unit_price", 0) or 0),
             "amount": float(it.get("amount", 0) or 0),
             "sku_id": it.get("sku_id"), "cost_center_id": it.get("cost_center_id"),
-            "confidence": it.get("confidence", 0.5),
+            # P11：与识别落库同口径——前端未提交该键（复核台该行本就没有置信度读数）
+            # 时保留 None，不再兜底 0.5，避免把「无数据」伪装成「置信度 0.5」。
+            "confidence": sanitize_nan(it.get("confidence"), default=None),
             "matched": int(bool(it.get("sku_id"))),
             "price_anomaly": int(it.get("price_anomaly", 0) or 0),
             "price_anomaly_direction": it.get("price_anomaly_direction", ""),
@@ -901,6 +933,17 @@ def save_edited(body: SaveEditedBody, request: Request):
     # Gap 6：手写注记归一（list[str]，空行/空白剔除）
     _notes = [str(n).strip() for n in (body.adjustment_notes or [])
               if str(n).strip()]
+    # F5 门禁联动：以店员提交值重算算术门禁（建议性，不阻断）
+    _math_warnings = _recompute_math_warnings(body, cur)
+    # P14/P15：带警告单据的自动保存沿用识别期门禁留痕——提交值未必能复现
+    # 契约类门禁错误，重算为空时保留原警告，避免自动保存把门禁留痕抹掉。
+    if is_auto and row is not None and row.status == "parsed_with_warnings" and not _math_warnings:
+        try:
+            _prev_warnings = json.loads(row.math_warnings_json or "[]")
+        except Exception:
+            _prev_warnings = []
+        if isinstance(_prev_warnings, list) and _prev_warnings:
+            _math_warnings = _prev_warnings
     db.update_receipt(
         rid,
         supplier_name=body.supplier_name or "通用供应商",
@@ -920,9 +963,7 @@ def save_edited(body: SaveEditedBody, request: Request):
         tax_amount=float(body.tax_amount or 0),
         adjustment_notes_json=json.dumps(_notes, ensure_ascii=False),
         payment_evidence=str(body.payment_evidence or "").strip(),
-        # F5 门禁联动：以店员提交值重算算术门禁（建议性，不阻断）
-        math_warnings_json=json.dumps(
-            _recompute_math_warnings(body, cur), ensure_ascii=False),
+        math_warnings_json=json.dumps(_math_warnings, ensure_ascii=False),
     )
     db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 
@@ -1053,10 +1094,10 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
-    if row.status not in ("parsed", "edited"):
+    if row.status not in ("parsed", "parsed_with_warnings", "edited"):
         return JSONResponse(
             content={"status": "error", "code": "INVALID_STATUS",
-                     "msg": f"仅 status='parsed' 或 'edited' 的单据可 approve，当前 status='{row.status}'"},
+                     "msg": f"仅 status='parsed'/'parsed_with_warnings'/'edited' 的单据可 approve，当前 status='{row.status}'"},
             status_code=409)
     ver_err = _version_error(body.version, row, "审核")
     if ver_err is not None:
@@ -1127,11 +1168,11 @@ def flag_receipt(receipt_id: int, request: Request):
     if old_status == "flagged":
         return {"status": "success",
                 "msg": f"单据 #{receipt_id} 已处于 flagged 状态，幂等跳过。"}
-    # 对齐完整版：uploaded/parsing/parsed/edited → flagged；approved 409
-    if old_status not in ("uploaded", "parsing", "parsed", "edited"):
+    # 对齐完整版：uploaded/parsing/parsed/parsed_with_warnings/edited → flagged；approved 409
+    if old_status not in ("uploaded", "parsing", "parsed", "parsed_with_warnings", "edited"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"非法状态转移 [{old_status}] → [flagged]：仅 uploaded/parsing/parsed/edited 单据可标记异常"
+                     "msg": f"非法状态转移 [{old_status}] → [flagged]：仅 uploaded/parsing/parsed/parsed_with_warnings/edited 单据可标记异常"
                             f"（已审核单据的问题修正必须走冲销路径）。"},
             status_code=409)
     db.update_receipt(receipt_id, status="flagged")
@@ -1242,10 +1283,10 @@ def convert_manual(receipt_id: int, request: Request):
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
     old_status = row.status
-    if old_status not in ("uploaded", "parsed", "error"):
+    if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许转手工录入：仅 uploaded/parsed/error 单据可转换。"},
+                     "msg": f"当前状态 [{old_status}] 不允许转手工录入：仅 uploaded/parsed/parsed_with_warnings/error 单据可转换。"},
             status_code=409)
     db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
     row = db.get_receipt_row(receipt_id)

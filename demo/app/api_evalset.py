@@ -13,6 +13,10 @@ GT 落盘：demo/evalsets/expected/<sample_id>.json（schema v2 与识别契约 
 对齐：supplier_name/date/total_amount/doc_form/payment_marked/payment_evidence/
 currency/各项费用/adjustment_notes/items[...]），manifest.csv 同步
 gt_status / gt_source_model。
+
+写入闸门：确权（confirm）与回流（promote）是本文件仅有的两个语料写入入口，均先在
+`_shared_corpus_write_refusal` 处校验 —— 目标是共享语料、而活动库不是部署默认库时整体
+拒绝（409）。理由与判据见该函数；默认库上的正常业务流不受影响。
 """
 
 import base64
@@ -98,6 +102,34 @@ def _save_manifest(evalset_dir, rows):
         w = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
+
+
+def _shared_corpus_write_refusal(evalset_dir):
+    """目标为共享语料且活动库非部署默认库时，返回拒绝响应；允许写则返回 None。
+
+    判据复用 app.services.evalset_linkage._shared_corpus_write_allowed（单一实现），
+    避免「确权/回流接口」与「linkage 回写」两处闸门规则各写一份后漂移：默认允许写，
+    只在「活动库 != 部署默认库（db._default_db_path）且目标 == 共享语料目录」时拒绝。
+
+    why：source_receipt_id 是「库内 id」，只对与语料成对的默认库有意义。隔离库（测试
+    临时库等）把 id 写进共享语料，临时库一丢引用即全部悬空 —— 这正是历史
+    source_receipt_id=1..33 顺序号污染的真实成因。启动自愈与 linkage 各已有一道闸门，
+    这里补上确权/回流接口这第二、第三条写入路径（同一「写共享语料」动作的其余入口）。
+    确权是正常业务路径，部署默认库上照常写入，不受影响。
+    """
+    from app.services.evalset_linkage import _shared_corpus_write_allowed
+    if _shared_corpus_write_allowed(evalset_dir, True):
+        return None
+    logger.warning(
+        "[evalset] 拒绝写入共享语料 %s：活动库 %s 非部署默认库 %s。"
+        "确权/回流请把 EVALSET_DIR 指向语料副本，或在部署默认库上操作。",
+        evalset_dir, db.DB_PATH, db._default_db_path)
+    return JSONResponse(status_code=409, content={
+        "status": "error",
+        "msg": "拒绝写入共享语料：当前活动数据库不是部署默认库，"
+               "写入的 source_receipt_id 只在该库内有效，会导致共享语料引用悬空。"
+               "测试请把 EVALSET_DIR 指向语料副本。",
+    })
 
 
 def _find_row(rows, sample_id):
@@ -309,6 +341,12 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
         return JSONResponse(status_code=404, content={
             "status": "error", "msg": "样本 %s 不在评测集 manifest 中" % sample_id})
 
+    # 写入闸门：共享语料 + 非部署默认库时整体拒绝（GT / manifest / 引用三处落地写
+    # 在此之前全部拦下），规则与 linkage 一致，见 `_shared_corpus_write_refusal`。
+    refusal = _shared_corpus_write_refusal(evalset_dir)
+    if refusal is not None:
+        return refusal
+
     gt = _normalize_gt_items(body.gt or {})
     missing = [k for k in GT_REQUIRED_KEYS if k not in gt]
     if missing:
@@ -513,6 +551,12 @@ def promote_candidate(candidate_id: int, request: Request, split: str = "val"):
         return JSONResponse(status_code=404, content={
             "status": "error",
             "msg": "评测集 manifest 不存在（%s）。请先运行 build_evalset.py 构建。" % _manifest_path(evalset_dir)})
+
+    # 写入闸门：共享语料 + 非部署默认库时整体拒绝（原图复制 / expected 落地 / manifest
+    # 追加三处写全部拦下），规则与 linkage 一致，见 `_shared_corpus_write_refusal`。
+    refusal = _shared_corpus_write_refusal(evalset_dir)
+    if refusal is not None:
+        return refusal
 
     new_sid = _next_sample_id(rows)
     ext = os.path.splitext(src_image)[1].lower()

@@ -31,13 +31,22 @@ VOUCHER_DIR.mkdir(parents=True, exist_ok=True)
 # -------------------------------------------------------------
 @router.get("/api/payments")
 def list_payments(request: Request, supplier_id: int = None):
+    """支付列表。supplier_id 非空时只返回该供应商的支付。
+
+    why（与 list_reconciliation 同源的口径分叉修复）：原先写成
+    `if supplier_id: sup = ...; if sup: data = [...]` —— 当 supplier_id 不存在
+    **或属于别的租户**时，`sup` 为 None，过滤整段被跳过，于是**静默退回全量**：
+    筛选看上去生效、实际把不属于该供应商（甚至跨租户）的支付一并返回。
+    现改为「找不到就是空列表」，与 list_reconciliation 的过滤口径一致。
+    """
     require_role("owner")(request)
     data = db.list_payments()
     if supplier_id:
-        # 需要按供应商过滤（简化：查该供应商名匹配）；供应商按租户校验
+        # 供应商按租户校验：不存在或跨租户 → 空列表（不退回全量）
         sup = db.get_supplier(supplier_id, tenant_id=_tenant_id(request))
-        if sup:
-            data = [p for p in data if p["supplier_name"] == sup.name]
+        if not sup:
+            return {"status": "success", "data": []}
+        data = [p for p in data if p["supplier_name"] == sup.name]
     return {"status": "success", "data": data}
 
 
@@ -75,9 +84,16 @@ RECON_TASKS = {}
 
 @router.get("/api/reconciliation")
 def list_reconciliation(request: Request, supplier_id: int = None):
+    """对账任务列表。supplier_id 非空时只返回该供应商的任务（前端选中供应商即传该参数）。
+
+    why: 该形参此前被声明却零使用，前端 `main.js` 的 `loadReconTasks()` 确实按选中
+    供应商拼了 `?supplier_id=`，于是「选中供应商」筛选对列表完全无效、始终返回全量。
+    """
     require_role("owner")(request)
     out = []
     for t in RECON_TASKS.values():
+        if supplier_id and t["supplier_id"] != supplier_id:
+            continue
         supplier = db.get_supplier(t["supplier_id"], tenant_id=_tenant_id(request))
         lines = t.get("lines", [])
         out.append({

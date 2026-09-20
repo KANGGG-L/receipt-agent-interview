@@ -4,7 +4,8 @@ from __future__ import annotations
 
 - 流程：extract（VLM 识别）→ contract gate（契约门禁）→ math gate（算术门禁）
         → audit（交叉审核）→ done
-- 重试阶梯：识别失败/契约算术不过 → 带反馈重试，最多 MAX_RETRY 轮；仍败 → error
+- 重试阶梯：仅"引擎瞬时故障"整图重跑（上限 MAX_RETRY，可经 EngineConfig.max_retry_rounds 调整）；
+  门禁快速反馈 / 输出质量失败 / 确定性失败均在当轮短路，不白跑后续轮次；仍败 → error
 - 灰测：命中灰测组的单据走灰测组引擎/模型（分组测试）
 - 每个决策写日志（状态快照 + 选择 + 理由），蒸馏成规则（对齐完整版蒸馏路径）
 
@@ -26,7 +27,97 @@ from app.services import math_engine
 from app.services.rag import retrieve_context
 from app import db
 
+# =================================================================
+# 重试阶梯策略（T11 / P10）
+# -----------------------------------------------------------------
+# MAX_RETRY＝整图重跑的最大轮数（含首轮），默认值。逐类说明"谁才会真正用到
+# 第 2/3 轮"，以免后人误调（下调前务必先看这条注释与 resolve_max_retry）：
+#
+#   1. 引擎瞬时故障（上游 5xx / DashScope 50507 / 调用超时）→ **重跑有意义**。
+#      这是本额度唯一"设计内"的消耗者：服务商侧抖动换一轮确实可能成功
+#      （实测 SF 每 3 次有 2 次撞超时，见问题清单 P9）。
+#   2. 契约/算术等门禁失败（快速反馈类）→ 走下方 gate_reject_fast 分支 break，
+#      不做整图重跑，**不消耗额度**（纯文本解析级修正已给过答案）。
+#   3. 输出质量失败（JSON 不可解析 / 契约不过，见 _is_output_quality_error）→
+#      下一轮 prompt 与首轮逐字相同（error 分支不设 retry_feedback、失败轮不补
+#      RAG 先验），temperature≈0 下近确定性复现，重跑无法改变结果 →
+#      走 output_reject_fast 短路，**不消耗额度**。
+#   4. 确定性失败（图片不可解码 / 鉴权或参数配置错误）→ 任何引擎都不可能成功 →
+#      走 deterministic_error 短路，**不消耗额度**。
+#
+# 结论：MAX_RETRY 保持 3。经上述三点收敛后，只剩"上游间歇故障"会消耗第 2/3 轮，
+# 而这一类正是需要重试的；把它下调到 1 会让上游抖动的单据直接失败。
 MAX_RETRY = 3
+# 上限护栏：即便管理台把 max_retry_rounds 填得很大，也不允许无限重跑（防长期空转 / 成本失控）。
+MAX_RETRY_LIMIT = 5
+# 引擎异常归类中"重跑同一配置不可能成功"的确定性类别（归类见 llm._engine_error_category）：
+#   auth  鉴权失败（HTTP 401/403）——同一 key 重试仍是 401/403；
+#   param 参数错误（HTTP 400）——模型名 / base_url 不被接受，重试同一配置仍是 400。
+# 上游 upstream（5xx / 50507）**不在其列**：它是服务商侧瞬时故障，正是重试阶梯要覆盖的场景。
+_NON_RETRYABLE_ENGINE_CATEGORIES = frozenset({"auth", "param"})
+
+# 成本兜底单价（元/百万 token，仅输入侧）：只在 _calc_cost_hkd 与 _resolve_token_price
+# 双双失败时使用，属「最后一道估算」，不是档位表口径。使用它时一律落 cost_estimated 标记，
+# 避免该数字被当成精确成本喂给 guardian 的成本护栏与大盘。
+_DEFAULT_COST_IN_PRICE = 2.2
+
+
+def resolve_max_retry(config=None) -> int:
+    """解析本次管线的整图重跑上限：EngineConfig.max_retry_rounds 优先，缺省 MAX_RETRY。
+
+    why 钳制到 [1, MAX_RETRY_LIMIT] 而非直接采用：该值来自 DB / 管理台，可能是
+    0、负数或非整数——0 会让 while 只跑 0 轮（data 恒为 None、单据直接失败），
+    离谱大值则会无限重跑烧钱。类型非法一律回落 MAX_RETRY。
+    """
+    v = getattr(config, "max_retry_rounds", None)
+    try:
+        iv = int(v)
+    except (TypeError, ValueError):
+        return MAX_RETRY
+    if iv < 1:
+        return 1
+    return min(iv, MAX_RETRY_LIMIT)
+
+
+def _is_fast_feedback_gate(gate_err: str) -> bool:
+    """门禁错误是否属"快速反馈类"（契约 / 算术等确定性结构问题）。
+
+    why 集中为单一函数：这些失败一文本地修正就能出结论（不重读原图），整图重跑
+    等于把一次 40s 级 VLM 调用浪费在同一个确定性结论上。命中即 gate_reject_fast，
+    保留已解析结构供人工复核，不再进下一轮。
+    """
+    if not gate_err:
+        return False
+    return ("算术门禁" in gate_err or "契约" in gate_err
+            or "总额" in gate_err or "明细为空" in gate_err)
+
+
+def _is_output_quality_error(result: dict) -> bool:
+    """extract 返回的失败是否属"输出质量"（JSON / 契约不过），而非引擎传输失败。
+
+    判据：引擎调用失败的三条返回路径都带 error_category（upstream/auth/param/decode，
+    未归类时为空串）；而 _parse_to_receipt 之后的 JSON / 契约失败走 extract_receipt
+    的最终返回，不带该键。故"有 error 但无 error_category"＝输出质量失败。
+
+    why 要单独区分：此类失败时 supervisor 下一轮传给模型的 prompt 与首轮**逐字相同**
+    （error 分支从不设 retry_feedback，失败轮也不会补 RAG 先验），在 temperature≈0
+    下近乎确定性复现——整图重跑既改变不了结果，又白烧 1-2 轮 VLM。
+    """
+    if not result.get("error"):
+        return False
+    return "error_category" not in result
+
+
+def _is_deterministic_engine_error(result: dict) -> bool:
+    """引擎失败是否属确定性（换引擎 / 重跑同一配置都不可能成功）。
+
+    两类：显式 deterministic_error 标记（图片解码失败，extract_chain 置位）；
+    以及 auth / param 归类的配置型失败（P9 归类，见 _NON_RETRYABLE_ENGINE_CATEGORIES）。
+    上游 upstream 归类与未归类异常（本地 CLI 抖动）不算确定性，仍需重试。
+    """
+    if result.get("deterministic_error"):
+        return True
+    return str(result.get("error_category") or "") in _NON_RETRYABLE_ENGINE_CATEGORIES
 
 # T6 Gap A5：低置信回流阈值（低于该值的识别结果回流为评测候选）。
 # T10 收口：本常量仅作 settings 缺省值，运行时经 settings_service 键
@@ -295,7 +386,7 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
     if receipt_id is None:
         return
     try:
-        _ai_engine = str(getattr(config, "audit_engine", "") or "opencode")
+        _ai_engine = str(getattr(config, "audit_engine", "") or "openai")
         _ai_model = str(getattr(config, "audit_model", "") or "")
         if use_grey:
             _ai_engine = str(getattr(config, "grey_audit_engine", _ai_engine) or _ai_engine)
@@ -303,16 +394,34 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
         from app import db as _db
         # 最严格：audit 亦记录 token 占位（text 审核零 token，VLM 审核可为实际值；当前 text 模式记 0）
         _audit_tu = audit.get("token_usage") or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        _audit_estimated = False
+        _audit_reason = ""
         try:
             from app.llm import _normalize_token_usage
             _audit_tu = _normalize_token_usage(_audit_tu)
-        except Exception:
+        except Exception as e:
             _audit_tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            _audit_estimated = True
+            _audit_reason = "token_usage_unparsed"
+            logging.getLogger("supervisor").warning(
+                "审核 token 归一失败(收据=%s 原值=%r)，记 0 并标记成本为估算值: %s",
+                receipt_id, audit.get("token_usage"), e)
         try:
             from app.llm import _calc_cost_hkd
-            _audit_cost = _calc_cost_hkd(_audit_tu)
-        except Exception:
+            # 传当时生效的审核模型（_ai_model 已含灰测分支）用于档位解析：
+            # 不传会按默认识别引擎 omni 档计，对 SF GLM 审核腿高估约 2.2 倍。
+            _audit_cost = _calc_cost_hkd(_audit_tu, model=_ai_model)
+        except Exception as e:
             _audit_cost = 0.0
+            _audit_estimated = True
+            _audit_reason = _audit_reason or "cost_calc_failed"
+            logging.getLogger("supervisor").warning(
+                "审核成本计算失败(收据=%s model=%s tokens=%s)，记 0 并标记为估算值: %s",
+                receipt_id, _ai_model, _audit_tu, e)
+        if not _audit_estimated and int(_audit_tu.get("total_tokens", 0) or 0) == 0:
+            # 当前审核为 text 模式，本就无 token -> 属「无测量值」，与识别腿口径一致
+            _audit_estimated = True
+            _audit_reason = _audit_reason or "no_token_usage"
         _audit_elapsed = {"audit": float(audit.get("audit_ms", 0) or 0), "total": float(audit.get("audit_ms", 0) or 0)}
         _db.log_ai_decision(
             receipt_id=int(receipt_id),
@@ -339,6 +448,8 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
                 "tokens_completion": int(_audit_tu.get("completion_tokens", 0) or 0),
                 "tokens_total": int(_audit_tu.get("total_tokens", 0) or 0),
                 "cost_hkd": float(_audit_cost or 0),
+                "cost_estimated": 1 if _audit_estimated else 0,
+                "cost_estimated_reason": _audit_reason,
                 "elapsed_ms": _audit_elapsed,
                 "success": bool(audit.get("overall_consistent")) if audit.get("skipped") is False else False,
             },
@@ -350,7 +461,8 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
 def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                           attempt, engine, status, gate_err="",
                           token_usage=None, cost_hkd=None, elapsed_ms=None,
-                          success=None, image_path="", supplier="", doc_form=""):
+                          success=None, image_path="", supplier="", doc_form="",
+                          cost_estimated_in=None, cost_estimated_reason_in=""):
     """U-2：每轮 extract 决策落库（AI 决策履历断链修复）。
 
     - receipt_id=None（run_pipeline 直接调用/冒烟场景）→ 跳过写库不抛错
@@ -358,38 +470,102 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
     - ai_value 紧凑 JSON ≤500 字符，超长截断加 …(truncated) 尾标；
       gate_err 仅拒绝/失败轮携带，≤200 字摘要
     - 最严格记忆落盘：ai_value 与 extra 均追加 {tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms, success, image_path, supplier, doc_form}
-      token 来自 ChatResult.generations[0].message.response_metadata['token_usage']（DashScope qwen3-vl-flash），本地 opencode/codebuddy 无 token 记 0 且 cost 0；
-      cost 按 docs/04-AI技术选型与评测/02-L0-L9选型决策档案/L4-多模态VLM直识(定稿冠军).md:21 qwen3-vl-flash ¥0.0022/张 或 token 单价 ¥0.15/1M 输入 / ¥1.50/1M 输出 计算。
+      token 来自 ChatResult.generations[0].message.response_metadata['token_usage']；
+      cost 按 llm._calc_cost_hkd 的按模型分档单价计算（见 llm._REC_TOKEN_PRICE_TIERS：
+      omni ¥2.2/¥13.3、vl-flash ¥0.15/¥1.50、GLM-4.5V ¥1.0/¥6.0 每百万 token），
+      传入 config 上当时生效的识别模型名，避免被按默认 omni 档静默高估。
     """
     if receipt_id is None:
-        return
+        # 始终返回 dict：调用方用 state.update(...) 透传成本可信度标记，返回 None 会炸
+        return {}
     # 归一化 token
     tu = token_usage or {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    # 上游给了值却解析不出来的字段：静默变 0 会让成本护栏失去判别力，必须留痕
+    _token_unparsed = []
     if not isinstance(tu, dict):
+        _token_unparsed.append("token_usage_not_dict")
         tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-    def _to_int(v):
+
+    def _to_int(v, label=""):
         try:
             return int(v or 0)
         except Exception:
             try:
                 return int(float(v or 0))
             except Exception:
+                if v not in (None, "", 0):
+                    _token_unparsed.append(label or type(v).__name__)
                 return 0
-    tokens_prompt = _to_int(tu.get("prompt_tokens", tu.get("input_tokens", 0)))
-    tokens_completion = _to_int(tu.get("completion_tokens", tu.get("output_tokens", 0)))
-    tokens_total = _to_int(tu.get("total_tokens", 0) or (tokens_prompt + tokens_completion))
+
+    tokens_prompt = _to_int(tu.get("prompt_tokens", tu.get("input_tokens", 0)), "prompt_tokens")
+    tokens_completion = _to_int(tu.get("completion_tokens", tu.get("output_tokens", 0)), "completion_tokens")
+    tokens_total = _to_int(tu.get("total_tokens", 0) or (tokens_prompt + tokens_completion), "total_tokens")
+    # 成本可信度标记：True = 这个 cost_hkd 不是按「真实模型单价 × 真实 token」算出来的，
+    # 不可用于护栏/大盘的精确判定。供 guardian 与大盘区分「真实 0 成本」（本地 CLI 无 token）
+    # 与「拿不到 token / 算不出来」这两种此刻数值相同、含义完全不同的情况。
+    _cost_estimated = False
+    _cost_reason = ""
+    # 当时生效的识别模型名（与下方决策落库的 model 字段同源）。
+    # why：_calc_cost_hkd 不传 model 会一律按默认 omni 档计，用 vl-flash 时高估约 11 倍。
+    _rec_model = str(getattr(config, "recognition_model", "") or "")
+    if use_grey:
+        _rec_model = str(getattr(config, "grey_recognition_model", _rec_model) or _rec_model)
     # 成本计算
     if cost_hkd is None:
         try:
             from app.llm import _calc_cost_hkd
-            cost_hkd = _calc_cost_hkd({"prompt_tokens": tokens_prompt, "completion_tokens": tokens_completion, "total_tokens": tokens_total})
-        except Exception:
-            cost_hkd = round(tokens_total * 0.15 / 1_000_000, 6) if tokens_total else 0.0
+            cost_hkd = _calc_cost_hkd(
+                {"prompt_tokens": tokens_prompt, "completion_tokens": tokens_completion, "total_tokens": tokens_total},
+                model=_rec_model)
+        except Exception as e:
+            _cost_estimated = True
+            _cost_reason = "cost_calc_failed"
+            logging.getLogger("supervisor").warning(
+                "成本计算失败(收据=%s engine=%s model=%s tokens_total=%s)，转兜底估算: %s",
+                receipt_id, engine, _rec_model, tokens_total, e)
+            # 兜底估算：只按该模型档位的输入单价计（对输出占比高的模型会低估），
+            # _resolve_token_price 也失败时用档位表默认输入单价兜底 —— 两者都不可信，
+            # 故一律打 cost_estimated 标记，不冒充精确值。
+            try:
+                from app.llm import _resolve_token_price
+                _in_price = _resolve_token_price(_rec_model)[0]
+            except Exception as e2:
+                _in_price = _DEFAULT_COST_IN_PRICE
+                _cost_reason = "price_table_failed"
+                logging.getLogger("supervisor").warning(
+                    "成本单价表解析失败(model=%s)，回落到默认输入单价 %s（仅估算兜底）: %s",
+                    _rec_model, _DEFAULT_COST_IN_PRICE, e2)
+            cost_hkd = round(tokens_total * _in_price / 1_000_000, 6) if tokens_total else 0.0
     else:
         try:
             cost_hkd = round(float(cost_hkd or 0), 6)
-        except Exception:
+        except Exception as e:
             cost_hkd = 0.0
+            _cost_estimated = True
+            _cost_reason = "cost_coerce_failed"
+            logging.getLogger("supervisor").warning(
+                "成本值归一失败(收据=%s 原值=%r)，记 0 并标记为估算值: %s", receipt_id, cost_hkd, e)
+    # 上游（extract_chain）已判定为估算的成本：一律继承，不因本地算出一个非 0 值就丢掉该标记
+    if cost_estimated_in and not _cost_estimated:
+        _cost_estimated = True
+        _cost_reason = cost_estimated_reason_in or "upstream_cost_fallback"
+    # 交叉校验：有 token 却算出 0 成本 -> 成本链路在更上游（extract_chain）被静默吞掉了。
+    # 这是 cost_estimated 最关键的触发条件：它让「真实成本上涨」不会以 0 的形式冒充正常值。
+    if not _cost_estimated and tokens_total > 0 and not cost_hkd:
+        _cost_estimated = True
+        _cost_reason = "cost_zero_with_tokens"
+        logging.getLogger("supervisor").warning(
+            "有 token(%s) 但成本为 0(收据=%s engine=%s model=%s) -> 成本链路异常，"
+            "该值标记为估算值，不得用于护栏判定",
+            tokens_total, receipt_id, engine, _rec_model)
+    # 没有任何 token 测量值 -> 成本不可验证。本地 CLI 引擎无 token 计费也落在这里：
+    # 它的「0 成本」是「没有测量值」而非「测量结果为 0」，同样不该被当成精确成本。
+    if not _cost_estimated and tokens_total == 0:
+        _cost_estimated = True
+        _cost_reason = "no_token_usage"
+        logging.getLogger("supervisor").warning(
+            "无可用 token 用量(收据=%s engine=%s 原值=%r 未解析字段=%s) -> 成本记 0 并标记为估算值",
+            receipt_id, engine, token_usage, _token_unparsed or ["none"])
     # elapsed 归一
     elapsed = elapsed_ms or {}
     if not isinstance(elapsed, dict):
@@ -423,6 +599,11 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
         "tokens_completion": tokens_completion,
         "tokens_total": tokens_total,
         "cost_hkd": cost_hkd,
+        # 成本可信度：1 = cost_hkd 为估算/不可用（拿不到 token、成本链路异常、走了兜底单价），
+        # 0 = 按真实模型单价 × 真实 token 算出。guardian 的成本护栏与大盘据此区分
+        # 「真实 0 成本」（本地 CLI 无 token）与「算不出来」，两者数值相同、含义不同。
+        "cost_estimated": 1 if _cost_estimated else 0,
+        "cost_estimated_reason": _cost_reason,
         "elapsed_ms": elapsed,
         "success": bool(success),
         "image_path": str(image_path or "")[:500],
@@ -430,9 +611,7 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
         "doc_form": str(doc_form or "")[:60],
     }
     try:
-        _model = str(getattr(config, "recognition_model", "") or "")
-        if use_grey:
-            _model = str(getattr(config, "grey_recognition_model", _model) or _model)
+        _model = _rec_model
         from app import db as _db
         _db.log_ai_decision(
             receipt_id=int(receipt_id),
@@ -449,6 +628,9 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
         )
     except Exception as e:
         logging.getLogger("supervisor").warning(f"记录 AI 决策失败: {e}")
+    # 回传成本可信度，供调用方透传到 state（Job 与前端据此显示「成本为估算值」）
+    return {"cost_estimated": bool(_cost_estimated),
+            "cost_estimated_reason": _cost_reason}
 
 
 def run_pipeline(image_path: str, vendor_hint: str = "",
@@ -481,11 +663,15 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         "config": config,
         "use_grey": use_grey,
         "attempt": 0,
-        "engine_name": "codebuddy",
+        "engine_name": "openai",
         "log": log,
         "retry_feedback": "",
         "contract_error": "",
         "math_problems": [],
+        # P14/P15：门禁快速反馈留下的警告（非空表示"带警告通过"）
+        "gate_warnings": [],
+        # T11：输出质量失败（JSON/契约不过）的快速反馈标记，非空表示已短路不重跑
+        "output_reject_fast": False,
         "audit_result": {},
         "raw": "",
         "data": None,
@@ -504,13 +690,17 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         "tokens_completion": 0,
         "tokens_total": 0,
         "cost_hkd": 0.0,
+        # 成本可信度（见 _log_extract_decision 的 cost_estimated）：随管线透传给 Job/前端
+        "cost_estimated": False,
+        "cost_estimated_reason": "",
         "success": False,
         "supplier": "",
         "doc_form": "",
     }
 
-    # ---- 重试阶梯：识别 + 门禁，最多 MAX_RETRY 轮 ----
-    while state["attempt"] < MAX_RETRY:
+    # ---- 重试阶梯：识别 + 门禁，最多 max_rounds 轮（默认 MAX_RETRY，见文件头策略注释）----
+    max_rounds = resolve_max_retry(config)
+    while state["attempt"] < max_rounds:
         state["attempt"] += 1
         attempt = state["attempt"]
 
@@ -536,11 +726,24 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         except Exception:
             pass
         _cost = result.get("cost_hkd", 0.0)
+        # 上游（extract_chain）成本链路的估算标记：它已经在更上游判过「这个成本是不是按真实档位算的」，
+        # 这里原样透传下去，避免「上游标了、下游又丢掉」的两次失真。
+        _cost_est_in = result.get("cost_estimated")
+        _cost_why_in = str(result.get("cost_estimated_reason") or "")
         try:
             _cost = float(_cost or 0)
-        except Exception:
+        except Exception as e:
             _cost = 0.0
-        state["engine_name"] = str(result.get("engine") or state.get("engine_name") or "opencode")
+            _cost_est_in = True
+            _cost_why_in = "cost_coerce_failed"
+            logging.getLogger("supervisor").warning(
+                "上游成本值无法转为数值(原值=%r)，记 0 并标记为估算值: %s",
+                result.get("cost_hkd"), e)
+        state["engine_name"] = str(result.get("engine") or state.get("engine_name") or "openai")
+        # Job/前端可见：本轮成本是否为估算值（供大盘区分「真实 0 成本」与「算不出来」）
+        if _cost_est_in:
+            state["cost_estimated"] = True
+            state["cost_estimated_reason"] = _cost_why_in or "upstream_cost_fallback"
         state["tokens_prompt"] = int(state.get("tokens_prompt", 0) or 0) + int(_tu.get("prompt_tokens", 0) or 0)
         state["tokens_completion"] = int(state.get("tokens_completion", 0) or 0) + int(_tu.get("completion_tokens", 0) or 0)
         state["tokens_total"] = int(state.get("tokens_total", 0) or 0) + int(_tu.get("total_tokens", 0) or 0)
@@ -561,8 +764,9 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
             state["fallback_triggered"] = True
             state["fallback_reason"] = result.get("fallback_reason", "")
             state["fallback_from"] = result.get("fallback_from", "")
-            state["fallback_engine"] = result.get("fallback_engine", "codebuddy")
-            _snapshot(log, "engine_fallback", state["fallback_reason"], attempt, engine="codebuddy")
+            state["fallback_engine"] = result.get("fallback_engine", "dashscope")
+            _snapshot(log, "engine_fallback", state["fallback_reason"], attempt,
+                      engine=state["fallback_engine"])
             if on_event is not None:
                 try:
                     on_event({
@@ -578,19 +782,43 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         if result["error"]:
             _snapshot(log, "extract_fail", f"识别失败(第{attempt}轮): {result['error']}",
                       attempt, engine=result["engine"])
-            _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                  attempt, result["engine"], "extract_fail",
-                                  gate_err=result["error"],
-                                  token_usage=_tu, cost_hkd=_cost,
-                                  elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                                  success=False, image_path=image_path,
-                                  supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+            state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                      attempt, result["engine"], "extract_fail",
+                                      gate_err=result["error"],
+                                      token_usage=_tu, cost_hkd=_cost,
+                                      elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                      success=False, image_path=image_path,
+                                      supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""),
+                                      cost_estimated_in=_cost_est_in,
+                                      cost_estimated_reason_in=_cost_why_in))
             if result.get("fallback_failed") or result.get("fallback_triggered") or "fallback" in str(result.get("engine", "")):
-                # 主模型与备用模型均失败时，不再盲目重试 3 轮，立即快速返回供前端自动切入手工输入界面
+                # 主模型与备用模型均失败时，不再盲目重试，立即快速返回供前端自动切入手工输入界面。
+                # 先于确定性判定：保持既有语义（Job 层 fallback_failed 透传、前端据此提示）。
                 state["fallback_failed"] = True
                 state["fallback_triggered"] = True
                 break
-            continue  # 识别失败 → 下一轮重试
+            if _is_deterministic_engine_error(result):
+                # T11：确定性失败（图片解码失败 N4；或 auth/param 配置型失败 P9）——
+                # 换引擎/重跑都不可能成功，立即结束重试阶梯，避免白跑剩余轮次、打重复日志。
+                # last_error 已在上方记录可读原因，最终仍走 "data is None" 既有 error
+                # 收口路径（status=error / success=False），Job 层照常取到错误文案。
+                state["deterministic_error"] = True
+                _snapshot(log, "deterministic_fail",
+                          f"确定性失败，不重试(第{attempt}轮): {result['error']}",
+                          attempt, engine=result["engine"])
+                break
+            if _is_output_quality_error(result):
+                # T11：输出质量失败（JSON 不可解析 / 契约不过）——下一轮 prompt 与首轮
+                # 逐字相同（error 分支不设 retry_feedback、失败轮不补 RAG 先验），
+                # temperature≈0 下近确定性复现，整图重跑无意义。快速反馈交人工复核，
+                # 不再白烧 1-2 轮 VLM（此前会跑满上限才失败）。
+                state["output_reject_fast"] = True
+                _snapshot(log, "output_reject_fast",
+                          f"输出质量快速反馈(第{attempt}轮): {result['error']}"
+                          f"（同一 prompt 重跑无意义，已保留原始输出交人工复核）",
+                          attempt, engine=result["engine"])
+                break
+            continue  # 引擎瞬时故障（上游 5xx / 超时等）→ 下一轮重试
 
         # 首轮补检索（真飞轮）：无 hint 时 VLM 已识别出供应商 → 读 VendorMemory 补上下文，
         # 供后续 gate_reject 重试轮注入（异常置空，不阻断识别线程）
@@ -637,12 +865,14 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                     _snapshot(log, "parse_correct",
                               f"解析级修正通过门禁(第{attempt}轮): {gate_err}",
                               attempt, engine=result["engine"])
-                    _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                           attempt, result["engine"], "parse_ok",
-                                           token_usage=_tu, cost_hkd=_cost,
-                                           elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                                           success=True, image_path=image_path,
-                                           supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+                    state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                               attempt, result["engine"], "parse_ok",
+                                               token_usage=_tu, cost_hkd=_cost,
+                                               elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                               success=True, image_path=image_path,
+                                               supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""),
+                                               cost_estimated_in=_cost_est_in,
+                                               cost_estimated_reason_in=_cost_why_in))
                     state["data"] = corr_data
                     state["contract_error"] = ""
                     # parse 修正成功同样视为成功，更新 supplier/doc_form
@@ -654,28 +884,29 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                         pass
                     state["success"] = True
                     break
-            # 修正未通过 → 快速反馈路径：contract/math 失败不再重调 VLM（避免 3*40s），直接快速反馈
-            is_fast_gate = ("算术门禁" in gate_err or "契约" in gate_err
-                            or "总额" in gate_err or "明细为空" in gate_err
-                            or "契约校验失败" in gate_err)
-            if is_fast_gate:
+            # 修正未通过 → 快速反馈路径：contract/math 失败不再重调 VLM（避免整图重跑），直接快速反馈
+            if _is_fast_feedback_gate(gate_err):
                 # 快速反馈：记录 gate_reject_fast，保留已解析结构交人工快速复核（不阻断、不整图重识别）
                 _snapshot(log, "gate_reject_fast",
                           f"门禁快速反馈(第{attempt}轮): {gate_err}（已尝试 parse 修正；保留已解析结构交人工快速复核）",
                           attempt, engine=result["engine"])
-                _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                       attempt, result["engine"], "gate_reject_fast",
-                                       gate_err=gate_err,
-                                       token_usage=_tu, cost_hkd=_cost,
-                                       elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                                       success=True, image_path=image_path,
-                                       supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+                state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                           attempt, result["engine"], "gate_reject_fast",
+                                           gate_err=gate_err,
+                                           token_usage=_tu, cost_hkd=_cost,
+                                           elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                           image_path=image_path,
+                                           supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""),
+                                           cost_estimated_in=_cost_est_in,
+                                           cost_estimated_reason_in=_cost_why_in))
+                # P14/P15：门禁未通过时不得静默当「解析成功」——留痕门禁警告，
+                # 最终状态由收尾处依 gate_warnings 置为 parsed_with_warnings（不再置 success=True）。
+                state["gate_warnings"] = [str(gate_err)]
                 # 关键：保留已解析结构供前端渲染与标红复核，不阻断流程
                 fallback_data = corr_data if (corrected and 'corr_data' in locals() and corr_data is not None) else result.get("data")
                 if fallback_data is not None:
                     state["data"] = fallback_data
                     state["math_problems"] = [gate_err]
-                    state["success"] = True
                     try:
                         state["supplier"] = str(getattr(fallback_data, "vendor", "") or state.get("supplier", ""))[:120]
                         _df2 = getattr(fallback_data, "doc_form", "")
@@ -687,13 +918,15 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
             state["retry_feedback"] = gate_err
             _snapshot(log, "gate_reject", f"门禁拒绝(第{attempt}轮): {gate_err}",
                       attempt, engine=result["engine"])
-            _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                                   attempt, result["engine"], "gate_reject",
-                                   gate_err=gate_err,
-                                   token_usage=_tu, cost_hkd=_cost,
-                                   elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                                   success=False, image_path=image_path,
-                                   supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+            state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                       attempt, result["engine"], "gate_reject",
+                                       gate_err=gate_err,
+                                       token_usage=_tu, cost_hkd=_cost,
+                                       elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                       success=False, image_path=image_path,
+                                       supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""),
+                                       cost_estimated_in=_cost_est_in,
+                                       cost_estimated_reason_in=_cost_why_in))
             continue  # 门禁不过 → 带反馈重试（仅非快速类型）
 
         state["data"] = data
@@ -710,12 +943,14 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                   attempt, engine=result["engine"])
         _snapshot(log, "gates_pass", "契约+算术门禁通过（零 token）",
                   attempt, engine=result["engine"])
-        _log_extract_decision(receipt_id, experiment_id, config, use_grey,
-                              attempt, result["engine"], "extract_ok",
-                              token_usage=_tu, cost_hkd=_cost,
-                              elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
-                              success=True, image_path=image_path,
-                              supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""))
+        state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                                  attempt, result["engine"], "extract_ok",
+                                  token_usage=_tu, cost_hkd=_cost,
+                                  elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
+                                  success=True, image_path=image_path,
+                                  supplier=state.get("supplier", ""), doc_form=state.get("doc_form", ""),
+                                  cost_estimated_in=_cost_est_in,
+                                  cost_estimated_reason_in=_cost_why_in))
         break
 
     # 透传 receipt_id 到 state 供 _finalize 记忆落盘
@@ -724,7 +959,18 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
     if state["data"] is None:
         state["status"] = "error"
         state["success"] = False
-        if state["contract_error"]:
+        if state.get("deterministic_error"):
+            # N4：确定性失败已主动结束阶梯（非耗尽重试），日志文案如实区分，
+            # 避免把"本地图片解码失败"误报成"重试耗尽"而误导排查方向。
+            _snapshot(log, "error_exit", f"确定性失败(不重试): {state['last_error'] or '识别失败'}",
+                      state["attempt"])
+        elif state.get("output_reject_fast"):
+            # T11：输出质量失败已主动短路（重跑同一 prompt 无意义），文案同样不得
+            # 写成"重试耗尽"，否则会让人以为还有可恢复空间。
+            _snapshot(log, "error_exit",
+                      f"输出质量快速反馈(不重试): {state['last_error'] or '识别失败'}",
+                      state["attempt"])
+        elif state["contract_error"]:
             _snapshot(log, "error_exit", f"重试耗尽: {state['contract_error']}",
                       state["attempt"])
         else:
@@ -756,7 +1002,9 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         daemon=True,
     ).start()
 
-    state["status"] = "parsed"
+    # P14/P15：门禁快速反馈虽保留了识别结构（供人工复核），但状态必须显式标注
+    # 「带警告」，避免下游（落库/列表/详情）把它当成干净的 parsed。
+    state["status"] = "parsed_with_warnings" if state.get("gate_warnings") else "parsed"
     return _finalize(state, pipeline_start)
 
 
@@ -766,6 +1014,10 @@ def _finalize(state: dict, pipeline_start: float) -> dict:
     state["retry_count"] = max(0, state["attempt"] - 1)
     # success 兜底（最严格：error 状态强制 false）
     if state.get("status") == "error":
+        state["success"] = False
+    elif state.get("status") == "parsed_with_warnings":
+        # P14/P15：门禁未通过的"带警告通过"不算 clean success —— 数据虽已落库
+        # 供人工复核，但日志/看板不应把它统计为一次干净的成功解析。
         state["success"] = False
     elif "success" not in state:
         state["success"] = bool(state.get("data") is not None)
@@ -813,24 +1065,28 @@ def _finalize(state: dict, pipeline_start: float) -> dict:
     # 尝试取真实 engine/model
     _cfg = state.get("config")
     try:
-        _engine = str(state.get("engine_name") or getattr(_cfg, "recognition_engine", "") or "opencode")
+        _engine = str(state.get("engine_name") or getattr(_cfg, "recognition_engine", "") or "openai")
         if hasattr(_engine, "value"):
             _engine = str(_engine.value)
     except Exception:
-        _engine = str(state.get("engine_name") or "opencode")
+        _engine = str(state.get("engine_name") or "openai")
     try:
         _model = str(getattr(_cfg, "recognition_model", "") or "")
         if state.get("use_grey"):
             _model = str(getattr(_cfg, "grey_recognition_model", _model) or _model)
     except Exception:
         _model = ""
+    cost_estimated = bool(state.get("cost_estimated"))
+    cost_estimated_reason = str(state.get("cost_estimated_reason") or "")
     logging.getLogger("supervisor").info(
-        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f success=%s engine=%s model=%s",
-        tokens_prompt, tokens_completion, tokens_total, cost_hkd, success, _engine, _model,
+        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f cost_estimated=%s(%s) success=%s engine=%s model=%s",
+        tokens_prompt, tokens_completion, tokens_total, cost_hkd,
+        cost_estimated, cost_estimated_reason or "-", success, _engine, _model,
     )
     print(
-        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f success=%s engine=%s model=%s" % (
-            tokens_prompt, tokens_completion, tokens_total, cost_hkd, success, _engine, _model,
+        "TOKENS prompt=%d completion=%d total=%d cost_hkd=%.6f cost_estimated=%s(%s) success=%s engine=%s model=%s" % (
+            tokens_prompt, tokens_completion, tokens_total, cost_hkd,
+            cost_estimated, cost_estimated_reason or "-", success, _engine, _model,
         ),
         flush=True,
     )
@@ -851,6 +1107,8 @@ def _finalize(state: dict, pipeline_start: float) -> dict:
                 "tokens_completion": tokens_completion,
                 "tokens_total": tokens_total,
                 "cost_hkd": cost_hkd,
+                "cost_estimated": 1 if cost_estimated else 0,
+                "cost_estimated_reason": cost_estimated_reason,
                 "elapsed_ms": elapsed_dict,
                 "success": success,
                 "error_msg": str(state.get("contract_error") or state.get("last_error") or "")[:500],

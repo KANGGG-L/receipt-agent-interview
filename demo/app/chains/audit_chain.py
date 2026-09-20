@@ -5,8 +5,9 @@
 （不同模型家族盲点互补）。输入原图 + 识别结果 JSON → 逐字段一致性判定 + 分歧清单。
 
 生成器-评估器强制异构（Gap A3）：审核腿（评估器）必须与识别腿跨厂商异构，
-禁止同引擎同家族（识别=Qwen/GLM 系时审核走 opencode 系；识别=opencode 系时
-审核必须换 Qwen/GLM 系）。评估确定性约定（Gap A4）：审核腿调用 temperature
+禁止同引擎同家族（识别走 DashScope Qwen 系时审核走 SiliconFlow GLM 系，反之亦然；
+判据是 base_url + 模型家族，两个本机 CLI 引擎已随 2026-09-02 弃用删除）。
+评估确定性约定（Gap A4）：审核腿调用 temperature
 必须为 0（由 app/llm.py `_build(side="aud")` 强制注入，勿在调用侧覆盖）。
 上线前必须跑元评测集自检：`python scripts/run_meta_eval.py` 且
 evaluator_trustworthy=true（见 ai_registry/README.md 生产准入规则）。
@@ -19,14 +20,21 @@ evaluator_trustworthy=true（见 ai_registry/README.md 生产准入规则）。
 """
 
 import json
+import logging
 import time
 from typing import Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.chains import extract_chain
 from app.llm import build_audit_model
 from app.models import ReceiptData
 from app.services import math_engine
+from app.services.canary_guard import (
+    generate_canary_token,
+    inject_canary_instructions,
+    verify_canary_in_text,
+)
 from app.services.contract import validate_contract
 
 # T12 SSOT：AUDIT_SYSTEM 改经 ai_registry 加载（active 版本）。
@@ -52,25 +60,22 @@ _VENDOR_PLACEHOLDERS = {
 
 
 def build_audit_prompt(image_path: str, data: ReceiptData) -> list:
+    """构造审核多模态 prompt。
+
+    why（P2）：本模块原先自带一份 _image_data_url 副本（裸 base64 + 按扩展名猜 mime），
+    .heic/.tiff 会被冒充成 image/jpeg 发给上游——与识别腿修过的同类缺陷是同一个根因。
+    现统一复用 extract_chain 的实现（单一实现、单一修复），非 Web 格式解码失败会抛
+    ImageDecodeError，由 run_audit 捕获并优雅降级为 skipped，不再发送损坏二进制。
+    """
     return [
         SystemMessage(content=AUDIT_SYSTEM),
         HumanMessage(content=[
             {"type": "text", "text": "原图："},
-            {"type": "image_url", "image_url": {"url": _image_data_url(image_path)}},
+            {"type": "image_url", "image_url": {"url": extract_chain._image_data_url(image_path)}},
             {"type": "text", "text": "识别结果 JSON：\n" + json.dumps(
                 data.model_dump(), ensure_ascii=False, indent=2)},
         ]),
     ]
-
-
-def _image_data_url(image_path: str) -> str:
-    import base64
-    import os
-    ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpg"
-    mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
-    with open(image_path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode()
-    return f"data:{mime};base64,{b64}"
 
 
 def _resolve_audit_mode(config, data: ReceiptData) -> str:
@@ -89,11 +94,17 @@ def _resolve_audit_mode(config, data: ReceiptData) -> str:
 
 
 def run_audit(image_path: str, data: ReceiptData,
-              model=None, config=None, use_grey=False) -> dict:
+              model=None, config=None, use_grey=False,
+              enable_canary: bool = True) -> dict:
     """交叉审核入口。返回审核结论 dict（供复核排序与 flag 参考）。
 
     失败/模型不可用 → 返回 graceful skip（审核不阻断主链路，对齐完整版）。
     use_grey=True → 用灰测组审核模型。
+
+    Canary（T8，堵 P13）：vlm/ondemand 分支会真的调一次 provider，此前既无注入也无校验，
+    被污染的审核 provider 可返回 overall_consistent=true 单方面洗白门禁。现与识别腿一致
+    注入 + 校验；校验失败按本模块既有约定优雅降级为 skipped（审核仅作参考，绝不阻断主链路）。
+    text 模式不调 LLM，因此完全不涉及 Canary，行为零变化。
     """
     if config and not config.audit_enabled:
         return {"skipped": True, "reason": "audit_disabled", "audit_ms": 0.0}
@@ -108,9 +119,14 @@ def run_audit(image_path: str, data: ReceiptData,
     try:
         if model is None:
             model = build_audit_model(cfg=config, use_grey=use_grey)
-        # 透传真实引擎 kind（opencode/codebuddy/openai/qwen），修正误导标签
+        # 透传真实引擎通道 kind（openai/qwen），修正误导标签
         engine = getattr(model, "kind", "unknown")
         prompt = build_audit_prompt(image_path, data)
+        # T8：只在真的走 VLM 的这条分支生成/注入 canary；text 分支在上面已 return，
+        # 不因 Canary 改变既有行为。
+        canary = generate_canary_token() if enable_canary else ""
+        if canary:
+            prompt = inject_canary_instructions(prompt, canary)
         result = model.invoke(prompt)
         raw = result.content if not isinstance(result, str) else result
         # 提取 audit VLM token（DashScope 同理，本地 0）
@@ -124,14 +140,36 @@ def run_audit(image_path: str, data: ReceiptData,
                 um = getattr(result, "usage_metadata", None)
                 if isinstance(um, dict):
                     audit_tu = _ntu({"prompt_tokens": um.get("input_tokens", 0), "completion_tokens": um.get("output_tokens", 0), "total_tokens": um.get("total_tokens", 0)})
-        except Exception:
+        except Exception as e:
             audit_tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            logging.getLogger("audit_chain").warning(
+                "审核 token 用量解析失败，回落全 0（成本不可用，审核腿成本口径失真）: %s", e)
         parsed = _parse_audit(raw)
+        if canary and not parsed.get("skipped"):
+            # 只有"产出了审核结论"的响应才需要握手：unparseable/empty_output 本就已
+            # skipped（不给任何结论），不存在被污染的判定可洗白，不能与握手失败混为一谈。
+            # why 校验 raw 而非 parsed：_parse_audit 只挑已知键重建 dict，__guard_token
+            # 在那一步就被丢弃，拿 parsed 校验会恒判「缺失令牌」。
+            ok, canary_err = verify_canary_in_text(raw, canary)
+            if not ok:
+                logging.getLogger("audit_chain").warning(
+                    f"[SECURITY_ALERT] 审核腿 Canary Token 握手失败: {canary_err}")
+                return {"skipped": True, "reason": f"audit_canary_blocked: {canary_err}",
+                        "mode": AUDIT_MODE_VLM,
+                        "audit_ms": round((time.time() - start) * 1000, 1),
+                        "token_usage": audit_tu}
         parsed["engine"] = engine
         parsed["mode"] = AUDIT_MODE_VLM
         parsed["audit_ms"] = round((time.time() - start) * 1000, 1)
         parsed["token_usage"] = audit_tu
         return parsed
+    except extract_chain.ImageDecodeError as e:
+        # 原图无法解码（如缺 pillow-heif 的 .heic）：审核腿不阻断主链路，也不把
+        # 原始二进制冒充 JPEG 发出去，直接给可读原因的优雅 skip（P2）。
+        return {"skipped": True, "reason": f"audit_image_decode_failed: {e}",
+                "mode": AUDIT_MODE_VLM,
+                "audit_ms": round((time.time() - start) * 1000, 1),
+                "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
     except Exception as e:
         return {"skipped": True, "reason": f"audit_error: {e}",
                 "mode": AUDIT_MODE_VLM,

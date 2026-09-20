@@ -87,6 +87,7 @@ def _group_metrics(rows):
         "success_rate_pct": None, "avg_cost": None,
         "p95_latency_ms": None, "avg_output_tokens": None,
         "avg_tool_calls": None, "avg_retry_rounds": None,
+        "cost_estimated_count": 0, "cost_sample_size": 0,
     }
     if n == 0:
         return out
@@ -95,8 +96,15 @@ def _group_metrics(rows):
     success = sum(1 for x in extras if bool(x.get("success")))
     out["success_rate_pct"] = round(100.0 * success / n, 4)
 
-    costs = [float(x.get("cost_hkd") or 0) for x in extras]
-    out["avg_cost"] = round(sum(costs) / n, 6)
+    # 成本可信度：extra.cost_estimated=1 的行其 cost_hkd 不是「真实单价 x 真实 token」的测量值
+    # （拿不到 token / 成本链路异常 / 走了兜底单价），计成 0 或低估会直接把成本护栏做瞎。
+    # 因此平均成本只用非估算行计算；估算行单独计数上报，让「不可判定」显式可见。
+    # 全为实测行时（正常路径）该口径与旧实现逐值一致。
+    reliable_costs = [float(x.get("cost_hkd") or 0) for x in extras
+                      if int(x.get("cost_estimated") or 0) != 1]
+    out["cost_estimated_count"] = n - len(reliable_costs)
+    out["cost_sample_size"] = len(reliable_costs)
+    out["avg_cost"] = round(sum(reliable_costs) / len(reliable_costs), 6) if reliable_costs else None
 
     lat = sorted(v for v in (_elapsed_total(x) for x in extras) if v is not None)
     if lat:
@@ -140,13 +148,15 @@ def perform_engine_rollback(who="guardian"):
     except Exception as e:
         logger.warning("[guardian] rollback config rebuild failed: %s", e)
         return False, None
-    db.set_engine_config(new_cfg)
+    # N4：回滚是把「人工推全」还原，属人工改配的延续 —— 必须显式置 manual，
+    # 否则该配置仍是 auto，下次重启会被 hydrate 按 .env 打回（推全/回滚白做）。
+    db.set_engine_config(new_cfg, source="manual")
     try:
         db.append_system_audit_log(
             who, "rollback_engine_config", "recognition_engine",
             str(old_engine), str(new_cfg.recognition_engine))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("[guardian] 审计写入失败(action=rollback_engine_config who=%s): %s", who, e)
     return True, new_cfg
 
 
@@ -159,7 +169,9 @@ def _drift_alerts(exp_id, th_drift_pct):
     if len(snaps) < 3:
         return []
     alerts = []
-    pct = float(th_drift_pct or 20) / 100.0
+    # 阈值 0 是合法配置（任何漂移都告警），不能用 `or 20` 吞成 20%；
+    # 缺省值由 _thresholds() 的 settings 缺省负责，这里只兜 None。
+    pct = (20.0 if th_drift_pct is None else float(th_drift_pct)) / 100.0
     for metric in ("avg_output_tokens", "avg_tool_calls", "avg_retry_rounds"):
         vals = [s.get(metric) for s in snaps]
         if any(v is None for v in vals):
@@ -229,16 +241,30 @@ def check_once():
                     db.append_system_audit_log(
                         "guardian", "guardian_alert",
                         f"experiment:{exp_id}", "", reason)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning("[guardian] 审计写入失败(action=guardian_alert exp=%s): %s",
+                                   exp_id, e)
                 actions.append({"experiment_id": exp_id, "kind": "alert",
                                 "reason": reason,
                                 "metrics_snapshot": {"treatment": t, "control": c}})
 
             # 样本量门槛：不足不判（避免小样本误杀）
-            min_sample = int(exp.get("min_sample") or 100)
+            # min_sample=0 是合法值（不做门槛），不能用 `or 100` 吞成 100；
+            # 归一逻辑与 create_experiment 落库口径共用 db.coerce_int。
+            min_sample = db.coerce_int(exp.get("min_sample"), 100)
             if t["sample_size"] < min_sample:
                 continue
+
+            # 成本护栏可判定性：估算行的 cost_hkd 不是真实测量值，据此判定涨跌会得出错误结论。
+            # 必须显式告警，否则「没有回滚」会被误读成「成本没有上涨」。
+            cost_decidable = bool(c["avg_cost"] and c["avg_cost"] > 0
+                                  and t["avg_cost"] is not None)
+            if not cost_decidable and (c["cost_estimated_count"] or t["cost_estimated_count"]):
+                logger.warning(
+                    "[guardian] 实验 %s 成本护栏不可判定：估算行 control=%s/%s treatment=%s/%s"
+                    "（估算行的 cost_hkd 非真实测量值，不能据此判定涨跌）",
+                    exp_id, c["cost_estimated_count"], c["sample_size"],
+                    t["cost_estimated_count"], t["sample_size"])
 
             # 守护判定：任一触发即回滚
             rollback_reasons = []
@@ -251,8 +277,7 @@ def check_once():
                         f"（control {c['success_rate_pct']:.1f}% → "
                         f"treatment {t['success_rate_pct']:.1f}%，"
                         f"阈值 {th['success_drop_pp']}pp）")
-            if (c["avg_cost"] and c["avg_cost"] > 0
-                    and t["avg_cost"] is not None):
+            if cost_decidable:
                 rise = (t["avg_cost"] - c["avg_cost"]) / c["avg_cost"] * 100.0
                 if rise > th["cost_rise_pct"]:
                     rollback_reasons.append(
@@ -281,8 +306,9 @@ def check_once():
                 db.append_system_audit_log(
                     "guardian", "guardian_rollback",
                     f"experiment:{exp_id}", "running", "stopped")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("[guardian] 审计写入失败(action=guardian_rollback exp=%s): %s",
+                               exp_id, e)
             logger.warning("[guardian] experiment %s rolled back: %s", exp_id, reason)
             actions.append({"experiment_id": exp_id, "kind": "rollback",
                             "reason": reason, "metrics_snapshot": metrics})

@@ -29,10 +29,12 @@ Infra 演进路径见 Gap 分析 E7：SQLite 单库为当前阶段的刻意取�
 - ai_decision_log / receipt_feedback 等履历与治理表
 """
 
+import functools
 import json
 import logging
 import math as _math
 import os
+import threading
 import uuid
 from collections import defaultdict
 from datetime import datetime
@@ -102,7 +104,7 @@ def _make_engine():
         math_warnings_json = Column(Text, default="[]")
         quality_warnings_json = Column(Text, default="[]")
         review_priority_score = Column(Float, default=0.0)
-        items_json = Column(Text, default="[]")            # 已解析明细（dict list）
+        items_json = Column(Text, default="[]")            # 历史遗留列：无消费方、已不再写入；明细以 receipt_items 表为准
         raw_llm = Column(Text, default="")                 # VLM 原始输出（可审计）
         audit_json = Column(Text, default="{}")
         confidence = Column(Float, default=0.0)
@@ -140,7 +142,10 @@ def _make_engine():
         amount = Column(Float, default=0.0)
         sku_id = Column(Integer, nullable=True)
         cost_center_id = Column(Integer, nullable=True)     # 部门
-        confidence = Column(Float, default=0.0)
+        # P11：可空——NULL 表示「模型未给出该行置信度」这一事实本身，与「给了 0.5」区分。
+        # 不能留 default=0.0：Python 侧默认值会把显式传入的 None 变成 0.0，
+        # 又变成一种「伪造的置信度」（且 0.0 会撞上任何低置信阈值）。
+        confidence = Column(Float, nullable=True)
         matched = Column(Integer, default=0)                # SKU 是否匹配
         price_anomaly = Column(Integer, default=0)
         price_anomaly_direction = Column(String, default="")
@@ -986,6 +991,77 @@ def new_id():
 
 
 # -------------------------------------------------------------
+# 后台 Job 跨库写入闸门
+# -------------------------------------------------------------
+# 说明：识别 Job 跑在后台线程里，写库时读的是「当时的」db.DB_PATH。若任务执行期间
+# DB_PATH 被切到另一个库（测试夹具收尾还原、外部调用切换），晚到的 Job 会把结果写进
+# 新库 —— 这正是历史「测试污染 live 库」的机制（探针实测 46 次 get_session@LIVE，
+# 栈全部来自 receipt_utils 的后台线程）。闸门放在 db 层而不是逐个调用点，是为了覆盖
+# Job 线程会走到的一切写库路径（receipt_utils 自身写入 + supervisor 的决策日志/埋点/
+# 评测候选回流），避免「修了 receipt_utils 漏了 supervisor」。
+_job_db_ctx = threading.local()
+
+
+def bind_job_db_path(path, job_id=""):
+    """把「后台 Job 所属的库路径」绑定到当前线程（线程级，不跨线程泄漏）。
+
+    必须在派发后台线程前或线程启动时调用；只有识别 Job 线程会绑定，普通请求线程
+    与脚本从不绑定，因此闸门对它们完全无感。
+    """
+    _job_db_ctx.path = os.path.abspath(str(path))
+    _job_db_ctx.job_id = str(job_id or "")
+
+
+def unbind_job_db_path():
+    """解绑当前线程的 Job 库路径（Job 线程收尾调用；线程结束本身也会释放）。"""
+    for _attr in ("path", "job_id"):
+        if hasattr(_job_db_ctx, _attr):
+            delattr(_job_db_ctx, _attr)
+
+
+def job_db_path_mismatch():
+    """本线程绑定了 Job 库路径且与当前生效 DB_PATH 不一致时，返回 (任务库, 当前库)。
+
+    未绑定（普通请求线程 / 脚本 / 定时任务）恒返回 None。生产路径 DB_PATH 由环境变量
+    在导入时确定、运行期不变，绑定值恒等于当前值，故本闸门对正常流程零影响。
+    """
+    bound = getattr(_job_db_ctx, "path", None)
+    if not bound:
+        return None
+    current = os.path.abspath(str(DB_PATH))
+    if current == bound:
+        return None
+    return bound, current
+
+
+def _warn_job_write_skipped(fn_name, mismatch):
+    """记一条可定位的 warning：哪个 Job、哪个写库函数、从哪个库到哪个库。"""
+    bound, current = mismatch
+    job_id = getattr(_job_db_ctx, "job_id", "") or "?"
+    logger.warning(
+        "识别 Job %s 的库路径在任务执行期间被切换（任务库=%s → 当前库=%s），"
+        "已放弃 %s 写入以避免污染新库", job_id, bound, current, fn_name)
+
+
+def _guard_job_db_write(blocked_return=None):
+    """写库函数装饰器：Job 线程 + 库路径已变更 → 放弃写入，返回 blocked_return。
+
+    只在「本线程绑定了 Job 库路径」且「与当前 DB_PATH 不一致」时拦截；不抛异常，
+    避免把异常抛穿到 Job 外层导致线程卡死或误伤调用方正常返回契约。
+    """
+    def _decorator(fn):
+        @functools.wraps(fn)
+        def _wrapper(*args, **kwargs):
+            mismatch = job_db_path_mismatch()
+            if mismatch is None:
+                return fn(*args, **kwargs)
+            _warn_job_write_skipped(fn.__name__, mismatch)
+            return blocked_return
+        return _wrapper
+    return _decorator
+
+
+# -------------------------------------------------------------
 # 收据
 # -------------------------------------------------------------
 def create_receipt(supplier_name="", status="uploaded", tenant_id="default"):
@@ -1036,6 +1112,7 @@ def get_receipt_row(receipt_id, tenant_id=None):
         s.close()
 
 
+@_guard_job_db_write()
 def update_receipt(receipt_id, **fields):
     """按字段更新收据；version 字段若传入则 +1。返回更新后的 row。"""
     if receipt_id is None or _ReceiptRow is None:
@@ -1087,6 +1164,7 @@ def set_expected_pay_date(receipt_id, value):
         s.close()
 
 
+@_guard_job_db_write()
 def set_receipt_items(receipt_id, items, tenant_id=None):
     """整体替换收据明细（先删后插）。items = list[dict]。
 
@@ -1196,6 +1274,12 @@ def append_system_audit_log(who, action, field, old, new):
     """系统级审计（无 receipt_id 的场景：engine config 变更等）。
 
     追加到 app_settings.system_audit_json（list）。
+
+    健壮性（为什么必须显式重建）：历史值一旦损坏（非 JSON / 非数组），原先
+    `json.loads(row.value or "[]")` 会**每次调用都抛错**，而所有调用点的
+    `except Exception: pass` 又会把它静默吞掉 —— 结果是审计链路外观完全正常、
+    实际一条也写不进去，且没有任何日志可查。故此处对坏值显式重建为空数组并告警，
+    让审计能力自愈且失败可观测。
     """
     _s = get_session()
     try:
@@ -1203,9 +1287,21 @@ def append_system_audit_log(who, action, field, old, new):
         if row is None:
             row = _AppSettingRow(key="system_audit_json")
             _s.add(row)
-        logs = json.loads(row.value or "[]")
-        if not isinstance(logs, list):
-            logs = []
+        raw = row.value
+        logs = []
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    logs = parsed
+                else:
+                    logger.warning(
+                        "system_audit_json 值不是数组(%s)，已重建为空数组并继续追加审计；"
+                        "原值前 200 字符=%r", type(parsed).__name__, str(raw)[:200])
+            except Exception as e:
+                logger.warning(
+                    "system_audit_json 损坏无法解析(%s: %s)，已重建为空数组并继续追加审计；"
+                    "原值前 200 字符=%r", type(e).__name__, e, str(raw)[:200])
         logs.append({
             "who": who or "unknown",
             "action": action,
@@ -1221,13 +1317,22 @@ def append_system_audit_log(who, action, field, old, new):
 
 
 def read_system_audit_log():
-    """读取系统级审计日志（app_settings.system_audit_json）。无数据返回 []。"""
+    """读取系统级审计日志（app_settings.system_audit_json）。无数据返回 []。
+
+    与写入侧同口径：坏值不外抛（否则管理台审计面板整页 500），记 warning 后按空返回。
+    """
     _s = get_session()
     try:
         row = _s.get(_AppSettingRow, "system_audit_json")
         if row is None or not row.value:
             return []
-        logs = json.loads(row.value)
+        try:
+            logs = json.loads(row.value)
+        except Exception as e:
+            logger.warning(
+                "system_audit_json 损坏无法解析(%s: %s)，审计面板按空返回；原值前 200 字符=%r",
+                type(e).__name__, e, str(row.value)[:200])
+            return []
         return logs if isinstance(logs, list) else []
     finally:
         _s.close()
@@ -2439,6 +2544,20 @@ def list_app_settings():
 # -------------------------------------------------------------
 # 引擎配置（admin 管理）
 # -------------------------------------------------------------
+def _normalize_legacy_cli_leg(eng, model, default_model):
+    """单腿的遗留 CLI 归一：引擎枚举 opencode/codebuddy → openai；CLI 模型名 → default_model。
+
+    返回 (new_eng, new_model)，**未改动的侧为 None**，调用方只写回非 None 的侧。
+    这个「只写改动侧」的约定必须保留：读闸门面对的是可能缺字段的存量 JSON，
+    把原本不存在的字段填成 None 会让 EngineConfig(**stored) 校验失败。
+    判定全部走 models.is_legacy_cli_model 单一实现（原先在 db.py 里抄了 9 份）。
+    """
+    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
+    new_eng = EngineKind.OPENAI if is_legacy_cli_engine(eng) else None
+    new_model = default_model if is_legacy_cli_model(model) else None
+    return new_eng, new_model
+
+
 def get_engine_config():
     s = get_session()
     try:
@@ -2462,7 +2581,6 @@ def get_engine_config():
         if "grey_mode" in stored:
             stored.pop("grey_mode", None)
         # 清理历史已保存的 opencode / codebuddy CLI 引擎与模型配置
-        from app.models import EngineKind
         for eng_field, mod_field, def_model in (
             ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
             ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
@@ -2471,20 +2589,36 @@ def get_engine_config():
             ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
             ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
         ):
-            if str(stored.get(eng_field) or "").lower() in ("opencode", "codebuddy"):
-                stored[eng_field] = EngineKind.OPENAI
-            m_val = str(stored.get(mod_field) or "")
-            if m_val.startswith("opencode") or m_val.startswith("codebuddy") or m_val == "minimax-m3-pay":
-                stored[mod_field] = def_model
+            new_eng, new_model = _normalize_legacy_cli_leg(
+                stored.get(eng_field), stored.get(mod_field), def_model)
+            if new_eng is not None:
+                stored[eng_field] = new_eng
+            if new_model is not None:
+                stored[mod_field] = new_model
         return EngineConfig(**stored)
     finally:
         s.close()
 
 
-def set_engine_config(cfg):
+def set_engine_config(cfg, source=None):
+    """写入引擎配置。
+
+    source 非空时覆盖 cfg.config_source（'manual'=管理台手工保存，'auto'=.env 装配）；
+    缺省 None 表示保留 cfg 自带来源标记 —— hydrate 重新装配时据此维持 auto，
+    而管理台 PUT 显式传 'manual' 声明「重启后不得被 .env 覆盖」（T1 修复）。
+
+    T9 收尾：写入闸门处把 call_timeout_seconds 归一到硬上限（clamp_call_timeout）。
+    放在这里而非各调用方，是因为写入口共 6 处（hydrate ×3 / PUT / promote / rollback /
+    guardian），逐处记得归一必然漏 —— 典型「修了 A 漏了 B」。放在闸门处可保证
+    「DB 里存的值恒等于实际生效值」成为持久层不变量，连回滚旧快照（含 90）也被兜住。
+    """
     s = get_session()
     try:
-        from app.models import EngineKind
+        from app.models import clamp_call_timeout
+        if source is not None:
+            cfg.config_source = str(source)
+        # 存量/回滚快照里的超时超上限值一律归一，避免「显示 90 实际 60」
+        cfg.call_timeout_seconds = clamp_call_timeout(getattr(cfg, "call_timeout_seconds", None))
         # 写入前确保不残留 opencode / codebuddy 引擎及模型
         for eng_field, mod_field, def_model in (
             ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
@@ -2494,13 +2628,12 @@ def set_engine_config(cfg):
             ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
             ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
         ):
-            val = getattr(cfg, eng_field, None)
-            val_str = str(getattr(val, "value", val) or "").lower()
-            if val_str in ("opencode", "codebuddy"):
-                setattr(cfg, eng_field, EngineKind.OPENAI)
-            m_val = str(getattr(cfg, mod_field, None) or "")
-            if m_val.startswith("opencode") or m_val.startswith("codebuddy") or m_val == "minimax-m3-pay":
-                setattr(cfg, mod_field, def_model)
+            new_eng, new_model = _normalize_legacy_cli_leg(
+                getattr(cfg, eng_field, None), getattr(cfg, mod_field, None), def_model)
+            if new_eng is not None:
+                setattr(cfg, eng_field, new_eng)
+            if new_model is not None:
+                setattr(cfg, mod_field, new_model)
 
         row = s.get(_AppSettingRow, "engine_config")
         if row is None:
@@ -2519,11 +2652,94 @@ def _is_placeholder_key(key) -> bool:
     return "YOUR_" in k.upper()
 
 
+def _engine_leg_uncallable(base, key, engine) -> bool:
+    """某腿是否缺到无法调用：OpenAI 兼容通道下 base 或 key 为空/占位符。
+
+    非 openai 引擎走原生 SDK 通道，不适用本判据（且启动装配已把遗留 CLI 引擎归一为 openai）。
+    """
+    eng = str(getattr(engine, "value", engine) or "").lower()
+    if eng != "openai":
+        return False
+    return (not str(base or "").strip()) or _is_placeholder_key(key)
+
+
+def _fill_manual_engine_config_gaps(cfg, log, ds_base, ds_key, sf_base, sf_key, ds_ok, sf_ok) -> bool:
+    """manual 模式的止损兜底：某腿密钥缺失到无法调用时，用 .env 兜底补全该腿。
+
+    为什么需要：管理台一旦把 key 清空/填成占位符并保存为 manual，若 hydrate 完全
+    跳过装配，该腿将永久调不动模型。故这里只补「空到无法调用」的那条腿
+    （base/key/model），其余人工配置一律保留；补全后 config_source 仍为 manual，
+    下次启动不会重新重装。返回是否发生了补全。
+    """
+    filled = False
+    # 识别腿
+    if _engine_leg_uncallable(cfg.openai_rec_base_url, cfg.openai_rec_api_key, cfg.recognition_engine):
+        if ds_ok:
+            cfg.openai_rec_base_url, cfg.openai_rec_api_key = ds_base, ds_key
+        elif sf_ok:
+            cfg.openai_rec_base_url, cfg.openai_rec_api_key = sf_base, sf_key
+        if not str(cfg.openai_rec_model or "").strip():
+            if ds_ok:
+                cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
+                                        or cfg.recognition_model or _REC_DEFAULT_MODEL)
+            else:
+                cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
+                                        or os.environ.get("OPENAI_MODEL")
+                                        or cfg.recognition_model or _SF_DEFAULT_REC_MODEL)
+        cfg.recognition_model = cfg.openai_rec_model or cfg.recognition_model
+        filled = True
+        log.warning("[engine-env] 管理台识别腿密钥缺失到无法调用，已用 .env 兜底补全（config_source 保持 manual）")
+    # 审核腿（审核开关关闭时不校验，避免无谓覆盖人工配置）
+    if cfg.audit_enabled and _engine_leg_uncallable(cfg.openai_aud_base_url, cfg.openai_aud_api_key, cfg.audit_engine):
+        if sf_ok:
+            cfg.openai_aud_base_url, cfg.openai_aud_api_key = sf_base, sf_key
+        elif ds_ok:
+            cfg.openai_aud_base_url, cfg.openai_aud_api_key = ds_base, ds_key
+        if not str(cfg.openai_aud_model or "").strip():
+            if sf_ok:
+                cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
+                                        or cfg.audit_model or _SF_DEFAULT_AUD_MODEL)
+            else:
+                cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
+                                        or cfg.audit_model or "qwen3-vl-plus")
+        cfg.audit_model = cfg.openai_aud_model or cfg.audit_model
+        filled = True
+        log.warning("[engine-env] 管理台审核腿密钥缺失到无法调用，已用 .env 兜底补全（config_source 保持 manual）")
+    return filled
+
+
+def _normalize_call_timeout(cfg, log) -> bool:
+    """存量超时归一（T9 收尾）：把 DB 里历史遗留的 >60 值钳到硬上限，使回显值恒等于生效值。
+
+    why 必须做：EngineConfig 默认值已改 60，但已落库的 app_settings.engine_config 里的
+    90 不会自己变；管理台回显 90 而 llm._resolve_timeout 实际钳到 60 —— 这正是要消除的
+    「填 90 实际只有 60」误导。hydrate 不管这个字段，故此前无任何路径能纠正存量值。
+
+    对 config_source=manual 同样生效：超时上限是硬约束，不是管理台可绕过的偏好。
+    幂等：已 ≤ 上限时逐字段不变并返回 False，调用方可据此跳过落盘（不再刷新 live 库）。
+    非法值（None/0/负值）保持原样不改写，口径与 llm._resolve_timeout 及
+    models.clamp_call_timeout 一致（运行期视为「未设置」并回落缺省 30s）。
+    """
+    from app.models import clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
+    raw = getattr(cfg, "call_timeout_seconds", None)
+    fixed = clamp_call_timeout(raw)
+    if fixed != raw:
+        cfg.call_timeout_seconds = fixed
+        log.warning("[engine-env] 存量超时值 %s 已归一为 %s（硬上限）；"
+                    "实际生效超时由 llm._resolve_timeout 钳制，填更大值不会延长等待",
+                    raw, MAX_CALL_TIMEOUT_SECONDS)
+        return True
+    return False
+
+
 def hydrate_engine_config_from_env():
     """启动装配：识别腿默认 DashScope，审核腿默认 SiliconFlow（用户决策 2026-09-15）。
 
-    每次重启都按 .env 重新装配双腿——即使 DB 已存其他引擎配置，
-    管理台的临时切换在重启后不保留。
+    装配范围按 DB 的 config_source 决定（T1）：
+      - auto（默认）：每次重启按 .env 重新装配双腿，管理台未保存过的手工临时切换不保留；
+      - manual：管理台 PUT 保存后置位，重启时**跳过 .env 覆盖**，人工配置持久生效；
+        仅当某腿密钥缺失到无法调用（base/key 为空或占位符）时才用 .env 兜底补全并记 warning，
+        避免管理员填错 key 后彻底调不动模型。复位走 POST /api/admin/engine-config/reset。
     识别腿：DashScope OpenAI 兼容通道 qwen3.5-omni-flash（QWEN_VL_MODEL 可覆盖），
             base 取 DASHSCOPE_BASE_URL，缺省官方 compatible-mode/v1；不依赖 SF 健康检查。
     审核腿：SiliconFlow zai-org/GLM-4.5V（SILICONFLOW_AUDIT_MODEL，视觉模型支持
@@ -2531,6 +2747,10 @@ def hydrate_engine_config_from_env():
     某侧密钥缺失或健康检查失败时，该侧降级到另一家（降级期间双腿同家族、异构性弱化，日志提示）；
     两者皆不可用则保持现有配置不动。用户决策（2026-09-02）：opencode 已过期——
     灰测/解析腿若仍为 opencode（历史遗留默认值）一并归一，业务开关保持原值。
+    T12：灰测开启且灰测识别腿仍是 SiliconFlow 历史默认时，其 provider（base/key/model）
+    对齐常规识别腿，使 A/B 只比模型/参数、不混供应商；灰测关闭时为纯 no-op。
+    T9 收尾：存量 call_timeout_seconds > 60 的配置归一到硬上限 60（对 manual 同样生效），
+    消除「管理台显示 90、实际生效 60」的误导；见 _normalize_call_timeout。
     幂等，可每次启动安全执行。
     """
     import logging
@@ -2540,6 +2760,8 @@ def hydrate_engine_config_from_env():
         from app.models import EngineKind, DASHSCOPE_DEFAULT_BASE_URL, DASHSCOPE_DEFAULT_REC_MODEL
         load_dotenv()
         cfg = get_engine_config()
+        # T9 收尾：存量超时归一必须先于分支返回 —— 否则 manual 路径会带着未归一的 90 直接 return。
+        timeout_fixed = _normalize_call_timeout(cfg, log)
 
         def _clean_base(raw: str, fallback: str) -> str:
             """容错：有人会把 /chat/completions 一并填进 base_url，协议层会自动追加，需去重。"""
@@ -2555,16 +2777,25 @@ def hydrate_engine_config_from_env():
         ds_ok = bool(ds_key) and not _is_placeholder_key(ds_key)
         sf_ok = bool(sf_key) and not _is_placeholder_key(sf_key)
 
+        ds_base = _clean_base(os.environ.get("DASHSCOPE_BASE_URL"), DASHSCOPE_DEFAULT_BASE_URL)
+        sf_base = _clean_base(os.environ.get("SILICONFLOW_BASE_URL")
+                              or os.environ.get("OPENAI_BASE_URL"),
+                              "https://api.siliconflow.cn/v1")
+
+        # T1：管理台手工配置优先。config_source=manual 时不再被 .env 无条件重装，
+        # 否则人工切换活不过一次 uvicorn --reload（每次改代码触发 startup 都被打回 .env 默认）。
+        if str(getattr(cfg, "config_source", "auto") or "auto") == "manual":
+            # 仅兜底补全或存量超时归一时写回；两者都未发生则不落盘，避免无意义刷新 live 库
+            if _fill_manual_engine_config_gaps(cfg, log, ds_base, ds_key, sf_base, sf_key, ds_ok, sf_ok) or timeout_fixed:
+                set_engine_config(cfg)
+            log.info("[engine-env] 检测到管理台手工配置（config_source=manual），跳过 .env 覆盖")
+            return
+
         if not ds_ok and not sf_ok:
             log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），仅归一遗留 opencode 配置")
             _normalize_legacy_cli_engines(cfg, log)
             set_engine_config(cfg)
             return
-
-        ds_base = _clean_base(os.environ.get("DASHSCOPE_BASE_URL"), DASHSCOPE_DEFAULT_BASE_URL)
-        sf_base = _clean_base(os.environ.get("SILICONFLOW_BASE_URL")
-                              or os.environ.get("OPENAI_BASE_URL"),
-                              "https://api.siliconflow.cn/v1")
 
         # ---- 识别腿：DashScope 优先；DS 密钥缺失时降级 SF Qwen3-VL ----
         cfg.recognition_engine = EngineKind.OPENAI
@@ -2618,6 +2849,12 @@ def hydrate_engine_config_from_env():
             rec_model=cfg.openai_rec_model,
             aud_base=cfg.openai_aud_base_url, aud_key=cfg.openai_aud_api_key,
         )
+        # T12：归一之后再对齐灰测识别腿 provider（仅 grey_enabled=True 时生效，
+        # 且只针对仍是 SF 历史默认的灰测腿；详见 _align_grey_recognition_leg）。
+        _align_grey_recognition_leg(
+            cfg, cfg.openai_rec_base_url, cfg.openai_rec_api_key,
+            cfg.openai_rec_model, log,
+        )
         set_engine_config(cfg)
         log.info(f"[engine-env] 已从 .env 装配：识别 {rec_src}；审核 {aud_src}")
     except Exception as e:
@@ -2634,6 +2871,53 @@ def hydrate_engine_config_from_env():
 from app.models import DASHSCOPE_DEFAULT_REC_MODEL as _REC_DEFAULT_MODEL  # noqa: E402
 _SF_DEFAULT_REC_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
 _SF_DEFAULT_AUD_MODEL = "zai-org/GLM-4.5V"
+_SF_DEFAULT_BASE = "https://api.siliconflow.cn/v1"
+
+
+def _align_grey_recognition_leg(cfg, rec_base: str, rec_key: str, rec_model: str, log) -> bool:
+    """灰测识别腿 provider 对齐（T12）：让灰测组与常规组在同一供应商下比模型/参数。
+
+    why：灰测/分组的语义是「控制 provider 不变，只比较模型或 prompt」，否则一次实验里
+    同时混入了供应商差异（价格档位、限流、图像预处理、输出风格都不同），A/B 结论无法
+    归因到被测模型。此前常规腿走 DashScope、灰测腿走 SiliconFlow，比较基准不纯。
+
+    三条守护，确保不破坏既有行为、也不堵死管理员的自定义路径：
+      1. 仅当 `grey_enabled=True` 时才执行 —— 灰测关闭时本函数是纯 no-op，配置逐字段不变
+         （当前线上状态即 grey_enabled=False）。
+      2. 仅在 auto 装配路径被调用 —— 管理台任何保存都会置 config_source=manual，hydrate
+         整体跳过，故「管理员想让灰测腿用别家 provider」仍可通过管理台配置并跨重启保留。
+      3. 只对齐「仍是 SiliconFlow 历史默认」的灰测腿（base 为空或 SF 默认、模型为空或 SF
+         默认）。已明确改成其它供应商的灰测腿视为刻意配置，保持不动，只记 warning 提示
+         比较基准混入了 provider 变量。
+
+    返回是否发生了对齐（True 表示配置需写回）。
+    """
+    if not getattr(cfg, "grey_enabled", False):
+        return False
+    from app.models import EngineKind
+    g_base = str(getattr(cfg, "grey_openai_rec_base_url", "") or "").strip()
+    g_model = str(getattr(cfg, "grey_openai_rec_model", "") or "").strip()
+    base_is_legacy_default = (not g_base) or g_base.rstrip("/") == _SF_DEFAULT_BASE
+    model_is_legacy_default = (not g_model) or g_model == _SF_DEFAULT_REC_MODEL
+    if base_is_legacy_default and model_is_legacy_default:
+        cfg.grey_openai_rec_base_url = rec_base or cfg.grey_openai_rec_base_url
+        cfg.grey_openai_rec_api_key = rec_key or cfg.grey_openai_rec_api_key
+        # 模型一并跟随：base 换成 DashScope 后仍留 SF 模型名（Qwen/... 组织前缀）会 404/400，
+        # 比不对齐更糟。管理员随后在管理台把灰测模型改成候选模型即可形成有效对比。
+        cfg.grey_openai_rec_model = rec_model or _SF_DEFAULT_REC_MODEL
+        cfg.grey_recognition_model = cfg.grey_openai_rec_model
+        cfg.grey_recognition_engine = EngineKind.OPENAI
+        log.info("[engine-env] 灰测识别腿已对齐常规识别腿 provider: %s / %s",
+                 cfg.grey_openai_rec_base_url, cfg.grey_openai_rec_model)
+        return True
+    if g_base and rec_base and g_base.rstrip("/") != rec_base.rstrip("/"):
+        log.warning(
+            "[engine-env] 灰测识别腿 provider（%s）与常规识别腿（%s）不一致，"
+            "A/B 比较基准混入了供应商变量，结论无法单独归因到模型；"
+            "如非刻意配置，请在管理台把灰测识别腿的 Base URL 与常规腿对齐。",
+            g_base, rec_base,
+        )
+    return False
 
 
 def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "",
@@ -2644,6 +2928,9 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     灰测识别腿沿用识别腿 provider（rec_base/rec_key/rec_model，缺失时回落 SF 默认），
     灰测审核腿与解析腿沿用审核腿 provider（aud_base/aud_key）。
     """
+    # 本模块未在模块级导入 EngineKind（其余函数均为函数内惰性导入），此处必须显式导入：
+    # 漏掉会抛 NameError，被 hydrate 的 except 静默吞掉，导致整套归一逻辑形同虚设。
+    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
     changed = []
 
     def _enum_str(v):
@@ -2651,15 +2938,14 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
         return str(getattr(v, "value", v) or "").lower()
 
     def _is_cli(eng, mod):
-        e = _enum_str(eng)
-        m = str(mod or "")
-        return e in ("opencode", "codebuddy") or m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay"
+        # 判定统一走 models 的单一实现（原先在这里抄了一份 opencode/codebuddy/minimax 字面量）
+        return is_legacy_cli_engine(eng) or is_legacy_cli_model(mod)
 
     # 主识别腿
     if _is_cli(getattr(cfg, "recognition_engine", ""), getattr(cfg, "recognition_model", "")):
         cfg.recognition_engine = EngineKind.OPENAI
         m = str(cfg.recognition_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             cfg.recognition_model = _SF_DEFAULT_REC_MODEL
         changed.append("rec")
 
@@ -2667,7 +2953,7 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     if _is_cli(getattr(cfg, "audit_engine", ""), getattr(cfg, "audit_model", "")):
         cfg.audit_engine = EngineKind.OPENAI
         m = str(cfg.audit_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             cfg.audit_model = _SF_DEFAULT_AUD_MODEL
         changed.append("aud")
 
@@ -2675,7 +2961,7 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     if _is_cli(getattr(cfg, "parse_llm_engine", ""), getattr(cfg, "parse_llm_model", "")):
         cfg.parse_llm_engine = EngineKind.OPENAI
         m = str(cfg.parse_llm_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             cfg.parse_llm_model = _SF_DEFAULT_REC_MODEL
         changed.append("parse")
 
@@ -2683,7 +2969,7 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     if _is_cli(getattr(cfg, "grey_recognition_engine", ""), getattr(cfg, "grey_recognition_model", "")):
         cfg.grey_recognition_engine = EngineKind.OPENAI
         m = str(cfg.grey_recognition_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             # 跟随识别腿模型（否则会出现 DashScope base + SF 模型名的错配）
             cfg.grey_recognition_model = rec_model or _SF_DEFAULT_REC_MODEL
         if not getattr(cfg, "grey_openai_rec_base_url", "") and rec_base:
@@ -2698,7 +2984,7 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     if _is_cli(getattr(cfg, "grey_audit_engine", ""), getattr(cfg, "grey_audit_model", "")):
         cfg.grey_audit_engine = EngineKind.OPENAI
         m = str(cfg.grey_audit_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             cfg.grey_audit_model = _SF_DEFAULT_AUD_MODEL
         if not getattr(cfg, "grey_openai_aud_base_url", "") and aud_base:
             cfg.grey_openai_aud_base_url = aud_base
@@ -2712,7 +2998,7 @@ def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "
     if _is_cli(getattr(cfg, "grey_parse_llm_engine", ""), getattr(cfg, "grey_parse_llm_model", "")):
         cfg.grey_parse_llm_engine = EngineKind.OPENAI
         m = str(cfg.grey_parse_llm_model or "")
-        if m.startswith("opencode") or m.startswith("codebuddy") or m == "minimax-m3-pay" or not m:
+        if is_legacy_cli_model(m) or not m:
             cfg.grey_parse_llm_model = _SF_DEFAULT_REC_MODEL
         if not getattr(cfg, "grey_openai_parse_base_url", "") and aud_base:
             cfg.grey_openai_parse_base_url = aud_base
@@ -2863,29 +3149,6 @@ def _zscore(p):
         x = (((((a[0]*r + a[1])*r + a[2])*r + a[3])*r + a[4])*r + a[5]) * q / \
             (((((b[0]*r + b[1])*r + b[2])*r + b[3])*r + b[4])*r + 1)
     return x
-
-
-def _two_proportion_ztest(x1, n1, x2, n2):
-    """两比例双侧 z 检验。返回 {z, p_value, diff}。
-    x1/n1 = treatment, x2/n2 = control（treatment 成功率 - control 成功率）。
-    """
-    import math
-    if n1 <= 0 or n2 <= 0:
-        return {"z": 0.0, "p_value": 1.0, "diff": 0.0, "error": "样本不足"}
-    p1 = x1 / n1
-    p2 = x2 / n2
-    p_pool = (x1 + x2) / (n1 + n2)
-    se = math.sqrt(p_pool * (1 - p_pool) * (1.0 / n1 + 1.0 / n2)) if p_pool > 0 and p_pool < 1 else 1e-9
-    z = (p1 - p2) / se
-    # 双侧 p 值 = 2 * P(Z > |z|)
-    abs_z = abs(z)
-    # 标准正态 CDF
-    t = 1.0 / (1.0 + 0.2316419 * abs_z)
-    d = 0.3989422804014327  # 1/sqrt(2*pi)
-    phi = d * math.exp(-0.5 * abs_z * abs_z)
-    cdf = 1.0 - phi * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
-    p_value = 2.0 * (1.0 - cdf) if abs_z > 0 else 1.0
-    return {"z": z, "p_value": p_value, "diff": p1 - p2, "error": None}
 
 
 def compute_metrics(rows, grp=None):
@@ -3100,47 +3363,30 @@ def query_funnel(period_start=None, period_end=None, grp=None,
         s.close()
 
 
-def create_experiment(name, hypothesis, success_metric="accuracy",
-                      guardrail_metrics=None, target_percent=50,
-                      target_supplier_ids=None, min_sample=100):
-    """创建 A/B 实验（draft）。返回 experiment_id。"""
-    s = get_session()
-    try:
-        row = _ExperimentRow(
-            name=name or "",
-            hypothesis=hypothesis or "",
-            success_metric=success_metric or "accuracy",
-            guardrail_metrics=json.dumps(guardrail_metrics or [], ensure_ascii=False),
-            status="draft",
-            target_percent=int(target_percent or 50),
-            target_supplier_ids=json.dumps(target_supplier_ids or [], ensure_ascii=False),
-            min_sample=int(min_sample or 100),
-            grey_snapshot=json.dumps(get_engine_config().model_dump(), ensure_ascii=False),
-        )
-        s.add(row)
-        s.commit()
-        s.refresh(row)
-        return row.id
-    finally:
-        s.close()
+def coerce_int(value, default: int) -> int:
+    """整型配置项归一：显式判空，尊重 0。
 
+    why（P2 + 本轮 S2）：本仓连续出现 `int(x or N)` 把合法 0 静默改成 N 的缺陷
+    （target_percent=0 = 全部走对照组；min_sample=0 = 不做样本量门槛）。0 是合法
+    的业务边界值，不能用 `or` 兜底；这里只对「None / 空串 / 纯空白」回落 default，
+    0 原样保留。
 
-def start_experiment(experiment_id):
-    """启动实验：draft → running。返回 experiment 行 dict。"""
-    s = get_session()
+    原 coerce_target_percent 的语义与此完全相同，故泛化为通用 helper，避免为
+    min_sample 再抄一份（本仓高发模式是「修 A 漏 B / 同名重复实现」）。
+
+    非法值的处理保持既有"不炸"语义：
+      - 非数字（如 "abc"）→ 回落 default（原实现会抛 ValueError，调用方炸掉）；
+      - 其它非法输入不在此处做范围钳制（保持原实现允许越界的既有行为），
+        范围校验由入口负责（如 AdminExpCreateBody 的 Field(ge=...)）。
+    """
+    if value is None:
+        return default
+    if isinstance(value, str) and not value.strip():
+        return default
     try:
-        row = s.get(_ExperimentRow, int(experiment_id))
-        if row is None:
-            return None
-        if row.status != "draft":
-            return {"status": "error", "msg": f"当前状态 {row.status}，仅 draft 可启动"}
-        row.status = "running"
-        row.start_ts = now_iso()
-        s.commit()
-        s.refresh(row)
-        return _row_to_exp_dict(row)
-    finally:
-        s.close()
+        return int(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _row_to_exp_dict(row):
@@ -3156,128 +3402,6 @@ def _row_to_exp_dict(row):
         "conclusion": row.conclusion, "conclusion_reason": row.conclusion_reason,
         "concluded_by": row.concluded_by, "concluded_at": row.concluded_at,
     }
-
-
-def conclude_experiment(experiment_id, min_sample=None, mde=0.05,
-                        guardrail_metrics=None):
-    """结题实验：z-test + 效应量 + 样本量 + 护栏。返回结题报告。"""
-    s = get_session()
-    try:
-        row = s.get(_ExperimentRow, int(experiment_id))
-        if row is None:
-            return {"status": "error", "msg": "实验不存在"}
-        if row.status not in ("running", "draft"):
-            return {"status": "error", "msg": f"当前状态 {row.status}，仅 running/draft 可结题"}
-
-        target_sample = int(min_sample or row.min_sample or 100)
-        target_mde = float(mde or 0.05)
-        guardrails = guardrail_metrics or (_parse_json_safe(row.guardrail_metrics) or [])
-
-        # 按 experiment_id + grp 取决策日志
-        q = s.query(_DecisionLogRow).filter(
-            _DecisionLogRow.experiment_id == int(experiment_id))
-        rows = q.all()
-        ctrl = [r for r in rows if r.grp == "control"]
-        treat = [r for r in rows if r.grp == "treatment"]
-
-        metric = row.success_metric or "accuracy"
-        m_ctrl = compute_metrics(ctrl)
-        m_treat = compute_metrics(treat)
-
-        # 主指标：取两组在 success_metric 上的值
-        ctrl_val = m_ctrl.get(metric)
-        treat_val = m_treat.get(metric)
-
-        reasons = []
-        verdict = "inconclusive"
-        reject = False
-
-        # 1) 样本量检查
-        if m_ctrl["sample_size"] < target_sample or m_treat["sample_size"] < target_sample:
-            reasons.append(f"样本量不足：control={m_ctrl['sample_size']} treatment={m_treat['sample_size']} < 要求={target_sample}")
-
-        # 2) z-test
-        z_info = {"p_value": 1.0, "z": 0.0, "diff": 0.0}
-        p_value = 1.0
-        effect_diff = 0.0
-        if ctrl_val is not None and treat_val is not None:
-            x1 = int(round(treat_val * m_treat["sample_size"]))
-            x2 = int(round(ctrl_val * m_ctrl["sample_size"]))
-            z_info = _two_proportion_ztest(x1, m_treat["sample_size"],
-                                           x2, m_ctrl["sample_size"])
-            p_value = z_info["p_value"]
-            effect_diff = z_info["diff"]
-
-        significant = p_value < 0.05
-        big_enough = abs(effect_diff) > target_mde
-        if significant and big_enough:
-            if effect_diff > 0:
-                verdict = "promote"
-            else:
-                verdict = "rollback"
-                reject = True
-        elif p_value >= 0.05:
-            reasons.append(f"p_value={p_value:.4f} ≥ 0.05，不显著")
-        elif abs(effect_diff) <= target_mde:
-            reasons.append(f"效应量={effect_diff:.4f} 小于 MDE={target_mde}")
-
-        # 3) 护栏检查：guardrail_metrics 中列出的指标在 treatment 中不能显著恶化
-        guardrail_ok = True
-        guardrail_notes = []
-        for gm in guardrails:
-            cv = m_ctrl.get(gm)
-            tv = m_treat.get(gm)
-            if cv is not None and tv is not None:
-                # accuracy 类指标恶化 = tv < cv；其他（hallucination/edit）恶化 = tv > cv
-                bad = (tv < cv) if gm == "accuracy" else (tv > cv)
-                diff_pct = abs(tv - cv)
-                if bad and diff_pct > 0.05:  # 护栏退化 > 5pp
-                    guardrail_ok = False
-                    guardrail_notes.append(f"{gm} 恶化：control={cv:.3f} treatment={tv:.3f}")
-            else:
-                guardrail_notes.append(f"{gm} 数据不足无法评估")
-
-        if not guardrail_ok and verdict == "promote":
-            verdict = "rollback"
-            reject = True
-            reasons.extend(["护栏指标未通过：" + "; ".join(guardrail_notes)])
-
-        if not reasons:
-            reasons.append("通过 z-test 与护栏检查")
-
-        row.status = "concluded"
-        row.conclusion = verdict
-        row.conclusion_reason = json.dumps({
-            "suggestion": verdict,
-            "control_metrics": m_ctrl,
-            "treatment_metrics": m_treat,
-            "z_test": z_info,
-            "effect_diff": effect_diff,
-            "mde": target_mde,
-            "sample_check": {
-                "control": m_ctrl["sample_size"],
-                "treatment": m_treat["sample_size"],
-                "min_sample": target_sample,
-                "passed": m_ctrl["sample_size"] >= target_sample and m_treat["sample_size"] >= target_sample,
-            },
-            "guardrail_check": {
-                "passed": guardrail_ok,
-                "details": guardrail_notes,
-            },
-            "reasons": reasons,
-        }, ensure_ascii=False)
-        row.concluded_by = "system"
-        row.concluded_at = now_iso()
-        s.commit()
-        s.refresh(row)
-        report = _row_to_exp_dict(row)
-        report["z_test"] = z_info
-        report["effect_diff"] = effect_diff
-        report["reasons"] = reasons
-        report["guardrail_notes"] = guardrail_notes
-        return report
-    finally:
-        s.close()
 
 
 def experiment_detail(experiment_id):
@@ -3310,21 +3434,6 @@ def experiment_detail(experiment_id):
         s.close()
 
 
-def stop_experiment(experiment_id):
-    """停止实验。"""
-    s = get_session()
-    try:
-        row = s.get(_ExperimentRow, int(experiment_id))
-        if row is None:
-            return None
-        row.status = "stopped"
-        row.end_ts = now_iso()
-        s.commit()
-        return _row_to_exp_dict(row)
-    finally:
-        s.close()
-
-
 # -------------------------------------------------------------
 # 阶段 2：AI 决策日志 / 埋点 / A/B 实验
 # -------------------------------------------------------------
@@ -3349,6 +3458,7 @@ def _parse_json(raw):
         return {}
 
 
+@_guard_job_db_write()
 def log_ai_decision(
     receipt_id=None, supplier_id=None, experiment_id=None, grp="control",
     engine="", model="", use_grey=0, decision_type="extract",
@@ -3440,6 +3550,10 @@ def list_ai_decisions(receipt_id):
                 "tokens_prompt": extra_dict.get("tokens_prompt", 0),
                 "tokens_completion": extra_dict.get("tokens_completion", 0),
                 "cost_hkd": cost_hkd,
+                # 成本可信度：0=按真实模型单价 x 真实 token 算出的实测值；
+                # 1=估算值（拿不到 token / 成本链路异常 / 走了兜底单价），前端据此标注
+                "cost_estimated": int(extra_dict.get("cost_estimated") or 0),
+                "cost_estimated_reason": extra_dict.get("cost_estimated_reason", ""),
                 "elapsed_ms": elapsed_ms,
                 "success": success,
                 "image_path": extra_dict.get("image_path", ""),
@@ -3478,6 +3592,7 @@ def list_experiment_decision_rows(experiment_id):
         s.close()
 
 
+@_guard_job_db_write()
 def log_user_event(account_id="", session_id="", event_type="",
                    receipt_id=None, properties=None, grp=None, tenant_id=None):
     """前端埋点事件。"""
@@ -3572,9 +3687,9 @@ def create_experiment(name, hypothesis="", success_metric="accuracy",
             hypothesis=str(hypothesis or ""),
             success_metric=str(success_metric or "accuracy"),
             guardrail_metrics=_safe_json(guardrail_metrics or []),
-            target_percent=int(target_percent or 50),
+            target_percent=coerce_int(target_percent, 50),
             target_supplier_ids=_safe_json(target_supplier_ids or []),
-            min_sample=int(min_sample or 100),
+            min_sample=coerce_int(min_sample, 100),
             status="draft",
         )
         s.add(row)
@@ -3829,6 +3944,7 @@ def freeze_experiment_rollback(exp_id, reason="", by="guardian"):
         s.close()
 
 
+@_guard_job_db_write()
 def add_assignment(experiment_id, receipt_id, grp="control"):
     s = get_session()
     try:
@@ -3995,7 +4111,7 @@ def get_grey_compare(period_days=30, min_sample=30):
         "edit_rate_pp": _diff(t["edit_rate"], c["edit_rate"]),
     }
 
-    low_confidence = min(c["n"], t["n"]) < int(min_sample or 30)
+    low_confidence = min(c["n"], t["n"]) < coerce_int(min_sample, 30)
     if low_confidence:
         diff = {k: (None if v is not None else None) for k, v in diff.items()}
 
@@ -4003,7 +4119,7 @@ def get_grey_compare(period_days=30, min_sample=30):
         "period_start": start_ts, "period_end": end_ts,
         "control": c, "treatment": t, "diff_pp": diff,
         "low_confidence": low_confidence,
-        "min_sample": int(min_sample or 30),
+        "min_sample": coerce_int(min_sample, 30),
     }
 
 
@@ -4079,19 +4195,19 @@ def get_ai_metrics(period_days=7, granularity="global",
     breakdown = {}
     for k, recs in buckets.items():
         st = _stats(recs)
-        st["low_confidence"] = st["n"] < int(min_sample or 30)
+        st["low_confidence"] = st["n"] < coerce_int(min_sample, 30)
         breakdown[k] = st
 
     all_rows = sum(buckets.values(), [])
     total = _stats(all_rows)
-    total["low_confidence"] = total["n"] < int(min_sample or 30)
+    total["low_confidence"] = total["n"] < coerce_int(min_sample, 30)
     return {
         "period_start": start_ts, "period_end": end_ts,
         "granularity": granularity, "granularity_id": granularity_id,
         "grp": grp,
         "total": total,
         "breakdown": breakdown,
-        "min_sample": int(min_sample or 30),
+        "min_sample": coerce_int(min_sample, 30),
     }
 
 
@@ -4358,6 +4474,7 @@ def _receipt_image_sha1(s, receipt_id):
         return ""
 
 
+@_guard_job_db_write(blocked_return=(None, False))
 def create_eval_candidate(receipt_id, reason, tenant_id=None, doc_form="",
                           confidence=None, ai_candidate=None, note=""):
     """创建评测候选（每单每 reason 幂等）。

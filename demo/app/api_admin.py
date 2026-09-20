@@ -6,11 +6,12 @@
 - /api/review：AI 复盘（价格异动/供应商洞察，owner 可用）
 """
 
+import logging
 import os
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 import re
 from app import db
@@ -88,6 +89,9 @@ def resolve_tenant_filter(request: Request, query_value=None):
 
 class EngineConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    # 配置来源（T1）：body 必须声明，否则 extra=forbid 会让带该字段的请求 422。
+    # PUT 保存一律由后端强制置 manual（见 set_engine_config），请求体传入值仅作占位。
+    config_source: str = None
     # 常规
     recognition_engine: str = None
     recognition_model: str = None
@@ -100,12 +104,15 @@ class EngineConfigBody(BaseModel):
     openai_aud_base_url: str = None
     openai_aud_api_key: str = None
     openai_aud_model: str = None
-    # 新增开关（与 models.EngineConfig 对齐）：超时 / 审核模式 / transport
+    # 新增开关（与 models.EngineConfig 对齐）：超时 / 审核模式
     call_timeout_seconds: int = None
+    # T11：整图识别重试上限。必须声明，否则 GET 回读后再 PUT（前端回显整份配置）会因
+    # models 侧 extra="forbid" 触发 422（与 T1 config_source 同一坑）。
+    max_retry_rounds: int = None
     audit_mode: str = None
-    recognition_transport: str = None
-    audit_transport: str = None
-    parse_transport: str = None
+    # 历史注记：此处原有 recognition_transport / audit_transport / parse_transport
+    # 及灰测组 3 个同名开关，随 CLI 引擎（2026-09-02 弃用）一并删除。
+    # models.EngineConfig 会在校验前统一摘掉这些遗留键，旧前端 payload 不会 422。
     # 常规解析 LLM
     parse_llm_enabled: bool = None
     parse_llm_engine: str = None
@@ -136,10 +143,6 @@ class EngineConfigBody(BaseModel):
     grey_openai_parse_base_url: str = None
     grey_openai_parse_api_key: str = None
     grey_openai_parse_model: str = None
-    # 灰测组 transport 开关（与 models.EngineConfig 对齐）
-    grey_recognition_transport: str = None
-    grey_audit_transport: str = None
-    grey_parse_transport: str = None
 
 
 def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key: str, label: str):
@@ -185,7 +188,7 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
 
 def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
     """归一化引擎枚举与双向字段对齐（单一事实源），并统一解析带掩码的 API Key。"""
-    from app.models import GreyAssignMode, EngineKind
+    from app.models import GreyAssignMode, EngineKind, is_legacy_cli_engine
 
     if cfg is not None:
         key_fields = (
@@ -208,8 +211,8 @@ def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
                 "grey_recognition_engine", "grey_audit_engine",
                 "parse_llm_engine", "grey_parse_llm_engine"):
         if key in updates:
-            val_str = str(getattr(updates[key], "value", updates[key]) or "").lower()
-            if val_str in ("opencode", "codebuddy"):
+            # 已弃用 CLI 引擎的取值归一为 openai（判定走 models.is_legacy_cli_engine 单一实现）
+            if is_legacy_cli_engine(updates[key]):
                 updates[key] = EngineKind.OPENAI
             else:
                 updates[key] = EngineKind(updates[key])
@@ -406,10 +409,11 @@ def promote_grey_config(request: Request):
     }
 
     new_cfg = EngineConfig(**new_dict)
-    db.set_engine_config(new_cfg)
+    # T1：推全是管理台人工改配，置 manual 以免重启被 .env 打回
+    db.set_engine_config(new_cfg, source="manual")
 
     # 把灰测组清空/重置回默认（关闭灰测，恢复默认识别/审核模型，关闭灰测审核/解析开关）
-    from app.models import GreyAssignMode, EngineKind
+    from app.models import GreyAssignMode, EngineKind, is_legacy_cli_engine
     grey_defaults = {
         "grey_enabled": False,
         "grey_percent": 0,
@@ -433,7 +437,7 @@ def promote_grey_config(request: Request):
         "grey_openai_parse_model": "",
     }
     final_cfg = EngineConfig(**{**new_cfg.model_dump(), **grey_defaults})
-    db.set_engine_config(final_cfg)
+    db.set_engine_config(final_cfg, source="manual")
 
     db.append_system_audit_log(who, "promote_grey_config",
                                "recognition_engine",
@@ -596,7 +600,8 @@ def get_engine_presets(request: Request):
 def get_engine_config(request: Request):
     require_admin(request)
     cfg = db.get_engine_config()
-    from app.llm import get_timeout_advice
+    from app.llm import get_timeout_advice, _resolve_timeout
+    from app.models import MAX_CALL_TIMEOUT_SECONDS, is_legacy_cli_engine
     advice = get_timeout_advice(cfg)
     # 性能基线与当前达标判定
     engine_str = str(getattr(cfg, "recognition_engine", "") or "")
@@ -611,11 +616,15 @@ def get_engine_config(request: Request):
     except Exception:
         has_valid_qwen = False
     perf = {
-        "baseline": "qwen3-vl-flash P50 9.0s P95 12s (L4 定稿冠军, step12 P95 ≤12s, NFR-2 P95 ≤60s)",
+        "baseline": "qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本；旧基线 qwen3-vl-flash P50 9.0s 已废止）",
         "local_expected": "纯 API 驱动 (SiliconFlow / DashScope)，CLI 引擎已彻底废弃",
         "current_p95_compliant": (engine_str == "openai" and has_valid_qwen),
-        "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 90),
-        "timeout_policy": "保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底",
+        "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 60),
+        # T9 收尾：显式回显「实际生效超时」，避免管理台只看配置值而误判
+        "effective_call_timeout_seconds": _resolve_timeout(cfg),
+        "timeout_policy": (f"实际生效超时硬上限 {MAX_CALL_TIMEOUT_SECONDS}s"
+                           "（llm._resolve_timeout 钳制 min(v, 硬上限)）；"
+                           "omni 实测 2.6-7.1s 结余充足，禁止长期空转"),
     }
     data = mask_engine_config_dict(cfg.model_dump())
 
@@ -624,7 +633,7 @@ def get_engine_config(request: Request):
     if advice:
         resp["timeout_advice"] = advice
         resp["warning"] = advice
-    if engine_str in ("opencode", "codebuddy"):
+    if is_legacy_cli_engine(engine_str):
         resp["degradation_notice"] = (
             "提示：历史本地 CLI 引擎已彻底下线，系统已自动转换为 OpenAI 兼容接口。"
         )
@@ -648,6 +657,8 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     from app.llm import _is_valid_dashscope_url, _is_valid_sk, _is_valid_dashscope_config, get_timeout_advice
     cfg = db.get_engine_config()
     updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
+    # 配置来源不接受请求体声明：PUT 保存后一律由后端置 manual（复位走 reset 端点）
+    updates.pop("config_source", None)
 
     # 任务 3a：热切到 qwen3-vl-flash 需有效 dashscope.aliyuncs.com compatible-mode/v1 + sk-，
     # 若无有效 key 则显式降级提示而非静默超时（避免本地 165s 不达标却静默阻塞）
@@ -731,20 +742,26 @@ def set_engine_config(body: EngineConfigBody, request: Request):
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
                     "msg": "灰测识别引擎的 API 密钥为空或仍是占位符，请填入真实密钥后再保存。"
                 })
-    # call_timeout 语义：保留 90 对 qwen3-vl-flash 足够，本地 240 仅为兜底
-    # 若切换至 openai/qwen 且超时仍为 240，自动建议 90（或保持但附加 warning）
-    if "call_timeout_seconds" not in updates:
-        # 自动治理：qwen 路径保持 90
-        if rec_engine == "openai" and _is_valid_dashscope_config(rec_base, rec_key):
-            # qwen 侧若之前为 240，热切时顺手降至 90（9s 足够，避免无畏长等待）
-            if int(cfg.call_timeout_seconds or 90) >= 200:
-                new_dict["call_timeout_seconds"] = 90
+    # call_timeout 语义（T9 收尾）：硬上限 60 是硬约束，不是管理台可绕过的偏好。
+    # 保存时即归一到 ≤60，使「落库值 / 回显值 / 实际生效值」三者恒等，消除「填 90 实际 60」的误导。
+    # 旧实现只在「请求未显式传该字段 且 是 qwen 路径 且 旧值 ≥200」时才降至 60，
+    # 管理员显式填 90 会被原样落库 → 现收敛为无条件归一（选项 b 的 API 侧回显）。
+    from app.models import clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
+    raw_timeout = new_dict.get("call_timeout_seconds")
+    new_dict["call_timeout_seconds"] = clamp_call_timeout(raw_timeout)
+    timeout_clamped = new_dict["call_timeout_seconds"] != raw_timeout
 
     old_engine = cfg.recognition_engine
-    new_cfg = EngineConfig(**new_dict)
-    db.set_engine_config(new_cfg)
+    # T1：管理台保存即声明「人工配置」（config_source=manual），
+    # 重启时 hydrate_engine_config_from_env 不再按 .env 覆盖，人工切换得以持久生效。
+    new_cfg = EngineConfig(**{**new_dict, "config_source": "manual"})
+    db.set_engine_config(new_cfg, source="manual")
     changed_keys = list(updates.keys())
-    if "call_timeout_seconds" in new_dict and new_dict["call_timeout_seconds"] != cfg.call_timeout_seconds:
+    if str(getattr(cfg, "config_source", "auto") or "auto") != "manual":
+        changed_keys.append("config_source")
+    if timeout_clamped:
+        changed_keys.append(f"call_timeout_seconds(auto:{raw_timeout}->{new_dict['call_timeout_seconds']})")
+    elif "call_timeout_seconds" in new_dict and new_dict["call_timeout_seconds"] != cfg.call_timeout_seconds:
         if "call_timeout_seconds" not in changed_keys:
             changed_keys.append("call_timeout_seconds(auto)")
     db.append_system_audit_log(who, "set_engine_config",
@@ -755,17 +772,49 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     advice = get_timeout_advice(new_cfg)
     warning = ""
     # 性能基线提示
-    perf_note = "预期：qwen3-vl-flash P50 9.0s P95 12s (step12) / 纯 API 驱动"
+    perf_note = "预期：qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本） / 纯 API 驱动"
     resp_data = mask_engine_config_dict(new_cfg.model_dump())
     resp = {"status": "success", "data": resp_data, "perf_note": perf_note}
 
+    if timeout_clamped:
+        # 显式回显（T9 收尾）：本次保存填的超限值已被归一，前端可用该字段提示管理员
+        warning = (f"call_timeout_seconds={raw_timeout} 超过硬上限 {MAX_CALL_TIMEOUT_SECONDS}s，"
+                   f"已归一为 {MAX_CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待")
     if advice:
         resp["timeout_advice"] = advice
     if warning:
+        resp["timeout_advice"] = warning
         resp["warning"] = warning
     if rec_engine == "openai":
-        resp["msg"] = "已保存引擎配置，预期 P50 9s P95 12s"
+        resp["msg"] = "已保存引擎配置，预期单张 2.6-7.1s（3 张 confirmed 样本实测）"
     return resp
+
+
+@router.post("/api/admin/engine-config/reset")
+def reset_engine_config(request: Request):
+    """复位为 .env 默认装配（T1）。
+
+    管理台 PUT 保存会把 config_source 置 manual（重启不被 .env 覆盖）；
+    本端点把来源改回 auto 并立即重新执行一次 .env 装配，
+    使配置回到与「服务刚启动时」一致的状态。不可逆，操作前前端需二次确认。
+    """
+    account = require_admin(request)
+    who = account.get("email", "unknown")
+    cfg = db.get_engine_config()
+    old_source = str(getattr(cfg, "config_source", "auto") or "auto")
+    cfg.config_source = "auto"
+    db.set_engine_config(cfg, source="auto")
+    # 立即重新装配（内部按 auto 走 .env 覆盖逻辑）
+    db.hydrate_engine_config_from_env()
+    new_cfg = db.get_engine_config()
+    db.append_system_audit_log(who, "reset_engine_config",
+                               "config_source", old_source,
+                               str(getattr(new_cfg, "config_source", "auto") or "auto"))
+    return {
+        "status": "success",
+        "data": mask_engine_config_dict(new_cfg.model_dump()),
+        "msg": "已复位为 .env 默认装配",
+    }
 
 
 @router.get("/api/admin/system-audit")
@@ -819,8 +868,10 @@ async def update_admin_settings(request: Request):
         db.append_system_audit_log(
             who, "settings_update", "app_settings",
             "", {k: v["new"] for k, v in changed.items()})
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("api_admin").warning(
+            "审计写入失败(action=settings_update who=%s keys=%s): %s",
+            who, list(changed.keys()), e)
     return {"status": "success", "data": settings_service.all_settings(),
             "changed": changed}
 
@@ -862,6 +913,7 @@ def admin_metrics(request: Request):
     elapsed = []
     success_cnt = 0
     cost_vals = []
+    cost_estimated_cnt = 0
     for r in rows:
         try:
             extra = _json.loads(r.extra) if r.extra else {}
@@ -912,14 +964,21 @@ def admin_metrics(request: Request):
         # cost
         try:
             c = float(extra.get("cost_hkd", 0) or 0)
-            cost_vals.append(c)
         except Exception:
-            cost_vals.append(0.0)
+            c = 0.0
+        # 成本可信度计数：估算行的 cost_hkd 不是实测值（拿不到 token / 成本链路异常 / 兜底单价），
+        # 大盘必须能标注「这一栏含 N 行为估算」，否则会被当成实测平均成本读。
+        if int(extra.get("cost_estimated") or 0) == 1:
+            cost_estimated_cnt += 1
+        else:
+            # avg_cost_hkd 只用实测行（口径对齐 guardian._group_metrics）：估算行 cost_hkd
+            # 是兜底/低估产物，混入均值会把「实测单张成本」拉偏；估算行仅计数上报。
+            cost_vals.append(c)
     n = len(rows)
     avg_tokens = round(sum(tokens) / n, 2) if n else 0
     avg_elapsed = round(sum(elapsed) / n, 2) if n else 0
     success_rate = round(success_cnt / n, 4) if n else 0
-    avg_cost = round(sum(cost_vals) / n, 6) if n else 0
+    avg_cost = round(sum(cost_vals) / len(cost_vals), 6) if cost_vals else None
     # 文件层补充（artifacts/memory/parse_log.jsonl）
     file_stats = {"count": 0, "avg_tokens": 0, "avg_elapsed": 0, "success_rate": 0}
     try:
@@ -990,6 +1049,9 @@ def admin_metrics(request: Request):
             "avg_elapsed": avg_elapsed,
             "success_rate": success_rate,
             "avg_cost_hkd": avg_cost,
+            # 成本可信度：avg_cost_hkd 中含多少行是估算值。>0 时前端应标注「含估算」，
+            # 不能把该平均值当作实测单张成本（0 表示全部为实测）。
+            "cost_estimated_count": cost_estimated_cnt,
             "success_count": success_cnt,
             "file": file_stats,
         },
@@ -1651,8 +1713,9 @@ def maintenance_deduplicate(request: Request):
     # 追加手动触发审计（系统级）
     try:
         db.append_system_audit_log(who, "manual_deduplicate", "deduplicate_skus_by_canonical", "", str(reports))
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("api_admin").warning(
+            "审计写入失败(action=manual_deduplicate who=%s): %s", who, e)
     merged_cnt = sum(len(r.get("merged_ids", [])) for r in reports) if reports else 0
     return {
         "status": "success",
@@ -1667,8 +1730,13 @@ class AdminExpCreateBody(BaseModel):
     name: str
     hypothesis: str = ""
     success_metric: str = "accuracy"
-    target_percent: int = 50
-    min_sample: int = 30
+    # P2：目标流量比例必须是合法百分比；0（全部走对照组）与 100（全部走实验组）
+    # 都是合法边界，越界值由 pydantic 直接拒绝（422），不再落到 db 层被静默改写。
+    target_percent: int = Field(default=50, ge=0, le=100)
+    # S2：min_sample=0 是合法边界（不做样本量门槛），负数无意义且会让守护门的
+    # 「样本量不足不判」恒真（sample_size < 负数 永不成立），故在入口拦住。
+    # 不设上界：样本门槛没有天然上限，且 db.coerce_int 不对越界做钳制。
+    min_sample: int = Field(default=30, ge=0)
     treatment_model: Optional[str] = None
     control_model: Optional[str] = None
     treatment_base_url: Optional[str] = None
@@ -1912,8 +1980,19 @@ def recognition_summary(request: Request):
         except Exception:
             return {}
 
+    def _is_warning_parsed(p):
+        """R4：该 ocr_parsed 事件是否为"带警告通过"（门禁失败但保留了识别结构）。
+
+        口径来源是 Job 埋点写入的 parse_status（见 receipt_utils 的 ocr_parsed）。
+        历史事件没有该字段 → 按干净成功兼容，不追溯改写既有统计。
+        """
+        return str(p.get("parse_status") or "") == "parsed_with_warnings"
+
     started = [e for e in events if e[0] == "ocr_parse_started"]
     parsed = [(e[2], _props(e[1])) for e in events if e[0] == "ocr_parsed"]
+    # parse_success 只计干净成功；带警告通过单列，避免 P14 的虚假成功信号流进看板
+    parsed_ok = [(g, p) for g, p in parsed if not _is_warning_parsed(p)]
+    parsed_warn = [(g, p) for g, p in parsed if _is_warning_parsed(p)]
     errors = [(e[2], _props(e[1])) for e in events if e[0] == "ocr_error"]
     guards = [(e[0], _props(e[1])) for e in events
               if e[0] in ("math_guard_checked", "contract_guard_checked")]
@@ -1924,7 +2003,9 @@ def recognition_summary(request: Request):
     global_fb = [_props(e[1]) for e in events if e[0] == "feedback_received"]
 
     parse_total = len(started)
-    parse_success = len(parsed)
+    # parse_success 与 parse_with_warnings 互斥：带警告通过的不得再计一次成功
+    parse_success = len(parsed_ok)
+    parse_with_warnings = len(parsed_warn)
     parse_fail = len(errors)
     elapsed = [p.get("elapsed_ms") for _, p in parsed + errors
                if isinstance(p.get("elapsed_ms"), (int, float))]
@@ -1952,13 +2033,15 @@ def recognition_summary(request: Request):
     fb_down = sum(1 for f in fbs if f.get("like") == -1)
 
     def _grp_block(grp):
-        g_parsed = [p for g, p in parsed if g == grp]
+        g_ok = [p for g, p in parsed_ok if g == grp]
+        g_warn = [p for g, p in parsed_warn if g == grp]
         g_reviews = [_props(e[1]) for e in events
                      if e[0] == "receipt_review_submitted" and (e[2] or "") == grp]
         g_fer = [float(p.get("fer_rate")) for p in g_reviews
                  if isinstance(p.get("fer_rate"), (int, float))]
         return {
-            "parse_success": len(g_parsed),
+            "parse_success": len(g_ok),
+            "parse_with_warnings": len(g_warn),
             "fer_rate": round(sum(g_fer) / len(g_fer), 4) if g_fer else None,
         }
 
@@ -1966,6 +2049,7 @@ def recognition_summary(request: Request):
         "tenant_id": effective_tenant or "all",
         "parse_total": parse_total,
         "parse_success": parse_success,
+        "parse_with_warnings": parse_with_warnings,
         "parse_fail": parse_fail,
         "parse_fail_rate": round(parse_fail / parse_total, 4) if parse_total else 0.0,
         "elapsed_p50_ms": _pct(elapsed, 0.5),

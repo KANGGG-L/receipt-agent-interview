@@ -77,8 +77,10 @@ def approve_pending(pending_id: int, request: Request):
         db.append_system_audit_log(
             who, "pending_memory_approve", f"pending_memory:{pending_id}",
             "pending", "approved")
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("api_memory").warning(
+            "审计写入失败(action=pending_memory_approve pending_id=%s who=%s): %s",
+            pending_id, who, e)
     return {"status": "success", "data": db.get_pending_memory(pending_id,
                                                                tenant_id=tenant_id)}
 
@@ -107,7 +109,9 @@ def reject_pending(pending_id: int, request: Request):
         db.append_system_audit_log(
             who, "pending_memory_reject", f"pending_memory:{pending_id}",
             "pending", "rejected")
-    except Exception:
-        pass
+    except Exception as e:
+        logging.getLogger("api_memory").warning(
+            "审计写入失败(action=pending_memory_reject pending_id=%s who=%s): %s",
+            pending_id, who, e)
     return {"status": "success", "data": db.get_pending_memory(pending_id,
                                                                tenant_id=tenant_id)}
