@@ -1,14 +1,58 @@
 {
   "tool_name": "query_sql_gen",
-  "active_version": "v1_0_0",
-  "description": "租户隔离只读安全 SQL 生成工具",
+  "active_version": "v1_1_0",
+  "description": "租户隔离只读安全 SQL 生成工具（占位符强制租户隔离）",
   "versions": {
     "v1_0_0": {
       "release_date": "2026-08-01",
-      "status": "experimental",
-      "interception_rate": 100.0,
+      "status": "archived",
       "latency_ms": 5.4,
-      "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具）"
+      "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具）。文件保留不删，作为旧版本回归资产。",
+      "metrics": {
+        "interception_rate": 27.3,
+        "attack_corpus_total": 22,
+        "attack_corpus_blocked": 6,
+        "interception_rate_scope": "本仓可复现攻击语料（tests/test_query_sql_gen_guard.py::ATTACK_CORPUS，22 条）中以 raise PermissionError 为准的拦截率 6/22；不是通用拦截率",
+        "claim_unsupported": true,
+        "claim_unsupported_note": "原登记 interception_rate=100.0 无任何评测集/脚本/报告支撑，经审计确认与本仓可复现实测（6/22=27.3）不符，判定为虚假指标并纠正。",
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_query_sql_gen_guard.py -q"
+      },
+      "changelog": [
+        "审计确认四类真实缺陷：租户隔离仅对**大写** WHERE 生效（小写/混合大小写 where 完全不注入，实测 `select * from receipts where id > 0` 原样返回跨租户 SQL）、黑名单漏项（CREATE/ATTACH/PRAGMA/VACUUM/REINDEX/REPLACE/COPY/LOAD 未覆盖）、注释绕过（`-- tenant_id` 使「含 tenant_id」检查误判通过、跳过租户注入）、多语句未拦截。",
+        "指标纠偏：原 interception_rate=100.0 与实测不符（虚假指标），改为本仓可复现语料的实测值 27.3（6/22），并保留 claim_unsupported 标记与复现命令。",
+        "无生产消费者，上述缺陷属潜伏（未曾经生产路径生效）。"
+      ]
+    },
+    "v1_1_0": {
+      "release_date": "2026-09-07",
+      "status": "production",
+      "description": "占位符强制租户隔离 + 注释剥离 + 多语句拦截 + 黑名单补齐的只读安全 SQL 生成工具",
+      "features": [
+        "租户隔离占位符强制：SQL 模板必须显式含 {tenant_id} 占位符，缺失直接 PermissionError（放弃不可靠的字符串改写）",
+        "占位符替换值按 SQL 字面量转义（单引号加倍），并正向校验输出必含租户条件",
+        "检测前剥离注释（-- 行注释 / /* */ 块注释），再做黑名单与租户判断（防注释绕过）",
+        "拒绝多语句（剥离末尾分号后仍含分号即拒；字符串字面量内的分号不计）",
+        "黑名单补齐写操作与 DDL/危险语句：INSERT/UPDATE/DELETE/DROP/ALTER/TRUNCATE/GRANT/REVOKE/CREATE/ATTACH/DETACH/PRAGMA/VACUUM/REINDEX/REPLACE/COPY/LOAD",
+        "字符串字面量内容掩蔽后再判定，避免把字符串里的分号/关键词误判为攻击"
+      ],
+      "metrics": {
+        "interception_rate": 100.0,
+        "attack_corpus_total": 22,
+        "attack_corpus_blocked": 22,
+        "attack_corpus_scope": "tests/test_query_sql_gen_guard.py::ATTACK_CORPUS（小写/混合大小写 where 缺占位符、注释绕过、多语句、危险关键字）",
+        "normal_corpus_total": 8,
+        "false_positive_rate": 0.0,
+        "false_positive_scope": "tests/test_query_sql_gen_guard.py::NORMAL_CORPUS（含占位符的正常只读聚合查询全部放行）",
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_query_sql_gen_guard.py -q"
+      },
+      "note": "仍无生产消费者（本次为潜伏缺陷修复 + 治理登记；demo 运行时未调用本工具）。",
+      "changelog": [
+        "修复 v1_0_0 租户隔离失效：改为占位符强制（{tenant_id} 缺失即 PermissionError），脚本/注释里的 tenant_id 不再被误认为已隔离。",
+        "修复 v1_0_0 注释绕过：检测前先剥离 -- 行注释与 /* */ 块注释。",
+        "新增多语句拦截：剥离末尾分号后仍含分号即拒。",
+        "补齐黑名单：新增 CREATE/ATTACH/DETACH/PRAGMA/VACUUM/REINDEX/REPLACE/COPY/LOAD。",
+        "v1_0_0 的 metadata 指标纠偏（100.0 -> 实测 27.3）并记录缺陷；文件保留不删。"
+      ]
     }
   }
 }

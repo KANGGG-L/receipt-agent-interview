@@ -16,6 +16,17 @@ const exportCenterState = {
 };
 window.exportCenterState = exportCenterState;
 
+// 转义小工具：一切进入 innerHTML / document.write 的动态插值必须过本函数。
+// 与 evalset.js 的 esc() 同实现（临时 div 的 textContent → innerHTML，由浏览器
+// 自带的 HTML 文本序列化完成转义），不自行拼正则，避免规则漂移。
+// 作用范围说明：本文件只用它做「文本上下文」插值（元素之间/属性值均为受控常量），
+// 故不额外转义引号；需要行内 JS 字符串上下文时一律改事件委托 + data-*，不在此处裸拼。
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s === null || s === undefined ? '' : String(s);
+    return d.innerHTML;
+}
+
 // 页面加载或切换至导出中心时初始化
 function initExportCenter() {
     loadExportMetadata();
@@ -133,11 +144,11 @@ function renderExportReportList() {
         html += `
             <div class="export-report-card ${isSelected ? 'selected' : ''}" onclick="selectExportReport('${rep.id}')">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <span class="badge ${catBadgeClass}" style="font-size:0.72rem; padding:3px 10px;">${rep.category_name}</span>
+                    <span class="badge ${catBadgeClass}" style="font-size:0.72rem; padding:3px 10px;">${esc(rep.category_name)}</span>
                     ${isSelected ? '<span class="badge badge-primary" style="font-size:0.72rem; padding:3px 10px;">正在预览</span>' : ''}
                 </div>
-                <div class="export-report-title">${rep.title}</div>
-                <div class="export-report-desc">${rep.description}</div>
+                <div class="export-report-title">${esc(rep.title)}</div>
+                <div class="export-report-desc">${esc(rep.description)}</div>
             </div>
         `;
     });
@@ -269,7 +280,7 @@ function renderExportFilters() {
                 <label>指定往来供应商</label>
                 <select id="expSupplier" class="form-control export-control-input" style="min-width:170px;" onchange="refreshExportPreview()">
                     <option value="">全部供应商</option>
-                    ${exportCenterState.suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                    ${exportCenterState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}
                 </select>
             </div>
         `;
@@ -282,7 +293,7 @@ function renderExportFilters() {
                 <label>归属成本部门</label>
                 <select id="expDepartment" class="form-control export-control-input" style="width:140px;" onchange="refreshExportPreview()">
                     <option value="">全部部门</option>
-                    ${exportCenterState.departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('')}
+                    ${exportCenterState.departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}
                     <option value="0">未分配部门</option>
                 </select>
             </div>
@@ -364,14 +375,14 @@ function updateExportFilterDropdowns() {
     if (supSel) {
         const val = supSel.value;
         supSel.innerHTML = '<option value="">全部供应商</option>' +
-            exportCenterState.suppliers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+            exportCenterState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
         supSel.value = val;
     }
     const deptSel = document.getElementById('expDepartment');
     if (deptSel) {
         const val = deptSel.value;
         deptSel.innerHTML = '<option value="">全部部门</option>' +
-            exportCenterState.departments.map(d => `<option value="${d.id}">${d.name}</option>`).join('') +
+            exportCenterState.departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('') +
             '<option value="0">未分配部门</option>';
         deptSel.value = val;
     }
@@ -551,10 +562,10 @@ function renderExportPreviewUI(data) {
 
     const summaryBox = document.getElementById('exportPreviewSummary');
     if (summaryBox) {
-        let sumHtml = `<span class="badge badge-primary" style="font-size:0.85rem; padding:4px 8px;">共 ${data.total_rows} 条记录</span>`;
+        let sumHtml = `<span class="badge badge-primary" style="font-size:0.85rem; padding:4px 8px;">共 ${esc(data.total_rows)} 条记录</span>`;
         if (data.summary && Object.keys(data.summary).length > 0) {
             for (const [k, v] of Object.entries(data.summary)) {
-                sumHtml += `<span class="export-summary-pill"><strong>${k}:</strong> ${v}</span>`;
+                sumHtml += `<span class="export-summary-pill"><strong>${esc(k)}:</strong> ${esc(v)}</span>`;
             }
         }
         summaryBox.innerHTML = sumHtml;
@@ -575,7 +586,8 @@ function renderExportPreviewUI(data) {
             return 'col-right';
         }
         if (h.includes('日期') || h.includes('类型') || h.includes('单位') || h.includes('状态') || 
-            h.includes('签字') || h.includes('分类') || h.includes('模式') || h.includes('级别')) {
+            h.includes('签字') || h.includes('分类') || h.includes('模式') || h.includes('级别') ||
+            h.includes('ID') || h.includes('编号') || h.includes('单号') || h.includes('凭证')) {
             return 'col-center';
         }
         return '';
@@ -585,7 +597,7 @@ function renderExportPreviewUI(data) {
     let headHtml = '<tr>';
     (data.headers || []).forEach(h => {
         const alignClass = getColAlignClass(h);
-        headHtml += `<th class="${alignClass}" style="white-space:nowrap;">${h}</th>`;
+        headHtml += `<th class="${alignClass}" style="white-space:nowrap;">${esc(h)}</th>`;
     });
     headHtml += '</tr>';
     thead.innerHTML = headHtml;
@@ -604,17 +616,22 @@ function renderExportPreviewUI(data) {
         r.forEach((cell, idx) => {
             const h = data.headers[idx] || '';
             const alignClass = getColAlignClass(h);
+            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
+            const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
             
             // 特殊样式高亮（统一为胶囊徽标）
             let cellStyle = '';
-            let cellContent = (cell === null || cell === undefined) ? '-' : String(cell);
-            if (cellContent.includes('异常') || cellContent.includes('低库存') || cellContent.includes('承压') || cellContent.includes('跌价') || cellContent.includes('逾期') || cellContent.includes('预警') || cellContent.includes('异动')) {
+            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
+            // 写进 innerHTML 的形态用转义后的文本（先转义再包徽标，避免二次解码）
+            const cellText = (cell === null || cell === undefined) ? '-' : String(cell);
+            let cellContent = esc(cellText);
+            if (cellText.includes('异常') || cellText.includes('低库存') || cellText.includes('承压') || cellText.includes('跌价') || cellText.includes('逾期') || cellText.includes('预警') || cellText.includes('异动')) {
                 cellContent = `<span class="badge badge-danger">${cellContent}</span>`;
-            } else if (cellContent.includes('已入账') || cellContent.includes('正常') || cellContent.includes('稳定') || cellContent.includes('下降') || cellContent.includes('已审批') || cellContent.includes('充足') || cellContent.includes('健康')) {
+            } else if (cellText.includes('已入账') || cellText.includes('正常') || cellText.includes('稳定') || cellText.includes('下降') || cellText.includes('已审批') || cellText.includes('充足') || cellText.includes('健康')) {
                 cellContent = `<span class="badge badge-success">${cellContent}</span>`;
             }
 
-            bodyHtml += `<td class="${alignClass}" style="white-space:nowrap; ${cellStyle}">${cellContent}</td>`;
+            bodyHtml += `<td class="${alignClass} ${wrapClass}" style="${cellStyle}">${cellContent}</td>`;
         });
         bodyHtml += '</tr>';
     });
@@ -691,6 +708,10 @@ function executeExportDownload() {
 
 // 打印当前预览报表（AC-9: 严格符合 A4 实地盘点标准，带空白手填列与三级下划线签名栏）
 function printExportReport() {
+    // 取值口径：标题与汇总取自 innerText（纯文本），写进新文档前一律过 esc()，
+    // 否则标题里的 `<` / `&` 会被当作标签解析（打印窗口是真实文档，等同又一次 innerHTML）。
+    // thead / tbody 取自 innerHTML，是 renderExportPreviewUI 已用 esc() 生成的可信 HTML：
+    // 表结构必须保持为 HTML 才能渲染，故不二次转义（转义会让整张表退化成源码文本）。
     const title = document.getElementById('exportActiveReportTitle')?.innerText || '报表打印';
     const thead = document.getElementById('exportPreviewThead')?.innerHTML || '';
     const tbody = document.getElementById('exportPreviewTbody')?.innerHTML || '';
@@ -706,7 +727,7 @@ function printExportReport() {
         <!DOCTYPE html>
         <html>
         <head>
-            <title>${title}</title>
+            <title>${esc(title)}</title>
             <meta charset="utf-8">
             <style>
                 @page {
@@ -792,9 +813,9 @@ function printExportReport() {
         </head>
         <body>
             <div class="print-header">
-                <h2>${title}</h2>
+                <h2>${esc(title)}</h2>
                 <div class="meta-bar">
-                    <span>${summary}</span>
+                    <span>${esc(summary)}</span>
                     <span>打印时间: ${new Date().toLocaleString('zh-HK', { hour12: false })}</span>
                 </div>
             </div>

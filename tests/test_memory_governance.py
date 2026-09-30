@@ -71,7 +71,13 @@ def test_approve_memory_carries_source_version_and_ref():
     assert r["created_at"] and r["updated_at"]
     assert r["status"] == "active"
     assert r["hit_count"] == 0
-    assert r["decay_score"] == 1.0
+    # P1-T2：新行起始分 = memory_initial_decay_score（缺省 0.7），刻意低于上限 1.0。
+    # 若与上限同为 1.0，命中强化 min(1.0, cur+bonus) 恒等 → 衰减只剩惩罚一侧。
+    from app.services import settings_service
+    initial = settings_service.get_float("memory_initial_decay_score")
+    assert abs(r["decay_score"] - initial) < 1e-9, \
+        f"新记忆起始分应为 memory_initial_decay_score={initial}，实际 {r['decay_score']}"
+    assert initial < 1.0, "起始分必须低于上限，否则命中强化是恒等操作"
 
     # Chroma metadata 同步携带治理字段（回溯删除用）
     docs = rag._store("gov_t1").similarity_search(vendor, k=5)
@@ -152,7 +158,7 @@ def test_dedup_hit_merges_source_ref_and_refreshes_updated_at():
     ref = json.loads(r["source_ref"] or "[]")
     assert ref == ["101", "102"], f"新 receipt_id 应并入既有 source_ref，实际 {ref}"
     assert r["updated_at"] >= updated_before, "去重命中应刷新 updated_at"
-    assert r["version"] == 1, "version 保持 1（同行演进归 TODO(T8) 口径）"
+    assert r["version"] == 1, "version 恒为 1（追加式不可变模型：内容变更即新增行，行内不就地改写）"
 
     # 同一 receipt_id 重复触发：集合式去重，不重复追加
     _db.upsert_vendor_memory(vendor, "同內容備註", "同樣本", tenant_id="gov_t3b",

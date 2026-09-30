@@ -37,9 +37,13 @@ import os
 import threading
 import uuid
 from collections import defaultdict
-from datetime import datetime
+from collections.abc import Mapping as _Mapping
+from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
+
+# P3-T1（K2）：结构化事实的行字段唯一定义（纯逻辑模块，只依赖标准库，无导入环）。
+from app.services.memory_facts import ROW_FIELDS as _MEMORY_FACT_ROW_FIELDS
 
 load_dotenv()
 
@@ -57,26 +61,32 @@ _SessionLocal = None
 
 _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
+_VendorSkuAliasRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
 _ReceiptFeedbackRow = None
 _PendingMemoryRow = None
+_MemoryExtractRunRow = None
 _EvalCandidateRow = None
 _GuardrailEventRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 _DishRecipeVersionRow = None
+_LlmCallLogRow = LLMCallLogRow = None
 
 
 def _make_engine():
     global _engine, _SessionLocal
     global _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow, _SupplierRow
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
+    global _VendorSkuAliasRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
     global _ReceiptFeedbackRow
     global _PendingMemoryRow
+    global _MemoryExtractRunRow
     global _EvalCandidateRow
     global _GuardrailEventRow
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
     global _DishRecipeVersionRow
+    global _LlmCallLogRow, LLMCallLogRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -91,8 +101,11 @@ def _make_engine():
         __tablename__ = "receipts"
         id = Column(Integer, primary_key=True, autoincrement=True)
         status = Column(String, default="uploaded")       # uploaded/parsing/parsed/edited/approved/flagged/error
-        supplier_name = Column(String, default="")
+        supplier_name = Column(String, default="")         # 展示字段：不改语义、不改写历史值
         supplier_code = Column(String, default="")
+        # D17：供应商归档外键（结构关联）。历史行由幂等回填补齐；无档案的名字串
+        # 保持 NULL（绝不凭空建档），读取侧对无 id 历史行回落归一 key 匹配。
+        supplier_id = Column(Integer, index=True, nullable=True)
         image_path = Column(String, default="")
         receipt_date = Column(String, default="")
         sheet_name = Column(String, default="")            # 月份，如 2026-07
@@ -121,6 +134,9 @@ def _make_engine():
         use_grey = Column(Integer, default=0)              # 灰测组标记（阶段 1 持久化）
         is_golden_sample = Column(Integer, default=0)      # 黄金基准集成员标记（可逆策展层，不改动单据本体）
         rag_context_json = Column(Text, default="")        # RAG 检索上下文（data_only 调试开关可见）
+        # P2-1 图内隐藏文字检测结果（JSON：{flagged, reasons, metrics}），只告警不拦截；
+        # 缺省 '{}' 表示未检测/无结果，向后兼容历史行。
+        image_guard_json = Column(Text, default="{}")
         currency = Column(String, default="HKD")           # 多币种（F-P1-3）
         # Gap 9 / Gap 6 店员可修正字段（识别直出 + save_edited 覆写，双写同列）
         service_fee = Column(Float, default=0.0)           # 加一服务费
@@ -201,7 +217,12 @@ def _make_engine():
     class SupplierRow(Base):
         __tablename__ = "suppliers"
         id = Column(Integer, primary_key=True, autoincrement=True)
-        name = Column(String, index=True, unique=True)
+        # 既有问题 #2（C）：name 去掉库级 unique=True —— 唯一性改按租户命名空间
+        # （create_supplier 的 scoped 重名检查为唯一防重线）。旧库的
+        # name 全局唯一物理约束（UNIQUE 索引或列约束）由下方迁移做数据保全式
+        # 重建消除，否则跨租户同名供应商通过 scoped 检查后仍会在 INSERT 处
+        # IntegrityError。与 skus.name 的既有修法（上方 SkuRow 注释）同口径。
+        name = Column(String, index=True)
         supplier_code = Column(String, default="")
         active = Column(Integer, default=1)
         payment_terms_days = Column(Integer, nullable=True)
@@ -216,6 +237,8 @@ def _make_engine():
         id = Column(Integer, primary_key=True, autoincrement=True)
         name = Column(String, default="")
         active = Column(Integer, default=1)
+        # D16：租户隔离键（payments / departments 补齐，与业务主表同口径）
+        tenant_id = Column(String(64), default="default", index=True)
 
     class PaymentRow(Base):
         __tablename__ = "payments"
@@ -227,6 +250,8 @@ def _make_engine():
         notes = Column(String, default="")
         voucher_image_path = Column(String, default="")
         linked_receipt_ids_json = Column(Text, default="[]")
+        # D16：租户隔离键
+        tenant_id = Column(String(64), default="default", index=True)
 
     class VendorMemoryRow(Base):
         __tablename__ = "vendor_memory"
@@ -241,8 +266,10 @@ def _make_engine():
         notes = Column(Text, default="")
         sample = Column(Text, default="")
         # Gap B1 治理元数据
-        # 本 Wave 为追加式写入，每行 version 初始 1；同行演进与 version 递增
-        # 在 T8 记忆生命周期治理中落地 TODO(T8)
+        # 追加式不可变（append-only）模型：notes/sample 内容一旦写入即不就地改写，
+        # 内容变更一律新增行（新 memory_id）。故行内 version 恒为 1、无需递增——它表示
+        # 「本行内容被就地改过几次」，而本模型永不就地改内容。去重命中时只合并
+        # source_ref / 刷新 updated_at（元数据刷新），不改变内容版本语义。
         version = Column(Integer, default=1)
         source_kind = Column(String(32), default="manual")  # approve|feedback_distilled|manual
         source_ref = Column(Text, default="[]")            # 触发来源 receipt_id 列表 JSON
@@ -250,8 +277,98 @@ def _make_engine():
         updated_at = Column(String, default="")
         hit_count = Column(Integer, default=0)
         last_hit_at = Column(String, default="")
-        decay_score = Column(Float, default=1.0)           # T8 消费：采纳+0.05/覆写-0.12
-        status = Column(String(16), default="active")      # active|archived
+        decay_score = Column(Float, default=1.0)           # T8：命中+bonus/覆写-penalty。新写入行的
+                                                          # 起始分走 memory_initial_decay_score（P1-T2），
+                                                          # 本缺省只兜底未显式赋值的路径（旧行/重建填空）
+        status = Column(String(16), default="active")      # active|archived|superseded
+        # P1-T3 冲突治理（同 key supersede + TTL）
+        # fact_key：结构化事实的键（如 "alias:黑牛" / "unit:斤"）。遗留行与既有
+        #   自由文本写入路径恒为 NULL —— NULL 表示"无键"，不参与 supersede 归并，
+        #   保持追加式语义（同 vendor 多行并存）。
+        fact_key = Column(Text)
+        # superseded_by：本条被哪条新记忆取代（新 memory_id）。旧行保留以存历史，
+        #   默认读路径不返回；链式可回溯（P3-T3 版本/回滚的载体）。
+        superseded_by = Column(String)
+        # valid_to：本条记忆的失效时刻（ISO）；空串 = 无显式失效期（由 TTL 兜底）。
+        valid_to = Column(String, default="")
+        # P2-T1 主体锚点：指向 suppliers.id（NULL = 未锚定，读侧按 vendor 名回退）。
+        # why：vendor 是自由文本，同一供应商的繁简/简称/英译写法会分裂成互不可见的
+        #   多份记忆（读侧全靠名字相关度门猜）。supplier_id 是档案主键，同一供应商的
+        #   一切写法都指向同一个 id —— 名字降为别名与展示字段。
+        # 为什么允许 NULL：无法可靠解析出档案时（如历史脏名、测试夹具名）宁可留空，
+        #   也不新建/错挂供应商档案（拿不准就不锚定，见 db.resolve_supplier_id）。
+        supplier_id = Column(Integer, index=True, nullable=True)
+        # P3-T1（K2）结构化事实载荷：MemoryFact 的 kind/value/信任/有效期/写入者。
+        # why 必须补这五列：memory_facts.ROW_FIELDS 声明了 14 个行字段，本表此前只有 9 个
+        #   —— `MemoryFact.to_row()` 产出的 fact_kind/fact_value/trust_level/valid_from/
+        #   written_by 没有落点，构造得出、落不进库（本仓高发的「定义了没接线」）。
+        # 列名与 memory_facts.ROW_FIELDS 逐字一致：db 侧不做第二份字段映射，
+        #   载荷列集合由 ROW_FIELDS 派生（见 _MEMORY_FACT_PAYLOAD_COLUMNS）。
+        # **为什么都不设 Column 缺省（刻意不写 default=）**：这五列只承载结构化事实，
+        #   遗留自由文本写入路径（approve 回写 / 反馈蒸馏）不产出事实，其行必须保持 NULL。
+        #   读侧 `MemoryFact.from_row` 把 NULL 视为"该字段不存在"；若填缺省值，一行自由
+        #   文本会长得跟一条合法事实一样 —— trust_level 尤其致命：填 1.0 等于凭空给它
+        #   最高信任，而它从未被任何人确认过。
+        fact_kind = Column(String(32))     # alias|unit|layout|price_range（memory_facts 白名单）
+        fact_value = Column(Text)          # 事实内容；与 fact_key 一起构成"同键异值"判定
+        trust_level = Column(Float)        # 0.0-1.0；人工来源 1.0，模型抽取由调用方下调
+        valid_from = Column(String)        # 事实生效时刻（YYYY-MM-DD 或 ISO）
+        written_by = Column(String)        # 写入者标识（供审计追溯"这条是谁写的"）
+
+    class VendorSkuAliasRow(Base):
+        """P2-T2：供应商 × SKU 别名（C4）。
+
+        语义：**该供应商用这个写法指这个 SKU**。上游的三个写入钩子（approve 入账
+        登记 / 自动建档登记 / SKU 合并改指）与一个读取钩子（`_match_sku` 供应商优先）
+        共用本表。
+
+        why 需要独立一张表、而不是塞进 vendor_memory 的自由文本：
+        1. 匹配是**结构化判定**（供应商 + 写法 → sku_id），自由文本无法参与等值查询；
+        2. 港式手写单里同一写法（如「黑牛」）在不同供应商下含义不同 —— 别名必须带
+           supplier_id 维度才不至于互相污染；
+        3. live 实测 SKU 匹配率仅 23.7%，根因是匹配完全按商品名做全局核心词互含，
+           不看供应商历史（`_match_sku` 的旧实现）。
+        同时它抑制 SKU 爆炸：同一供应商的同类写法第二次出现直接命中，不再建新 SKU。
+
+        唯一键 (tenant_id, supplier_id, raw_name)：一个写法在同一供应商下只能指向
+        一个 SKU —— 读取侧靠它才能确定命中哪一条。unit 只作记录、不进唯一键，
+        避免同写法换单位时出现两条都参与匹配、命中结果不确定。
+        """
+        __tablename__ = "vendor_sku_alias"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        tenant_id = Column(String(64), default="default", index=True)
+        # 指向 suppliers.id；NULL = 未锚定（本表**不使用** NULL 行：无供应商维度时
+        # 读取侧无从判定，登记了也没人消费，写入侧直接跳过并计数）
+        supplier_id = Column(Integer, index=True, nullable=True)
+        # 指向 skus.id；被合并的副 SKU 由 merge 联动改指到主 SKU（见 _repoint_vendor_sku_alias）
+        sku_id = Column(Integer, index=True)
+        # 供应商侧的原始写法（匹配键，与解析时 item["name"] 同口径）
+        raw_name = Column(Text, default="")
+        # 核心词归一后的写法（覆盖繁简/规格/包装前缀差异，第二顺位匹配键）
+        canonical_name = Column(Text, default="")
+        # 该供货写法惯用的单位。**消费方**＝P2-T4 的复核侧单位先验（按供应商提示
+        # 历史单位），本批只写不读；读取侧不拿它改写票面单位（那是重构口径的事）。
+        unit = Column(String, default="")
+        # 读取侧命中累计：**消费方**＝`find_vendor_sku_alias` 的归一通道排序
+        # （同核心词多条候选时取用得最多的一条），同时是后续清理/度量的依据。
+        hit_count = Column(Integer, default=0)
+        # 登记时刻。**消费方**暂为审计/回滚口径（P3 的版本化），本批只写不读；
+        # 明确记在这里，避免变成"只写列无人消费"的静默残留。
+        valid_from = Column(String, default="")
+        # 空串 = 无显式失效期；非空且已过期 → 读取侧不命中（不删行，保留可审计）
+        valid_to = Column(String, default="")
+        status = Column(String(16), default="active")   # active|retired
+        # 来源留痕：如 "receipt:1455" / "backfill:matched"
+        source_ref = Column(Text, default="")
+        updated_at = Column(String, default="")
+        __table_args__ = (
+            # 用显式 Index(unique=True) 而不是 UniqueConstraint：SQLite 会把
+            # UniqueConstraint 落成匿名自增索引（sqlite_autoindex_*），与迁移块里
+            # 命名唯一索引对不上会造成两个重复唯一索引。命名索引两处同名，新建库
+            # 与迁移块互不重复。
+            Index("ux_vendor_sku_alias_key", "tenant_id", "supplier_id", "raw_name",
+                  unique=True),
+        )
 
     class AppSettingRow(Base):
         __tablename__ = "app_settings"
@@ -408,6 +525,69 @@ def _make_engine():
         created_at = Column(String, default="")
         reviewed_by = Column(String, nullable=True)
         reviewed_at = Column(String, nullable=True)
+        # P3-T1（K2）字段级 diff 载荷：审核者要能逐字段看到"这条记忆打算写什么"，
+        # 而不是对整段 content 只能整体接受/拒绝（无 diff 载体时人工闸的成本高到
+        # 只能被绕过，等于闸门形同虚设）。
+        # why 用与 vendor_memory.ROW_FIELDS 逐字相同的列名（supplier_id/fact_kind/
+        #   fact_key/fact_value）：approve 时可直接把载荷交给 save_memory_fact，
+        #   不需要第二次字段映射（本仓高发的「同一口径多份实现」）。
+        # **不设缺省**：遗留入队路径（反馈蒸馏）不产出结构化事实，其行保持 NULL =
+        #   "没有字段级载荷" —— 审核界面据此退回整段文本视图，而不是显示一排空字段。
+        supplier_id = Column(Integer, nullable=True)   # 主体锚点（同 vendor_memory；NULL=未锚定）
+        fact_kind = Column(String(32))                # 四类事实白名单之一
+        fact_key = Column(Text)                       # 事实键（同键冲突判定用）
+        fact_value = Column(Text)                     # 事实内容（diff 视图的"新值"侧）
+        # reject_reason：拒绝/落选的可读理由。NULL = 未产生理由。为什么必须落库：
+        # 只把理由打日志，审核者与被拒方的下一次写入都看不到"上次为什么没进来"。
+        # 写入方（Q2，此前零写入方＝只建列）：api_receipts._record_refused_candidate，
+        # 被 `_extract_and_enqueue_memory_facts` 在三条"候选没进队列"的分支上调用 ——
+        #   ① 抽取侧闸门拒绝（memory_extract 的逐条理由，只有理由字符串、无 fact 载荷）
+        #   ② 写入侧闸门拒绝（memory_facts.validate_fact 的 reason，带 fact 载荷）
+        #   ③ decide_action 判 NOOP（memory_consolidate 的 reason，含"低可信不得覆盖高可信"）
+        # 消费方：`_pending_row_to_dict` → `GET /api/memory/pending`（含 status=rejected）。
+        # 形态约定：这些行落在 status='rejected' 且 reviewed_by 为 NULL ＝ 由系统闸门自动
+        # 拒绝（人工拒绝必经 `review_pending_memory`，那里会写 reviewed_by/reviewed_at）。
+        reject_reason = Column(Text)
+
+    class MemoryExtractRunRow(Base):
+        """P3-T4（B6）：记忆抽取的**运行记录**（中间产物可查、失败可复盘）。
+
+        为什么需要它：`memory_extract.get_last_run()` / `get_last_error()` 是
+        `threading.local` 的**内存态** —— 进程重启即丢，事后无法回答"某次抽取为什么产出
+        0 条事实 / 是哪一批退了回退文案 / 失败在哪一步"。本表是那份内存态的持久化落点，
+        **不重复实现 get_last_run**：入参就是它的内容（见 record_memory_extract_run）。
+
+        与 `pending_memory`（status='rejected'）的区别：那是**候选级**的"为什么这条没进来"，
+        本表是**运行级**的"这次抽取整体发生了什么"（含没产出任何候选、甚至没跑成的那些次），
+        两者互补、不可互相替代。本表只记运行元数据，不记候选内容（候选内容归 pending）。
+        `facts_produced` + `reject_reasons_json` 一起看才能区分"模型没给出候选"与
+        "候选都被闸门拒了"，这正是 2026-09-23 那次"看板显示 0 却看不出原因"的缺口。
+
+        幂等：run_id 自增主键，每次调用新增一行 —— 运行记录按"次"计，刻意不去重
+        （去重会把"同一张单据反复重跑"这个信号抹掉）。
+        """
+        __tablename__ = "memory_extract_runs"
+        run_id = Column(Integer, primary_key=True, autoincrement=True)
+        tenant_id = Column(String(64), default="default", index=True)
+        receipt_id = Column(Integer, index=True)
+        vendor = Column(String, default="")
+        # 主体锚点（同 vendor_memory.supplier_id；NULL = 当时没能解析出锚点，属可查的失败态）
+        supplier_id = Column(Integer, nullable=True)
+        # 触发来源：save_edited（复核保存）/ approve（入账）。消费方＝复盘时按入口分桶看
+        # "哪条路径上的抽取一直在失败"。
+        trigger = Column(String(32), default="")
+        diffs_count = Column(Integer, default=0)
+        facts_produced = Column(Integer, default=0)
+        facts_rejected = Column(Integer, default=0)
+        # 逐条丢弃理由 JSON。**失败行也非空**（见 record_memory_extract_run 的 why）：
+        # 只留 error 时，"失败"与"本来就没什么可记的"在库里长得一样。
+        reject_reasons_json = Column(Text, default="[]")
+        # 本次用的是注册表文案还是内联回退（memory_extract 的 PROMPT_SOURCE_* 常量值）。
+        # 单列的理由：回退率是 prompt 治理失效的**治理信号**，不是"这次结果有问题"，
+        # 混进 error 会让告警方向失真。
+        prompt_source = Column(String(32), default="")
+        error = Column(Text, default="")           # 空串 = 本次抽取成功执行（含 0 候选）
+        created_at = Column(String, default="")
 
     # -------------------------------------------------------------
     # 餐品管理与 FIFO 批次库存
@@ -528,7 +708,67 @@ def _make_engine():
         batch_id = Column(Integer, nullable=True)
         batch_date = Column(String, default="")
 
+    class LlmCallLogRow(Base):
+        """LLM/VLM 模型调用与输入输出全息日志表。"""
+        __tablename__ = "llm_call_log"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        receipt_id = Column(Integer, index=True, nullable=True)
+        tenant_id = Column(String(64), default="default", index=True)
+        trace_id = Column(String(64), default="")
+        leg = Column(String(32), nullable=False, default="extract")
+        attempt = Column(Integer, default=1)
+        engine = Column(String(32), default="")
+        model = Column(String(128), default="")
+        prompt_messages_json = Column(Text, default="[]")
+        raw_output = Column(Text, default="")
+        prompt_tokens = Column(Integer, default=0)
+        completion_tokens = Column(Integer, default=0)
+        cached_tokens = Column(Integer, default=0)
+        total_tokens = Column(Integer, default=0)
+        cost_hkd = Column(Float, default=0.0)
+        cost_estimated = Column(Integer, default=0)
+        cost_estimated_reason = Column(String(64), default="")
+        elapsed_ms = Column(Float, default=0.0)
+        status = Column(String(32), default="success")
+        error_msg = Column(Text, default="")
+        error_category = Column(String(32), default="")
+        created_at = Column(String(64), default="", index=True)
+
+    _LlmCallLogRow = LLMCallLogRow = LlmCallLogRow
+
     Base.metadata.create_all(_engine)
+
+    # SQLite 迁移：幂等确保 llm_call_log 表及关键索引存在
+    _apply_migration_ddl(
+        _engine,
+        """CREATE TABLE IF NOT EXISTS llm_call_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER,
+            tenant_id VARCHAR(64) DEFAULT 'default',
+            trace_id VARCHAR(64) DEFAULT '',
+            leg VARCHAR(32) NOT NULL,
+            attempt INTEGER DEFAULT 1,
+            engine VARCHAR(32) DEFAULT '',
+            model VARCHAR(128) DEFAULT '',
+            prompt_messages_json TEXT DEFAULT '[]',
+            raw_output TEXT DEFAULT '',
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            cached_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
+            cost_hkd REAL DEFAULT 0.0,
+            cost_estimated INTEGER DEFAULT 0,
+            cost_estimated_reason VARCHAR(64) DEFAULT '',
+            elapsed_ms REAL DEFAULT 0.0,
+            status VARCHAR(32) DEFAULT 'success',
+            error_msg TEXT DEFAULT '',
+            error_category VARCHAR(32) DEFAULT '',
+            created_at VARCHAR(64) DEFAULT ''
+        )"""
+    )
+    _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_receipt_id ON llm_call_log (receipt_id)")
+    _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_tenant_id ON llm_call_log (tenant_id)")
+    _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_created_at ON llm_call_log (created_at)")
 
     # SQLite 迁移：给 receipts 表补 use_grey 列（阶段 1：AI 可见性与信任）
     # R5 静默幂等：先查再执行 —— 列已存在静默跳过（零日志）；仅真实异常
@@ -550,6 +790,8 @@ def _make_engine():
         "ALTER TABLE receipts ADD COLUMN tax_amount REAL DEFAULT 0",
         "ALTER TABLE receipts ADD COLUMN adjustment_notes_json TEXT DEFAULT '[]'",
         "ALTER TABLE receipts ADD COLUMN payment_evidence TEXT DEFAULT ''",
+        # P2-1 图内隐藏文字检测结果（只告警不拦截；'{}' = 未检测/无结果）
+        "ALTER TABLE receipts ADD COLUMN image_guard_json TEXT DEFAULT '{}'",
         "ALTER TABLE receipt_items ADD COLUMN is_void INTEGER DEFAULT 0",
         "ALTER TABLE receipt_items ADD COLUMN actual_qty REAL",
         # Gap E1 / T7：字段级证据列（可空；旧行无证据为 NULL，向后兼容）
@@ -580,6 +822,40 @@ def _make_engine():
     ):
         _apply_migration_ddl(_engine, _ddl)
 
+    # SQLite 迁移（D16/D17 安全加固第二批）：
+    # - payments / departments 补 tenant_id 列（与业务主表同口径：存量行归 default）
+    # - receipts 补 supplier_id 列（供应商结构关联；历史行由下方幂等回填补齐）
+    # 幂等：先查再执行（列/索引已存在静默跳过），仅 ADD COLUMN / CREATE INDEX，
+    # 禁重建表。
+    for _ddl in (
+        "ALTER TABLE payments ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+        "ALTER TABLE departments ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+        "ALTER TABLE receipts ADD COLUMN supplier_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_payments_tenant_id ON payments (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_departments_tenant_id ON departments (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_receipts_supplier_id ON receipts (supplier_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # D16：payments / departments 存量行 tenant_id 回填 'default'。
+    # ADD COLUMN ... DEFAULT 'default' 已让存量行逻辑返回 'default'；此处再显式
+    # UPDATE 兜底（覆盖历史上列存在但值为 NULL/'' 的物理形态）。改写后不再命中
+    # 判据 —— 二次执行为 no-op（幂等）。
+    for _tbl_tid in ("payments", "departments"):
+        try:
+            from sqlalchemy import text as _sa_text_tid
+            with _engine.connect() as _c:
+                _c.execute(_sa_text_tid(
+                    f"UPDATE {_tbl_tid} SET tenant_id = 'default' "
+                    "WHERE tenant_id IS NULL OR tenant_id = ''"))
+                _c.commit()
+        except Exception as _e:
+            logger.warning(
+                "[migrate] %s tenant_id backfill skipped: %s", _tbl_tid, _e)
+
+    # D17：receipts.supplier_id 幂等回填（精确名匹配 -> 归一 key 匹配 -> 保持 NULL）。
+    _backfill_receipt_supplier_ids(_engine)
+
     # SQLite 迁移（Gap B1 记忆治理元数据，T3）：vendor_memory 追加 10 列。
     # 幂等写法与上同（先查再执行，列已存在静默跳过零日志）；仅 ADD COLUMN，
     # 禁重建表。已知折中：存量库物理主键无法变更，memory_id 由下方回填补齐。
@@ -594,6 +870,86 @@ def _make_engine():
         "ALTER TABLE vendor_memory ADD COLUMN last_hit_at TEXT DEFAULT ''",
         "ALTER TABLE vendor_memory ADD COLUMN decay_score REAL DEFAULT 1.0",
         "ALTER TABLE vendor_memory ADD COLUMN status VARCHAR(16) DEFAULT 'active'",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（P1-T3 冲突治理）：vendor_memory 追加 3 列。
+    # 幂等写法与上同（先查再执行，列已存在静默跳过零日志）；仅 ADD COLUMN，禁重建表。
+    # 为什么单独一个迁移块：与上方 B1 那 10 列不是同一批变更（语义不同、回滚粒度
+    # 不同），合并写会让"这一列是哪一批加的"变得不可考。
+    for _ddl in (
+        # 结构化事实的键；遗留行为 NULL（NULL 不参与 supersede 归并）
+        "ALTER TABLE vendor_memory ADD COLUMN fact_key TEXT",
+        # 被哪条新记忆取代（旧行保留以存历史）
+        "ALTER TABLE vendor_memory ADD COLUMN superseded_by TEXT",
+        # 本条记忆的失效时刻（ISO）；空串 = 无显式失效期
+        "ALTER TABLE vendor_memory ADD COLUMN valid_to TEXT DEFAULT ''",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（P2-T1 supplier_id 锚点）：vendor_memory 追加 1 列 + 索引。
+    # 幂等写法与上同（先查再执行，列已存在静默跳过零日志）；仅 ADD COLUMN /
+    # CREATE INDEX，禁重建表。
+    # 语义：supplier_id 指向 suppliers.id；NULL = 未锚定（读侧回退按 vendor 名匹配）。
+    # **为什么回填不在这里做**：列是结构变更、回填是数据变更，后者必须显式授权
+    #   （--apply）才落笔，否则任何一次 import 都会静默改写存量记忆归属。回填走
+    #   demo/scripts/backfill_vendor_memory_supplier.py（缺省预演、--apply 才写），
+    #   且与新写入侧共用同一解析实现 db.resolve_supplier_id（防「同一根因两份实现」）。
+    for _ddl in (
+        "ALTER TABLE vendor_memory ADD COLUMN supplier_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_vendor_memory_supplier_id"
+        " ON vendor_memory (supplier_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（P3-T1 结构化事实载荷）：vendor_memory 追加 5 列。
+    # 幂等写法与上同（先查再执行，列已存在静默跳过零日志）；仅 ADD COLUMN，禁重建表。
+    # **刻意不带 DEFAULT**：列形态必须与 create_all 建出的新库一致 —— 带 DEFAULT 会让
+    #   同一行在"ALTER 出来的老库"与"新建的库"里拿到不同的读侧结果（遗留自由文本行走
+    #   读侧 MemoryFact.from_row 时，NULL → 无字段，而 1.0/'' → 看起来像一条事实）。
+    # 本块与 `_rebuild_legacy_vendor_memory` 的 target_cols 是同一份 schema 的两处实现，
+    #   加列必须两处同时登记（漏一处＝重建后的库缺列，且 ALTER 不会补第二次）。
+    for _ddl in (
+        "ALTER TABLE vendor_memory ADD COLUMN fact_kind VARCHAR(32)",
+        "ALTER TABLE vendor_memory ADD COLUMN fact_value TEXT",
+        "ALTER TABLE vendor_memory ADD COLUMN trust_level REAL",
+        "ALTER TABLE vendor_memory ADD COLUMN valid_from TEXT",
+        "ALTER TABLE vendor_memory ADD COLUMN written_by VARCHAR",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（P2-T2 供应商×SKU 别名，C4）：vendor_sku_alias 新表 + 唯一索引。
+    # 幂等 CREATE TABLE IF NOT EXISTS（与 eval_candidate 同款兜底，覆盖裸库场景；
+    # 新库由上方 create_all 按 ORM 声明建出等价 schema）；仅新建表/索引，禁重建表。
+    # **为什么"唯一索引"是这张表的语义要件而非优化**：读取侧要按
+    # (tenant_id, supplier_id, raw_name) 确定性地命中一条，没有唯一约束时重复登记
+    # 会留下两条指向不同 SKU 的别名，"同一写法解析到哪个 SKU"就成了不确定行为。
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS vendor_sku_alias ("
+        " id INTEGER NOT NULL PRIMARY KEY,"
+        " tenant_id VARCHAR(64) DEFAULT 'default',"
+        " supplier_id INTEGER,"
+        " sku_id INTEGER,"
+        " raw_name TEXT DEFAULT '',"
+        " canonical_name TEXT DEFAULT '',"
+        " unit VARCHAR DEFAULT '',"
+        " hit_count INTEGER DEFAULT 0,"
+        " valid_from TEXT DEFAULT '',"
+        " valid_to TEXT DEFAULT '',"
+        " status VARCHAR(16) DEFAULT 'active',"
+        " source_ref TEXT DEFAULT '',"
+        " updated_at TEXT DEFAULT '')",
+    )
+    for _ddl in (
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_vendor_sku_alias_key"
+        " ON vendor_sku_alias (tenant_id, supplier_id, raw_name)",
+        "CREATE INDEX IF NOT EXISTS ix_vendor_sku_alias_supplier_id"
+        " ON vendor_sku_alias (supplier_id)",
+        "CREATE INDEX IF NOT EXISTS ix_vendor_sku_alias_sku_id"
+        " ON vendor_sku_alias (sku_id)",
+        "CREATE INDEX IF NOT EXISTS ix_vendor_sku_alias_tenant_id"
+        " ON vendor_sku_alias (tenant_id)",
     ):
         _apply_migration_ddl(_engine, _ddl)
 
@@ -639,8 +995,26 @@ def _make_engine():
         " status VARCHAR(16) DEFAULT 'pending',"
         " created_at TEXT DEFAULT '',"
         " reviewed_by VARCHAR,"
-        " reviewed_at TEXT)",
+        " reviewed_at TEXT,"
+        # P3-T1（K2）：字段级 diff 载荷 + 拒绝理由（裸库兜底建表，与 ORM 声明一致）
+        " supplier_id INTEGER,"
+        " fact_kind VARCHAR(32),"
+        " fact_key TEXT,"
+        " fact_value TEXT,"
+        " reject_reason TEXT)",
     )
+    # SQLite 迁移（P3-T1 字段级 diff 载荷）：pending_memory 追加 5 列。
+    # 幂等写法与上同（先查再执行，列已存在静默跳过零日志）；仅 ADD COLUMN，禁重建表。
+    # **刻意不带 DEFAULT**：遗留队列行必须保持 NULL = "无字段级载荷"，否则审核界面
+    #   会把空字符串当成一个真实的字段值渲染出来（伪造 diff）。
+    for _ddl in (
+        "ALTER TABLE pending_memory ADD COLUMN supplier_id INTEGER",
+        "ALTER TABLE pending_memory ADD COLUMN fact_kind VARCHAR(32)",
+        "ALTER TABLE pending_memory ADD COLUMN fact_key TEXT",
+        "ALTER TABLE pending_memory ADD COLUMN fact_value TEXT",
+        "ALTER TABLE pending_memory ADD COLUMN reject_reason TEXT",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
     for _ddl in (
         "CREATE INDEX IF NOT EXISTS idx_pending_memory_tenant_id"
         " ON pending_memory (tenant_id)",
@@ -648,6 +1022,38 @@ def _make_engine():
         " ON pending_memory (status)",
         "CREATE INDEX IF NOT EXISTS idx_pending_memory_vendor"
         " ON pending_memory (vendor)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
+    # SQLite 迁移（P3-T4 可观测与可重跑 / B6）：memory_extract_runs 新表 + 索引。
+    # 幂等 CREATE TABLE IF NOT EXISTS 走既有迁移块（与 pending_memory / eval_candidate
+    # 同款兜底，覆盖裸库场景）；新库由上方 create_all 按 ORM 声明建出等价 schema；
+    # 仅新建表/索引，禁重建表。表结构含 run_id 自增主键与 tenant_id 过滤列，二者的
+    # 消费方分别是 `list_memory_extract_runs` 的倒序分页与租户隔离。
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS memory_extract_runs ("
+        " run_id INTEGER NOT NULL PRIMARY KEY,"
+        " tenant_id VARCHAR(64) DEFAULT 'default',"
+        " receipt_id INTEGER,"
+        " vendor VARCHAR DEFAULT '',"
+        " supplier_id INTEGER,"
+        " trigger VARCHAR(32) DEFAULT '',"
+        " diffs_count INTEGER DEFAULT 0,"
+        " facts_produced INTEGER DEFAULT 0,"
+        " facts_rejected INTEGER DEFAULT 0,"
+        " reject_reasons_json TEXT DEFAULT '[]',"
+        " prompt_source VARCHAR(32) DEFAULT '',"
+        " error TEXT DEFAULT '',"
+        " created_at TEXT DEFAULT '')",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS idx_memory_extract_runs_tenant_id"
+        " ON memory_extract_runs (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS idx_memory_extract_runs_receipt_id"
+        " ON memory_extract_runs (receipt_id)",
+        "CREATE INDEX IF NOT EXISTS idx_memory_extract_runs_created_at"
+        " ON memory_extract_runs (created_at)",
     ):
         _apply_migration_ddl(_engine, _ddl)
 
@@ -765,7 +1171,8 @@ def _make_engine():
         logger.warning("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
 
     # -----------------------------------------------------------------
-    # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / dish_ingredients）：
+    # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / suppliers /
+    # dish_ingredients）：
     # SQLite 无法 ALTER 主键/唯一约束，检测到旧物理形态时做数据保全式标准
     # 重建（CREATE 新表 → 按列拷贝 → 校验行数 → DROP 旧表 → RENAME，最后补索引）。
     # 铁律：新形态库零动作；拷贝保全全部列（缺失列按默认值填充）；失败只告警
@@ -773,11 +1180,13 @@ def _make_engine():
     # -----------------------------------------------------------------
     _rebuild_legacy_vendor_memory(_engine)
     _rebuild_legacy_skus_name_unique(_engine)
+    _rebuild_legacy_suppliers_name_unique(_engine)
     _rebuild_legacy_dish_ingredients(_engine)
 
     _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow = ReceiptRow, ItemRow, SkuRow, StockLogRow
     _SupplierRow, _DeptRow, _PaymentRow = SupplierRow, DeptRow, PaymentRow
     _VendorMemoryRow, _AppSettingRow = VendorMemoryRow, AppSettingRow
+    _VendorSkuAliasRow = VendorSkuAliasRow
     _DecisionLogRow = DecisionLogRow
     _SnapshotRow = SnapshotRow
     _UserEventRow = UserEventRow
@@ -785,6 +1194,7 @@ def _make_engine():
     _ExperimentAssignRow = ExperimentAssignRow
     _ReceiptFeedbackRow = ReceiptFeedbackRow
     _PendingMemoryRow = PendingMemoryRow
+    _MemoryExtractRunRow = MemoryExtractRunRow
     _EvalCandidateRow = EvalCandidateRow
     _GuardrailEventRow = GuardrailEventRow
     _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
@@ -795,7 +1205,7 @@ def _make_engine():
 
 
 # -----------------------------------------------------------------
-# 遗留物理形态检测与数据保全式重建（仅限 vendor_memory / skus，单独授权）。
+# 遗留物理形态检测与数据保全式重建（仅限 vendor_memory / skus / suppliers，单独授权）。
 # 通用纪律：
 # - 仅当检测到旧物理形态才动手，新形态库零动作零异常（幂等，二次 import 零动作）
 # - 顺序：CREATE 新表 → 按列拷贝（缺失列默认值/NULL memory_id 用 Python UUID 回填）
@@ -915,6 +1325,10 @@ def _rebuild_legacy_vendor_memory(engine):
                 return  # 表不存在（全新库由 create_all 建出正确形态）
             if _table_pk_columns(conn, table) == ["memory_id"]:
                 return  # 已是新形态：零动作
+            # 注意：这里的 decay_score 缺省仍是 1.0，**不是** memory_initial_decay_score。
+            # 它只服务「旧物理形态重建时给缺失列填空」，填的是既有历史行 —— 历史行降分
+            # 等于在迁移里悄悄改写信任分；新写入行的起始分由 upsert_vendor_memory 决定
+            # （P1-T2 起 = memory_initial_decay_score）。两处口径不同是刻意的，非漏改。
             target_cols = [
                 ("memory_id", None), ("vendor", None), ("tenant_id", "'default'"),
                 ("notes", "''"), ("sample", "''"), ("version", "1"),
@@ -922,6 +1336,17 @@ def _rebuild_legacy_vendor_memory(engine):
                 ("created_at", "''"), ("updated_at", "''"),
                 ("hit_count", "0"), ("last_hit_at", "''"),
                 ("decay_score", "1.0"), ("status", "'active'"),
+                # P1-T3 三列必须在这里同步登记：重建分支从 target_cols 建新表，
+                # 而 ALTER 迁移块跑在重建之前 —— 漏登记就等于"重建后的库缺列"，
+                # 且 ALTER 不会补第二次（本仓高发的「同一根因多份实现只改一份」）。
+                ("fact_key", None), ("superseded_by", None), ("valid_to", "''"),
+                # P2-T1 同一条纪律：supplier_id 也必须在这里登记（本函数是
+                # vendor_memory schema 的第二份实现）。
+                ("supplier_id", None),
+                # P3-T1 同一条纪律：结构化事实载荷五列同样必须登记，否则"重建过的库
+                # 缺列"（而 ALTER 块跑在重建之前，不会补第二次）。
+                ("fact_kind", None), ("fact_value", None), ("trust_level", None),
+                ("valid_from", None), ("written_by", None),
             ]
             conn.execute(_t(f"DROP TABLE IF EXISTS {tmp}"))
             conn.execute(_t(
@@ -931,6 +1356,9 @@ def _rebuild_legacy_vendor_memory(engine):
                 " version INTEGER, source_kind VARCHAR(32), source_ref TEXT,"
                 " created_at TEXT, updated_at TEXT, hit_count INTEGER,"
                 " last_hit_at TEXT, decay_score FLOAT, status VARCHAR(16),"
+                " fact_key TEXT, superseded_by VARCHAR, valid_to TEXT,"
+                " supplier_id INTEGER, fact_kind VARCHAR(32), fact_value TEXT,"
+                " trust_level FLOAT, valid_from TEXT, written_by VARCHAR,"
                 " PRIMARY KEY (memory_id))"
             ))
             col_sql = ", ".join(c for c, _d in target_cols)
@@ -948,7 +1376,13 @@ def _rebuild_legacy_vendor_memory(engine):
                         rec[col] = {"tenant_id": "default", "version": 1,
                                     "source_kind": "manual", "source_ref": "[]",
                                     "hit_count": 0, "decay_score": 1.0,
-                                    "status": "active"}.get(col, "")
+                                    "status": "active",
+                                    # P3-T1 载荷五列填 None（NULL）而不是 ""：
+                                    # 与 ALTER 路径对既有行的处理保持一致 ——
+                                    # "" 在读侧是"有值且为空"，NULL 是"没有该字段"。
+                                    "fact_kind": None, "fact_value": None,
+                                    "trust_level": None, "valid_from": None,
+                                    "written_by": None}.get(col, "")
                 if rec.get("memory_id") is None or str(rec.get("memory_id") or "") == "":
                     rec["memory_id"] = uuid.uuid4().hex
                 payload.append(rec)
@@ -971,6 +1405,8 @@ def _rebuild_legacy_vendor_memory(engine):
             "CREATE INDEX IF NOT EXISTS idx_vendor_memory_tenant_id ON vendor_memory (tenant_id)",
             "CREATE INDEX IF NOT EXISTS ix_vendor_memory_vendor ON vendor_memory (vendor)",
             "CREATE INDEX IF NOT EXISTS ix_vendor_memory_tenant_id ON vendor_memory (tenant_id)",
+            "CREATE INDEX IF NOT EXISTS idx_vendor_memory_supplier_id"
+            " ON vendor_memory (supplier_id)",
         ):
             try:
                 with engine.begin() as conn:
@@ -1047,6 +1483,73 @@ def _rebuild_legacy_skus_name_unique(engine):
         _drop_rebuild_tmp_table(engine, tmp)
 
 
+def _rebuild_legacy_suppliers_name_unique(engine):
+    """既有问题 #2（C）：suppliers.name 全局 UNIQUE 约束改按租户命名空间。
+
+    旧形态（建表 SQL 含 name UNIQUE 列约束或存在 name 上的唯一索引，
+    如 create_all 生成的 ix_suppliers_name UNIQUE）上跨租户同名供应商会
+    IntegrityError。检测到 name 唯一索引即数据保全式重建为非唯一形态；
+    create_supplier 的 scoped 重名检查成为唯一防重线（同租户重名仍被拒，
+    跨租户允许同名 —— 与 skus.name 的既有修法同口径）。
+    """
+    table, tmp = "suppliers", "suppliers__rebuild"
+    try:
+        from sqlalchemy import text as _t
+        with engine.begin() as conn:
+            cols = _table_columns(conn, table)
+            if not cols:
+                return  # 表不存在（全新库由 create_all 建出正确形态）
+            has_unique_name = any(c == ["name"] for c in
+                                  _table_unique_index_columns(conn, table))
+            if not has_unique_name:
+                return  # 已是新形态：零动作
+            target_cols = [
+                ("id", None), ("name", "''"), ("supplier_code", "''"),
+                ("active", "1"), ("payment_terms_days", None),
+                ("settlement_pref", "''"), ("contact_phone", "''"),
+                ("notes", "''"), ("tenant_id", "'default'"),
+            ]
+            conn.execute(_t(f"DROP TABLE IF EXISTS {tmp}"))
+            conn.execute(_t(
+                f"CREATE TABLE {tmp} ("
+                " id INTEGER NOT NULL, name VARCHAR, supplier_code VARCHAR,"
+                " active INTEGER, payment_terms_days INTEGER,"
+                " settlement_pref VARCHAR, contact_phone VARCHAR,"
+                " notes VARCHAR, tenant_id VARCHAR(64), PRIMARY KEY (id))"
+            ))
+            select_exprs = []
+            for col, default in target_cols:
+                select_exprs.append(f'"{col}"' if col in cols else default)
+            conn.execute(_t(
+                f"INSERT INTO {tmp} ({', '.join(c for c, _d in target_cols)}) "
+                f"SELECT {', '.join(select_exprs)} FROM {table}"
+            ))
+            new_cnt = conn.execute(_t(f"SELECT COUNT(*) FROM {tmp}")).scalar()
+            old_cnt = conn.execute(_t(f"SELECT COUNT(*) FROM {table}")).scalar()
+            if int(new_cnt or 0) != int(old_cnt or 0):
+                raise RuntimeError(
+                    f"row count mismatch old={old_cnt} new={new_cnt}")
+            # 拷贝完成且校验通过后才允许 drop 旧表
+            conn.execute(_t(f"DROP TABLE {table}"))
+            conn.execute(_t(f"ALTER TABLE {tmp} RENAME TO {table}"))
+        logger.warning(
+            "[migrate] suppliers legacy global UNIQUE(name) rebuilt to "
+            "per-tenant namespace (rows=%s)", new_cnt)
+        for ddl in (
+            "CREATE INDEX IF NOT EXISTS ix_suppliers_name ON suppliers (name)",
+            "CREATE INDEX IF NOT EXISTS idx_suppliers_tenant_id"
+            " ON suppliers (tenant_id)",
+        ):
+            try:
+                with engine.begin() as conn:
+                    conn.execute(_t(ddl))
+            except Exception as e:
+                logger.warning("[migrate] %s skipped: %s", ddl, e)
+    except Exception as e:
+        logger.warning("[migrate] suppliers legacy rebuild skipped: %s", e)
+        _drop_rebuild_tmp_table(engine, tmp)
+
+
 def _rebuild_legacy_dish_ingredients(engine):
     """WS6：dish_ingredients 旧形态物理重建（单层 sku → 支持 sku/dish 两级组件）。
 
@@ -1120,6 +1623,75 @@ def _rebuild_legacy_dish_ingredients(engine):
     except Exception as e:
         logger.warning("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+
+
+def _backfill_receipt_supplier_ids(engine):
+    """D17：receipts.supplier_id 幂等回填（结构关联修复，用户决策）。
+
+    口径（三步，顺序固定）：
+    1. 先按 receipts.supplier_name 与 suppliers.name **精确匹配**填 supplier_id；
+    2. 剩余未匹配的，按 canonical_supplier_key(receipts.supplier_name) 与档案名
+       归一 key 匹配填；
+    3. 仍匹配不到就保持 NULL —— **绝不凭空创建供应商档案**。
+    空 supplier_name（NULL / ''）不参与任何匹配（避免 345 张空名单被误挂）。
+
+    租户口径：仅在同一租户内匹配（tenant_id 为空按 default 处理），避免 A 租户
+    单据被挂到 B 租户同名档案上（跨租户错挂）。
+
+    幂等：仅处理 supplier_id IS NULL 且在本次匹配到档案的行；改写后即脱离待处理
+    集合，二次执行为 no-op（零行更新）。表/列缺失（裸库）直接静默返回。
+    """
+    try:
+        from sqlalchemy import text as _t
+        from app.services.supplier_normalizer import canonical_supplier_key
+        with engine.begin() as conn:
+            rcols = _table_columns(conn, "receipts")
+            scols = _table_columns(conn, "suppliers")
+            if (not rcols or "supplier_id" not in rcols
+                    or "supplier_name" not in rcols):
+                return
+            if not scols or "id" not in scols or "name" not in scols:
+                return
+            same_tenant = (
+                "COALESCE(NULLIF(s.tenant_id, ''), 'default') = "
+                "COALESCE(NULLIF(receipts.tenant_id, ''), 'default')")
+            # 步 1：精确名匹配（同租户内；档案名物理唯一）
+            conn.execute(_t(
+                "UPDATE receipts SET supplier_id = ("
+                "  SELECT s.id FROM suppliers s "
+                "  WHERE s.name = receipts.supplier_name AND " + same_tenant +
+                ") WHERE supplier_id IS NULL "
+                "  AND supplier_name IS NOT NULL AND supplier_name <> '' "
+                "  AND EXISTS (SELECT 1 FROM suppliers s "
+                "              WHERE s.name = receipts.supplier_name AND "
+                + same_tenant + ")"))
+            # 步 2：归一 key 匹配（剩余未匹配行）
+            canon_map = {}
+            for sid, sname, stid in conn.execute(_t(
+                    "SELECT id, name, tenant_id FROM suppliers ORDER BY id")).fetchall():
+                key = canonical_supplier_key(sname)
+                tkey = (str(stid or "").strip() or "default", key)
+                if key and tkey not in canon_map:
+                    canon_map[tkey] = sid
+            if canon_map:
+                pending = conn.execute(_t(
+                    "SELECT id, supplier_name, tenant_id FROM receipts "
+                    "WHERE supplier_id IS NULL "
+                    "  AND supplier_name IS NOT NULL AND supplier_name <> ''"
+                )).fetchall()
+                updates = []
+                for rid, rname, rtid in pending:
+                    key = canonical_supplier_key(rname)
+                    sid = canon_map.get(
+                        (str(rtid or "").strip() or "default", key))
+                    if sid is not None:
+                        updates.append({"sid": sid, "rid": rid})
+                if updates:
+                    conn.execute(_t(
+                        "UPDATE receipts SET supplier_id = :sid WHERE id = :rid"),
+                        updates)
+    except Exception as e:
+        logger.warning("[migrate] receipts.supplier_id backfill skipped: %s", e)
 
 
 _make_engine()
@@ -1859,6 +2431,13 @@ def delete_sku(sku_id, tenant_id=None):
             .count()
         )
         if log_count == 0 and item_count == 0 and bom_count == 0:
+            # P2-T2：别名行也是引用方 —— 物理删除前先级联清掉指向它的别名
+            #（否则留下指向不存在 sku_id 的死链；读取侧虽会因取不到 SKU 而回落，
+            #  但表里会永久积累无效行，且「别名命中率」这类度量会被污染）。
+            # 别名**不**计入"存在引用则只停用"的判据：别名是 SKU 的派生索引，
+            # 不是业务引用，删掉 SKU 时一并退休是正确语义。
+            s.query(_VendorSkuAliasRow).filter(
+                _VendorSkuAliasRow.sku_id == int(sku_id)).delete(synchronize_session=False)
             s.delete(row)
             s.commit()
             return True, "DELETED"
@@ -1868,6 +2447,31 @@ def delete_sku(sku_id, tenant_id=None):
             return True, "DEACTIVATED"
     finally:
         s.close()
+
+
+def _repoint_vendor_sku_alias(session, secondary_ids, primary_id):
+    """P2-T2 钩子 C：把指向被合并 SKU 的别名改指到主 SKU。
+
+    why 必须做：别名是「这个写法 → 这个 SKU」的直接映射。合并后若仍指向副 SKU，
+    读取侧（`find_vendor_sku_alias`）拿到的是一条已停用（active=0）的死链 → 该供应商
+    历史上沉淀的全部写法当场作废，匹配率白白回退（典型的"修了 A 漏了 B"）。
+
+    这里可以直接批量 UPDATE，不必逐行判重：唯一键 (tenant_id, supplier_id, raw_name)
+    保证「同一写法 + 同一供应商只有一行」，副侧不可能撞上主侧已有的同键行。若将来
+    有写入方绕过唯一键（表外写入），事务会**显式失败**而不是静默丢行 —— 这正是要的
+    失败姿态（静默丢别名＝历史写法无声蒸发）。
+
+    **两个合并入口（merge_skus / deduplicate_skus_by_canonical）共用本函数** ——
+    本仓高发的「同一根因多份实现只改一份」在这里就表现为：只给 merge_skus 加联动，
+    自动去重的启动自愈（main.py 每次启动都调 deduplicate_skus_by_canonical）仍会把
+    别名留在死 SKU 上。返回被改指的别名行数（供调用方留痕与度量）。
+    """
+    sec_ids = [int(x) for x in (secondary_ids or [])]
+    if not sec_ids:
+        return 0
+    return session.query(_VendorSkuAliasRow).filter(
+        _VendorSkuAliasRow.sku_id.in_(sec_ids)
+    ).update({_VendorSkuAliasRow.sku_id: int(primary_id)}, synchronize_session=False)
 
 
 def merge_skus(primary_sku_id, secondary_sku_ids, tenant_id=None):
@@ -1914,14 +2518,241 @@ def merge_skus(primary_sku_id, secondary_sku_ids, tenant_id=None):
             sec.active = 0
             sec.current_stock = 0.0
 
+        # P2-T2 钩子 C：别名改指到主 SKU（必须在停用副 SKU 之前/同时完成，
+        # 否则别名指向 active=0 的副 SKU，读取侧判为死链直接不命中）
+        alias_moved = _repoint_vendor_sku_alias(s, sec_ids, primary.id)
+
         s.commit()
         return {
             "primary_sku_id": primary.id,
             "primary_name": primary.name,
             "merged_sku_ids": sec_ids,
             "merged_names": secondary_names,
-            "new_stock": primary.current_stock
+            "new_stock": primary.current_stock,
+            "alias_repointed": alias_moved,
         }, None
+    finally:
+        s.close()
+
+
+# 归一通道单次最多考察的候选数。canonical_name 没有独立索引（唯一键是 raw_name），
+# 同一核心词的写法数量理论上无上限；而这是热路径（每张单据每条明细各一次匹配），
+# 故设上界。候选按 hit_count 降序取，被截掉的是"用得最少"的那些先验。
+_ALIAS_CANONICAL_CANDIDATE_LIMIT = 20
+
+
+def _alias_row_usable_sku(session, row, tenant_id):
+    """判定一条别名行当前是否可用：可用返回其 SKU 行，不可用返回 None。
+
+    不可用的三种形态（必须跳过，且**绝不能返回给调用方** —— 返回死链等于把已合并/
+    已过期的先验当成现役事实）：
+    1. `status != active`（人工置停，或更新语义里被取代的那条）；
+    2. `valid_to` 非空且已过期（TTL 到点不再召回）；
+    3. 指向不存在 / 跨租户 / 已停用（active=0，典型是合并后留下的副 SKU）的 SKU。
+
+    why 抽成函数：精确写法通道与归一通道要做**同一套**判定。P2a 审核 M5 的根因正是
+    判定只做在第一条通道上就早退 —— 同一条判据散成两处实现，就是本仓高发的
+    "同一根因多份实现只改一份"。
+    """
+    if row is None:
+        return None
+    if (row.status or "active") != "active":
+        return None
+    vt = _parse_iso_dt(row.valid_to or "")
+    if vt is not None and datetime.now() > vt:
+        return None
+    sku = session.get(_SkuRow, int(row.sku_id)) if row.sku_id else None
+    if sku is None or not _tenant_ok(sku, tenant_id) or (sku.active or 0) != 1:
+        return None
+    return sku
+
+
+def find_vendor_sku_alias(raw_name, tenant_id=None, supplier_id=None, canonical_name=None):
+    """P2-T2 钩子 A：按（租户, 供应商）查历史别名 → 返回命中的 SKU 行（未命中 None）。
+
+    语义：本表记录「该供应商用这个写法指这个 SKU」。同一个写法（港式手写单里的
+    缩写，如「黑牛」）在不同供应商下含义不同 —— 这正是别名必须带 supplier_id
+    维度的理由，故 **supplier_id 为空时直接返回 None**（无从判定供应商维度时回落
+    既有全局匹配：不猜、也不返回全量，本仓已出现 3 次"找不到就退回全量"的越权形态）。
+
+    匹配顺序（固定，先精确后归一，**逐条判可用性、不早退**）：
+    1. `raw_name` 精确相等（与解析时 item["name"] 同口径，最高置信）；
+    2. `canonical_name` 相等（核心词归一，覆盖繁简/规格/包装前缀差异）。
+    候选只要**不可用就换下一条**：精确那条若是 retired / 已过期 / 指向被合并的死 SKU，
+    早退会把整条别名能力当场作废 —— 同 canonical 明明还有 active 候选，本该命中却
+    回落到全局匹配（P2a 审核 M5：早退压低了召回）。两条通道都无可用的才返回 None。
+    命中即累加 `hit_count`（度量"这条别名是否真在被用"，也是后续清理/排序的依据）；
+    被跳过的候选**不累加** —— 计数必须反映"真的被用上了"。
+
+    返回 SKU 行而不是别名行：调用方（`receipt_utils._match_sku`）还要读
+    `sku.last_unit_price` 做价格异动比对，返回别名行会多一次 `get_sku` 往返。
+
+    不命中 / 别名指向已停用 SKU（被合并掉的死链）/ 过期 / 表不存在等任何异常，
+    一律返回 None 并留 warning：别名是**增量先验**，它故障时调用方必须能安然回落
+    既有全局匹配 —— 不能让"别名表出问题"变成"识别结果没有 SKU"。这里刻意不让
+    异常上抛，就是为了不重演本仓"异常被静默吞掉导致功能静默失效"之外的另一种
+    形态（主链路被辅助能力拖垮）；warning 保证它有观测性。
+    """
+    raw = str(raw_name or "").strip()
+    if not raw or supplier_id is None or not str(supplier_id).strip():
+        return None
+    canon = str(canonical_name or "").strip()
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorSkuAliasRow), _VendorSkuAliasRow, tenant_id).filter(
+            _VendorSkuAliasRow.supplier_id == int(supplier_id))
+        # 通道一：精确写法。唯一键 (tenant_id, supplier_id, raw_name) 保证同一写法
+        # 只有一行，取一条即可。
+        exact = q.filter(_VendorSkuAliasRow.raw_name == raw).order_by(
+            _VendorSkuAliasRow.id).first()
+        hit_row, sku = exact, _alias_row_usable_sku(s, exact, tenant_id)
+        # 通道二：核心词归一。**精确通道没给出可用命中就继续找**（不早退）。
+        # 这里不再用 `canon != raw` 短路：canonical 与 raw 相等是常见形态（干净写法
+        # 归一后不变），短路会让"精确行 retired、同 canonical 另有 active 候选"这种
+        # 情形仍然召回丢失 —— 短路只是省一次查询，代价是把上面刚修好的洞留一半。
+        # 候选多条（同一核心词的多种写法）→ 按 hit_count 降序、id 升序逐个判可用性：
+        # 用得最多的先验优先，同频次取最早登记的那条（确定性）。
+        if sku is None and canon:
+            exact_id = exact.id if exact is not None else None
+            for cand in q.filter(_VendorSkuAliasRow.canonical_name == canon).order_by(
+                    _VendorSkuAliasRow.hit_count.desc(),
+                    _VendorSkuAliasRow.id).limit(
+                    _ALIAS_CANONICAL_CANDIDATE_LIMIT).all():
+                if cand.id == exact_id:
+                    continue    # 已在精确通道判过不可用，不重复判定
+                got = _alias_row_usable_sku(s, cand, tenant_id)
+                if got is not None:
+                    hit_row, sku = cand, got
+                    break
+        if sku is None:
+            # 两条通道都没有可用候选 → None（调用方回落全局匹配）。已停用/过期/
+            # 指向死 SKU 的候选一律不返回：**安全性优先于召回**。
+            return None
+        hit_row.hit_count = (hit_row.hit_count or 0) + 1
+        hit_row.updated_at = now_iso()
+        s.commit()
+        return sku
+    except Exception as e:
+        logger.warning("[sku_alias] find_vendor_sku_alias failed (supplier=%s raw=%s): %s",
+                       supplier_id, raw, e)
+        return None
+    finally:
+        s.close()
+
+
+def upsert_vendor_sku_alias(supplier_id, sku_id, raw_name, canonical_name="", unit="",
+                            tenant_id="default", source_ref="", protect_live_target=False):
+    """P2-T2 钩子 B/C 的写入实现：登记 / 刷新「供应商 × 写法 → SKU」别名。
+
+    幂等键 = (tenant_id, supplier_id, raw_name)：一个写法在同一供应商下只能指向一个
+    SKU（读取侧靠它才能确定命中哪一条）；`unit` 只作记录、不进唯一键，避免同一写法
+    换单位后出现两条都参与匹配、命中结果不确定。
+
+    已存在时：SKU 不同 → 改指（重新匹配/合并场景）；相同 → 只刷新 canonical/unit，
+    `hit_count` 保留（它是"这条别名被用了几次"的累计度量，不能被登记动作清零）。
+
+    `protect_live_target=True` 时的额外保护（P2fix-F1）：既有别名指向一个**仍然存活**
+    （存在、同租户、active=1）且**非本次新建**的 SKU 时，不把指向改到本次传入的
+    sku_id。why：调用方（`services/inventory.apply_receipt_to_inventory`）在"没匹配上
+    就自动新建 SKU"的分支里传 True —— 若入账路径自己刚建了一个重复 SKU 又想覆盖既有
+    先验，这条别名就会被翻转指向重复项，下次解析反而落到重复 SKU（正是 P2-T2 要消灭
+    的 SKU 爆炸，且是"后跑的实现推翻前一套成果"的自我推翻形态）。既有目标已死
+    （被合并/跨租户/删除）时不保护 —— 那种情况下改指才是修复。默认 False 保持既有
+    调用方（回填脚本、合并联动、测试）的改指语义不变。
+
+    返回 `(alias_id, reason)`：
+    - `(id, None)` 成功；
+    - `(id, "TARGET_PROTECTED")` 命中上述保护：行未改指（既有指向保留），id 仍是该行
+      —— 返回原因而非静默返回成功，调用方才能把"入账与别名先验分歧"记进告警；
+    - `(None, "NO_SUPPLIER")` supplier_id 为空 —— 无供应商维度，登记了也没人消费
+      （读取侧要求 supplier_id），故直接跳过；调用方按跳过计数并汇总留痕；
+    - `(None, "INVALID_SKU")` sku_id 非法或在库中不存在/跨租户/已停用 —— 防"别名
+      指向死 SKU"（这正是 P2-T2 要消灭的形态）；
+    - `(None, "INVALID_RAW_NAME")` 写法为空；
+    - `(None, "CONFLICT")` 唯一键竞争（并发插入），本次未写入。
+    四种失败都返回原因而非静默 pass —— 本仓高发的"异常被静默吞掉导致功能静默失效"
+    在这里表现为别名一条都登记不上却毫无痕迹。
+    """
+    raw = str(raw_name or "").strip()
+    if not raw:
+        return None, "INVALID_RAW_NAME"
+    if supplier_id is None or not str(supplier_id).strip():
+        return None, "NO_SUPPLIER"
+    try:
+        supplier_id_int, sku_id_int = int(supplier_id), int(sku_id)
+    except (TypeError, ValueError):
+        return None, "INVALID_SKU"
+    tid = str(tenant_id or "default")
+    s = get_session()
+    try:
+        sku = s.get(_SkuRow, sku_id_int)
+        if sku is None or not _tenant_ok(sku, tid) or (sku.active or 0) != 1:
+            return None, "INVALID_SKU"
+        row = scoped(s.query(_VendorSkuAliasRow), _VendorSkuAliasRow, tid).filter(
+            _VendorSkuAliasRow.supplier_id == supplier_id_int,
+            _VendorSkuAliasRow.raw_name == raw).first()
+        if row is not None:
+            if protect_live_target and int(row.sku_id or 0) != sku_id_int:
+                old = s.get(_SkuRow, int(row.sku_id)) if row.sku_id else None
+                if old is not None and _tenant_ok(old, tid) and (old.active or 0) == 1:
+                    # 既有指向仍存活 → 保留它（不改指、不覆盖 canonical/unit）
+                    return int(row.id), "TARGET_PROTECTED"
+            row.sku_id = sku_id_int
+            if canonical_name:
+                row.canonical_name = str(canonical_name)
+            if unit:
+                row.unit = str(unit)
+            row.status = "active"
+            row.updated_at = now_iso()
+            s.commit()
+            return int(row.id), None
+        row = _VendorSkuAliasRow(
+            tenant_id=tid, supplier_id=supplier_id_int, sku_id=sku_id_int,
+            raw_name=raw, canonical_name=str(canonical_name or ""),
+            unit=str(unit or ""), hit_count=0, valid_from=now_iso(),
+            valid_to="", status="active", source_ref=str(source_ref or ""),
+            updated_at=now_iso())
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return int(row.id), None
+    except Exception as e:
+        s.rollback()
+        try:
+            from sqlalchemy.exc import IntegrityError as _IntegrityError
+            _is_conflict = isinstance(e, _IntegrityError)
+        except Exception:
+            _is_conflict = False
+        if _is_conflict:
+            logger.warning("[sku_alias] upsert conflict (supplier=%s raw=%s)", supplier_id, raw)
+            return None, "CONFLICT"
+        logger.warning("[sku_alias] upsert_vendor_sku_alias failed (supplier=%s raw=%s): %s",
+                       supplier_id, raw, e)
+        return None, "ERROR"
+    finally:
+        s.close()
+
+
+def delete_vendor_sku_alias_for_supplier(supplier_id, tenant_id=None):
+    """FP-2a：物理删除某供应商的全部 SKU 别名行（供应商主档删除的级联之一）。
+
+    why 物理删而不是置 retired：别名行的 valid_to/status 是**治理态**（这条先验是否
+    仍在召回），不是 erasure 对象 —— 供应商档案本体已物理删除后，残留的别名行只会
+    指向不存在的 supplier_id（死先验）。返回删除行数（供应商不存在/无别名 = 0）。
+    """
+    if _VendorSkuAliasRow is None:
+        return 0
+    try:
+        sid = int(supplier_id)
+    except (TypeError, ValueError):
+        return 0
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorSkuAliasRow), _VendorSkuAliasRow,
+                   tenant_id).filter(_VendorSkuAliasRow.supplier_id == sid)
+        n = q.delete(synchronize_session=False)
+        s.commit()
+        return int(n)
     finally:
         s.close()
 
@@ -2022,6 +2853,10 @@ def deduplicate_skus_by_canonical(tenant_id=None):
             for sec in secondaries:
                 sec.active = 0
                 sec.current_stock = 0.0
+            # P2-T2 钩子 C（第二个合并入口）：别名改指到主 SKU。这条自动去重由
+            # 启动自愈每次调用（app/main.py），漏了它会让别名在每次启动后悄悄
+            # 指向被停用的旧 SKU。
+            alias_moved = _repoint_vendor_sku_alias(s, sec_ids, primary.id)
             # 系统审计留痕（每组合并一条，幂等可追溯，复用同一会话避免锁）
             try:
                 _audit_row = s.get(_AppSettingRow, "system_audit_json")
@@ -2058,6 +2893,7 @@ def deduplicate_skus_by_canonical(tenant_id=None):
                 "merged_ids": sec_ids,
                 "merged_names": sec_names,
                 "new_stock": primary.current_stock,
+                "alias_repointed": alias_moved,
             })
         # 兜底清理：处理残留的 _17871* 命名（包括历史已停用但无流水的可物理删除，确保 sqlite 验证清零）
         has_residual = False
@@ -2070,6 +2906,9 @@ def deduplicate_skus_by_canonical(tenant_id=None):
                     log_cnt = s.query(_StockLogRow).filter(_StockLogRow.sku_id == r.id).count()
                     item_cnt = s.query(_ItemRow).filter(_ItemRow.sku_id == r.id).count()
                     if log_cnt == 0 and item_cnt == 0:
+                        # P2-T2：物理删除前级联清掉指向它的别名（同 delete_sku）
+                        s.query(_VendorSkuAliasRow).filter(
+                            _VendorSkuAliasRow.sku_id == r.id).delete(synchronize_session=False)
                         s.delete(r)
                         has_residual = True
                     else:
@@ -2333,6 +3172,155 @@ def find_supplier_by_canonical_name(name, tenant_id=None):
         s.close()
 
 
+def resolve_supplier_id(vendor_name, tenant_id=None):
+    """P2-T1：把记忆的 vendor 自由文本解析成供应商档案 id（supplier_id 锚点）。
+
+    口径（两步，顺序固定，与 D17 的 receipts.supplier_id 回填同款）：
+    1. `find_supplier_by_name` 精确名匹配；
+    2. 未命中则 `find_supplier_by_canonical_name` 归一 key 匹配（去英文括号注 + 繁转简 +
+       常见商号别名）；
+    3. 仍拿不准 → **返回 None，绝不新建供应商**。why：记忆写入侧只需一个"归属标签"，
+       为它凭空建档案会把错名（买方名、测试夹具名、手写噪声）洗成正式供应商，并污染
+       供应商列表与按供应商的统计（live 已有「七月餐室」这类买方名被自动建档）。
+
+    本函数是**唯一的名字→id 解析实现**：写入侧（upsert_vendor_memory）、读取侧
+    （rag.retrieve_context）与回填脚本三方共用，避免"同一根因多份实现只改一份"。
+
+    租户：tenant_id 非空时只在同租户内匹配（scoped），防跨租户错挂；None 表示不过滤
+    （仅供内部脚本/测试的全量路径，生产两侧都传真实租户）。
+    异常一律吞成 None 并留 warning：解析失败不能让记忆写入/检索链路抛错。
+    """
+    name = str(vendor_name or "").strip()
+    if not name:
+        return None
+    try:
+        row = find_supplier_by_name(name, tenant_id=tenant_id)
+        if row is not None:
+            return int(row.id)
+        row = find_supplier_by_canonical_name(name, tenant_id=tenant_id)
+        if row is not None:
+            return int(row.id)
+    except Exception as e:
+        logger.warning("[memory] resolve_supplier_id failed (%s): %s", name, e)
+        return None
+    return None
+
+
+def resolve_supplier_id_from_memory(vendor_name, tenant_id=None):
+    """L0 记忆先验锚点解析：vendor_memory 中与该名字**精确相等**的 active 行所携带的
+    supplier_id 恰好唯一时返回该 id；零候选 / 多于一个不同 id 一律返回 None（不猜）。
+
+    why：单据未锚定（receipts.supplier_id 为空、按名解析也落空）时，同一 vendor 名
+    的历史记忆行可能携带"上次该名字被锚定到哪个档案"的先验。它只配当**最后一档回退**
+    ——历史锚点可能过时（供应商改档/合并后旧记忆行仍指旧 id），故多候选绝不取第一个。
+
+    口径（与 resolve_supplier_id 同一条纪律的两处落实）：
+    - **只读**：绝不新建档案、绝不回写任何表、绝不触向量库；
+    - 查询不复用 `list_vendor_memory`：它的名字通道含 `_vendor_related` 模糊回退，
+      会把"名字相关的别的供应商"放行进来，而别名表读侧是严格 supplier_id 相等，
+      两边口径必须同严 —— 这里只认 **vendor 精确相等**；
+    - 租户门：tenant_id 为空直接返回 None（宁可不锚定）——scoped(..., None) 不过滤
+      租户，会把单据锚到别的租户的同名记忆行/档案上；
+    - 唯一候选还要过 `get_supplier(sid, tenant_id=...)` 归属校验（跨租户 id 拒绝
+      锚定，同 `_memory_anchor_for_write` 口径）；
+    - 任何异常 → 返回 None + warning，绝不向上抛（锚点解析失败不得阻断解析/入账主链路）。
+    """
+    name = str(vendor_name or "").strip()
+    if not name:
+        return None
+    tid = str(tenant_id or "").strip()
+    if not tid:
+        # 租户门：scoped(..., None) 是全量扫描，"精确名匹配"会跨租户命中 —— 不锚定。
+        return None
+    try:
+        s = get_session()
+        try:
+            rows = scoped(s.query(_VendorMemoryRow), _VendorMemoryRow, tid).filter(
+                _VendorMemoryRow.status == "active",
+                _VendorMemoryRow.vendor == name,
+                _VendorMemoryRow.supplier_id.isnot(None),
+            ).all()
+        finally:
+            s.close()
+        ids = set()
+        for r in rows:
+            try:
+                ids.add(int(r.supplier_id))
+            except (TypeError, ValueError):
+                logger.warning(
+                    "[supplier_anchor] 记忆先验候选 supplier_id 非法（vendor=%r "
+                    "tenant=%s memory_id=%s value=%r），丢弃", name, tid,
+                    getattr(r, "memory_id", None), getattr(r, "supplier_id", None))
+        if len(ids) != 1:
+            logger.info(
+                "[supplier_anchor] memory prior 候选 %d 个（ids=%s），不锚定 "
+                "vendor=%r tenant=%s", len(ids), sorted(ids), name, tid)
+            return None
+        sid = ids.pop()
+        if get_supplier(sid, tenant_id=tid) is None:
+            logger.warning(
+                "[supplier_anchor] memory prior supplier_id=%s 不属于租户 %s"
+                "（vendor=%r），拒绝锚定", sid, tid, name)
+            return None
+        return sid
+    except Exception as e:
+        logger.warning("[supplier_anchor] memory prior 解析失败（vendor=%r tenant=%s）: %s",
+                       name, tid, e)
+        return None
+
+
+def _memory_anchor_for_write(vendor, tenant_id, supplier_id=None):
+    """写入侧 supplier_id 锚点解析（唯一实现，两条写入链路共用）。
+
+    优先级（顺序固定）：
+    1. 调用方显式给出的 `supplier_id`（权威锚点，如 `receipts.supplier_id`）；
+    2. 未给 / 给了但不可用 → `resolve_supplier_id(vendor, tenant)` 按名解析；
+    3. 仍拿不到 → 返回 None（列写 NULL），**绝不编造、绝不新建档案**。
+
+    why 显式锚点优先于名字解析：调用方给的 id 来自单据行/档案主键，是真正的结构关联；
+    名字解析是"猜"，在重名变体（繁简/简称/中文字段后缀）与"同一写法这次指向另一个
+    档案"时会把记忆挂到错的供应商上。J3 之前写入侧**只有**名字解析这条路 —— 这正是
+    "锚点写了却落不到生产写入路径"的根因。
+
+    why 显式 id 还要校验租户归属：跨租户的 id 会把记忆挂到别的租户档案上，而读侧
+    （list_vendor_memory）同时按 tenant + anchor 过滤 → 该行将**永远**召不回且零日志
+    （本仓③类缺陷形态）。校验失败只告警并回落名字口径，不抛错（写入不得因锚点故障失败）。
+
+    why 解析不出必须 logger.warning（与读侧口径刻意不同）：读侧"解析返回 None"只是
+    这一次没命中，属正常；写侧未命中意味着这一行**永久**失去锚点 —— 除重写或回填外
+    无从修复，只能靠这条日志被发现（I2「降级可接受、静默不行」同一条纪律）。
+    """
+    vid = str(vendor or "").strip()
+    tid = str(tenant_id or "default").strip() or "default"
+    if supplier_id is not None:
+        sid = None
+        try:
+            sid = int(supplier_id)
+        except (TypeError, ValueError):
+            logger.warning(
+                "[memory] supplier_id 非法（vendor=%s tenant=%s supplier_id=%r），"
+                "改按 vendor 名解析", vid, tid, supplier_id)
+        if sid is not None:
+            try:
+                if get_supplier(sid, tenant_id=tid) is not None:
+                    return sid
+                logger.warning(
+                    "[memory] supplier_id=%s 不属于租户 %s（vendor=%s），"
+                    "拒绝锚定，改按 vendor 名解析", sid, tid, vid)
+            except Exception as e:
+                logger.warning(
+                    "[memory] supplier_id 归属校验失败（vendor=%s tenant=%s "
+                    "supplier_id=%s）：%s，改按 vendor 名解析", vid, tid, sid, e)
+    if not vid:
+        return None
+    sid = resolve_supplier_id(vid, tid)
+    if sid is None:
+        logger.warning(
+            "[memory] supplier_id 解析不出（vendor=%s tenant=%s），本行写 NULL，"
+            "读侧只能回退按 vendor 名匹配", vid, tid)
+    return sid
+
+
 def create_supplier(name, tenant_id="default", **fields):
     s = get_session()
     try:
@@ -2374,17 +3362,100 @@ def update_supplier(supplier_id, **fields):
         s.close()
 
 
+def _receipts_for_supplier(s, supplier, tenant_id=None):
+    """D17：归属某供应商的单据集合（关联口径：优先 supplier_id，回落归一 key）。
+
+    - 已带 supplier_id 的行：仅当等于该供应商 id 时计入（不再按名字猜）；
+    - 无 supplier_id 的历史行：按 canonical_supplier_key 归一匹配该供应商名计入；
+    - 供应商名为空（归一 key 为空）时不回落匹配任何历史行。
+    调用方负责 tenant_id 口径（本函数在传入的 query 上已做租户过滤）。
+    """
+    from app.services.supplier_normalizer import canonical_supplier_key
+    key = canonical_supplier_key(supplier.name or "")
+    out = []
+    for r in scoped(s.query(_ReceiptRow), _ReceiptRow, tenant_id).all():
+        if r.supplier_id is not None:
+            if r.supplier_id == supplier.id:
+                out.append(r)
+        elif key and canonical_supplier_key(r.supplier_name or "") == key:
+            out.append(r)
+    return out
+
+
+def list_receipts_for_supplier(supplier_id, tenant_id=None):
+    """D17：某供应商名下单据（含无 id 历史行的归一 key 回落）。
+
+    供应商不存在或跨租户 -> 空列表（不返回他人数据）。
+    """
+    s = get_session()
+    try:
+        sup = s.get(_SupplierRow, int(supplier_id))
+        if sup is None or not _tenant_ok(sup, tenant_id):
+            return []
+        return _receipts_for_supplier(s, sup, tenant_id)
+    finally:
+        s.close()
+
+
+def count_receipts_for_supplier(supplier_id, tenant_id=None):
+    """FP-2a：某供应商名下**引用单据**计数（只认 receipts.supplier_id 精确关联）。
+
+    为什么只按 supplier_id、不做归一 key 回落（与 list_receipts_for_supplier 口径
+    不同）：本函数服务的是删除守卫 —— 回落匹配会随 supplier_name 改写而漂移，而
+    外键引用（receipts.supplier_id）是结构事实；守卫拦的是"还有单据锚在这份档案上"，
+    名字撞车不该拦、也不该放（防「删档后恢复软删单」出现死链按的是精确 id）。
+    **含软删行**（不看 deleted_at）：软删单可经回收站恢复，恢复后 supplier_id 仍在，
+    删档会让它变成死链 —— 与 memory_consistency 的孤儿口径一致（表内行存在即算引用）。
+    不校验供应商本身存在/跨租户：404 判定由调用方先经 get_supplier 完成，本函数只计数。
+    """
+    s = get_session()
+    try:
+        q = scoped(s.query(_ReceiptRow), _ReceiptRow, tenant_id).filter(
+            _ReceiptRow.supplier_id == int(supplier_id))
+        return q.count()
+    finally:
+        s.close()
+
+
+def delete_supplier_master(supplier_id, tenant_id=None):
+    """FP-2a：物理删除供应商主档行（不是 active=0 软删）。
+
+    why 物理删：contact_phone 属个人数据（PDPO s.26「删除」要求数据不再可取回），
+    merge 端点的 active=0 是"合并归档"语义（行与手机号都还在），不可复用。
+    调用方（DELETE /api/suppliers/{id}）负责先过引用守卫与记忆级联；跨租户/
+    不存在返回 False。
+    """
+    s = get_session()
+    try:
+        row = s.get(_SupplierRow, int(supplier_id))
+        if row is None or not _tenant_ok(row, tenant_id):
+            return False
+        s.delete(row)
+        s.commit()
+        return True
+    finally:
+        s.close()
+
+
 def supplier_stats(supplier_id, tenant_id=None):
-    """供应商聚合：receipt_count / 赊账未付总额。"""
+    """供应商聚合：receipt_count / 赊账未付总额。
+
+    D16：先按租户校验供应商归属——不存在或跨租户返回空统计（不再拿别人的行）。
+    D17：单据计数优先 supplier_id 精确关联，无 id 的历史行按归一 key 计入。
+    """
     s = get_session()
     try:
         _sup = s.get(_SupplierRow, int(supplier_id))
-        sup_name = _sup.name if _sup is not None else ""
-        receipts = scoped(s.query(_ReceiptRow), _ReceiptRow, tenant_id).filter(
-            _ReceiptRow.supplier_name == sup_name).all()
+        if _sup is None or not _tenant_ok(_sup, tenant_id):
+            return {
+                "receipt_count": 0,
+                "unpaid_credit_total": 0.0,
+                "unpaid_credit_count": 0,
+            }
+        receipts = _receipts_for_supplier(s, _sup, tenant_id)
         return {
             "receipt_count": len(receipts),
-            "unpaid_credit_total": sum(r.total_amount for r in receipts
+            "unpaid_credit_total": sum((r.total_amount or 0.0) for r in receipts
                                        if r.settlement_type == "credit" and r.status == "approved"),
             "unpaid_credit_count": sum(1 for r in receipts
                                        if r.settlement_type == "credit" and r.status == "approved"),
@@ -2396,18 +3467,19 @@ def supplier_stats(supplier_id, tenant_id=None):
 # -------------------------------------------------------------
 # 部门
 # -------------------------------------------------------------
-def list_departments():
+def list_departments(tenant_id=None):
     s = get_session()
     try:
-        return s.query(_DeptRow).all()
+        return scoped(s.query(_DeptRow), _DeptRow, tenant_id).all()
     finally:
         s.close()
 
 
-def create_department(name):
+def create_department(name, tenant_id="default"):
     s = get_session()
     try:
-        row = _DeptRow(name=name, active=1)
+        row = _DeptRow(name=name, active=1,
+                       tenant_id=str(tenant_id or "default"))
         s.add(row)
         s.commit()
         s.refresh(row)
@@ -2416,11 +3488,12 @@ def create_department(name):
         s.close()
 
 
-def update_department(dept_id, **fields):
+def update_department(dept_id, tenant_id=None, **fields):
+    """更新部门字段。tenant_id 非空时校验归属，跨租户视为不存在（返回 None）。"""
     s = get_session()
     try:
         row = s.get(_DeptRow, int(dept_id))
-        if row is None:
+        if row is None or not _tenant_ok(row, tenant_id):
             return None
         for k, v in fields.items():
             if v is not None and hasattr(row, k):
@@ -2435,21 +3508,24 @@ def update_department(dept_id, **fields):
 # 付款
 # -------------------------------------------------------------
 def create_payment(supplier_id, amount, method, paid_at, notes="",
-                   voucher_image_path="", linked_receipt_ids=None):
+                   voucher_image_path="", linked_receipt_ids=None,
+                   tenant_id="default"):
     s = get_session()
     try:
+        tid = str(tenant_id or "default")
         row = _PaymentRow(supplier_id=int(supplier_id), amount=amount, method=method,
                           paid_at=paid_at, notes=notes,
                           voucher_image_path=voucher_image_path,
-                          linked_receipt_ids_json=json.dumps(linked_receipt_ids or []))
+                          linked_receipt_ids_json=json.dumps(linked_receipt_ids or []),
+                          tenant_id=tid)
         s.add(row)
         s.commit()
         s.refresh(row)
         payment_id = row.id
-        # 回写收据付款状态
+        # 回写收据付款状态（D16：仅限同租户单据，跨租户 id 不得被改写）
         for rid in (linked_receipt_ids or []):
             rc = s.get(_ReceiptRow, int(rid))
-            if rc:
+            if rc and _tenant_ok(rc, tid):
                 rc.paid_at = paid_at
                 rc.paid_method = method
                 rc.payment_id = payment_id
@@ -2459,15 +3535,17 @@ def create_payment(supplier_id, amount, method, paid_at, notes="",
         s.close()
 
 
-def list_payments():
+def list_payments(tenant_id=None):
     s = get_session()
     try:
-        rows = s.query(_PaymentRow).order_by(_PaymentRow.paid_at.desc()).all()
+        rows = scoped(s.query(_PaymentRow), _PaymentRow, tenant_id).order_by(
+            _PaymentRow.paid_at.desc()).all()
         out = []
         for r in rows:
             sup = s.get(_SupplierRow, r.supplier_id) if r.supplier_id else None
             out.append({
-                "id": r.id, "supplier_name": sup.name if sup else "—",
+                "id": r.id, "supplier_id": r.supplier_id,
+                "supplier_name": sup.name if sup else "—",
                 "paid_at": r.paid_at, "amount": r.amount,
                 "method": r.method,
                 "method_label": {"cash": "现金", "bank_transfer": "银行转账",
@@ -2487,7 +3565,9 @@ def list_payments():
 # -------------------------------------------------------------
 def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
                          source_kind="manual", source_ref="[]",
-                         memory_id=None, created_at=None):
+                         memory_id=None, created_at=None,
+                         fact_key=None, valid_to=None, supplier_id=None,
+                         fact_row=None):
     """每条记忆一行（Gap B1，T3 追加式写入）。
 
     语义变更：不再把 notes 拼接/覆盖到 (vendor, tenant_id) 单行，而是每次写入
@@ -2495,6 +3575,33 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
     相同的 active 行已存在时不重复追加（幂等），复用既有 memory_id。
     source_kind: approve | feedback_distilled | manual
     source_ref:  触发来源 receipt_id 列表 JSON（可回溯）
+    decay_score: 起始分取 memory_initial_decay_score()（settings 键，缺省 0.7），
+                 刻意不硬编码为 1.0 —— 见该函数 docstring（P1-T2 衰减双向）。
+    fact_key:    P1-T3 结构化事实键（缺省 None = 无键，保持追加式语义）。
+                 **本函数只负责落键，不做 supersede 归并** —— 归并语义在
+                 save_memory_fact；经典调用方（approve 回写 / 反馈蒸馏）继续按
+                 "同 key 多行并存"运行，行为零变化。
+    valid_to:    失效时刻（ISO）；缺省 None → 落空串 = 无显式失效期（不过期）。
+                 显式期由 save_memory_fact 按 TTL 计算传入，本函数不自行套 TTL ——
+                 否则会顺带改变既有写入路径的过期语义。
+    P2-T1 / J3 supplier_id 锚点：本函数在写入时定值，规则见
+    `_memory_anchor_for_write`（调用方给的 `supplier_id` 权威优先，未给才按
+    `resolve_supplier_id(vendor, tenant)` 名字解析，两者都拿不到就写 NULL）。
+    why 放在这里而不是各调用点：写入侧有两条链路（rag.ingest_memory 的人工 approve
+    回写、save_memory_fact 的结构化写入），在调用点各自拼一遍就是本仓高发的「同一根因
+    多份实现只改一份」；且写入侧的解析口径必须与读侧（rag.retrieve_context）**完全
+    一致**，否则"写进去锚的是 A、读的时候按 B 找"，两边都查不到。
+    supplier_id: 调用方已知的权威锚点（如 `receipts.supplier_id`）；None = 由本函数
+                 按 vendor 名解析。给了值但档案不存在/属别的租户 → 告警后回落解析，
+                 绝不编造 id、绝不新建档案。
+    fact_row:    P3-T1（K2）结构化事实的**载荷列**行字典（键＝memory_facts.ROW_FIELDS
+                 的载荷子集，由 `_memory_fact_row` 从 `MemoryFact.to_row()` 派生）。
+                 本函数只逐列 setattr，不做任何字段名映射（映射只有 memory_facts 一份）。
+                 身份/治理列（memory_id / tenant_id / supplier_id / source_kind /
+                 source_ref / fact_key / valid_to / status / superseded_by）**不从
+                 fact_row 覆盖** —— 那些列的取值由本函数的锚点解析、TTL 与 supersede
+                 规则决定，被载荷覆盖会绕过 P2-T1 的租户归属校验。
+                 缺省 None → 完全不碰这五列（遗留调用方零行为变化）。
     返回 (memory_id, is_new)：is_new=False 表示命中幂等去重。
     """
     vid = str(vendor or "")
@@ -2503,6 +3610,8 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
     mid = str(memory_id).strip() if memory_id else uuid.uuid4().hex
     now = now_iso()
     created = str(created_at).strip() if created_at else now
+    fkey = str(fact_key).strip() if fact_key else None
+    sid = _memory_anchor_for_write(vid, tid, supplier_id)
     s = get_session()
     try:
         dup = s.query(_VendorMemoryRow).filter(
@@ -2515,7 +3624,8 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
         if dup is not None:
             # P3-3：去重命中时把新 source_ref 的 receipt_id 并入既有 JSON
             #（集合式去重合并）并刷新 updated_at，避免新触发来源丢失可回溯性。
-            # version 保持 1 不变 —— 行内演进与 version 递增归 TODO(T8) 口径。
+            # version 保持 1 不变：追加式不可变模型下内容变更即新增行，行内内容
+            # 不就地改写，故无版本递增语义（此处只刷新 source_ref/updated_at 元数据）。
             try:
                 old_refs = json.loads(dup.source_ref or "[]")
                 if not isinstance(old_refs, list):
@@ -2529,6 +3639,20 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
                         merged.append(str(r))
                 dup.source_ref = json.dumps(merged, ensure_ascii=False)
                 dup.updated_at = now_iso()
+                # P1-T3：内容完全相同的健康行此前可能是在"无键"状态下写入的
+                #（键机制上线前落库）。此时去重命中会复用它，若不把键补上，
+                # 后续同键新值将找不到它、旧行永远不会被 supersede —— 两个 active
+                # 行同时可注入。故在去重命中时就地绑定键（不改变内容与 version）。
+                if fkey and not str(dup.fact_key or "").strip():
+                    dup.fact_key = fkey
+                # P2-T1：同一条纪律 —— 去重命中复用旧行时补锚点。旧行可能是锚点列
+                # 上线前写入的（supplier_id IS NULL），只补非空值，不清空已有锚点。
+                if sid is not None and dup.supplier_id is None:
+                    dup.supplier_id = sid
+                # P3-T1：同一条纪律 —— 去重命中复用旧行时补载荷列。旧行可能是载荷列
+                # 上线前写入的（fact_kind/trust_level… 为 NULL），只补空值、不覆盖已有
+                # 值：一次重复写入不得改写既有事实内容（改写要经过 supersede 语义）。
+                _apply_payload_columns(dup, fact_row, only_empty=True)
                 s.commit()
             except Exception as e:
                 logger.warning("[memory] source_ref merge on dedup hit failed: %s", e)
@@ -2540,8 +3664,8 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
             tenant_id=tid,
             notes=notes or "",
             sample=sample or "",
-            # 本 Wave 为追加式写入，每行 version 初始 1；同行演进与 version 递增
-            # 在 T8 记忆生命周期治理中落地 TODO(T8)
+            # 追加式写入：新行 version 恒为 1（内容变更走新增行，不就地改写，
+            # 故无 version 递增语义）。
             version=1,
             source_kind=str(source_kind or "manual"),
             source_ref=source_ref or "[]",
@@ -2549,28 +3673,341 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
             updated_at=now,
             hit_count=0,
             last_hit_at="",
-            decay_score=1.0,
+            # P1-T2：起始分刻意低于上限 1.0（settings 键 memory_initial_decay_score，
+            # 缺省 0.7）。起始分若与上限同为 1.0，命中强化 min(1.0, cur+bonus) 就是
+            # 恒等操作 —— 分数只降不升、归档成不可逆终点（旧实现即如此）。
+            decay_score=memory_initial_decay_score(),
             status="active",
+            fact_key=fkey,
+            superseded_by=None,
+            valid_to=str(valid_to).strip() if valid_to else "",
+            # P2-T1：主体锚点（调用方给的权威 id 优先，否则按名解析，都拿不到为 None，
+            # 读侧回退按 vendor 名匹配）
+            supplier_id=sid,
         )
+        # P3-T1：结构化事实载荷列（缺省 fact_row=None 时不碰，遗留写入路径行保持 NULL）
+        _apply_payload_columns(row, fact_row)
         s.add(row)
         s.commit()
-        return (mid, True)
+    finally:
+        s.close()
+    # W-4 / M2 容量淘汰：新行已提交后，若同 (vendor, tenant) 的 active 行数超过上限，
+    # 归档多余的最低分/最旧行（确定性、可审计，归档而非物理删除）。只在**真的新增了
+    # active 行**时调用 —— 幂等去重命中不增行，故不触发（上面 dup 分支已 return）。
+    # 淘汰失败不得让写入失败：行已提交，淘汰是可重跑的治理动作，降级留 warning。
+    try:
+        _evict_vendor_memory_over_capacity(
+            vid, tid, keep_memory_id=mid,
+            written_by=(fact_row or {}).get("written_by")
+            if isinstance(fact_row, dict) else None)
+    except Exception as e:
+        logger.warning(
+            "[db] W-4 容量淘汰失败（新行已提交，淘汰可重跑）"
+            "vendor=%s tenant=%s memory_id=%s: %s", vid, tid, mid, e)
+    return (mid, True)
+
+
+def memory_ttl_days():
+    """记忆 TTL（settings 实时读取，缺省 0 = 不过期）。
+
+    0 表示"不设过期"（迁移前行为零变化）：TTL 是治理策略，默认打开会让既有记忆
+    在某天集体消失，属于「默认值即行为变更」，必须由管理台显式设置。
+
+    过期判据有两条并用（见 _memory_row_expired）：
+    1. valid_to 非空且已过 —— 单行的显式失效期（save_memory_fact 按 TTL 写入）；
+    2. created_at + TTL 已过 —— 覆盖 TTL 上线前写入、valid_to 为空的存量行。
+    只有第 1 条会让"上线前写入的行"永久免于 TTL，故两条都必须有。
+    """
+    try:
+        from app.services import settings_service
+        return settings_service.get_int("memory_ttl_days", 0)
+    except Exception as e:
+        # P20-D9（I2 口径）：回退值 0（不过期）本身是刻意兜底，但**静默**会让
+        # "TTL 配置读不出来"与"本来就设了 0"在库里完全同形 —— 治理策略失效而无人可见。
+        logger.warning(
+            "memory_ttl_days 读取失败，本次按 0（不过期）处理："
+            "异常=%s: %s", type(e).__name__, e)
+        return 0
+
+
+def _parse_iso_dt(value):
+    """解析记忆时间戳（ISO 文本）为 datetime；空/格式非法返回 None。
+
+    为什么非法值不抛错：本函数只服务"是否过期"的判定，抛错会让整条检索链路被
+    except 吞掉（本仓高发的静默失效）。返回 None 由调用方按"无法判定"处理。
+    """
+    s = str(value or "").strip()
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _memory_row_expired(row, now_dt=None, ttl_days=None):
+    """判断一条 vendor_memory 行是否已过期（不参与注入）。
+
+    - ttl_days 由调用方传入（一次读取，避免逐行读 settings）；
+    - valid_to / created_at 无法解析时按"未过期"处理：宁可注入一条时间戳脏的
+      记忆，也不因为格式问题静默丢掉整批记忆（丢记忆没有日志、无法察觉）。
+    """
+    now = now_dt or datetime.now()
+    vt = _parse_iso_dt(getattr(row, "valid_to", "") or "")
+    if vt is not None and now > vt:
+        return True
+    if ttl_days and ttl_days > 0:
+        created = _parse_iso_dt(getattr(row, "created_at", "") or "")
+        if created is not None and now > created + timedelta(days=ttl_days):
+            return True
+    return False
+
+
+def _filter_memory_rows_for_read(rows, ttl_days=None, now_dt=None):
+    """读侧过滤：丢弃过期行 + 同 (tenant, vendor, fact_key) 只留最新一条。
+
+    调用方传入的 rows 必须是 rowid DESC（最新在前）序 —— 首见即最新，去重因此
+    只需一个 seen 集合，不必排序。
+
+    为什么去重放在读侧（supersede 已保证同键只有一条 active）：supersede 是两次
+    DB 操作（先插新行、再置旧行），中途失败会留下两条同键 active 行；vector/DB
+    也可能被外部脚本直写。读侧去重是第二道防线 —— "同 key 只注入最新一条"这条
+    承诺不依赖写侧每次都对。fact_key 为空的遗留行不参与去重（保持追加式语义）。
+    """
+    ttl = memory_ttl_days() if ttl_days is None else ttl_days
+    now = now_dt or datetime.now()
+    out = []
+    seen = set()
+    for r in rows:
+        if _memory_row_expired(r, now_dt=now, ttl_days=ttl):
+            continue
+        fkey = str(getattr(r, "fact_key", "") or "").strip()
+        if fkey:
+            sig = (str(getattr(r, "tenant_id", "") or "default"),
+                   str(getattr(r, "vendor", "") or ""), fkey)
+            if sig in seen:
+                continue
+            seen.add(sig)
+        out.append(r)
+    return out
+
+
+# -------------------------------------------------------------
+# P3-T1（K2）：结构化事实的载荷列
+# 事实的"身份 / 治理列"由 upsert_vendor_memory 的既有规则决定，**不允许**被事实载荷
+# 覆盖：memory_id（行身份，去重复用）、tenant_id（租户隔离）、supplier_id（P2-T1 锚点
+# 解析 + 租户归属校验）、source_kind / source_ref（来源追溯与去重合并）、fact_key
+# （supersede 归并的键）、valid_to（P1-T3 TTL 计算，显式期优先）、status /
+# superseded_by（P1-T3 状态机）。其余 ROW_FIELDS 成员是纯载荷列，逐列写入。
+# why 用"排除法"从 ROW_FIELDS 派生、而不是手抄一份载荷列清单：ROW_FIELDS 是 schema 的
+#   唯一定义，手抄第二份就会在它新增字段时静默漏写（本仓高发的「同一根因多份实现只改
+#   一份」）。新增 ROW_FIELDS 成员时必须在此判定它属于载荷列还是治理列。
+# -------------------------------------------------------------
+_MEMORY_FACT_GOVERNANCE_COLUMNS = frozenset({
+    "memory_id", "tenant_id", "supplier_id", "source_kind", "source_ref",
+    "fact_key", "valid_to", "status", "superseded_by",
+})
+_MEMORY_FACT_PAYLOAD_COLUMNS = tuple(
+    c for c in _MEMORY_FACT_ROW_FIELDS if c not in _MEMORY_FACT_GOVERNANCE_COLUMNS)
+
+
+def _memory_fact_row(fact):
+    """MemoryFact / 行字典 → 行字段字典（键＝memory_facts.ROW_FIELDS）。无 fact 返回 {}。
+
+    映射**只走** `MemoryFact.from_row` / `MemoryFact.to_row`（其内部用
+    memory_facts._FACT_TO_ROW），本函数不手写第二份字段映射，也不做字段名转换。
+    非 MemoryFact 且非 Mapping 的输入显式抛 TypeError：静默返回 {} 会让"传了事实却
+    没落库"变成零痕迹的静默失效（本仓③类缺陷）。
+    """
+    if fact is None:
+        return {}
+    from app.services.memory_facts import MemoryFact
+    if isinstance(fact, _Mapping):
+        fact = MemoryFact.from_row(fact)
+    if not isinstance(fact, MemoryFact):
+        raise TypeError(
+            "save_memory_fact 的 fact 需要 MemoryFact 或行字典，"
+            f"实得 {type(fact).__name__}")
+    return fact.to_row()
+
+
+def _apply_payload_columns(row, fact_row, only_empty=False):
+    """把事实载荷逐列写入行对象；治理列跳过、未声明的列显式告警。
+
+    why 逐列白名单式写入而不是 `for k, v in fact_row.items(): setattr(row, k, v)`：
+    裸 setattr 会让载荷里的 tenant_id / memory_id / status 覆盖掉 upsert 刚算好的治理
+    列（绕过 P2-T1 的租户校验与 P1-T3 的状态机），这类"载荷反客为主"的缺陷不会有任何
+    报错，只会让隔离与 supersede 静默失效。故 fact_row 里的治理列**一律跳过**（它们是
+    memory_facts 声明的行字段，不算异常），只在出现"根本没声明过的列名"时告警 ——
+    那说明调用方在拼一个不存在的字段，静默丢弃会让它以为写进去了。
+
+    only_empty=True（去重命中复用旧行时用）：只补空值，不覆盖已有事实内容 —— 一次
+    重复写入不得改写既有事实（改写要经 supersede 语义）。
+    """
+    if not fact_row:
+        return
+    applied = _MEMORY_FACT_PAYLOAD_COLUMNS
+    for col in applied:
+        if col not in fact_row:
+            continue
+        if only_empty and getattr(row, col, None) not in (None, ""):
+            continue
+        setattr(row, col, fact_row[col])
+    known = set(applied) | _MEMORY_FACT_GOVERNANCE_COLUMNS
+    unknown = [c for c in fact_row if c not in known]
+    if unknown:
+        logger.warning(
+            "[memory] fact payload 含未声明的行字段，已忽略：%s", sorted(unknown))
+
+
+def save_memory_fact(tenant_id, vendor, fact_key, notes="", sample="",
+                     source_kind="manual", source_ref="[]", fact=None):
+    """P1-T3 结构化事实写入：同 (tenant, vendor, fact_key) 冲突时 supersede 旧行。
+
+    supersede 而非覆盖/删除（为什么保留旧行）：记忆的价值一半在"当前值"，一半在
+    "这个值被什么取代过"。就地覆盖会丢掉举证链（用户改了什么、什么时候改的），
+    硬删则连历史都没有。旧的 active 行改置 status='superseded' 且 superseded_by
+    指向新 memory_id，链式可回溯；默认读路径只返 active，故旧值不再注入。
+
+    与向量层对称（R13）：改状态的同时级联删掉这批旧行的向量（复用归档侧同一个实现
+    `memory_store.archive_memory_vectors`，本函数在状态提交后调用）。why：一条记忆同时
+    落在 vendor_memory 行与 Chroma 向量两处，读侧的 allowed_mids 门虽已挡住非 active 行
+    （注入面安全），但向量本身会**永久残留**并让一致性巡检长期报 orphan —— 与 R11 归档
+    当初只改 status 不动向量层是同一个不对称（删除有级联 / 归档已有 / supersede 此前没有）。
+    只删**本次真发生迁移**的那批 mid（幂等）；向量层故障降级为 warning，状态变更仍成功。
+
+    与 upsert_vendor_memory 的分工：本函数是"带键的结构化写入"，负责 supersede
+    与 TTL 计算；行构造仍复用 upsert_vendor_memory（单一实现，避免本仓高发的
+    「同一段逻辑两份实现、只改一份」）。
+
+    为什么 fact_key 为空时抛 ValueError：空键会让 supersede 退化成"永远追加"，
+    等于把污染源（同 key 多行并存）重新引进来。这种输入是调用方的契约错误，显式
+    失败比静默降级安全（本任务不新增"静默吞掉再追加"的路径）。本函数目前由阶段四
+    的抽取/整合链路调用，无既有调用方，故新增异常不构成回归。
+
+    TTL：memory_ttl_days > 0 时写 valid_to = 创建时刻 + TTL（显式落库，便于治理
+    视图直接看到失效期）；= 0 时 valid_to 落空串（不过期）。
+
+    fact（P3-T1/K2）：`MemoryFact` 或行字典。给了它就按 memory_facts.ROW_FIELDS 把这条
+    事实**完整**写入行：载荷列（fact_kind / fact_value / trust_level / valid_from /
+    written_by）逐列 setattr，身份与治理列按下列优先级取值 ——
+    - 事实的 fact_key / source_kind / source_ref / valid_to 非空时**优先于**同名形参：
+      调用方既然交出了事实对象，事实对象就是权威（把这些值再从形参传一遍，等于要求
+      每个调用点各拼一份，正是本仓高发的「同一根因多份实现只改一份」）；
+    - supplier_id 由事实的锚点传给 `_memory_anchor_for_write`（值不可用则告警并回落名字
+      解析，绝不编造 id）—— 事实的 scope 必须真的落库，否则 P3-T6 的读侧按
+      (tenant, supplier_id) 收窄时这条事实永远召不回；
+    - valid_to 显式期优先于 TTL 计算值（调用方明确给了失效时刻就不该被策略值覆盖）。
+    未给 fact（缺省 None）＝遗留契约：不写载荷列（落 NULL），行为与新增形参前完全一致。
+    **本函数不做校验**：闸门是 `memory_facts.validate_fact`，调用方须先过闸再写入
+    （抽取/整合链路即如此）。
+
+    返回 dict：{"memory_id": 新行 id, "superseded": [被取代的旧 memory_id...],
+                "is_new": 本次是否真的新增了行（False = 内容幂等去重命中）}。
+    """
+    payload = _memory_fact_row(fact)
+    vid = str(vendor or "")
+    tid = str(tenant_id or "default").strip() or "default"
+    key = str(fact_key or payload.get("fact_key") or "").strip()
+    if not key:
+        raise ValueError("save_memory_fact 需要非空 fact_key（空键会退化为只追加）")
+    if not vid:
+        raise ValueError("save_memory_fact 需要非空 vendor")
+    # 事实对象非空时它是权威来源（见 docstring 的优先级说明）；事实里为空则回落形参
+    eff_source_kind = str(payload.get("source_kind") or source_kind)
+    eff_source_ref = str(payload.get("source_ref") or source_ref)
+    eff_supplier_id = payload.get("supplier_id") or None
+    created = now_iso()
+    ttl = memory_ttl_days()
+    # 显式失效期优先于 TTL：调用方明确给了有效期末尾，就不该被策略值改写成"更晚失效"
+    valid_to = str(payload.get("valid_to") or "").strip()
+    if not valid_to and ttl and ttl > 0:
+        base = _parse_iso_dt(created) or datetime.now()
+        valid_to = (base + timedelta(days=ttl)).isoformat(timespec="seconds")
+    mid, is_new = upsert_vendor_memory(
+        vid, notes, sample, tenant_id=tid,
+        source_kind=eff_source_kind, source_ref=eff_source_ref,
+        created_at=created, fact_key=key, valid_to=valid_to,
+        supplier_id=eff_supplier_id,
+        # 载荷列交给 upsert 逐列写入（本函数不碰字段名，避免第二份映射）
+        fact_row=payload,
+    )
+    superseded = []
+    s = get_session()
+    try:
+        rows = s.query(_VendorMemoryRow).filter(
+            _VendorMemoryRow.tenant_id == tid,
+            _VendorMemoryRow.vendor == vid,
+            _VendorMemoryRow.fact_key == key,
+            _VendorMemoryRow.status == "active",
+            _VendorMemoryRow.memory_id != mid,
+        ).all()
+        for r in rows:
+            r.status = "superseded"
+            r.superseded_by = mid
+            r.updated_at = now_iso()
+            superseded.append(str(r.memory_id))
+        if superseded:
+            s.commit()
+        # R13：supersede 与向量层对称 —— 与 R11 归档同族的第二个不对称。删除
+        # （memory_store.delete_memory）与归档（本文件 apply_vendor_memory_override_penalty，
+        # R11）都有按 memory_id 的向量级联，而 supersede 此前只改 status、完全不动向量层 →
+        # 每取代一次就在向量库留一枚孤儿（巡检 orphan_mids 立刻报，且没有任何写入路径会自愈）。
+        # 复用归档侧**同一个实现**（memory_store.archive_memory_vectors → 底层
+        # delete_memory_vectors），不另写第二份 collection 操作（本仓①类缺陷的防线）。
+        # 只对本次真发生 active -> superseded 迁移的行调用：行一旦被 superseded，上面的查询
+        # （status == "active"）就取不到它，故重复写同键不会重复删（幂等）。
+        # 级联失败只告警 —— 取代关系此刻已提交，向量残留由巡检可查（与归档侧同口径）。
+        if superseded:
+            try:
+                from app.services import memory_store
+                memory_store.archive_memory_vectors(
+                    tid, superseded, vendor=vid, reason="superseded")
+            except Exception as e:
+                logger.warning(
+                    "[db] R13 supersede 向量级联失败（取代关系已提交，向量可能残留）"
+                    "vendor=%s tenant=%s memory_ids=%s: %s",
+                    vid, tid, superseded, e)
+        return {"memory_id": mid, "superseded": superseded, "is_new": bool(is_new)}
     finally:
         s.close()
 
 
-def list_vendor_memory(vendor=None, tenant_id="default", include_archived=False):
-    """按 (vendor, tenant_id) 过滤列出记忆（Gap B1 治理视图）。
+def list_vendor_memory(vendor=None, tenant_id="default", include_archived=False,
+                       supplier_id=None):
+    """按 (supplier_id 锚点 / vendor 名, tenant_id) 过滤列出记忆（Gap B1 治理视图）。
 
     - vendor 为空：列出租户下全部记忆（管理视角）
     - vendor 非空：精确匹配优先、模糊/别名相关次之（与 get_vendor_memory 同
       一口径，仅在本租户范围内，绝不跨租户召回）
-    - 默认只列 status='active'（include_archived=True 时含归档行）
+    - supplier_id 非空（P2-T1 主体锚点，优先于 vendor 名）：先取该档案下的行；
+      命中则再用 vendor 名把"同租户内、尚未锚定（supplier_id IS NULL）但名字相关"
+      的遗留行并入（回填上线前的存量行不能因为锚点反而读不到）；锚点零命中才回退
+      纯名字匹配。
+      why 优先锚点：名字相关度门（rag._vendor_related）靠子串/核心词猜，对"大生"与
+      "大生隆"这类互相包含的真实商号会互相放行 → 他商记忆泄漏进 prompt；supplier_id
+      是档案主键，同一 id 才是同一供应商，重名变体（繁简/简称/后缀/中段英文注）
+      也一律命中同一条记忆。
+    - **锚点给了却一个都没命中且没给 vendor 名时返回空列表**，绝不返回全量：
+      "找不到就退回全量"是本仓已出现 3 次的越权形态（会把别的供应商/租户的记忆
+      一并注入）。
+    - 默认（include_archived=False）＝**注入/读取口径**：只返 status='active'
+      且未过期的行，并对同 (tenant, vendor, fact_key) 只保留最新一条
+      （supersede 保证同键只有一条 active；这里是第二道防线，见
+      _filter_memory_rows_for_read）。'superseded' 行天然被 status 过滤排除。
+    - include_archived=True ＝**治理/历史口径**：不过滤 status、不过滤过期，
+      归档行与已被 supersede 的旧行都可见（P3-T3 的"历史可查/可回滚"靠它）。
+      调用方若拿它做注入，等于绕过 supersede/TTL —— 注入路径只用默认口径。
     - 排序：追加序倒序（rowid DESC，最新写入在前），精确匹配优先于模糊匹配
-    返回 dict 列表，含全部治理字段。
+    返回 dict 列表，含全部治理字段（含 supplier_id）。
     """
     tid = str(tenant_id).strip() if tenant_id else "default"
     tid = tid or "default"
+    v = str(vendor).strip() if vendor and str(vendor).strip() else ""
+    try:
+        anchor = int(supplier_id) if supplier_id is not None else None
+    except (TypeError, ValueError):
+        anchor = None
     s = get_session()
     try:
         from sqlalchemy import text as _sa_text
@@ -2578,19 +4015,45 @@ def list_vendor_memory(vendor=None, tenant_id="default", include_archived=False)
         if not include_archived:
             q = q.filter(_VendorMemoryRow.status == "active")
         rows = q.order_by(_sa_text("rowid DESC")).all()
-        if vendor and str(vendor).strip():
-            v = str(vendor).strip()
+        if not include_archived:
+            # 过期 + 同键去重放在 vendor 匹配之前：此处仍是 rowid DESC 全序，
+            # 去重"首见即最新"成立；vendor 分组会改变顺序，不能再做去重。
+            rows = _filter_memory_rows_for_read(rows)
+
+        def _name_matched(candidates):
+            """名字口径（精确优先于相关）——锚点回退与无锚点时共用同一实现。"""
+            if not v:
+                return list(candidates)
             try:
                 from app.services.rag import _vendor_related
-            except Exception:
+            except Exception as e:
                 _vendor_related = None
+                # P20-D9（I2 口径）：回退 None 会让下面的 elif 永不成立 ——
+                # 后果必须写进日志，否则运维看到一行 warning 不知道意味着什么：
+                # 本次退化为纯精确匹配，模糊/别名不再命中。
+                logger.warning(
+                    "list_vendor_memory._name_matched 无法加载 _vendor_related，"
+                    "本次退化为纯精确匹配，模糊/别名不再命中：vendor=%s tenant_id=%s "
+                    "异常=%s: %s", v, tid, type(e).__name__, e)
             exact, fuzzy = [], []
-            for r in rows:
+            for r in candidates:
                 if r.vendor == v:
                     exact.append(r)
                 elif _vendor_related is not None and _vendor_related(v, r.vendor):
                     fuzzy.append(r)
-            rows = exact + fuzzy
+            return exact + fuzzy
+
+        if anchor is not None:
+            anchored = [r for r in rows if r.supplier_id == anchor]
+            if anchored:
+                # 并入"无锚点 + 名字相关"的遗留行（绝不并入别的锚点行）
+                legacy = _name_matched(
+                    [r for r in rows if r.supplier_id is None])
+                rows = anchored + legacy
+            else:
+                rows = _name_matched(rows) if v else []
+        elif v:
+            rows = _name_matched(rows)
         out = []
         for r in rows:
             out.append({
@@ -2608,6 +4071,24 @@ def list_vendor_memory(vendor=None, tenant_id="default", include_archived=False)
                 "last_hit_at": r.last_hit_at or "",
                 "decay_score": float(r.decay_score if r.decay_score is not None else 1.0),
                 "status": r.status or "active",
+                # P1-T3：冲突治理字段（消费方＝阶段四抽取/整合链路与治理视图；
+                # 现有注入链路只读 notes/sample/decay_score/status）
+                "fact_key": r.fact_key or "",
+                "superseded_by": r.superseded_by or "",
+                "valid_to": r.valid_to or "",
+                # P2-T1：主体锚点（消费方＝回填脚本的幂等判据、检索侧锚点回退判定、
+                # 以及 P2-T2/P3 按 (tenant, supplier) 收窄的读侧）
+                "supplier_id": r.supplier_id,
+                # P3-T1（K2）：结构化事实载荷。**必须有消费方**，否则这五列就是"只写列"
+                # （本仓④类缺陷）：消费方＝`memory_consolidate.decide_action(existing=...)`
+                # 的同键比对与信任判定 —— 它接受行字典并按 memory_facts.ROW_FIELDS 解析，
+                # 若这里不返回，既有事实在整合侧全部退化成"无 kind/无信任"的遗留行，
+                # 冲突判定（低可信不得覆盖人工确认）会整条失效。
+                "fact_kind": r.fact_kind,
+                "fact_value": r.fact_value,
+                "trust_level": r.trust_level,
+                "valid_from": r.valid_from or "",
+                "written_by": r.written_by or "",
             })
         return out
     finally:
@@ -2629,11 +4110,83 @@ def get_vendor_memory(vendor, tenant_id="default"):
     return {"vendor": r["vendor"], "notes": r["notes"], "sample": r["sample"]}
 
 
+def delete_vendor_memory(memory_id=None, vendor=None, tenant_id=None,
+                         supplier_id=None, dry_run=False):
+    """P1-T1 删除记忆（硬删）：单条（memory_id）或按供应商批量（vendor / supplier_id）。
+
+    返回 (受影响行数, 被删行的 memory_id 列表)。为什么把 memory_id 一并返回：
+    记忆同时存在于两张介质（本表 + Chroma 向量库），SQL 事务管不到向量层，只能
+    由调用方拿这份 memory_id 清单去级联删（services.memory_store.delete_memory）。
+
+    为什么硬删而不是置 status='archived'：删除权闭环（香港 PDPO s.26「删除已不再
+    需要的个人数据」）要求数据真正不再可取回；归档行仍留在库里，且默认查询只列
+    active，反而变成"看不见但仍在"的残留。
+
+    租户：tenant_id 传了就强制过滤 —— 跨租户删除因此命中 0 行（端点据此回 404），
+    这是本仓 H1「读侧不传租户」那类缺陷的防线；不传则不过滤（仅供内部脚本/测试的
+    全量清理路径，端点一律传租户）。
+
+    三个过滤条件都不给时直接返回 (0, [])：避免"删整个租户记忆"这种误删入口，
+    调用方必须显式给 memory_id / vendor / supplier_id。
+
+    supplier_id（FP-2a）：主体锚点（suppliers.id），与 vendor 名过滤是 **OR** 关系
+    （vendor 是自由文本，锚定到同一供应商但写法不同的行按名删会漏掉）。memory_id
+    单条模式优先（给 memory_id 时忽略另两个选择器，沿用"单条即单条"的既有语义）。
+
+    dry_run（FP-2c）：True 时**只查不删**，返回 (0, mids) —— mids 即同一份过滤会
+    命中的 memory_id 清单。供 vector-first 删除路径复用（先拿清单删向量、失败即抛，
+    DB 行不动），不另写第二份"选中哪些行"的口径。
+
+    批量删除覆盖该供应商的全部 status（active/archived）：意图就是"删掉这个供应商
+    的记忆"，把已归档行留下同样违背删除语义。
+    """
+    if _VendorMemoryRow is None:
+        return (0, [])
+    mid = str(memory_id).strip() if memory_id is not None else ""
+    vid = str(vendor).strip() if vendor is not None else ""
+    sid = str(supplier_id).strip() if supplier_id is not None else ""
+    if not mid and not vid and not sid:
+        return (0, [])
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorMemoryRow), _VendorMemoryRow, tenant_id)
+        if mid:
+            q = q.filter(_VendorMemoryRow.memory_id == mid)
+        else:
+            # OR 口径：名匹配或锚点匹配任一命中即删（两者都给时取并集）
+            from sqlalchemy import or_
+            cond = []
+            if vid:
+                cond.append(_VendorMemoryRow.vendor == vid)
+            if sid:
+                try:
+                    cond.append(_VendorMemoryRow.supplier_id == int(sid))
+                except ValueError:
+                    return (0, [])   # 非法 supplier_id：不匹配任何行，也不误删
+            q = q.filter(or_(*cond))
+        rows = q.all()
+        if not rows:
+            return (0, [])
+        mids = [str(r.memory_id) for r in rows if r.memory_id]
+        if dry_run:
+            return (0, mids)
+        # 批量删除走 SQL DELETE（不经 ORM 逐行 delete）：历史库的物理主键形态与 ORM
+        # 声明的 memory_id 主键未必一致，按 WHERE 删除不受主键映射影响。
+        q.delete(synchronize_session=False)
+        s.commit()
+        return (len(rows), mids)
+    finally:
+        s.close()
+
+
 def bump_vendor_memory_hit(memory_ids):
     """Gap B1 命中记账：自增 hit_count 并刷新 last_hit_at（检索注入后调用）。
 
     T8 非对称衰减（强化慢）：每次命中按 settings 键 'memory_decay_hit_bonus'
     （缺省 +0.05）上调 decay_score，封顶 1.0。
+    封顶保留、但起始分已下调（P1-T2）：写入侧起始分取 memory_initial_decay_score
+    （缺省 0.7）而非 1.0，否则 min(1.0, cur + bonus) 在起始即封顶，强化恒等、
+    衰减只剩惩罚一侧 —— 强化必须真的能抬高分数，本函数才有意义。
     memory_id 不存在的忽略；返回实际更新的行数。异常由调用方兜底（不阻断识别）。
     """
     ids = [str(m) for m in (memory_ids or []) if m]
@@ -2642,8 +4195,14 @@ def bump_vendor_memory_hit(memory_ids):
     try:
         from app.services import settings_service
         bonus = settings_service.get_float("memory_decay_hit_bonus", 0.05)
-    except Exception:
+    except Exception as e:
         bonus = 0.05
+        # P20-D9（I2 口径）：回退 +0.05 是刻意兜底，但静默会让"强化档位配置读不出来"
+        # 永久不为人知（表现只是记忆衰减得比预期快）。
+        logger.warning(
+            "bump_vendor_memory_hit 读取 memory_decay_hit_bonus 失败，"
+            "本次按缺省 +0.05 强化：memory_ids=%s 异常=%s: %s",
+            ids, type(e).__name__, e)
     s = get_session()
     try:
         rows = s.query(_VendorMemoryRow).filter(
@@ -2665,22 +4224,57 @@ def bump_vendor_memory_hit(memory_ids):
 # -------------------------------------------------------------
 def enqueue_pending_memory(vendor, content, tenant_id="default",
                            source_kind="feedback_distilled",
-                           source_receipt_ids=None):
+                           source_receipt_ids=None,
+                           supplier_id=None, fact_kind=None, fact_key=None,
+                           fact_value=None, reject_reason=None,
+                           status="pending"):
     """蒸馏产物入待确认队列（不直接生效）。
 
-    幂等：同 (vendor, tenant_id, content) 已有 pending 行时并入触发来源并返回
+    幂等：同 (vendor, tenant_id, content, status) 已有行时并入触发来源并返回
     既有行 (id, False)。返回 (pending_id, is_new)。
+
+    P3-T1（K2）字段级 diff 载荷（可选）：supplier_id / fact_kind / fact_key /
+    fact_value / reject_reason。给了就让审核者能逐字段看到"这条记忆打算写什么"
+    （以及被拒时的理由），而不是对整段 content 只能整体接受/拒绝。
+    **向后兼容**：全部缺省 None → 新列落 NULL，行为与新增形参前完全一致
+    （遗留调用方 rag.distill_feedback_to_pending 零改动）。
+    why 载荷用与 vendor_memory.ROW_FIELDS 逐字相同的列名：approve 时可直接把载荷交给
+    save_memory_fact，不需要第二次字段映射。
+
+    status（Q2）：`"pending"`（缺省，进人工闸，可被 approve / reject）或 `"rejected"`
+    （**闸门自动拒绝的审计行**：只留"这条候选为什么没进来"的可查痕迹，不进可批准队列）。
+    为什么被拒也要建行、而不是只打日志：K2 建了 reject_reason 列却零写入方，于是
+    "上次为什么没进来"在库里查不到 —— 只打日志时审核者与被拒方的下一次写入都看不见
+    （本仓高发的「只建列、零消费方」）。为什么不用 `"pending"` 承载被拒候选：被拒候选的
+    载荷必然过不了 `memory_facts.validate_fact`，它在审核界面上却看起来可批准，一旦被
+    批准，approve 链路会回落自由文本路径把它写成一条自由文本记忆 —— 等于人工闸给写入侧
+    闸门开了后门；且人工闸列表与角标只列 pending，被拒行混进去会把闸门刷成噪声。
+    去重按 (vendor, tenant_id, content, status)：同一条理由反复发生＝同一件事反复发生，
+    合并触发单据而不是堆行。`"approved"` 不接受：人工批准必须经 review_pending_memory，
+    绕过它等于伪造一次审核。
     """
+    final_status = str(status or "pending").strip() or "pending"
+    if final_status not in ("pending", "rejected"):
+        raise ValueError(
+            "enqueue_pending_memory 的 status 只允许 'pending' / 'rejected'，实得 %r"
+            "（人工批准必须经 review_pending_memory 流转）" % (status,))
     vid = str(vendor or "")
     tid = str(tenant_id or "default").strip() or "default"
     refs = json.dumps([str(r) for r in (source_receipt_ids or [])],
                       ensure_ascii=False)
+    payload = {
+        "supplier_id": _coerce_supplier_id(supplier_id),
+        "fact_kind": fact_kind,
+        "fact_key": fact_key,
+        "fact_value": fact_value,
+        "reject_reason": reject_reason,
+    }
     s = get_session()
     try:
         dup = s.query(_PendingMemoryRow).filter(
             _PendingMemoryRow.vendor == vid,
             _PendingMemoryRow.tenant_id == tid,
-            _PendingMemoryRow.status == "pending",
+            _PendingMemoryRow.status == final_status,
             _PendingMemoryRow.content == (content or ""),
         ).first()
         if dup is not None:
@@ -2693,6 +4287,14 @@ def enqueue_pending_memory(vendor, content, tenant_id="default",
                     if str(r) not in merged:
                         merged.append(str(r))
                 dup.source_receipt_ids_json = json.dumps(merged, ensure_ascii=False)
+                # 与 upsert_vendor_memory 去重命中同一条纪律：旧行可能是在载荷列
+                # 上线前入队的（列为 NULL），此时补上；只补空值，不覆盖已有载荷
+                # （复用旧行不得改写它待审的内容）。
+                for col, val in payload.items():
+                    if val is None:
+                        continue
+                    if getattr(dup, col, None) in (None, ""):
+                        setattr(dup, col, val)
                 s.commit()
             except Exception:
                 s.rollback()
@@ -2703,8 +4305,9 @@ def enqueue_pending_memory(vendor, content, tenant_id="default",
             content=content or "",
             source_kind=str(source_kind or "feedback_distilled"),
             source_receipt_ids_json=refs,
-            status="pending",
+            status=final_status,
             created_at=now_iso(),
+            **payload,
         )
         s.add(row)
         s.commit()
@@ -2712,6 +4315,21 @@ def enqueue_pending_memory(vendor, content, tenant_id="default",
         return row.id, True
     finally:
         s.close()
+
+
+def _coerce_supplier_id(value):
+    """pending 载荷的 supplier_id 归一成 int；不可归一返回 None（不编造锚点）。
+
+    为什么显式归一而不是直接写：列是 INTEGER，写进 'abc' 这类字符串在 SQLite 里
+    会被原样存成文本，之后按 (supplier_id, vendor) 查询永远匹配不上且零报错。
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        logger.warning("[memory] pending supplier_id 非法，落 NULL：%r", value)
+        return None
 
 
 def _pending_row_to_dict(r):
@@ -2726,18 +4344,41 @@ def _pending_row_to_dict(r):
         "created_at": r.created_at or "",
         "reviewed_by": r.reviewed_by,
         "reviewed_at": r.reviewed_at,
+        # P3-T1（K2）：字段级 diff 载荷（消费方＝人工闸的 diff 视图与 approve 落库：
+        #   None = 该行没有结构化载荷，界面退回整段文本视图 —— 刻意不折算成空串，
+        #   否则会渲染出一排"值为空"的假字段）。
+        "supplier_id": r.supplier_id,
+        "fact_kind": r.fact_kind,
+        "fact_key": r.fact_key,
+        "fact_value": r.fact_value,
+        "reject_reason": r.reject_reason,
     }
 
 
 def list_pending_memory(status=None, tenant_id=None):
-    """待确认记忆列表（可按 status / 租户过滤），id 倒序。"""
+    """待确认记忆列表，id 倒序。
+
+    AH3 契约：**缺省（不传 status，或显式传 None）只返回 `status='pending'`** —— 那才是
+    "待确认"的语义。要看其它状态必须显式传：`status='rejected'`（落选审计行）、
+    `status='approved'`（已批准行）。本函数**不再提供"不过滤/全状态"模式**：人审队列与
+    审计行的语义不同，刻意不提供混装视图，需要跨状态快照的调用方自行按状态分别取。
+
+    why：Q2 之后同一张表里多了一族 `status='rejected'` 的**落选审计行**（候选没过
+    `validate_fact`、或与既有同值事实被判 NOOP —— 按设计"不进队列"，只留理由备查）。
+    它们不是等人审的行。旧写法 `if status:` 使"不传 status"＝"不过滤"，于是
+    「待确认记忆」列表与前端角标会把审计行当成待批记忆（角标虚高、审核者看到永远批不掉
+    的条目），与本仓自己的口径（待审界面只列 status='pending'）相反。改后隔离是**默认
+    安全**的：新增调用方漏传 status 时落到人审队列，而不是混入审计行的全量表。
+    传 None 与不传参数行为一致（刻意不让"签名默认值"与"显式 None"分成两条行为）。
+    """
     if _PendingMemoryRow is None:
         return []
+    # 传 None / 空串一律按"待确认"处理；否则按显式状态过滤（kwargs 读法不受调用姿势影响）。
+    target_status = str(status) if status else "pending"
     s = get_session()
     try:
         q = scoped(s.query(_PendingMemoryRow), _PendingMemoryRow, tenant_id)
-        if status:
-            q = q.filter(_PendingMemoryRow.status == str(status))
+        q = q.filter(_PendingMemoryRow.status == target_status)
         rows = q.order_by(_PendingMemoryRow.id.desc()).all()
         return [_pending_row_to_dict(r) for r in rows]
     finally:
@@ -2793,12 +4434,178 @@ def review_pending_memory(pending_id, status, reviewed_by, tenant_id=None):
         s.close()
 
 
+def delete_pending_memory(vendor=None, supplier_id=None, tenant_id=None):
+    """FP-2b：删除某主体的全部待确认记忆行（vendor 名 / supplier_id 锚点，OR 过滤）。
+
+    erasure 语义（PDPO s.26）：**覆盖全部 status** —— 已审过的 approved/rejected 历史行
+    同样是该主体的个人数据（审计留痕在 system_audit_log，不在 pending 行本身）。
+    两个选择器都空直接返回 0：防"不传参 = 删整租户队列"的误删入口（与
+    delete_vendor_memory 的双空拒绝同口径）。返回删除的行数。
+    """
+    if _PendingMemoryRow is None:
+        return 0
+    vid = str(vendor).strip() if vendor is not None else ""
+    sid = str(supplier_id).strip() if supplier_id is not None else ""
+    if not vid and not sid:
+        return 0
+    from sqlalchemy import or_
+    cond = []
+    if vid:
+        cond.append(_PendingMemoryRow.vendor == vid)
+    if sid:
+        try:
+            cond.append(_PendingMemoryRow.supplier_id == int(sid))
+        except ValueError:
+            return 0    # 非法锚点：不匹配任何行，也不误删
+    s = get_session()
+    try:
+        q = scoped(s.query(_PendingMemoryRow), _PendingMemoryRow,
+                   tenant_id).filter(or_(*cond))
+        n = q.delete(synchronize_session=False)
+        s.commit()
+        return int(n)
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# P3-T4（B6）：记忆抽取的运行记录（中间产物可查、失败可复盘）
+# -------------------------------------------------------------
+def record_memory_extract_run(tenant_id="default", receipt_id=None, vendor="",
+                              supplier_id=None, trigger="", diffs_count=0,
+                              facts_produced=0, facts_rejected=0,
+                              reject_reasons=None, prompt_source="", error=""):
+    """把一次记忆抽取的运行记录写库，返回新行的 run_id（表不可用时返回 None）。
+
+    为什么要有这张表：`memory_extract.get_last_run()` / `get_last_error()` 是
+    `threading.local` 的**内存态** —— 进程重启即丢，事后无法复盘"某次抽取为什么产出 0 条
+    / 是不是一直走回退文案 / 失败在哪一步"。本函数是那份内存态的**唯一持久化落点**：
+    入参就是它的内容，**不在这里重算任何统计**（本仓高发的「同一根因两份实现」）。
+
+    失败行也写 `reject_reasons_json`：`error` 非空而 `reject_reasons` 为空时，把 error
+    本身作为一条理由落进列表。why：本表的两列服务于同一个问题"这次为什么没有候选"，
+    若失败行只填 error、理由列留空，库里的"失败了"与"本来就没什么可记的"长得一样 ——
+    正是本仓高发的"静默失效"。此归一**只发生在持久化层**，不改 `memory_extract` 的
+    内存态（那边的 `reject_reasons` 仍只含候选级理由，两种语义不混）。
+
+    `prompt_source` 单列（不并入 error）：回退文案与注册表版条款等价、结果可用，
+    回退率是 **prompt 治理失效**的信号，混进 error 会让告警方向失真。
+
+    幂等：run_id 自增主键，每次调用新增一行。运行记录按"次"计，**刻意不去重** ——
+    去重会把"同一张单据被反复重跑"这个信号抹掉（而它正是复盘要找的东西）。
+    另：本函数**不吞异常**（与 enqueue_pending_memory 同口径）；调用方负责把它裹进
+    try/except —— 记录失败绝不能让已成功的保存/入账变成 500。
+
+    消费方：`list_memory_extract_runs`（复盘查询；其再上层调用方见该函数 docstring）。
+    """
+    if _MemoryExtractRunRow is None:
+        return None
+    reasons = [str(r) for r in (reject_reasons or []) if str(r).strip()]
+    err = str(error or "")
+    if err and not reasons:
+        # 见 docstring：失败行的"为什么没有候选"就是 error 本身
+        reasons = [err]
+    tid = str(tenant_id or "default").strip() or "default"
+    rid = None if receipt_id in (None, "") else coerce_int(receipt_id, 0)
+    row = _MemoryExtractRunRow(
+        tenant_id=tid,
+        receipt_id=rid,
+        vendor=str(vendor or ""),
+        supplier_id=_coerce_supplier_id(supplier_id),
+        trigger=str(trigger or ""),
+        diffs_count=coerce_int(diffs_count, 0),
+        facts_produced=coerce_int(facts_produced, 0),
+        facts_rejected=coerce_int(facts_rejected, 0),
+        reject_reasons_json=json.dumps(reasons, ensure_ascii=False),
+        prompt_source=str(prompt_source or ""),
+        error=err,
+        created_at=now_iso(),
+    )
+    s = get_session()
+    try:
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        return row.run_id
+    finally:
+        s.close()
+
+
+def _memory_extract_run_to_dict(r):
+    """运行记录行 → dict。
+
+    `reject_reasons`（已解析的列表）与 `reject_reasons_json`（原始 JSON）都给出：
+    前者供调用方直接遍历（复盘脚本），后者保留原样以支持"库里的值到底是什么"的核对。
+    JSON 损坏时回落 `[]` 而**不抛**：一条坏行不该让整个复盘查询失败（也不静默装作
+    没有理由 —— 原始的坏字符串仍在 reject_reasons_json 里可见）。
+    """
+    raw = r.reject_reasons_json or "[]"
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        parsed = []
+    if not isinstance(parsed, list):
+        parsed = []
+    return {
+        "run_id": r.run_id,
+        "tenant_id": r.tenant_id or "default",
+        "receipt_id": r.receipt_id,
+        "vendor": r.vendor or "",
+        "supplier_id": r.supplier_id,
+        "trigger": r.trigger or "",
+        "diffs_count": int(r.diffs_count or 0),
+        "facts_produced": int(r.facts_produced or 0),
+        "facts_rejected": int(r.facts_rejected or 0),
+        "reject_reasons_json": raw,
+        "reject_reasons": [str(x) for x in parsed],
+        "prompt_source": r.prompt_source or "",
+        "error": r.error or "",
+        "created_at": r.created_at or "",
+    }
+
+
+def list_memory_extract_runs(tenant_id=None, receipt_id=None, trigger=None,
+                             limit=None):
+    """记忆抽取运行记录列表（可按租户 / 单据 / 触发入口过滤），默认按时间倒序。
+
+    why 默认倒序：复盘的第一眼看的是"最近几次发生了什么"；同秒多行用 run_id 倒序兜底
+    （run_id 自增，单调递增），避免 `created_at` 秒级精度下顺序不确定。
+
+    消费方（**待接线，禁止在别处声称已接**）：
+    - P8b·AA2 的 `demo/scripts/memory_extract_replay.py`（`--failed-only` 需要按
+      `error != ''` 捞出可重跑的失败运行）；
+    - 本波新增的 `tests/test_memory_extract_runs_persistence.py`（租户不跨租判据）。
+    当前**尚无生产读端点**接入本函数 —— 不要把它写成"已在管理台可看"。
+    """
+    if _MemoryExtractRunRow is None:
+        return []
+    s = get_session()
+    try:
+        q = scoped(s.query(_MemoryExtractRunRow), _MemoryExtractRunRow, tenant_id)
+        if receipt_id not in (None, ""):
+            q = q.filter(_MemoryExtractRunRow.receipt_id == coerce_int(receipt_id, 0))
+        if trigger not in (None, ""):
+            q = q.filter(_MemoryExtractRunRow.trigger == str(trigger))
+        q = q.order_by(_MemoryExtractRunRow.created_at.desc(),
+                       _MemoryExtractRunRow.run_id.desc())
+        if limit not in (None, ""):
+            q = q.limit(max(0, coerce_int(limit, 0)))
+        return [_memory_extract_run_to_dict(r) for r in q.all()]
+    finally:
+        s.close()
+
+
 def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
     """T8 非对称衰减（淘汰快）：用户覆写 → 该供应商活跃记忆扣分。
 
     步长取 settings 键 'memory_decay_override_penalty'（缺省 -0.12）；
     扣分后低于归档阈值（键 'memory_archive_threshold'，缺省 0.5）的行自动
     置 archived，停止注入。返回受影响的行数。
+
+    R11-AR1：本次真的发生 active -> archived 迁移的行，会交给
+    `services.memory_store.archive_memory_vectors` 级联删掉其向量 —— 归档与删除在
+    向量层上必须对称（删除早有级联，归档此前没有，于是每归档一次就留一枚孤儿向量，
+    巡检立刻报 `orphan_mids`）。级联失败只告警，不影响衰减结果与调用方（单据保存）。
     """
     if _VendorMemoryRow is None:
         return 0
@@ -2820,14 +4627,30 @@ def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
             _VendorMemoryRow.tenant_id == tid,
             _VendorMemoryRow.status == "active",
         ).all()
+        archived_mids = []   # R11-AR1：本次真的 active -> archived 的 memory_id
         for r in rows:
             cur = float(r.decay_score if r.decay_score is not None else 1.0)
             new = cur - penalty
             r.decay_score = new
             if new <= threshold:
                 r.status = "archived"
+                archived_mids.append(str(r.memory_id))
             r.updated_at = now_iso()
         s.commit()
+        # R11-AR1：归档与向量层对称 —— 删除路径有级联（memory_store.delete_memory），
+        # 归档此前没有，于是每归档一次就在向量库留一枚孤儿（巡检 orphan_mids 立刻报）。
+        # 只对本次真发生 active -> archived 迁移的行调用：行一旦归档，本查询（status ==
+        # "active"）就取不到它，故重复调用不会重复删向量（幂等）。级联失败只告警 ——
+        # 衰减结果与调用方（单据保存）不受影响，向量残留由巡检可查。
+        if archived_mids:
+            try:
+                from app.services import memory_store
+                memory_store.archive_memory_vectors(tid, archived_mids, vendor=vid)
+            except Exception as e:
+                logger.warning(
+                    "[db] R11 归档向量级联失败（衰减已提交，向量可能残留）"
+                    "vendor=%s tenant=%s memory_ids=%s: %s",
+                    vid, tid, archived_mids, e)
         return len(rows)
     finally:
         s.close()
@@ -2840,6 +4663,233 @@ def memory_archive_threshold():
         return settings_service.get_float("memory_archive_threshold", 0.5)
     except Exception:
         return 0.5
+
+
+def memory_initial_decay_score():
+    """新记忆的起始衰减分（settings 实时读取，缺省 0.7），写入与恢复两处共用。
+
+    为什么需要这个键（P1-T2 修「衰减单向」的根）：起始分若与上限 1.0 相同，命中强化
+    的 min(1.0, cur + bonus) 就是恒等操作 —— 分数只降不升，归档成了不可逆终点。
+    起始分下调后「命中强化」才有可观测效果，归档也才有配套的恢复语义。
+
+    单点实现（写入 upsert_vendor_memory 与恢复 revive_vendor_memory 共用同一函数），
+    避免本仓高发的「同一口径多份实现、只改了一份」。
+
+    取值自洽性：起始分必须高于 memory_archive_threshold（缺省 0.5），否则新写入的
+    记忆当次即被判为劣化、不可注入；两个键由管理台维护，本函数不做双向钳制。
+    """
+    try:
+        from app.services import settings_service
+        return settings_service.get_float("memory_initial_decay_score", 0.7)
+    except Exception:
+        return 0.7
+
+
+def memory_max_active_per_vendor():
+    """每 (vendor, tenant) 的 active 记忆容量上限（settings 实时读取，缺省 200）。
+
+    W-4 / M2：追加式写入此前无容量边界，同一供应商可无限追加 active 行，高分供应商
+    会被噪声记忆淹没、检索质量随使用下降。0 或负值 = 不限制（向后兼容：关闭淘汰即回到
+    「只追加、无边界」的旧行为，与 memory_ttl_days 同款「关闭即老行为」语义）。
+
+    单点读取（写入侧 `_evict_vendor_memory_over_capacity` 与将来的治理视图共用同一
+    阈值口径），避免本仓高发的「同一根因多份实现、只改了一份」。
+    """
+    try:
+        from app.services import settings_service
+        return settings_service.get_int("memory_max_active_per_vendor", 200)
+    except Exception as e:
+        # 与 memory_ttl_days 同口径：回退值 200（有界）本身是刻意兜底，但**静默**会让
+        # "容量配置读不出来"与"本来就设了 200"在库中完全同形 —— 容量闸失效而无人可见。
+        logger.warning(
+            "memory_max_active_per_vendor 读取失败，本次按 200（有界）处理："
+            "异常=%s: %s", type(e).__name__, e)
+        return 200
+
+
+def _evict_vendor_memory_over_capacity(vendor, tenant_id, keep_memory_id=None,
+                                       written_by=None):
+    """容量淘汰（W-4）：active 行数**超过**上限时归档多余的最低分/最旧行。
+
+    调用契约：写入侧在**新行已提交**后调用（只有真的新增了 active 行才可能超限；
+    幂等去重命中不增行、不会调用）。返回本次归档的 memory_id 列表（未超限返回 []）。
+
+    淘汰口径（确定性 + 可审计，缺一不可）：
+      候选 = 同 (vendor, tenant) 下的 active 行，排除 keep_memory_id（= 本次刚写入的
+      新行，绝不"写完即被自己淘汰"）；按 (decay_score ASC, created_at ASC, rowid ASC)
+      排序，取前 `active 数 - 上限` 条。decay_score 为 NULL 的行按 1.0 处理 —— 与
+      `apply_vendor_memory_override_penalty` 同口径（视为高分、优先保留）。三名并列
+      用 rowid 破平，故同输入必然淘汰同一批（无随机性）。**只在超过上限时淘汰**：
+      active 数 <= 上限直接返回，未超限的既有行为（幂等去重等）逐字节不变。
+
+      FP-4：容量计数**排除已过 `valid_to` 的 active 行**（`now > valid_to` 严格大于；
+      空/NULL/非法格式/恰好相等一律照常计入 —— 与 `_memory_row_expired` 的读侧口径
+      对齐「解析不出来宁可算入」）。为什么：D4 设计下到期行 status 不迁移，若计入
+      容量，满员后每次写入都会误淘一条 active 好行。刻意不复用 `_memory_row_expired`：
+      那里还有 created_at+TTL 全局兜底过期，容量口径只有 valid_to（见 SPEC FP-4 §4.2，
+      口径蔓延须先改规格）。到期行本身不迁移、不删不归档（治理视图仍可见）。
+
+    归档而非物理删除：与本仓「非 active 迁移需级联向量」的一贯纪律一致 —— 归档路径
+    已有向量级联，此处**复用** `memory_store.archive_memory_vectors`（不写第二份
+    collection 操作），归档行仍可经 `revive_vendor_memory` 恢复；物理删除不可逆。
+
+    审计：复用 `append_system_audit_log` —— 记忆治理的 approve / reject 用的就是它
+    （见 api_memory._safe_audit）；本动作无 receipt 上下文，故不走 receipt 级的
+    `append_audit_log`（后者按 receipt_id 定位，无单据时会静默 no-op，等于不留痕）。
+    action 记为 `capacity_eviction`，载荷含 vendor / tenant / 淘汰的 memory_id。
+    """
+    if _VendorMemoryRow is None:
+        return []
+    vid = str(vendor or "")
+    tid = str(tenant_id or "default").strip() or "default"
+    if not vid:
+        return []
+    limit = memory_max_active_per_vendor()
+    if limit is None or limit <= 0:
+        return []   # 0 / 负值 = 不限制（向后兼容）
+    keep = str(keep_memory_id).strip() if keep_memory_id else None
+    evicted = []
+    s = get_session()
+    try:
+        from sqlalchemy import func as _func, text as _sa_text
+        q = s.query(_VendorMemoryRow).filter(
+            _VendorMemoryRow.vendor == vid,
+            _VendorMemoryRow.tenant_id == tid,
+            _VendorMemoryRow.status == "active",
+        # FP-4：排序仍在 SQL 侧完成（rowid 破平是 SQLite 方言，Python 侧拿不到），
+        # 过期排除放 Python 侧逐行判定 —— valid_to 是 ISO 文本、秒级精度混合，
+        # SQL 字符串比较的顺序不可靠。过滤保序，候选序即淘汰优先序。
+        ).order_by(
+            _func.coalesce(_VendorMemoryRow.decay_score, 1.0).asc(),
+            _VendorMemoryRow.created_at.asc(),
+            _sa_text("rowid ASC"),
+        ).all()
+        now = datetime.now()
+        kept = []
+        excluded_expired = 0
+        for r in q:
+            vt = _parse_iso_dt(getattr(r, "valid_to", "") or "")
+            if vt is not None and now > vt:
+                excluded_expired += 1
+                continue    # 已过 valid_to 的行不占容量坑（也不在此迁移/删除）
+            kept.append(r)
+        total = len(kept)
+        if total <= limit:
+            return []
+        excess = total - limit
+        candidates = [
+            r for r in kept
+            if not keep or str(r.memory_id) != keep][:excess]
+        for r in candidates:
+            r.status = "archived"
+            r.updated_at = now_iso()
+            evicted.append(str(r.memory_id))
+        if evicted:
+            s.commit()
+    finally:
+        s.close()
+    if not evicted:
+        return []
+    # R11 同族：归档与向量层必须对称 —— 只对**本次真发生 active -> archived** 的行
+    # 调用级联（幂等：那些行已非 active，重复淘汰取不到它们）。级联失败只告警，
+    # 淘汰结果已提交，向量残留由巡检可查。
+    try:
+        from app.services import memory_store
+        memory_store.archive_memory_vectors(tid, evicted, vendor=vid)
+    except Exception as e:
+        logger.warning(
+            "[db] W-4 容量淘汰向量级联失败（归档已提交，向量可能残留）"
+            "vendor=%s tenant=%s memory_ids=%s: %s", vid, tid, evicted, e)
+    # 审计（失败只告警，不得让已提交的淘汰/写入失败）
+    try:
+        append_system_audit_log(
+            str(written_by or "").strip() or "system",
+            "capacity_eviction", "vendor_memory",
+            {"status": "active", "vendor": vid, "tenant_id": tid,
+             "memory_ids": evicted, "limit": limit,
+             # FP-4：本次被排除出容量计数的过期行数（纯增量，便于 QA 断言）
+             "excluded_expired": excluded_expired},
+            {"status": "archived"},
+        )
+    except Exception as e:
+        logger.warning(
+            "[db] W-4 容量淘汰审计写入失败 vendor=%s tenant=%s: %s", vid, tid, e)
+    return evicted
+
+
+def revive_vendor_memory(memory_id, tenant_id=None):
+    """P1-T2 归档恢复：把 status='archived' 的记忆恢复为 active 并重置起始分。
+
+    why 需要恢复通道：apply_vendor_memory_override_penalty 的扣分是单向的 —— 低于
+    阈值即归档，而默认查询只列 active，归档行此后既不会被检索命中、也不会被命中
+    强化回升。一次误判（或一次合理的业务变更）因此会把该供应商的记忆永久踢出注入
+    面。归档必须是可逆的，恢复动作由 admin 经端点显式发起。
+
+    为什么重置为起始分而不是"恢复归档前的原值"：原值已在阈值以下，直接复活会让它
+    停在可注入边缘、下次检索前仍近乎不可用；重置为起始分等于「由一次人工背书重新
+    开始积累」，且与写入侧同一口径（memory_initial_decay_score）。
+
+    向量层（R11-AR1 起必须补写）：归档路径现已级联删掉该 mid 的向量（与删除对称），
+    因此恢复不能只改 status —— 只改 status 会留下「DB 行 active、向量库无该 mid」的
+    脱钩（巡检报 missing_vector_mids，且没有写入路径会自愈）。故恢复成功后调用
+    `services.memory_store.restore_memory_vectors` 补写；补写失败只告警（状态已生效）。
+    （R11 之前的说明是「归档不动向量层、行回到 active 即自动放行」—— 该前提已被
+    R11 的归档级联推翻，勿再按它推断。）
+
+    tenant_id：传了就强制过滤 —— 跨租户恢复命中 0 行、端点据此回 404（与删除端点同
+    口径：不给出用 403/404 差异探测他租户 memory_id 是否存在的接口）；不传则不过滤
+    （仅供内部脚本/测试）。
+
+    返回 dict：「found」区分"目标存在"与"不存在/跨租户"，「revived」区分"本次真的
+    恢复了"与"本来就是 active"，端点据此把 404（目标不可见）与 409（无需恢复）分开
+    回答，而不是把后者伪装成 404。
+    """
+    if _VendorMemoryRow is None:
+        return {"found": 0, "revived": 0, "already_active": False}
+    mid = str(memory_id).strip() if memory_id is not None else ""
+    if not mid:
+        return {"found": 0, "revived": 0, "already_active": False}
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorMemoryRow), _VendorMemoryRow, tenant_id)
+        row = q.filter(_VendorMemoryRow.memory_id == mid).first()
+        if row is None:
+            return {"found": 0, "revived": 0, "already_active": False}
+        info = {
+            "found": 1, "revived": 0, "already_active": False,
+            "memory_id": str(row.memory_id), "vendor": row.vendor or "",
+        }
+        if (row.status or "active") != "archived":
+            # 本来就没归档：不改分、不改状态（第二次点击恢复不应把分数重置一遍）
+            info["already_active"] = True
+            info["status"] = row.status or "active"
+            info["decay_score"] = float(
+                row.decay_score if row.decay_score is not None else 0.0)
+            return info
+        rv_mid = str(row.memory_id)
+        rv_vendor = str(row.vendor or "")
+        rv_tid = str(row.tenant_id or "")
+        row.status = "active"
+        row.decay_score = memory_initial_decay_score()
+        row.updated_at = now_iso()
+        s.commit()
+        # R11-AR1：状态提交后再补向量（恢复动作不得因向量层故障失败）。取值在 commit 前
+        # 先落到局部变量，避免依赖 commit 后的 ORM 属性刷新。只在本行真的从非 active 回到
+        # active 时走到这里 —— 本来 active 的行在上面就 return 了（不重复写向量）。
+        try:
+            from app.services import memory_store
+            memory_store.restore_memory_vectors(rv_tid, rv_mid, vendor=rv_vendor)
+        except Exception as e:
+            logger.warning(
+                "[db] R11 恢复补向量失败（状态已置 active，向量可能缺失）"
+                "memory_id=%s vendor=%s tenant=%s: %s",
+                rv_mid, rv_vendor, rv_tid, e)
+        info["revived"] = 1
+        info["status"] = "active"
+        info["decay_score"] = float(row.decay_score)
+        return info
+    finally:
+        s.close()
 
 
 # -------------------------------------------------------------
@@ -2958,6 +5008,12 @@ def set_engine_config(cfg, source=None):
             cfg.config_source = str(source)
         # 存量/回滚快照里的超时超上限值一律归一，避免「显示 90 实际 60」
         cfg.call_timeout_seconds = clamp_call_timeout(getattr(cfg, "call_timeout_seconds", None))
+        for tf in (
+            "rec_timeout_seconds", "aud_timeout_seconds", "parse_timeout_seconds",
+            "grey_rec_timeout_seconds", "grey_aud_timeout_seconds", "grey_parse_timeout_seconds"
+        ):
+            if hasattr(cfg, tf) and getattr(cfg, tf, None) is not None:
+                setattr(cfg, tf, clamp_call_timeout(getattr(cfg, tf)))
         # 写入前确保不残留 opencode / codebuddy 引擎及模型
         for eng_field, mod_field, def_model in (
             ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
@@ -3048,18 +5104,8 @@ def _fill_manual_engine_config_gaps(cfg, log, ds_base, ds_key, sf_base, sf_key, 
 
 
 def _normalize_call_timeout(cfg, log) -> bool:
-    """存量超时归一（T9 收尾）：把 DB 里历史遗留的 >60 值钳到硬上限，使回显值恒等于生效值。
-
-    why 必须做：EngineConfig 默认值已改 60，但已落库的 app_settings.engine_config 里的
-    90 不会自己变；管理台回显 90 而 llm._resolve_timeout 实际钳到 60 —— 这正是要消除的
-    「填 90 实际只有 60」误导。hydrate 不管这个字段，故此前无任何路径能纠正存量值。
-
-    对 config_source=manual 同样生效：超时上限是硬约束，不是管理台可绕过的偏好。
-    幂等：已 ≤ 上限时逐字段不变并返回 False，调用方可据此跳过落盘（不再刷新 live 库）。
-    非法值（None/0/负值）保持原样不改写，口径与 llm._resolve_timeout 及
-    models.clamp_call_timeout 一致（运行期视为「未设置」并回落缺省 30s）。
-    """
     from app.models import clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
+    changed = False
     raw = getattr(cfg, "call_timeout_seconds", None)
     fixed = clamp_call_timeout(raw)
     if fixed != raw:
@@ -3067,8 +5113,19 @@ def _normalize_call_timeout(cfg, log) -> bool:
         log.warning("[engine-env] 存量超时值 %s 已归一为 %s（硬上限）；"
                     "实际生效超时由 llm._resolve_timeout 钳制，填更大值不会延长等待",
                     raw, MAX_CALL_TIMEOUT_SECONDS)
-        return True
-    return False
+        changed = True
+    for tf in (
+        "rec_timeout_seconds", "aud_timeout_seconds", "parse_timeout_seconds",
+        "grey_rec_timeout_seconds", "grey_aud_timeout_seconds", "grey_parse_timeout_seconds"
+    ):
+        v = getattr(cfg, tf, None)
+        fv = clamp_call_timeout(v)
+        if fv != v:
+            setattr(cfg, tf, fv)
+            log.warning("[engine-env] 存量超时值 %s=%s 已归一为 %s（硬上限）",
+                        tf, v, MAX_CALL_TIMEOUT_SECONDS)
+            changed = True
+    return changed
 
 
 def hydrate_engine_config_from_env():
@@ -3356,13 +5413,23 @@ def _openai_gateway_healthy(api_key: str, base_url: str = "") -> bool:
 
     base_url 留空时回落 OPENAI/SILICONFLOW base（历史调用兼容）；显式传入可避免
     「探 SF 端点却用于判断 DashScope」这类误判。
+
+    P2-4：外呼前一律经统一 SSRF 网关 validate_safe_external_url 校验；内网/元数据
+    形态的 base_url 不通过校验时直接判为「不健康」（返回 False）并 [WARN] 留痕，
+    既不静默也不抛穿启动流程。
     """
     import urllib.request
+    from app.services.security_guard import validate_safe_external_url
     base = (base_url or os.environ.get("SILICONFLOW_BASE_URL")
             or os.environ.get("OPENAI_BASE_URL")
             or "https://api.siliconflow.cn/v1").strip()
     if base.endswith("/chat/completions"):
         base = base[:-len("/chat/completions")]
+    is_safe, reason = validate_safe_external_url(base)
+    if not is_safe:
+        logger.warning("[WARN] 网关健康检查跳过外呼：base_url 未通过 SSRF 安全校验"
+                       "（%s）：%s", base, reason)
+        return False
     try:
         req = urllib.request.Request(base.rstrip("/") + "/models",
                                      headers={"Authorization": "Bearer " + api_key})
@@ -3370,6 +5437,159 @@ def _openai_gateway_healthy(api_key: str, base_url: str = "") -> bool:
             return resp.status == 200
     except Exception:
         return False
+
+
+# -------------------------------------------------------------
+# LLM / VLM 调用全息日志记录与查询接口 (Phase 2)
+# -------------------------------------------------------------
+def insert_llm_call_log(
+    receipt_id=None,
+    tenant_id="default",
+    trace_id="",
+    leg="extract",
+    attempt=1,
+    engine="",
+    model="",
+    prompt_messages_json="[]",
+    raw_output="",
+    prompt_tokens=0,
+    completion_tokens=0,
+    cached_tokens=0,
+    total_tokens=0,
+    cost_hkd=0.0,
+    cost_estimated=0,
+    cost_estimated_reason="",
+    elapsed_ms=0.0,
+    status="success",
+    error_msg="",
+    error_category="",
+    created_at="",
+):
+    """写一条 LLM/VLM 调用日志（全链路观测）。异常软失败不阻断业务。"""
+    s = get_session()
+    try:
+        if isinstance(prompt_messages_json, (dict, list)):
+            p_json = json.dumps(prompt_messages_json, ensure_ascii=False)
+        else:
+            p_json = str(prompt_messages_json or "[]")
+
+        row = _LlmCallLogRow(
+            receipt_id=int(receipt_id) if receipt_id is not None else None,
+            tenant_id=str(tenant_id or "default"),
+            trace_id=str(trace_id or ""),
+            leg=str(leg or "extract"),
+            attempt=int(attempt or 1),
+            engine=str(engine or ""),
+            model=str(model or ""),
+            prompt_messages_json=p_json,
+            raw_output=str(raw_output or ""),
+            prompt_tokens=int(prompt_tokens or 0),
+            completion_tokens=int(completion_tokens or 0),
+            cached_tokens=int(cached_tokens or 0),
+            total_tokens=int(total_tokens or 0),
+            cost_hkd=float(cost_hkd or 0.0),
+            cost_estimated=int(cost_estimated or 0),
+            cost_estimated_reason=str(cost_estimated_reason or ""),
+            elapsed_ms=float(elapsed_ms or 0.0),
+            status=str(status or "success"),
+            error_msg=str(error_msg or ""),
+            error_category=str(error_category or ""),
+            created_at=str(created_at or now_iso()),
+        )
+        s.add(row)
+        s.commit()
+        return row.id
+    except Exception as e:
+        logger.warning(f"插入 LLM 调用日志失败 (receipt_id={receipt_id}, leg={leg}): {e}")
+        try:
+            s.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        s.close()
+
+
+def list_llm_call_logs_by_receipt(receipt_id, tenant_id=None, s=None):
+    """按 receipt_id 查询 LLM 调用日志列表。"""
+    should_close = False
+    if s is None:
+        s = get_session()
+        should_close = True
+    try:
+        q = s.query(_LlmCallLogRow).filter(_LlmCallLogRow.receipt_id == int(receipt_id))
+        if tenant_id and tenant_id != "all":
+            q = q.filter(_LlmCallLogRow.tenant_id == str(tenant_id))
+        rows = q.order_by(_LlmCallLogRow.id.asc()).all()
+        results = []
+        for r in rows:
+            results.append({
+                "id": r.id,
+                "receipt_id": r.receipt_id,
+                "tenant_id": r.tenant_id,
+                "trace_id": r.trace_id,
+                "leg": r.leg,
+                "attempt": r.attempt,
+                "engine": r.engine,
+                "model": r.model,
+                "prompt_messages_json": r.prompt_messages_json,
+                "raw_output": r.raw_output,
+                "prompt_tokens": r.prompt_tokens,
+                "completion_tokens": r.completion_tokens,
+                "cached_tokens": r.cached_tokens,
+                "total_tokens": r.total_tokens,
+                "cost_hkd": r.cost_hkd,
+                "cost_estimated": r.cost_estimated,
+                "cost_estimated_reason": r.cost_estimated_reason,
+                "elapsed_ms": r.elapsed_ms,
+                "status": r.status,
+                "error_msg": r.error_msg,
+                "error_category": r.error_category,
+                "created_at": r.created_at,
+            })
+        return results
+    finally:
+        if should_close:
+            s.close()
+
+
+def get_llm_call_log_by_id(log_id, s=None):
+    """按 id 查询单条 LLM 调用日志。"""
+    should_close = False
+    if s is None:
+        s = get_session()
+        should_close = True
+    try:
+        r = s.query(_LlmCallLogRow).filter(_LlmCallLogRow.id == int(log_id)).first()
+        if not r:
+            return None
+        return {
+            "id": r.id,
+            "receipt_id": r.receipt_id,
+            "tenant_id": r.tenant_id,
+            "trace_id": r.trace_id,
+            "leg": r.leg,
+            "attempt": r.attempt,
+            "engine": r.engine,
+            "model": r.model,
+            "prompt_messages_json": r.prompt_messages_json,
+            "raw_output": r.raw_output,
+            "prompt_tokens": r.prompt_tokens,
+            "completion_tokens": r.completion_tokens,
+            "cached_tokens": r.cached_tokens,
+            "total_tokens": r.total_tokens,
+            "cost_hkd": r.cost_hkd,
+            "cost_estimated": r.cost_estimated,
+            "cost_estimated_reason": r.cost_estimated_reason,
+            "elapsed_ms": r.elapsed_ms,
+            "status": r.status,
+            "error_msg": r.error_msg,
+            "error_category": r.error_category,
+            "created_at": r.created_at,
+        }
+    finally:
+        if should_close:
+            s.close()
 
 
 # -------------------------------------------------------------

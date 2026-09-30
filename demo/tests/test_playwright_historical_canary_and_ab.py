@@ -2,6 +2,7 @@
 """Playwright 端到端浏览器验证：AI 效果观测中心中历史灰度测试与 A/B 实验深度数据。"""
 
 import os
+import pytest
 from playwright.sync_api import sync_playwright
 
 BASE_URL = "http://127.0.0.1:15010"
@@ -9,6 +10,7 @@ SCREENSHOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
+@pytest.mark.usefixtures("playwright_live_server")
 def test_playwright_historical_canary_and_ab_observatory():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

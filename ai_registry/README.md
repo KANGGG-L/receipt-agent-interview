@@ -15,7 +15,8 @@ ai_registry/
 ├── eval_reporter.py               # 资产效果分析与版本对比报告生成器
 │
 ├── prompts/                       # 1. 提示词资产库 (分场景、分版本、含评测元数据)
-│   ├── extract/                   # 视觉提取 VLM Prompts，11 版：v1_0_0 → v1_2_8_anti_injection（active）
+│   ├── extract/                   # 视觉提取 VLM Prompts，13 版：v1_0_0 → v1_2_8_anti_injection（active）；
+│   │                              #   v1_2_9_image_injection / v1_3_0_evidence 为 draft 灰测候选
 │   ├── parse/                     # 文本规范化 Prompts，4 版：v1_0_0 / v2_0_0_hk_units /
 │   │                              #   v2_1_0_sku_clean（active）/ v2_2_0_structured_json
 │   ├── correct/                   # 门禁反馈驱动的解析级修正 Prompts（新场景，v1_0_0 active）
@@ -25,8 +26,8 @@ ai_registry/
 │   ├── query/                     # 自然语言查账 Prompts (v1.0.0)
 │   └── memory/                    # 供应商记忆提炼 Prompts (v1.0.0)
 │
-├── tools/                         # 2. 确定性工具资产库 (Tool Registry，12 个)
-│   ├── math_engine/               # 确定性算术校验工具 (零 Token 守恒计算, v2_0_0)
+├── tools/                         # 2. 确定性工具资产库 (Tool Registry，13 个)
+│   ├── math_engine/               # 确定性算术校验工具 (零 Token 守恒计算, v2_1_0)
 │   ├── smart_splitter/            # 品名规格智能正则剥离工具
 │   ├── item_sanitizer/            # 明细条目清洗工具（免责条款/杂项行剔除）
 │   ├── sku_matcher/               # SKU 核心词匹配工具（精确 → 核心词 → 建档）
@@ -35,6 +36,7 @@ ai_registry/
 │   ├── huama_evaluator/           # 花码（苏州码）与草书置信度评估工具
 │   ├── image_quality_guard/       # 图像质量守卫工具（模糊/过曝检测）
 │   ├── prompt_injection_guard/    # 提示注入防护与 XML 沙箱工具
+│   ├── image_injection_guard/     # 图内隐藏文字检测工具（只告警不拦截）
 │   ├── pii_masker/                # 敏感信息 (HKID/银行卡/手机) 脱敏工具
 │   ├── query_sql_gen/             # 只读安全 SQL 动态生成器
 │   └── statement_reconciler/      # 月结 Statement 对账差异比对工具
@@ -58,6 +60,8 @@ ai_registry/
     ├── benchmark_matrix.json      # 全量资产版本效果总表
     ├── prompt_eval_history.json   # 提示词效果演化指标追踪 (准确率/CER/Token)
     ├── tool_eval_history.json     # 确定性工具执行时延与拦截率统计
+    ├── injection_guard_bypass_eval.json  # 注入守卫绕过语料逐条实测记录（14 条绕过 / 18 条旧基线
+    │                              #   / 30 条负样本 / 5 条已知检不出，含复现命令与能力上限说明）
     ├── meta_eval_set.json         # 元评测集（评估器可信度自检，25 条已确证二元样本）
     ├── meta_eval_runs/            # run_meta_eval.py 的评估器可信度报告留档
     └── eval_runs/                 # run_eval.py 的评测报告落盘目录（首次运行后生成，

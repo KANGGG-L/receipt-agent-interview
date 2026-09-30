@@ -9,8 +9,12 @@
       "description": "Unicode 苏州码子特征检测、花码转译与置信度强制压降 (<= 0.40)",
       "metrics": {
         "huama_detection_rate": 100.0,
+        "huama_detection_rate_scope": "确定性工具，行为由 tests/test_gap7_huama_confidence.py 的用例集覆盖（含花码/不含花码正负样本全部判对）；不是通用检出率",
         "overconfidence_suppression_rate": 100.0,
-        "manual_review_trigger_rate": 100.0
+        "overconfidence_suppression_rate_scope": "同上：受测样本中含花码行的虚高置信度全部被压降至 <= 0.40；非通用比率",
+        "manual_review_trigger_rate": 100.0,
+        "manual_review_trigger_rate_scope": "同上：受测样本中命中花码时均写入人工复核警告；非通用比率",
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap7_huama_confidence.py -q"
       }
     }
   }

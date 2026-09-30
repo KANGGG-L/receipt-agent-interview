@@ -14,6 +14,7 @@ E2E Playwright 用例：验证 select#pvalueExperimentSelect 切换实验时选�
 """
 import os
 
+import pytest
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
@@ -91,6 +92,7 @@ def _wait_cards_render_as(page, cards, timeout=10000):
         return False
 
 
+@pytest.mark.usefixtures("playwright_live_server")
 def test_pvalue_experiment_select_switch():
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
     with sync_playwright() as p:

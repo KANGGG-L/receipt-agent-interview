@@ -152,12 +152,10 @@ def test_split_sizes_follow_55_25_20(tmp_path):
         assert abs(counts[split] / n - ratio) <= 0.06, \
             f"{split} 配比 {counts[split]}/{n} 偏离 55/25/20"
 
-    # 163 张真实语料的切分规模与计划口径一致（test 集约 33 张）
-    real = build_evalset.allocate_splits(158)
-    real["train"] += build_evalset.allocate_splits(5)["train"]
-    real["val"] += build_evalset.allocate_splits(5)["val"]
-    real["test"] += build_evalset.allocate_splits(5)["test"]
-    assert real["test"] == 33, real
+    # 注：原先此处还有一段「163 张真实语料的切分规模与计划口径一致（test 集约 33 张）」
+    # 的断言，它只调用 build_evalset.allocate_splits 纯函数、从不读盘 —— 真实语料怎么
+    # 漂移它都不会红（假绿），已改写为读真实 manifest 的
+    # test_real_corpus_test_split_scale_matches_historical_baseline。
 
 
 def test_same_seed_reproducible_manifest(tmp_path):
@@ -470,3 +468,43 @@ def test_real_corpus_splits_disjoint(evalset_dir):
     assert not (buckets["train"] & buckets["val"])
     assert not (buckets["train"] & buckets["test"])
     assert not (buckets["val"] & buckets["test"])
+
+
+@pytest.mark.eval
+def test_real_corpus_test_split_scale_matches_historical_baseline(evalset_dir):
+    """读**真实** manifest：run_eval 默认打分的 test 切片规模 == 历史基线（batch1 163 张的 test 切片）。
+
+    why（旧判据为何过时、为何是假绿）：本条原先挂在 `test_split_sizes_follow_55_25_20`
+    末尾，写成
+
+        real = build_evalset.allocate_splits(158)
+        real["train"] += build_evalset.allocate_splits(5)["train"]
+        ...
+        assert real["test"] == 33, real
+
+    —— 它**只调用纯函数、从不读盘**，于是带上了「真实语料」的注释，却对磁盘语料
+    毫无判别力：语料增删或 split 划分漂移时它**不会红**（恒真的装饰）。而且它把
+    「batch1 163 张（按 158 + 5 两次构建）的 test 切片 = 33」这个**历史口径**写成了
+    对**当前**语料的断言 —— 二者数字偶然相同（磁盘上现留的正是那批语料的 test 切片，
+    33 张），掩盖了「断言对象其实是纯函数」这一事实。
+
+    现在改为读真实 manifest、对「split == test 的样本数」写真断言：守的是「评测默认
+    打分的那一档语料规模未漂移」（样本增删、或 split 列被改动都必须失败）。
+    判别力由 --run-eval 下的实测反证覆盖（把 manifest 少读一行 → 本条必须失败）。
+
+    前提：需要真实语料（夹具缺失时自动 skip）；本用例**只读** manifest，
+    不写语料 / GT / 报告。
+    """
+    rows = _read_manifest(os.path.join(evalset_dir, "manifest.csv"))
+    assert rows, "语料存在但 manifest 为空"
+
+    splits = {r["split"] for r in rows}
+    assert splits <= {"train", "val", "test"}, f"manifest 含非法 split 值：{splits}"
+
+    n_test = sum(1 for r in rows if r["split"] == "test")
+    # 历史基线：batch1 163 张按 158 + 5 两次构建时的 test 切片规模（= 33）
+    baseline = (build_evalset.allocate_splits(158)["test"]
+                + build_evalset.allocate_splits(5)["test"])
+    assert n_test == baseline, (
+        f"真实语料 test 切片 {n_test} 张 != 历史基线 {baseline} 张 —— "
+        "语料规模或 split 划分漂移时必须失败（不得改成恒真断言）")

@@ -104,7 +104,7 @@ def test_unresolved_domain_is_rejected_by_default(monkeypatch):
 
     monkeypatch.setattr(socket, "getaddrinfo", raise_gaierror)
 
-    valid, reason = validate_safe_external_url("http://offline.invalid/v1")
+    valid, reason = validate_safe_external_url("http://offline.unknown/v1")
     assert valid is False, "解析失败时不得放行（fail-closed）"
     assert "无法解析" in reason
 
@@ -119,9 +119,57 @@ def test_unresolved_domain_allowed_only_when_explicitly_enabled():
 
         mp.setattr(socket, "getaddrinfo", raise_gaierror)
         valid, reason = validate_safe_external_url(
-            "http://offline.invalid/v1", allow_unresolved=True)
+            "http://offline.unknown/v1", allow_unresolved=True)
         assert valid is True
         assert reason is None
+
+
+def test_block_rfc2544_benchmark_range_and_fake_ip_dns(monkeypatch):
+    """198.18.0.0/15（RFC 2544 基准测试段）处理规则：
+    1. 字面量 IP 依然严格阻断；
+    2. 内网保留域名（如 metadata.google.internal）即使被 fake-ip 代理也坚决阻断；
+    3. 合法公网域名（如 api.commandcode.ai）解析到 198.18.x.x（fake-ip 代理环境）安全放行。
+    """
+    # 形态一：字面量 IP（段的两端都被覆盖）必须阻断
+    for url in ("http://198.18.0.1/v1", "http://198.19.255.254/v1"):
+        valid, reason = validate_safe_external_url(url)
+        assert valid is False, f"RFC 2544 基准段字面量必须阻断: {url}"
+        assert reason, url
+
+    # 形态二：域名解析到该段（fake-IP 代理的典型行为）
+    def fake_ip_getaddrinfo(host, port, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("198.18.0.7", 80))]
+
+    monkeypatch.setattr(socket, "getaddrinfo", fake_ip_getaddrinfo)
+    # 内网保留域名即使解析到 fake-ip 也必须阻断
+    for url in ("http://metadata.google.internal/v1", "http://anything.invalid/v1"):
+        valid, reason = validate_safe_external_url(url)
+        assert valid is False, f"私有保留域名必须阻断: {url}"
+        assert reason, url
+
+    # 形态三：合法公网域名在代理 Fake-IP 下解析到 198.18.x.x（安全放行，避免误杀）
+    valid, reason = validate_safe_external_url("https://api.commandcode.ai/v1")
+    assert valid is True, f"公网域名在 Fake-IP 下应安全放行: {reason}"
+
+
+def test_block_reserved_and_documentation_ranges():
+    """D20 同类补漏：IETF 协议专用段 / TEST-NET / 保留段 / IPv6 文档段一律阻断。
+
+    这些段都不是全局可路由的真实服务地址，作为识别引擎 base_url 只会是攻击或误配；
+    与 198.18.0.0/15 同理，DNS 劫持把域名指向它们时同样能绕过域名形态校验。
+    """
+    for url in (
+        "http://192.0.0.8/v1",          # RFC 6890 IETF 协议专用
+        "http://192.0.2.10/v1",         # RFC 5737 TEST-NET-1
+        "http://198.51.100.7/v1",       # RFC 5737 TEST-NET-2
+        "http://203.0.113.5/v1",        # RFC 5737 TEST-NET-3
+        "http://240.0.0.1/v1",          # RFC 1112 保留段
+        "http://255.255.255.255/v1",    # 广播地址（落在 240.0.0.0/4 内）
+        "http://[2001:db8::1]:8000/v1",  # RFC 3849 IPv6 文档段
+    ):
+        valid, reason = validate_safe_external_url(url)
+        assert valid is False, f"保留/测试段必须阻断: {url}"
+        assert reason, url
 
 
 def test_mask_secret_key():

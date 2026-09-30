@@ -9,8 +9,11 @@
       "description": "香港惯例 DD/MM/YYYY 优先推断、中英文月份解析与两位年份补齐",
       "metrics": {
         "dmy_accuracy": 100.0,
+        "dmy_accuracy_scope": "确定性工具，行为由 tests/test_gap5_hk_date_normalizer.py 的用例集覆盖（港式 DD/MM/YYYY 歧义优先、日>12 无歧义、两位年份补齐、中英文月份与中文年月日全部通过）；不是通用准确率",
         "format_resolution_rate": 100.0,
-        "latency_ms": 0.5
+        "format_resolution_rate_scope": "同上：受测格式样例全部解析成功；非通用召回率",
+        "latency_ms": 0.5,
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap5_hk_date_normalizer.py -q"
       }
     }
   }

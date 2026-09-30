@@ -6,7 +6,9 @@
     "v1_0_0": {
       "release_date": "2026-08-15",
       "status": "experimental",
-      "interception_rate": 99.0,
+      "interception_rate": null,
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原登记 interception_rate=99.0 无任何评测集/脚本/报告支撑，且本工具无生产消费者、无任何测试引用（tests/ 与 demo/tests/ 均无 sku_matcher 用例），判定为无支撑指标并纠正（改为 null）。能力边界如实登记：无实测数据。",
       "latency_ms": 1.8,
       "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具）"
     }

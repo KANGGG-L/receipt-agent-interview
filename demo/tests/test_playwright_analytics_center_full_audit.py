@@ -96,6 +96,7 @@ def _wait_cards_render_as(page, cards, timeout=10000):
         return False
 
 
+@pytest.mark.usefixtures("playwright_live_server")
 def test_analytics_center_every_component_audit():
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
     with sync_playwright() as p:
@@ -120,6 +121,9 @@ def test_analytics_center_every_component_audit():
         print("=== 走查功能区 01: 埋点分布与挽回 ===")
         page.locator("#btnSubViewTelemetry").click()
         page.wait_for_timeout(500)
+        if page.locator("#btnTelemetrySubTabEvents").count() > 0:
+            page.locator("#btnTelemetrySubTabEvents").click()
+            page.wait_for_timeout(300)
 
         # 等待事件分布和挽回指标卡片加载完毕
         page.wait_for_function(

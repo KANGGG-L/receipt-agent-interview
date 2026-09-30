@@ -134,6 +134,30 @@ def eval_candidate_low_confidence_threshold() -> float:
     except Exception:
         return EVAL_CANDIDATE_LOW_CONFIDENCE
 
+
+def first_round_inject_enabled() -> bool:
+    """首轮记忆注入开关（W-1 / Gap H4；settings 实时读取，缺省 False = 零行为变化）。"""
+    try:
+        from app.services import settings_service
+        return bool(settings_service.get_bool("memory_first_round_inject_enabled", False))
+    except Exception:
+        return False
+
+
+def _resolve_first_round_vendor(image_path: str, config=None) -> str:
+    """首轮供应商来源 #2：调用既有 vendor_precheck.predict_vendor（W-1）。
+
+    仅在 vendor_precheck 自身开关（vendor_precheck_enabled）也为开时才发模型调用；
+    关闭 / 预判失败 / 解析不出 vendor 一律返回空串（不猜、不阻断识别主链路）。
+    """
+    try:
+        from app.services import vendor_precheck
+        if not vendor_precheck.is_enabled():
+            return ""
+        return str(vendor_precheck.predict_vendor(image_path, cfg=config) or "").strip()
+    except Exception:
+        return ""
+
 # ---- 记忆落盘：文件层并发安全与路径 ----
 _MEMORY_LOCK = threading.Lock()
 _MEMORY_LOG_PATH = os.path.abspath(
@@ -145,6 +169,24 @@ _MEMORY_LOG_PATH_ALT = os.path.abspath(
 )
 
 def _memory_log_path() -> str:
+    """记忆落盘路径：默认仓库内 artifacts/memory/parse_log.jsonl。
+
+    why 支持 ARTIFACTS_DIR 重定向（Q3-M4）：本函数在**每次落盘时**被调用，读环境变量
+    即可让测试（两处 conftest 的 _isolate_artifacts_dir）与容器化部署把产物写到临时
+    目录，避免「跑一次测试就往仓库内 artifacts/ 追加一行」；按 __file__ 算出的路径
+    不受 DB / RAG / 图片隔离影响，需单独有一个可覆盖点。落盘时读取意味着不依赖模块
+    是否已 import，对「用例内才 import supervisor」的时序同样生效（与 RAG_DIR 同款）。
+    显式重定向时只认 override、不回落仓库内目录 —— 否则重定向目录不可写时隔离会静默
+    失效，又写回仓库。
+    """
+    override = os.environ.get("ARTIFACTS_DIR", "").strip()
+    if override:
+        p = os.path.join(os.path.abspath(override), "memory", "parse_log.jsonl")
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+        except Exception:
+            pass
+        return p
     # 优先保证 artifacts/memory 目录存在，取可写路径
     for p in (_MEMORY_LOG_PATH, _MEMORY_LOG_PATH_ALT):
         d = os.path.dirname(p)
@@ -169,8 +211,12 @@ def _snapshot(log, action, reason, attempt, engine="", note=""):
 
 
 def _run_extract(image_path, vendor_hint, config, use_grey, retry_feedback, attempt,
-                 vendor_prior: str = "", on_event=None):
-    """单轮识别：VLM 读图 → 结构化（含可选解析 LLM）。vendor_prior 为重试轮注入的历史先验。"""
+                 vendor_prior: str = "", on_event=None, tenant_id: str = "default"):
+    """单轮识别：VLM 读图 → 结构化（含可选解析 LLM）。vendor_prior 为重试轮注入的历史先验。
+
+    tenant_id（Gap H1）：本次识别所属租户，透传给 extract_receipt 的 hint 通道检索，
+    保证读侧与写侧（approve 回写）用同一租户键。
+    """
     model = build_recognition_model(
         config.recognition_model if config else None,
         cfg=config, use_grey=use_grey,
@@ -181,6 +227,7 @@ def _run_extract(image_path, vendor_hint, config, use_grey, retry_feedback, atte
         retry_feedback=retry_feedback,
         use_grey=use_grey,
         vendor_prior=vendor_prior,
+        tenant_id=tenant_id,
         on_event=on_event,
     )
 
@@ -408,9 +455,17 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
                 receipt_id, audit.get("token_usage"), e)
         try:
             from app.llm import _calc_cost_hkd
-            # 传当时生效的审核模型（_ai_model 已含灰测分支）用于档位解析：
-            # 不传会按默认识别引擎 omni 档计，对 SF GLM 审核腿高估约 2.2 倍。
-            _audit_cost = _calc_cost_hkd(_audit_tu, model=_ai_model)
+            # 传当时生效的审核模型（_ai_model 已含灰测分支）及自定义单价用于档位解析：
+            _aud_in = getattr(config, "price_input_grey_aud" if use_grey else "price_input_aud", None)
+            _aud_cached = getattr(config, "price_cached_input_grey_aud" if use_grey else "price_cached_input_aud", None)
+            _aud_out = getattr(config, "price_output_grey_aud" if use_grey else "price_output_aud", None)
+            _audit_cost = _calc_cost_hkd(
+                _audit_tu,
+                model=_ai_model,
+                custom_in_price=_aud_in,
+                custom_cached_price=_aud_cached,
+                custom_out_price=_aud_out,
+            )
         except Exception as e:
             _audit_cost = 0.0
             _audit_estimated = True
@@ -446,6 +501,7 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
                 "corrected_suggestions": audit.get("corrected_suggestions", {}) or {},
                 "tokens_prompt": int(_audit_tu.get("prompt_tokens", 0) or 0),
                 "tokens_completion": int(_audit_tu.get("completion_tokens", 0) or 0),
+                "tokens_cached": int(_audit_tu.get("cached_tokens", 0) or 0),
                 "tokens_total": int(_audit_tu.get("total_tokens", 0) or 0),
                 "cost_hkd": float(_audit_cost or 0),
                 "cost_estimated": 1 if _audit_estimated else 0,
@@ -462,7 +518,9 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                           attempt, engine, status, gate_err="",
                           token_usage=None, cost_hkd=None, elapsed_ms=None,
                           success=None, image_path="", supplier="", doc_form="",
-                          cost_estimated_in=None, cost_estimated_reason_in=""):
+                          cost_estimated_in=None, cost_estimated_reason_in="",
+                          image_guard=None, rag_hint_source="",
+                          vendor_hint_origin=""):
     """U-2：每轮 extract 决策落库（AI 决策履历断链修复）。
 
     - receipt_id=None（run_pipeline 直接调用/冒烟场景）→ 跳过写库不抛错
@@ -474,6 +532,16 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
       cost 按 llm._calc_cost_hkd 的按模型分档单价计算（见 llm._REC_TOKEN_PRICE_TIERS：
       omni ¥2.2/¥13.3、vl-flash ¥0.15/¥1.50、GLM-4.5V ¥1.0/¥6.0 每百万 token），
       传入 config 上当时生效的识别模型名，避免被按默认 omni 档静默高估。
+    - image_guard（P2-1）：上传入口在 preprocess 之前对原图算出的图内隐藏文字检测
+      结果（{flagged, reasons, metrics}）。非空时写入 extra 的 image_guard /
+      image_guard_flagged（供大盘统计命中率），不改变识别主链路任何行为。
+    - rag_hint_source（FP-1）：run 级 hint 来源标记（"first_round"= W-1 首轮注入）。
+      非空时写入 extra["rag_hint_source"]；空串不写键（extra 字节与既有路径一致）。
+    - vendor_hint_origin（可观测性，additive）：调用方传入的显式 vendor_hint 的来源
+      （"user"=用户手填 / "precheck"=上传端点预判填充）。非空时写入
+      extra["vendor_hint_origin"]；空串不写键（extra 字节与既有路径一致）。
+      与 rag_hint_source 互补：后者只标记 W-1 首轮注入，前者区分「显式 hint」内部
+      的两个来源 —— 下游因此能回答"这次识别吃到的 hint 是人给的还是机器猜的"。
     """
     if receipt_id is None:
         # 始终返回 dict：调用方用 state.update(...) 透传成本可信度标记，返回 None 会炸
@@ -499,6 +567,7 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
 
     tokens_prompt = _to_int(tu.get("prompt_tokens", tu.get("input_tokens", 0)), "prompt_tokens")
     tokens_completion = _to_int(tu.get("completion_tokens", tu.get("output_tokens", 0)), "completion_tokens")
+    tokens_cached = _to_int(tu.get("cached_tokens", 0), "cached_tokens")
     tokens_total = _to_int(tu.get("total_tokens", 0) or (tokens_prompt + tokens_completion), "total_tokens")
     # 成本可信度标记：True = 这个 cost_hkd 不是按「真实模型单价 × 真实 token」算出来的，
     # 不可用于护栏/大盘的精确判定。供 guardian 与大盘区分「真实 0 成本」（本地 CLI 无 token）
@@ -514,9 +583,16 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
     if cost_hkd is None:
         try:
             from app.llm import _calc_cost_hkd
+            _rec_in = getattr(config, "price_input_grey_rec" if use_grey else "price_input_rec", None)
+            _rec_cached = getattr(config, "price_cached_input_grey_rec" if use_grey else "price_cached_input_rec", None)
+            _rec_out = getattr(config, "price_output_grey_rec" if use_grey else "price_output_rec", None)
             cost_hkd = _calc_cost_hkd(
-                {"prompt_tokens": tokens_prompt, "completion_tokens": tokens_completion, "total_tokens": tokens_total},
-                model=_rec_model)
+                {"prompt_tokens": tokens_prompt, "completion_tokens": tokens_completion, "cached_tokens": tokens_cached, "total_tokens": tokens_total},
+                model=_rec_model,
+                custom_in_price=_rec_in,
+                custom_cached_price=_rec_cached,
+                custom_out_price=_rec_out,
+            )
         except Exception as e:
             _cost_estimated = True
             _cost_reason = "cost_calc_failed"
@@ -597,6 +673,7 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
     extra = {
         "tokens_prompt": tokens_prompt,
         "tokens_completion": tokens_completion,
+        "tokens_cached": tokens_cached,
         "tokens_total": tokens_total,
         "cost_hkd": cost_hkd,
         # 成本可信度：1 = cost_hkd 为估算/不可用（拿不到 token、成本链路异常、走了兜底单价），
@@ -610,6 +687,23 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
         "supplier": str(supplier or "")[:120],
         "doc_form": str(doc_form or "")[:60],
     }
+    # P2-1 图内隐藏文字检测：flags 落 extra，使大盘可按 image_guard_flagged 统计命中率。
+    # 沿用既有 extra 风格（嵌套 dict，如 elapsed_ms）；非 dict 一律不写，避免噪声。
+    if isinstance(image_guard, dict):
+        extra["image_guard_flagged"] = bool(image_guard.get("flagged"))
+        extra["image_guard"] = {
+            "flagged": bool(image_guard.get("flagged")),
+            "reasons": [str(r)[:200] for r in (image_guard.get("reasons") or [])][:5],
+            "metrics": image_guard.get("metrics") or {},
+        }
+    # FP-1（rag_hint_source 持久化）：W-1 首轮注入的来源标记落 extra。**纯增量**：
+    # 空串不写键 —— 开关关/显式 hint 路径的 extra 序列化字节与改动前逐字节一致（C3 红线）。
+    if str(rag_hint_source or "").strip():
+        extra["rag_hint_source"] = str(rag_hint_source)
+    # 可观测性（vendor_hint_origin）：显式 hint 的来源（"user"/"precheck"）落 extra。
+    # 同款纯增量手法：空串不写键，无 hint 路径的 extra 字节与改动前逐字节一致。
+    if str(vendor_hint_origin or "").strip():
+        extra["vendor_hint_origin"] = str(vendor_hint_origin)
     try:
         _model = _rec_model
         from app import db as _db
@@ -639,18 +733,42 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                  receipt_id: Optional[int] = None,
                  experiment_id: Optional[int] = None,
                  on_event=None,
+                 image_guard=None,
+                 tenant_id: str = "default",
+                 vendor_hint_origin: str = "",
                  ) -> dict:
     """完整识别管线入口（线性编排 + 重试阶梯）。
 
     supplier_name 供灰测按供应商分配（同供应商一致命中）。
+    tenant_id（Gap H1）：本单所属租户，透传到两处 VendorMemory 检索（hint 通道与
+    首轮补检索），使读侧与 approve 写侧同租户。缺省 "default" 仅为兼容离线脚本
+    与既有测试对 run_pipeline 的直接调用；生产入口
+    receipt_utils.start_recognition_job 一律传 Job 捕获的真实租户。
     on_event（可选）：实时事件回调，如首选引擎降级回退时立即通知调用方
     （异步 Job 层借此把回退状态透传给前端轮询，第一时间弹出提示）。
+    image_guard（可选，P2-1）：上传入口对原图算出的图内隐藏文字检测结果
+    （{flagged, reasons, metrics}），随每轮 extract 决策写入 ai_decision_log.extra；
+    缺省 None 时行为与接线前完全一致（只告警、不影响识别成败）。
+    vendor_hint_origin（可选，可观测性 additive）：调用方传入的显式 vendor_hint 的
+    来源（"user"=用户手填 / "precheck"=上传端点预判填充），随 state → Job result /
+    extract 决策 extra 透传；缺省空串时无 extra 键、result 字段为空串（行为零变化）。
     返回 dict 含 data / raw / log / contract_error 等（与旧接口兼容）。
     """
     from app.models import should_use_grey
     use_grey = should_use_grey(config, supplier_name) if config else False
 
     pipeline_start = time.time()
+    try:
+        from app.services.llm_logger import set_llm_context
+        set_llm_context(
+            receipt_id=receipt_id,
+            tenant_id=tenant_id,
+            leg="extract",
+            attempt=1,
+            image_path=image_path,
+        )
+    except Exception:
+        pass
     log = []
     if use_grey:
         _snapshot(log, "grey_assigned",
@@ -660,6 +778,8 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
     state = {
         "image_path": image_path,
         "vendor_hint": vendor_hint,
+        # P2-1：图内隐藏文字检测结果（由上传入口透传，随每轮 extract 决策落 extra）
+        "image_guard": image_guard,
         "config": config,
         "use_grey": use_grey,
         "attempt": 0,
@@ -678,6 +798,13 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         "elapsed_ms": 0,
         "last_error": "",
         "vendor_context": "",  # VendorMemory 检索先验（跨轮保留，落库 rag_context_json）
+        # W-1 / Gap H4 可观测标记：首轮注入发生时为 "first_round"，否则空串（与重试轮注入区分）
+        "rag_hint_source": "",
+        # 可观测性（additive）：调用方传入的显式 vendor_hint 的来源（"user"=用户手填 /
+        # "precheck"=上传端点预判填充），随 Job result 与 extract 决策 extra 透传；
+        # 无显式 hint 时为空串（不写 extra 键）。W-1 首轮注入的来源仍由 rag_hint_source
+        # 标记，两者互补、互不覆盖。
+        "vendor_hint_origin": str(vendor_hint_origin or "").strip(),
         # 分段计时埋点（Layer 1.3）
         "extract_ms": 0.0,
         "parse_ms": 0.0,
@@ -698,17 +825,51 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         "doc_form": "",
     }
 
+    # P2-1：把上传入口透传的图内隐藏文字检测结果注入每轮 extract 决策落库
+    # （extra.image_guard / extra.image_guard_flagged），避免 5 个调用点各抄一遍。
+    def _log_decision(*args, **kwargs):
+        kwargs.setdefault("image_guard", state.get("image_guard"))
+        # FP-1：run 级 hint 来源标记随每轮决策落 extra（语义：标记的是"本 run 的
+        # hint 来源"——首轮注入派生的 hint 在重试轮仍然有效，非"第几轮注入的"）。
+        kwargs.setdefault("rag_hint_source", state.get("rag_hint_source") or "")
+        # 可观测性：显式 hint 的来源（"user"/"precheck"）随每轮决策落 extra，同款
+        # run 级透传手法；空串路径 extra 不含该键（字节一致）。
+        kwargs.setdefault("vendor_hint_origin", state.get("vendor_hint_origin") or "")
+        return _log_extract_decision(*args, **kwargs)
+
+    # ---- W-1 / Gap H4：首轮记忆注入（缺省关 = 与现状逐字节一致）----
+    # 无显式 vendor_hint 时，在首轮 extract **之前**尽力确定供应商，作为本单的
+    # vendor_hint 交给既有 hint 通道「检索 + 注入」——使首轮即可吃到记忆（此前只有
+    # 跑在首轮模型调用之后的「首轮补检索」，先验只能喂重试轮）。
+    # 供应商来源：#1 调用方 vendor_hint（非空则不进入本分支）；#2 vendor_precheck
+    # （仅其自身开关为开时才发模型调用）；两者都不行则不猜（避免错误供应商污染）。
+    # 走既有 hint 通道，rag_context_json 以 [prior:hint] 落库，与重试轮 [prior:retry] 可区分。
+    if first_round_inject_enabled() and not vendor_hint:
+        _fr_vendor = _resolve_first_round_vendor(image_path, config)
+        if _fr_vendor:
+            vendor_hint = _fr_vendor
+            state["vendor_hint"] = _fr_vendor
+            state["rag_hint_source"] = "first_round"
+            _snapshot(log, "first_round_inject",
+                      f"首轮注入记忆先验（供应商预判={_fr_vendor}）", 0)
+
     # ---- 重试阶梯：识别 + 门禁，最多 max_rounds 轮（默认 MAX_RETRY，见文件头策略注释）----
     max_rounds = resolve_max_retry(config)
     while state["attempt"] < max_rounds:
         state["attempt"] += 1
         attempt = state["attempt"]
+        try:
+            from app.services.llm_logger import set_llm_leg_and_attempt
+            set_llm_leg_and_attempt(leg="extract", attempt=attempt)
+        except Exception:
+            pass
 
         result = _run_extract(
             image_path, vendor_hint, config, use_grey,
             state["retry_feedback"], attempt,
             vendor_prior=state["vendor_context"],
             on_event=on_event,
+            tenant_id=tenant_id,
         )
         state["raw"] = result["raw"]
         state["elapsed_ms"] = result["elapsed_ms"]
@@ -782,7 +943,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         if result["error"]:
             _snapshot(log, "extract_fail", f"识别失败(第{attempt}轮): {result['error']}",
                       attempt, engine=result["engine"])
-            state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+            state.update(_log_decision(receipt_id, experiment_id, config, use_grey,
                                       attempt, result["engine"], "extract_fail",
                                       gate_err=result["error"],
                                       token_usage=_tu, cost_hkd=_cost,
@@ -822,11 +983,13 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
 
         # 首轮补检索（真飞轮）：无 hint 时 VLM 已识别出供应商 → 读 VendorMemory 补上下文，
         # 供后续 gate_reject 重试轮注入（异常置空，不阻断识别线程）
+        # Gap H1：必须带本单的 tenant_id，否则会读到 default 桶（跨租户串味 / 读不到本租户记忆）
         if not state["vendor_context"] and result["data"] is not None:
             try:
                 r_start = time.time()
                 ctx = retrieve_context(
-                    getattr(result["data"], "vendor", "") or "") or ""
+                    getattr(result["data"], "vendor", "") or "",
+                    tenant_id=tenant_id) or ""
                 state["rag_ms"] = round(state["rag_ms"] + (time.time() - r_start) * 1000, 1)
                 state["vendor_context"] = ctx
                 if ctx:
@@ -865,7 +1028,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                     _snapshot(log, "parse_correct",
                               f"解析级修正通过门禁(第{attempt}轮): {gate_err}",
                               attempt, engine=result["engine"])
-                    state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                    state.update(_log_decision(receipt_id, experiment_id, config, use_grey,
                                                attempt, result["engine"], "parse_ok",
                                                token_usage=_tu, cost_hkd=_cost,
                                                elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
@@ -890,7 +1053,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                 _snapshot(log, "gate_reject_fast",
                           f"门禁快速反馈(第{attempt}轮): {gate_err}（已尝试 parse 修正；保留已解析结构交人工快速复核）",
                           attempt, engine=result["engine"])
-                state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+                state.update(_log_decision(receipt_id, experiment_id, config, use_grey,
                                            attempt, result["engine"], "gate_reject_fast",
                                            gate_err=gate_err,
                                            token_usage=_tu, cost_hkd=_cost,
@@ -918,7 +1081,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
             state["retry_feedback"] = gate_err
             _snapshot(log, "gate_reject", f"门禁拒绝(第{attempt}轮): {gate_err}",
                       attempt, engine=result["engine"])
-            state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+            state.update(_log_decision(receipt_id, experiment_id, config, use_grey,
                                        attempt, result["engine"], "gate_reject",
                                        gate_err=gate_err,
                                        token_usage=_tu, cost_hkd=_cost,
@@ -943,7 +1106,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                   attempt, engine=result["engine"])
         _snapshot(log, "gates_pass", "契约+算术门禁通过（零 token）",
                   attempt, engine=result["engine"])
-        state.update(_log_extract_decision(receipt_id, experiment_id, config, use_grey,
+        state.update(_log_decision(receipt_id, experiment_id, config, use_grey,
                                   attempt, result["engine"], "extract_ok",
                                   token_usage=_tu, cost_hkd=_cost,
                                   elapsed_ms={"extract": state["extract_ms"], "parse": state["parse_ms"], "rag": state["rag_ms"], "audit": state["audit_ms"], "total": 0},
@@ -979,6 +1142,11 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         return _finalize(state, pipeline_start)
 
     # ---- 交叉审核（可选，失败不阻断）----
+    try:
+        from app.services.llm_logger import set_llm_leg_and_attempt
+        set_llm_leg_and_attempt(leg="audit", attempt=state["attempt"])
+    except Exception:
+        pass
     audit = _run_audit(
         image_path, state["data"], config=config, use_grey=use_grey,
     )

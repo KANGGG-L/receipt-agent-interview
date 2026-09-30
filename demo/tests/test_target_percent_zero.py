@@ -102,7 +102,8 @@ def _receipt_with_bucket(bucket):
 def _run_job(monkeypatch, receipt_id):
     """跑一次识别 Job：假 run_pipeline + 假 save_parsed_data，等 Job 收口。"""
     def _fake_pipeline(image_path, vendor_hint="", config=None, supplier_name="",
-                       receipt_id=None, experiment_id=None, on_event=None):
+                       receipt_id=None, experiment_id=None, on_event=None,
+                       image_guard=None, tenant_id="default"):
         return {"data": object(), "raw": "{}", "error": None,
                 "status": "parsed", "gate_warnings": []}
 

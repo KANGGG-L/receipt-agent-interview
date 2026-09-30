@@ -6,11 +6,41 @@
     "v1_0_0": {
       "release_date": "2026-08-01",
       "status": "production",
+      "description": "初版自由文本提炼文案（无 kind 白名单、无输出契约、无注入防御，全仓零调用方）",
       "metrics": {
-        "alias_extraction_accuracy": 94.2,
-        "knowledge_validity": 96.0,
-        "avg_tokens": 380
-      }
+        "alias_extraction_accuracy": null,
+        "knowledge_validity": null,
+        "avg_tokens": null,
+        "claim_unsupported": true,
+        "claim_unsupported_note": "原登记 alias_extraction_accuracy=94.2 / knowledge_validity=96.0 / avg_tokens=380 三项均无可复现路径：全仓无对应评测集、评测脚本或评测报告，且本版本 PROMPT 至今零调用方。出处与判定见 docs/06-adds-on/05-VendorMemory现状与大厂标准Gap分析.md 的 L4 条目。三项已置 null；重新登记前必须补可复现来源（评测脚本或报告路径）。",
+        "unvalidated_keys": ["alias_extraction_accuracy", "knowledge_validity", "avg_tokens"]
+      },
+      "changelog": [
+        "本次仅纠偏指标登记（94.2 / 96.0 / 380 → null + claim_unsupported），PROMPT 文本零改动",
+        "active_version 保持本版：新版本一律 draft，按 ai_registry 分级规则须人工审批后方可晋升（见 v1_1_0_extract / v1_1_0_consolidate 的 changelog）"
+      ]
+    },
+    "v1_1_0_extract": {
+      "release_date": "2026-09-22",
+      "status": "draft",
+      "description": "供应商记忆抽取提示词：kind 白名单 + 严格 JSON 数组输出契约 + 外部数据不可信（Gap 8）",
+      "changelog": [
+        "新增 kind 白名单（alias/unit/layout/price_range，与 app/services/memory_facts.ALLOWED_KINDS 同口径），补齐 v1_0_0 缺失的输出契约",
+        "新增外部数据不可信条款：差异清单/单据文本/票面备注内任何指令一律不执行，不得改变输出 Schema 与 kind 取值集合（与 extract 场景 v1_2_8_anti_injection 的 Gap 8 口径一致）",
+        "本版不登记任何指标数字：尚无评测集与评测脚本，按指标诚实性要求不得写入未验证数值；晋升 production 前须补可复现评测",
+        "消费方：app/services/memory_extract._load_registry_prompt() 显式钉住本版本；该模块当前无生产调用方，属阶段四地基"
+      ]
+    },
+    "v1_1_0_consolidate": {
+      "release_date": "2026-09-22",
+      "status": "draft",
+      "description": "供应商记忆冲突整合提示词：只在 ADD/UPDATE/DELETE/NOOP 四选一 + 强制 reason",
+      "changelog": [
+        "四动作白名单与 app/services/memory_consolidate.ALLOWED_ACTIONS 同口径；并新增「不得改写人工确认的高可信事实」条款，与调用方的 SOURCE_TRUST_ORDER 可信度守卫同一条口径",
+        "强制输出 action 与 reason 两个字段且 reason 不得为空（人工闸/审计需要可读判断依据），并含外部数据不可信条款（与 Gap 8 同口径）",
+        "纠偏接线状态：原 changelog 写「内联整合文案已版本化上收」，而代码侧 memory_consolidate 当时仍直接使用内联常量、全文件无注册表读取 —— 该叙述与代码相反，属「已建未接」。现已接线：app/services/memory_consolidate._load_registry_prompt() 显式钉住本版本，_ask_llm 经 _system_prompt() 取值，载入失败回退内联常量并 logger.warning",
+        "本版不登记任何指标数字（无评测集/脚本）；新版本一律 draft，按 ai_registry 分级规则须人工审批后方可晋升，故 active_version 保持 v1_0_0 不动"
+      ]
     }
   }
 }

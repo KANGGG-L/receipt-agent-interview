@@ -102,10 +102,11 @@ audit_prompt = get_prompt("audit", version="v2_0_0_reason")
    - 阻断私网 (RFC 1918)、本地回环 (`127.0.0.1`, `localhost`)、CGNAT (`100.64.0.0/10`) 与云元数据 (`169.254.169.254`)。
    - 域名 DNS 预解析校验防重绑定，外呼强制禁用 HTTP 30x 重定向 (`allow_redirects=False`)。
    - 密钥仅在接口与审计日志中暴露前3后4位，杜绝明文凭证泄露。
-2. **协议层 Canary Token 动态握手防上游篡改 (`demo/app/services/canary_guard.py`)**：
+2. **协议层 Canary Token 动态握手（上游错配 / 静默降级检测，`demo/app/services/canary_guard.py`）**：
    - 动态生成高熵 Nonce `CANARY_<HEX>`，并在 System 与 User 消息尾部实施双重协议锚定。
-   - 若上游代理剥离或篡改 System Prompt，触发 Fail-Fast 快速熔断；恒定时间比对安全弹出令牌，保护 Pydantic `extra="forbid"` 契约。
-3. **数据层 XML 数据沙箱与凭证嗅探过滤 (`ai_registry/tools/prompt_injection_guard/v1_0_0.py`)**：
+   - 若上游代理剥离或错配本轮锚定指令，回包缺失令牌即触发 Fail-Fast 快速熔断；恒定时间比对安全剥离令牌（非破坏性：返回清洗副本），保护 Pydantic `extra="forbid"` 契约。
+   - 能力边界（如实登记）：token 明文随 prompt 下发，恶意 provider 原样回填即可通过校验并篡改数据 —— 本机制**不是认证、也不提供完整性保护**，仅作上游错配 / 静默降级检测；完整性由契约门禁 / 算术校验 / 交叉审核 / 人审兜底。
+3. **数据层 XML 数据沙箱与凭证嗅探过滤 (`ai_registry/tools/prompt_injection_guard/v1_1_0_normalize.py`)**：
    - 扩充针对 `OPENAI_API_KEY`, `process.env`, `os.environ` 的嗅探拦截正则。
    - 所有不可信输入封入 `<untrusted_input data_only="true" security="untrusted_external_data">` 沙箱，强制 HTML/XML 实体转义剥夺可执行权。
 4. **展现层 DOM XSS 免疫 (`demo/static/js/main.js`)**：

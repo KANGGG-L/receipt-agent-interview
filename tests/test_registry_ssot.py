@@ -136,7 +136,8 @@ def test_ac06_no_inline_prompt_literals_in_demo_chains():
 
 def test_ac07_admin_prompts_api_shape_unchanged():
     """AC-07: /api/admin/prompts 响应保持 status/versions.active/versions.available/benchmark 四键,
-    versions.available.extract 含 12 个版本号（T7 新增 v1_3_0_evidence 灰测候选）。"""
+    versions.available.extract 含 13 个版本号（T7 新增 v1_3_0_evidence、P2-2 新增
+    v1_2_9_image_injection，均为灰测候选）。"""
     from fastapi.testclient import TestClient
     from app.main import app
     client = TestClient(app)
@@ -148,23 +149,26 @@ def test_ac07_admin_prompts_api_shape_unchanged():
     assert set(body["versions"].keys()) == {"active", "available"}
     assert isinstance(body["benchmark"], dict)
     avail_extract = body["versions"]["available"]["extract"]
-    assert len(avail_extract) == 12
+    assert len(avail_extract) == 13
     assert "v1_2_8_anti_injection" in avail_extract
     assert "v1_3_0_evidence" in avail_extract
+    assert "v1_2_9_image_injection" in avail_extract
 
 
 def test_ac08_extract_metadata_complete_and_active_switched():
-    """AC-08: extract metadata active=v1_2_8_anti_injection,versions 键集==目录 12 个 .py,
-    v1_2_0_sku_clean 置 archived,T7 的 v1_3_0_evidence 为 draft（灰测候选,非 production）。"""
+    """AC-08: extract metadata active=v1_2_8_anti_injection,versions 键集==目录 13 个 .py,
+    v1_2_0_sku_clean 置 archived,T7 的 v1_3_0_evidence 与 P2-2 的 v1_2_9_image_injection
+    为 draft（灰测候选,非 production）。"""
     scene_dir = os.path.join(REPO_ROOT, "ai_registry", "prompts", "extract")
     py_versions = {f[:-3] for f in os.listdir(scene_dir) if f.endswith(".py")}
-    assert len(py_versions) == 12
+    assert len(py_versions) == 13
     meta = _meta("extract")
     assert meta["active_version"] == "v1_2_8_anti_injection"
     assert set(meta["versions"].keys()) == py_versions
     assert meta["versions"]["v1_2_0_sku_clean"]["status"] == "archived"
     assert meta["versions"]["v1_2_8_anti_injection"]["status"] == "production"
     assert meta["versions"]["v1_3_0_evidence"]["status"] == "draft"
+    assert meta["versions"]["v1_2_9_image_injection"]["status"] == "draft"
 
 
 def test_ac08b_audit_mirror_registered_as_new_version():
@@ -178,6 +182,30 @@ def test_ac08b_audit_mirror_registered_as_new_version():
     assert os.path.exists(os.path.join(scene_dir, "v2_1_0_overall_schema.py"))
     from ai_registry.registry import ai_registry
     assert ai_registry.get_prompt("audit", "v2_1_0_overall_schema") == _golden("audit_active_mirror.txt")
+
+
+def test_ac08c_extract_prompt_version_env_switch(monkeypatch):
+    """AC-08(补): P2-2 EXTRACT_PROMPT_VERSION 环境开关可显式加载新版本 v1_2_9_image_injection;
+    未设置时仍加载 active v1_2_8_anti_injection（默认识别链路零变化）。
+
+    why：v1_2_9 是 draft 灰测候选,只能经显式版本开关生效,不得改变默认识别链路。
+    """
+    from ai_registry.registry import ai_registry
+    from app.chains import extract_chain
+    assert ai_registry.get_prompt("extract") == \
+        ai_registry.get_prompt("extract", "v1_2_8_anti_injection")
+
+    # 不设置环境变量 -> active v1_2_8
+    monkeypatch.delenv("EXTRACT_PROMPT_VERSION", raising=False)
+    assert extract_chain._resolve_extract_system_prompt() == \
+        ai_registry.get_prompt("extract", "v1_2_8_anti_injection")
+
+    # 显式设置 -> 加载新版本 v1_2_9（含图面隐含文字层条款,且保留 v1_2_8 既有条款）
+    monkeypatch.setenv("EXTRACT_PROMPT_VERSION", "v1_2_9_image_injection")
+    switched = extract_chain._resolve_extract_system_prompt()
+    assert switched == ai_registry.get_prompt("extract", "v1_2_9_image_injection")
+    assert "图面隐含文字层" in switched
+    assert "苏州码子" in switched or "花码" in switched
 
 
 # ============================================================
@@ -279,17 +307,47 @@ MATH_CONSUMER_TEST_FILES = [
     "demo/tests/test_demo.py",
 ]
 
+# D11：唯一一个「基线锚定到 golden 快照而非 git HEAD」的消费测试（理由见 test_ac13
+# docstring 与快照文件 _comment）。其余文件不走本表。
+MATH_CONSUMER_GOLDEN_BASELINE = {
+    "tests/test_hallucination_adversarial.py":
+        os.path.join(GOLDEN_DIR, "math_consumer_assert_baseline.json"),
+}
+
+
+def _baseline_semantics(rel_path):
+    """取某消费测试文件的基线 (asserts, test_names)。
+
+    默认取 git HEAD 版本；对 MATH_CONSUMER_GOLDEN_BASELINE 中登记的文件改取本仓
+    golden 快照（D11 强化后的新基线）。
+    """
+    golden = MATH_CONSUMER_GOLDEN_BASELINE.get(rel_path)
+    if golden:
+        with open(golden, "r", encoding="utf-8") as f:
+            snap = json.load(f)
+        assert snap.get("_source_file") == rel_path, (
+            f"golden 基线 {golden} 的 _source_file={snap.get('_source_file')} 与 {rel_path} 不符")
+        return list(snap["asserts"]), list(snap["tests"])
+    return _test_semantics(_git_show_head(rel_path), rel_path)
+
 
 def test_ac13_math_consumer_assertions_untouched():
-    """AC-13: 9 个 math_engine 消费测试的**断言口径**对 HEAD 零改动。
+    """AC-13: 9 个 math_engine 消费测试的**断言口径**对基线零改动。
 
     守卫刻意落在断言与用例名上，而非整文件 git diff：测试脚手架（夹具、
     TestClient 默认头、import）必须能随被测实现一起演进，否则实现侧的合理
     修复会被迫绕道；但任何 assert 被改写/删除、任何用例被改名或摘掉，
     都等于弱化 math 口径，一律拦下。
+
+    D11 例外（唯一）：tests/test_hallucination_adversarial.py 的三个「自证式」用例
+    （断言测试数据自身、从不调用被测系统）已按明确要求改写为真实行为断言——这是
+    **强化**而非弱化。该文件因此无法再与 git HEAD 逐字节比对，其「不得弱化」基线
+    改锚定到本仓记录的 golden 快照 tests/golden/math_consumer_assert_baseline.json
+    （见该文件 _comment）。其余 8 个消费测试仍逐条与 git HEAD 比对；两道门合起来
+    仍拦下任何未同步基线的弱化。
     """
     for rel in MATH_CONSUMER_TEST_FILES:
-        base_asserts, base_tests = _test_semantics(_git_show_head(rel), rel)
+        base_asserts, base_tests = _baseline_semantics(rel)
         cur_asserts, cur_tests = _test_semantics(
             _read(os.path.join(REPO_ROOT, rel)), rel)
 

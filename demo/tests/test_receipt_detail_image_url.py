@@ -2,17 +2,21 @@
 """Y1 详情接口死链治理回归守卫：GET /api/receipt/{id} 的 image_url 目标文件不存在时置空。
 
 背景：X1 只收口了归档列表（list_receipts）与 admin 灰测样本，详情接口仍对
-「DB 有行、磁盘无文件」的 928 条历史 pytest 污染单据输出 /uploads/<name>（非 Web
-格式则输出转码端点 URL），归档弹窗打开这些老单据时 404 破图/死链——前端只有空值
-守卫（main.js 的 `if (archiveImageUrl)`），挡不住非空死链。
+「DB 有行、磁盘无文件」的 928 条历史 pytest 污染单据输出签名取图端点 URL，归档弹窗
+打开这些老单据时 404 破图/死链——前端只有空值守卫（main.js 的 `if (archiveImageUrl)`），
+挡不住非空死链。
 
 修复只做展示层兜底：文件不存在时 image_url 返回空串，字段保留、不删历史行、不改
 image_path、不影响任何仍可访问的 URL，也不触碰识别/审核链路。
 
+URL 契约（P0-4 变更，旧契约作废）：`/uploads` 静态挂载已整体撤销，Web 格式不再直链
+`/uploads/<name>`；所有格式统一产出签名取图端点
+`/api/receipt/{id}/image?v=<stem>&sig=<HMAC>`。
+
 覆盖点：
-- 文件存在：URL 逐字节不变（Web 格式仍是 /uploads/<name>）
+- 文件存在：URL 为签名取图端点形态（以 /api/receipt/ 开头且带 ?v= 与 &sig=）
 - 文件缺失：URL 置空（Web 与非 Web 两种格式）
-- 非 Web 且文件存在：签名转码 URL 原样保留
+- 非 Web 且文件存在：签名取图端点 URL 原样保留
 - image_path 为空：保持空串
 - 绝对路径（pytest 污染形态）按 basename 判定
 - 详情与列表两侧判据同源（同一单据两边结论一致）
@@ -97,7 +101,10 @@ def test_missing_file_detail_url_is_blanked_and_existing_kept(client, upload_dir
     (upload_dir / "ok.jpg").write_bytes(b"x")
     gone = _mk_receipt("uploads/gone.jpg")
 
-    assert _detail(client, ok)["image_url"] == "/uploads/ok.jpg"
+    # 旧契约是与 "/uploads/ok.jpg" 逐字节相等；P0-4 撤销 /uploads 挂载后改为签名端点形态
+    ok_url = _detail(client, ok)["image_url"]
+    assert ok_url.startswith("/api/receipt/%d/image?v=ok&sig=" % ok), ok_url
+    assert "/uploads/" not in ok_url
     assert _detail(client, gone)["image_url"] == ""
 
 
@@ -144,7 +151,9 @@ def test_absolute_pytest_path_judged_by_basename(client, upload_dir):
 
     here = _mk_receipt("/private/var/folders/xx/pytest-of-ethan/pytest-8/img_1.png")
     (upload_dir / "img_1.png").write_bytes(b"x")
-    assert _detail(client, here)["image_url"] == "/uploads/img_1.png"
+    # 旧契约是与 "/uploads/img_1.png" 逐字节相等；改为签名端点形态
+    here_url = _detail(client, here)["image_url"]
+    assert here_url.startswith("/api/receipt/%d/image?v=img_1&sig=" % here), here_url
 
 
 # -------------------------------------------------------------

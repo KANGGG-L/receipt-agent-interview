@@ -19,8 +19,11 @@
       "description": "扩充复合包装容量乘数解耦 (大豆油 5L*2樽 -> 大豆油 5L, 2樽) 与计件单位保护",
       "metrics": {
         "multi_pack_accuracy": 100.0,
+        "multi_pack_accuracy_scope": "确定性工具，行为由 tests/test_gap4_multi_pack_units.py 的用例集覆盖（各类复合包装乘数全部正确解耦）；不是通用准确率",
         "clean_name_accuracy": 100.0,
-        "over_trim_rate": 0.0
+        "clean_name_accuracy_scope": "由 tests/test_gap4_multi_pack_units.py / tests/test_sku_cleaning_benchmark.py 覆盖（受保护品名零误删）；非通用精确率",
+        "over_trim_rate": 0.0,
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap4_multi_pack_units.py tests/test_sku_cleaning_benchmark.py -q"
       }
     }
   }

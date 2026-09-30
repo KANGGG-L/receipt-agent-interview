@@ -1,7 +1,10 @@
+# -*- coding: utf-8 -*-
 import os
 import socket
 import time
 import json
+import hashlib
+import tempfile
 from urllib.parse import urlparse
 
 import pytest
@@ -24,8 +27,57 @@ except Exception:  # pragma: no cover - 离线/未装 playwright 时走 skip 分
     _PLAYWRIGHT_IMPORT_OK = False
 
 BASE_URL = "http://127.0.0.1:15010"
-SCREENSHOT_DIR = "/Users/ethan/Documents/GitHub/receipt-agent-interview/artifacts/e2e-refactor"
-os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+
+# 仓库根（tests/<file> → 仓库根）与本用例的原定落盘目录（缺省回落点）
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_REPO_E2E_DIR = os.path.join(_REPO_ROOT, "artifacts", "e2e-refactor")
+
+
+def _screenshot_dir():
+    """截图与测试图落盘目录：优先 ARTIFACTS_DIR，缺口才回落仓库内 artifacts/e2e-refactor。
+
+    why（AH1）：本用例原先在**模块导入期**就把 SCREENSHOT_DIR 写死成仓库内绝对路径并
+    makedirs，于是它成了往仓库 artifacts/ 写的**第二个入口** —— S2 的隔离只加在 conftest
+    （`_isolate_artifacts_dir` 把 ARTIFACTS_DIR 指向本轮 tmp_path），对写死的常量毫无作用：
+    跑一次 e2e 就把仓库里 6 个文件的 mtime 刷成同一时刻。
+
+    这里复用 conftest 的**同一个覆盖点**（ARTIFACTS_DIR 环境变量，与
+    `supervisor._memory_log_path` 同款口径），不新造第二种隔离机制；且在**每次调用时**
+    读环境变量 —— 夹具是在用例执行期间 setenv 的，模块级常量算不出这个值。
+    显式重定向时只认 override、不回落仓库目录：否则重定向目录不可写时隔离会静默失效、
+    又写回仓库。
+    """
+    override = os.environ.get("ARTIFACTS_DIR", "").strip()
+    target = os.path.join(os.path.abspath(override), "e2e-refactor") if override else _REPO_E2E_DIR
+    os.makedirs(target, exist_ok=True)
+    return target
+
+
+def _dir_fingerprint(d):
+    """目录指纹：存在性 / 文件数 / 总字节数 / 内容 md5 汇总（文件名 + 逐文件内容）。
+
+    why（AH1）：断言「跑完 e2e 后仓库 artifacts/e2e-refactor 一字未动」需要一个能反映任何
+    写入的判据。只比文件数会被「覆盖写同名文件」骗过，只比总字节数会被「等长改写」骗过，
+    故四项一起给 —— 内容 md5 同时覆盖文件名与每个文件的字节内容。
+    """
+    if not os.path.isdir(d):
+        return {"exists": False, "file_count": 0, "total_bytes": 0, "content_md5": None}
+    entries = []
+    total = 0
+    for name in sorted(os.listdir(d)):
+        p = os.path.join(d, name)
+        if not os.path.isfile(p):
+            continue
+        with open(p, "rb") as f:
+            data = f.read()
+        total += len(data)
+        entries.append((name, hashlib.md5(data).hexdigest()))
+    return {
+        "exists": True,
+        "file_count": len(entries),
+        "total_bytes": total,
+        "content_md5": hashlib.md5(repr(entries).encode("utf-8")).hexdigest(),
+    }
 
 
 def _service_reachable(timeout=1.0):
@@ -48,7 +100,7 @@ def _browser_available():
 
 
 def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
-    path = os.path.join(SCREENSHOT_DIR, filename)
+    path = os.path.join(_screenshot_dir(), filename)
     img = Image.new("RGB", (600, 800), color=(250, 248, 245))
     draw = ImageDraw.Draw(img)
 
@@ -101,7 +153,9 @@ if _SKIP_REASON is None:
         _SKIP_REASON = "需要活体服务与浏览器: 服务 %s 不可达" % BASE_URL
     elif not _browser_available():
         _SKIP_REASON = "需要活体服务与浏览器: playwright 浏览器启动失败"
-pytestmark = pytest.mark.skipif(
+# skip 只挂在本用例上（原先是模块级 pytestmark）：同模块的自校准用例不依赖活体服务，
+# 必须照常执行 —— 否则「指纹断言是否只是恒真」这件事永远无人验证。
+_E2E_SKIP = pytest.mark.skipif(
     _SKIP_REASON is not None,
     reason=_SKIP_REASON or "需要活体服务与浏览器",
 )
@@ -178,8 +232,19 @@ MOCK_PARSED_RESULT = {
 }
 
 
+@_E2E_SKIP
 def test_e2e_clerk_flow_all_scenarios():
+    # AH1：先给仓库 artifacts/e2e-refactor 拍指纹快照，用例全程不得改动它
+    repo_fp_before = _dir_fingerprint(_REPO_E2E_DIR)
+
     test_img_path = create_test_receipt_image()
+    screenshot_dir = _screenshot_dir()
+
+    # 落盘必须落在 ARTIFACTS_DIR 重定向后的目录（确定性判据，不依赖截图内容是否逐字节相同）
+    override = os.environ.get("ARTIFACTS_DIR", "").strip()
+    if override:
+        assert os.path.abspath(screenshot_dir).startswith(os.path.abspath(override) + os.sep), \
+            "截图目录未重定向到 ARTIFACTS_DIR：%s" % screenshot_dir
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -292,7 +357,7 @@ def test_e2e_clerk_flow_all_scenarios():
         expect(page.locator("#preConfirmCard")).to_be_visible()
 
         # Screenshot Scenario 1: Step 1/2 Preview & Gentle Warning Banner
-        s1_path = os.path.join(SCREENSHOT_DIR, "01_scenario1_upload_gentle_warning.png")
+        s1_path = os.path.join(screenshot_dir, "01_scenario1_upload_gentle_warning.png")
         page.screenshot(path=s1_path)
         print(f"Scenario 1 screenshot saved to {s1_path}")
 
@@ -330,7 +395,7 @@ def test_e2e_clerk_flow_all_scenarios():
         expect(page.locator("#loadingStep4")).to_be_visible()
         expect(page.locator("#ocrTimer")).to_be_visible()
 
-        s2_path = os.path.join(SCREENSHOT_DIR, "02_scenario2_loading_4stages.png")
+        s2_path = os.path.join(screenshot_dir, "02_scenario2_loading_4stages.png")
         page.screenshot(path=s2_path)
         print(f"Scenario 2 screenshot saved to {s2_path}")
 
@@ -381,7 +446,7 @@ def test_e2e_clerk_flow_all_scenarios():
         second_name_input.click()
         expect(second_row.locator(".sku-dropdown-floating")).to_be_visible()
 
-        s3_path = os.path.join(SCREENSHOT_DIR, "03_scenario3_step2_review_form_table.png")
+        s3_path = os.path.join(screenshot_dir, "03_scenario3_step2_review_form_table.png")
         page.screenshot(path=s3_path)
         print(f"Scenario 3 screenshot saved to {s3_path}")
 
@@ -440,7 +505,7 @@ def test_e2e_clerk_flow_all_scenarios():
         # Select settlement type (required)
         page.locator("#inpSettlementType").select_option("cash")
 
-        s4_path = os.path.join(SCREENSHOT_DIR, "04_scenario4_fees_drawer_void_recalc.png")
+        s4_path = os.path.join(screenshot_dir, "04_scenario4_fees_drawer_void_recalc.png")
         page.screenshot(path=s4_path)
         print(f"Scenario 4 screenshot saved to {s4_path}")
 
@@ -451,13 +516,58 @@ def test_e2e_clerk_flow_all_scenarios():
 
         # Wait for toast notification
         page.wait_for_selector(".app-toast", timeout=8000)
-        s5_path = os.path.join(SCREENSHOT_DIR, "05_save_success_toast.png")
+        s5_path = os.path.join(screenshot_dir, "05_save_success_toast.png")
         page.screenshot(path=s5_path)
         print(f"Save success screenshot saved to {s5_path}")
 
         browser.close()
 
+    # AH1：跑完 e2e 后仓库内 artifacts/e2e-refactor 的指纹必须逐项不变
+    repo_fp_after = _dir_fingerprint(_REPO_E2E_DIR)
+    assert repo_fp_after == repo_fp_before, \
+        "跑 e2e 改动了仓库 artifacts/e2e-refactor：before=%r after=%r" % (
+            repo_fp_before, repo_fp_after)
+
+
+def test_screenshot_dir_redirected_out_of_repo():
+    """重定向判据：ARTIFACTS_DIR 已设时，落盘目录必须在仓库 artifacts/ 之外。
+
+    why（AH1）：这是本缺陷的**确定性判据** —— 只要有人把 SCREENSHOT_DIR 改回写死的仓库路径，
+    本用例立刻失败，不依赖截图内容是否逐字节相同（e2e 用例里那条指纹断言受此影响会有随机性，
+    本用例把它钉死）。不依赖活体服务与浏览器，任何环境都应执行。
+    """
+    assert os.environ.get("ARTIFACTS_DIR", "").strip(), \
+        "需要 ARTIFACTS_DIR（由 conftest 的 _isolate_artifacts_dir 夹具设置）"
+    d = os.path.abspath(_screenshot_dir())
+    repo = os.path.abspath(_REPO_E2E_DIR)
+    assert not (d == repo or d.startswith(repo + os.sep)), "落盘目录落在仓库 artifacts/ 内：%s" % d
+
+
+def test_dir_fingerprint_selfcalibration(tmp_path):
+    """自校准：证明 `_dir_fingerprint` 不是恒真（新增 / 等长改写 / 恢复三态都能分辨）。
+
+    why（AH1）：本仓反复踩过「恒真用例比没有更糟」—— 若指纹函数写坏，e2e 用例里那条
+    「仓库 artifacts 指纹不变」的断言会永远通过，等于没有守护。这里在同一函数上做三态校准：
+    新增文件必须被捕捉，**等长改写**也必须被捕捉（只比总字节数会漏），恢复后必须回到原值。
+    全程在 tmp_path 上做，不往仓库目录写任何东西。
+    """
+    d = tmp_path / "fp"
+    d.mkdir()
+    (d / "a.bin").write_bytes(b"aaa")
+    base = _dir_fingerprint(str(d))
+    (d / "b.bin").write_bytes(b"bbb")
+    added = _dir_fingerprint(str(d))
+    assert added != base, "指纹未捕捉到新增文件"
+    (d / "a.bin").write_bytes(b"aab")  # 与 b"aaa" 等长
+    assert _dir_fingerprint(str(d)) != added, "指纹未捕捉到等长改写（只比字节数会漏）"
+    (d / "a.bin").write_bytes(b"aaa")
+    (d / "b.bin").unlink()
+    assert _dir_fingerprint(str(d)) == base, "指纹未回到原值"
+
 
 if __name__ == "__main__":
+    # 直接 python 运行（不经 pytest/conftest）时自行把产物重定向到临时目录，
+    # 与 pytest 下保持同一行为，避免写进仓库 artifacts/e2e-refactor。
+    os.environ.setdefault("ARTIFACTS_DIR", tempfile.mkdtemp(prefix="e2e_artifacts_"))
     test_e2e_clerk_flow_all_scenarios()
     print("ALL PLAYWRIGHT E2E SCENARIOS PASSED SUCCESSFULLY!")

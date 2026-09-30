@@ -89,6 +89,15 @@ def resolve_tenant_filter(request: Request, query_value=None):
 
 class EngineConfigBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    api_format: str = "chat_completion"
+    grey_api_format: str = "chat_completion"
+    openai_rec_api_format: str = "chat_completion"
+    grey_openai_rec_api_format: str = "chat_completion"
+    openai_aud_api_format: str = "chat_completion"
+    openai_parse_api_format: str = "chat_completion"
+    grey_openai_aud_api_format: str = "chat_completion"
+    grey_openai_parse_api_format: str = "chat_completion"
+
     # 配置来源（T1）：body 必须声明，否则 extra=forbid 会让带该字段的请求 422。
     # PUT 保存一律由后端强制置 manual（见 set_engine_config），请求体传入值仅作占位。
     config_source: str = None
@@ -106,6 +115,20 @@ class EngineConfigBody(BaseModel):
     openai_aud_model: str = None
     # 新增开关（与 models.EngineConfig 对齐）：超时 / 审核模式
     call_timeout_seconds: int = None
+    # 独立超时
+    rec_timeout_seconds: Optional[int] = None
+    aud_timeout_seconds: Optional[int] = None
+    parse_timeout_seconds: Optional[int] = None
+    grey_rec_timeout_seconds: Optional[int] = None
+    grey_aud_timeout_seconds: Optional[int] = None
+    grey_parse_timeout_seconds: Optional[int] = None
+    # 思考强度
+    openai_rec_reasoning_effort: Optional[str] = None
+    openai_aud_reasoning_effort: Optional[str] = None
+    openai_parse_reasoning_effort: Optional[str] = None
+    grey_openai_rec_reasoning_effort: Optional[str] = None
+    grey_openai_aud_reasoning_effort: Optional[str] = None
+    grey_openai_parse_reasoning_effort: Optional[str] = None
     # T11：整图识别重试上限。必须声明，否则 GET 回读后再 PUT（前端回显整份配置）会因
     # models 侧 extra="forbid" 触发 422（与 T1 config_source 同一坑）。
     max_retry_rounds: int = None
@@ -143,10 +166,45 @@ class EngineConfigBody(BaseModel):
     grey_openai_parse_base_url: str = None
     grey_openai_parse_api_key: str = None
     grey_openai_parse_model: str = None
+    # 各引擎腿供应商名称（保存时自动写入预设网关）
+    vendor_name_rec: str = None
+    vendor_name_aud: str = None
+    vendor_name_parse: str = None
+    vendor_name_grey_rec: str = None
+    vendor_name_grey_aud: str = None
+    vendor_name_grey_parse: str = None
+
+    # 各引擎腿自定义 Token 单价（单位：元/1M Token，ge=0 拦截负数）
+    price_input_rec: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_rec: Optional[float] = Field(default=None, ge=0)
+    price_output_rec: Optional[float] = Field(default=None, ge=0)
+
+    price_input_aud: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_aud: Optional[float] = Field(default=None, ge=0)
+    price_output_aud: Optional[float] = Field(default=None, ge=0)
+
+    price_input_parse: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_parse: Optional[float] = Field(default=None, ge=0)
+    price_output_parse: Optional[float] = Field(default=None, ge=0)
+
+    price_input_grey_rec: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_grey_rec: Optional[float] = Field(default=None, ge=0)
+    price_output_grey_rec: Optional[float] = Field(default=None, ge=0)
+
+    price_input_grey_aud: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_grey_aud: Optional[float] = Field(default=None, ge=0)
+    price_output_grey_aud: Optional[float] = Field(default=None, ge=0)
+
+    price_input_grey_parse: Optional[float] = Field(default=None, ge=0)
+    price_cached_input_grey_parse: Optional[float] = Field(default=None, ge=0)
+    price_output_grey_parse: Optional[float] = Field(default=None, ge=0)
 
 
-def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key: str, label: str):
-    """轻量快速探测：校验 OpenAI 兼容接口可用性与模型/Key合法性。"""
+EngineConfigPayload = EngineConfigBody
+
+
+def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key: str, label: str, api_format: str = "chat_completion"):
+    """轻量快速探测：校验 OpenAI/Response/Anthropic 兼容接口可用性与模型/Key合法性。"""
     import requests
     from app.services.security_guard import validate_safe_external_url
 
@@ -164,26 +222,92 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
     base = base_url.strip().rstrip("/")
     if base.endswith("/chat/completions"):
         base = base[:-len("/chat/completions")].rstrip("/")
+    if base.endswith("/responses"):
+        base = base[:-len("/responses")].rstrip("/")
+    if base.endswith("/messages"):
+        base = base[:-len("/messages")].rstrip("/")
     if base.endswith("/models"):
         base = base[:-len("/models")].rstrip("/")
-    models_url = f"{base}/models"
 
-    headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
-    try:
-        r = requests.get(models_url, headers=headers, timeout=12, allow_redirects=False)
-        if r.status_code == 200:
-            return None
-        # 若 /models 接口返回 404/405（如 DashScope 等兼容层未暴露 /models），回退至 /chat/completions 最小探测
-        if r.status_code in (404, 405):
-            chat_url = f"{base}/chat/completions"
-            payload = {"model": model_name.strip(), "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
-            r_chat = requests.post(chat_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
-            if r_chat.status_code != 200:
-                return f"[{label}] OpenAI 接口返回 HTTP {r_chat.status_code}: {r_chat.text[:200]}"
-            return None
-        return f"[{label}] OpenAI 接口返回 HTTP {r.status_code}: {r.text[:200]}"
-    except Exception as e:
-        return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
+    fmt = str(api_format or "chat_completion").strip().lower()
+
+    if fmt == "anthropic":
+        headers = {
+            "x-api-key": api_key.strip(),
+            "Authorization": f"Bearer {api_key.strip()}",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+        models_url = f"{base}/models"
+        try:
+            r = requests.get(models_url, headers=headers, timeout=12, allow_redirects=False)
+            if r.status_code in (200, 401):
+                return None
+            msg_url = f"{base}/messages" if base.endswith("/v1") else f"{base}/v1/messages"
+            payload = {
+                "model": model_name.strip(),
+                "messages": [{"role": "user", "content": "hi"}],
+                "max_tokens": 5,
+            }
+            r_msg = requests.post(msg_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
+            if r_msg.status_code in (200, 400, 401):
+                return None
+            if r_msg.status_code == 404:
+                alt_url = f"{base}/messages" if not base.endswith("/v1") else f"{base}/v1/messages"
+                if alt_url != msg_url:
+                    r_alt = requests.post(alt_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
+                    if r_alt.status_code in (200, 400, 401):
+                        return None
+            return f"[{label}] Anthropic 接口返回 HTTP {r_msg.status_code}: {r_msg.text[:200]}"
+        except Exception as e:
+            return f"[{label}] 连接 Anthropic 网关失败: {str(e)}"
+
+    elif fmt == "response":
+        models_url = f"{base}/models"
+        headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
+        try:
+            r = requests.get(models_url, headers=headers, timeout=12, allow_redirects=False)
+            if r.status_code == 200:
+                return None
+            resp_url = f"{base}/responses"
+            payload = {"model": model_name.strip(), "input": "hi", "max_output_tokens": 5}
+            r_resp = requests.post(resp_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
+            if r_resp.status_code == 200:
+                return None
+            if r_resp.status_code in (404, 405):
+                chat_url = f"{base}/chat/completions"
+                payload_chat = {
+                    "model": model_name.strip(),
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "response_format": {"type": "json_object"},
+                    "max_tokens": 5,
+                }
+                r_chat = requests.post(chat_url, headers=headers, json=payload_chat, timeout=12, allow_redirects=False)
+                if r_chat.status_code == 200:
+                    return None
+                return f"[{label}] OpenAI Structured 接口返回 HTTP {r_chat.status_code}: {r_chat.text[:200]}"
+            return f"[{label}] OpenAI Responses 接口返回 HTTP {r_resp.status_code}: {r_resp.text[:200]}"
+        except Exception as e:
+            return f"[{label}] 连接 OpenAI Responses 网关失败: {str(e)}"
+
+    else:
+        # chat_completion (标准 OpenAI 协议)
+        models_url = f"{base}/models"
+        headers = {"Authorization": f"Bearer {api_key.strip()}", "Content-Type": "application/json"}
+        try:
+            r = requests.get(models_url, headers=headers, timeout=12, allow_redirects=False)
+            if r.status_code == 200:
+                return None
+            if r.status_code in (404, 405):
+                chat_url = f"{base}/chat/completions"
+                payload = {"model": model_name.strip(), "messages": [{"role": "user", "content": "hi"}], "max_tokens": 5}
+                r_chat = requests.post(chat_url, headers=headers, json=payload, timeout=12, allow_redirects=False)
+                if r_chat.status_code != 200:
+                    return f"[{label}] OpenAI 接口返回 HTTP {r_chat.status_code}: {r_chat.text[:200]}"
+                return None
+            return f"[{label}] OpenAI 接口返回 HTTP {r.status_code}: {r.text[:200]}"
+        except Exception as e:
+            return f"[{label}] 连接 OpenAI 网关失败: {str(e)}"
 
 
 def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
@@ -218,6 +342,17 @@ def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
                 updates[key] = EngineKind(updates[key])
     if "grey_percent" in updates:
         updates["grey_percent"] = max(0, min(100, int(updates["grey_percent"])))
+
+    # 接口协议格式双向自动同步
+    if updates.get("openai_rec_api_format"):
+        updates["api_format"] = updates["openai_rec_api_format"]
+    elif updates.get("api_format"):
+        updates["openai_rec_api_format"] = updates["api_format"]
+
+    if updates.get("grey_openai_rec_api_format"):
+        updates["grey_api_format"] = updates["grey_openai_rec_api_format"]
+    elif updates.get("grey_api_format"):
+        updates["grey_openai_rec_api_format"] = updates["grey_api_format"]
 
     # 纯 OpenAI 参数双向自动同步映射 (单一事实源)
     if updates.get("openai_rec_model"):
@@ -292,7 +427,8 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     # 1. 常规识别引擎测试
     rec_eng = test_cfg.recognition_engine.value if hasattr(test_cfg.recognition_engine, "value") else str(test_cfg.recognition_engine)
     err = _quick_test_engine(rec_eng, test_cfg.openai_rec_model or test_cfg.recognition_model,
-                             test_cfg.openai_rec_base_url, test_cfg.openai_rec_api_key, "识别引擎")
+                             test_cfg.openai_rec_base_url, test_cfg.openai_rec_api_key, "识别引擎",
+                             api_format=getattr(test_cfg, "openai_rec_api_format", getattr(test_cfg, "api_format", "chat_completion")))
     if err:
         return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -300,7 +436,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.parse_llm_enabled:
         parse_eng = test_cfg.parse_llm_engine.value if hasattr(test_cfg.parse_llm_engine, "value") else str(test_cfg.parse_llm_engine)
         err = _quick_test_engine(parse_eng, test_cfg.openai_parse_model or test_cfg.parse_llm_model,
-                                 test_cfg.openai_parse_base_url, test_cfg.openai_parse_api_key, "解析 LLM")
+                                 test_cfg.openai_parse_base_url, test_cfg.openai_parse_api_key, "解析 LLM", api_format=getattr(test_cfg, "openai_parse_api_format", "chat_completion"))
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -308,7 +444,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.audit_enabled:
         aud_eng = test_cfg.audit_engine.value if hasattr(test_cfg.audit_engine, "value") else str(test_cfg.audit_engine)
         err = _quick_test_engine(aud_eng, test_cfg.openai_aud_model or test_cfg.audit_model,
-                                 test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎")
+                                 test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎", api_format=getattr(test_cfg, "openai_aud_api_format", "chat_completion"))
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -316,21 +452,22 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.grey_enabled and test_cfg.grey_percent > 0:
         g_rec_eng = test_cfg.grey_recognition_engine.value if hasattr(test_cfg.grey_recognition_engine, "value") else str(test_cfg.grey_recognition_engine)
         err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model or test_cfg.grey_recognition_model,
-                                 test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别")
+                                 test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别",
+                                 api_format=getattr(test_cfg, "grey_openai_rec_api_format", getattr(test_cfg, "grey_api_format", "chat_completion")))
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_parse_llm_enabled:
             gp_eng = test_cfg.grey_parse_llm_engine.value if hasattr(test_cfg.grey_parse_llm_engine, "value") else str(test_cfg.grey_parse_llm_engine)
             err = _quick_test_engine(gp_eng, test_cfg.grey_openai_parse_model or test_cfg.grey_parse_llm_model,
-                                     test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析")
+                                     test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析", api_format=getattr(test_cfg, "grey_openai_parse_api_format", "chat_completion"))
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_audit_enabled:
             ga_eng = test_cfg.grey_audit_engine.value if hasattr(test_cfg.grey_audit_engine, "value") else str(test_cfg.grey_audit_engine)
             err = _quick_test_engine(ga_eng, test_cfg.grey_openai_aud_model or test_cfg.grey_audit_model,
-                                     test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核")
+                                     test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核", api_format=getattr(test_cfg, "grey_openai_aud_api_format", "chat_completion"))
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -368,6 +505,8 @@ def promote_grey_config(request: Request):
             "openai_rec_base_url": prev.get("openai_rec_base_url"),
             "openai_rec_api_key": prev.get("openai_rec_api_key"),
             "openai_rec_model": prev.get("openai_rec_model"),
+            "openai_rec_api_format": prev.get("openai_rec_api_format", prev.get("api_format", "chat_completion")),
+            "api_format": prev.get("api_format", prev.get("openai_rec_api_format", "chat_completion")),
             "openai_aud_base_url": prev.get("openai_aud_base_url"),
             "openai_aud_api_key": prev.get("openai_aud_api_key"),
             "openai_aud_model": prev.get("openai_aud_model"),
@@ -377,6 +516,21 @@ def promote_grey_config(request: Request):
             "openai_parse_base_url": prev.get("openai_parse_base_url"),
             "openai_parse_api_key": prev.get("openai_parse_api_key"),
             "openai_parse_model": prev.get("openai_parse_model"),
+            "rec_timeout_seconds": prev.get("rec_timeout_seconds"),
+            "aud_timeout_seconds": prev.get("aud_timeout_seconds"),
+            "parse_timeout_seconds": prev.get("parse_timeout_seconds"),
+            "openai_rec_reasoning_effort": prev.get("openai_rec_reasoning_effort", ""),
+            "openai_aud_reasoning_effort": prev.get("openai_aud_reasoning_effort", ""),
+            "openai_parse_reasoning_effort": prev.get("openai_parse_reasoning_effort", ""),
+            "price_input_rec": prev.get("price_input_rec"),
+            "price_cached_input_rec": prev.get("price_cached_input_rec"),
+            "price_output_rec": prev.get("price_output_rec"),
+            "price_input_aud": prev.get("price_input_aud"),
+            "price_cached_input_aud": prev.get("price_cached_input_aud"),
+            "price_output_aud": prev.get("price_output_aud"),
+            "price_input_parse": prev.get("price_input_parse"),
+            "price_cached_input_parse": prev.get("price_cached_input_parse"),
+            "price_output_parse": prev.get("price_output_parse"),
         },
         "meta": {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -396,6 +550,8 @@ def promote_grey_config(request: Request):
         "openai_rec_base_url": grey.grey_openai_rec_base_url,
         "openai_rec_api_key": grey.grey_openai_rec_api_key,
         "openai_rec_model": grey.grey_openai_rec_model,
+        "openai_rec_api_format": getattr(grey, "grey_openai_rec_api_format", getattr(grey, "grey_api_format", "chat_completion")),
+        "api_format": getattr(grey, "grey_openai_rec_api_format", getattr(grey, "grey_api_format", "chat_completion")),
         "openai_aud_base_url": grey.grey_openai_aud_base_url,
         "openai_aud_api_key": grey.grey_openai_aud_api_key,
         "openai_aud_model": grey.grey_openai_aud_model,
@@ -405,6 +561,21 @@ def promote_grey_config(request: Request):
         "openai_parse_base_url": grey.grey_openai_parse_base_url,
         "openai_parse_api_key": grey.grey_openai_parse_api_key,
         "openai_parse_model": grey.grey_openai_parse_model,
+        "rec_timeout_seconds": grey.grey_rec_timeout_seconds,
+        "aud_timeout_seconds": grey.grey_aud_timeout_seconds,
+        "parse_timeout_seconds": grey.grey_parse_timeout_seconds,
+        "openai_rec_reasoning_effort": grey.grey_openai_rec_reasoning_effort,
+        "openai_aud_reasoning_effort": grey.grey_openai_aud_reasoning_effort,
+        "openai_parse_reasoning_effort": grey.grey_openai_parse_reasoning_effort,
+        "price_input_rec": grey.price_input_grey_rec,
+        "price_cached_input_rec": grey.price_cached_input_grey_rec,
+        "price_output_rec": grey.price_output_grey_rec,
+        "price_input_aud": grey.price_input_grey_aud,
+        "price_cached_input_aud": grey.price_cached_input_grey_aud,
+        "price_output_aud": grey.price_output_grey_aud,
+        "price_input_parse": grey.price_input_grey_parse,
+        "price_cached_input_parse": grey.price_cached_input_grey_parse,
+        "price_output_parse": grey.price_output_grey_parse,
         "rollback_snapshot": snap,
     }
 
@@ -426,6 +597,8 @@ def promote_grey_config(request: Request):
         "grey_openai_rec_base_url": "",
         "grey_openai_rec_api_key": "",
         "grey_openai_rec_model": "",
+        "grey_openai_rec_api_format": "chat_completion",
+        "grey_api_format": "chat_completion",
         "grey_openai_aud_base_url": "",
         "grey_openai_aud_api_key": "",
         "grey_openai_aud_model": "",
@@ -435,13 +608,30 @@ def promote_grey_config(request: Request):
         "grey_openai_parse_base_url": "",
         "grey_openai_parse_api_key": "",
         "grey_openai_parse_model": "",
+        "grey_rec_timeout_seconds": None,
+        "grey_aud_timeout_seconds": None,
+        "grey_parse_timeout_seconds": None,
+        "grey_openai_rec_reasoning_effort": "",
+        "grey_openai_aud_reasoning_effort": "",
+        "grey_openai_parse_reasoning_effort": "",
+        "price_input_grey_rec": None,
+        "price_cached_input_grey_rec": None,
+        "price_output_grey_rec": None,
+        "price_input_grey_aud": None,
+        "price_cached_input_grey_aud": None,
+        "price_output_grey_aud": None,
+        "price_input_grey_parse": None,
+        "price_cached_input_grey_parse": None,
+        "price_output_grey_parse": None,
     }
     final_cfg = EngineConfig(**{**new_cfg.model_dump(), **grey_defaults})
     db.set_engine_config(final_cfg, source="manual")
 
+    old_model = cfg.recognition_model or cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
+    new_model = final_cfg.recognition_model or final_cfg.openai_rec_model or getattr(grey, "grey_recognition_model", "Qwen/Qwen3-VL-32B-Instruct")
     db.append_system_audit_log(who, "promote_grey_config",
-                               "recognition_engine",
-                               str(cfg.recognition_engine), str(final_cfg.recognition_engine))
+                               "recognition_model",
+                               str(old_model), str(new_model))
 
     return {"status": "success", "data": mask_engine_config_dict(final_cfg.model_dump())}
 
@@ -493,6 +683,21 @@ def diff_regular_vs_grey(request: Request):
         ("openai_rec_model", "grey_openai_rec_model", "识别 · OpenAI 模型名"),
         ("openai_aud_model", "grey_openai_aud_model", "审核 · OpenAI 模型名"),
         ("openai_parse_model", "grey_openai_parse_model", "解析 · OpenAI 模型名"),
+        ("rec_timeout_seconds", "grey_rec_timeout_seconds", "识别 · 调用超时 (秒)"),
+        ("aud_timeout_seconds", "grey_aud_timeout_seconds", "审核 · 调用超时 (秒)"),
+        ("parse_timeout_seconds", "grey_parse_timeout_seconds", "解析 · 调用超时 (秒)"),
+        ("openai_rec_reasoning_effort", "grey_openai_rec_reasoning_effort", "识别 · 思考强度"),
+        ("openai_aud_reasoning_effort", "grey_openai_aud_reasoning_effort", "审核 · 思考强度"),
+        ("openai_parse_reasoning_effort", "grey_openai_parse_reasoning_effort", "解析 · 思考强度"),
+        ("price_input_rec", "price_input_grey_rec", "识别 · Input 价格 (元/1M)"),
+        ("price_cached_input_rec", "price_cached_input_grey_rec", "识别 · Cached Input 价格 (元/1M)"),
+        ("price_output_rec", "price_output_grey_rec", "识别 · Output 价格 (元/1M)"),
+        ("price_input_aud", "price_input_grey_aud", "审核 · Input 价格 (元/1M)"),
+        ("price_cached_input_aud", "price_cached_input_grey_aud", "审核 · Cached Input 价格 (元/1M)"),
+        ("price_output_aud", "price_output_grey_aud", "审核 · Output 价格 (元/1M)"),
+        ("price_input_parse", "price_input_grey_parse", "解析 · Input 价格 (元/1M)"),
+        ("price_cached_input_parse", "price_cached_input_grey_parse", "解析 · Cached Input 价格 (元/1M)"),
+        ("price_output_parse", "price_output_grey_parse", "解析 · Output 价格 (元/1M)"),
     ]
     # OpenAI 参数区：敏感字段（api_key / base_url）不直接展示值，仅提示一致/不一致
     sensitive_pairs = [
@@ -577,6 +782,12 @@ def get_engine_presets(request: Request):
             "api_key": "",
             "rec_model": "agnes-2.0-flash",
             "aud_model": "agnes-2.0-flash",
+            "rec_price_input": 0.5,
+            "rec_price_cached": 0.1,
+            "rec_price_output": 2.0,
+            "aud_price_input": 0.5,
+            "aud_price_cached": 0.1,
+            "aud_price_output": 2.0,
         },
         "bailian": {
             "label": "阿里云百炼 · DashScope",
@@ -584,6 +795,12 @@ def get_engine_presets(request: Request):
             "api_key": dashscope_key,
             "rec_model": "qwen3.5-omni-flash",
             "aud_model": "qwen3-vl-plus",
+            "rec_price_input": 2.2,
+            "rec_price_cached": 0.55,
+            "rec_price_output": 13.3,
+            "aud_price_input": 1.5,
+            "aud_price_cached": 0.375,
+            "aud_price_output": 4.5,
         },
         "siliconflow": {
             "label": "SiliconFlow · 硅基流动",
@@ -591,9 +808,76 @@ def get_engine_presets(request: Request):
             "api_key": siliconflow_key,
             "rec_model": "Qwen/Qwen3-VL-32B-Instruct",
             "aud_model": "zai-org/GLM-4.5V",
+            "rec_price_input": 2.0,
+            "rec_price_cached": 0.5,
+            "rec_price_output": 6.0,
+            "aud_price_input": 1.0,
+            "aud_price_cached": 0.25,
+            "aud_price_output": 6.0,
         },
     }
+    # 合并用户通过管理台保存的自定义预设
+    try:
+        import json as _json
+        custom_raw = db.get_app_setting("custom_engine_presets", "{}")
+        custom = _json.loads(custom_raw or "{}")
+        if isinstance(custom, dict):
+            presets.update(custom)
+    except Exception:
+        pass
     return {"status": "success", "data": presets}
+
+
+class _SavePresetBody(BaseModel):
+    key: str
+    label: str
+    base_url: str
+    api_key: str = ""
+    rec_model: str = ""
+    aud_model: str = ""
+    parse_model: str = ""
+    rec_price_input: Optional[float] = None
+    rec_price_cached: Optional[float] = None
+    rec_price_output: Optional[float] = None
+    aud_price_input: Optional[float] = None
+    aud_price_cached: Optional[float] = None
+    aud_price_output: Optional[float] = None
+
+
+@router.post("/api/admin/engine-presets")
+def save_engine_preset(body: _SavePresetBody, request: Request):
+    """保存一条自定义预设网关配置到 app_settings。key 为唯一标识符（会覆盖同 key 旧值）。"""
+    require_admin(request)
+    import json as _json
+    import re
+    # key 只允许字母/数字/下划线/连字符，最长 64 字符
+    safe_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", (body.key or "").strip())[:64]
+    if not safe_key:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "preset key 不能为空"})
+    label = (body.label or "").strip()[:100]
+    if not label:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "供应商名称不能为空"})
+    custom_raw = db.get_app_setting("custom_engine_presets", "{}")
+    try:
+        custom = _json.loads(custom_raw or "{}")
+    except Exception:
+        custom = {}
+    custom[safe_key] = {
+        "label": label,
+        "base_url": body.base_url.strip(),
+        "api_key": body.api_key.strip(),
+        "rec_model": body.rec_model.strip(),
+        "aud_model": body.aud_model.strip(),
+        "parse_model": body.parse_model.strip(),
+        "is_custom": True,
+    }
+    db.set_app_setting("custom_engine_presets", _json.dumps(custom, ensure_ascii=False))
+    return {"status": "success", "key": safe_key, "data": custom}
+
+
+
 
 
 @router.get("/api/admin/engine-config")
@@ -622,6 +906,14 @@ def get_engine_config(request: Request):
         "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 60),
         # T9 收尾：显式回显「实际生效超时」，避免管理台只看配置值而误判
         "effective_call_timeout_seconds": _resolve_timeout(cfg),
+        "effective_timeouts": {
+            "rec": _resolve_timeout(cfg, side="rec", use_grey=False),
+            "aud": _resolve_timeout(cfg, side="aud", use_grey=False),
+            "parse": _resolve_timeout(cfg, side="parse", use_grey=False),
+            "grey_rec": _resolve_timeout(cfg, side="rec", use_grey=True),
+            "grey_aud": _resolve_timeout(cfg, side="aud", use_grey=True),
+            "grey_parse": _resolve_timeout(cfg, side="parse", use_grey=True),
+        },
         "timeout_policy": (f"实际生效超时硬上限 {MAX_CALL_TIMEOUT_SECONDS}s"
                            "（llm._resolve_timeout 钳制 min(v, 硬上限)）；"
                            "omni 实测 2.6-7.1s 结余充足，禁止长期空转"),
@@ -648,15 +940,102 @@ def _is_placeholder_api_key(key) -> bool:
     return "YOUR_" in k.upper()
 
 
+def _auto_save_vendor_presets(new_cfg, new_dict: dict):
+    """保存引擎配置时，对供应商名非空的引擎腿，自动写入/更新自定义预设网关。
+
+    每条预设的 key = vendor_name 去除特殊字符后的安全标识符（同名覆盖）。
+    各引擎腿共享同一个 key（供应商相同时合并为一条预设，model 取各腿之和）。
+    """
+    import json as _json
+    import re
+
+    # 每腿：(vendor_name_field, base_url_field, api_key_field, rec_model_field, aud_model_field, parse_model_field, is_aud, is_parse)
+    LEGS = [
+        ("vendor_name_rec",        "openai_rec_base_url",       "openai_rec_api_key",       "openai_rec_model",       None,                 None,                    False, False),
+        ("vendor_name_aud",        "openai_aud_base_url",       "openai_aud_api_key",        None,                    "openai_aud_model",   None,                    True,  False),
+        ("vendor_name_parse",      "openai_parse_base_url",     "openai_parse_api_key",      None,                    None,                 "openai_parse_model",    False, True),
+        ("vendor_name_grey_rec",   "grey_openai_rec_base_url",  "grey_openai_rec_api_key",   "grey_openai_rec_model", None,                 None,                    False, False),
+        ("vendor_name_grey_aud",   "grey_openai_aud_base_url",  "grey_openai_aud_api_key",   None,                    "grey_openai_aud_model", None,                 True,  False),
+        ("vendor_name_grey_parse", "grey_openai_parse_base_url","grey_openai_parse_api_key", None,                    None,                 "grey_openai_parse_model", False, True),
+    ]
+
+    def _safe_key(name: str) -> str:
+        return re.sub(r"[^a-zA-Z0-9_\-]", "_", name.strip())[:64].strip("_")
+
+    cfg_dict = new_cfg.model_dump()
+    custom_raw = db.get_app_setting("custom_engine_presets", "{}")
+    try:
+        custom = _json.loads(custom_raw or "{}")
+    except Exception:
+        custom = {}
+
+    for vendor_field, url_field, key_field, rec_f, aud_f, parse_f, _is_aud, _is_parse in LEGS:
+        vendor_name = (cfg_dict.get(vendor_field) or "").strip()
+        if not vendor_name:
+            continue
+        safe_key = _safe_key(vendor_name)
+        if not safe_key:
+            continue
+        base_url = (cfg_dict.get(url_field) or "").strip()
+        api_key_raw = (cfg_dict.get(key_field) or "").strip()
+        rec_model = (cfg_dict.get(rec_f) or "").strip() if rec_f else ""
+        aud_model = (cfg_dict.get(aud_f) or "").strip() if aud_f else ""
+        parse_model = (cfg_dict.get(parse_f) or "").strip() if parse_f else ""
+        # 合并同 key 已有条目（保留现有 rec/aud/parse_model 不被单腿覆盖为空）
+        existing = custom.get(safe_key, {})
+        merged_rec = rec_model or existing.get("rec_model", "")
+        merged_aud = aud_model or existing.get("aud_model", "")
+        merged_parse = parse_model or existing.get("parse_model", "")
+        # api_key 若含掩码（****）则保留旧值
+        merged_key = api_key_raw if api_key_raw and "****" not in api_key_raw else existing.get("api_key", "")
+        custom[safe_key] = {
+            "label": vendor_name,
+            "base_url": base_url or existing.get("base_url", ""),
+            "api_key": merged_key,
+            "rec_model": merged_rec,
+            "aud_model": merged_aud,
+            "parse_model": merged_parse,
+            "is_custom": True,
+        }
+
+    db.set_app_setting("custom_engine_presets", _json.dumps(custom, ensure_ascii=False))
+
+
 @router.put("/api/admin/engine-config")
 def set_engine_config(body: EngineConfigBody, request: Request):
     require_admin(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
+
     from app.models import EngineConfig
     from app.llm import _is_valid_dashscope_url, _is_valid_sk, _is_valid_dashscope_config, get_timeout_advice
     cfg = db.get_engine_config()
     updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
+    # 对分腿独立超时，若请求显式传递了字段（如传递 null 恢复继承全局），予以放行
+    for tf in (
+        "rec_timeout_seconds",
+        "aud_timeout_seconds",
+        "parse_timeout_seconds",
+        "grey_rec_timeout_seconds",
+        "grey_aud_timeout_seconds",
+        "grey_parse_timeout_seconds",
+    ):
+        if tf in body.model_fields_set:
+            updates[tf] = getattr(body, tf)
+
+    # 对各引擎腿自定义 Token 单价，若请求显式传递了字段（含传递 null 恢复使用默认刊例价），予以放行
+    price_fields = (
+        "price_input_rec", "price_cached_input_rec", "price_output_rec",
+        "price_input_aud", "price_cached_input_aud", "price_output_aud",
+        "price_input_parse", "price_cached_input_parse", "price_output_parse",
+        "price_input_grey_rec", "price_cached_input_grey_rec", "price_output_grey_rec",
+        "price_input_grey_aud", "price_cached_input_grey_aud", "price_output_grey_aud",
+        "price_input_grey_parse", "price_cached_input_grey_parse", "price_output_grey_parse",
+    )
+    for pf in price_fields:
+        if pf in body.model_fields_set:
+            updates[pf] = getattr(body, pf)
+
     # 配置来源不接受请求体声明：PUT 保存后一律由后端置 manual（复位走 reset 端点）
     updates.pop("config_source", None)
 
@@ -747,27 +1126,43 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     # 旧实现只在「请求未显式传该字段 且 是 qwen 路径 且 旧值 ≥200」时才降至 60，
     # 管理员显式填 90 会被原样落库 → 现收敛为无条件归一（选项 b 的 API 侧回显）。
     from app.models import clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
-    raw_timeout = new_dict.get("call_timeout_seconds")
-    new_dict["call_timeout_seconds"] = clamp_call_timeout(raw_timeout)
-    timeout_clamped = new_dict["call_timeout_seconds"] != raw_timeout
+    timeout_fields = [
+        "call_timeout_seconds",
+        "rec_timeout_seconds",
+        "aud_timeout_seconds",
+        "parse_timeout_seconds",
+        "grey_rec_timeout_seconds",
+        "grey_aud_timeout_seconds",
+        "grey_parse_timeout_seconds",
+    ]
+    clamped_fields = []
+    for tf in timeout_fields:
+        if tf in new_dict and new_dict[tf] is not None:
+            raw_v = new_dict[tf]
+            clamped_v = clamp_call_timeout(raw_v)
+            new_dict[tf] = clamped_v
+            if clamped_v != raw_v:
+                clamped_fields.append((tf, raw_v, clamped_v))
 
     old_engine = cfg.recognition_engine
     # T1：管理台保存即声明「人工配置」（config_source=manual），
     # 重启时 hydrate_engine_config_from_env 不再按 .env 覆盖，人工切换得以持久生效。
     new_cfg = EngineConfig(**{**new_dict, "config_source": "manual"})
     db.set_engine_config(new_cfg, source="manual")
+
+    # ---- 自动将填写了供应商名的引擎腿写入自定义预设网关 ----
+    _auto_save_vendor_presets(new_cfg, new_dict)
+
     changed_keys = list(updates.keys())
     if str(getattr(cfg, "config_source", "auto") or "auto") != "manual":
         changed_keys.append("config_source")
-    if timeout_clamped:
-        changed_keys.append(f"call_timeout_seconds(auto:{raw_timeout}->{new_dict['call_timeout_seconds']})")
-    elif "call_timeout_seconds" in new_dict and new_dict["call_timeout_seconds"] != cfg.call_timeout_seconds:
-        if "call_timeout_seconds" not in changed_keys:
-            changed_keys.append("call_timeout_seconds(auto)")
+    for tf, raw_v, clamped_v in clamped_fields:
+        changed_keys.append(f"{tf}(auto:{raw_v}->{clamped_v})")
+    effective_model = new_cfg.recognition_model or new_cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
     db.append_system_audit_log(who, "set_engine_config",
                                "engine_config",
                                " ".join(changed_keys),
-                               str(new_cfg.recognition_engine))
+                               str(effective_model))
     # 附带超时显式降级告警与性能预期（任务 3a）
     advice = get_timeout_advice(new_cfg)
     warning = ""
@@ -776,10 +1171,14 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     resp_data = mask_engine_config_dict(new_cfg.model_dump())
     resp = {"status": "success", "data": resp_data, "perf_note": perf_note}
 
-    if timeout_clamped:
+    if clamped_fields:
         # 显式回显（T9 收尾）：本次保存填的超限值已被归一，前端可用该字段提示管理员
-        warning = (f"call_timeout_seconds={raw_timeout} 超过硬上限 {MAX_CALL_TIMEOUT_SECONDS}s，"
-                   f"已归一为 {MAX_CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待")
+        warn_msgs = [
+            f"{tf}={raw_v} 超过硬上限 {MAX_CALL_TIMEOUT_SECONDS}s，"
+            f"已归一为 {MAX_CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待"
+            for tf, raw_v, _ in clamped_fields
+        ]
+        warning = "；".join(warn_msgs)
     if advice:
         resp["timeout_advice"] = advice
     if warning:
@@ -1073,6 +1472,30 @@ def grey_test_status(request: Request):
     }}
 
 
+def _normalize_audit_model_name(val: str, fallback: str = "deepseek/deepseek-v4.1-flash") -> str:
+    """平滑映射：如果历史审计记录存的是 engine kind (EngineKind.OPENAI / openai / opencode 等)，
+    转换为实际对应的模型名称。如果已是模型名称则保留。
+    """
+    if not val:
+        return fallback
+    s = str(val).strip()
+    s_lower = s.lower()
+    if "enginekind.openai" in s_lower or s_lower == "openai":
+        return fallback
+    if "enginekind.opencode" in s_lower or s_lower in ("opencode", "codebuddy", "enginekind.codebuddy"):
+        return "Qwen/Qwen3-VL-32B-Instruct"
+    if "mock" in s_lower:
+        return "mock-vlm-rec"
+    if s_lower == "qwen" or "enginekind.qwen" in s_lower:
+        return "qwen3.5-omni-flash"
+    if "->" in s:
+        parts = [p.strip() for p in s.split("->", 1)]
+        p0 = _normalize_audit_model_name(parts[0], fallback="deepseek/deepseek-v4.1-flash")
+        p1 = _normalize_audit_model_name(parts[1], fallback="Qwen/Qwen3-VL-32B-Instruct")
+        return f"{p0} -> {p1}"
+    return s
+
+
 @router.get("/api/admin/canary/history")
 def canary_history(request: Request):
     """返回历史灰度发布、放量变更、推全与回滚履历。"""
@@ -1081,6 +1504,10 @@ def canary_history(request: Request):
     history = []
     promote_count = 0
     rollback_count = 0
+
+    cur_cfg = db.get_engine_config()
+    cur_prod_model = cur_cfg.recognition_model or cur_cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
+    cur_grey_model = cur_cfg.grey_recognition_model or cur_cfg.grey_openai_rec_model or "Qwen/Qwen3-VL-32B-Instruct"
 
     for l in reversed(raw_logs):
         act = l.get("action", "")
@@ -1092,36 +1519,46 @@ def canary_history(request: Request):
 
         if act == "promote_grey_config":
             promote_count += 1
+            old_m = _normalize_audit_model_name(old_val, fallback=cur_prod_model)
+            new_m = _normalize_audit_model_name(new_val, fallback=cur_grey_model)
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+                new_m = cur_grey_model
             history.append({
                 "ts": ts,
                 "action": "promote",
                 "action_label": "推全上线",
                 "badge_class": "badge-success",
                 "description": "灰测配置全量推全至常规生产组（生成回滚快照）",
-                "models": f"{old_val} -> {new_val}",
+                "models": f"{old_m} -> {new_m}",
                 "operator": who,
                 "status": "已推全",
             })
         elif act == "rollback_engine_config":
             rollback_count += 1
+            old_m = _normalize_audit_model_name(old_val, fallback=cur_grey_model)
+            new_m = _normalize_audit_model_name(new_val, fallback=cur_prod_model)
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+                old_m = cur_grey_model
             history.append({
                 "ts": ts,
                 "action": "rollback",
                 "action_label": "紧急回滚",
                 "badge_class": "badge-danger",
                 "description": "从前次推全快照快速回滚常规生产配置",
-                "models": f"{old_val} -> {new_val}",
+                "models": f"{old_m} -> {new_m}",
                 "operator": who,
                 "status": "已回滚",
             })
         elif "grey" in old_val or "grey" in fld or act == "set_canary_config":
+            is_grey_field = "grey" in old_val or "grey" in fld
+            def_m = cur_grey_model if is_grey_field else cur_prod_model
             history.append({
                 "ts": ts,
                 "action": "config_update",
                 "action_label": "灰度放量/参数变更",
                 "badge_class": "badge-primary",
                 "description": f"更新灰度分流策略或放量参数: {old_val[:50]}",
-                "models": new_val,
+                "models": _normalize_audit_model_name(new_val, fallback=def_m),
                 "operator": who,
                 "status": "配置生效",
             })
@@ -1133,6 +1570,7 @@ def canary_history(request: Request):
     finally:
         s.close()
 
+    history.sort(key=lambda x: str(x.get("ts", "") or ""), reverse=True)
     return {
         "status": "success",
         "total_records": len(history),
@@ -1456,6 +1894,8 @@ def get_grey_test_samples(request: Request):
             }
         })
 
+    samples.sort(key=lambda s: int(s.get("receipt_id") or 0), reverse=True)
+
     # 统计全局采纳指标（口径：仅统计有真实 AI 预填可比对的样本，no_prefill 样本不计入）
     comparable = [s["effect_evaluation"] for s in samples
                   if s["effect_evaluation"]["feedback_type"] != "no_prefill"]
@@ -1627,6 +2067,8 @@ def golden_samples(request: Request, scope: str = "all"):
             "sample_id": sample_id,
             "eval_candidate_id": eval_candidate_id,
         })
+
+    all_annotated.sort(key=lambda x: int(x.get("id") or 0), reverse=True)
 
     # 4. Scope 过滤
     if scope == "golden":
@@ -1842,12 +2284,15 @@ def get_experiment_samples(exp_id: int, request: Request):
         assigns = s.query(db._ExperimentAssignRow).filter(
             db._ExperimentAssignRow.experiment_id == int(exp_id)).all()
         assign_map = {a.receipt_id: a.grp for a in assigns}
+        assign_time_map = {a.receipt_id: a.assigned_at for a in assigns if getattr(a, "assigned_at", None)}
 
         dec_rows = s.query(db._DecisionLogRow).filter(
             db._DecisionLogRow.experiment_id == int(exp_id)).all()
         for dr in dec_rows:
             if dr.receipt_id and dr.receipt_id not in assign_map:
                 assign_map[dr.receipt_id] = dr.grp or "control"
+            if dr.receipt_id and dr.receipt_id not in assign_time_map and getattr(dr, "ts", None):
+                assign_time_map[dr.receipt_id] = dr.ts
 
         rids = list(assign_map.keys())
         receipts = s.query(db._ReceiptRow).filter(db._ReceiptRow.id.in_(rids)).all() if rids else []
@@ -1889,7 +2334,7 @@ def get_experiment_samples(exp_id: int, request: Request):
                 "is_match": is_match,
                 "accuracy": round(adopted_count / len(decs), 4) if decs else 1.0,
                 "feedback_label": "完全采纳" if is_match else "人工修正",
-                "assigned_at": decs[0].ts if decs and decs[0].ts else "",
+                "assigned_at": assign_time_map.get(rid) or (decs[0].ts if decs and decs[0].ts else (r.created_at if r and getattr(r, "created_at", None) else "")),
             }
 
             if scope == "control" and grp != "control":
@@ -2078,3 +2523,75 @@ def recognition_summary(request: Request):
                        "treatment": _grp_block("treatment")},
     }
     return {"status": "success", "period_days": period_days, "data": data}
+
+
+@router.get("/api/analytics/parsing-logs")
+def analytics_parsing_logs(
+    request: Request,
+    page: int = 1,
+    page_size: int = 20,
+    tenant_id: str = "all",
+    status: str = "all",
+    gate_status: str = "all",
+    feedback: str = "all",
+    is_modified: str = "all",
+    modified_only: Optional[str] = None,
+    search: str = "",
+    date_range: str = "all",
+    start_date: str = "",
+    end_date: str = "",
+):
+    """05 解析日志与链路审计：全量解析日志明细查询与 KPI 汇总。"""
+    require_admin(request)
+    from app.services.parsing_logs import query_parsing_logs
+
+    if modified_only is not None and modified_only != "":
+        val_str = str(modified_only).strip().lower()
+        if val_str in ("true", "1", "yes"):
+            is_modified = "yes"
+        elif val_str in ("false", "0", "no"):
+            is_modified = "no"
+
+    effective_tenant = resolve_tenant_filter(request, tenant_id)
+
+    s = db.get_session()
+    try:
+        result = query_parsing_logs(
+            s=s,
+            tenant_id=effective_tenant,
+            status=status,
+            gate_status=gate_status,
+            feedback=feedback,
+            is_modified=is_modified,
+            search=search,
+            date_range=date_range,
+            start_date=start_date,
+            end_date=end_date,
+            page=page,
+            page_size=page_size,
+        )
+        return {"status": "success", "data": result}
+    finally:
+        s.close()
+
+
+@router.get("/api/analytics/parsing-logs/detail")
+def analytics_parsing_log_detail(
+    request: Request,
+    record_id: Optional[int] = None,
+    job_id: Optional[str] = None,
+):
+    """01 线上体验感知与链路审计：单据解析生命周期全息详情与关联打点时序下钻。"""
+    require_admin(request)
+    from app.services.parsing_logs import get_parsing_log_detail
+
+    s = db.get_session()
+    try:
+        detail = get_parsing_log_detail(s=s, record_id=record_id, job_id=job_id)
+        if not detail:
+            return {"status": "error", "detail": "单据或链路未找到"}
+        return {"status": "success", "data": detail}
+    finally:
+        s.close()
+
+

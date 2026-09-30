@@ -7,6 +7,8 @@
 - enhance(image): 自适应对比度（CLAHE，LAB 空间 L 通道）+ 轻度去噪（双边滤波）
 - _orthogonal_correct(image): 正交旋转纠正（90/180/270），四假设+水平
   投影方差+顶部重心启发式，90/270 换边 via cv2.rotate，避免 warpAffine 裁切
+- crop_header_roi(image_path): 只裁顶部区域的窄接口（抬头 ROI，P2-T6 供应商
+  预判用）。纯几何操作：解码复用 _imread，返回 ndarray，不落盘、不改行为。
 - apply_pipeline(image_path): 上传后、抽取前的统一入口。
   · 正交纠正由 'preprocess_orthogonal_enabled'（默认 true）控制，不受
     'preprocess_enabled' 限制（正交错误致命）；小角度 deskew+enhance 仍由
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 # ±1° 以内视作已摆正，不纠偏（避免轻微抖动引入重采样噪声）
 DESKEW_DEADZONE_DEG = 1.0
+# 纠偏最大倾斜角度阈值（度）：超过 15° 严禁自动纠偏，交由人工交互判定
+DESKEW_MAX_ANGLE_DEG = 15.0
 # 纠偏输出统一为 JPEG（识别腿输入兼容），质量 95 保细节
 _OUTPUT_QUALITY = 95
 
@@ -28,6 +32,10 @@ _OUTPUT_QUALITY = 95
 _ORTHO_ROWVAR_MIN = 1e6
 # 判断 90/180 时“显著优于”比例（95% 过滤）
 _ORTHO_RATIO_FILTER = 0.95
+
+# 抬头 ROI 默认取上 25%：HK 手写单/打印单的供应商名几乎都落在抬头区
+# （唯一消费方：app/services/vendor_precheck.py 的供应商预判）
+HEADER_ROI_DEFAULT_TOP_RATIO = 0.25
 
 
 def _laplacian_variance_gray(gray_arr):
@@ -103,10 +111,10 @@ def _estimate_skew_angle(gray):
         if w <= 0 or h <= 0:
             return 0.0
         skew = -(angle + 90.0) if w < h else -angle
-        if skew > 90.0:
-            skew -= 180.0
-        if skew <= -90.0:
-            skew += 180.0
+        while skew > 45.0:
+            skew -= 90.0
+        while skew <= -45.0:
+            skew += 90.0
         return float(skew)
     except Exception:
         return 0.0
@@ -146,82 +154,13 @@ def _orientation_metrics(gray):
 
 
 def _orthogonal_correct(image):
-    """正交检测与纠正（90/180/270），返回 (corrected, angle)。
+    """正交检测与纠正（已彻底下线/废止自动正交纠偏）。
 
-    策略：四假设（0/90/180/270）分别计算水平投影方差（行 var）——水
-    平文字行在摆正时行方差最大、列方差最小——取行 var 最大者为水平组；
-    在水平组内以重心最靠上（cy 最小，顶部 heaviness）挑直立方向，180°
-    场景由此区分为 upright vs upside-down。90/270 换边 via cv2.rotate
-    （交换 w/h），避免 warpAffine 保持 (w,h) 的裁切。对空白/低方差图
-    回落 0，不阻断主链路。
-    angle 为将输入图恢复摆正所需的顺时针旋转角度（0/90/180/270），0 表示已摆正。
+    为避免算法越权误判将正常收据翻转颠倒，正交大角度自动翻转已永久下线。
+    恒定返回 (image, 0)，严禁调用 cv2.rotate 对原图进行 90/180/270 度自动翻转。
+    旋转控制权全量归还前端与用户。
     """
-    try:
-        import cv2
-        import numpy as np
-        if image is None or not hasattr(image, 'shape'):
-            return image, 0
-        is_gray = image.ndim == 2
-        if is_gray:
-            gray = image
-        else:
-            try:
-                gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            except Exception:
-                return image, 0
-        if gray.size == 0:
-            return image, 0
-        # 四假设灰度候选（用于打分，省去对 BGR 的重复转换）
-        try:
-            cand_gray = {
-                0: gray,
-                90: cv2.rotate(gray, cv2.ROTATE_90_CLOCKWISE),
-                180: cv2.rotate(gray, cv2.ROTATE_180),
-                270: cv2.rotate(gray, cv2.ROTATE_90_COUNTERCLOCKWISE),
-            }
-        except Exception:
-            return image, 0
-        metrics = {}
-        for ang, g in cand_gray.items():
-            rv, cv_, cy = _orientation_metrics(g)
-            metrics[ang] = (rv, cv_, cy, g.shape[0], g.shape[1])
-        # 行方差最大值；过小说明空白/模糊，不做正交判定
-        max_rv = max(v[0] for v in metrics.values())
-        if max_rv < _ORTHO_ROWVAR_MIN:
-            return image, 0
-        # 进一步门限：水平组需显著大于垂直组才视为可信的正交差异
-        # 若所有候选行 var 接近（小角度情形 0/180 与 90/270 比值 ~2-3），
-        # 仍能通过 0.95 过滤保留水平组而不误转（见 tests）。
-        # 但若图像本身各向同性（无文字行），max_rv 与次大接近，回落
-        # 避免误转：要求 max 至少比非水平组大 20% 才继续（经验阈）
-        # 以 minColVar 等价判断？简化：若 max_rv < _ORTHO_ROWVAR_MIN 则已回落，
-        # 否则认为有判别度，继续走 0.95 过滤。
-        thresh = max_rv * _ORTHO_RATIO_FILTER
-        filtered = [a for a, v in metrics.items() if v[0] >= thresh]
-        if not filtered:
-            return image, 0
-        # 水平组内挑最靠上的（cy 最小）——直立假设：内容重心偏上（表头）
-        # 对于合成横条图，上边距 60 vs 下边距 80，重心差约 10px，可区分
-        # 真实收据表头通常更靠上，同样适用；若完全对称则 tie 取首个（0）
-        best = min(filtered, key=lambda a: metrics[a][2])
-        if best == 0:
-            return image, 0
-        # 按 best 角度对原图（BGR 或灰度）做 cv2.rotate
-        try:
-            if best == 90:
-                corrected = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
-            elif best == 180:
-                corrected = cv2.rotate(image, cv2.ROTATE_180)
-            elif best == 270:
-                corrected = cv2.rotate(image, cv2.ROTATE_90_COUNTERCLOCKWISE)
-            else:
-                corrected = image
-            return corrected, int(best)
-        except Exception:
-            return image, 0
-    except Exception as e:
-        logger.warning("[preprocess] orthogonal_correct degraded: %s", e)
-        return image, 0
+    return image, 0
 
 
 def sharpness(image):
@@ -238,6 +177,33 @@ def sharpness(image):
         gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return _laplacian_variance_gray(gray)
     except Exception:
+        return None
+
+
+def crop_header_roi(image_path, top_ratio=HEADER_ROI_DEFAULT_TOP_RATIO):
+    """裁出图片顶部 `top_ratio` 区域，返回 BGR ndarray；失败返回 None。
+
+    why：供应商预判（P2-T6）只关心供应商名，而它几乎总落在抬头区——整图送模型
+    既慢又贵，还容易让模型顺手产出别的字段。这是一个**纯几何**窄接口：不做纠偏、
+    不落盘、不读配置，因此可直接复用 `_imread` 的统一解码口径（HEIC / EXIF 正交），
+    也不会给上传链路引入任何副作用（落盘与否由调用方决定）。
+    非法 top_ratio（非数值 / <=0 / >1）回落默认值，而不是裁出空图。
+    """
+    try:
+        top = float(top_ratio)
+    except (TypeError, ValueError):
+        top = HEADER_ROI_DEFAULT_TOP_RATIO
+    if not (0.0 < top <= 1.0):
+        top = HEADER_ROI_DEFAULT_TOP_RATIO
+    try:
+        img = _imread(image_path)
+        if img is None or getattr(img, "size", 0) == 0 or img.ndim < 2:
+            logger.warning("[preprocess] 抬头裁剪跳过：图片不可解码 (%s)", image_path)
+            return None
+        keep = max(1, int(round(int(img.shape[0]) * top)))
+        return img[:keep, :]
+    except Exception as e:
+        logger.warning("[preprocess] 抬头裁剪失败: %s", e)
         return None
 
 
@@ -275,12 +241,20 @@ def assess(image):
 def deskew(image):
     """倾斜还原：返回 (image, angle)。angle 为估计出的倾斜角；±1° 内原样返回。
 
-    旋转方向：估计角等于「图被旋转过的角度」（逆时针为正），故按 -angle 还原。
+    硬约束：
+    1. 死区：|angle| <= 1.0°，原样返回原图矩阵；
+    2. 合法纠偏区间：1.0° < |angle| <= 15.0°，按 -angle 进行微纠偏；
+    3. 超限区间：|angle| > 15.0°，严禁自动纠偏，原图返回。
     """
     import cv2
+    if image is None or not hasattr(image, "shape"):
+        return image, 0.0
     gray = image if image.ndim == 2 else cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     angle = _estimate_skew_angle(gray)
-    if abs(angle) <= DESKEW_DEADZONE_DEG:
+    abs_angle = abs(angle)
+    if abs_angle <= DESKEW_DEADZONE_DEG:
+        return image, angle
+    if abs_angle > DESKEW_MAX_ANGLE_DEG:
         return image, angle
     h, w = image.shape[:2]
     m = cv2.getRotationMatrix2D((w / 2.0, h / 2.0), -angle, 1.0)
@@ -321,20 +295,30 @@ def enhance(image):
 def apply_pipeline(image_path):
     """上传后、抽取前统一入口：(new_image_path, meta)。
 
-    两阶段：
-    1) 正交纠正（90/180/270）由 'preprocess_orthogonal_enabled'（默认 true）
-       控制，不受 'preprocess_enabled' 限制，致命错误必纠；
-    2) 小角度 deskew（±1° 死区）+ enhance 由 'preprocess_enabled'（默认 OFF）
-       控制。
+    纠偏规则：
+    1) 正交大角度自动翻转（90/180/270）已下线，'preprocess_orthogonal_enabled' 默认 False，
+       恒不执行大角度翻转；
+    2) 小角度 deskew 由 'preprocess_enabled'（默认 OFF）控制，具有硬边界约束：
+       - 死区 |angle| <= 1.0°：不执行几何重采样；
+       - 合法区间 1.0° < |angle| <= 15.0°：执行微角度纠偏还原；
+       - 超限区间 |angle| > 15.0°：严禁自动纠偏，直接返回原图，meta["deskew_skipped"] = True，
+         meta["reason"] = "angle_exceeds_threshold"。
     任何阶段失败均回落原图，不阻断识别主链路。产物落 <原名>_prep.jpg。
     """
-    meta = {"applied": False, "skew_angle": 0.0, "reason": "", "orthogonal_angle": 0}
+    meta = {
+        "applied": False,
+        "skew_angle": 0.0,
+        "reason": "",
+        "orthogonal_angle": 0,
+        "enhance_applied": False,
+        "deskew_skipped": False,
+    }
     # 读取开关（任一读失败走安全缺省）
     try:
         from app.services import settings_service
-        orthogonal_enabled = settings_service.get_bool("preprocess_orthogonal_enabled", True)
+        orthogonal_enabled = settings_service.get_bool("preprocess_orthogonal_enabled", False)
     except Exception:
-        orthogonal_enabled = True
+        orthogonal_enabled = False
     try:
         from app.services import settings_service
         enabled = settings_service.get_bool("preprocess_enabled", False)
@@ -364,13 +348,25 @@ def apply_pipeline(image_path):
         skew_angle = 0.0
         if enabled:
             try:
-                fixed, skew_angle = deskew(img)
-                img = fixed
+                gray = img if img.ndim == 2 else cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                est_angle = _estimate_skew_angle(gray)
+                abs_est = abs(est_angle)
+                if abs_est > DESKEW_MAX_ANGLE_DEG:
+                    meta["deskew_skipped"] = True
+                    meta["skew_angle"] = round(float(est_angle), 2)
+                    meta["reason"] = "angle_exceeds_threshold"
+                    return image_path, meta
+                elif abs_est <= DESKEW_DEADZONE_DEG:
+                    skew_angle = est_angle
+                else:
+                    fixed, skew_angle = deskew(img)
+                    img = fixed
             except Exception as e:
                 logger.warning("[preprocess] deskew degraded: %s", e)
                 skew_angle = 0.0
             try:
                 img = enhance(img)
+                meta["enhance_applied"] = True
             except Exception as e:
                 logger.warning("[preprocess] enhance degraded: %s", e)
         else:
@@ -378,10 +374,9 @@ def apply_pipeline(image_path):
             if orthogonal_angle == 0:
                 meta["reason"] = "disabled"
                 return image_path, meta
-            # OFF 且已正交纠正：不做 enhance/deskew，直接落盘纠正后图
             skew_angle = 0.0
 
-        # 判定是否需要落盘：正交已纠 或 小角度开关开启（即使 0° 也做 enhance，沿用历史语义）
+        # 判定是否需要落盘：正交已纠 或 小角度开关开启
         need_write = (orthogonal_angle != 0) or enabled
         if not need_write:
             meta["reason"] = "disabled"
@@ -394,18 +389,13 @@ def apply_pipeline(image_path):
             meta["reason"] = "write_failed"
             return image_path, meta
 
-        # meta 语义：applied True；skew_angle 取 deskew 角（OFF 时为 orthogonal_angle）
-        # 以兼容既有测试（10° 小角 case skew≈10），orthogonal_angle 另字段
         reported_skew = float(skew_angle) if enabled else float(orthogonal_angle if orthogonal_angle else skew_angle)
         meta.update({
             "applied": True,
             "skew_angle": round(reported_skew, 2),
             "orthogonal_angle": int(orthogonal_angle),
-            "reason": "orthogonal" if (orthogonal_angle != 0 and not enabled) else "",
+            "reason": "",
         })
-        # 当 enabled 亦发生正交，reason 置空以免误解
-        if enabled and orthogonal_angle != 0:
-            meta["reason"] = ""
         return out_path, meta
     except Exception as e:
         logger.warning("[preprocess] pipeline degraded to original image: %s", e)

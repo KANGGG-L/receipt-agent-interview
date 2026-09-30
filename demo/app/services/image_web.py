@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """非 Web 格式原图 → 浏览器可渲染 JPEG（单一职责，无 Web 依赖）。
 
-why: `.heic/.heif/.tif/.tiff` 经 `/uploads` 的 StaticFiles 直挂时，Starlette
-`guess_type` 不认识这些扩展名，会返回 `content-type: text/plain`，浏览器必然
-不渲染；且前端转码只覆盖「用户选文件那一刻」，对已入库文件没有任何通道。
+why: `.heic/.heif/.tif/.tiff` 交给 Starlette 的 StaticFiles 时，`guess_type`
+不认识这些扩展名，会返回 `content-type: text/plain`，浏览器必然不渲染；且前端
+转码只覆盖「用户选文件那一刻」，对已入库文件没有任何通道。
 因此服务端需按需把非 Web 原图转成 JPEG 供 `<img src>` 直接展示。
 
 - is_non_web_image_path(path): 是否为浏览器无法直接渲染的图片路径

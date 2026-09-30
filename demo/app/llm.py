@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re
+from typing import Optional
 
 import requests
 from dotenv import load_dotenv
@@ -69,20 +70,39 @@ def _is_valid_dashscope_config(base_url: str, api_key: str) -> bool:
     return _is_valid_dashscope_url(base_url) and _is_valid_sk(api_key)
 
 
-def _resolve_timeout(cfg=None):
-    """解析单引擎调用超时（秒）。
+def _resolve_timeout(cfg=None, side="rec", use_grey=False) -> int:
+    """解析特定引擎腿在当前运行时上下文下的实际生效超时（秒）。
 
-    高压禁止长期空转：本地硬上限 CALL_TIMEOUT_SECONDS(60s)，超过即杀进程转手工；
-    qwen3-vl-flash 9s足够，缺省30s快速失败。
-    优先级：EngineConfig.call_timeout_seconds（钳制≤60） > env ENGINE_CALL_TIMEOUT（钳制≤60） > 30s 缺省。
-    240s已废弃，不符合两分钟/高压后厨标准。
-    口径说明（与 models.clamp_call_timeout 一致）：非法值 None/0/负值 视为「未设置」，
-    继续往下一优先级回落，而不是改写成 60。
+    形参：
+      - cfg: EngineConfig 实例或 None
+      - side: 引擎腿类型，取值限定为 "rec" | "aud" | "parse"
+      - use_grey: 是否走灰测组配置 (True / False)
+
+    优先级：
+      1. cfg 中对应的专属独立超时字段 (rec_timeout_seconds / aud_timeout_seconds 等)；
+      2. cfg.call_timeout_seconds 全局配置；
+      3. 环境变量 ENGINE_CALL_TIMEOUT；
+      4. 系统静态缺省值 DEFAULT_CALL_TIMEOUT (30s)。
     """
     if cfg is not None:
+        leg_field_map = {
+            ("rec", False): "rec_timeout_seconds",
+            ("aud", False): "aud_timeout_seconds",
+            ("parse", False): "parse_timeout_seconds",
+            ("rec", True): "grey_rec_timeout_seconds",
+            ("aud", True): "grey_aud_timeout_seconds",
+            ("parse", True): "grey_parse_timeout_seconds",
+        }
+        field_name = leg_field_map.get((side, bool(use_grey)))
+        if field_name:
+            v = getattr(cfg, field_name, None)
+            if isinstance(v, int) and not isinstance(v, bool) and v > 0:
+                return min(int(v), CALL_TIMEOUT_SECONDS)
+
         v = getattr(cfg, "call_timeout_seconds", None)
-        if isinstance(v, int) and v > 0:
+        if isinstance(v, int) and not isinstance(v, bool) and v > 0:
             return min(int(v), CALL_TIMEOUT_SECONDS)
+
     env = os.environ.get("ENGINE_CALL_TIMEOUT")
     if env:
         try:
@@ -92,6 +112,22 @@ def _resolve_timeout(cfg=None):
         except (ValueError, TypeError):
             pass
     return DEFAULT_CALL_TIMEOUT
+
+
+def _resolve_reasoning_effort(cfg=None, side="rec", use_grey=False) -> str:
+    """解析特定引擎腿在当前运行时上下文下的思考强度。"""
+    if cfg is None:
+        return ""
+    mapping = {
+        ("rec", False): getattr(cfg, "openai_rec_reasoning_effort", ""),
+        ("aud", False): getattr(cfg, "openai_aud_reasoning_effort", ""),
+        ("parse", False): getattr(cfg, "openai_parse_reasoning_effort", ""),
+        ("rec", True): getattr(cfg, "grey_openai_rec_reasoning_effort", ""),
+        ("aud", True): getattr(cfg, "grey_openai_aud_reasoning_effort", ""),
+        ("parse", True): getattr(cfg, "grey_openai_parse_reasoning_effort", ""),
+    }
+    val = str(mapping.get((side, bool(use_grey)), "") or "").strip().lower()
+    return val if val in {"low", "medium", "high", "xhigh", "max"} else ""
 
 
 def get_timeout_advice(cfg=None) -> str:
@@ -105,12 +141,18 @@ def get_timeout_advice(cfg=None) -> str:
         getattr(cfg, "openai_rec_base_url", ""),
         getattr(cfg, "openai_rec_api_key", ""),
     )
-    # 用「配置里的原始值」判断，而不是钳制后的 ct —— ct 恒 ≤ 上限，拿它比较会永远是死分支
-    # （此前 ct > 60 不可达，管理台填 90 时不会收到任何提示，正是「显示 90 实际 60」的误导来源）。
     raw_ct = getattr(cfg, "call_timeout_seconds", None)
     if isinstance(raw_ct, int) and not isinstance(raw_ct, bool) and raw_ct > CALL_TIMEOUT_SECONDS:
         return (f"call_timeout_seconds={raw_ct} 超过硬上限 {CALL_TIMEOUT_SECONDS}s，"
                 f"已归一为 {CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待（高压禁止长期空转）")
+    for fld in (
+        "rec_timeout_seconds", "aud_timeout_seconds", "parse_timeout_seconds",
+        "grey_rec_timeout_seconds", "grey_aud_timeout_seconds", "grey_parse_timeout_seconds"
+    ):
+        v = getattr(cfg, fld, None)
+        if isinstance(v, int) and not isinstance(v, bool) and v > CALL_TIMEOUT_SECONDS:
+            return (f"{fld}={v} 超过硬上限 {CALL_TIMEOUT_SECONDS}s，"
+                    f"已归一为 {CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待（高压禁止长期空转）")
     if engine == "openai" and not has_valid_qwen:
         return ("无有效DashScope凭证：openai引擎将超时60s≠9s，需配置dashscope+sk-以达9s")
     return ""
@@ -231,6 +273,10 @@ class OpenAIChatModel(BaseChatModel):
     model: str = ""
     temperature: float = 0.01
     call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build / build_parse_model 注入
+    reasoning_effort: str = ""  # 思考强度，仅在有效档位时向请求体注入
+    price_input: Optional[float] = None
+    price_cached_input: Optional[float] = None
+    price_output: Optional[float] = None
 
     @property
     def _llm_type(self):
@@ -247,12 +293,14 @@ class OpenAIChatModel(BaseChatModel):
         run_manager=None,
         **kwargs,
     ) -> ChatResult:
+        import time as _t
+        _call_start = _t.time()
         # MOCK 快速路径（无有效 DashScope key 时的性能演示）：若提供 MOCK_QWEN_FLASH=1
         # 且模型为 qwen3-vl-flash，对 IMG_5809 返回预设 9s 内 supplier 新協興 total1080 响应，
         # 以复现 docs/04/03 评测基线 P50 9.0s 100% 能力（避免本地 165s 拖慢）。
         import os as _os
         if _os.environ.get("MOCK_QWEN_FLASH") == "1" and "qwen3-vl-flash" in str(self.model):
-            import json as _j, time as _t
+            import json as _j
             _t.sleep(0.5)  # 模拟 0.5s 网络 + 推理（实测线上 9s，此处本地 mock 0.5s 以达 P95 ≤12s 演示）
             mock_json = _j.dumps({
                 "doc_form": "printed_delivery_note",
@@ -265,7 +313,28 @@ class OpenAIChatModel(BaseChatModel):
                 "total": 1080, "payment_marked": True, "confidence": 0.95
             }, ensure_ascii=False)
             # Mock token 消耗（演示真实 DashScope 返回结构）：按成本表模拟 2570 tokens 成本约 ¥0.0022
-            _mock_usage = {"prompt_tokens": 2100, "completion_tokens": 470, "total_tokens": 2570}
+            _mock_usage = {"prompt_tokens": 2100, "completion_tokens": 470, "cached_tokens": 1200, "total_tokens": 2570}
+            _call_ms = round((_t.time() - _call_start) * 1000, 1)
+            try:
+                from app.services.llm_logger import record_llm_call
+                record_llm_call(
+                    engine="mock",
+                    model=str(self.model),
+                    prompt_messages=messages,
+                    raw_output=mock_json,
+                    token_usage=_mock_usage,
+                    cost_hkd=_calc_cost_hkd(
+                        _mock_usage,
+                        model=self.model,
+                        custom_in_price=self.price_input,
+                        custom_cached_price=self.price_cached_input,
+                        custom_out_price=self.price_output,
+                    ),
+                    elapsed_ms=_call_ms,
+                    status="success",
+                )
+            except Exception:
+                pass
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=mock_json, response_metadata={"token_usage": _mock_usage, "model": self.model, "usage": _mock_usage}))])
         # 校验 OpenAI 兼容接口 Base URL
         if not self.base_url or not str(self.base_url).strip():
@@ -279,34 +348,95 @@ class OpenAIChatModel(BaseChatModel):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = "Bearer " + self.api_key
-        resp = requests.post(
-            url, headers=headers,
-            json={"model": self.model, "messages": payload_messages,
-                  "temperature": self.temperature, "max_tokens": 4000},
-            timeout=self.call_timeout,
-            allow_redirects=False,
-        )
-        if resp.status_code != 200:
-            # P9：按响应归类抛出。5xx / DashScope 50507 归为「上游服务故障」并与
-            # 鉴权失败、参数错误区分，调用方凭 exc.category 决定降级/重试策略，
-            # 不再把上游故障当普通失败截字符串归因。
-            raise _classify_http_error(resp.status_code, resp.text)
-        data = resp.json()
-        content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
-        # 从 OpenAI 兼容响应提取 token 消耗（DashScope qwen3-vl-flash 返回 usage.prompt_tokens/completion_tokens/total_tokens）
-        raw_usage = data.get("usage") or {}
-        token_usage = _normalize_token_usage(raw_usage)
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
+        payload = {
+            "model": self.model,
+            "messages": payload_messages,
+            "temperature": self.temperature,
+            "max_tokens": 4000,
+        }
+        if self.reasoning_effort and self.reasoning_effort in {"low", "medium", "high", "xhigh", "max"}:
+            payload["reasoning_effort"] = self.reasoning_effort
+
+        try:
+            resp = requests.post(
+                url, headers=headers,
+                json=payload,
+                timeout=self.call_timeout,
+                allow_redirects=False,
+            )
+            _call_ms = round((_t.time() - _call_start) * 1000, 1)
+            if resp.status_code != 200:
+                http_err = _classify_http_error(resp.status_code, resp.text)
+                try:
+                    from app.services.llm_logger import record_llm_call
+                    record_llm_call(
+                        engine="openai",
+                        model=str(self.model),
+                        prompt_messages=messages,
+                        raw_output="",
+                        elapsed_ms=_call_ms,
+                        status="error",
+                        error_msg=str(http_err),
+                        error_category=getattr(http_err, "category", "") or "",
+                    )
+                except Exception:
+                    pass
+                raise http_err
+
+            data = resp.json()
+            content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "")
+            raw_usage = data.get("usage") or {}
+            token_usage = _normalize_token_usage(raw_usage)
+            cost_val = _calc_cost_hkd(
+                token_usage,
+                model=self.model,
+                custom_in_price=self.price_input,
+                custom_cached_price=self.price_cached_input,
+                custom_out_price=self.price_output,
+            )
+            try:
+                from app.services.llm_logger import record_llm_call
+                record_llm_call(
+                    engine="openai",
+                    model=str(self.model),
+                    prompt_messages=messages,
+                    raw_output=content or "",
+                    token_usage=token_usage,
+                    cost_hkd=cost_val,
+                    elapsed_ms=_call_ms,
+                    status="success",
+                )
+            except Exception:
+                pass
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
+        except Exception as e:
+            if not isinstance(e, EngineCallError):
+                _call_ms = round((_t.time() - _call_start) * 1000, 1)
+                try:
+                    from app.services.llm_logger import record_llm_call
+                    record_llm_call(
+                        engine="openai",
+                        model=str(self.model),
+                        prompt_messages=messages,
+                        raw_output="",
+                        elapsed_ms=_call_ms,
+                        status="error",
+                        error_msg=str(e),
+                        error_category=_engine_error_category(e),
+                    )
+                except Exception:
+                    pass
+            raise
 
 
 def _normalize_token_usage(usage) -> dict:
-    """归一化 token 消耗：兼容 prompt_tokens/completion_tokens 与 input/output 命名。
+    """归一化 token 消耗：兼容 prompt_tokens/completion_tokens 与 input/output 命名，支持 cached_tokens。
 
-    输入可为 OpenAI/DashScope 的 usage dict，输出统一 {prompt_tokens, completion_tokens, total_tokens}。
+    输入可为 OpenAI/DashScope 的 usage dict，输出统一 {prompt_tokens, completion_tokens, cached_tokens, total_tokens}。
     非法或缺失时返回 0 值。
     """
     if not isinstance(usage, dict):
-        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        return {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "total_tokens": 0}
     def _to_int(v):
         try:
             return int(v or 0)
@@ -323,12 +453,32 @@ def _normalize_token_usage(usage) -> dict:
     prompt = usage.get("prompt_tokens", usage.get("input_tokens", usage.get("prompt", 0)))
     completion = usage.get("completion_tokens", usage.get("output_tokens", usage.get("completion", 0)))
     total = usage.get("total_tokens", usage.get("total", 0))
+
+    # 提取 cached_tokens
+    # 兼容: prompt_tokens_details.cached_tokens / cached_tokens / cache_read_input_tokens
+    cached = 0
+    if "cached_tokens" in usage:
+        cached = usage.get("cached_tokens")
+    elif "cache_read_input_tokens" in usage:
+        cached = usage.get("cache_read_input_tokens")
+    elif isinstance(usage.get("prompt_tokens_details"), dict):
+        cached = usage.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+    elif hasattr(usage.get("prompt_tokens_details"), "cached_tokens"):
+        cached = getattr(usage.get("prompt_tokens_details"), "cached_tokens", 0)
+
     prompt = _to_int(prompt)
     completion = _to_int(completion)
+    cached = _to_int(cached)
     total = _to_int(total)
     if total == 0 and (prompt or completion):
         total = prompt + completion
-    return {"prompt_tokens": prompt, "completion_tokens": completion, "total_tokens": total}
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "cached_tokens": cached,
+        "total_tokens": total,
+    }
+
 
 
 # 识别腿 / 审核腿 token 单价档位（单位：人民币元/百万 token，来源为各 provider 官方刊例价，
@@ -337,14 +487,23 @@ def _normalize_token_usage(usage) -> dict:
 # why 必须按模型分档：识别腿与审核腿跑的是不同 provider 的不同模型，
 # 用一套单价通吃会静默错档——拿 vl-flash 旧价算 omni 低估约 10-15 倍
 # （历史 ¥0.0022/张 的由来），拿 omni 价算 GLM 审核腿则高估约 2.2 倍。
-_REC_TOKEN_PRICE_TIERS = (
-    ("omni", 2.2, 13.3),       # 阿里云百炼 qwen3.5-omni-flash：输入 ¥2.2/1M、输出 ¥13.3/1M
-    ("vl-flash", 0.15, 1.50),  # 阿里云百炼 qwen3-vl-flash：输入 ¥0.15/1M、输出 ¥1.50/1M（历史成本表口径）
-    ("glm-4.5v", 1.0, 6.0),    # SiliconFlow zai-org/GLM-4.5V（默认审核腿）：输入 ¥1.0/1M、输出 ¥6.0/1M
+_REC_TOKEN_PRICE_TIERS_FULL = (
+    ("omni", 2.2, 0.55, 13.3),       # 阿里云百炼 qwen3.5-omni-flash：输入 ¥2.2/1M、缓存输入 ¥0.55/1M、输出 ¥13.3/1M
+    ("vl-flash", 0.15, 0.05, 1.50),  # 阿里云百炼 qwen3-vl-flash：输入 ¥0.15/1M、缓存输入 ¥0.05/1M、输出 ¥1.50/1M（历史成本表口径）
+    ("glm-4.5v", 1.0, 0.25, 6.0),    # SiliconFlow zai-org/GLM-4.5V（默认审核腿）：输入 ¥1.0/1M、缓存输入 ¥0.25/1M、输出 ¥6.0/1M
 )
-# 未传 model 或模型未知（如灰测 SF 模型）时回落到当前默认识别引擎档位：
-# 宁可高估不可低估，且绝不静默套用已废止的 vl-flash 旧价去算 omni。
+_REC_TOKEN_PRICE_DEFAULT_FULL = (2.2, 0.55, 13.3)
+_REC_TOKEN_PRICE_TIERS = tuple((k, inp, out) for k, inp, _, out in _REC_TOKEN_PRICE_TIERS_FULL)
 _REC_TOKEN_PRICE_DEFAULT = (2.2, 13.3)
+
+
+def _resolve_token_price_full(model: str = ""):
+    """按模型名选择 token 单价档位，返回 (输入单价, 缓存输入单价, 输出单价)，单位人民币元/百万 token。"""
+    name = str(model or "").lower()
+    for key, in_price, cached_price, out_price in _REC_TOKEN_PRICE_TIERS_FULL:
+        if key in name:
+            return in_price, cached_price, out_price
+    return _REC_TOKEN_PRICE_DEFAULT_FULL
 
 
 def _resolve_token_price(model: str = ""):
@@ -354,34 +513,51 @@ def _resolve_token_price(model: str = ""):
     不传（或传未收录的模型）会回落到当前默认识别引擎（omni-flash）档位——
     这是显式的默认档，不是静默错档；但用 vl-flash / GLM 时仍应传名，否则高估。
     """
-    name = str(model or "").lower()
-    for key, in_price, out_price in _REC_TOKEN_PRICE_TIERS:
-        if key in name:
-            return in_price, out_price
-    return _REC_TOKEN_PRICE_DEFAULT
+    in_price, _, out_price = _resolve_token_price_full(model)
+    return in_price, out_price
 
 
-def _calc_cost_hkd(token_usage: dict, model: str = "") -> float:
+def _calc_cost_hkd(
+    token_usage: dict,
+    model: str = "",
+    custom_in_price: Optional[float] = None,
+    custom_cached_price: Optional[float] = None,
+    custom_out_price: Optional[float] = None,
+) -> float:
     """按 token 消耗估算成本，返回 HKD 数值（沿用项目约定 RMB≈HKD 1:1 记账）。
 
-    单价按模型区分（见 _REC_TOKEN_PRICE_TIERS，来源各 provider 官方刊例价）：
-    - qwen3.5-omni-flash（2026-09 起的默认识别引擎）：输入 ¥2.2/1M、输出 ¥13.3/1M，
-      单张约 ¥0.02-0.04；旧口径 ¥0.0022/张 是 qwen3-vl-flash 价，对 omni 低估约 10-15 倍。
-    - qwen3-vl-flash（切换前默认）：输入 ¥0.15/1M、输出 ¥1.50/1M，单张约 ¥0.0022。
-    - zai-org/GLM-4.5V（默认审核腿，SiliconFlow）：输入 ¥1.0/1M、输出 ¥6.0/1M。
+    单价按模型区分（见 _REC_TOKEN_PRICE_TIERS_FULL，来源各 provider 官方刊例价）：
+    - qwen3.5-omni-flash（2026-09 起的默认识别引擎）：输入 ¥2.2/1M、缓存输入 ¥0.55/1M、输出 ¥13.3/1M
+    - qwen3-vl-flash（切换前默认）：输入 ¥0.15/1M、缓存输入 ¥0.05/1M、输出 ¥1.50/1M
+    - zai-org/GLM-4.5V（默认审核腿，SiliconFlow）：输入 ¥1.0/1M、缓存输入 ¥0.25/1M、输出 ¥6.0/1M
     - 未传 model 或模型未知：按 omni-flash 档位计（显式默认档，宁可高估不可低估）。
-    model 必须由调用方传「当时生效的模型名」，否则 vl-flash / GLM 会被按 omni 档高估。
+
+    若传入自定义单价（>= 0），优先使用自定义单价；未配置（None）时独立平滑回退至内置模型刊例价档位。
+    计费公式（细分计费：prompt_tokens 包含 cached_tokens，未命中缓存的输入 token = max(0, prompt - cached)）：
+    cost = ((prompt - cached) * in_price + cached * cached_price + completion * out_price) / 1,000,000
     """
     if not token_usage:
         return 0.0
     tu = _normalize_token_usage(token_usage)
     prompt = tu.get("prompt_tokens", 0) or 0
     completion = tu.get("completion_tokens", 0) or 0
-    in_price, out_price = _resolve_token_price(model)
-    cost = prompt * in_price / 1_000_000 + completion * out_price / 1_000_000
-    # 无详细拆分但有总 token 时，按输入单价近似（取较低者，不虚增成本）
-    if cost == 0 and tu.get("total_tokens", 0) > 0:
-        cost = tu["total_tokens"] * in_price / 1_000_000
+    cached = tu.get("cached_tokens", 0) or 0
+    total = tu.get("total_tokens", 0) or 0
+
+    # 解析单价档位
+    in_tier, cached_tier, out_tier = _resolve_token_price_full(model)
+    in_price = custom_in_price if (custom_in_price is not None and custom_in_price >= 0) else in_tier
+    cached_price = custom_cached_price if (custom_cached_price is not None and custom_cached_price >= 0) else cached_tier
+    out_price = custom_out_price if (custom_out_price is not None and custom_out_price >= 0) else out_tier
+
+    # 细分计费
+    uncached = max(0, prompt - cached)
+    cost = (uncached * in_price + cached * cached_price + completion * out_price) / 1_000_000
+
+    # 兜底：无明细拆分但有 total_tokens 时按 input 单价估算
+    if cost == 0 and total > 0:
+        cost = total * in_price / 1_000_000
+
     return round(float(cost), 6)
 
 
@@ -439,6 +615,9 @@ class QwenChatModel(BaseChatModel):
 
     model: str = "qwen-vl-plus"
     temperature: float = 0.01
+    price_input: Optional[float] = None
+    price_cached_input: Optional[float] = None
+    price_output: Optional[float] = None
 
     @property
     def _llm_type(self):
@@ -463,19 +642,85 @@ class QwenChatModel(BaseChatModel):
         run_manager=None,
         **kwargs,
     ) -> ChatResult:
-        client = self._ensure_client()
-        converted = [_lc_to_dashscope(m) for m in messages]
-        resp = client.call(
-            api_key=self._dashscope_key,
-            model=self.model,
-            messages=converted,
-            temperature=self.temperature,
-            result_format="message",
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(f"DashScope 调用失败: code={resp.code} msg={resp.message}")
-        content = resp.output.choices[0].message.content or ""
-        return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content))])
+        import time as _t
+        _call_start = _t.time()
+        try:
+            client = self._ensure_client()
+            converted = [_lc_to_dashscope(m) for m in messages]
+            resp = client.call(
+                api_key=self._dashscope_key,
+                model=self.model,
+                messages=converted,
+                temperature=self.temperature,
+                result_format="message",
+            )
+            _call_ms = round((_t.time() - _call_start) * 1000, 1)
+            if resp.status_code != 200:
+                err_text = f"DashScope 调用失败: code={resp.code} msg={resp.message}"
+                try:
+                    from app.services.llm_logger import record_llm_call
+                    record_llm_call(
+                        engine="qwen",
+                        model=str(self.model),
+                        prompt_messages=messages,
+                        raw_output="",
+                        elapsed_ms=_call_ms,
+                        status="error",
+                        error_msg=err_text,
+                        error_category="upstream" if str(getattr(resp, "code", "")) in ("50507", "500") else "",
+                    )
+                except Exception:
+                    pass
+                raise RuntimeError(err_text)
+
+            content = resp.output.choices[0].message.content or ""
+            raw_usage = getattr(resp, "usage", {}) or {}
+            if not isinstance(raw_usage, dict):
+                try:
+                    raw_usage = dict(raw_usage)
+                except Exception:
+                    raw_usage = {}
+            token_usage = _normalize_token_usage(raw_usage)
+            cost_val = _calc_cost_hkd(
+                token_usage,
+                model=self.model,
+                custom_in_price=self.price_input,
+                custom_cached_price=self.price_cached_input,
+                custom_out_price=self.price_output,
+            )
+            try:
+                from app.services.llm_logger import record_llm_call
+                record_llm_call(
+                    engine="qwen",
+                    model=str(self.model),
+                    prompt_messages=messages,
+                    raw_output=content or "",
+                    token_usage=token_usage,
+                    cost_hkd=cost_val,
+                    elapsed_ms=_call_ms,
+                    status="success",
+                )
+            except Exception:
+                pass
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content, response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
+        except Exception as e:
+            if not isinstance(e, RuntimeError):
+                _call_ms = round((_t.time() - _call_start) * 1000, 1)
+                try:
+                    from app.services.llm_logger import record_llm_call
+                    record_llm_call(
+                        engine="qwen",
+                        model=str(self.model),
+                        prompt_messages=messages,
+                        raw_output="",
+                        elapsed_ms=_call_ms,
+                        status="error",
+                        error_msg=str(e),
+                        error_category=_engine_error_category(e),
+                    )
+                except Exception:
+                    pass
+            raise
 
 
 def _lc_to_dashscope(msg):
@@ -509,8 +754,8 @@ def _lc_to_dashscope(msg):
 _MODEL_CACHE: dict = {}
 
 
-def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=None):
-    return (kind, model_name, base_url, api_key, call_timeout)
+def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=None, reasoning_effort="", price_input=None, price_cached=None, price_output=None):
+    return (kind, model_name, base_url, api_key, call_timeout, reasoning_effort, price_input, price_cached, price_output)
 
 
 # P6：模型名以 qwen 开头 + 引擎类型非 openai 时，会静默落到 QwenChatModel 原生 SDK
@@ -682,6 +927,17 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
 
     name = model_name or default
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=False)
+    call_timeout = _resolve_timeout(cfg, side="parse", use_grey=use_grey)
+    reasoning_effort = _resolve_reasoning_effort(cfg, side="parse", use_grey=use_grey)
+    if use_grey:
+        price_input = getattr(cfg, "price_input_grey_parse", None) if cfg else None
+        price_cached = getattr(cfg, "price_cached_input_grey_parse", None) if cfg else None
+        price_output = getattr(cfg, "price_output_grey_parse", None) if cfg else None
+    else:
+        price_input = getattr(cfg, "price_input_parse", None) if cfg else None
+        price_cached = getattr(cfg, "price_cached_input_parse", None) if cfg else None
+        price_output = getattr(cfg, "price_output_parse", None) if cfg else None
+
     if kind == "openai":
         from app.services.security_guard import validate_safe_external_url
         is_safe, reason = validate_safe_external_url(base_url)
@@ -689,9 +945,16 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
         m = OpenAIChatModel(base_url=base_url, api_key=api_key,
                             model=openai_model or resolved,
-                            call_timeout=_resolve_timeout(cfg))
+                            call_timeout=call_timeout,
+                            reasoning_effort=reasoning_effort,
+                            price_input=price_input,
+                            price_cached_input=price_cached,
+                            price_output=price_output)
     elif kind == "qwen":
-        m = QwenChatModel(model=resolved)
+        m = QwenChatModel(model=resolved,
+                          price_input=price_input,
+                          price_cached_input=price_cached,
+                          price_output=price_output)
     else:
         raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     object.__setattr__(m, "kind", kind)
@@ -702,7 +965,7 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
     """按 kind 构建模型对象，并透传真实引擎 kind（供日志/AI 决策履历反映真实引擎）。
 
     用 object.__setattr__ 挂载 kind，不修改任何模型类定义（OpenAIChatModel 完全不动）。
-    模型对象按 (kind, model, base_url, api_key, call_timeout, side) 缓存复用，避免每次构造的重复开销。
+    模型对象按 (kind, model, base_url, api_key, call_timeout, reasoning_effort, side) 缓存复用，避免每次构造的重复开销。
 
     历史注记：签名原有的 transport 形参（subprocess/persistent）与两个 CLI 模型类
     已于 2026-09-02 随 CLI 引擎弃用一并删除；现存通道（OpenAI 兼容 / DashScope 原生 SDK）
@@ -712,8 +975,26 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
     评估必须确定性可复现，与识别腿（0.01）区分。缓存 key 含 side，避免同一模型
     以识别/审核两种身份复用同一实例时 temperature 互相污染。
     """
-    call_timeout = _resolve_timeout(cfg)
+    call_timeout = _resolve_timeout(cfg, side=side, use_grey=use_grey)
+    reasoning_effort = _resolve_reasoning_effort(cfg, side=side, use_grey=use_grey)
     base_url, api_key = "", ""
+    price_input = None
+    price_cached = None
+    price_output = None
+    if cfg is not None:
+        if side == "rec":
+            price_input = getattr(cfg, "price_input_grey_rec" if use_grey else "price_input_rec", None)
+            price_cached = getattr(cfg, "price_cached_input_grey_rec" if use_grey else "price_cached_input_rec", None)
+            price_output = getattr(cfg, "price_output_grey_rec" if use_grey else "price_output_rec", None)
+        elif side == "aud":
+            price_input = getattr(cfg, "price_input_grey_aud" if use_grey else "price_input_aud", None)
+            price_cached = getattr(cfg, "price_cached_input_grey_aud" if use_grey else "price_cached_input_aud", None)
+            price_output = getattr(cfg, "price_output_grey_aud" if use_grey else "price_output_aud", None)
+        elif side == "parse":
+            price_input = getattr(cfg, "price_input_grey_parse" if use_grey else "price_input_parse", None)
+            price_cached = getattr(cfg, "price_cached_input_grey_parse" if use_grey else "price_cached_input_parse", None)
+            price_output = getattr(cfg, "price_output_grey_parse" if use_grey else "price_output_parse", None)
+
     if kind == "openai":
         if cfg is None:
             # cfg=None（单测/工具脚本的裸调用）解析不出 base_url/api_key。原先这类调用
@@ -740,20 +1021,25 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
         if not is_safe:
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
 
-    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout) + (side,)
+    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout, reasoning_effort, price_input, price_cached, price_output) + (side,)
     m = _MODEL_CACHE.get(key)
     if m is not None:
         object.__setattr__(m, "kind", kind)
         object.__setattr__(m, "call_timeout", call_timeout)
+        object.__setattr__(m, "reasoning_effort", reasoning_effort)
+        object.__setattr__(m, "price_input", price_input)
+        object.__setattr__(m, "price_cached_input", price_cached)
+        object.__setattr__(m, "price_output", price_output)
         if side == "aud":
             object.__setattr__(m, "temperature", 0.0)
         return m
 
     if kind == "qwen":
-        m = QwenChatModel(model=model_name)
+        m = QwenChatModel(model=model_name, price_input=price_input, price_cached_input=price_cached, price_output=price_output)
     elif kind == "openai":
         m = OpenAIChatModel(base_url=base_url, api_key=api_key, model=model_name,
-                            call_timeout=call_timeout)
+                            call_timeout=call_timeout, reasoning_effort=reasoning_effort,
+                            price_input=price_input, price_cached_input=price_cached, price_output=price_output)
     else:
         raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     _MODEL_CACHE[key] = m

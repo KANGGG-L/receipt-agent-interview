@@ -694,7 +694,7 @@ textarea.form-control {
     }
 }
 
-/* 表格控件 */
+/* 表格控件容器 */
 .table-container {
     overflow-x: auto;
     max-width: 100%;
@@ -703,6 +703,24 @@ textarea.form-control {
     margin-bottom: 20px;
     border-radius: var(--radius);
     border: 1px solid var(--border-color);
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 #f8fafc;
+}
+.table-container::-webkit-scrollbar {
+    height: 6px;
+    width: 6px;
+}
+.table-container::-webkit-scrollbar-track {
+    background: #f8fafc;
+    border-radius: 4px;
+}
+.table-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+}
+.table-container::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
 }
 
 #tab-archive .table-container {
@@ -728,15 +746,12 @@ textarea.form-control {
 
 table.data-table {
     width: 100%;
-    min-width: 760px;  /* 7 列 + 4 按钮不换行的最小宽度；窄视口由 #tab-inventory 横向滚动 */
+    min-width: 760px;
     border-collapse: collapse;
     font-size: 0.88rem;
-    table-layout: fixed;
+    table-layout: auto;
     background: #ffffff;
     border-radius: var(--radius);
-    /* 不在 table 上设 overflow:hidden/clip（会反压 td 的 overflow:visible，
-       导致 551px 视口下操作列溢出的按钮被整表裁切）。
-       表格水平溢出由 #tab-inventory 的 overflow-x:auto 横向滚动承载。 */
     overflow: visible;
 }
 /* 补偿 table.overflow:visible 后第一/最后一行方角问题（圆角靠行 td 自带的 radius） */
@@ -762,39 +777,74 @@ table.data-table th {
 
 table.data-table td {
     padding: 10px 14px;
-    height: 48px;
+    min-height: 48px;
     box-sizing: border-box;
     vertical-align: middle;
     border-bottom: 1px solid var(--border-color);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
     color: var(--text-main);
     font-variant-numeric: tabular-nums;
+    text-align: left;
 }
 
 table.data-table tr:last-child td {
     border-bottom: none;
 }
 
-/* 操作列（末列）：内容完整显示，不被表格 overflow:hidden 裁掉；
-   按钮统一放进 .inv-actions（nowrap + 内部横向滚动），避免"更多"在窄屏被挤到下一行 */
+/* 单元格通用排版与对齐辅助类 */
+table.data-table th.col-center,
+table.data-table td.col-center,
+table.data-table .cell-center {
+    text-align: center !important;
+}
+
+table.data-table th.col-right,
+table.data-table td.col-right,
+table.data-table .cell-right {
+    text-align: right !important;
+}
+
+table.data-table th.col-left,
+table.data-table td.col-left,
+table.data-table .cell-left {
+    text-align: left !important;
+}
+
+table.data-table .cell-nowrap {
+    white-space: nowrap !important;
+}
+
+table.data-table .cell-break {
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+
+table.data-table .cell-code {
+    font-family: monospace;
+    white-space: nowrap;
+    font-size: 0.8rem;
+    display: inline-block;
+}
+
+/* 胶囊徽章：强制不换行且自适应完整展示，杜绝胶囊溢出邻列 */
+table.data-table .badge {
+    white-space: nowrap !important;
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* 操作列（末列）：内容完整显示，不被表格 overflow:hidden 裁掉 */
 #tab-archive table.data-table td:last-child,
 #tab-archive table.data-table td.col-center,
 #tab-inventory table.data-table td:last-child {
     overflow: visible;
     white-space: normal;
     text-align: center;
-}
-
-/* 埋点事件分布与最近事件流：事件类型列完整展示，防 overflow:hidden / ellipsis 截断 */
-#analyticsEventDistBody table.data-table td:first-child,
-#analyticsEventDistBody table.data-table td:first-child code,
-#analyticsRecoveryBody table.data-table td:nth-child(2),
-#analyticsRecoveryBody table.data-table td:nth-child(2) code {
-    overflow: visible !important;
-    text-overflow: clip !important;
-    white-space: nowrap !important;
 }
 
 /* =====================================================================
@@ -804,6 +854,8 @@ table.data-table tr:last-child td {
     border-collapse: separate;
     border-spacing: 0;
     width: 100%;
+    table-layout: auto !important;
+    min-width: 960px;
 }
 
 .golden-board-table th {
@@ -826,10 +878,11 @@ table.data-table.golden-board-table td {
 }
 
 table.data-table.golden-board-table td.cell-supplier {
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-    max-width: 200px;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+    max-width: 240px;
 }
 
 .golden-board-table tbody tr {
@@ -1624,6 +1677,12 @@ table.data-table td input {
     flex: 1 1 46%;
     min-width: 0;
     min-height: 38px;
+}
+.fee-row .fee-custom-label {
+    flex: 1 1 34%;
+    min-width: 0;
+    min-height: 38px;
+    font-size: 0.85rem;
 }
 .fee-row .fee-sign-hint {
     flex: 0 0 auto;
@@ -2729,14 +2788,12 @@ table.data-table td .inv-actions button {
 #tab-inventory table.data-table {
     table-layout: auto;
 }
-/* 全局：所有表格居中（历史收据/应付等） */
-table.data-table th,
-table.data-table td {
-    text-align: center !important;
-    vertical-align: middle;
-}
-table.data-table td > div {
+/* 库存表居中支持（避免全局 !important 强制破坏其他表格文本/数值对齐） */
+#tab-inventory table.data-table th,
+#tab-inventory table.data-table td,
+#tab-inventory table.data-table td > div {
     text-align: center;
+    vertical-align: middle;
 }
 /* 历史收据总金额：最重要数据，去省略、居中、加粗 */
 #archiveTableBody td:nth-child(6) {
@@ -3512,6 +3569,18 @@ table.data-table tr.inv-row-low-stock td {
 .feedback-btn:active { transform: scale(0.95); }
 .feedback-btn-up:hover { background: var(--success-bg); }
 .feedback-btn-down:hover { background: var(--danger-bg); }
+.feedback-btn-up.active {
+    background: var(--success-bg) !important;
+    border-color: var(--success) !important;
+    color: var(--success) !important;
+    box-shadow: 0 0 0 1px var(--success) !important;
+}
+.feedback-btn-down.active {
+    background: var(--danger-bg) !important;
+    border-color: var(--danger) !important;
+    color: var(--danger-strong) !important;
+    box-shadow: 0 0 0 1px var(--danger) !important;
+}
 
 
 /* ==========================================================================
@@ -3556,80 +3625,7 @@ table.data-table tr.inv-row-low-stock td {
     font-size: 0.85rem;
 }
 
-/* ============================================================
-   T7（Gap E1）：字段级证据高亮 —— 明细行点击 → 原图叠加高亮框
-   高亮层挂 .img-viewer-container（position:relative），与图片
-   共用同一 transform/transform-origin，跟随缩放/平移/旋转。
-   ============================================================ */
-.evidence-highlight-layer {
-    position: absolute;
-    z-index: 6;
-    pointer-events: none;   /* 纯展示层：不拦截原图的定点放大/拖拽 */
-    box-sizing: border-box;
-}
-.evidence-highlight-box {
-    position: absolute;
-    border: 3px solid #f59e0b;             /* 琥珀色，深色底上对比醒目 */
-    border-radius: 4px;
-    background: rgba(245, 158, 11, 0.18);
-    box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.55);
-    animation: evidence-pulse 1.6s ease-in-out infinite;
-}
-@keyframes evidence-pulse {
-    0%, 100% { box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.55); }
-    50% { box-shadow: 0 0 0 6px rgba(245, 158, 11, 0.45); }
-}
-.evidence-raw-text-label {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    max-height: 34%;
-    overflow-y: auto;
-    padding: 8px 10px;
-    background: rgba(17, 24, 39, 0.88);
-    color: #fde68a;
-    font-size: 0.82rem;
-    line-height: 1.45;
-    border-top: 2px solid #f59e0b;
-    box-sizing: border-box;
-    pointer-events: none;
-    white-space: pre-wrap;
-    word-break: break-all;
-}
 
-/* 「证据」按钮（明细行操作列）：控件 >= 38px，禁 emoji，纯文字 */
-.btn-evidence {
-    min-height: 38px;
-    min-width: 38px;
-    padding: 4px 10px;
-    font-size: 0.78rem;
-    border-radius: 6px;
-    border: 1px solid rgba(217, 119, 6, 0.35);
-    background: rgba(245, 158, 11, 0.14);
-    color: #b45309;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    margin-right: 4px;
-}
-.btn-evidence:hover {
-    background: rgba(245, 158, 11, 0.28);
-}
-.btn-evidence:focus-visible {
-    outline: 3px solid rgba(245, 158, 11, 0.45);
-    outline-offset: 1px;
-}
-
-/* 有证据的明细行：整行可点（行内控件除外），左侧加定位提示条 */
-tr.evidence-row td:first-child {
-    box-shadow: inset 3px 0 0 rgba(245, 158, 11, 0.75);
-}
-tr.evidence-row {
-    cursor: pointer;
-}
-tr.evidence-row-active {
-    background: rgba(245, 158, 11, 0.10);
-}
 
 /* ==========================================================================
    统一报表与数据导出中心 (Export & Reporting Center) 专用样式
@@ -3910,12 +3906,12 @@ tr.evidence-row-active {
     background: #94a3b8;
 }
 
-/* 导出中心在线预览表格：解除 table-layout: fixed，自适应列宽并杜绝表头重叠挤压与单元格截断 */
+/* 导出中心在线预览表格：自适应列宽并杜绝表头重叠挤压与单元格截断 */
 table.data-table.export-preview-table,
 #exportPreviewTable {
     table-layout: auto !important;
     width: 100% !important;
-    min-width: max-content !important;
+    min-width: 100% !important;
     border-collapse: collapse !important;
 }
 
@@ -3924,7 +3920,7 @@ table.data-table.export-preview-table th,
 #exportPreviewThead th,
 .export-table-preview-card table th {
     white-space: nowrap !important;
-    padding: 10px 16px !important;
+    padding: 10px 14px !important;
     font-size: 0.82rem !important;
     font-weight: 600 !important;
     background: #f8fafc !important;
@@ -3945,20 +3941,37 @@ table.data-table.export-preview-table th.col-center,
     text-align: center !important;
 }
 
-/* 表体单元格高优先级样式：消除截断，完整呈现 SKU、品名及财务金额 */
+/* 表体单元格高优先级样式：消除省略号截断，完整呈现 SKU、品名及财务金额 */
 table.data-table.export-preview-table td,
 #exportPreviewTbody td,
 .export-table-preview-card table td {
-    white-space: nowrap !important;
     overflow: visible !important;
     text-overflow: clip !important;
-    padding: 10px 16px !important;
+    padding: 10px 14px !important;
     font-size: 0.85rem !important;
     color: var(--text-main, #1e293b);
     vertical-align: middle !important;
     border-bottom: 1px solid var(--border-color, #e2e8f0) !important;
     font-variant-numeric: tabular-nums;
     box-sizing: border-box;
+    text-align: left;
+    word-break: break-word;
+}
+
+/* 长文本列（商品品名、配方说明、备注等）：自适应折行完整可见，杜绝截断 */
+table.data-table.export-preview-table td.export-col-desc,
+#exportPreviewTbody td.export-col-desc {
+    white-space: normal !important;
+    min-width: 160px;
+    max-width: 340px;
+    line-height: 1.4;
+    text-align: left !important;
+}
+
+/* 短字段列（金额、数量、单价、日期、单号等）：保持单行工整对齐 */
+table.data-table.export-preview-table td.export-col-nowrap,
+#exportPreviewTbody td.export-col-nowrap {
+    white-space: nowrap !important;
 }
 
 table.data-table.export-preview-table td.col-right,
@@ -4198,5 +4211,45 @@ table.data-table.export-preview-table td .badge,
     padding: 10px 14px;
     border-radius: 6px;
     font-size: 0.85rem;
+}
+
+/* =====================================================================
+   观测中心：解析日志与链路审计表格完整无截断展示规范
+   ===================================================================== */
+#parsingLogsTable {
+    table-layout: auto !important;
+    min-width: 1800px !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+}
+
+#parsingLogsTable td,
+#parsingLogsTable th {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    height: auto !important;
+    min-height: 48px;
+    padding: 10px 14px !important;
+    vertical-align: middle !important;
+    box-sizing: border-box;
+}
+
+#parsingLogsTable th {
+    white-space: nowrap !important;
+}
+
+#parsingLogsTable td.cell-nowrap {
+    white-space: nowrap !important;
+}
+
+#parsingLogsTable td.cell-wrap {
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+
+#parsingLogsTable .badge {
+    white-space: nowrap !important;
+    display: inline-block;
+    max-width: 100%;
 }
 

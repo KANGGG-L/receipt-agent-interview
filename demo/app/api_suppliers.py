@@ -1,20 +1,36 @@
 # -*- coding: utf-8 -*-
-"""供应商端点：列表/搜索/CRUD/合并 + 部门 CRUD + 成本报表。"""
+"""供应商端点：列表/搜索/CRUD/合并/删除 + 部门 CRUD + 成本报表。"""
+
+import logging
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from app import db
-from app.auth import require_role
+from app.auth import require_role, resolve_tenant
+from app.services import memory_store
+from app.services.memory_store import MemoryVectorDeleteError
+from app.services.supplier_normalizer import canonical_supplier_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
+
+
+def _safe_audit(who, action, field, old, new):
+    """系统审计（与 api_memory._safe_audit 同口径）：审计失败不阻断已完成的业务动作。"""
+    try:
+        db.append_system_audit_log(who, action, field, old, new)
+    except Exception as e:
+        logger.warning("审计写入失败(action=%s field=%s who=%s): %s",
+                       action, field, who, e)
 
 
 # -------------------------------------------------------------
@@ -85,6 +101,77 @@ def patch_supplier(supplier_id: int, body: SupplierBody, request: Request):
     return {"status": "success"}
 
 
+@router.delete("/api/suppliers/{supplier_id}")
+def delete_supplier(supplier_id: int, request: Request):
+    """FP-2a：物理删除供应商主档（PDPO s.26 erasure），owner 权限。
+
+    流程（顺序即规格，SPEC FP-2a）：取档 404 → 单据引用守卫 409（有单据一律拒绝，
+    含软删单——防「删档后恢复软删单」出现死链）→ 记忆级联（先向量后 DB 行，向量失败
+    500 未生效可重试）→ 候选记忆 → SKU 别名 → 主档行 → 审计 → 200。
+    Out of scope：单据/付款等业务引用的级联清理（守卫拒绝即不存在该场景）。
+
+    跨租户 supplier_id 与不存在同样回 404（与 patch 同口径，不区分两者）。
+    """
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    row = db.get_supplier(supplier_id, tenant_id=tenant_id)
+    if row is None:
+        return JSONResponse(status_code=404,
+                            content={"status": "error", "msg": "供应商不存在"})
+    receipt_count = db.count_receipts_for_supplier(row.id, tenant_id=tenant_id)
+    if receipt_count > 0:
+        # 守卫拒绝：不做任何删除；留一条拒绝审计（可观测，非删除动作本身）
+        _safe_audit(_actor(request), "supplier_delete_refused",
+                    f"suppliers:{row.id}", {"receipt_count": receipt_count}, "")
+        return JSONResponse(status_code=409, content={
+            "status": "error", "code": "SUPPLIER_HAS_RECEIPTS",
+            "msg": f"该供应商存在 {receipt_count} 张引用单据，不可删除",
+            "data": {"receipt_count": receipt_count}})
+    sup_name = row.name or ""
+    sup_id = row.id
+    has_phone = bool(str(row.contact_phone or "").strip())
+    try:
+        mem = memory_store.delete_memory(vendor=sup_name, supplier_id=sup_id,
+                                         tenant_id=tenant_id)
+    except MemoryVectorDeleteError as e:
+        # vector-first：此刻 DB 行/候选/别名/主档均未删，本次删除未生效、可重试
+        logger.warning("[suppliers] 删除失败（向量级联，未生效）supplier=%s: %s",
+                       sup_id, e)
+        _safe_audit(_actor(request), "vector_delete_failed",
+                    f"suppliers:{sup_id}", "", str(e)[:500])
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "VECTOR_DELETE_FAILED",
+            "msg": "向量级联删除失败，本次删除未生效，可重试"})
+    pending_deleted = db.delete_pending_memory(vendor=sup_name,
+                                               supplier_id=sup_id,
+                                               tenant_id=tenant_id)
+    alias_deleted = db.delete_vendor_sku_alias_for_supplier(sup_id,
+                                                            tenant_id=tenant_id)
+    db.delete_supplier_master(sup_id, tenant_id=tenant_id)
+    # 审计：old 记删除前主档要点（contact_phone 只记有无，手机号本身不进审计），
+    # new 记各级联计数；审计失败不阻断（_safe_audit 内已兜底）。
+    _safe_audit(_actor(request), "supplier_master_delete",
+                f"suppliers:{sup_id}",
+                {"name": sup_name, "has_contact_phone": has_phone},
+                {"vendor_memory_deleted": mem["affected"],
+                 "vectors_deleted": mem["vectors_deleted"],
+                 "pending_memory_deleted": pending_deleted,
+                 "vendor_sku_alias_deleted": alias_deleted})
+    return {"status": "success", "data": {
+        "supplier_id": sup_id,
+        "vendor_memory_deleted": mem["affected"],
+        "vectors_deleted": mem["vectors_deleted"],
+        "pending_memory_deleted": pending_deleted,
+        "vendor_sku_alias_deleted": alias_deleted,
+    }}
+
+
+def _actor(request: Request) -> str:
+    """操作者标识（审计用）：取已解析身份里的 email，匿名兜底 owner。"""
+    account = getattr(request.state, "account", {})
+    return account.get("email", "owner") if isinstance(account, dict) else "owner"
+
+
 class MergeBody(BaseModel):
     keep_id: int
     drop_id: int
@@ -98,10 +185,16 @@ def merge_suppliers(body: MergeBody, request: Request):
     drop = db.get_supplier(body.drop_id, tenant_id=tenant_id)
     if keep is None or drop is None:
         return {"status": "error", "msg": "供应商不存在"}
-    # 收据供应商名合并（仅限当前租户的单据）
+    # D17：待合并单据按归一 key 匹配（含已挂 drop 的行与无 id 的历史行），
+    # 合并时同步回填 receipts.supplier_id 到保留方；supplier_name 一并改写为
+    # 保留方展示名（合并的既有语义：展示名跟随保留方）。
+    drop_key = canonical_supplier_key(drop.name or "")
     for r in db.list_receipt_rows(tenant_id=tenant_id):
-        if r.supplier_name == drop.name:
-            db.update_receipt(r.id, supplier_name=keep.name)
+        if r.supplier_id == drop.id or (
+                drop_key and r.supplier_id is None
+                and canonical_supplier_key(r.supplier_name or "") == drop_key):
+            db.update_receipt(r.id, supplier_name=keep.name,
+                              supplier_id=keep.id)
     db.update_supplier(body.drop_id, active=0)
     return {"status": "success", "msg": "已合并"}
 
@@ -119,9 +212,8 @@ def get_supplier_receipts(supplier_id: int, request: Request, desensitized: str 
         return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
 
     is_desens = desensitized.lower() == "true"
-    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
-    # 匹配当前供应商的单据（按名字匹配）
-    matched = [r for r in rows if r.supplier_name == sup.name]
+    # D17：匹配当前供应商的单据（优先 supplier_id 关联，无 id 历史行按归一 key 回落）
+    matched = db.list_receipts_for_supplier(supplier_id, tenant_id=_tenant_id(request))
 
     receipts_data = []
     monthly_trend = defaultdict(float)
@@ -177,7 +269,7 @@ def get_supplier_receipts(supplier_id: int, request: Request, desensitized: str 
 @router.get("/api/departments")
 def list_departments(request: Request):
     require_role("staff")(request)
-    depts = db.list_departments()
+    depts = db.list_departments(tenant_id=_tenant_id(request))
     return {"status": "success",
             "data": [{"id": d.id, "name": d.name, "active": d.active} for d in depts]}
 
@@ -191,24 +283,26 @@ def create_department(body: DeptBody, request: Request):
     require_role("owner")(request)
     if not body.name:
         return {"status": "error", "msg": "部门名称不能为空"}
-    dept_id = db.create_department(body.name)
+    dept_id = db.create_department(body.name, tenant_id=_tenant_id(request))
     return {"status": "success", "id": dept_id}
 
 
 @router.patch("/api/departments/{dept_id}")
 def patch_department(dept_id: int, body: DeptBody, request: Request):
     require_role("owner")(request)
-    db.update_department(dept_id, name=body.name)
+    db.update_department(dept_id, tenant_id=_tenant_id(request), name=body.name)
     return {"status": "success"}
 
 
 @router.delete("/api/departments/{dept_id}")
 def delete_department(dept_id: int, request: Request):
     require_role("owner")(request)
-    depts = db.list_departments()
+    tenant_id = _tenant_id(request)
+    # D16：「不得停用最后一个启用部门」按租户独立判定（计数只看本租户部门）
+    depts = db.list_departments(tenant_id=tenant_id)
     if len([d for d in depts if d.active]) <= 1:
         return {"status": "error", "msg": "不得停用最后一个启用部门"}
-    db.update_department(dept_id, active=0)
+    db.update_department(dept_id, tenant_id=tenant_id, active=0)
     return {"status": "success"}
 
 

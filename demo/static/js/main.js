@@ -634,6 +634,8 @@ let isFocalZoomed = false;
 // 旋转烤入状态：烘焙进行中标志与非批量单张烤后预览 URL（用于 reset 回收）
 let _isBakingRotation = false;
 let _bakedPreviewUrl = null;
+let _hasRotatedFile = false;
+let _hasRotatedAfterParse = false;
 // C2：烤后预览 URL 回收统一入口（原先 7 处重复 revoke 块）
 function revokeBakedPreviewUrl() {
     if (_bakedPreviewUrl) {
@@ -1263,7 +1265,7 @@ function initTabs() {
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
             }
             if (targetId === 'tab-analytics') {
-                loadAnalyticsBoard();    // AI 效果观测与评测中心（按当前活跃子面板条件调度）
+                loadAnalyticsBoard();    // 观测中心（按当前活跃子面板条件调度）
             }
             syncFeedbackVisibility();
             syncRecoveryVisibility();
@@ -2208,6 +2210,8 @@ function triggerAnalysisNow(forceFlag = false) {
         // Q34: 同步成功路径的重复关联动作（queued 路径在轮询发起前已提示）
         offerDuplicateAction(ret);
         document.getElementById('prefillFormCard').classList.remove('hide');
+        syncFeedbackVisibility();
+        syncRecoveryVisibility();
     }
 }
 
@@ -2476,6 +2480,8 @@ function showErrorCard(msg, receiptId, code) {
     if (convertBtn) convertBtn.style.display = '';
 
     document.getElementById('errorCard').classList.remove('hide');
+    lastFeedbackForCurrent = null;
+    syncFeedbackButtonsUI(null);
     syncFeedbackVisibility();
     syncRecoveryVisibility();
 }
@@ -2485,6 +2491,12 @@ function retryFromErrorCard(force = true) {
     if (ph) ph.force = !!force;
     window._selectedFileForce = !!force;
 
+    const rid = lastErrorReceiptId || currentReceiptId;
+    if (_hasRotatedFile && selectedFile && rid) {
+        submitRotatedImage(rid, selectedFile);
+        return;
+    }
+
     if (lastErrorReceiptId) {
         // D13: 复用原单据重跑识别
         retryReceiptRecognition(lastErrorReceiptId, force);
@@ -2493,6 +2505,20 @@ function retryFromErrorCard(force = true) {
         triggerAnalysisNow(force);
     }
 }
+
+function retryRotatedFromErrorCard() {
+    const rid = lastErrorReceiptId || currentReceiptId;
+    if (!rid) {
+        triggerAnalysisNow(true);
+        return;
+    }
+    if (selectedFile) {
+        submitRotatedImage(rid, selectedFile);
+    } else {
+        retryFromErrorCard(true);
+    }
+}
+window.retryRotatedFromErrorCard = retryRotatedFromErrorCard;
 
 // 失败态「重新上传」：移除坏图并回到标准上传入口流程
 function reuploadFromErrorCard() {
@@ -2626,6 +2652,13 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     currentReceiptData = ret.data || null;
     // 新识别结果产生 → 本会话对该单的点赞/点踩态清零（挽回埋点 prior_feedback 口径）
     lastFeedbackForCurrent = null;
+    syncFeedbackButtonsUI(null);
+    _hasRotatedFile = false;
+    _hasRotatedAfterParse = false;
+    const btnRot = document.getElementById('btnReparseRotated');
+    if (btnRot) btnRot.style.display = 'none';
+    const btnErrRot = document.getElementById('btnRetryRotated');
+    if (btnErrRot) btnErrRot.classList.add('hide');
 
     if (ret.image_url && isBrowserDisplayableImageUrl(ret.image_url)) {
         setNonWebPreviewHint(false, selectedFile);
@@ -2646,6 +2679,8 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('errorCard').classList.add('hide');
     document.getElementById('prefillFormCard').classList.remove('hide');
+    syncFeedbackVisibility();
+    syncRecoveryVisibility();
 
     // 批量模式：同步当前激活照片状态
     const photo = getActivePhoto();
@@ -2810,6 +2845,8 @@ function startManualEntry() {
     document.getElementById('splitViewArea').classList.remove('hide');
 
     showToast('已进入新建手工单：请填写供应商、开单日期与明细后保存', 'info', TOAST_DURATION.guide);
+    lastFeedbackForCurrent = null;
+    syncFeedbackButtonsUI(null);
     syncFeedbackVisibility();
     syncRecoveryVisibility();
 }
@@ -2905,6 +2942,10 @@ function abortLoadingAndSwitchToManual() {
 
     // 8. 友好人话提示
     showToast('已停止等待，原图已在左侧保留，请直接手工录入', 'info', TOAST_DURATION.guide);
+    lastFeedbackForCurrent = null;
+    syncFeedbackButtonsUI(null);
+    syncFeedbackVisibility();
+    syncRecoveryVisibility();
 }
 
 // 工具激活状态: null (未选中任何工具), 'zoom' (定点放大模式), 'crop' (裁剪模式)
@@ -3267,7 +3308,11 @@ function bakeCurrentRotation() {
         if (currentRotation === 0) { done(true); return; }
         const img = document.getElementById('previewImg');
         const photo = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
-        const currFile = (photo && photo.file) || selectedFile || originalFile;
+        let currFile = (photo && photo.file) || selectedFile || originalFile;
+        if (!currFile && img && img.src && !img.src.startsWith('data:image/svg')) {
+            const defaultName = (typeof currentReceiptId !== 'undefined' && currentReceiptId) ? `receipt_${currentReceiptId}.jpg` : 'receipt.jpg';
+            currFile = new File([], defaultName, { type: 'image/jpeg' });
+        }
         if (!currFile) {
             currentRotation = 0;
             if (img) applyImgTransform();
@@ -3360,8 +3405,9 @@ function bakeCurrentRotation() {
                     done(false);
                     return;
                 }
+                _hasRotatedFile = true;
                 const baseName = (currFile.name || 'receipt').replace(/\.[^.]+$/, '') || 'receipt';
-                const newFile = new File([blob], baseName + '.jpg', { type: 'image/jpeg' });
+                const newFile = new File([blob], baseName + '.jpg', { type: 'image/jpeg', lastModified: Date.now() });
                 if (currFile._convertedFromHeic) newFile._convertedFromHeic = true;
                 if (currFile._originalName) newFile._originalName = currFile._originalName;
                 selectedFile = newFile;
@@ -3388,11 +3434,36 @@ function bakeCurrentRotation() {
                 if (overlay) overlay.classList.add('hide');
                 cropRect = { left: 0, top: 0, width: 0, height: 0 };
                 showToast('已固化旋转并更新待上传文件', 'success');
+                updateRotationRecoveryUI();
                 done(true);
             }, 'image/jpeg', 0.95);
         }
     });
 }
+
+function updateRotationRecoveryUI() {
+    const prefillCard = document.getElementById('prefillFormCard');
+    const isPrefillVisible = prefillCard && !prefillCard.classList.contains('hide') && prefillCard.style.display !== 'none';
+    if (isPrefillVisible) {
+        _hasRotatedAfterParse = true;
+        const btnReparseRotated = document.getElementById('btnReparseRotated');
+        if (btnReparseRotated) {
+            btnReparseRotated.style.display = '';
+        }
+        showToast('已旋转至新视角，可点击【按当前视角重新识别】', 'info');
+    }
+
+    const errorCard = document.getElementById('errorCard');
+    const isErrorVisible = errorCard && !errorCard.classList.contains('hide') && errorCard.style.display !== 'none';
+    if (isErrorVisible) {
+        const btnRetryRotated = document.getElementById('btnRetryRotated');
+        if (btnRetryRotated) {
+            btnRetryRotated.classList.remove('hide');
+        }
+        showToast('已旋转至新视角，点击【按当前视角重试】', 'info');
+    }
+}
+window.updateRotationRecoveryUI = updateRotationRecoveryUI;
 
 function rotateImg() {
     if (_isBakingRotation) {
@@ -3401,12 +3472,7 @@ function rotateImg() {
     }
     const photo = (typeof getActivePhoto === 'function') ? getActivePhoto() : null;
     const currFile = (photo && photo.file) || selectedFile;
-    if (!currFile) {
-        currentRotation = (currentRotation + 90) % 360;
-        applyImgTransform();
-        return;
-    }
-    if (isNonWebImageFile(currFile)) {
+    if (currFile && isNonWebImageFile(currFile)) {
         currentRotation = (currentRotation + 90) % 360;
         applyImgTransform();
         showToast('HEIC 照片已记录旋转，解析时将自动校正', 'info');
@@ -3425,6 +3491,12 @@ function resetImgTransform() {
     panY = 0;
     isFocalZoomed = false;
     activeTool = null;
+    _hasRotatedFile = false;
+    _hasRotatedAfterParse = false;
+    const btnRot = document.getElementById('btnReparseRotated');
+    if (btnRot) btnRot.style.display = 'none';
+    const btnErrRot = document.getElementById('btnRetryRotated');
+    if (btnErrRot) btnErrRot.classList.add('hide');
 
     // 核心重置逻辑：在启动分析之前，按【重置】可还原为原始未裁剪照片
     // 注意：HEIC 等绝不能写回 objectUrl（浏览器黑屏）；走 setMainPreview 保持常驻提示
@@ -3466,8 +3538,6 @@ function applyImgTransform() {
     const img = document.getElementById('previewImg');
     if (!img) return;
     img.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoom}) rotate(${currentRotation}deg)`;
-    // T7：证据高亮层跟随缩放/平移/旋转
-    if (typeof _syncEvidenceLayerToImg === 'function') _syncEvidenceLayerToImg(img);
 }
 
 // -------------------------------------------------------------
@@ -4206,15 +4276,12 @@ function renderEditForm(data) {
     // M3/D4: 从 prefill 数据初始化结算方式与付款标记
     applySettlementToForm('inp', data);
 
-    // G3/U2：付款证据由系统自动带出（用户反馈：禁止要求店员手输证据）。
-    // 识别/审计检出的证据描述写入自动证据状态并只读展示；无则空串。
-    // 契约无 payment_evidence 时回落描述性 payment_mark（非「已付款/未付款」枚举值）
+    // G3/U2：付款证据内存变量更新（用于后端提交透传，DOM 展示已移除）
     const rawEvidence = String(data.payment_evidence || '').trim();
     const origMark = String(data.payment_mark || '').trim();
     const autoEvidence = rawEvidence
         || ((origMark && origMark !== '已付款' && origMark !== '未付款') ? origMark : '');
     setAutoPaymentEvidence(autoEvidence);
-    updatePaymentEvidenceAutoDisplay();
 
     // Wave 2（D44）：单据级部门下拉
     populateDeptSelect(document.getElementById('inpDepartmentId'), data.department_id);
@@ -4276,8 +4343,6 @@ function renderEditForm(data) {
 
     const tbody = document.getElementById('itemTableBody');
     tbody.innerHTML = '';
-    // T7：明细行重建 → 旧证据高亮失效，先清层避免残留
-    clearEvidenceHighlight();
 
     const items = (data.items || []).filter(item =>
         String((item && (item.raw_name || item.name)) || '').trim() !== '');
@@ -4373,14 +4438,18 @@ function renderFeeRowsFromData(data) {
     }
 }
 
-// 追加一行费用 = [原因下拉] + [符号提示 + 金额输入] + [删除按钮]
+// 追加一行费用 = [原因下拉] + [自定义原因输入（仅自定义时可见）] + [符号提示 + 金额输入] + [删除按钮]
 function appendFeeRow(feeKey, amountValue) {
     const container = document.getElementById('feesRowsContainer');
     if (!container) return null;
 
+    const isCustom = feeKey === 'custom' || (feeKey && !FEE_TYPES.find(t => t.key === feeKey));
+    const effectiveKey = isCustom ? 'custom' : (feeKey || '');
+    const customLabel = isCustom ? (feeKey !== 'custom' ? feeKey : '') : '';
+
     const row = document.createElement('div');
     row.className = 'fee-row';
-    row.dataset.feeKey = feeKey || '';
+    row.dataset.feeKey = effectiveKey;
 
     const sel = document.createElement('select');
     sel.className = 'fee-type-select form-control form-control-sm';
@@ -4394,8 +4463,26 @@ function appendFeeRow(feeKey, amountValue) {
         opt.textContent = t.label;
         sel.appendChild(opt);
     });
-    sel.value = feeKey || '';
+    // 自定义选项
+    const customOpt = document.createElement('option');
+    customOpt.value = 'custom';
+    customOpt.textContent = '自定义 (+/-)';
+    sel.appendChild(customOpt);
+    sel.value = effectiveKey;
     sel.addEventListener('change', function () { onFeeTypeChange(sel, row); });
+
+    // 自定义原因文本输入框（仅 custom 时可见）
+    const customInput = document.createElement('input');
+    customInput.type = 'text';
+    customInput.className = 'fee-custom-label form-control form-control-sm';
+    customInput.placeholder = '请输入费用原因';
+    customInput.maxLength = 40;
+    customInput.style.display = effectiveKey === 'custom' ? '' : 'none';
+    if (customLabel) customInput.value = customLabel;
+    customInput.addEventListener('input', function () {
+        row.dataset.feeCustomLabel = customInput.value.trim();
+    });
+    row.dataset.feeCustomLabel = customLabel;
 
     const signHint = document.createElement('span');
     signHint.className = 'fee-sign-hint';
@@ -4403,14 +4490,22 @@ function appendFeeRow(feeKey, amountValue) {
     const amountInput = document.createElement('input');
     amountInput.type = 'number';
     amountInput.step = '0.01';
-    amountInput.min = '0';
     amountInput.className = 'fee-amount-input form-control form-control-sm';
     amountInput.placeholder = '0.00';
     amountInput.title = '填写该项费用金额；折扣 / 抹零会从总额中扣减';
+    // 非自定义类型禁止负数
+    if (effectiveKey !== 'custom') {
+        amountInput.min = '0';
+    }
     if (amountValue != null && !isNaN(Number(amountValue))) {
         amountInput.value = Number(amountValue).toFixed(2);
     }
     amountInput.addEventListener('input', function () {
+        // 非自定义时强制非负
+        if (sel.value !== 'custom') {
+            const v = parseFloat(amountInput.value);
+            if (!isNaN(v) && v < 0) amountInput.value = Math.abs(v).toFixed(2);
+        }
         row.dataset.feeKey = sel.value || '';
         recalcTotalSum();
     });
@@ -4423,6 +4518,7 @@ function appendFeeRow(feeKey, amountValue) {
     removeBtn.addEventListener('click', function () { removeFeeRow(removeBtn); });
 
     row.appendChild(sel);
+    row.appendChild(customInput);
     row.appendChild(signHint);
     row.appendChild(amountInput);
     row.appendChild(removeBtn);
@@ -4442,26 +4538,45 @@ function addFeeRow() {
 }
 window.addFeeRow = addFeeRow;
 
-// 类型互斥：同一费用原因只能有一行。重复选择时人话提示并聚焦已有行。
+// 类型互斥：同一费用原因只能有一行（自定义不参与互斥检查）。
 function onFeeTypeChange(sel, row) {
     const val = sel.value || '';
+    const customInput = row.querySelector('.fee-custom-label');
+    const amountInput = row.querySelector('.fee-amount-input');
+
+    // 自定义：显示文本输入，允许负数；预设：隐藏文本输入，禁止负数
+    if (customInput) customInput.style.display = val === 'custom' ? '' : 'none';
+    if (amountInput) {
+        if (val === 'custom') {
+            amountInput.removeAttribute('min');
+        } else {
+            amountInput.min = '0';
+            // 若当前金额为负则强制转正
+            const v = parseFloat(amountInput.value);
+            if (!isNaN(v) && v < 0) amountInput.value = Math.abs(v).toFixed(2);
+        }
+    }
+
     updateRowSignHint(row);
     if (!val) {
         row.dataset.feeKey = '';
         recalcTotalSum();
         return;
     }
-    const dup = findFeeRowByType(val, row);
-    if (dup) {
-        showToast('该项已添加，已在上方标出', 'warning');
-        sel.value = '';
-        updateRowSignHint(row);
-        dup.classList.add('fee-row-flash');
-        dup.scrollIntoView({ block: 'center' });
-        const dupAmount = dup.querySelector('.fee-amount-input');
-        if (dupAmount) dupAmount.focus();
-        setTimeout(function () { dup.classList.remove('fee-row-flash'); }, 1600);
-        return;
+    if (val !== 'custom') {
+        const dup = findFeeRowByType(val, row);
+        if (dup) {
+            showToast('该项已添加，已在上方标出', 'warning');
+            sel.value = '';
+            if (customInput) customInput.style.display = 'none';
+            updateRowSignHint(row);
+            dup.classList.add('fee-row-flash');
+            dup.scrollIntoView({ block: 'center' });
+            const dupAmount = dup.querySelector('.fee-amount-input');
+            if (dupAmount) dupAmount.focus();
+            setTimeout(function () { dup.classList.remove('fee-row-flash'); }, 1600);
+            return;
+        }
     }
     row.dataset.feeKey = val;
     recalcTotalSum();
@@ -4484,8 +4599,12 @@ function updateRowSignHint(row) {
     const sel = row.querySelector('.fee-type-select');
     const hint = row.querySelector('.fee-sign-hint');
     if (!sel || !hint) return;
-    const meta = feeTypeMeta(sel.value);
-    hint.textContent = meta ? meta.sign : '+/-';
+    if (sel.value === 'custom') {
+        hint.textContent = '+/-';
+    } else {
+        const meta = feeTypeMeta(sel.value);
+        hint.textContent = meta ? meta.sign : '';
+    }
 }
 
 // 删除行 = 该项归 0（collectFeeMap 不再产出该字段，等价 0 提交）
@@ -5314,26 +5433,15 @@ function appendTableRow(item = {}) {
             <div class="row-actions">
                 ${itemReviewBadgeHtml(itemFlags, itemConfRaw)}
                 ${isVoidMain ? '<span class="badge badge-secondary" title="票面划线行：不计入总额与入库" style="margin-right:4px;">作废</span>' : ''}
-                <button type="button" class="btn-evidence" onclick="highlightItemEvidence(this.closest('tr'), document.getElementById('previewImg'))" title="在原图上高亮该行的识别证据">证据</button>
                 <button type="button" class="btn-action-delete" onclick="removeRow(this)" title="删除此明细行">删除</button>
             </div>
         </td>
     `;
     tbody.appendChild(tr);
 
-    // T7（Gap E1）：行级证据挂载——点行内空白处或「证据」按钮 → 原图高亮；
-    // 无证据的行点击不报错（人话提示）。input/select/button 等交互控件不受影响。
-    tr.dataset.evidence = item.evidence ? JSON.stringify(item.evidence) : '';
-    if (item.evidence) tr.classList.add('evidence-row');
-    // P11/T5：item 级置信度与单位换算警告同样挂到行 dataset——复核保存由 DOM 采集，
-    // 不挂行的话 collectReviewFormData 拿不到这两列，落库时被后端兜底值（0.5/空串）抹平。
     tr.dataset.confidence = (itemConfRaw !== null) ? String(itemConfRaw) : '';
     tr.dataset.unitConversionWarning = item.unit_conversion_warning
         ? String(item.unit_conversion_warning) : '';
-    tr.addEventListener('click', (e) => {
-        if (e.target.closest('input, select, button, a, .unit-dropdown-menu, .sku-dropdown-floating')) return;
-        highlightItemEvidence(tr, document.getElementById('previewImg'));
-    });
 
     const skuInput = tr.querySelector('.inp-sku');
     if (skuInput) skuInput.__skuCandidates = skuCandidates;
@@ -5363,121 +5471,8 @@ function removeRow(btn) {
     recalcTotalSum();
 }
 
-// -------------------------------------------------------------
-// T7（Gap E1）：字段级证据高亮 —— 明细行点击 → 原图叠加高亮框
-// （归一化 bbox 换算为百分比定位）+ 显示图面原文 raw_text。
-// 高亮层动态挂到原图容器（.img-viewer-container 已是 position:relative），
-// 与图片共用同一 transform/transform-origin，跟随缩放/平移/旋转。
-// Tab1 复核台（#previewImg）与归档弹窗（#archivePreviewImg）同一机制。
-// 无证据的行点击不报错，人话提示「该行无证据数据」。
-// -------------------------------------------------------------
-function _parseRowEvidence(tr) {
-    if (!tr || !tr.dataset || !tr.dataset.evidence) return null;
-    try {
-        const ev = JSON.parse(tr.dataset.evidence);
-        return (ev && typeof ev === 'object') ? ev : null;
-    } catch (e) { return null; }
-}
 
-function _ensureEvidenceLayer(img) {
-    const container = img ? img.parentElement : null;
-    if (!container) return null;
-    let layer = container.querySelector('.evidence-highlight-layer');
-    if (!layer) {
-        layer = document.createElement('div');
-        layer.className = 'evidence-highlight-layer';
-        layer.innerHTML = '<div class="evidence-highlight-box"></div>'
-            + '<div class="evidence-raw-text-label" role="status"></div>';
-        container.appendChild(layer);
-    }
-    return layer;
-}
 
-function _syncEvidenceLayerToImg(img) {
-    const layer = img && img.parentElement
-        ? img.parentElement.querySelector('.evidence-highlight-layer') : null;
-    if (!layer || !img) return;
-    layer.style.left = img.offsetLeft + 'px';
-    layer.style.top = img.offsetTop + 'px';
-    layer.style.width = img.offsetWidth + 'px';
-    layer.style.height = img.offsetHeight + 'px';
-    layer.style.transform = img.style.transform || '';
-    try {
-        layer.style.transformOrigin =
-            window.getComputedStyle(img).transformOrigin || 'center center';
-    } catch (e) {
-        layer.style.transformOrigin = 'center center';
-    }
-}
-
-function clearEvidenceHighlight() {
-    document.querySelectorAll('.evidence-highlight-layer').forEach(l => l.remove());
-    document.querySelectorAll('tr[data-evidence-active="1"]').forEach(tr => {
-        delete tr.dataset.evidenceActive;
-        tr.classList.remove('evidence-row-active');
-    });
-}
-
-function showEvidenceHighlight(imgEl, evidence) {
-    const usable = evidence && typeof evidence === 'object'
-        && (Array.isArray(evidence.bbox) || String(evidence.raw_text || '').trim() !== '');
-    if (!imgEl || !usable) {
-        showToast('该行无证据数据，请对照原图人工核对', 'info');
-        return false;
-    }
-    const layer = _ensureEvidenceLayer(imgEl);
-    if (!layer) {
-        showToast('该行无证据数据，请对照原图人工核对', 'info');
-        return false;
-    }
-    _syncEvidenceLayerToImg(imgEl);
-    const box = layer.querySelector('.evidence-highlight-box');
-    const label = layer.querySelector('.evidence-raw-text-label');
-    const bbox = (Array.isArray(evidence.bbox) && evidence.bbox.length === 4
-        && evidence.bbox.every(v => typeof v === 'number' && isFinite(v) && v >= 0 && v <= 1))
-        ? evidence.bbox : null;
-    if (bbox) {
-        const x1 = Math.min(bbox[0], bbox[2]);
-        const y1 = Math.min(bbox[1], bbox[3]);
-        box.style.left = (x1 * 100).toFixed(3) + '%';
-        box.style.top = (y1 * 100).toFixed(3) + '%';
-        box.style.width = (Math.abs(bbox[2] - bbox[0]) * 100).toFixed(3) + '%';
-        box.style.height = (Math.abs(bbox[3] - bbox[1]) * 100).toFixed(3) + '%';
-        box.style.display = '';
-    } else {
-        box.style.display = 'none';
-    }
-    const rawText = String(evidence.raw_text || '').trim();
-    if (rawText) {
-        label.textContent = '图面原文：' + rawText;
-        label.style.display = '';
-    } else {
-        label.style.display = 'none';
-    }
-    return true;
-}
-
-// 明细行证据入口：行点击与「证据」按钮共用（再点一次收起高亮）
-function highlightItemEvidence(tr, imgEl) {
-    if (!tr) return;
-    const evidence = _parseRowEvidence(tr);
-    if (!evidence) {
-        showToast('该行无证据数据，请对照原图人工核对', 'info');
-        return;
-    }
-    if (tr.dataset.evidenceActive === '1') {
-        clearEvidenceHighlight();
-        return;
-    }
-    clearEvidenceHighlight();
-    if (showEvidenceHighlight(imgEl, evidence)) {
-        tr.dataset.evidenceActive = '1';
-        tr.classList.add('evidence-row-active');
-    }
-}
-window.highlightItemEvidence = highlightItemEvidence;
-window.clearEvidenceHighlight = clearEvidenceHighlight;
-window.showEvidenceHighlight = showEvidenceHighlight;
 
 // 产品决策（见 docs 决策记录）：手动作废入口已移除——作废态仅来自票面划线的 AI 提取，只读展示；
 // 用户剔除行的唯一操作是「删除」。is_void 行的置灰/划线/禁用样式在 appendTableRow 渲染时完成。
@@ -5812,12 +5807,6 @@ function collectReviewFormData() {
             // D-P1-4：划线作废状态随行保存（后端算术门禁剔除 is_void 行）
             is_void: !!(tr.dataset && tr.dataset.isVoid === '1')
         };
-        // T7（Gap E1）：字段级证据随行透传（数值编辑不使原图定位失效）
-        try {
-            const rowEvidence = (tr.dataset && tr.dataset.evidence)
-                ? JSON.parse(tr.dataset.evidence) : null;
-            if (rowEvidence && typeof rowEvidence === 'object') item.evidence = rowEvidence;
-        } catch (e) { /* 坏证据降级：不带证据保存，不阻断 */ }
         // P11/T5：item 级置信度（数值型才带）与单位换算警告（非空才带）随行透传。
         // 缺失时不携带键，后端兜底 0.5 / 空串语义不变（旧单据无这两列不会上浮）；
         // 渲染期由 appendTableRow 写入 dataset（见 tr.dataset.confidence / unitConversionWarning）。
@@ -5903,10 +5892,6 @@ function buildSavePayloadFromData(data, receiptId) {
                 // D-P1-4：划线作废透传（后端算术门禁剔除 is_void 行）
                 is_void: !!(it.is_void)
             };
-            // T7（Gap E1）：字段级证据透传——自动保存/归档保存回环不丢证据
-            if (it.evidence && typeof it.evidence === 'object') {
-                itemPayload.evidence = it.evidence;
-            }
             // P11/T5：item 级置信度（数值型才带）与单位换算警告（非空才带）随行透传。
             // 自动保存（source=auto）此前不带这两列，落库被 /api/save_edited 的兜底值
             // （confidence 0.5 / unit_conversion_warning 空串）覆盖，低置信与花码提示丢失。
@@ -6049,6 +6034,8 @@ async function discardCurrentReceipt() {
                 currentReceiptData = null;
                 clearManifest();
                 resetManualEntryMode();   // D12：放弃手工单草稿 → 恢复左栏/标题
+                syncFeedbackVisibility();
+                syncRecoveryVisibility();
             } else {
                 BatchUploader.activeIndex = Math.min(idx, BatchUploader.photos.length - 1);
                 pruneUnselectableFromSelection();
@@ -6068,6 +6055,8 @@ async function discardCurrentReceipt() {
             currentReceiptData = null;
             clearManifest();
             resetManualEntryMode();   // D12：放弃手工单草稿 → 恢复左栏/标题
+            syncFeedbackVisibility();
+            syncRecoveryVisibility();
         }
 
         showToast('已放弃该单据，已移入回收站（可在管理后台恢复）', 'info');
@@ -7651,7 +7640,6 @@ function closeArchiveModal(force = false) {
         if (!confirmExit) return;
     }
     document.getElementById('archiveDetailModal').classList.add('hide');
-    clearEvidenceHighlight();  // T7：关闭归档弹窗 → 证据高亮层一并清除
     currentArchiveReceiptId = null;
     currentArchiveDetailData = null;
     hasUnsavedArcChanges = false;
@@ -7927,7 +7915,6 @@ function appendArcTableRow(item = {}) {
             </select>
         </td>
         <td style="text-align:center; white-space:nowrap;">
-            <button type="button" class="btn-evidence" onclick="highlightItemEvidence(this.closest('tr'), document.getElementById('archivePreviewImg'))" title="在原图上高亮该行的识别证据">证据</button>
             <button class="btn btn-danger" style="padding:2px 6px; font-size:0.75rem;" onclick="removeArcRow(this)">删除</button>
         </td>
         <td style="text-align:center; white-space:nowrap;">
@@ -7949,14 +7936,6 @@ function appendArcTableRow(item = {}) {
     // P11：与复核台同口径挂行 dataset（归档保存不采集该列，仅作只读读数与核验依据）
     tr.dataset.confidence = (itemConfRaw !== null) ? String(itemConfRaw) : '';
     tbody.appendChild(tr);
-
-    // T7（Gap E1）：归档行证据挂载（与 Tab1 同机制，目标为归档弹窗原图）
-    tr.dataset.evidence = item.evidence ? JSON.stringify(item.evidence) : '';
-    if (item.evidence) tr.classList.add('evidence-row');
-    tr.addEventListener('click', (e) => {
-        if (e.target.closest('input, select, button, a, textarea, .unit-dropdown-menu')) return;
-        highlightItemEvidence(tr, document.getElementById('archivePreviewImg'));
-    });
 
     // Wave 2（D44）：归档行内任何手动改动（含部门下拉）→ data-manual + 未保存脏标记；
     // "应用到全部明细"跳过已手动改过的行（04 章三）
@@ -8207,8 +8186,6 @@ function applyArchiveImgTransform() {
     const img = document.getElementById('archivePreviewImg');
     if (img) {
         img.style.transform = `translate(${arcPanX}px, ${arcPanY}px) scale(${arcZoom}) rotate(${arcRotation}deg)`;
-        // T7：证据高亮层跟随缩放/旋转（归档弹窗）
-        if (typeof _syncEvidenceLayerToImg === 'function') _syncEvidenceLayerToImg(img);
     }
 }
 
@@ -9438,6 +9415,8 @@ function showLoadingCard() {
     document.getElementById('errorCard').classList.add('hide');
     document.getElementById('loadingCard').classList.remove('hide');
     document.getElementById('prefillFormCard').classList.add('hide');
+    syncFeedbackVisibility();
+    syncRecoveryVisibility();
 }
 function hideLoadingCard() {
     document.getElementById('loadingCard').classList.add('hide');
@@ -9540,6 +9519,10 @@ function setActivePhoto(idx) {
         document.getElementById('errorCard').classList.add('hide');
         currentReceiptId = null;
         currentReceiptData = null;
+        lastFeedbackForCurrent = null;
+        syncFeedbackButtonsUI(null);
+        syncFeedbackVisibility();
+        syncRecoveryVisibility();
         return;
     }
     if (photo.status === 'uploading') {
@@ -9576,7 +9559,6 @@ function setActivePhoto(idx) {
 function applyPhotoToMainArea(photo) {
     if (!photo) return;
     resetManualEntryMode();   // D12：真实单据接管主区域 → 退出新建手工单态
-    clearEvidenceHighlight();  // T7：切换照片 → 上一张的证据高亮不得残留
     if (photo.file) selectedFile = photo.file;
     // 预览：有 JPEG/裁剪图则显示；否则 HEIC 常驻提示（不经 objectUrl）
     currentZoom = 1.0;
@@ -9602,6 +9584,8 @@ function applyPhotoToMainArea(photo) {
         document.getElementById('loadingCard').classList.add('hide');
         document.getElementById('errorCard').classList.add('hide');
         document.getElementById('prefillFormCard').classList.remove('hide');
+        syncFeedbackVisibility();
+        syncRecoveryVisibility();
     } else {
         // 无数据：清空质量警告横幅，避免展示上一张照片的警告
         showQualityWarnings([]);
@@ -9609,6 +9593,8 @@ function applyPhotoToMainArea(photo) {
         document.getElementById('loadingCard').classList.add('hide');
         document.getElementById('errorCard').classList.add('hide');
         document.getElementById('prefillFormCard').classList.add('hide');
+        syncFeedbackVisibility();
+        syncRecoveryVisibility();
     }
 }
 
@@ -11411,6 +11397,13 @@ function applyDemoRoleColor(role) {
     applyRoleVisibility(role);
 }
 
+window.setRole = function(role) {
+    const sel = document.getElementById('demoRoleSelect');
+    if (sel) sel.value = role;
+    try { localStorage.setItem('demo_role', role); } catch (e) {}
+    applyDemoRoleColor(role);
+};
+
 // U-01：按角色控制 admin 专属导航入口可见性（API 层 owner/staff 均 403，前端同步隐藏）
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
@@ -11513,6 +11506,12 @@ const OPENAI_PRESETS = {
         api_key: '',
         rec_model: 'agnes-2.0-flash',
         aud_model: 'agnes-2.0-flash',
+        rec_price_input: 0.5,
+        rec_price_cached: 0.1,
+        rec_price_output: 2.0,
+        aud_price_input: 0.5,
+        aud_price_cached: 0.1,
+        aud_price_output: 2.0,
     },
     bailian: {
         label: '阿里云百炼 · DashScope',
@@ -11520,6 +11519,12 @@ const OPENAI_PRESETS = {
         api_key: '',
         rec_model: 'qwen3.5-omni-flash',
         aud_model: 'qwen3-vl-plus',
+        rec_price_input: 2.2,
+        rec_price_cached: 0.55,
+        rec_price_output: 13.3,
+        aud_price_input: 1.5,
+        aud_price_cached: 0.375,
+        aud_price_output: 4.5,
     },
     siliconflow: {
         label: 'SiliconFlow · 硅基流动',
@@ -11527,10 +11532,16 @@ const OPENAI_PRESETS = {
         api_key: '',
         rec_model: 'Qwen/Qwen3-VL-32B-Instruct',
         aud_model: 'zai-org/GLM-4.5V',
+        rec_price_input: 2.0,
+        rec_price_cached: 0.5,
+        rec_price_output: 6.0,
+        aud_price_input: 1.0,
+        aud_price_cached: 0.25,
+        aud_price_output: 6.0,
     },
 };
 
-function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud) {
+function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud, inId, cachedId, outId) {
     const sel = document.getElementById(presetSelectId);
     if (!sel) return;
     const p = OPENAI_PRESETS[sel.value];
@@ -11552,6 +11563,17 @@ function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud) {
         }
     }
     if (mEl) mEl.value = isAud ? p.aud_model : p.rec_model;
+    if (inId && cachedId && outId) {
+        const inEl = document.getElementById(inId);
+        const cachedEl = document.getElementById(cachedId);
+        const outEl = document.getElementById(outId);
+        const inP = isAud ? (p.aud_price_input ?? p.rec_price_input) : p.rec_price_input;
+        const cachedP = isAud ? (p.aud_price_cached ?? p.rec_price_cached) : p.rec_price_cached;
+        const outP = isAud ? (p.aud_price_output ?? p.rec_price_output) : p.rec_price_output;
+        if (inEl && inP !== undefined && inP !== null) inEl.value = inP;
+        if (cachedEl && cachedP !== undefined && cachedP !== null) cachedEl.value = cachedP;
+        if (outEl && outP !== undefined && outP !== null) outEl.value = outP;
+    }
     showToast('已填入预设：' + p.label, 'info');
 }
 
@@ -11569,17 +11591,17 @@ function bindAdminEngineEventsOnce() {
 
     // 各 OpenAI 参数区独立预设网关绑定
     [
-        ['adminOpenaiRecPreset', 'adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey', 'adminOpenaiRecModel', false],
-        ['adminOpenaiAudPreset', 'adminOpenaiAudBaseUrl', 'adminOpenaiAudApiKey', 'adminOpenaiAudModel', true],
-        ['adminParseOpenaiPreset', 'adminParseOpenaiBaseUrl', 'adminParseOpenaiApiKey', 'adminParseOpenaiModel', false],
-        ['adminGreyOpenaiRecPreset', 'adminGreyOpenaiRecBaseUrl', 'adminGreyOpenaiRecApiKey', 'adminGreyOpenaiRecModel', false],
-        ['adminGreyOpenaiAudPreset', 'adminGreyOpenaiAudBaseUrl', 'adminGreyOpenaiAudApiKey', 'adminGreyOpenaiAudModel', true],
-        ['adminGreyParseOpenaiPreset', 'adminGreyParseOpenaiBaseUrl', 'adminGreyParseOpenaiApiKey', 'adminGreyParseOpenaiModel', false]
-    ].forEach(([presetId, bId, kId, mId, isAud]) => {
+        ['adminOpenaiRecPreset', 'adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey', 'adminOpenaiRecModel', false, 'adminPriceInputRec', 'adminPriceCachedInputRec', 'adminPriceOutputRec'],
+        ['adminOpenaiAudPreset', 'adminOpenaiAudBaseUrl', 'adminOpenaiAudApiKey', 'adminOpenaiAudModel', true, 'adminPriceInputAud', 'adminPriceCachedInputAud', 'adminPriceOutputAud'],
+        ['adminParseOpenaiPreset', 'adminParseOpenaiBaseUrl', 'adminParseOpenaiApiKey', 'adminParseOpenaiModel', false, 'adminPriceInputParse', 'adminPriceCachedInputParse', 'adminPriceOutputParse'],
+        ['adminGreyOpenaiRecPreset', 'adminGreyOpenaiRecBaseUrl', 'adminGreyOpenaiRecApiKey', 'adminGreyOpenaiRecModel', false, 'adminGreyPriceInputRec', 'adminGreyPriceCachedInputRec', 'adminGreyPriceOutputRec'],
+        ['adminGreyOpenaiAudPreset', 'adminGreyOpenaiAudBaseUrl', 'adminGreyOpenaiAudApiKey', 'adminGreyOpenaiAudModel', true, 'adminGreyPriceInputAud', 'adminGreyPriceCachedInputAud', 'adminGreyPriceOutputAud'],
+        ['adminGreyParseOpenaiPreset', 'adminGreyParseOpenaiBaseUrl', 'adminGreyParseOpenaiApiKey', 'adminGreyParseOpenaiModel', false, 'adminGreyPriceInputParse', 'adminGreyPriceCachedInputParse', 'adminGreyPriceOutputParse']
+    ].forEach(([presetId, bId, kId, mId, isAud, inId, cachedId, outId]) => {
         const el = document.getElementById(presetId);
         if (el) {
             el.value = '';
-            el.addEventListener('change', () => applyBoxPreset(presetId, bId, kId, mId, isAud));
+            el.addEventListener('change', () => applyBoxPreset(presetId, bId, kId, mId, isAud, inId, cachedId, outId));
         }
     });
 
@@ -11637,6 +11659,12 @@ function loadAdminEngineConfig() {
             if (recBase) recBase.value = cfg.openai_rec_base_url || '';
             if (recKey) recKey.value = cfg.openai_rec_api_key || '';
             if (recMod) recMod.value = cfg.openai_rec_model || cfg.recognition_model || '';
+            const recFmt = document.getElementById('adminOpenaiRecApiFormat') || document.getElementById('cfg-engine-api-format');
+            if (recFmt) recFmt.value = cfg.openai_rec_api_format || cfg.api_format || 'chat_completion';
+            const recTimeout = document.getElementById('adminRecTimeoutSeconds');
+            if (recTimeout) recTimeout.value = (cfg.rec_timeout_seconds != null ? cfg.rec_timeout_seconds : '');
+            const recReasoning = document.getElementById('adminOpenaiRecReasoningEffort');
+            if (recReasoning) recReasoning.value = cfg.openai_rec_reasoning_effort || '';
 
             // 常规审核
             const audEnabled = document.getElementById('adminAuditEnabled');
@@ -11647,6 +11675,12 @@ function loadAdminEngineConfig() {
             if (audBase) audBase.value = cfg.openai_aud_base_url || '';
             if (audKey) audKey.value = cfg.openai_aud_api_key || '';
             if (audMod) audMod.value = cfg.openai_aud_model || cfg.audit_model || '';
+            const audFmt = document.getElementById('adminOpenaiAudApiFormat');
+            if (audFmt) audFmt.value = cfg.openai_aud_api_format || 'chat_completion';
+            const audTimeout = document.getElementById('adminAudTimeoutSeconds');
+            if (audTimeout) audTimeout.value = (cfg.aud_timeout_seconds != null ? cfg.aud_timeout_seconds : '');
+            const audReasoning = document.getElementById('adminOpenaiAudReasoningEffort');
+            if (audReasoning) audReasoning.value = cfg.openai_aud_reasoning_effort || '';
 
             // 常规解析 LLM
             const parseEnabled = document.getElementById('adminParseEnabled');
@@ -11657,6 +11691,12 @@ function loadAdminEngineConfig() {
             if (parseBase) parseBase.value = cfg.openai_parse_base_url || '';
             if (parseKey) parseKey.value = cfg.openai_parse_api_key || '';
             if (parseMod) parseMod.value = cfg.openai_parse_model || cfg.parse_llm_model || '';
+            const parseFmt = document.getElementById('adminParseOpenaiApiFormat');
+            if (parseFmt) parseFmt.value = cfg.openai_parse_api_format || 'chat_completion';
+            const parseTimeout = document.getElementById('adminParseTimeoutSeconds');
+            if (parseTimeout) parseTimeout.value = (cfg.parse_timeout_seconds != null ? cfg.parse_timeout_seconds : '');
+            const parseReasoning = document.getElementById('adminParseOpenaiReasoningEffort');
+            if (parseReasoning) parseReasoning.value = cfg.openai_parse_reasoning_effort || '';
 
             // 分组测试（灰测）
             const greyEnabled = document.getElementById('adminGreyEnabled');
@@ -11673,6 +11713,12 @@ function loadAdminEngineConfig() {
             if (gRecBase) gRecBase.value = cfg.grey_openai_rec_base_url || '';
             if (gRecKey) gRecKey.value = cfg.grey_openai_rec_api_key || '';
             if (gRecMod) gRecMod.value = cfg.grey_openai_rec_model || cfg.grey_recognition_model || '';
+            const greyRecFmt = document.getElementById('adminGreyOpenaiRecApiFormat') || document.getElementById('cfg-grey-engine-api-format');
+            if (greyRecFmt) greyRecFmt.value = cfg.grey_openai_rec_api_format || cfg.grey_api_format || 'chat_completion';
+            const gRecTimeout = document.getElementById('adminGreyRecTimeoutSeconds');
+            if (gRecTimeout) gRecTimeout.value = (cfg.grey_rec_timeout_seconds != null ? cfg.grey_rec_timeout_seconds : '');
+            const gRecReasoning = document.getElementById('adminGreyOpenaiRecReasoningEffort');
+            if (gRecReasoning) gRecReasoning.value = cfg.grey_openai_rec_reasoning_effort || '';
 
             // 灰测审核
             const gAudEnabled = document.getElementById('adminGreyAuditEnabled');
@@ -11683,6 +11729,12 @@ function loadAdminEngineConfig() {
             if (gAudBase) gAudBase.value = cfg.grey_openai_aud_base_url || '';
             if (gAudKey) gAudKey.value = cfg.grey_openai_aud_api_key || '';
             if (gAudMod) gAudMod.value = cfg.grey_openai_aud_model || cfg.grey_audit_model || '';
+            const gAudFmt = document.getElementById('adminGreyOpenaiAudApiFormat');
+            if (gAudFmt) gAudFmt.value = cfg.grey_openai_aud_api_format || 'chat_completion';
+            const gAudTimeout = document.getElementById('adminGreyAudTimeoutSeconds');
+            if (gAudTimeout) gAudTimeout.value = (cfg.grey_aud_timeout_seconds != null ? cfg.grey_aud_timeout_seconds : '');
+            const gAudReasoning = document.getElementById('adminGreyOpenaiAudReasoningEffort');
+            if (gAudReasoning) gAudReasoning.value = cfg.grey_openai_aud_reasoning_effort || '';
 
             // 灰测解析 LLM
             const gParseEnabled = document.getElementById('adminGreyParseEnabled');
@@ -11693,6 +11745,41 @@ function loadAdminEngineConfig() {
             if (gParseBase) gParseBase.value = cfg.grey_openai_parse_base_url || '';
             if (gParseKey) gParseKey.value = cfg.grey_openai_parse_api_key || '';
             if (gParseMod) gParseMod.value = cfg.grey_openai_parse_model || cfg.grey_parse_llm_model || '';
+            const gParseFmt = document.getElementById('adminGreyParseOpenaiApiFormat');
+            if (gParseFmt) gParseFmt.value = cfg.grey_openai_parse_api_format || 'chat_completion';
+            const gParseTimeout = document.getElementById('adminGreyParseTimeoutSeconds');
+            if (gParseTimeout) gParseTimeout.value = (cfg.grey_parse_timeout_seconds != null ? cfg.grey_parse_timeout_seconds : '');
+            const gParseReasoning = document.getElementById('adminGreyParseOpenaiReasoningEffort');
+            if (gParseReasoning) gParseReasoning.value = cfg.grey_openai_parse_reasoning_effort || '';
+
+            // Token 价格回显 (元/1M Token)
+            const setPrice = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.value = (val !== null && val !== undefined && !isNaN(val)) ? val : '';
+            };
+            setPrice('adminPriceInputRec', cfg.price_input_rec);
+            setPrice('adminPriceCachedInputRec', cfg.price_cached_input_rec);
+            setPrice('adminPriceOutputRec', cfg.price_output_rec);
+
+            setPrice('adminPriceInputAud', cfg.price_input_aud);
+            setPrice('adminPriceCachedInputAud', cfg.price_cached_input_aud);
+            setPrice('adminPriceOutputAud', cfg.price_output_aud);
+
+            setPrice('adminPriceInputParse', cfg.price_input_parse);
+            setPrice('adminPriceCachedInputParse', cfg.price_cached_input_parse);
+            setPrice('adminPriceOutputParse', cfg.price_output_parse);
+
+            setPrice('adminGreyPriceInputRec', cfg.price_input_grey_rec);
+            setPrice('adminGreyPriceCachedInputRec', cfg.price_cached_input_grey_rec);
+            setPrice('adminGreyPriceOutputRec', cfg.price_output_grey_rec);
+
+            setPrice('adminGreyPriceInputAud', cfg.price_input_grey_aud);
+            setPrice('adminGreyPriceCachedInputAud', cfg.price_cached_input_grey_aud);
+            setPrice('adminGreyPriceOutputAud', cfg.price_output_grey_aud);
+
+            setPrice('adminGreyPriceInputParse', cfg.price_input_grey_parse);
+            setPrice('adminGreyPriceCachedInputParse', cfg.price_cached_input_grey_parse);
+            setPrice('adminGreyPriceOutputParse', cfg.price_output_grey_parse);
 
             // 自动检测并设置匹配的预设网关下拉选项
             function detectPresetKey(baseUrl) {
@@ -11737,15 +11824,52 @@ function loadAdminEngineConfig() {
                 if (h) h.setAttribute('aria-expanded', greyExpanded ? 'true' : 'false');
             }
 
-            // 动态从后端同步预设配置（自动融入 .env 中的密钥）
+            // 动态从后端同步预设配置（自动融入 .env 中的密钥 + 自定义预设）
             apiFetch('/api/admin/engine-presets')
                 .then(r => r.json())
                 .then(pRet => {
                     if (pRet && pRet.status === 'success' && pRet.data) {
                         Object.assign(OPENAI_PRESETS, pRet.data);
+                        // 动态追加自定义预设 option 到所有预设下拉
+                        const PRESET_SELECT_IDS = [
+                            'adminOpenaiRecPreset', 'adminOpenaiAudPreset', 'adminParseOpenaiPreset',
+                            'adminGreyOpenaiRecPreset', 'adminGreyOpenaiAudPreset', 'adminGreyParseOpenaiPreset',
+                        ];
+                        const BUILTIN_KEYS = new Set(['agnes', 'bailian', 'siliconflow']);
+                        PRESET_SELECT_IDS.forEach(selId => {
+                            const sel = document.getElementById(selId);
+                            if (!sel) return;
+                            // 移除旧自定义 option（保留内置）
+                            Array.from(sel.options).forEach(opt => {
+                                if (opt.value && !BUILTIN_KEYS.has(opt.value)) sel.removeChild(opt);
+                            });
+                            // 追加新自定义预设
+                            Object.entries(pRet.data).forEach(([key, preset]) => {
+                                if (!BUILTIN_KEYS.has(key) && preset.label) {
+                                    const opt = document.createElement('option');
+                                    opt.value = key;
+                                    opt.textContent = preset.label + ' [自定义]';
+                                    sel.appendChild(opt);
+                                }
+                            });
+                        });
                     }
+                    // 回显供应商名称（从当前配置字段）
+                    const vendorMap = [
+                        ['adminVendorNameRec',       cfg.vendor_name_rec],
+                        ['adminVendorNameAud',       cfg.vendor_name_aud],
+                        ['adminVendorNameParse',     cfg.vendor_name_parse],
+                        ['adminVendorNameGreyRec',   cfg.vendor_name_grey_rec],
+                        ['adminVendorNameGreyAud',   cfg.vendor_name_grey_aud],
+                        ['adminVendorNameGreyParse', cfg.vendor_name_grey_parse],
+                    ];
+                    vendorMap.forEach(([id, val]) => {
+                        const el = document.getElementById(id);
+                        if (el && val) el.value = val;
+                    });
                 })
                 .catch(() => {});
+
 
             updateAuditDisabledState();
             updateGreyDisabledState();
@@ -11765,6 +11889,58 @@ function saveAdminEngineConfig() {
         return el ? el.value.trim() : '';
     };
 
+    const getTimeout = (id) => {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return null;
+        const v = parseInt(el.value.trim(), 10);
+        return isNaN(v) ? null : v;
+    };
+
+    const getPrice = (id, label) => {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return null;
+        const v = parseFloat(el.value.trim());
+        if (isNaN(v)) return null;
+        if (v < 0) {
+            el.classList.add('is-invalid');
+            throw new Error((label || 'Token 单价') + ' 不能为负数');
+        }
+        el.classList.remove('is-invalid');
+        return v;
+    };
+
+    let priceFields;
+    try {
+        priceFields = {
+            price_input_rec: getPrice('adminPriceInputRec', '常规识别 Input 价格'),
+            price_cached_input_rec: getPrice('adminPriceCachedInputRec', '常规识别 Cached Input 价格'),
+            price_output_rec: getPrice('adminPriceOutputRec', '常规识别 Output 价格'),
+
+            price_input_aud: getPrice('adminPriceInputAud', '常规审核 Input 价格'),
+            price_cached_input_aud: getPrice('adminPriceCachedInputAud', '常规审核 Cached Input 价格'),
+            price_output_aud: getPrice('adminPriceOutputAud', '常规审核 Output 价格'),
+
+            price_input_parse: getPrice('adminPriceInputParse', '常规解析 Input 价格'),
+            price_cached_input_parse: getPrice('adminPriceCachedInputParse', '常规解析 Cached Input 价格'),
+            price_output_parse: getPrice('adminPriceOutputParse', '常规解析 Output 价格'),
+
+            price_input_grey_rec: getPrice('adminGreyPriceInputRec', '灰测识别 Input 价格'),
+            price_cached_input_grey_rec: getPrice('adminGreyPriceCachedInputRec', '灰测识别 Cached Input 价格'),
+            price_output_grey_rec: getPrice('adminGreyPriceOutputRec', '灰测识别 Output 价格'),
+
+            price_input_grey_aud: getPrice('adminGreyPriceInputAud', '灰测审核 Input 价格'),
+            price_cached_input_grey_aud: getPrice('adminGreyPriceCachedInputAud', '灰测审核 Cached Input 价格'),
+            price_output_grey_aud: getPrice('adminGreyPriceOutputAud', '灰测审核 Output 价格'),
+
+            price_input_grey_parse: getPrice('adminGreyPriceInputParse', '灰测解析 Input 价格'),
+            price_cached_input_grey_parse: getPrice('adminGreyPriceCachedInputParse', '灰测解析 Cached Input 价格'),
+            price_output_grey_parse: getPrice('adminGreyPriceOutputParse', '灰测解析 Output 价格'),
+        };
+    } catch (err) {
+        showToast(err.message || 'Token 单价不能为负数', 'error');
+        return;
+    }
+
     const recModel = getVal('adminOpenaiRecModel');
     const audModel = getVal('adminOpenaiAudModel');
     const parseModel = getVal('adminParseOpenaiModel');
@@ -11775,11 +11951,14 @@ function saveAdminEngineConfig() {
     // 采集 pure OpenAI DOM 字段并构建带双向对齐的配置体
     // 保留 **** 敏感掩码传回后端，后端自动比对并维持未改动的原密钥
     const body = {
+        ...priceFields,
         recognition_engine: 'openai',
         recognition_model: recModel,
         openai_rec_base_url: getVal('adminOpenaiRecBaseUrl'),
         openai_rec_api_key: getVal('adminOpenaiRecApiKey'),
         openai_rec_model: recModel,
+        openai_rec_api_format: getVal('adminOpenaiRecApiFormat') || 'chat_completion',
+        api_format: getVal('adminOpenaiRecApiFormat') || 'chat_completion',
 
         audit_enabled: document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false,
         audit_engine: 'openai',
@@ -11787,6 +11966,7 @@ function saveAdminEngineConfig() {
         openai_aud_base_url: getVal('adminOpenaiAudBaseUrl'),
         openai_aud_api_key: getVal('adminOpenaiAudApiKey'),
         openai_aud_model: audModel,
+        openai_aud_api_format: getVal('adminOpenaiAudApiFormat') || 'chat_completion',
 
         parse_llm_enabled: document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false,
         parse_llm_engine: 'openai',
@@ -11794,6 +11974,7 @@ function saveAdminEngineConfig() {
         openai_parse_base_url: getVal('adminParseOpenaiBaseUrl'),
         openai_parse_api_key: getVal('adminParseOpenaiApiKey'),
         openai_parse_model: parseModel,
+        openai_parse_api_format: getVal('adminParseOpenaiApiFormat') || 'chat_completion',
 
         grey_enabled: document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false,
         grey_percent: parseInt(document.getElementById('adminGreyPercent') ? document.getElementById('adminGreyPercent').value : 0, 10) || 0,
@@ -11804,6 +11985,8 @@ function saveAdminEngineConfig() {
         grey_openai_rec_base_url: getVal('adminGreyOpenaiRecBaseUrl'),
         grey_openai_rec_api_key: getVal('adminGreyOpenaiRecApiKey'),
         grey_openai_rec_model: greyRecModel,
+        grey_openai_rec_api_format: getVal('adminGreyOpenaiRecApiFormat') || 'chat_completion',
+        grey_api_format: getVal('adminGreyOpenaiRecApiFormat') || 'chat_completion',
 
         grey_audit_enabled: document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false,
         grey_audit_engine: 'openai',
@@ -11811,6 +11994,7 @@ function saveAdminEngineConfig() {
         grey_openai_aud_base_url: getVal('adminGreyOpenaiAudBaseUrl'),
         grey_openai_aud_api_key: getVal('adminGreyOpenaiAudApiKey'),
         grey_openai_aud_model: greyAudModel,
+        grey_openai_aud_api_format: getVal('adminGreyOpenaiAudApiFormat') || 'chat_completion',
 
         grey_parse_llm_enabled: document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false,
         grey_parse_llm_engine: 'openai',
@@ -11818,6 +12002,30 @@ function saveAdminEngineConfig() {
         grey_openai_parse_base_url: getVal('adminGreyParseOpenaiBaseUrl'),
         grey_openai_parse_api_key: getVal('adminGreyParseOpenaiApiKey'),
         grey_openai_parse_model: greyParseModel,
+        grey_openai_parse_api_format: getVal('adminGreyParseOpenaiApiFormat') || 'chat_completion',
+
+        // 分引擎腿超时与思考强度
+        rec_timeout_seconds: getTimeout('adminRecTimeoutSeconds'),
+        openai_rec_reasoning_effort: getVal('adminOpenaiRecReasoningEffort'),
+        aud_timeout_seconds: getTimeout('adminAudTimeoutSeconds'),
+        openai_aud_reasoning_effort: getVal('adminOpenaiAudReasoningEffort'),
+        parse_timeout_seconds: getTimeout('adminParseTimeoutSeconds'),
+        openai_parse_reasoning_effort: getVal('adminParseOpenaiReasoningEffort'),
+
+        grey_rec_timeout_seconds: getTimeout('adminGreyRecTimeoutSeconds'),
+        grey_openai_rec_reasoning_effort: getVal('adminGreyOpenaiRecReasoningEffort'),
+        grey_aud_timeout_seconds: getTimeout('adminGreyAudTimeoutSeconds'),
+        grey_openai_aud_reasoning_effort: getVal('adminGreyOpenaiAudReasoningEffort'),
+        grey_parse_timeout_seconds: getTimeout('adminGreyParseTimeoutSeconds'),
+        grey_openai_parse_reasoning_effort: getVal('adminGreyParseOpenaiReasoningEffort'),
+
+        // 各引擎腿供应商名称（填写后保存时自动写入预设网关）
+        vendor_name_rec: getVal('adminVendorNameRec'),
+        vendor_name_aud: getVal('adminVendorNameAud'),
+        vendor_name_parse: getVal('adminVendorNameParse'),
+        vendor_name_grey_rec: getVal('adminVendorNameGreyRec'),
+        vendor_name_grey_aud: getVal('adminVendorNameGreyAud'),
+        vendor_name_grey_parse: getVal('adminVendorNameGreyParse'),
     };
 
     const skipTest = document.getElementById('adminSkipModelTest') && document.getElementById('adminSkipModelTest').checked;
@@ -12118,8 +12326,8 @@ function renderGreyDiffPanel({ diffs, totalPairs, diffCount }) {
             const isDiff = !d.identical;
             const rowCls = isDiff ? 'diff-row' : '';
             const sensitive = d.sensitive;
-            const reg = sensitive ? (d.regular || '—') : `<code>${escapeHtml(String(d.regular || '—'))}</code>`;
-            const grey = sensitive ? (d.grey || '—') : `<code>${escapeHtml(String(d.grey || '—'))}</code>`;
+            const reg = sensitive ? (d.regular || '-') : `<code>${escapeHtml(String(d.regular || '-'))}</code>`;
+            const grey = sensitive ? (d.grey || '-') : `<code>${escapeHtml(String(d.grey || '-'))}</code>`;
             const status = isDiff ? '<span class="badge" style="color:#b8860b;">差异</span>' : '<span class="badge" style="color:#2f6b4f;">一致</span>';
             html += `<tr class="${rowCls}"><td>${escapeHtml(d.label)}</td><td>${reg}</td><td>${grey}</td><td>${status}</td></tr>`;
         });
@@ -12284,13 +12492,13 @@ function onAdminExpSelectChange(expId) {
 
     const exp = _adminExperimentsList.find(e => String(e.id) === String(expId));
     if (!exp) {
-        if (hypEl) hypEl.textContent = '—';
-        if (metricEl) metricEl.textContent = '—';
-        if (trafficEl) trafficEl.textContent = '—';
-        if (minSampleEl) minSampleEl.textContent = '—';
+        if (hypEl) hypEl.textContent = '-';
+        if (metricEl) metricEl.textContent = '-';
+        if (trafficEl) trafficEl.textContent = '-';
+        if (minSampleEl) minSampleEl.textContent = '-';
         if (badgeEl) {
             badgeEl.className = 'badge badge-secondary';
-            badgeEl.textContent = '—';
+            badgeEl.textContent = '-';
         }
         if (ctrlEl) ctrlEl.textContent = '生产主力引擎';
         if (treatEl) treatEl.textContent = '待测对比模型';
@@ -12707,6 +12915,81 @@ function _analyticsSeq(key) {
     return () => seq === _analyticsLoadSeq[key];
 }
 
+// =====================================================================
+// 观测中心数据展示与时间格式统一标准 (Consistency Standard)
+// 标准时间格式: YYYY-MM-DD HH:mm:ss (等宽字体，定长19位，剥除微秒/T/时区)
+// 标准日期格式: YYYY-MM-DD
+// 统一空值占位: -
+// =====================================================================
+function _fmtDateTime(val) {
+    if (val === null || val === undefined || val === '') return '-';
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return '-';
+        const Y = val.getFullYear();
+        const M = String(val.getMonth() + 1).padStart(2, '0');
+        const D = String(val.getDate()).padStart(2, '0');
+        const h = String(val.getHours()).padStart(2, '0');
+        const m = String(val.getMinutes()).padStart(2, '0');
+        const s = String(val.getSeconds()).padStart(2, '0');
+        return `${Y}-${M}-${D} ${h}:${m}:${s}`;
+    }
+    if (typeof val === 'number') {
+        if (isNaN(val) || val <= 0) return '-';
+        const ms = val < 1e11 ? val * 1000 : val;
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '-';
+        return _fmtDateTime(d);
+    }
+    let s = String(val).trim();
+    if (!s || s === 'None' || s === 'null' || s === 'undefined' || s === '-' || s === '—') return '-';
+    if (/^\d{10,13}$/.test(s)) {
+        return _fmtDateTime(Number(s));
+    }
+    s = s.replace('T', ' ');
+    const dotIdx = s.indexOf('.');
+    if (dotIdx > 0) s = s.substring(0, dotIdx);
+    const plusIdx = s.indexOf('+');
+    if (plusIdx > 0) s = s.substring(0, plusIdx);
+    if (s.endsWith('Z')) s = s.substring(0, s.length - 1);
+    s = s.trim();
+    if (s.length > 19) s = s.substring(0, 19);
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)) {
+        return s;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        return s + ' 00:00:00';
+    }
+    return s || '-';
+}
+
+function _fmtDateOnly(val) {
+    if (val === null || val === undefined || val === '') return '-';
+    if (val instanceof Date) {
+        if (isNaN(val.getTime())) return '-';
+        const Y = val.getFullYear();
+        const M = String(val.getMonth() + 1).padStart(2, '0');
+        const D = String(val.getDate()).padStart(2, '0');
+        return `${Y}-${M}-${D}`;
+    }
+    if (typeof val === 'number') {
+        if (isNaN(val) || val <= 0) return '-';
+        const ms = val < 1e11 ? val * 1000 : val;
+        const d = new Date(ms);
+        if (isNaN(d.getTime())) return '-';
+        return _fmtDateOnly(d);
+    }
+    let s = String(val).trim();
+    if (!s || s === 'None' || s === 'null' || s === 'undefined' || s === '-' || s === '—') return '-';
+    if (/^\d{10,13}$/.test(s)) {
+        return _fmtDateOnly(Number(s));
+    }
+    s = s.replace('T', ' ');
+    if (s.length >= 10 && s.indexOf('-') === 4) {
+        return s.substring(0, 10);
+    }
+    return s || '-';
+}
+
 // -------------------------------------------------------------
 // Admin 灰测用户使用状态与脱敏样本观测逻辑
 // -------------------------------------------------------------
@@ -12754,8 +13037,8 @@ function loadAdminGreySamples(tenantId, isManual = false) {
             if (mCanary) mCanary.textContent = res.grey_count || 0;
             if (mPos) mPos.textContent = res.positive_feedback_count || 0;
             if (mMod) mMod.textContent = res.modified_feedback_count || 0;
-            // avg_match_rate 只由有真实 AI 预填的样本贡献；无可比样本时如实显示「—」
-            if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '—');
+            // avg_match_rate 只由有真实 AI 预填的样本贡献；无可比样本时如实显示「-」
+            if (mAvg) mAvg.textContent = (res.avg_match_rate != null ? res.avg_match_rate + '%' : '-');
 
             const totalCount = res.total_count || res.samples.length;
             if (noticeEl) {
@@ -12786,8 +13069,8 @@ function loadAdminGreySamples(tenantId, isManual = false) {
                     : '<span class="badge" style="background:#e9ecef; color:#495057;">常规线上组</span>';
 
                 const evalData = s.effect_evaluation || {};
-                // match_rate 为 null（无 AI 预填可比对）时显示「—」，不再回退 100%
-                const matchRateText = '(' + (evalData.match_rate != null ? evalData.match_rate + '%' : '—') + ')';
+                // match_rate 为 null（无 AI 预填可比对）时显示「-」，不再回退 100%
+                const matchRateText = '(' + (evalData.match_rate != null ? evalData.match_rate + '%' : '-') + ')';
                 const feedbackBadge = `<span class="badge" style="background:${evalData.feedback_badge_bg || '#e2e3e5'}; color:${evalData.feedback_badge_color || '#383d41'}; font-size:0.75rem;">${w2Escape(evalData.feedback_label || '待复核')} ${w2Escape(matchRateText)}</span>`;
 
                 html += `
@@ -12806,9 +13089,6 @@ function loadAdminGreySamples(tenantId, isManual = false) {
                 `;
             });
             if (tbody) tbody.innerHTML = html;
-            if (isManual) {
-                showToast('已成功拉取 ' + res.samples.length + ' 份脱敏灰测样本与效果评估', 'success');
-            }
         })
         .catch(err => {
             console.error(err);
@@ -12897,7 +13177,7 @@ function viewGreySampleDetail(idx) {
         mBadge.style.background = evalData.feedback_badge_bg || '#e2e3e5';
         mBadge.style.color = evalData.feedback_badge_color || '#383d41';
     }
-    if (mMatchRate) mMatchRate.textContent = (evalData.match_rate != null ? evalData.match_rate + '%' : '—');
+    if (mMatchRate) mMatchRate.textContent = (evalData.match_rate != null ? evalData.match_rate + '%' : '-');
     if (mMatchedFields) mMatchedFields.textContent = evalData.matched_fields || 0;
     if (mModifiedFields) mModifiedFields.textContent = evalData.modified_fields || 0;
 
@@ -13043,13 +13323,32 @@ function loadCanaryHistory() {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#999; padding:16px;">暂无历史灰测变更记录</td></tr>';
                 return;
             }
+            const _formatCanaryModelName = (val) => {
+                if (!val) return '-';
+                const s = String(val).trim();
+                if (!s || s === '-') return '-';
+                const replaceKind = (k) => {
+                    const lower = k.trim().toLowerCase();
+                    if (lower.includes('openai')) return 'deepseek/deepseek-v4.1-flash';
+                    if (lower.includes('opencode') || lower.includes('codebuddy')) return 'Qwen/Qwen3-VL-32B-Instruct';
+                    if (lower.includes('mock')) return 'mock-vlm-rec';
+                    if (lower === 'qwen' || lower.includes('qwen')) return 'qwen3.5-omni-flash';
+                    return k.trim();
+                };
+                if (s.includes('->')) {
+                    const parts = s.split('->');
+                    return replaceKind(parts[0]) + ' -> ' + replaceKind(parts[1]);
+                }
+                return replaceKind(s);
+            };
+
             let html = '';
             items.forEach(it => {
                 const badgeClass = it.badge_class || 'badge-secondary';
                 html += '<tr>'
-                    + '<td style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted);">' + w2Escape(it.ts || '-') + '</td>'
+                    + '<td style="font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:0.75rem; color:var(--text-muted); white-space:nowrap;">' + w2Escape(_fmtDateTime(it.ts)) + '</td>'
                     + '<td><span class="badge ' + badgeClass + '" style="font-size:0.72rem; padding:2px 6px;">' + w2Escape(it.action_label || it.action) + '</span></td>'
-                    + '<td><code style="font-size:0.75rem;">' + w2Escape(it.models || '-') + '</code></td>'
+                    + '<td><code style="font-size:0.75rem;">' + w2Escape(_formatCanaryModelName(it.models)) + '</code></td>'
                     + '<td style="font-size:0.78rem; color:var(--text-main);">' + w2Escape(it.description || '-') + '</td>'
                     + '<td style="font-size:0.78rem; color:var(--text-muted);">' + w2Escape(it.operator || 'admin') + '</td>'
                     + '<td style="text-align:right;"><span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.72rem; padding:2px 6px;">' + w2Escape(it.status || '归档') + '</span></td>'
@@ -13116,7 +13415,7 @@ function loadGoldenBoard(scope) {
                 }
 
                 // 2. GT 确权治理列（唯一入口，直达确权台，消除操作列重复按钮）
-                let gtHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">—</span>';
+                let gtHtml = '<span style="color:var(--text-muted); font-size:0.75rem;">-</span>';
                 if (it.gt_status === 'confirmed') {
                     gtHtml = '<span class="badge badge-success" style="font-size:0.72rem; padding:2px 6px;" title="' + w2Escape(it.sample_id || '') + '">已确权' + (it.sample_id ? ' · ' + w2Escape(it.sample_id) : '') + '</span>';
                 } else if (it.gt_status === 'pending') {
@@ -13151,9 +13450,9 @@ function loadGoldenBoard(scope) {
                 // 5. 8 列优雅工业级排版
                 html += '<tr>'
                     + '<td style="font-family:var(--font-mono); font-size:0.78rem; color:var(--text-muted-2);">#' + Number(it.id) + '</td>'
-                    + '<td class="cell-supplier" style="font-weight:500; color:var(--text-main);" title="' + w2Escape(it.supplier_name || '') + '">' + w2Escape(it.supplier_name || '—') + '</td>'
-                    + '<td style="color:var(--text-muted-2); font-size:0.78rem;">' + w2Escape(it.receipt_date || '—') + '</td>'
-                    + '<td><span style="font-size:0.75rem; color:var(--text-subtle);">' + w2Escape(GOLDEN_DOC_FORM_LABELS[it.doc_form] || it.doc_form || '—') + '</span></td>'
+                    + '<td class="cell-supplier" style="font-weight:500; color:var(--text-main);" title="' + w2Escape(it.supplier_name || '') + '">' + w2Escape(it.supplier_name || '-') + '</td>'
+                    + '<td style="color:var(--text-muted-2); font-size:0.78rem; font-family:var(--font-mono); font-variant-numeric:tabular-nums;">' + w2Escape(_fmtDateOnly(it.receipt_date)) + '</td>'
+                    + '<td><span style="font-size:0.75rem; color:var(--text-subtle);">' + w2Escape(GOLDEN_DOC_FORM_LABELS[it.doc_form] || it.doc_form || '-') + '</span></td>'
                     + '<td class="col-right">' + amountHtml + '</td>'
                     + '<td>' + statusBadge + '</td>'
                     + '<td>' + gtHtml + '</td>'
@@ -13352,8 +13651,10 @@ function loadAnalyticsBoard(tenantId) {
     const selectedTenant = tenantId || (sel ? sel.value : 'all') || 'all';
     const activeBtn = document.querySelector('.analytics-segment-btn.active');
     const activeView = activeBtn ? activeBtn.getAttribute('data-view') : 'sec-telemetry';
-    if (activeView === 'sec-telemetry') {
+    if (activeView === 'sec-telemetry' || activeView === 'sec-parsing-logs') {
+        if (typeof syncTelemetryTenants === 'function') syncTelemetryTenants();
         loadRecoverySummaryBlocks(selectedTenant);
+        if (typeof loadParsingLogs === 'function') loadParsingLogs(1);
     } else if (activeView === 'sec-canary') {
         loadAnalyticsGreyStatus();
         loadAdminGreySamples(selectedTenant, false);
@@ -13368,11 +13669,22 @@ function loadAnalyticsBoard(tenantId) {
 window.loadAnalyticsBoard = loadAnalyticsBoard;
 
 window.onAnalyticsTenantChange = function(tId) {
-    loadAnalyticsBoard(tId);
+    if (typeof onUnifiedTenantChange === 'function') {
+        onUnifiedTenantChange(tId);
+    } else {
+        loadAnalyticsBoard(tId);
+    }
 };
 
-// AI 效果观测与评测中心：四大独立功能区分段切换器
+// AI 效果观测与评测中心：四大独立功能区分段切换器 (05 解析日志已并入 01 观测中枢)
 function switchAnalyticsSubView(targetViewId) {
+    // 兼容历史调用：当入参为 sec-parsing-logs 时自动重定向至 sec-telemetry 并切换至链路审计子选项卡
+    let shouldSwitchToAuditSubTab = false;
+    if (targetViewId === 'sec-parsing-logs') {
+        targetViewId = 'sec-telemetry';
+        shouldSwitchToAuditSubTab = true;
+    }
+
     const validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval'];
     if (!validViews.includes(targetViewId)) {
         targetViewId = 'sec-telemetry';
@@ -13386,7 +13698,7 @@ function switchAnalyticsSubView(targetViewId) {
         btn.setAttribute('aria-selected', isMatch ? 'true' : 'false');
     });
 
-    // 切换四大独立功能区子面板显示
+    // 切换独立功能区子面板显示
     validViews.forEach(viewId => {
         const panel = document.getElementById(viewId);
         if (panel) {
@@ -13400,14 +13712,23 @@ function switchAnalyticsSubView(targetViewId) {
         }
     });
 
+    // 隐藏可能残留的历史 sec-parsing-logs 面板
+    const legacyPanel = document.getElementById('sec-parsing-logs');
+    if (legacyPanel) legacyPanel.style.display = 'none';
+
     // 针对 4 大激活功能区触发专属刷新
     if (targetViewId === 'sec-telemetry') {
-        const sel = document.getElementById('analyticsTenantSelect');
+        if (typeof syncTelemetryTenants === 'function') syncTelemetryTenants();
+        const sel = document.getElementById('analyticsTenantSelect') || document.getElementById('parsingLogTenantSelect');
         const tId = sel ? sel.value : 'all';
         if (typeof loadRecoverySummaryBlocks === 'function') loadRecoverySummaryBlocks(tId);
+        if (typeof loadParsingLogs === 'function') loadParsingLogs(1);
+        if (shouldSwitchToAuditSubTab && typeof switchTelemetrySubTab === 'function') {
+            switchTelemetrySubTab('audit');
+        }
     } else if (targetViewId === 'sec-canary') {
         if (typeof loadAnalyticsGreyStatus === 'function') loadAnalyticsGreyStatus();
-        if (typeof loadAdminGreySamples === 'function') loadAdminGreySamples(null, true);
+        if (typeof loadAdminGreySamples === 'function') loadAdminGreySamples(null, false);
         if (typeof loadCanaryHistory === 'function') loadCanaryHistory();
     } else if (targetViewId === 'sec-experiment') {
         if (typeof loadAnalyticsExperiments === 'function') loadAnalyticsExperiments();
@@ -13433,11 +13754,16 @@ function _analyticsBarHtml(share) {
 }
 
 // 指标小卡片
-function _analyticsStatHtml(label, value, sub) {
-    return '<div style="border:1px solid var(--border-color); border-radius:10px; padding:10px 14px; background:var(--bg-main); min-width:130px;">'
-        + '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">' + w2Escape(label) + '</div>'
-        + '<div style="font-size:1.15rem; font-weight:700; color:var(--text-main); font-variant-numeric:tabular-nums;">' + w2Escape(String(value)) + '</div>'
-        + (sub ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:2px;">' + w2Escape(sub) + '</div>' : '')
+function _analyticsStatHtml(label, value, sub, id, color, isRawSub, metricKey) {
+    const valColor = color ? color : 'var(--text-main)';
+    const idAttr = id ? (' id="' + w2Escape(id) + '"') : '';
+    const subHtml = isRawSub ? (sub || '') : (sub ? w2Escape(sub) : '');
+    const clickAttr = metricKey ? (' onclick="openKpiTrendModal(\'' + w2Escape(metricKey) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openKpiTrendModal(\'' + w2Escape(metricKey) + '\');}" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻"') : '';
+    const cardClass = metricKey ? 'card kpi-trend-card' : 'card';
+    return '<div class="' + cardClass + '"' + clickAttr + ' style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; position:relative;">'
+        + '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">' + w2Escape(label) + '</div>'
+        + '<div' + idAttr + ' style="font-size:1.35rem; font-weight:700; color:' + valColor + '; font-variant-numeric:tabular-nums;">' + w2Escape(String(value)) + '</div>'
+        + (subHtml ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">' + subHtml + '</div>' : '')
         + '</div>';
 }
 
@@ -13445,7 +13771,7 @@ function _analyticsStatHtml(label, value, sub) {
 function loadRecoverySummaryBlocks(tenantId) {
     const distEl = document.getElementById('analyticsEventDistBody');
     const recEl = document.getElementById('analyticsRecoveryBody');
-    if (distEl) distEl.innerHTML = '加载中';
+    if (distEl) distEl.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted); font-size:0.85rem;">加载中...</div>';
     if (recEl) recEl.innerHTML = '加载中';
     const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
     const url = '/api/analytics/recovery-summary?tenant_id=' + encodeURIComponent(tId);
@@ -13458,21 +13784,24 @@ function loadRecoverySummaryBlocks(tenantId) {
             if (!ret || ret.status !== 'success') {
                 const msg = '加载失败：' + ((ret && (ret.msg || ret.detail)) || ('HTTP ' + httpStatus))
                     + (httpStatus === 403 ? '（本区块仅限 admin 权限访问）' : '');
-                if (distEl) distEl.innerHTML = '<span style="color:#c00;">' + w2Escape(msg) + '</span>';
+                if (distEl) distEl.innerHTML = '<div style="padding:20px; text-align:center; color:#c00; font-size:0.85rem;">' + w2Escape(msg) + '</div>';
                 if (recEl) recEl.innerHTML = '<span style="color:#c00;">' + w2Escape(msg) + '</span>';
                 return;
             }
             const data = ret.data || {};
-            // 更新租户下拉选项
+            // 租户筛选为文本输入：已知租户 ID 仅供 datalist 提示，不覆盖用户输入
             const sel = document.getElementById('analyticsTenantSelect');
-            if (sel && Array.isArray(data.available_tenants)) {
-                const curVal = data.tenant_id || tId || 'all';
-                let optHtml = '<option value="all">全部租户 (All)</option>';
+            const plSel = document.getElementById('parsingLogTenantSelect');
+            const datalist = document.getElementById('tenantIdSuggestions');
+            if (datalist && Array.isArray(data.available_tenants)) {
+                let optHtml = '';
                 data.available_tenants.forEach(t => {
-                    optHtml += '<option value="' + w2Escape(t) + '">' + w2Escape(t) + '</option>';
+                    optHtml += '<option value="' + w2Escape(t) + '"></option>';
                 });
-                sel.innerHTML = optHtml;
-                sel.value = curVal;
+                datalist.innerHTML = optHtml;
+            }
+            if (sel && plSel && plSel.value !== sel.value) {
+                plSel.value = sel.value;
             }
             renderEventDistribution(distEl, data);
             renderRecoveryMetrics(recEl, data);
@@ -13480,7 +13809,7 @@ function loadRecoverySummaryBlocks(tenantId) {
         .catch(err => {
             if (!isCurrent()) return;
             console.error('埋点观测台加载失败', err);
-            if (distEl) distEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
+            if (distEl) distEl.innerHTML = '<div style="padding:20px; text-align:center; color:#c00; font-size:0.85rem;">加载失败，请稍后重试</div>';
             if (recEl) recEl.innerHTML = '<span style="color:#c00;">加载失败，请稍后重试</span>';
         });
 }
@@ -13533,42 +13862,166 @@ function _eventTypeAlias(code) {
     return '自定义业务事件';
 }
 
-// 最近触发时间格式化：去掉年份，展示「月-日 时:分」（2026-09-03T22:54:06 -> 09-03 22:54）
+// 最近触发时间格式化：全中心对齐 _fmtDateTime 标准 (YYYY-MM-DD HH:mm:ss)
 function _fmtLastTs(ts) {
-    if (!ts) return '-';
-    const s = String(ts);
-    if (s.length < 16 || s.indexOf('-') < 0) return s;
-    return s.slice(5, 16).replace('T', ' ');
+    return _fmtDateTime(ts);
+}
+
+// 事件类别分组定义（与 TELEMETRY_EVENT_ALIASES 注释块对齐）
+const TELEMETRY_EVENT_CATEGORIES = [
+    {
+        key: 'lifecycle',
+        label: '核心生命周期',
+        desc: '上传 → 解析 → 复核 → 审核 → 入库',
+        color: '#1e4ed8',
+        bg: 'rgba(219,234,254,0.55)',
+        events: new Set([
+            'upload','receipt_uploaded','ocr_parse_started','ocr_parsed','parse_done',
+            'ocr_error','receipt_review_submitted','save_edited','edit','field_edited',
+            'receipt_approved','approve','receipt_flagged','inventory_in'
+        ])
+    },
+    {
+        key: 'recovery',
+        label: '异常挽回与体验交互',
+        desc: '重拍 / 重解析 / 手工录入 / 反馈',
+        color: '#b45309',
+        bg: 'rgba(254,243,199,0.6)',
+        events: new Set([
+            'image_replaced','retake_clicked','reparse_clicked','reupload_after_fail',
+            'feedback_received','parse_abandoned_for_manual','manual_entry_start','manual_entry_started'
+        ])
+    },
+    {
+        key: 'governance',
+        label: 'AI 治理护栏与知识增强',
+        desc: 'RAG 命中 / 契约护栏 / 数学护栏 / 价格告警',
+        color: '#065f46',
+        bg: 'rgba(209,250,229,0.55)',
+        events: new Set([
+            'rag_hit','math_guard_checked','contract_guard_checked',
+            'price_anomaly_flagged','reconciliation_completed'
+        ])
+    }
+];
+
+function _resolveEventCategory(eventType) {
+    for (const cat of TELEMETRY_EVENT_CATEGORIES) {
+        if (cat.events.has(eventType)) return cat.key;
+    }
+    return '__other__';
 }
 
 function renderEventDistribution(el, data) {
     if (!el) return;
     const dist = (data.event_distribution || []).filter(d => !_isExcludedTelemetryEvent(d.event_type));
+    const countEl = document.getElementById('analyticsEventDistCount');
     if (dist.length === 0) {
-        el.innerHTML = '<span style="color:var(--text-muted);">暂无埋点事件。</span>';
+        if (countEl) countEl.textContent = '共 0 条事件、0 类';
+        el.innerHTML = '<div style="padding:32px; text-align:center; color:var(--text-muted); font-size:0.85rem;">暂无埋点事件。</div>';
         return;
     }
-    let html = '<div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">'
-        + '共 ' + Number(data.total_events || 0) + ' 条事件、' + dist.length + ' 类；占比条相对全量事件。'
-        + (data.low_confidence ? '（样本 < 30，低置信度，仅作参考）' : '')
-        + '</div>'
-        + '<div class="table-container" style="overflow-x:auto;"><table class="data-table" style="min-width:880px;">'
-        + '<thead><tr><th style="white-space:nowrap; width:240px; min-width:240px;">事件类型</th><th style="min-width:240px;">说明</th><th class="col-right" style="white-space:nowrap; width:80px;">计数</th><th style="width:160px; min-width:140px; white-space:nowrap;">占比</th><th style="white-space:nowrap; width:130px;">最近触发</th></tr></thead><tbody>';
+
+    // 按类别分桶
+    const buckets = {};
+    TELEMETRY_EVENT_CATEGORIES.forEach(c => { buckets[c.key] = []; });
+    buckets['__other__'] = [];
     dist.forEach(d => {
-        const alias = _eventTypeAlias(d.event_type);
-        html += '<tr>'
-            + '<td style="white-space:nowrap; overflow:visible; text-overflow:clip;" title="' + w2Escape(d.event_type) + '"><code style="white-space:nowrap; font-size:0.8rem; display:inline-block;">' + w2Escape(d.event_type) + '</code></td>'
-            + '<td style="font-size:0.78rem; color:var(--text-muted);" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
-            + '<td class="col-right" style="white-space:nowrap;">' + Number(d.count) + '</td>'
-            + '<td><div style="display:flex; align-items:center; gap:8px;">'
-            + _analyticsBarHtml(d.share)
-            + '<span style="font-size:0.75rem; color:var(--text-muted); font-variant-numeric:tabular-nums;">' + _analyticsPct(d.share) + '</span>'
-            + '</div></td>'
-            + '<td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">' + w2Escape(_fmtLastTs(d.last_ts)) + '</td>'
-            + '</tr>';
+        const catKey = _resolveEventCategory(d.event_type);
+        buckets[catKey].push(d);
     });
+
+    // 组装分组顺序：已知三类 + 兜底「其他」
+    const orderedCats = [...TELEMETRY_EVENT_CATEGORIES];
+    if (buckets['__other__'].length > 0) {
+        orderedCats.push({ key: '__other__', label: '其他自定义事件', desc: '', color: '#475569', bg: 'rgba(241,245,249,0.8)' });
+    }
+
+    if (countEl) {
+        let countText = '共 ' + Number(data.total_events || 0) + ' 条事件、' + dist.length + ' 类';
+        if (data.low_confidence) {
+            countText += '（样本 < 30，低置信度）';
+        }
+        countEl.textContent = countText;
+    }
+
+    let html = '<div class="table-container" style="overflow-x:auto; margin-bottom:0; border:none;">'
+        + '<table class="data-table" id="analyticsEventDistTable" style="width:100%; min-width:980px; table-layout:auto;">'
+        + '<thead><tr>'
+        + '<th style="white-space:nowrap; width:240px; min-width:220px; text-align:left;">事件类型</th>'
+        + '<th style="min-width:240px; text-align:left;">说明</th>'
+        + '<th class="col-right" style="white-space:nowrap; width:90px; text-align:right;">计数</th>'
+        + '<th style="width:180px; min-width:160px; white-space:nowrap; text-align:left;">占比</th>'
+        + '<th style="white-space:nowrap; width:180px; text-align:left;">最近触发时间 (最新在前)</th>'
+        + '<th class="col-center" style="white-space:nowrap; width:100px; text-align:center;">操作</th>'
+        + '</tr></thead><tbody>';
+
+    orderedCats.forEach(cat => {
+        const rows = buckets[cat.key];
+        if (!rows || rows.length === 0) return;
+
+        // 统一组内排序：计数倒序，计数相同时按最后触发时间倒序
+        rows.sort((a, b) => {
+            const cntDiff = Number(b.count || 0) - Number(a.count || 0);
+            if (cntDiff !== 0) return cntDiff;
+            return String(b.last_ts || '').localeCompare(String(a.last_ts || ''));
+        });
+
+        // 分组 header 行（可点击折叠）
+        const catCount = rows.reduce((s, d) => s + Number(d.count || 0), 0);
+        const safeKey = cat.key.replace(/[^a-z0-9_]/g, '_');
+        html += '<tr style="cursor:pointer; user-select:none;" onclick="toggleEventCatGroup(\'' + safeKey + '\', this)">'
+            + '<td colspan="6" style="'
+            +   'background:' + cat.bg + ';'
+            +   'padding:6px 10px;'
+            +   'font-size:0.78rem;'
+            +   'font-weight:700;'
+            +   'color:' + cat.color + ';'
+            +   'letter-spacing:0.02em;'
+            +   'border-bottom:1px solid rgba(0,0,0,0.06);'
+            + '">'
+            + '<span class="evt-cat-arrow" style="display:inline-block; margin-right:6px; font-size:0.7rem; transition:transform 0.18s; transform:rotate(0deg);">&#9660;</span>'
+            + cat.label
+            + (cat.desc ? '<span style="font-weight:400; margin-left:8px; color:' + cat.color + '; opacity:0.75;">' + w2Escape(cat.desc) + '</span>' : '')
+            + '<span style="float:right; font-weight:400; font-variant-numeric:tabular-nums; opacity:0.7;">' + catCount + ' 次</span>'
+            + '</td>'
+            + '</tr>';
+
+        // 事件行（data-cat 供折叠定位，支持点击代码或操作列查看明细）
+        rows.forEach(d => {
+            const alias = _eventTypeAlias(d.event_type);
+            const safeEvt = w2Escape(d.event_type);
+            html += '<tr data-cat="' + safeKey + '">'
+                + '<td style="white-space:nowrap; text-align:left; padding-left:24px;" title="点击下钻查看该事件类型全量明细日志">'
+                + '<a href="javascript:void(0)" onclick="openEventDetailModal(\'' + safeEvt + '\')" style="text-decoration:none; color:var(--primary-color, #2563eb); font-weight:600; cursor:pointer;" title="点击下钻查看该事件类型全量明细日志">'
+                + '<code style="white-space:nowrap; font-size:0.8rem; display:inline-block; font-family:monospace; background:rgba(37,99,235,0.06); padding:2px 6px; border-radius:4px; border:1px solid rgba(37,99,235,0.15);">' + safeEvt + '</code>'
+                + '</a></td>'
+                + '<td style="font-size:0.82rem; color:var(--text-main); text-align:left; line-height:1.4;" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
+                + '<td class="col-right" style="white-space:nowrap; text-align:right; font-weight:600;">' + Number(d.count) + '</td>'
+                + '<td><div style="display:flex; align-items:center; gap:8px;">'
+                + _analyticsBarHtml(d.share)
+                + '<span style="font-size:0.75rem; color:var(--text-muted); font-variant-numeric:tabular-nums;">' + _analyticsPct(d.share) + '</span>'
+                + '</div></td>'
+                + '<td style="font-size:0.78rem; font-family:var(--font-mono); font-variant-numeric:tabular-nums; color:var(--text-muted); white-space:nowrap; text-align:left;">' + w2Escape(_fmtDateTime(d.last_ts)) + '</td>'
+                + '<td class="col-center" style="white-space:nowrap; text-align:center;">'
+                + '<button class="btn btn-secondary btn-sm" onclick="openEventDetailModal(\'' + safeEvt + '\')" style="padding:2px 8px; font-size:0.75rem; cursor:pointer;" title="点击下钻查看该事件类型全量明细日志">[查看明细]</button>'
+                + '</td>'
+                + '</tr>';
+        });
+    });
+
     html += '</tbody></table></div>';
     el.innerHTML = html;
+}
+
+function toggleEventCatGroup(catKey, headerTr) {
+    const table = headerTr.closest('table');
+    if (!table) return;
+    const rows = table.querySelectorAll('tr[data-cat="' + catKey + '"]');
+    const arrow = headerTr.querySelector('.evt-cat-arrow');
+    const isCollapsed = rows.length > 0 && rows[0].style.display === 'none';
+    rows.forEach(r => { r.style.display = isCollapsed ? '' : 'none'; });
+    if (arrow) arrow.style.transform = isCollapsed ? 'rotate(0deg)' : 'rotate(-90deg)';
 }
 
 function renderRecoveryMetrics(el, data) {
@@ -13577,48 +14030,921 @@ function renderRecoveryMetrics(el, data) {
     const fb = data.feedback || {};
     const rs = data.recovery_success || {};
     const lowNote = data.low_confidence ? '（低置信度：全量事件 < 30，仅作参考）' : '';
-    let html = '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">'
-        + _analyticsStatHtml('重拍点击（输入归因）', rec.retake_clicked != null ? rec.retake_clicked : '-',
-            '占比 ' + _analyticsPct(rec.input_attribution_share))
-        + _analyticsStatHtml('重新解析点击（模型归因）', rec.reparse_clicked != null ? rec.reparse_clicked : '-',
-            '占比 ' + _analyticsPct(rec.model_attribution_share))
-        + _analyticsStatHtml('挽回点击比（可>100%）', _analyticsPct(rec.entry_rate),
-            '挽回点击 ' + (rec.total || 0) + ' / 解析成功')
-        + _analyticsStatHtml('点踩比（可>100%）', _analyticsPct(fb.down_rate),
-            '点踩 ' + (fb.down || 0) + ' / 有反馈单据 ' + (fb.feedbacked_receipts || 0))
-        + _analyticsStatHtml('挽回成功率', _analyticsPct(rs.rate),
-            '成功 ' + (rs.success || 0) + ' / 点击 ' + (rs.total || 0))
-        + '</div>';
-    if (lowNote) {
-        html += '<div style="font-size:0.75rem; color:#b8860b; margin-bottom:10px;">' + w2Escape(lowNote) + '</div>';
-    }
-    html += '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px;">口径：挽回成功 = 点击后同单据出现更晚的保存/审核通过事件；点踩比与挽回点击比的分母（有反馈单据/解析成功）小于分子计数属正常，比值可>100%。</div>';
 
-    const events = (data.recent_events || []).filter(ev => !_isExcludedTelemetryEvent(ev.event_type));
-    html += '<div style="font-weight:600; font-size:0.85rem; margin:12px 0 6px;">最近事件流（最新 ' + events.length + ' 条）</div>';
-    if (events.length === 0) {
-        html += '<div style="color:var(--text-muted); font-size:0.8rem;">暂无事件。</div>';
-    } else {
-        html += '<div class="table-container" style="max-height:260px; overflow:auto;"><table class="data-table" style="min-width:980px;">'
-            + '<thead><tr><th style="white-space:nowrap; width:130px;">时间</th><th style="white-space:nowrap; width:240px; min-width:240px;">事件类型</th><th style="width:24%; min-width:180px;">说明</th><th style="white-space:nowrap; width:80px;">单据</th><th style="white-space:nowrap; width:100px;">操作者</th><th>properties</th></tr></thead><tbody>';
-        events.forEach(ev => {
-            let propsFull = '';
-            try { propsFull = JSON.stringify(ev.properties || {}); } catch (e) { propsFull = ''; }
-            const propsShow = propsFull.length > 80 ? propsFull.slice(0, 80) + '...' : propsFull;
-            const alias = _eventTypeAlias(ev.event_type || '');
-            html += '<tr>'
-                + '<td style="font-size:0.75rem; white-space:nowrap;">' + w2Escape(ev.ts || '-') + '</td>'
-                + '<td style="white-space:nowrap; overflow:visible; text-overflow:clip;" title="' + w2Escape(ev.event_type || '') + '"><code style="white-space:nowrap; font-size:0.8rem; display:inline-block;">' + w2Escape(ev.event_type || '') + '</code></td>'
-                + '<td style="font-size:0.72rem; color:var(--text-muted);" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
-                + '<td style="white-space:nowrap;">' + (ev.receipt_id != null ? '#' + Number(ev.receipt_id) : '-') + '</td>'
-                + '<td style="font-size:0.75rem; white-space:nowrap;">' + w2Escape(ev.account_id || '-') + '</td>'
-                + '<td style="font-size:0.72rem; color:var(--text-muted);" title="' + w2Escape(propsFull) + '">' + w2Escape(propsShow) + '</td>'
-                + '</tr>';
-        });
-        html += '</tbody></table></div>';
+    // 综合好评率与人工修正率 (SSOT 与 parsing_logs 对齐)
+    let posRateVal = fb.positive_rate != null ? _analyticsPct(fb.positive_rate) : '-';
+    let editRateVal = fb.edit_rate != null ? _analyticsPct(fb.edit_rate) : '-';
+    if (posRateVal === '-' && window.currentParsingLogsSummary && window.currentParsingLogsSummary.positive_rate != null) {
+        posRateVal = _analyticsPct(window.currentParsingLogsSummary.positive_rate);
     }
+    if (editRateVal === '-' && window.currentParsingLogsSummary && window.currentParsingLogsSummary.edit_rate != null) {
+        editRateVal = _analyticsPct(window.currentParsingLogsSummary.edit_rate);
+    }
+
+    // 副标签：点踩率与评价明细
+    let posSub = '';
+    if (fb.positive_rate != null) {
+        posSub = '好评 ' + (fb.liked_receipts_count || 0) + ' / 评价 ' + (fb.feedbacked_receipts || 0) + ' · ';
+    }
+    posSub += '点踩率 <span id="telemetryKpiDislikeRate">' + _analyticsPct(fb.down_rate) + '</span>';
+
+    const editSub = '人工改动单据占比';
+
+    // 挽回归因拆解：重拍（输入质量）与重新解析（模型能力）
+    const retakeTxt = (rec.retake_clicked != null ? rec.retake_clicked : '-') + (rec.input_attribution_share != null ? (' (' + _analyticsPct(rec.input_attribution_share) + ')') : '');
+    const reparseTxt = (rec.reparse_clicked != null ? rec.reparse_clicked : '-') + (rec.model_attribution_share != null ? (' (' + _analyticsPct(rec.model_attribution_share) + ')') : '');
+    const entrySub = (rec.entry_rate_desc ? (w2Escape(rec.entry_rate_desc) + '<br>') : '')
+        + '重拍 <span id="telemetryKpiRetakeAttribution">' + w2Escape(retakeTxt) + '</span> ｜ 重解析 <span id="telemetryKpiReparseAttribution">' + w2Escape(reparseTxt) + '</span>';
+
+    const successSub = '成功 ' + (rs.success || 0) + ' / 尝试 ' + (rs.total || 0) + ' (闭环入库转化)';
+
+    // 统一区块 B：精简聚合为 4 大核心 KPI 卡片，与区块 A 保持 1:1 对称信息架构
+    let html = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">'
+        + _analyticsStatHtml('综合好评率', posRateVal, posSub, 'parsingKpiPositiveRate', '#0284c7', true, 'positive_rate')
+        + _analyticsStatHtml('人工修正率', editRateVal, editSub, 'parsingKpiEditRate', '#b8860b', true, 'edit_rate')
+        + _analyticsStatHtml('异常挽回触发率', _analyticsPct(rec.entry_rate), entrySub, 'telemetryKpiRecoveryEntry', '#b45309', true, 'recovery_entry_rate')
+        + _analyticsStatHtml('挽回成功率', _analyticsPct(rs.rate), successSub, 'telemetryKpiRecoverySuccess', '#16a34a', true, 'recovery_success_rate')
+        + '</div>';
+
+    if (lowNote) {
+        html += '<div style="font-size:0.75rem; color:#b8860b; margin-top:8px;">' + w2Escape(lowNote) + '</div>';
+    }
+
     el.innerHTML = html;
 }
+
+// -------------------------------------------------------------
+// 埋点事件明细审计模态框控制器 (Drill-down Event Logs Controller)
+// -------------------------------------------------------------
+window.currentEventModalState = {
+    eventType: '',
+    tenantId: 'all',
+    page: 1,
+    pageSize: 20,
+    search: '',
+    totalPages: 1,
+    totalItems: 0,
+};
+
+function openEventDetailModal(eventType) {
+    if (!eventType) return;
+    const modal = document.getElementById('analyticsEventModal');
+    if (!modal) return;
+
+    const tenantSelect = document.getElementById('analyticsTenantSelect');
+    const tenantId = tenantSelect ? tenantSelect.value : 'all';
+
+    currentEventModalState.eventType = eventType;
+    currentEventModalState.tenantId = tenantId;
+    currentEventModalState.page = 1;
+    currentEventModalState.search = '';
+
+    const titleEl = document.getElementById('analyticsEventModalTitle');
+    const aliasEl = document.getElementById('analyticsEventModalAliasBadge');
+    const codeEl = document.getElementById('analyticsEventModalTypeCode');
+    const tenantEl = document.getElementById('analyticsEventModalTenant');
+    const searchInput = document.getElementById('analyticsEventSearchInput');
+
+    const alias = _eventTypeAlias(eventType);
+    if (titleEl) titleEl.textContent = '事件审计日志: ' + eventType;
+    if (aliasEl) aliasEl.textContent = alias;
+    if (codeEl) codeEl.textContent = eventType;
+    if (tenantEl) tenantEl.textContent = tenantId || 'all';
+    if (searchInput) searchInput.value = '';
+
+    modal.classList.remove('hide');
+    modal.style.display = 'flex';
+
+    loadAnalyticsEventLogs(1);
+}
+window.openEventDetailModal = openEventDetailModal;
+const openEventLogsModal = openEventDetailModal;
+window.openEventLogsModal = openEventDetailModal;
+
+function closeAnalyticsEventModal() {
+    const modal = document.getElementById('analyticsEventModal');
+    if (modal) {
+        modal.classList.add('hide');
+        modal.style.display = 'none';
+    }
+}
+window.closeAnalyticsEventModal = closeAnalyticsEventModal;
+
+function loadAnalyticsEventLogs(page) {
+    const container = document.getElementById('analyticsEventTableContainer');
+    if (container) {
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">正在加载事件明细...</div>';
+    }
+
+    const state = currentEventModalState;
+    state.page = page || 1;
+
+    const params = new URLSearchParams();
+    params.set('event_type', state.eventType);
+    params.set('tenant_id', state.tenantId || 'all');
+    params.set('page', String(state.page));
+    params.set('page_size', String(state.pageSize));
+    if (state.search) {
+        params.set('search', state.search.trim());
+    }
+
+    apiFetch('/api/analytics/events/logs?' + params.toString())
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (httpStatus !== 200 || !ret || ret.status !== 'success') {
+                const msg = (ret && (ret.detail || ret.msg)) || ('HTTP ' + httpStatus);
+                if (container) {
+                    container.innerHTML = '<div style="padding:20px; color:#c00; text-align:center;">加载失败: ' + w2Escape(msg) + '</div>';
+                }
+                return;
+            }
+            const data = ret.data || {};
+            const pagination = data.pagination || {};
+            const items = data.items || [];
+
+            state.totalItems = pagination.total_items || 0;
+            state.totalPages = pagination.total_pages || 1;
+
+            const totalCountEl = document.getElementById('analyticsEventModalTotalCount');
+            if (totalCountEl) totalCountEl.textContent = String(state.totalItems);
+
+            const pageInfo = document.getElementById('analyticsEventPageInfo');
+            if (pageInfo) {
+                pageInfo.textContent = '第 ' + state.page + ' / ' + state.totalPages + ' 页 (共 ' + state.totalItems + ' 条记录)';
+            }
+            const curSpan = document.getElementById('analyticsEventCurrentPageSpan');
+            if (curSpan) curSpan.textContent = String(state.page);
+
+            const prevBtn = document.getElementById('btnAnalyticsEventPrev');
+            const nextBtn = document.getElementById('btnAnalyticsEventNext');
+            if (prevBtn) prevBtn.disabled = state.page <= 1;
+            if (nextBtn) nextBtn.disabled = state.page >= state.totalPages;
+
+            renderAnalyticsEventTable(items, state.eventType);
+        })
+        .catch(err => {
+            if (container) {
+                container.innerHTML = '<div style="padding:20px; color:#c00; text-align:center;">网络异常: ' + w2Escape(err.message || '未知错误') + '</div>';
+            }
+        });
+}
+window.loadAnalyticsEventLogs = loadAnalyticsEventLogs;
+
+function searchAnalyticsEventLogs() {
+    const input = document.getElementById('analyticsEventSearchInput');
+    currentEventModalState.search = input ? input.value.trim() : '';
+    loadAnalyticsEventLogs(1);
+}
+window.searchAnalyticsEventLogs = searchAnalyticsEventLogs;
+
+function resetAnalyticsEventSearch() {
+    const input = document.getElementById('analyticsEventSearchInput');
+    if (input) input.value = '';
+    currentEventModalState.search = '';
+    loadAnalyticsEventLogs(1);
+}
+window.resetAnalyticsEventSearch = resetAnalyticsEventSearch;
+
+function refreshAnalyticsEventLogs() {
+    loadAnalyticsEventLogs(currentEventModalState.page || 1);
+}
+window.refreshAnalyticsEventLogs = refreshAnalyticsEventLogs;
+
+function changeAnalyticsEventPage(delta) {
+    const target = currentEventModalState.page + delta;
+    if (target < 1 || target > currentEventModalState.totalPages) return;
+    loadAnalyticsEventLogs(target);
+}
+window.changeAnalyticsEventPage = changeAnalyticsEventPage;
+
+function renderAnalyticsEventTable(items, eventType) {
+    const container = document.getElementById('analyticsEventTableContainer');
+    if (!container) return;
+
+    if (!items || items.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:36px; color:var(--text-muted); font-size:0.85rem;">该事件类型暂无符合条件的审计记录</div>';
+        return;
+    }
+
+    let html = '<div class="table-container" style="overflow-x:auto;">'
+        + '<table class="data-table" id="analyticsRecentEventsTable" style="width:100%; min-width:1160px; table-layout:auto;">'
+        + '<thead><tr>'
+        + '<th style="white-space:nowrap; width:180px; min-width:170px; text-align:left;">触发时间 (最新在前)</th>'
+        + '<th style="white-space:nowrap; width:220px; min-width:200px; text-align:left;">事件类型</th>'
+        + '<th style="min-width:220px; text-align:left;">业务说明</th>'
+        + '<th class="col-center" style="white-space:nowrap; width:90px; text-align:center;">单据 ID</th>'
+        + '<th style="white-space:nowrap; width:130px; text-align:left;">操作账号</th>'
+        + '<th style="min-width:320px; text-align:left;">事件属性 (Properties)</th>'
+        + '</tr></thead><tbody>';
+
+    items.forEach(ev => {
+        let propsFull = '';
+        try {
+            propsFull = typeof ev.properties === 'object' ? JSON.stringify(ev.properties || {}, null, 2) : String(ev.properties || '{}');
+        } catch (e) {
+            propsFull = '{}';
+        }
+        const alias = _eventTypeAlias(ev.event_type || eventType || '');
+        const fmtTs = ev.ts ? String(ev.ts).replace('T', ' ') : '';
+        const displayTs = _fmtDateTime(ev.ts);
+
+        const ridHtml = ev.receipt_id != null
+            ? '<a href="javascript:void(0)" onclick="openParsingLogDetailModal(' + Number(ev.receipt_id) + ')" style="text-decoration:none; color:var(--primary-color, #2563eb); font-weight:600; cursor:pointer;" title="点击查看单据解析生命周期详情">#' + Number(ev.receipt_id) + '</a>'
+            : '-';
+
+        html += '<tr>'
+            + '<td style="font-size:0.78rem; font-family:var(--font-mono); white-space:nowrap; text-align:left; font-variant-numeric:tabular-nums;">' + w2Escape(displayTs) + '</td>'
+            + '<td style="white-space:nowrap; text-align:left;" title="' + w2Escape(ev.event_type || '') + '">'
+            + '<code style="white-space:nowrap; font-size:0.8rem; display:inline-block; font-family:monospace; background:rgba(0,0,0,0.03); padding:2px 6px; border-radius:4px;">' + w2Escape(ev.event_type || '') + '</code>'
+            + '</td>'
+            + '<td style="font-size:0.82rem; color:var(--text-main); text-align:left; line-height:1.4;" title="' + w2Escape(alias) + '">' + w2Escape(alias) + '</td>'
+            + '<td class="col-center" style="white-space:nowrap; text-align:center;">' + ridHtml + '</td>'
+            + '<td style="font-size:0.78rem; white-space:nowrap; text-align:left; color:var(--text-muted);">' + w2Escape(ev.account_id || '-') + '</td>'
+            + '<td style="font-size:0.75rem; text-align:left; color:var(--text-muted); line-height:1.4;">'
+            + '<pre style="font-family:monospace; font-size:0.75rem; background:rgba(0,0,0,0.02); padding:4px 8px; border-radius:4px; margin:0; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto;">' + w2Escape(propsFull) + '</pre>'
+            + '</td>'
+            + '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
+}
+window.renderAnalyticsEventTable = renderAnalyticsEventTable;
+
+// 键盘 ESC 监听：关闭事件审计模态框与趋势模态框
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' || e.key === 'Esc') {
+        const modal = document.getElementById('analyticsEventModal');
+        if (modal && !modal.classList.contains('hide') && modal.style.display !== 'none') {
+            closeAnalyticsEventModal();
+        }
+        const trendModal = document.getElementById('kpiTrendModal');
+        if (trendModal && !trendModal.classList.contains('hide') && trendModal.style.display !== 'none') {
+            closeKpiTrendModal();
+        }
+    }
+});
+
+// =============================================================
+// 8 大核心 KPI 时序趋势与多维下钻分析控制器 (PRD-OBS-KPI-DRILLDOWN-V2-20260930)
+// =============================================================
+window.currentKpiTrendState = {
+    metricKey: 'total_parses',
+    days: 7,
+    startDate: null,
+    endDate: null,
+    tenantId: 'all',
+    data: null,
+};
+
+function kpiTrendTodayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function openKpiTrendModal(metricKey) {
+    const modal = document.getElementById('kpiTrendModal');
+    if (!modal) return;
+
+    const state = window.currentKpiTrendState;
+    if (metricKey) {
+        state.metricKey = metricKey;
+    }
+    const tenantSel = document.getElementById('analyticsTenantSelect') || document.getElementById('parsingLogTenantSelect');
+    state.tenantId = (tenantSel && tenantSel.value) ? tenantSel.value : 'all';
+
+    modal.classList.remove('hide');
+    modal.style.display = 'flex';
+
+    const eEl = document.getElementById('kpiTrendEndDate');
+    if (eEl) eEl.value = state.endDate || kpiTrendTodayStr();
+
+    loadKpiTrendData();
+}
+window.openKpiTrendModal = openKpiTrendModal;
+
+function closeKpiTrendModal() {
+    const modal = document.getElementById('kpiTrendModal');
+    if (modal) {
+        modal.classList.add('hide');
+        modal.style.display = 'none';
+    }
+    const tip = document.getElementById('kpiTrendChartTooltip');
+    if (tip) tip.style.display = 'none';
+}
+window.closeKpiTrendModal = closeKpiTrendModal;
+
+function switchKpiTrendDays(days) {
+    const state = window.currentKpiTrendState;
+    state.days = parseInt(days, 10) || 7;
+    state.startDate = null;
+    state.endDate = null;
+
+    const sEl = document.getElementById('kpiTrendStartDate');
+    const eEl = document.getElementById('kpiTrendEndDate');
+    if (sEl) sEl.value = '';
+    if (eEl) eEl.value = kpiTrendTodayStr();
+
+    ['7D', '14D', '30D'].forEach(k => {
+        const btn = document.getElementById('btnKpiTrend' + k);
+        if (!btn) return;
+        if (k === (state.days + 'D')) {
+            btn.className = 'btn btn-sm btn-primary';
+            btn.style.fontWeight = '600';
+        } else {
+            btn.className = 'btn btn-sm btn-secondary';
+            btn.style.fontWeight = 'normal';
+        }
+    });
+
+    const span = document.getElementById('kpiTrendModalPeriodSpan');
+    if (span) span.textContent = '最近 ' + state.days + ' 天';
+
+    loadKpiTrendData();
+}
+window.switchKpiTrendDays = switchKpiTrendDays;
+
+function applyKpiTrendCustomDate() {
+    const state = window.currentKpiTrendState;
+    const sEl = document.getElementById('kpiTrendStartDate');
+    const eEl = document.getElementById('kpiTrendEndDate');
+    if (!sEl || !eEl) return;
+    const sVal = sEl.value ? sEl.value.trim() : '';
+    const eVal = eEl.value ? eEl.value.trim() : '';
+
+    if (!eVal) {
+        alert('请选择结束日期（开始日期留空时默认从最早一条记录开始）');
+        return;
+    }
+    if (sVal && sVal > eVal) {
+        alert('开始日期不能晚于结束日期');
+        return;
+    }
+    let diffDays = null;
+    if (sVal) {
+        const dStart = new Date(sVal);
+        const dEnd = new Date(eVal);
+        diffDays = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24)) + 1;
+        if (diffDays > 90) {
+            alert('自定义时间段跨度不能超过 90 天');
+            return;
+        }
+    }
+
+    state.startDate = sVal || null;
+    state.endDate = eVal;
+    if (diffDays != null) state.days = diffDays;
+
+    ['7D', '14D', '30D'].forEach(k => {
+        const btn = document.getElementById('btnKpiTrend' + k);
+        if (btn) {
+            btn.className = 'btn btn-sm btn-secondary';
+            btn.style.fontWeight = 'normal';
+        }
+    });
+
+    const span = document.getElementById('kpiTrendModalPeriodSpan');
+    if (span) span.textContent = (sVal ? sVal : '最早记录') + ' 至 ' + eVal;
+
+    loadKpiTrendData();
+}
+window.applyKpiTrendCustomDate = applyKpiTrendCustomDate;
+
+function loadKpiTrendData() {
+    const state = window.currentKpiTrendState;
+    const chartBox = document.getElementById('kpiTrendChartContainer');
+    const tableBox = document.getElementById('kpiTrendTableContainer');
+    if (chartBox) chartBox.innerHTML = '<div style="color:var(--text-muted); font-size:0.85rem; padding:40px 0;">正在加载时序数据与渲染图表...</div>';
+    if (tableBox) tableBox.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:0.82rem;">加载明细数据中...</div>';
+
+    const params = new URLSearchParams({
+        metric_key: state.metricKey,
+        tenant_id: state.tenantId,
+    });
+    if (state.endDate) {
+        if (state.startDate) params.set('start_date', state.startDate);
+        params.set('end_date', state.endDate);
+    } else {
+        params.set('days', String(state.days));
+    }
+
+    apiFetch('/api/analytics/kpi-trends?' + params.toString())
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (httpStatus !== 200 || !ret || ret.status !== 'success' || !ret.data) {
+                const msg = (ret && (ret.message || ret.detail || ret.msg)) || ('HTTP ' + httpStatus);
+                if (chartBox) chartBox.innerHTML = '<div style="color:#b91c1c; font-size:0.85rem; padding:30px 0;">时序数据加载失败: ' + w2Escape(msg) + '</div>';
+                if (tableBox) tableBox.innerHTML = '<div style="color:#b91c1c; text-align:center; padding:20px; font-size:0.82rem;">无法读取时序切片数据</div>';
+                return;
+            }
+
+            const data = ret.data;
+            state.data = data;
+
+            // 1. 模态框头部导引信息 (简化为 ${metric_name}趋势)
+            const titleEl = document.getElementById('kpiTrendModalTitle');
+            if (titleEl) titleEl.textContent = data.metric_name;
+
+            const sectionEl = document.getElementById('kpiTrendModalSectionBadge');
+            if (sectionEl) sectionEl.textContent = '[' + (data.section_name || '观测中心') + ']';
+
+            const tenantEl = document.getElementById('kpiTrendModalTenantBadge');
+            if (tenantEl) {
+                if (data.tenant_id && data.tenant_id !== 'all') {
+                    tenantEl.textContent = '[租户: ' + data.tenant_id + ']';
+                    tenantEl.style.display = 'inline-block';
+                } else {
+                    tenantEl.textContent = '';
+                    tenantEl.style.display = 'none';
+                }
+            }
+
+            const keyEl = document.getElementById('kpiTrendModalMetricKey');
+            if (keyEl) keyEl.textContent = data.metric_key;
+
+            const unitEl = document.getElementById('kpiTrendModalUnit');
+            if (unitEl) unitEl.textContent = data.metric_unit || '无';
+
+            // 2. 统计卡片摘要区 (智能格式化，整数指标严禁 0.0)
+            const summary = data.summary || {};
+            const isInt = !!data.is_integer;
+            const unitStr = data.metric_unit ? (' ' + data.metric_unit) : '';
+            const formatVal = (v) => {
+                if (v == null) return '-';
+                const num = Number(v);
+                if (isInt) return Math.round(num).toLocaleString();
+                return num.toLocaleString();
+            };
+
+            const avgEl = document.getElementById('kpiTrendSummaryAvg');
+            if (avgEl) avgEl.textContent = formatVal(summary.avg_val) + unitStr;
+
+            const curEl = document.getElementById('kpiTrendSummaryCurrent');
+            if (curEl) curEl.textContent = formatVal(summary.current_val) + unitStr;
+
+            const extEl = document.getElementById('kpiTrendSummaryExtremes');
+            if (extEl) {
+                extEl.textContent = '高 ' + formatVal(summary.max_val)
+                    + ' / 低 ' + formatVal(summary.min_val)
+                    + unitStr;
+            }
+
+            const trEl = document.getElementById('kpiTrendSummaryTrend');
+            if (trEl) {
+                const ch = summary.change_rate_pct != null ? summary.change_rate_pct : 0;
+                // lower_is_better 指标（耗时/Token/修正率/挽回触发率）下降是积极信号：
+                // [提升]/[下降] 只描述方向，颜色按好与坏标注
+                const lowerIsBetter = !!data.lower_is_better;
+                const upGood = !lowerIsBetter;
+                let badgeText = '[平稳]';
+                let color = 'var(--text-muted)';
+                if (ch > 0.5) {
+                    badgeText = '[提升] +' + ch.toFixed(1) + '%';
+                    color = upGood ? '#16a34a' : '#dc2626';
+                } else if (ch < -0.5) {
+                    badgeText = '[下降] ' + ch.toFixed(1) + '%';
+                    color = upGood ? '#dc2626' : '#16a34a';
+                } else {
+                    badgeText = '[平稳] ' + ch.toFixed(1) + '%';
+                }
+                trEl.innerHTML = '<span style="color:' + color + ';">' + w2Escape(badgeText) + '</span>';
+            }
+
+            // 3. 原生内联 SVG 折线图与面积图渲染
+            renderKpiTrendChart(data.series || [], data);
+
+            // 4. 每日切片明细表渲染
+            renderKpiTrendTable(data.daily_records || [], data);
+        })
+        .catch(err => {
+            if (chartBox) chartBox.innerHTML = '<div style="color:#b91c1c; font-size:0.85rem; padding:30px 0;">网络异常: ' + w2Escape(err.message || '未知错误') + '</div>';
+            if (tableBox) tableBox.innerHTML = '<div style="color:#b91c1c; text-align:center; padding:20px; font-size:0.82rem;">加载异常</div>';
+        });
+}
+window.loadKpiTrendData = loadKpiTrendData;
+
+function renderKpiTrendChart(series, meta) {
+    const container = document.getElementById('kpiTrendChartContainer');
+    if (!container) return;
+
+    if (!series || series.length === 0) {
+        container.innerHTML = '<div style="padding:40px; color:var(--text-muted); font-size:0.85rem;">暂无时序切片数据</div>';
+        return;
+    }
+
+    const W = 840;
+    const H = 240;
+    const padL = 65;
+    const padR = 45;
+    const padT = 30;
+    const padB = 40;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+
+    const values = series.map(s => Number(s.value) || 0);
+    const summary = meta.summary || {};
+    const isRate = (meta.metric_unit === '%');
+
+    let minVal = 0;
+    let maxVal = Math.max(...values, summary.avg_val || 0);
+    if (isRate) {
+        maxVal = 100;
+    } else {
+        if (maxVal <= 0) maxVal = 10;
+        maxVal = Math.ceil(maxVal * 1.15);
+    }
+
+    function getY(v) {
+        if (maxVal === minVal) return padT + plotH / 2;
+        const ratio = (v - minVal) / (maxVal - minVal);
+        return padT + plotH - (ratio * plotH);
+    }
+
+    const n = series.length;
+    function getX(idx) {
+        if (n <= 1) return padL + plotW / 2;
+        return padL + (idx / (n - 1)) * plotW;
+    }
+
+    // Y 轴刻度 4 档
+    const yTicks = [0, 0.33, 0.66, 1.0].map(ratio => {
+        const val = minVal + ratio * (maxVal - minVal);
+        const y = padT + plotH - ratio * plotH;
+        let lbl = isRate ? (val.toFixed(0) + '%') : (val >= 1000 ? (val / 1000).toFixed(1) + 'k' : val.toFixed(0));
+        return { val, y, lbl };
+    });
+
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%; height:auto; display:block; overflow:visible;" xmlns="http://www.w3.org/2000/svg">';
+    // Defs: 渐变
+    svg += '<defs>'
+        + '<linearGradient id="kpiTrendGrad" x1="0" y1="0" x2="0" y2="1">'
+        + '<stop offset="0%" stop-color="#2563eb" stop-opacity="0.25"/>'
+        + '<stop offset="100%" stop-color="#2563eb" stop-opacity="0.01"/>'
+        + '</linearGradient>'
+        + '</defs>';
+
+    // 背景网格线与 Y 轴刻度
+    yTicks.forEach(tick => {
+        svg += '<line x1="' + padL + '" y1="' + tick.y + '" x2="' + (padL + plotW) + '" y2="' + tick.y + '" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3"/>';
+        svg += '<text x="' + (padL - 10) + '" y="' + (tick.y + 4) + '" fill="#94a3b8" font-size="11" text-anchor="end" font-family="monospace">' + tick.lbl + '</text>';
+    });
+
+    // 均值参考虚线（数值不再标注在图上，改为 hover tooltip 展示）
+    let avgY = null;
+    if (summary.avg_val != null && summary.avg_val >= minVal && summary.avg_val <= maxVal) {
+        avgY = getY(summary.avg_val);
+        svg += '<line x1="' + padL + '" y1="' + avgY + '" x2="' + (padL + plotW) + '" y2="' + avgY + '" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5,4"/>';
+    }
+
+    // 折线与面积路径
+    const points = series.map((s, idx) => ({ x: getX(idx), y: getY(s.value), item: s, idx: idx }));
+    let pathD = '';
+    points.forEach((p, i) => {
+        pathD += (i === 0 ? 'M ' : ' L ') + p.x.toFixed(1) + ' ' + p.y.toFixed(1);
+    });
+
+    // 面积
+    if (points.length > 0) {
+        const areaD = pathD + ' L ' + points[points.length - 1].x.toFixed(1) + ' ' + (padT + plotH)
+            + ' L ' + points[0].x.toFixed(1) + ' ' + (padT + plotH) + ' Z';
+        svg += '<path d="' + areaD + '" fill="url(#kpiTrendGrad)"/>';
+    }
+
+    // 主线条
+    svg += '<path d="' + pathD + '" fill="none" stroke="#2563eb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>';
+
+    // X 轴日期刻度
+    const showEvery = n <= 7 ? 1 : (n <= 14 ? 2 : 4);
+    points.forEach((p, idx) => {
+        if (idx % showEvery === 0 || idx === n - 1) {
+            const shortDate = p.item.date.slice(5); // MM-DD
+            svg += '<text x="' + p.x.toFixed(1) + '" y="' + (padT + plotH + 20) + '" fill="#64748b" font-size="11" text-anchor="middle" font-family="monospace">' + shortDate + '</text>';
+            svg += '<line x1="' + p.x.toFixed(1) + '" y1="' + (padT + plotH) + '" x2="' + p.x.toFixed(1) + '" y2="' + (padT + plotH + 4) + '" stroke="#cbd5e1" stroke-width="1"/>';
+        }
+    });
+
+    // 数据节点圆圈
+    points.forEach(p => {
+        const isAnomaly = !!p.item.is_anomaly;
+        const color = isAnomaly ? '#ef4444' : '#2563eb';
+        const r = isAnomaly ? 5.5 : 4.5;
+
+        if (isAnomaly) {
+            svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="9" fill="none" stroke="#fca5a5" stroke-width="2" opacity="0.8"/>';
+        }
+        svg += '<circle cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="' + r + '" fill="' + color + '" stroke="#ffffff" stroke-width="2"/>';
+    });
+
+    // 悬停参考线与高亮点（随鼠标移动更新）
+    svg += '<line id="kpiTrendGuideLine" x1="' + padL + '" y1="' + padT + '" x2="' + padL + '" y2="' + (padT + plotH) + '" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3" visibility="hidden"/>';
+    svg += '<circle id="kpiTrendHoverDot" r="6.5" fill="none" stroke="#2563eb" stroke-width="2.5" visibility="hidden"/>';
+
+    // 全绘图区悬停热区：线上任意位置都能按最近切片触发 tooltip
+    svg += '<rect x="' + padL + '" y="' + padT + '" width="' + plotW + '" height="' + plotH + '" fill="transparent"'
+        + ' onmousemove="kpiTrendPlotMove(event)"'
+        + ' onmouseleave="hideKpiTrendHover()"/>';
+
+    svg += '</svg>';
+    container.innerHTML = svg;
+
+    // 记录布局供 hover 换算坐标使用（avgY 供均值参考线 hover 判定）
+    window.currentKpiTrendState._chartLayout = { W: W, points: points, avgY: avgY };
+}
+window.renderKpiTrendChart = renderKpiTrendChart;
+
+function kpiTrendPlotMove(e) {
+    const state = window.currentKpiTrendState;
+    const layout = state && state._chartLayout;
+    const chartBox = document.getElementById('kpiTrendChartContainer');
+    if (!layout || !layout.points || !layout.points.length || !chartBox) return;
+
+    const points = layout.points;
+    const rect = chartBox.getBoundingClientRect();
+    const scale = rect.width / layout.W;
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    // x 超出折线首尾范围（留 12px 余量）时不展示
+    if (points.length > 1 && (mx < points[0].x * scale - 12 || mx > points[points.length - 1].x * scale + 12)) {
+        hideKpiTrendHover();
+        return;
+    }
+
+    // 最近邻切片：按 x 距离取整段折线上离鼠标最近的日期点
+    let idx;
+    if (points.length === 1) {
+        idx = 0;
+    } else {
+        const firstX = points[0].x * scale;
+        const step = (points[1].x - points[0].x) * scale;
+        idx = Math.round((mx - firstX) / step);
+        idx = Math.max(0, Math.min(points.length - 1, idx));
+    }
+    const p = points[idx];
+    if (!p) return;
+
+    // 灵敏度收敛：仅当鼠标贴近折线（距临近数据点 ≤36px，或距所在线段 ≤14px）才展示
+    const px = p.x * scale;
+    const py = p.y * scale;
+    let lineY = py;
+    if (points.length > 1) {
+        const i2 = (mx > px && idx < points.length - 1) ? idx + 1 : ((mx < px && idx > 0) ? idx - 1 : idx);
+        const q = points[i2];
+        const qx = q.x * scale;
+        const qy = q.y * scale;
+        if (qx !== px) {
+            const t = (mx - px) / (qx - px);
+            lineY = py + t * (qy - py);
+        }
+    }
+    const distPt = Math.hypot(mx - px, my - py);
+    const dyLine = Math.abs(my - lineY);
+    const avgDist = (layout.avgY != null) ? Math.abs(my - layout.avgY * scale) : Infinity;
+
+    // 灰色均值线优先：贴近虚线（≤10px）且不在数据点标记上（>12px）时，
+    // 一律展示均值信息，不被邻近数据点的 tooltip 抢走
+    if (avgDist <= 10 && distPt > 12) {
+        const guide0 = document.getElementById('kpiTrendGuideLine');
+        if (guide0) guide0.setAttribute('visibility', 'hidden');
+        const dot0 = document.getElementById('kpiTrendHoverDot');
+        if (dot0) dot0.setAttribute('visibility', 'hidden');
+        showKpiTrendAvgTooltip(e);
+        return;
+    }
+
+    const nearData = distPt <= 36 || dyLine <= 14;
+    if (!nearData) {
+        hideKpiTrendHover();
+        return;
+    }
+
+    const guide = document.getElementById('kpiTrendGuideLine');
+    if (guide) {
+        guide.setAttribute('x1', p.x.toFixed(1));
+        guide.setAttribute('x2', p.x.toFixed(1));
+        guide.setAttribute('visibility', 'visible');
+    }
+    const dot = document.getElementById('kpiTrendHoverDot');
+    if (dot) {
+        dot.setAttribute('cx', p.x.toFixed(1));
+        dot.setAttribute('cy', p.y.toFixed(1));
+        dot.setAttribute('stroke', p.item.is_anomaly ? '#ef4444' : '#2563eb');
+        dot.setAttribute('visibility', 'visible');
+    }
+
+    showKpiTrendTooltip(e, idx);
+}
+window.kpiTrendPlotMove = kpiTrendPlotMove;
+
+function hideKpiTrendHover() {
+    ['kpiTrendGuideLine', 'kpiTrendHoverDot'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('visibility', 'hidden');
+    });
+    hideKpiTrendTooltip();
+}
+window.hideKpiTrendHover = hideKpiTrendHover;
+
+function showKpiTrendAvgTooltip(e) {
+    const tip = document.getElementById('kpiTrendChartTooltip');
+    const state = window.currentKpiTrendState;
+    const layout = state && state._chartLayout;
+    const chartBox = document.getElementById('kpiTrendChartContainer');
+    if (!tip || !state || !state.data || !layout || layout.avgY == null || !chartBox) return;
+    const summary = state.data.summary || {};
+    if (summary.avg_val == null) return;
+
+    const isInt = !!state.data.is_integer;
+    const unit = state.data.metric_unit || '';
+    const avgDisplay = isInt ? Math.round(Number(summary.avg_val)) : summary.avg_val;
+    tip.innerHTML = '<div style="font-weight:700; color:#f8fafc; font-family:monospace;">区间均值</div>'
+        + '<div style="font-size:0.85rem; font-weight:700; color:#94a3b8; margin-top:2px;">' + avgDisplay + ' ' + w2Escape(unit) + '</div>';
+
+    const svgEl = chartBox.querySelector('svg');
+    const sr = svgEl ? svgEl.getBoundingClientRect() : chartBox.getBoundingClientRect();
+    const br = chartBox.getBoundingClientRect();
+    const scale = sr.width / layout.W;
+    let x = e.clientX - br.left;
+    let y = layout.avgY * scale + (sr.top - br.top);
+    tip.style.display = 'block';
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    x = Math.max(tw / 2 + 4, Math.min(br.width - tw / 2 - 4, x));
+    const below = (y - th - 8) < 0;
+    tip.style.left = x + 'px';
+    tip.style.top = (below ? y + 14 : y - 8) + 'px';
+    tip.style.transform = below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
+}
+window.showKpiTrendAvgTooltip = showKpiTrendAvgTooltip;
+
+function showKpiTrendTooltip(e, idx) {
+    const tip = document.getElementById('kpiTrendChartTooltip');
+    const state = window.currentKpiTrendState;
+    if (!tip || !state || !state.data || !state.data.series) return;
+    const pt = state.data.series[idx];
+    if (!pt) return;
+
+    const unit = state.data.metric_unit || '';
+    const isInt = !!state.data.is_integer;
+    let popHtml = '';
+    if (pt.prev_diff_pct != null) {
+        const diffNum = Number(pt.prev_diff_pct);
+        const sign = diffNum > 0 ? '+' : '';
+        // lower_is_better 指标：上涨标红、下降标绿
+        const upGood = !(state.data && state.data.lower_is_better);
+        const clr = diffNum > 0 ? (upGood ? '#4ade80' : '#f87171') : (diffNum < 0 ? (upGood ? '#f87171' : '#4ade80') : '#94a3b8');
+        popHtml = '<div style="font-size:0.72rem; color:' + clr + '; margin-top:3px;">环比昨日: ' + sign + diffNum.toFixed(1) + '%</div>';
+    }
+
+    const anomalyBadge = pt.is_anomaly ? '<span style="color:#f87171; font-weight:700; margin-left:6px;">[异动预警]</span>' : '';
+    const valDisplay = isInt ? Math.round(Number(pt.value)) : pt.value;
+
+    // 元素收敛：tooltip 样本行与切片明细「构成样本」列同口径
+    const mk = state.data.metric_key;
+    let sampleLine = '';
+    if (mk === 'avg_elapsed_ms' || mk === 'avg_tokens') {
+        sampleLine = '<div style="font-size:0.72rem; color:#94a3b8; margin-top:2px;">样本量: ' + pt.denominator + '</div>';
+    } else if (mk !== 'total_parses') {
+        sampleLine = '<div style="font-size:0.72rem; color:#94a3b8; margin-top:2px;">样本构成: ' + pt.numerator + ' / ' + pt.denominator + '</div>';
+    }
+
+    tip.innerHTML = '<div style="font-weight:700; color:#f8fafc; font-family:monospace;">' + w2Escape(pt.date) + anomalyBadge + '</div>'
+        + '<div style="font-size:0.85rem; font-weight:700; color:#60a5fa; margin-top:2px;">' + valDisplay + ' ' + w2Escape(unit) + '</div>'
+        + sampleLine
+        + popHtml;
+
+    const chartBox = document.getElementById('kpiTrendChartContainer');
+    if (chartBox) {
+        const rect = chartBox.getBoundingClientRect();
+        const layout = state._chartLayout;
+        let x, y;
+        if (layout && layout.points && layout.points[idx]) {
+            // 锚定在数据点上方（viewBox 坐标按实际渲染宽度换算），不随光标飘移
+            const scale = rect.width / layout.W;
+            x = layout.points[idx].x * scale;
+            y = layout.points[idx].y * scale;
+        } else {
+            x = e.clientX - rect.left;
+            y = e.clientY - rect.top;
+        }
+        tip.style.display = 'block';
+        const tw = tip.offsetWidth;
+        const th = tip.offsetHeight;
+        // 水平钳制在容器内；贴顶时翻转到点下方
+        x = Math.max(tw / 2 + 4, Math.min(rect.width - tw / 2 - 4, x));
+        const below = (y - th - 8) < 0;
+        tip.style.left = x + 'px';
+        tip.style.top = (below ? y + 14 : y - 8) + 'px';
+        tip.style.transform = below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)';
+    }
+}
+window.showKpiTrendTooltip = showKpiTrendTooltip;
+
+function hideKpiTrendTooltip() {
+    const tip = document.getElementById('kpiTrendChartTooltip');
+    if (tip) tip.style.display = 'none';
+}
+window.hideKpiTrendTooltip = hideKpiTrendTooltip;
+
+function renderKpiTrendTable(records, meta) {
+    const container = document.getElementById('kpiTrendTableContainer');
+    if (!container) return;
+
+    if (!records || records.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-muted); font-size:0.82rem;">暂无时序明细记录</div>';
+        return;
+    }
+
+    // 元素收敛：构成样本与较前日环比两列移除（环比信息保留在图表 hover tooltip，
+    // 波动异常仍由健康评估的 [异动预警] 承载），表格只保留核心四列
+    let html = '<table class="kpi-trend-table table" style="width:100%; border-collapse:collapse; font-size:0.8rem;">'
+        + '<thead><tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; color:var(--text-muted);">'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:left;">日期</th>'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:right;">当日数值</th>'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:center;">健康评估</th>'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:center;">操作</th>'
+        + '</tr></thead><tbody>';
+
+    const isInt = !!meta.is_integer;
+
+    records.forEach(r => {
+        let statusBadge = '<span class="badge" style="background:#f1f5f9; color:#475569;">[正常]</span>';
+        if (r.health_status === '[异动预警]') {
+            statusBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca;">[异动预警]</span>';
+        } else if (r.health_status === '[样本不足]') {
+            statusBadge = '<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a;">[样本不足]</span>';
+        } else if (r.health_status === '[无数据]') {
+            statusBadge = '<span class="badge" style="background:#f1f5f9; color:#94a3b8;">[无数据]</span>';
+        }
+
+        // 纯数值展示，单元格不拼接"单"等汉字单位
+        let displayVal = r.formatted_value;
+        if (!displayVal) {
+            displayVal = isInt ? String(Math.round(Number(r.value || 0))) : String(r.value || 0);
+        }
+
+        // [查看详情] 按钮联动
+        html += '<tr class="kpi-trend-row" style="border-bottom:1px solid #f1f5f9;">'
+            + '<td style="padding:8px 12px; text-align:left; font-family:monospace; font-weight:600;">' + w2Escape(r.date) + '</td>'
+            + '<td style="padding:8px 12px; text-align:right; font-weight:700; color:#2563eb; font-variant-numeric:tabular-nums;">' + w2Escape(displayVal) + '</td>'
+            + '<td style="padding:8px 12px; text-align:center;">' + statusBadge + '</td>'
+            + '<td style="padding:8px 12px; text-align:center;">'
+            + '<button class="btn btn-secondary btn-sm" onclick="drillDownKpiDate(\'' + w2Escape(r.date) + '\')" title="[查看当日单据详情]" style="font-size:0.75rem; padding:3px 10px; cursor:pointer;">查看详情</button>'
+            + '</td>'
+            + '</tr>';
+    });
+
+    html += '</tbody></table>';
+
+    container.innerHTML = html;
+}
+window.renderKpiTrendTable = renderKpiTrendTable;
+
+function drillDownKpiDate(dateStr) {
+    closeKpiTrendModal();
+
+    // 1. 先填充时间筛选（单日 = 自定义区间的起止同为该日），再切页签，
+    //    避免 switchTelemetrySubTab 内部按旧筛选发起加载
+    setParsingLogCustomRange(dateStr, dateStr);
+    if (typeof switchTelemetrySubTab === 'function') {
+        switchTelemetrySubTab('audit');
+    }
+
+    // 2. 加载日志并滚动聚焦
+    loadParsingLogs(1);
+    const tableEl = document.getElementById('parsingLogsTableBody');
+    if (tableEl) {
+        tableEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+window.drillDownKpiDate = drillDownKpiDate;
+
+// 按当前统计周期（含自定义时间段）整段钻取日志明细
+function drillDownKpiRange() {
+    const state = window.currentKpiTrendState;
+    const dr = state && state.data && state.data.date_range;
+    if (!dr || !dr.start_date || !dr.end_date) return;
+
+    closeKpiTrendModal();
+
+    // 1. 先填充时间筛选（统计周期区间），再切页签：switchTelemetrySubTab
+    //    内部会按当前筛选触发 loadParsingLogs，若先切页签会以旧筛选加载
+    setParsingLogCustomRange(dr.start_date, dr.end_date);
+
+    // 2. 切入「单据解析与链路审计」Tab（内部按已填充的区间筛选加载）
+    if (typeof switchTelemetrySubTab === 'function') {
+        switchTelemetrySubTab('audit');
+    }
+
+    // 3. 若切页签前已处于 audit 视图（未触发内部加载），显式兜底加载一次
+    loadParsingLogs(1);
+
+    const tableEl = document.getElementById('parsingLogsTableBody');
+    if (tableEl) {
+        tableEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+}
+window.drillDownKpiRange = drillDownKpiRange;
 
 // 区块 3：灰测现状（复用 /api/admin/grey-test；非 admin 降级提示）
 function loadAnalyticsGreyStatus() {
@@ -13640,12 +14966,15 @@ function loadAnalyticsGreyStatus() {
             }
             const cur = (ret.data && ret.data.current) || {};
             const on = !!cur.grey_enabled;
+            const recModelDisplay = cur.recognition_model || cur.openai_rec_model || '-';
+            const greyRecModelDisplay = cur.grey_recognition_model || cur.grey_openai_rec_model || '-';
+            const greyAudModelDisplay = cur.grey_audit_model || cur.grey_openai_aud_model || '-';
             let html = '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">'
                 + _analyticsStatHtml('灰测状态', on ? '开启' : '停用',
                     on ? ('概率 ' + (cur.grey_percent || 0) + '% · 分配 ' + (cur.grey_assign_mode || '-')) : '全量走常规引擎')
-                + _analyticsStatHtml('常规识别引擎', (cur.recognition_engine || '-') + ' / ' + (cur.recognition_model || '-'))
-                + (on ? _analyticsStatHtml('灰测识别引擎', (cur.grey_recognition_engine || '-') + ' / ' + (cur.grey_recognition_model || '-')) : '')
-                + (on && cur.grey_audit_enabled ? _analyticsStatHtml('灰测审核引擎', (cur.grey_audit_engine || '-') + ' / ' + (cur.grey_audit_model || '-')) : '')
+                + _analyticsStatHtml('常规识别引擎', recModelDisplay)
+                + (on ? _analyticsStatHtml('灰测识别引擎', greyRecModelDisplay) : '')
+                + (on && cur.grey_audit_enabled ? _analyticsStatHtml('灰测审核引擎', greyAudModelDisplay) : '')
                 + '</div>';
             html += '<div style="font-size:0.75rem; color:var(--text-muted);">配置快照来自引擎配置实时读取；调整请前往「引擎与系统配置」页签（admin）。</div>';
             el.innerHTML = html;
@@ -13689,18 +15018,27 @@ function loadAnalyticsExperiments() {
                 expSelect.innerHTML = optHtml;
             }
 
-            let html = '<div class="table-container"><table class="data-table">'
-                + '<thead><tr><th style="width:70px;">编号</th><th style="min-width:160px;">实验名称</th><th style="width:90px;">状态</th><th style="min-width:110px;">主指标</th><th style="width:90px;" class="col-right">目标流量</th><th style="width:90px;" class="col-right">最小样本</th><th style="min-width:100px;">结论</th><th style="width:110px; text-align:right;">操作</th></tr></thead><tbody>';
+            let html = '<div class="table-container" style="overflow-x:auto;"><table class="data-table" id="analyticsExperimentsTable" style="width:100%; min-width:980px; table-layout:auto;">'
+                + '<thead><tr>'
+                + '<th class="col-center" style="width:80px; text-align:center;">编号</th>'
+                + '<th style="min-width:180px; text-align:left;">实验名称</th>'
+                + '<th class="col-center" style="width:100px; text-align:center;">状态</th>'
+                + '<th style="min-width:130px; text-align:left;">主指标</th>'
+                + '<th class="col-right" style="width:100px; text-align:right;">目标流量</th>'
+                + '<th class="col-right" style="width:100px; text-align:right;">最小样本</th>'
+                + '<th style="min-width:140px; text-align:left;">结论</th>'
+                + '<th class="col-right" style="width:120px; text-align:right;">操作</th>'
+                + '</tr></thead><tbody>';
             exps.forEach(e => {
                 html += '<tr>'
-                    + '<td><strong>#' + Number(e.id) + '</strong></td>'
-                    + '<td>' + w2Escape(e.name || '-') + '</td>'
-                    + '<td><span class="badge" style="' + expStatusStyle(e.status) + ' font-size:0.72rem; padding:2px 6px;">' + w2Escape(expStatusLabel(e.status, '-')) + '</span></td>'
-                    + '<td><code>' + w2Escape(e.success_metric || '-') + '</code></td>'
-                    + '<td class="col-right">' + Number(e.target_percent || 0) + '%</td>'
-                    + '<td class="col-right">' + Number(e.min_sample || 0) + '</td>'
-                    + '<td>' + w2Escape(e.conclusion || '-') + '</td>'
-                    + '<td style="text-align:right;"><button class="btn btn-secondary" style="font-size:0.75rem; padding:3px 8px;" onclick="inspectExperimentDetail(' + Number(e.id) + ')">查看深度档案</button></td>'
+                    + '<td class="col-center" style="text-align:center;"><strong>#' + Number(e.id) + '</strong></td>'
+                    + '<td style="text-align:left; font-weight:600;">' + w2Escape(e.name || '-') + '</td>'
+                    + '<td class="col-center" style="text-align:center;"><span class="badge" style="' + expStatusStyle(e.status) + ' font-size:0.75rem; padding:3px 8px;">' + w2Escape(expStatusLabel(e.status, '-')) + '</span></td>'
+                    + '<td style="text-align:left;"><code style="font-family:monospace; font-size:0.8rem;">' + w2Escape(e.success_metric || '-') + '</code></td>'
+                    + '<td class="col-right" style="text-align:right; font-variant-numeric:tabular-nums;">' + Number(e.target_percent || 0) + '%</td>'
+                    + '<td class="col-right" style="text-align:right; font-variant-numeric:tabular-nums;">' + Number(e.min_sample || 0) + '</td>'
+                    + '<td style="text-align:left; line-height:1.4;">' + w2Escape(e.conclusion || '-') + '</td>'
+                    + '<td class="col-right" style="text-align:right;"><button class="btn btn-secondary" style="font-size:0.75rem; padding:4px 10px;" onclick="inspectExperimentDetail(' + Number(e.id) + ')">查看深度档案</button></td>'
                     + '</tr>';
             });
             html += '</tbody></table></div>';
@@ -13757,20 +15095,21 @@ function inspectExperimentDetail(expId) {
                 titleEl.innerHTML = `<strong>#${exp.id} ${w2Escape(exp.name)}</strong> <span class="badge" style="${expStatusStyle(exp.status)} font-size:0.72rem; padding:2px 6px; margin-left:6px;">${w2Escape(expStatusLabel(exp.status))}</span>`;
             }
 
-            // 元数据横幅
+            const startFormatted = exp.start_ts ? _fmtDateTime(exp.start_ts) : '未记录启动时间';
+            const endFormatted = exp.end_ts ? _fmtDateTime(exp.end_ts) : (exp.status === 'running' ? '持续运行中' : '未记录');
             let metaHtml = '<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:12px;">'
                 + '<div><b>实验名称：</b><strong style="color:#2563eb;">' + w2Escape(exp.name || '-') + '</strong></div>'
                 + '<div><b>科学假设：</b>' + w2Escape(exp.hypothesis || '未设定假设') + '</div>'
                 + '<div><b>主成功指标：</b><code>' + w2Escape(exp.success_metric || 'accuracy') + '</code></div>'
                 + '<div><b>目标流量比例：</b>' + Number(exp.target_percent || 0) + '% (Control : Treatment = ' + (100 - Number(exp.target_percent || 0)) + ' : ' + Number(exp.target_percent || 0) + ')</div>'
                 + '<div><b>样本门槛：</b>最小 ' + (exp.min_sample != null ? Number(exp.min_sample) : 30) + ' 样本</div>'
-                + '<div><b>起止周期：</b>' + w2Escape(exp.start_ts || '未记录启动时间') + ' ~ ' + w2Escape(exp.end_ts || (exp.status === 'running' ? '持续运行中' : '未记录')) + '</div>';
+                + '<div><b>起止周期：</b>' + w2Escape(startFormatted) + ' ~ ' + w2Escape(endFormatted) + '</div>';
 
             if (exp.conclusion) {
                 const CONCLUSION_LABELS = { promote: '推全实验组', rollback: '回滚对照组', inconclusive: '不显著/无差异' };
                 metaHtml += '<div style="grid-column: 1 / -1; background:#fff; border:1px solid var(--border-color); border-radius:6px; padding:8px 12px; margin-top:4px;">'
                     + '<b>结题结论：</b><span class="badge badge-success" style="margin-right:8px;">' + w2Escape(CONCLUSION_LABELS[exp.conclusion] || exp.conclusion) + '</span>'
-                    + '<span style="color:var(--text-muted);">结题人：' + w2Escape(exp.concluded_by || 'admin') + ' · ' + w2Escape(exp.concluded_at || '-') + '</span>'
+                    + '<span style="color:var(--text-muted);">结题人：' + w2Escape(exp.concluded_by || 'admin') + ' · ' + w2Escape(exp.concluded_at ? _fmtDateTime(exp.concluded_at) : '-') + '</span>'
                     + (exp.conclusion_reason ? '<div style="margin-top:4px; color:var(--text-main);"><b>结题依据：</b>' + w2Escape(exp.conclusion_reason) + '</div>' : '')
                     + '</div>';
             }
@@ -13783,9 +15122,9 @@ function inspectExperimentDetail(expId) {
             const assigns = detail.assignments || {};
             const tests = metrics.tests || {};
 
-            const fmtPct = (val) => (val != null ? (Number(val) * 100).toFixed(2) + '%' : '—');
+            const fmtPct = (val) => (val != null ? (Number(val) * 100).toFixed(2) + '%' : '-');
             const fmtDiff = (cVal, tVal, isHigherBetter = true) => {
-                if (cVal == null || tVal == null) return '—';
+                if (cVal == null || tVal == null) return '-';
                 const diff = (Number(tVal) - Number(cVal)) * 100;
                 const sign = diff > 0 ? '+' : '';
                 const isGood = isHigherBetter ? diff > 0 : diff < 0;
@@ -13796,16 +15135,16 @@ function inspectExperimentDetail(expId) {
             const rowsData = [
                 {
                     dim: '归属单据量 (Receipts)',
-                    c: (assigns.control != null ? assigns.control : '—') + ' 单',
-                    t: (assigns.treatment != null ? assigns.treatment : '—') + ' 单',
-                    diff: '—',
+                    c: (assigns.control != null ? assigns.control : '-') + ' 单',
+                    t: (assigns.treatment != null ? assigns.treatment : '-') + ' 单',
+                    diff: '-',
                     note: '按流量比例分配'
                 },
                 {
                     dim: '决策样本量 (Decisions N)',
                     c: (ctrl.n || ctrl.sample_size || 0) + ' 决策',
                     t: (treat.n || treat.sample_size || 0) + ' 决策',
-                    diff: '—',
+                    diff: '-',
                     note: ((ctrl.n || ctrl.sample_size || 0) >= 30 && (treat.n || treat.sample_size || 0) >= 30)
                         ? '<span class="badge badge-success" style="font-size:0.72rem;">样本充分 (N≥30)</span>'
                         : '<span class="badge badge-warning" style="font-size:0.72rem;">样本量较小 (N<30)</span>'
@@ -13869,7 +15208,7 @@ function inspectExperimentDetail(expId) {
                     gEvents.forEach(ev => {
                         gHtml += '<div style="background:#fff; border:1px solid var(--border-color); border-radius:6px; padding:8px 12px;">'
                             + '<span class="badge badge-danger" style="margin-right:8px;">' + w2Escape(ev.action) + '</span>'
-                            + '<span style="font-size:0.75rem; color:var(--text-muted); margin-right:12px;">' + w2Escape(ev.ts) + '</span>'
+                            + '<span style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono); font-variant-numeric:tabular-nums; margin-right:12px;">' + w2Escape(_fmtDateTime(ev.ts)) + '</span>'
                             + '<span>' + w2Escape(ev.reason || '守护策略触发') + '</span>'
                             + '</div>';
                     });
@@ -13937,9 +15276,9 @@ function loadExpSamples(expId) {
                     + '<td><span style="color:#2f6b4f; font-weight:600;">' + w2Escape(s.supplier_name) + '</span></td>'
                     + '<td><code style="font-weight:600;">' + w2Escape(s.total_amount) + '</code></td>'
                     + '<td><code>' + w2Escape(s.model || '-') + '</code></td>'
-                    + '<td><b>' + (s.accuracy != null ? (s.accuracy * 100).toFixed(1) + '%' : '—') + '</b></td>'
+                    + '<td><b>' + (s.accuracy != null ? (s.accuracy * 100).toFixed(1) + '%' : '-') + '</b></td>'
                     + '<td>' + matchBadge + '</td>'
-                    + '<td style="font-family:var(--font-mono); font-size:0.75rem; text-align:right; color:var(--text-muted);">' + w2Escape(s.assigned_at || '-') + '</td>'
+                    + '<td style="font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:0.75rem; text-align:right; color:var(--text-muted);">' + w2Escape(_fmtDateTime(s.assigned_at)) + '</td>'
                     + '</tr>';
             });
             if (tbody) tbody.innerHTML = html;
@@ -16226,35 +17565,84 @@ if (typeof window !== 'undefined') {
     window.loadDishCostAnalysis = loadDishCostAnalysis;
 }
 
-// ---- 复核完成态谓词：识别 Tab 激活且已有识别结果 ----
-// 点踩按钮与挽回动作栏（重新解析/重拍）共用同一显隐口径，恒同步
-// （复核工作台 Spec 2.3：常驻、与点踩无关、解析中/预确认/手工单隐藏）
+// ---- 反馈组件显隐判定（全场景穿透：只要处于复核或错误态即展示） ----
+function shouldShowFeedback() {
+    const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
+    const scanActive = !scanBtn || scanBtn.classList.contains('active');
+    if (!scanActive) return false;
+
+    const loading = document.getElementById('loadingCard');
+    const preConfirm = document.getElementById('preConfirmCard');
+    const isBusy = (loading && !loading.classList.contains('hide'))
+        || (preConfirm && !preConfirm.classList.contains('hide'));
+    if (isBusy) return false;
+
+    const prefill = document.getElementById('prefillFormCard');
+    const errorCard = document.getElementById('errorCard');
+    const isPrefill = prefill && !prefill.classList.contains('hide');
+    const isError = errorCard && !errorCard.classList.contains('hide');
+
+    return !!(isPrefill || isError);
+}
+window.shouldShowFeedback = shouldShowFeedback;
+
+// ---- 挽回动作栏（重新解析/重拍）显隐谓词（必须有原图单据上下文） ----
 function hasRecognizedResult(data) {
-    const d = data || currentReceiptData || null;
-    const aiItems = ((d && d.ai_prefill) || {}).items || [];
-    const scanActive = !!document.querySelector('.sidebar-btn[data-target="tab-scan"].active');
+    const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
+    const scanActive = !scanBtn || scanBtn.classList.contains('active');
     const loading = document.getElementById('loadingCard');
     const preConfirm = document.getElementById('preConfirmCard');
     const idle = (!loading || loading.classList.contains('hide'))
         && (!preConfirm || preConfirm.classList.contains('hide'));
-    return scanActive && !!(currentReceiptId && !isManualEntry && idle && aiItems.length > 0);
+    const prefill = document.getElementById('prefillFormCard');
+    const isPrefill = prefill && !prefill.classList.contains('hide');
+    // 有单据且不是新建手工单（无原图），且处于表单就绪态
+    return !!(scanActive && currentReceiptId && !isManualEntry && idle && isPrefill);
 }
+window.hasRecognizedResult = hasRecognizedResult;
 
-// ---- 点赞/点踩反馈显隐：只评价识别结果——仅「收据识别」Tab 且已有识别结果时出现 ----
+// ---- 反馈按钮 UI 高亮联动（双向同步头部、底部、错误态按钮） ----
+function syncFeedbackButtonsUI(like) {
+    const upBtns = document.querySelectorAll('.feedback-btn-up');
+    const downBtns = document.querySelectorAll('.feedback-btn-down');
+    upBtns.forEach(btn => {
+        if (like === 1) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+    downBtns.forEach(btn => {
+        if (like === -1) btn.classList.add('active');
+        else btn.classList.remove('active');
+    });
+}
+window.syncFeedbackButtonsUI = syncFeedbackButtonsUI;
+
+// ---- 点赞/点踩反馈显隐同步 ----
 function syncFeedbackVisibility(data) {
-    const box = document.getElementById('feedbackInline');
-    if (!box) return;
-    box.style.display = hasRecognizedResult(data) ? 'inline-flex' : 'none';
+    const show = shouldShowFeedback();
+    const prefill = document.getElementById('prefillFormCard');
+    const errorCard = document.getElementById('errorCard');
+    const isPrefill = prefill && !prefill.classList.contains('hide');
+    const isError = errorCard && !errorCard.classList.contains('hide');
+
+    const boxInline = document.getElementById('feedbackInline');
+    const boxError = document.getElementById('feedbackErrorCard');
+
+    if (boxInline) boxInline.style.display = (show && isPrefill) ? 'inline-flex' : 'none';
+    if (boxError) boxError.style.display = (show && isError) ? 'inline-flex' : 'none';
+
+    syncFeedbackButtonsUI(lastFeedbackForCurrent);
 }
 window.syncFeedbackVisibility = syncFeedbackVisibility;
 
-// ---- 挽回动作栏显隐：与点踩同条件（解析中/预确认/手工单隐藏，防并发双击）----
+// ---- 挽回动作栏显隐：与原图单据上下文绑定（解析中/预确认/手工单隐藏，防并发双击）----
 function syncRecoveryVisibility(data) {
     const show = hasRecognizedResult(data);
     ['btnReparse', 'btnRetake'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = show ? '' : 'none';
     });
+    const elRot = document.getElementById('btnReparseRotated');
+    if (elRot) elRot.style.display = (show && _hasRotatedAfterParse) ? '' : 'none';
 }
 window.syncRecoveryVisibility = syncRecoveryVisibility;
 
@@ -16266,10 +17654,90 @@ let lastFeedbackForCurrent = null;
 function onReparseClick() {
     const rid = currentReceiptId;
     if (!rid) return;
+    if (_hasRotatedAfterParse && selectedFile) {
+        onReparseRotatedClick();
+        return;
+    }
     track('reparse_clicked', rid, { prior_feedback: lastFeedbackForCurrent });
     retryReceiptRecognition(rid);
 }
 window.onReparseClick = onReparseClick;
+
+// ---- 挽回动作：按当前旋转视角重新识别 ----
+function onReparseRotatedClick() {
+    const rid = currentReceiptId;
+    if (!rid) {
+        showToast('未找到有效单据编号', 'warning');
+        return;
+    }
+    if (!selectedFile) {
+        showToast('旋转图片文件尚未准备就绪，请稍候', 'warning');
+        return;
+    }
+    track('reparse_rotated_clicked', rid, { prior_feedback: lastFeedbackForCurrent });
+    submitRotatedImage(rid, selectedFile);
+}
+window.onReparseRotatedClick = onReparseRotatedClick;
+
+async function submitRotatedImage(receiptId, file) {
+    if (!file) {
+        showToast('未找到旋转图片文件', 'warning');
+        return;
+    }
+    const fd = new FormData();
+    fd.append('receipt', file);
+    fd.append('force', 'true');
+    const gen = ++singleUploadGen;
+    if (singlePollToken) singlePollToken.cancelled = true;
+    singlePollToken = { cancelled: false };
+
+    document.getElementById('errorCard').classList.add('hide');
+    document.getElementById('preConfirmCard').classList.add('hide');
+    document.getElementById('prefillFormCard').classList.add('hide');
+    document.getElementById('loadingCard').classList.remove('hide');
+    startOcrTimer();
+    syncFeedbackVisibility();
+    syncRecoveryVisibility();
+
+    try {
+        const res = await apiFetch(`/api/receipt/${receiptId}/replace-image`, { method: 'POST', body: fd });
+        const body = await res.json().catch(() => ({}));
+        if (gen !== singleUploadGen) return;
+        const ret = body || {};
+        if (res.ok && ret.status === 'queued' && ret.job_id) {
+            _hasRotatedFile = false;
+            _hasRotatedAfterParse = false;
+            const btnRot = document.getElementById('btnReparseRotated');
+            if (btnRot) btnRot.style.display = 'none';
+            const btnErrRot = document.getElementById('btnRetryRotated');
+            if (btnErrRot) btnErrRot.classList.add('hide');
+            if (ret.image_url) {
+                const img = document.getElementById('previewImg');
+                if (img) img.src = ret.image_url;
+                const ph = getActivePhoto();
+                if (ph) {
+                    ph.imageUrl = ret.image_url;
+                    if (typeof renderSider === 'function') renderSider();
+                }
+            }
+            pollAndApply(ret, receiptId);
+            return;
+        }
+        stopOcrTimer();
+        document.getElementById('loadingCard').classList.add('hide');
+        showToast((ret && ret.msg) || '按新视角重新识别失败', 'error');
+        if (routeRecognitionFailure(ret, receiptId)) return;
+        showErrorCard((ret && ret.msg) || '按新视角重新识别失败', receiptId);
+    } catch (err) {
+        if (gen !== singleUploadGen) return;
+        stopOcrTimer();
+        document.getElementById('loadingCard').classList.add('hide');
+        console.error('提交旋转图片异常', err);
+        showToast('提交旋转图片失败，请检查网络后重试', 'error');
+        showErrorCard('提交旋转图片失败: ' + err, receiptId);
+    }
+}
+window.submitRotatedImage = submitRotatedImage;
 
 // ---- 挽回动作：重拍（输入归因）——埋点 → 二次确认 → 选新图换图重跑 ----
 function onRetakeClick() {
@@ -16345,37 +17813,1133 @@ async function submitRetakeImage(receiptId, file) {
 }
 window.submitRetakeImage = submitRetakeImage;
 
-// ---- 点赞/点踩反馈按钮（内联于「确认上传单据」右侧，11-组件Spec §5 智能归属）----
-function onFeedbackClick(like) {
+// ---- 点赞/点踩反馈按钮（头部/底部/错误卡片通用，全场景支持）----
+function onFeedbackClick(like, source) {
     const rid = (typeof currentReceiptId === 'number' && currentReceiptId > 0)
-        ? currentReceiptId : null;
-    const okMsg = like === 1 ? '感谢点赞！' : '已收到反馈，我们会改进';
+        ? currentReceiptId
+        : (currentReceiptId && Number(currentReceiptId) > 0 ? Number(currentReceiptId) : null);
+
+    const errorCard = document.getElementById('errorCard');
+    const isError = errorCard && !errorCard.classList.contains('hide');
+    const activeSource = source || (isError ? 'error_card' : 'prefill_footer');
+
+    const itemsCount = (currentReceiptData && currentReceiptData.items && currentReceiptData.items.length)
+        || (document.getElementById('itemTableBody') ? document.getElementById('itemTableBody').children.length : 0);
+
+    lastFeedbackForCurrent = like;
+    syncFeedbackButtonsUI(like);
+
+    const okMsg = like === 1 ? '感谢您的点赞反馈！' : '已收到您的改进建议，感谢反馈！';
+
     if (rid) {
-        // 租户标识与 _postFeedback（FR-8 行反馈发送器）同源：localStorage demo_tenant_id，
-        // 缺省 default；否则非 default 租户下内联反馈会因租户不匹配恒 404
         const tenantId = _feedbackTenantId();
         apiFetch(`/api/receipt/${rid}/feedback`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenantId },
-            body: JSON.stringify({ like: like, tenant_id: tenantId }),
+            body: JSON.stringify({ like: like, comment: '', tenant_id: tenantId }),
         })
             .then(r => r.json())
             .then(ret => {
                 if (ret && ret.status === 'success') {
-                    lastFeedbackForCurrent = like;   // 供挽回埋点 prior_feedback
+                    track('receipt_feedback_submitted', rid, {
+                        like: like,
+                        source: activeSource,
+                        is_manual: !!isManualEntry,
+                        items_count: itemsCount,
+                    });
                     showToast(okMsg, like === 1 ? 'success' : 'info');
-                } else showToast('反馈提交失败', 'error');
+                } else {
+                    showToast('反馈已记录，我们会持续优化', 'info');
+                }
             })
-            .catch(() => showToast('反馈提交失败', 'error'));
+            .catch(() => {
+                showToast('反馈已记录，我们会持续优化', 'info');
+            });
     } else {
         track('feedback_received', null, {
             like: like,
-            tab: (document.querySelector('.sidebar-btn.active') || {}).textContent || '',
+            scene: isManualEntry ? 'manual_entry' : 'pre_receipt_error',
+            source: activeSource,
             role: localStorage.getItem('demo_role') || 'owner',
+            tab: 'tab-scan',
         });
         showToast(okMsg, like === 1 ? 'success' : 'info');
     }
 }
 window.onFeedbackClick = onFeedbackClick;
+
+
+// =====================================================================
+// 05 解析日志与链路审计模块 (Parsing Logs & Pipeline Audit)
+// =====================================================================
+
+const currentParsingLogsState = {
+    page: 1,
+    pageSize: 20,
+    totalPages: 1,
+    totalItems: 0,
+    items: [],
+    activeItem: null,
+};
+
+window.currentTelemetryState = {
+    subTab: 'audit',
+};
+
+function syncTelemetryTenants() {
+    // 租户筛选为文本输入：镜像同步隐藏域即可（空值 = 全部租户）
+    const mainSel = document.getElementById('analyticsTenantSelect');
+    const plSel = document.getElementById('parsingLogTenantSelect');
+    if (!mainSel || !plSel) return;
+    if (plSel.value !== mainSel.value) {
+        plSel.value = mainSel.value;
+    }
+}
+window.syncTelemetryTenants = syncTelemetryTenants;
+window.syncParsingLogsTenants = syncTelemetryTenants;
+
+function onUnifiedTenantChange(tId) {
+    const v = (tId || '').trim();
+    const mainSel = document.getElementById('analyticsTenantSelect');
+    const plSel = document.getElementById('parsingLogTenantSelect');
+    if (mainSel && mainSel.value !== v) mainSel.value = v;
+    if (plSel && plSel.value !== v) plSel.value = v;
+    loadParsingLogs(1);
+    loadRecoverySummaryBlocks(v || 'all');
+}
+window.onUnifiedTenantChange = onUnifiedTenantChange;
+window.onAnalyticsTenantChange = onUnifiedTenantChange;
+
+function refreshUnifiedTelemetry() {
+    const tId = (document.getElementById('analyticsTenantSelect')?.value) || (document.getElementById('parsingLogTenantSelect')?.value) || 'all';
+    loadParsingLogs(1);
+    loadRecoverySummaryBlocks(tId);
+}
+window.refreshUnifiedTelemetry = refreshUnifiedTelemetry;
+
+function switchTelemetrySubTab(subTabKey) {
+    if (subTabKey !== 'audit' && subTabKey !== 'events') {
+        subTabKey = 'audit';
+    }
+    window.currentTelemetryState.subTab = subTabKey;
+
+    const btnAudit = document.getElementById('btnTelemetrySubTabAudit');
+    const btnEvents = document.getElementById('btnTelemetrySubTabEvents');
+    const contentAudit = document.getElementById('telemetrySubContentAudit');
+    const contentEvents = document.getElementById('telemetrySubContentEvents');
+
+    const isAudit = (subTabKey === 'audit');
+
+    if (btnAudit) {
+        btnAudit.classList.toggle('active', isAudit);
+        btnAudit.setAttribute('aria-selected', isAudit ? 'true' : 'false');
+        btnAudit.style.borderBottomColor = isAudit ? '#2563eb' : 'transparent';
+        btnAudit.style.color = isAudit ? '#2563eb' : 'var(--text-muted)';
+        btnAudit.style.fontWeight = isAudit ? '600' : 'normal';
+    }
+    if (btnEvents) {
+        btnEvents.classList.toggle('active', !isAudit);
+        btnEvents.setAttribute('aria-selected', !isAudit ? 'true' : 'false');
+        btnEvents.style.borderBottomColor = !isAudit ? '#2563eb' : 'transparent';
+        btnEvents.style.color = !isAudit ? '#2563eb' : 'var(--text-muted)';
+        btnEvents.style.fontWeight = !isAudit ? '600' : 'normal';
+    }
+
+    if (contentAudit) contentAudit.style.display = isAudit ? 'block' : 'none';
+    if (contentEvents) contentEvents.style.display = !isAudit ? 'block' : 'none';
+
+    // 按子页签显示对应的过滤器：流水明细表格用完整筛选；埋点分布接口只消费
+    // 租户维度，解析状态/门禁/反馈/人工干预/时间跨度/搜索对其无意义
+    const auditOnlyFilterIds = ['filterParsingStatus', 'filterGate', 'filterFeedback', 'filterModified', 'filterTimeRange', 'filterSearch'];
+    auditOnlyFilterIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = isAudit ? '' : 'none';
+    });
+
+    if (isAudit) {
+        if (!currentParsingLogsState.items || currentParsingLogsState.items.length === 0) {
+            loadParsingLogs(1);
+        }
+    } else {
+        const sel = document.getElementById('analyticsTenantSelect') || document.getElementById('parsingLogTenantSelect');
+        const tId = sel ? sel.value : 'all';
+        loadRecoverySummaryBlocks(tId);
+    }
+}
+window.switchTelemetrySubTab = switchTelemetrySubTab;
+
+// 时间跨度周期状态：与趋势弹窗「统计周期」同逻辑（预设周期按钮 + 自定义起止）
+window._parsingLogPeriod = { mode: 'all', startDate: null, endDate: null };
+
+function _parsingLogTodayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function _parsingLogDaysAgoStr(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+const _PARSING_LOG_PERIOD_BTN_IDS = {
+    'all': 'btnLogRangeAll',
+    '24h': 'btnLogRange24h',
+    '7d': 'btnLogRange7d',
+    '14d': 'btnLogRange14d',
+    '30d': 'btnLogRange30d',
+};
+
+function _updateParsingLogPeriodButtons() {
+    const mode = window._parsingLogPeriod.mode;
+    Object.keys(_PARSING_LOG_PERIOD_BTN_IDS).forEach(m => {
+        const btn = document.getElementById(_PARSING_LOG_PERIOD_BTN_IDS[m]);
+        if (!btn) return;
+        if (m === mode) {
+            btn.className = 'btn btn-sm btn-primary';
+            btn.style.fontWeight = '600';
+        } else {
+            btn.className = 'btn btn-sm btn-secondary';
+            btn.style.fontWeight = 'normal';
+        }
+    });
+}
+
+function setParsingLogPeriod(mode) {
+    const p = window._parsingLogPeriod;
+    p.mode = mode;
+    p.startDate = null;
+    p.endDate = null;
+    const sEl = document.getElementById('parsingLogStartDate');
+    const eEl = document.getElementById('parsingLogEndDate');
+    if (sEl) sEl.value = '';
+    if (eEl) eEl.value = '';
+    _updateParsingLogPeriodButtons();
+    loadParsingLogs(1);
+}
+window.setParsingLogPeriod = setParsingLogPeriod;
+
+function applyParsingLogCustomPeriod(silent) {
+    const sEl = document.getElementById('parsingLogStartDate');
+    const eEl = document.getElementById('parsingLogEndDate');
+    const sVal = sEl && sEl.value ? sEl.value.trim() : '';
+    const eVal = eEl && eEl.value ? eEl.value.trim() : '';
+    // 日期选择后自动应用（silent）：结束日期未填时静默等待，不弹窗打断
+    if (!eVal) {
+        if (!silent) alert('请选择结束日期（开始日期留空默认从最早一条记录开始）');
+        return;
+    }
+    if (sVal && sVal > eVal) {
+        if (!silent) alert('开始日期不能晚于结束日期');
+        return;
+    }
+    const p = window._parsingLogPeriod;
+    p.mode = 'custom';
+    p.startDate = sVal || null;
+    p.endDate = eVal;
+    _updateParsingLogPeriodButtons();
+    loadParsingLogs(1);
+}
+window.applyParsingLogCustomPeriod = applyParsingLogCustomPeriod;
+
+// 供趋势弹窗钻取调用：直接填充自定义区间（不触发加载，由调用方统一加载）
+function setParsingLogCustomRange(startDate, endDate) {
+    const p = window._parsingLogPeriod;
+    p.mode = 'custom';
+    p.startDate = startDate || null;
+    p.endDate = endDate || null;
+    const sEl = document.getElementById('parsingLogStartDate');
+    const eEl = document.getElementById('parsingLogEndDate');
+    if (sEl) sEl.value = startDate || '';
+    if (eEl) eEl.value = endDate || '';
+    _updateParsingLogPeriodButtons();
+}
+window.setParsingLogCustomRange = setParsingLogCustomRange;
+
+function loadParsingLogs(page) {
+    page = page || 1;
+    currentParsingLogsState.page = page;
+
+    const tenant = (document.getElementById('analyticsTenantSelect')?.value) || (document.getElementById('parsingLogTenantSelect')?.value) || 'all';
+    const status = (document.getElementById('parsingLogStatusSelect')?.value) || 'all';
+    const gateStatus = (document.getElementById('parsingLogGateSelect')?.value) || 'all';
+    const feedback = (document.getElementById('parsingLogFeedbackSelect')?.value) || 'all';
+    const isModified = (document.getElementById('parsingLogModifiedSelect')?.value) || 'all';
+    const period = window._parsingLogPeriod || { mode: 'all', startDate: null, endDate: null };
+    const search = (document.getElementById('parsingLogSearchInput')?.value || '').trim();
+
+    const tbody = document.getElementById('parsingLogsTableBody');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:30px; color:var(--text-muted);">正在加载解析日志...</td></tr>';
+    }
+
+    const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(currentParsingLogsState.pageSize),
+        tenant_id: tenant,
+        status: status,
+        gate_status: gateStatus,
+        feedback: feedback,
+        is_modified: isModified,
+        date_range: 'all',
+        search: search,
+    });
+    if (period.mode === 'custom') {
+        // 自定义区间：开始留空时不传 start_date，后端即从最早一条记录开始
+        if (period.startDate) params.set('start_date', period.startDate + 'T00:00:00');
+        if (period.endDate) params.set('end_date', period.endDate + 'T23:59:59.999999');
+    } else if (period.mode === '7d' || period.mode === '14d' || period.mode === '30d') {
+        // 与趋势弹窗「统计周期」同口径：含今天的最近 N 个自然日
+        const n = parseInt(period.mode, 10);
+        params.set('start_date', _parsingLogDaysAgoStr(n - 1) + 'T00:00:00');
+        params.set('end_date', _parsingLogTodayStr() + 'T23:59:59.999999');
+    } else {
+        // all / 24h 沿用后端既有口径
+        params.set('date_range', period.mode);
+    }
+
+    apiFetch('/api/analytics/parsing-logs?' + params.toString())
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (httpStatus !== 200 || !ret || ret.status !== 'success' || !ret.data) {
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:30px; color:#b91c1c;">加载解析日志失败: ' + w2Escape(ret?.detail || '网络或鉴权错误') + '</td></tr>';
+                }
+                return;
+            }
+
+            const data = ret.data;
+            const summary = data.summary || {};
+            window.currentParsingLogsSummary = summary;
+            const pagination = data.pagination || {};
+            const items = data.items || [];
+
+            currentParsingLogsState.items = items;
+            currentParsingLogsState.totalPages = pagination.total_pages || 1;
+            currentParsingLogsState.totalItems = pagination.total_items || 0;
+
+            // 1. 渲染顶部 8 个 KPI 卡片 (吞吐质量 + 体验挽回)
+            const kpiTotal = document.getElementById('parsingKpiTotal');
+            const kpiSuccess = document.getElementById('parsingKpiSuccessRate');
+            const kpiElapsed = document.getElementById('parsingKpiAvgElapsed');
+            const kpiTokens = document.getElementById('parsingKpiAvgTokens');
+            const kpiPositive = document.getElementById('parsingKpiPositiveRate');
+            const kpiEdit = document.getElementById('parsingKpiEditRate');
+            const kpiRecoveryEntry = document.getElementById('telemetryKpiRecoveryEntry');
+            const kpiRecoverySuccess = document.getElementById('telemetryKpiRecoverySuccess');
+
+            if (kpiTotal) kpiTotal.textContent = (summary.total_parses || 0).toLocaleString();
+            if (kpiSuccess) kpiSuccess.textContent = ((summary.success_rate || 0) * 100).toFixed(1) + '%';
+            if (kpiElapsed) kpiElapsed.textContent = summary.avg_elapsed_ms ? (summary.avg_elapsed_ms.toFixed(0) + ' ms') : '-';
+            if (kpiTokens) kpiTokens.textContent = (summary.avg_tokens || 0).toLocaleString();
+            if (kpiPositive) kpiPositive.textContent = ((summary.positive_rate || 0) * 100).toFixed(1) + '%';
+            if (kpiEdit) kpiEdit.textContent = ((summary.edit_rate || 0) * 100).toFixed(1) + '%';
+            if (kpiRecoveryEntry && summary.recovery_entry_rate != null) {
+                kpiRecoveryEntry.textContent = ((summary.recovery_entry_rate || 0) * 100).toFixed(1) + '%';
+            }
+            if (kpiRecoverySuccess && summary.recovery_success_rate != null) {
+                kpiRecoverySuccess.textContent = ((summary.recovery_success_rate || 0) * 100).toFixed(1) + '%';
+            }
+
+            // 2. 渲染明细表格
+            renderParsingLogsTable(items);
+
+            // 3. 渲染分页器
+            renderParsingLogsPagination(pagination);
+        })
+        .catch(err => {
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:30px; color:#b91c1c;">请求异常: ' + w2Escape(err.message || '未知错误') + '</td></tr>';
+            }
+        });
+}
+
+function _extractGateReason(gate) {
+    if (!gate || !gate.triggered || gate.status === 'none') return '';
+    const raw = String(gate.summary || '').trim();
+    if (!raw) return gate.primary_type_label || (gate.status === 'rejected' ? '校验拦截' : '规则告警');
+
+    const sLower = raw.toLowerCase();
+    if (/vlm|openai|codebuddy|500|502|503|504|超时|timeout|接口失败|request failed|调用失败/i.test(sLower)) {
+        return 'VLM调用失败';
+    }
+    if (/算术|合计|平算|金额|总额|差额|math/i.test(sLower)) {
+        return '算术合计不符';
+    }
+    if (/画质|清晰度|模糊|花码|quality/i.test(sLower)) {
+        return '图片画质模糊';
+    }
+    if (/安全|隐写|隐藏文字|风控|security|注入/i.test(sLower)) {
+        return '安全风控拦截';
+    }
+    if (/供应商|开单日期|必填|缺少|缺失|契约|schema/i.test(sLower)) {
+        return '关键字段缺失';
+    }
+
+    const firstWord = raw.split(/[\(（:：\s]/)[0];
+    if (firstWord && firstWord.length >= 2 && firstWord.length <= 10) {
+        return firstWord;
+    }
+    return gate.primary_type_label || (gate.status === 'rejected' ? '校验拦截' : '规则告警');
+}
+
+function _formatGateBadge(gate) {
+    if (!gate || !gate.triggered || gate.status === 'none') {
+        return '<span class="badge" style="background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; white-space:nowrap; font-weight:600;" title="算术契约检验全部通过">[平算无门禁]</span>';
+    }
+
+    const isReject = gate.status === 'rejected';
+    const bg = isReject ? '#fee2e2' : '#fef3c7';
+    const color = isReject ? '#b91c1c' : '#b45309';
+    const border = isReject ? '#fecaca' : '#fde68a';
+    const prefix = isReject ? '[门禁拦截: ' : '[门禁告警: ';
+    const reason = _extractGateReason(gate);
+    const labelText = prefix + reason + ']';
+    const rawSummary = String(gate.summary || labelText).trim();
+
+    return '<span class="badge" style="background:' + bg + '; color:' + color + '; border:1px solid ' + border + '; white-space:nowrap; font-weight:600;" title="' + w2Escape(rawSummary) + '">' + w2Escape(labelText) + '</span>';
+}
+
+function renderParsingLogsTable(items) {
+    const tbody = document.getElementById('parsingLogsTableBody');
+    const countEl = document.getElementById('parsingLogTableCount');
+    if (countEl) countEl.textContent = '共 ' + currentParsingLogsState.totalItems + ' 条';
+    if (!tbody) return;
+
+    if (!items || items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:36px; color:var(--text-muted);">暂无符合筛选条件的解析日志</td></tr>';
+        return;
+    }
+
+    let html = '';
+    items.forEach(it => {
+        const rid = it.record_id;
+        const tenant = it.tenant_id || 'default';
+        const gid = it.graph_id || ('graph-' + rid);
+        const createdAtFormatted = _fmtDateTime(it.created_at);
+        const supplier = it.supplier_name || '未命名供应商';
+        const docForm = it.doc_form || '标准单据';
+        const eng = it.engine || 'vlm';
+        const mdl = it.model || '-';
+        const tokensTotal = it.token_usage?.tokens_total || 0;
+        const costHkd = it.token_usage?.cost_hkd != null ? ('HK$' + it.token_usage.cost_hkd.toFixed(4)) : '-';
+        const elapsedTotal = it.elapsed_ms?.total || 0;
+        const elapsedStyle = elapsedTotal > 5000 ? 'color:#b45309; font-weight:700;' : '';
+
+        // 门禁状态与原因：收敛为紧凑专业徽章 [门禁拦截: 原因]，悬浮 tooltip 保留完整堆栈细节
+        const gate = it.gate_info || {
+            triggered: false,
+            status: 'none',
+            badge_label: '[平算无门禁]',
+            primary_type: '',
+            primary_type_label: '',
+            summary: '算术契约检验全部通过',
+            details: []
+        };
+        const gateBadgeHtml = _formatGateBadge(gate);
+        const gateDescHtml = ''; // 细节收敛至徽章 title 悬浮与详情弹窗，主表格仅呈现 [门禁拦截: 原因] 紧凑徽章
+
+        // 状态徽章 (严格禁止 Emoji，禁止截断)
+        let statusBadge = '<span class="badge" style="background:#dcfce7; color:#15803d; white-space:nowrap;">[成功]</span>';
+        if (it.parse_status === 'warning') {
+            statusBadge = '<span class="badge" style="background:#fef3c7; color:#b45309; white-space:nowrap;">[告警通过]</span>';
+        } else if (it.parse_status === 'error') {
+            statusBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c; white-space:nowrap;">[失败]</span>';
+        } else if (it.parse_status === 'processing') {
+            statusBadge = '<span class="badge" style="background:#e0f2fe; color:#0369a1; white-space:nowrap;">[解析中]</span>';
+        }
+
+        // 反馈徽章 (严格禁止 Emoji)
+        let feedbackBadge = '<span class="badge" style="background:#f1f5f9; color:#64748b; white-space:nowrap;">[未评]</span>';
+        if (it.feedback?.like === 1) {
+            feedbackBadge = '<span class="badge" style="background:#dcfce7; color:#15803d; white-space:nowrap;" title="' + w2Escape(it.feedback.comment || '满意') + '">[赞]</span>';
+        } else if (it.feedback?.like === -1) {
+            feedbackBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c; white-space:nowrap;" title="' + w2Escape(it.feedback.comment || '不满意') + '">[踩]</span>';
+        }
+
+        // 改动徽章 (严格禁止 Emoji，零改动统一为绿色积极标识)
+        let modBadge = '<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; font-weight:600; white-space:nowrap;">[零改动]</span>';
+        if (it.modification?.is_modified) {
+            const modCount = it.modification.modified_count || 1;
+            modBadge = '<span class="badge" style="background:#eff6ff; color:#1d4ed8; font-weight:600; white-space:nowrap;">[已修正 (' + modCount + '项)]</span>';
+        }
+
+        html += '<tr style="border-bottom:1px solid var(--border-color);">'
+            + '<td class="cell-nowrap" style="text-align:center; font-weight:600; font-family:monospace;">#' + rid + '</td>'
+            + '<td class="cell-nowrap" style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:left;">' + w2Escape(createdAtFormatted) + '</td>'
+            + '<td class="cell-nowrap" style="text-align:center;"><span class="badge" style="background:#f1f5f9; color:#475569;">' + w2Escape(tenant) + '</span></td>'
+            + '<td class="cell-nowrap" style="text-align:left;"><code style="font-size:0.75rem; color:#0369a1;" title="' + w2Escape(gid) + '">' + w2Escape(gid) + '</code></td>'
+            + '<td class="cell-wrap" style="text-align:left;"><div style="font-weight:600; color:var(--text-primary);">' + w2Escape(supplier) + '</div><div style="font-size:0.72rem; color:var(--text-muted);">' + w2Escape(docForm) + '</div></td>'
+            + '<td class="cell-wrap" style="text-align:left;"><div style="font-size:0.75rem; color:var(--text-primary); font-family:monospace; word-break:break-all;">' + w2Escape(mdl) + '</div></td>'
+            + '<td class="cell-wrap" style="text-align:left; min-width:180px;">' + gateBadgeHtml + '</td>'
+            + '<td class="cell-nowrap" style="text-align:right; min-width:130px;"><div style="font-weight:600;">' + tokensTotal.toLocaleString() + '</div><div style="font-size:0.7rem; color:var(--text-muted);" title="折算成本">' + costHkd + '</div></td>'
+            + '<td class="cell-nowrap" style="text-align:right;' + elapsedStyle + '">' + elapsedTotal.toFixed(0) + ' ms</td>'
+            + '<td class="cell-nowrap" style="text-align:center;">' + statusBadge + '</td>'
+            + '<td class="cell-nowrap" style="text-align:center;">' + feedbackBadge + '</td>'
+            + '<td class="cell-nowrap" style="text-align:center;">' + modBadge + '</td>'
+            + '<td class="cell-nowrap" style="text-align:center;"><button class="btn btn-secondary" style="padding:3px 8px; font-size:0.75rem;" onclick="openParsingLogModal(' + rid + ')">[查看详情]</button></td>'
+            + '</tr>';
+    });
+
+    tbody.innerHTML = html;
+}
+
+function renderParsingLogsPagination(pagination) {
+    const page = pagination.page || 1;
+    const totalPages = pagination.total_pages || 1;
+    const totalItems = pagination.total_items || 0;
+
+    const pageInfo = document.getElementById('parsingLogsPageInfo');
+    const curSpan = document.getElementById('parsingLogsCurrentPageSpan');
+    const prevBtn = document.getElementById('btnParsingLogsPrev');
+    const nextBtn = document.getElementById('btnParsingLogsNext');
+
+    if (pageInfo) pageInfo.textContent = '第 ' + page + ' / ' + totalPages + ' 页 (共 ' + totalItems + ' 笔)';
+    if (curSpan) curSpan.textContent = String(page);
+    if (prevBtn) prevBtn.disabled = page <= 1;
+    if (nextBtn) nextBtn.disabled = page >= totalPages;
+}
+
+function onParsingLogsPageChange(delta) {
+    const targetPage = currentParsingLogsState.page + delta;
+    if (targetPage < 1 || targetPage > currentParsingLogsState.totalPages) return;
+    loadParsingLogs(targetPage);
+}
+
+function resetParsingLogFilters() {
+    const tSel = document.getElementById('parsingLogTenantSelect');
+    const mainTSel = document.getElementById('analyticsTenantSelect');
+    const sSel = document.getElementById('parsingLogStatusSelect');
+    const gSel = document.getElementById('parsingLogGateSelect');
+    const fSel = document.getElementById('parsingLogFeedbackSelect');
+    const mSel = document.getElementById('parsingLogModifiedSelect');
+    const sInp = document.getElementById('parsingLogSearchInput');
+
+    if (tSel) tSel.value = '';
+    if (mainTSel) mainTSel.value = '';
+    if (sSel) sSel.value = 'all';
+    if (gSel) gSel.value = 'all';
+    if (fSel) fSel.value = 'all';
+    if (mSel) mSel.value = 'all';
+    if (sInp) sInp.value = '';
+
+    const p = window._parsingLogPeriod;
+    if (p) {
+        p.mode = 'all';
+        p.startDate = null;
+        p.endDate = null;
+    }
+    const sEl = document.getElementById('parsingLogStartDate');
+    const eEl = document.getElementById('parsingLogEndDate');
+    if (sEl) sEl.value = '';
+    if (eEl) eEl.value = '';
+    _updateParsingLogPeriodButtons();
+
+    loadParsingLogs(1);
+}
+
+function renderParsingLogModalContent(item) {
+    if (!item) return;
+
+    // 填充元数据
+    const metaRecordId = document.getElementById('plMetaRecordId');
+    const metaGraphId = document.getElementById('plMetaGraphId');
+    const metaTenantId = document.getElementById('plMetaTenantId');
+    const metaSupplier = document.getElementById('plMetaSupplier');
+    const metaModel = document.getElementById('plMetaModel');
+    const metaCreatedAt = document.getElementById('plMetaCreatedAt');
+    const metaGateBadge = document.getElementById('plMetaGateBadge');
+
+    if (metaRecordId) metaRecordId.textContent = '#' + item.record_id;
+    if (metaGraphId) metaGraphId.textContent = item.graph_id || ('graph-' + item.record_id);
+    if (metaTenantId) metaTenantId.textContent = item.tenant_id || 'default';
+    if (metaSupplier) metaSupplier.textContent = item.supplier_name || '未命名供应商';
+    if (metaModel) metaModel.textContent = (item.engine || 'vlm') + ' / ' + (item.model || '-');
+    if (metaCreatedAt) {
+        metaCreatedAt.textContent = _fmtDateTime(item.created_at);
+        metaCreatedAt.style.fontFamily = 'var(--font-mono)';
+        metaCreatedAt.style.fontVariantNumeric = 'tabular-nums';
+    }
+
+    if (metaGateBadge) {
+        const gInfo = item.gate_info || {};
+        metaGateBadge.className = 'badge';
+        const isReject = gInfo.status === 'rejected';
+        const isNone = !gInfo.triggered || gInfo.status === 'none';
+        metaGateBadge.style.background = isNone ? '#f0fdf4' : (isReject ? '#fee2e2' : '#fef3c7');
+        metaGateBadge.style.color = isNone ? '#16a34a' : (isReject ? '#b91c1c' : '#b45309');
+        metaGateBadge.style.border = '1px solid ' + (isNone ? '#bbf7d0' : (isReject ? '#fecaca' : '#fde68a'));
+        metaGateBadge.style.whiteSpace = 'nowrap';
+        metaGateBadge.style.fontWeight = '600';
+
+        if (isNone) {
+            metaGateBadge.textContent = '[平算无门禁]';
+        } else {
+            const reason = _extractGateReason(gInfo);
+            metaGateBadge.textContent = (isReject ? '[门禁拦截: ' : '[门禁告警: ') + reason + ']';
+        }
+        metaGateBadge.title = String(gInfo.summary || metaGateBadge.textContent).trim();
+    }
+
+    const statusBadge = document.getElementById('plModalStatusBadge');
+    if (statusBadge) {
+        if (item.parse_status === 'warning') {
+            statusBadge.className = 'badge';
+            statusBadge.style.background = '#fef3c7';
+            statusBadge.style.color = '#b45309';
+            statusBadge.textContent = '[告警通过]';
+        } else if (item.parse_status === 'error') {
+            statusBadge.className = 'badge';
+            statusBadge.style.background = '#fee2e2';
+            statusBadge.style.color = '#b91c1c';
+            statusBadge.textContent = '[失败]';
+        } else {
+            statusBadge.className = 'badge';
+            statusBadge.style.background = '#dcfce7';
+            statusBadge.style.color = '#15803d';
+            statusBadge.textContent = '[成功]';
+        }
+    }
+
+    // 填充 Tab 1: Diff 对照
+    const diffBody = document.getElementById('plDiffTableBody');
+    const diffBadge = document.getElementById('plDiffSummaryBadge');
+    const diffs = item.modification?.diffs || [];
+
+    if (diffs.length > 0) {
+        if (diffBadge) diffBadge.textContent = '已修正 ' + item.modification.modified_count + ' 项字段';
+        let diffHtml = '';
+        diffs.forEach(d => {
+            let typeBadge = '<span class="badge" style="background:#eff6ff; color:#1d4ed8;">[已修正]</span>';
+            if (d.type === 'added') {
+                typeBadge = '<span class="badge" style="background:#dcfce7; color:#15803d;">[新增]</span>';
+            } else if (d.type === 'deleted') {
+                typeBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c;">[删除]</span>';
+            }
+
+            diffHtml += '<tr style="border-bottom:1px solid #f1f5f9;">'
+                + '<td style="padding:8px 10px; font-weight:600;">' + w2Escape(d.label || d.field) + '</td>'
+                + '<td style="padding:8px 10px; color:#64748b; font-family:monospace;">' + w2Escape(String(d.ai_value ?? '-')) + '</td>'
+                + '<td style="padding:8px 10px; color:#1e293b; font-weight:600; font-family:monospace;">' + w2Escape(String(d.user_value ?? '-')) + '</td>'
+                + '<td style="padding:8px 10px; text-align:center;">' + typeBadge + '</td>'
+                + '</tr>';
+        });
+        if (diffBody) diffBody.innerHTML = diffHtml;
+    } else {
+        if (diffBadge) diffBadge.textContent = '零人工改动 (完全采纳)';
+        if (diffBody) {
+            diffBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:#16a34a; font-weight:600;">AI 解析结果与入库数据 100% 保持一致，无人工改动</td></tr>';
+        }
+    }
+
+    // 填充 Tab 2: Token 消耗与性能瀑布
+    const tUsage = item.token_usage || {};
+    const pTokenEl = document.getElementById('plTokenPrompt');
+    const cTokenEl = document.getElementById('plTokenCompletion');
+    const cachedTokenEl = document.getElementById('plTokenCached');
+    const hitRateEl = document.getElementById('plTokenCacheHitRate');
+    const totTokenEl = document.getElementById('plTokenTotal');
+    const costEl = document.getElementById('plCostHkd');
+
+    const promptTokens = tUsage.tokens_prompt || 0;
+    const cachedTokens = tUsage.tokens_cached || 0;
+    const hitRate = tUsage.cache_hit_rate != null ? (tUsage.cache_hit_rate * 100).toFixed(1) + '%' : (promptTokens > 0 ? ((cachedTokens / promptTokens) * 100).toFixed(1) + '%' : '0.0%');
+
+    if (pTokenEl) pTokenEl.textContent = promptTokens.toLocaleString();
+    if (cTokenEl) cTokenEl.textContent = (tUsage.tokens_completion || 0).toLocaleString();
+    if (cachedTokenEl) cachedTokenEl.textContent = cachedTokens.toLocaleString();
+    if (hitRateEl) hitRateEl.textContent = hitRate;
+    if (totTokenEl) totTokenEl.textContent = (tUsage.tokens_total || 0).toLocaleString();
+    if (costEl) costEl.textContent = 'HK$' + (tUsage.cost_hkd != null ? tUsage.cost_hkd.toFixed(4) : '0.0000');
+
+    const elapsed = item.elapsed_ms || {};
+    const totalMs = elapsed.total || 0;
+    const extractMs = elapsed.extract || 0;
+    const ragMs = elapsed.rag || 0;
+    const auditMs = elapsed.audit || 0;
+
+    const baseMs = Math.max(totalMs, (extractMs + ragMs + auditMs), 1);
+    const extractPct = Math.min(100, Math.round((extractMs / baseMs) * 100));
+    const ragPct = Math.min(100, Math.round((ragMs / baseMs) * 100));
+    const auditPct = Math.min(100, Math.round((auditMs / baseMs) * 100));
+
+    const exText = document.getElementById('plElapsedExtractText');
+    const exBar = document.getElementById('plElapsedExtractBar');
+    const ragText = document.getElementById('plElapsedRagText');
+    const ragBar = document.getElementById('plElapsedRagBar');
+    const audText = document.getElementById('plElapsedAuditText');
+    const audBar = document.getElementById('plElapsedAuditBar');
+    const totText = document.getElementById('plElapsedTotalText');
+
+    if (exText) exText.textContent = extractMs.toFixed(1) + ' ms (' + extractPct + '%)';
+    if (exBar) exBar.style.width = extractPct + '%';
+    if (ragText) ragText.textContent = ragMs.toFixed(1) + ' ms (' + ragPct + '%)';
+    if (ragBar) ragBar.style.width = ragPct + '%';
+    if (audText) audText.textContent = auditMs.toFixed(1) + ' ms (' + auditPct + '%)';
+    if (audBar) audBar.style.width = auditPct + '%';
+    if (totText) totText.textContent = totalMs.toFixed(1) + ' ms';
+
+    // 填充 Tab 3: 质检与门禁规则审计 (四大模块)
+    const gateDecEl = document.getElementById('plGateDecisionBody');
+    if (gateDecEl) {
+        const gInfo = item.gate_info || {};
+        const rejDetails = (gInfo.details || []).filter(d => d.level === 'rejected');
+        if (rejDetails.length > 0) {
+            let html = '<div style="color:#b91c1c; font-weight:600; margin-bottom:6px;">门禁拦截阻断触发:</div><ul style="margin:0; padding-left:18px; color:#b91c1c;">';
+            rejDetails.forEach(d => {
+                html += '<li>[' + w2Escape(d.type_label || '门禁') + '] ' + w2Escape(d.reason || '') + ' (来源: ' + w2Escape(d.source || '') + ')</li>';
+            });
+            html += '</ul>';
+            gateDecEl.innerHTML = html;
+        } else if (gInfo.triggered) {
+            gateDecEl.innerHTML = '<span style="color:#b45309; font-weight:600;">[告警放行] ' + w2Escape(gInfo.summary || '触发门禁提示但未阻断流程') + '</span>';
+        } else {
+            gateDecEl.innerHTML = '<span style="color:#15803d; font-weight:600;">[放行] 判定通过，未触发拦截门禁，全链路平算契约正常</span>';
+        }
+    }
+
+    const mathEl = document.getElementById('plMathWarningsBody');
+    const mWarns = item.warnings?.math_warnings || [];
+    if (mathEl) {
+        if (mWarns.length > 0) {
+            let mHtml = '<ul style="margin:0; padding-left:18px; color:#b45309;">';
+            mWarns.forEach(w => { mHtml += '<li>' + w2Escape(typeof w === 'string' ? w : JSON.stringify(w)) + '</li>'; });
+            mHtml += '</ul>';
+            mathEl.innerHTML = mHtml;
+        } else {
+            mathEl.innerHTML = '<span style="color:#15803d;">[通过] 算术逻辑平算无异常，合计与总额一致</span>';
+        }
+    }
+
+    const contractEl = document.getElementById('plContractGuardBody');
+    if (contractEl) {
+        const contractDetails = (item.gate_info?.details || []).filter(d => d.type === 'contract');
+        if (contractDetails.length > 0) {
+            let cHtml = '<ul style="margin:0; padding-left:18px; color:#b45309;">';
+            contractDetails.forEach(d => { cHtml += '<li>' + w2Escape(d.reason || '') + '</li>'; });
+            cHtml += '</ul>';
+            contractEl.innerHTML = cHtml;
+        } else {
+            contractEl.innerHTML = '<span style="color:#15803d;">[通过] 供应商、开单日期格式与明细行结构有效</span>';
+        }
+    }
+
+    const qualityEl = document.getElementById('plQualityWarningsBody');
+    const qWarns = item.warnings?.quality_warnings || [];
+    if (qualityEl) {
+        if (qWarns.length > 0) {
+            let qHtml = '<ul style="margin:0; padding-left:18px; color:#b45309;">';
+            qWarns.forEach(w => { qHtml += '<li>' + w2Escape(typeof w === 'string' ? w : JSON.stringify(w)) + '</li>'; });
+            qHtml += '</ul>';
+            qualityEl.innerHTML = qHtml;
+        } else {
+            qualityEl.innerHTML = '<span style="color:#15803d;">[通过] 图面清晰度与花码校验正常</span>';
+        }
+    }
+
+    const imgGuardEl = document.getElementById('plImageGuardBody');
+    if (imgGuardEl) {
+        if (item.warnings?.image_guard_flagged) {
+            const secDetails = (item.gate_info?.details || []).filter(d => d.type === 'security');
+            let reasonText = secDetails.length > 0 ? secDetails.map(d => d.reason).join('; ') : '触发图内隐藏文字风险排查';
+            imgGuardEl.innerHTML = '<span style="color:#b91c1c; font-weight:600;">[告警] ' + w2Escape(reasonText) + '</span>';
+        } else {
+            imgGuardEl.innerHTML = '<span style="color:#15803d;">[通过] 未发现图内违规/隐藏文字风险</span>';
+        }
+    }
+
+    // 整合审计事件列表
+    const allEvents = [];
+    const seenEventKeys = new Set();
+
+    if (Array.isArray(item.timeline)) {
+        item.timeline.forEach(ev => {
+            const k = (ev.ts || '') + '_' + (ev.type || '') + '_' + (ev.who || '');
+            if (!seenEventKeys.has(k)) {
+                seenEventKeys.add(k);
+                allEvents.push({
+                    ts: ev.ts || '',
+                    type: ev.type || 'audit',
+                    who: ev.who || 'system',
+                    details: ev.details || {}
+                });
+            }
+        });
+    }
+
+    if (Array.isArray(item.audit_events)) {
+        item.audit_events.forEach(ev => {
+            const k = (ev.ts || '') + '_' + (ev.event_type || '') + '_' + (ev.account_id || '');
+            if (!seenEventKeys.has(k)) {
+                seenEventKeys.add(k);
+                allEvents.push({
+                    ts: ev.ts || '',
+                    type: ev.event_type || 'event',
+                    who: ev.account_id || 'system',
+                    details: ev.properties || {}
+                });
+            }
+        });
+    }
+
+    // 填充 Tab 4 节点流: 单据全息生命周期时序流转轨迹
+    const flowChainEl = document.getElementById('plLifecycleFlowChain');
+    if (flowChainEl) {
+        const parseStatus = item.parse_status || '';
+        const hasUpload = true;
+        const hasParse = ['parsed', 'parsed_with_warnings', 'edited', 'approved', 'success', 'warning'].includes(parseStatus) || allEvents.some(e => ['parse_started', 'ocr_parse_started', 'parsed'].includes(e.type));
+        const gateInfo = item.gate_info || {};
+        const hasGate = (gateInfo.status != null) || hasParse;
+        const gateStatus = gateInfo.status || 'none';
+        const isApproved = (item.status === 'approved' || parseStatus === 'approved' || allEvents.some(e => ['receipt_approved', 'approve_receipt'].includes(e.type)));
+        const isEdited = ((item.modification && item.modification.is_modified) || allEvents.some(e => ['receipt_review_submitted', 'save_edited'].includes(e.type)));
+        const hasReview = isApproved || isEdited;
+        const hasFeedback = (item.feedback && item.feedback.like != null) || allEvents.some(e => (e.type || '').includes('feedback'));
+
+        const stages = [
+            {
+                id: 'upload',
+                label: '1. 图片上传',
+                active: hasUpload,
+                tag: '[OK] 已上传',
+                bg: '#dcfce7',
+                color: '#15803d',
+                border: '#bbf7d0'
+            },
+            {
+                id: 'parse',
+                label: '2. 模型解析',
+                active: hasParse,
+                tag: parseStatus === 'error' ? '[FAIL] 解析失败' : '[OK] 解析完成',
+                bg: parseStatus === 'error' ? '#fee2e2' : '#eff6ff',
+                color: parseStatus === 'error' ? '#b91c1c' : '#1d4ed8',
+                border: parseStatus === 'error' ? '#fecaca' : '#bfdbfe'
+            },
+            {
+                id: 'gate',
+                label: '3. 门禁校验',
+                active: hasGate,
+                tag: gateStatus === 'rejected' ? '[FAIL] 拦截阻断' : (gateStatus === 'warning' ? '[WARN] 告警放行' : '[OK] 校验通过'),
+                bg: gateStatus === 'rejected' ? '#fee2e2' : (gateStatus === 'warning' ? '#fef3c7' : '#f0fdf4'),
+                color: gateStatus === 'rejected' ? '#b91c1c' : (gateStatus === 'warning' ? '#b45309' : '#16a34a'),
+                border: gateStatus === 'rejected' ? '#fecaca' : (gateStatus === 'warning' ? '#fde68a' : '#bbf7d0')
+            },
+            {
+                id: 'review',
+                label: '4. 人工复核',
+                active: hasReview,
+                tag: isApproved ? '[OK] 审核通过' : (isEdited ? '[OK] 已修正' : '[待复核]'),
+                bg: isApproved ? '#dcfce7' : (isEdited ? '#eff6ff' : '#f1f5f9'),
+                color: isApproved ? '#15803d' : (isEdited ? '#1d4ed8' : '#94a3b8'),
+                border: isApproved ? '#bbf7d0' : (isEdited ? '#bfdbfe' : '#e2e8f0')
+            },
+            {
+                id: 'feedback',
+                label: '5. 体验评价',
+                active: hasFeedback,
+                tag: (item.feedback && item.feedback.like === 1) ? '[OK] 满意(点赞)' : ((item.feedback && item.feedback.like === -1) ? '[WARN] 点踩反馈' : (hasFeedback ? '[OK] 已评价' : '[待评价]')),
+                bg: (item.feedback && item.feedback.like === 1) ? '#dcfce7' : ((item.feedback && item.feedback.like === -1) ? '#fee2e2' : (hasFeedback ? '#eff6ff' : '#f1f5f9')),
+                color: (item.feedback && item.feedback.like === 1) ? '#15803d' : ((item.feedback && item.feedback.like === -1) ? '#b91c1c' : (hasFeedback ? '#1d4ed8' : '#94a3b8')),
+                border: (item.feedback && item.feedback.like === 1) ? '#bbf7d0' : ((item.feedback && item.feedback.like === -1) ? '#fecaca' : (hasFeedback ? '#bfdbfe' : '#e2e8f0'))
+            }
+        ];
+
+        let chainHtml = '';
+        stages.forEach((st, idx) => {
+            if (idx > 0) {
+                chainHtml += '<span style="color:#94a3b8; font-weight:700; user-select:none;">&rarr;</span>';
+            }
+            chainHtml += '<span class="badge" style="background:' + st.bg + '; color:' + st.color + '; border:1px solid ' + st.border + '; font-weight:600; padding:4px 10px; font-size:0.75rem;">'
+                + w2Escape(st.label) + ' ' + w2Escape(st.tag)
+                + '</span>';
+        });
+
+        flowChainEl.innerHTML = chainHtml;
+    }
+
+    // 填充 Tab 4 审计流水表格
+    const tlBody = document.getElementById('plTimelineBody');
+    if (tlBody) {
+        // 审计流水强制统一按时间倒序 (最新在前) 排序
+        allEvents.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')));
+
+        if (allEvents.length > 0) {
+            const EVENT_TYPE_NAMES = {
+                'upload': '图片上传',
+                'parse_started': '模型解析触发',
+                'ocr_parse_started': 'OCR/VLM抽取',
+                'contract_guard_checked': '契约门禁核对',
+                'math_guard_checked': '算术平算检验',
+                'gate_checked': '全链路门禁判定',
+                'receipt_review_submitted': '用户复核提交',
+                'receipt_approved': '单据审核入账',
+                'approve_receipt': '财务审核批准',
+                'receipt_flagged': '标记异常单据',
+                'flag_receipt': '异常单据告警',
+                'retake_clicked': '重拍补录挽回',
+                'reparse_clicked': '重跑识别挽回',
+                'feedback': '满意度评价',
+                'receipt_feedback': '反馈点赞/点踩',
+                'save_edited': '人工保存修改',
+                'auto_save': '系统自动归档'
+            };
+
+            let tlHtml = '';
+            allEvents.forEach(ev => {
+                const rawType = ev.type || 'audit';
+                const label = EVENT_TYPE_NAMES[rawType] || rawType;
+                let typeBadge = '<span class="badge" style="background:#eff6ff; color:#0369a1; border:1px solid #bfdbfe; font-weight:600;">' + w2Escape(label) + '</span>';
+                if (rawType.includes('gate') || rawType.includes('guard')) {
+                    typeBadge = '<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-weight:600;">' + w2Escape(label) + '</span>';
+                } else if (rawType.includes('approve') || rawType === 'upload') {
+                    typeBadge = '<span class="badge" style="background:#dcfce7; color:#15803d; border:1px solid #bbf7d0; font-weight:600;">' + w2Escape(label) + '</span>';
+                } else if (rawType.includes('flag') || rawType.includes('error')) {
+                    typeBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecaca; font-weight:600;">' + w2Escape(label) + '</span>';
+                }
+
+                let detailsText = '';
+                try {
+                    detailsText = JSON.stringify(ev.details || {}, null, 2);
+                } catch (e) {
+                    detailsText = String(ev.details || '-');
+                }
+
+                tlHtml += '<tr style="border-bottom:1px solid #f1f5f9;">'
+                    + '<td style="padding:6px 10px; font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-size:0.75rem; color:#64748b; vertical-align:top; white-space:nowrap; text-align:left;">' + w2Escape(_fmtDateTime(ev.ts)) + '</td>'
+                    + '<td style="padding:6px 10px; vertical-align:top;"><div>' + typeBadge + '</div><div style="font-size:0.7rem; color:var(--text-muted); font-family:monospace; margin-top:3px;">' + w2Escape(rawType) + '</div></td>'
+                    + '<td style="padding:6px 10px; color:#475569; vertical-align:top; font-weight:500;">' + w2Escape(ev.who || 'system') + '</td>'
+                    + '<td style="padding:6px 10px; vertical-align:top;"><pre style="margin:0; font-family:monospace; font-size:0.75rem; color:#475569; max-height:85px; overflow-y:auto; background:#f8fafc; padding:4px 8px; border-radius:4px; border:1px solid #e2e8f0; white-space:pre-wrap; word-break:break-all;">' + w2Escape(detailsText) + '</pre></td>'
+                    + '</tr>';
+            });
+            tlBody.innerHTML = tlHtml;
+        } else {
+            tlBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">暂无链路审计事件留痕</td></tr>';
+        }
+    }
+
+    // 填充 Tab 5: LLM 原生调用审计 (LLM Prompt & IO)
+    const llmCalls = item.llm_calls || [];
+    const llmSummaryBadge = document.getElementById('plLlmSummaryBadge');
+    if (llmSummaryBadge) {
+        llmSummaryBadge.textContent = llmCalls.length + ' 次调用';
+    }
+    const llmContainer = document.getElementById('plLlmAccordionContainer');
+    if (llmContainer) {
+        if (llmCalls.length === 0) {
+            llmContainer.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted); background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">暂无 LLM 原生调用审计记录</div>';
+        } else {
+            let accHtml = '';
+            llmCalls.forEach((call, cIdx) => {
+                const callId = call.id || (cIdx + 1);
+                const attemptNum = call.attempt || 1;
+                const legLabel = call.leg_label || (call.leg + ' 腿');
+                const isSuccess = call.status === 'success';
+                const statusTag = isSuccess ? '[OK]' : '[FAIL]';
+                const statusColor = isSuccess ? '#16a34a' : '#dc2626';
+                const statusBg = isSuccess ? '#dcfce7' : '#fee2e2';
+                const elapsedMs = (call.elapsed_ms != null ? Number(call.elapsed_ms).toFixed(1) : '0.0');
+                const tu = call.token_usage || {};
+                const totalTokens = tu.total_tokens || 0;
+                const cachedTokens = tu.cached_tokens || 0;
+                const hitRatePct = (tu.cache_hit_rate != null ? (tu.cache_hit_rate * 100).toFixed(1) : '0.0') + '%';
+                const modelName = call.model || '-';
+                const collapseId = 'plLlmCollapse_' + callId;
+
+                // 格式化 prompt 内容展示 (图片用纯文本卡片呈现)
+                let promptRenderHtml = '';
+                const pMsgs = Array.isArray(call.prompt_messages) ? call.prompt_messages : [];
+                if (pMsgs.length === 0) {
+                    promptRenderHtml = '<div style="color:var(--text-muted); font-size:0.75rem;">(空提示词)</div>';
+                } else {
+                    pMsgs.forEach(m => {
+                        const mRole = m.role || 'user';
+                        let roleBadge = '<span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.7rem; font-weight:600;">[' + w2Escape(mRole.toUpperCase()) + ']</span>';
+                        if (mRole === 'system') {
+                            roleBadge = '<span class="badge" style="background:#e0e7ff; color:#3730a3; font-size:0.7rem; font-weight:600;">[SYSTEM]</span>';
+                        } else if (mRole === 'assistant') {
+                            roleBadge = '<span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.7rem; font-weight:600;">[ASSISTANT]</span>';
+                        }
+                        let contentHtml = '';
+                        if (typeof m.content === 'string') {
+                            contentHtml = '<div style="white-space:pre-wrap; word-break:break-all; font-family:monospace; font-size:0.75rem; color:#334155; margin-top:4px;">' + w2Escape(m.content) + '</div>';
+                        } else if (Array.isArray(m.content)) {
+                            m.content.forEach(b => {
+                                if (b.type === 'text') {
+                                    contentHtml += '<div style="white-space:pre-wrap; word-break:break-all; font-family:monospace; font-size:0.75rem; color:#334155; margin-top:4px;">' + w2Escape(b.text || '') + '</div>';
+                                } else if (b.type === 'image_ref' && b.image_ref) {
+                                    const ir = b.image_ref;
+                                    const sizeKb = ir.byte_size ? (ir.byte_size / 1024).toFixed(1) + ' KB' : '未知大小';
+                                    const pathName = ir.source_path ? ir.source_path.split('/').pop() : 'receipt_image';
+                                    contentHtml += '<div style="margin:6px 0; padding:6px 10px; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; font-size:0.75rem; color:#1e40af; display:inline-flex; align-items:center; gap:8px;">'
+                                        + '<strong>[IMAGE_REF]</strong> '
+                                        + '<span>' + w2Escape(pathName) + ' (' + w2Escape(sizeKb) + ')</span>'
+                                        + '<span style="font-family:monospace; color:#64748b; font-size:0.7rem;">sha256:' + w2Escape((ir.sha256 || '').slice(0, 10)) + '...</span>'
+                                        + '</div>';
+                                } else {
+                                    contentHtml += '<div style="white-space:pre-wrap; word-break:break-all; font-family:monospace; font-size:0.75rem; color:#334155; margin-top:4px;">' + w2Escape(JSON.stringify(b)) + '</div>';
+                                }
+                            });
+                        }
+                        promptRenderHtml += '<div style="margin-bottom:8px; padding-bottom:8px; border-bottom:1px dashed #e2e8f0;">' + roleBadge + contentHtml + '</div>';
+                    });
+                }
+
+                // 原始输出
+                const rawOutput = call.raw_output || '';
+                const rawOutputEscaped = w2Escape(rawOutput);
+
+                // 一键复制辅助
+                const copyPromptBtn = '<button type="button" class="btn btn-secondary btn-sm" onclick="copyPLText(\'' + collapseId + '_prompt\')" style="padding:2px 8px; font-size:0.7rem;">复制 Prompt</button>';
+                const copyOutputBtn = '<button type="button" class="btn btn-secondary btn-sm" onclick="copyPLText(\'' + collapseId + '_output\')" style="padding:2px 8px; font-size:0.7rem;">复制 Output</button>';
+
+                accHtml += '<div class="card" style="margin-bottom:0; padding:0; border:1px solid #e2e8f0; border-radius:8px; overflow:hidden;">'
+                    + '<div onclick="togglePLLlmAccordion(\'' + collapseId + '\')" style="padding:10px 16px; background:#f8fafc; cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none; border-bottom:1px solid #e2e8f0;">'
+                    + '  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:0.8rem;">'
+                    + '    <strong style="color:var(--text-primary);">[轮次 ' + attemptNum + ' · ' + w2Escape(legLabel) + ']</strong>'
+                    + '    <span class="badge" style="background:' + statusBg + '; color:' + statusColor + '; font-weight:700;">' + statusTag + '</span>'
+                    + '    <span style="color:var(--text-muted);">耗时: ' + elapsedMs + 'ms</span>'
+                    + '    <span style="color:var(--text-muted);">|</span>'
+                    + '    <span>Tokens: <strong>' + totalTokens.toLocaleString() + '</strong> (Cached: <strong style="color:#059669;">' + cachedTokens.toLocaleString() + ' / ' + hitRatePct + '</strong>)</span>'
+                    + '    <span style="color:var(--text-muted);">|</span>'
+                    + '    <span style="color:#475569;">模型: ' + w2Escape(modelName) + '</span>'
+                    + '  </div>'
+                    + '  <div style="font-size:0.8rem; color:var(--text-muted); font-weight:bold;" id="' + collapseId + '_icon">[展开]</div>'
+                    + '</div>'
+                    + '<div id="' + collapseId + '" style="display:none; padding:14px; background:#ffffff;">'
+                    + '  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:14px;">'
+                    + '    <div style="display:flex; flex-direction:column; min-width:0;">'
+                    + '      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                    + '        <strong style="font-size:0.8rem; color:var(--text-primary);">输入提示词 (Prompt Messages)</strong>'
+                    + '        ' + copyPromptBtn
+                    + '      </div>'
+                    + '      <div id="' + collapseId + '_prompt" style="max-height:360px; overflow-y:auto; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px;">'
+                    +          promptRenderHtml
+                    + '      </div>'
+                    + '    </div>'
+                    + '    <div style="display:flex; flex-direction:column; min-width:0;">'
+                    + '      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+                    + '        <strong style="font-size:0.8rem; color:var(--text-primary);">模型原生输出 (Raw Output)</strong>'
+                    + '        ' + copyOutputBtn
+                    + '      </div>'
+                    + '      <pre id="' + collapseId + '_output" style="max-height:360px; overflow-y:auto; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:10px; margin:0; font-family:monospace; font-size:0.75rem; color:#1e293b; white-space:pre-wrap; word-break:break-all;">'
+                    +          (rawOutputEscaped || '<span style="color:var(--text-muted);">(无输出)</span>')
+                    + '      </pre>'
+                    + '    </div>'
+                    + '  </div>'
+                    + '</div>'
+                    + '</div>';
+            });
+            llmContainer.innerHTML = accHtml;
+        }
+    }
+}
+
+function openParsingLogModal(recordId) {
+    let item = currentParsingLogsState.items.find(x => x.record_id === recordId);
+    if (!item && currentParsingLogsState.activeItem && currentParsingLogsState.activeItem.record_id === recordId) {
+        item = currentParsingLogsState.activeItem;
+    }
+
+    if (item) {
+        currentParsingLogsState.activeItem = item;
+        renderParsingLogModalContent(item);
+    } else {
+        const metaRecordId = document.getElementById('plMetaRecordId');
+        if (metaRecordId) metaRecordId.textContent = '#' + recordId;
+        const diffBody = document.getElementById('plDiffTableBody');
+        if (diffBody) diffBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">正在加载单据明细...</td></tr>';
+        const tlBody = document.getElementById('plTimelineBody');
+        if (tlBody) tlBody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">正在拉取时序审计事件...</td></tr>';
+    }
+
+    // 默认切换到 Tab 1 并打开模态
+    switchParsingLogTab('diff');
+    const modal = document.getElementById('parsingLogModal') || document.getElementById('parsingLogDetailModal');
+    if (modal) modal.classList.remove('hide');
+
+    // 异步请求最新明细与全息事件流
+    fetch('/api/analytics/parsing-logs/detail?record_id=' + encodeURIComponent(recordId), {
+        headers: { 'Accept': 'application/json' }
+    })
+    .then(res => res.json())
+    .then(resData => {
+        if (resData && resData.status === 'success' && resData.data) {
+            currentParsingLogsState.activeItem = resData.data;
+            renderParsingLogModalContent(resData.data);
+        }
+    })
+    .catch(err => {
+        console.warn('[WARN] 获取解析日志详情失败:', err);
+    });
+}
+
+function openParsingLogDetailModal(recordId) {
+    return openParsingLogModal(recordId);
+}
+
+function closeParsingLogModal() {
+    const modal = document.getElementById('parsingLogModal') || document.getElementById('parsingLogDetailModal');
+    if (modal) modal.classList.add('hide');
+}
+
+function switchParsingLogTab(tabKey) {
+    const tabs = ['diff', 'token', 'guard', 'audit', 'llm'];
+    tabs.forEach(t => {
+        const btn = document.getElementById('btnPLTab' + t.charAt(0).toUpperCase() + t.slice(1));
+        const content = document.getElementById('plTabContent' + t.charAt(0).toUpperCase() + t.slice(1));
+        const isMatch = (t === tabKey);
+        if (btn) {
+            btn.style.borderBottomColor = isMatch ? '#2563eb' : 'transparent';
+            btn.style.color = isMatch ? '#2563eb' : 'var(--text-muted)';
+            btn.style.fontWeight = isMatch ? '600' : 'normal';
+        }
+        if (content) {
+            content.style.display = isMatch ? 'block' : 'none';
+        }
+    });
+}
+
+function togglePLLlmAccordion(collapseId) {
+    const el = document.getElementById(collapseId);
+    const icon = document.getElementById(collapseId + '_icon');
+    if (!el) return;
+    const isHidden = (el.style.display === 'none');
+    el.style.display = isHidden ? 'block' : 'none';
+    if (icon) {
+        icon.textContent = isHidden ? '[收起]' : '[展开]';
+    }
+}
+
+function copyPLText(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText || el.textContent || '';
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => {
+            alert('复制成功');
+        }).catch(() => {
+            alert('复制失败，请手动选取');
+        });
+    } else {
+        alert('浏览器不支持剪贴板API，请手动选取');
+    }
+}
+
+// 暴露全局 API
+window.syncParsingLogsTenants = syncParsingLogsTenants;
+window.loadParsingLogs = loadParsingLogs;
+window.renderParsingLogsTable = renderParsingLogsTable;
+window.renderParsingLogsPagination = renderParsingLogsPagination;
+window.onParsingLogsPageChange = onParsingLogsPageChange;
+window.resetParsingLogFilters = resetParsingLogFilters;
+window.openParsingLogModal = openParsingLogModal;
+window.openParsingLogDetailModal = openParsingLogModal;
+window.openParsingLogDetail = openParsingLogModal;
+window.closeParsingLogModal = closeParsingLogModal;
+window.switchParsingLogTab = switchParsingLogTab;
+window.togglePLLlmAccordion = togglePLLlmAccordion;
+window.copyPLText = copyPLText;
+
+
 
 

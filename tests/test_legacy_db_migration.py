@@ -8,9 +8,11 @@
 3. T2 复合主键形态 (vendor, tenant_id) 同样触发重建
 4. 含 name 全局 UNIQUE 的 skus 重建为按租户命名空间（无 name 唯一约束），
    数据保全；行为闭环：跨租户同名 SKU 可创建
-5. 幂等：同一库连续两次 import，第二次零动作零异常（schema 指纹不变）
-6. 新形态库（create_all 直建）零动作：二次 import schema 指纹不变
-7. 失败路径（R5b）：拷贝阶段抛异常时旧表数据完好、无 __rebuild 残留、
+5. 含 name 全局 UNIQUE 的 suppliers 重建为按租户命名空间（无 name 唯一约束），
+   数据保全；行为闭环：同租户重名仍被拒、跨租户同名供应商可各自创建
+6. 幂等：同一库连续两次 import，第二次零动作零异常（schema 指纹不变）
+7. 新形态库（create_all 直建）零动作：二次 import schema 指纹不变
+8. 失败路径（R5b）：拷贝阶段抛异常时旧表数据完好、无 __rebuild 残留、
    import/函数调用不抛出、日志含 warning
 
 数据一律假数据（虚拟商户/虚拟食材，随机后缀防串扰）；临时库用 tempfile 并清理。
@@ -42,8 +44,10 @@ import app.db as db  # noqa: E402
 # 夹具：裸 SQL 构造旧形态库 + 受控 import
 # -------------------------------------------------------------
 def _build_legacy_db(path, with_vendor_memory=True, with_skus=True,
-                     vendor_memory_shape="pre_t2", skus_shape="unique_index"):
-    """用裸 SQL 构造 pre-T2/T2 形态的 vendor_memory 与含 name 唯一约束的 skus。"""
+                     vendor_memory_shape="pre_t2", skus_shape="unique_index",
+                     with_suppliers=False, suppliers_shape="unique_index"):
+    """用裸 SQL 构造 pre-T2/T2 形态的 vendor_memory、含 name 唯一约束的 skus
+    与含 name 唯一约束的 suppliers。"""
     suffix = uuid.uuid4().hex[:6]
     conn = sqlite3.connect(path)
     c = conn.cursor()
@@ -93,6 +97,33 @@ def _build_legacy_db(path, with_vendor_memory=True, with_skus=True,
         c.execute("INSERT INTO skus (name, category, base_unit, current_stock,"
                   " last_unit_price, active) VALUES (?, ?, ?, ?, ?, ?)",
                   (f"虚拟食材乙{suffix}", "肉类", "斤", 0.0, 33.0, 1))
+    if with_suppliers:
+        # 旧形态不含 tenant_id（由 import 期的 ALTER 迁移补列 + default 回填）
+        if suppliers_shape == "unique_index":
+            # create_all 旧形态：name 列上生成 UNIQUE 索引（ix_suppliers_name UNIQUE）
+            c.execute("CREATE TABLE suppliers ("
+                      "id INTEGER NOT NULL, name VARCHAR, supplier_code VARCHAR,"
+                      "active INTEGER, payment_terms_days INTEGER,"
+                      "settlement_pref VARCHAR, contact_phone VARCHAR,"
+                      "notes VARCHAR, PRIMARY KEY (id))")
+            c.execute("CREATE UNIQUE INDEX ix_suppliers_name ON suppliers (name)")
+        elif suppliers_shape == "unique_column":
+            # 更老形态：name 列约束 UNIQUE（sqlite_autoindex）
+            c.execute("CREATE TABLE suppliers ("
+                      "id INTEGER NOT NULL, name VARCHAR UNIQUE,"
+                      "supplier_code VARCHAR, active INTEGER,"
+                      "payment_terms_days INTEGER, settlement_pref VARCHAR,"
+                      "contact_phone VARCHAR, notes VARCHAR, PRIMARY KEY (id))")
+        c.execute("INSERT INTO suppliers (name, supplier_code, active,"
+                  " payment_terms_days, settlement_pref, contact_phone, notes)"
+                  " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (f"虚拟供應商甲{suffix}", "SUP-AAAAAA", 1, 30, "credit",
+                   "91234567", "備註A"))
+        c.execute("INSERT INTO suppliers (name, supplier_code, active,"
+                  " payment_terms_days, settlement_pref, contact_phone, notes)"
+                  " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                  (f"虚拟供应商乙{suffix}", "SUP-BBBBBB", 1, None, "cash",
+                   "", "備註B"))
     conn.commit()
     conn.close()
     return {"suffix": suffix}
@@ -250,12 +281,78 @@ def test_rebuilt_skus_allow_cross_tenant_same_name():
 
 
 # -------------------------------------------------------------
+# 3b. suppliers：name 全局 UNIQUE 重建为按租户命名空间 + 数据保全 + 行为闭环
+# -------------------------------------------------------------
+def test_legacy_suppliers_unique_name_rebuilt_to_tenant_namespace():
+    for shape in ("unique_index", "unique_column"):
+        path = os.path.join(_TMP, f"sup_{shape}_{uuid.uuid4().hex[:8]}.db")
+        planted = _build_legacy_db(path, with_vendor_memory=False,
+                                   with_skus=False, with_suppliers=True,
+                                   suppliers_shape=shape)
+        _db = _import_db(path)
+
+        conn = sqlite3.connect(path)
+        c = conn.cursor()
+        # 无任何覆盖 name 的唯一索引
+        for idx in c.execute("PRAGMA index_list(suppliers)").fetchall():
+            idx_name, is_unique = idx[1], idx[2]
+            if not is_unique:
+                continue
+            cols = [r[2] for r in c.execute(f"PRAGMA index_info({idx_name})")]
+            assert cols != ["name"], f"{shape}: name 仍存在唯一索引 {idx_name}"
+        # 数据保全：id/全部字段值不变，缺失 tenant_id 按 default 填充
+        rows = c.execute("SELECT id, name, supplier_code, active,"
+                         " payment_terms_days, settlement_pref, contact_phone,"
+                         " notes, tenant_id FROM suppliers ORDER BY id").fetchall()
+        conn.close()
+        assert len(rows) == 2, "重建不得丢行"
+        assert rows[0][0] == 1 and rows[1][0] == 2, "供应商 id 必须保全（外键引用）"
+        assert rows[0][1] == f"虚拟供應商甲{planted['suffix']}"
+        assert rows[1][1] == f"虚拟供应商乙{planted['suffix']}"
+        assert rows[0][2] == "SUP-AAAAAA" and rows[1][2] == "SUP-BBBBBB"
+        assert rows[0][3] == 1 and rows[1][3] == 1
+        assert rows[0][4] == 30 and rows[1][4] is None, "payment_terms_days NULL 必须保全"
+        assert rows[0][5] == "credit" and rows[1][5] == "cash"
+        assert rows[0][6] == "91234567" and rows[1][6] == ""
+        assert rows[0][7] == "備註A" and rows[1][7] == "備註B"
+        assert all(r[8] == "default" for r in rows)
+
+
+def test_rebuilt_suppliers_same_tenant_dup_rejected_cross_tenant_allowed():
+    """C 项行为闭环：同租户重名仍被 scoped 检查拒绝（既有行为不变），
+    跨租户同名供应商可各自创建（旧库会在 INSERT 处 IntegrityError）。"""
+    path = os.path.join(_TMP, f"sup_cross_{uuid.uuid4().hex[:8]}.db")
+    planted = _build_legacy_db(path, with_vendor_memory=False, with_skus=False,
+                               with_suppliers=True, suppliers_shape="unique_index")
+    _db = _import_db(path)
+
+    name = f"虚拟供應商甲{planted['suffix']}"
+    # ① 同租户重名仍被拒（既有行为不变，应用层 scoped 检查是唯一防重线）
+    sup_id, err = _db.create_supplier(name, tenant_id="default")
+    assert sup_id is None and err == "已存在同名供应商"
+    # ② 跨租户同名供应商可各自构造成功
+    sup_b, err_b = _db.create_supplier(name, tenant_id="tenantB")
+    assert err_b is None and sup_b, "跨租户同名供应商应可创建"
+    row_b = _db.get_supplier(sup_b, tenant_id="tenantB")
+    assert row_b is not None and row_b.tenant_id == "tenantB"
+    assert row_b.id != 1, "跨租户同名必须是新档案，不得复用 default 租户的既有 id"
+    # 旧库存量行完好且归属 default；跨租户视角看不到它
+    row_a = _db.get_supplier(1, tenant_id="default")
+    assert row_a is not None and row_a.name == name
+    assert _db.get_supplier(1, tenant_id="tenantB") is None
+    # tenantB 内同名重复创建同样被拒
+    sup_b2, err_b2 = _db.create_supplier(name, tenant_id="tenantB")
+    assert sup_b2 is None and err_b2 == "已存在同名供应商"
+
+
+# -------------------------------------------------------------
 # 4. 幂等：二次 import 零动作零异常
 # -------------------------------------------------------------
 def test_rebuild_idempotent_second_import_zero_action():
     path = os.path.join(_TMP, f"idem_{uuid.uuid4().hex[:8]}.db")
     planted = _build_legacy_db(path, vendor_memory_shape="pre_t2",
-                               skus_shape="unique_index")
+                               skus_shape="unique_index", with_suppliers=True,
+                               suppliers_shape="unique_column")
     _db = _import_db(path)  # 第一次 import：触发重建
     fp1 = _schema_fingerprint(path)
 
@@ -270,6 +367,7 @@ def test_rebuild_idempotent_second_import_zero_action():
     # 数据仍在
     counts = dict(fp2["counts"])
     assert counts.get("vendor_memory") == 2 and counts.get("skus") == 2
+    assert counts.get("suppliers") == 2, "suppliers 重建后行数必须保全"
 
 
 # -------------------------------------------------------------
@@ -295,6 +393,10 @@ def test_new_shape_db_untouched_on_import():
         if idx[2]:
             cols = [r[2] for r in c.execute(f"PRAGMA index_info({idx[1]})")]
             assert cols != ["name"], "新库 skus.name 不应有唯一索引"
+    for idx in c.execute("PRAGMA index_list(suppliers)").fetchall():
+        if idx[2]:
+            cols = [r[2] for r in c.execute(f"PRAGMA index_info({idx[1]})")]
+            assert cols != ["name"], "新库 suppliers.name 不应有唯一索引"
     conn.close()
     assert len(_db.list_vendor_memory(vendor, tenant_id="default")) == 1
 

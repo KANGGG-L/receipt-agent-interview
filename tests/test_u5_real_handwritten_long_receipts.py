@@ -44,26 +44,28 @@ def test_ac1_rag_vendor_memory_retrieval_and_variations():
     )
 
     # 1. 变体检索验证：德利行
-    ctx_1 = rag.retrieve_context("德利行")
+    # P0-T1：retrieve_context 的 tenant_id 已改为必填（keyword-only），
+    # 读侧必须显式传租户，与上面 ingest_memory 的写侧同口径。
+    ctx_1 = rag.retrieve_context("德利行", tenant_id="default")
     assert "德利行" in ctx_1
     assert "獅球嘜粟米油" in ctx_1 or "街市NCR" in ctx_1
 
-    ctx_2 = rag.retrieve_context("Tak Lee Hong")
+    ctx_2 = rag.retrieve_context("Tak Lee Hong", tenant_id="default")
     assert "德利行" in ctx_2 or "Tak Lee Hong" in ctx_2
 
-    ctx_3 = rag.retrieve_context("德利行糧油批發有限公司")
+    ctx_3 = rag.retrieve_context("德利行糧油批發有限公司", tenant_id="default")
     assert "德利行" in ctx_3
 
     # 2. 变体检索验证：祥興快餐用品
-    ctx_4 = rag.retrieve_context("祥興")
+    ctx_4 = rag.retrieve_context("祥興", tenant_id="default")
     assert "祥興" in ctx_4
     assert "环保发泡胶碗" in ctx_4 or "耗材批发商" in ctx_4
 
-    ctx_5 = rag.retrieve_context("祥兴快餐用品")  # 简体
+    ctx_5 = rag.retrieve_context("祥兴快餐用品", tenant_id="default")  # 简体
     assert "祥興" in ctx_5 or "祥兴" in ctx_5
 
     # 3. 隔离性验证：买方名称绝不串联到供应商记忆
-    ctx_buyer = rag.retrieve_context("七月餐室")
+    ctx_buyer = rag.retrieve_context("七月餐室", tenant_id="default")
     assert ctx_buyer == "" or ("德利行" not in ctx_buyer and "祥興" not in ctx_buyer)
 
 

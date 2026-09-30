@@ -29,6 +29,13 @@
 
     function headers(extra) {
         var h = { 'X-Role': role() };
+        // 本页不经过 main.js 的 apiFetch 统一出口，需自行带上 Bearer 令牌：
+        // AUTH_ENABLED=1 时后端只认令牌，缺了它该页所有请求都会 401。
+        // 令牌键名与 main.js 的 AUTH_TOKEN_KEY 一致；无令牌时不注入（演示态照常放行）。
+        try {
+            var token = localStorage.getItem('receipt_auth_token');
+            if (token) { h['Authorization'] = 'Bearer ' + token; }
+        } catch (e) { /* localStorage 不可用时降级为不带令牌 */ }
         if (extra) { for (var k in extra) { h[k] = extra[k]; } }
         return h;
     }
@@ -378,6 +385,38 @@
 
     // ---------------- 待确认记忆（T8 Gap D1 人工闸）----------------
     // 连续纠偏蒸馏产物先进队列，人工批准后才注入识别；未批准不参与检索。
+
+    // W-10 字段级 diff：把候选的结构化载荷逐字段渲染出来（kind / key / 既有值 / 候选值），
+    // 而不是只摊一整段 content 让审核者对整体点头/摇头。旧值侧（existing_fact_value）由
+    // 只读端点复用 db.list_vendor_memory 投射（同 vendor+fact_key 的当前 active 值）；
+    // 取不到时显示「新增」，不渲染成空串（"没有旧值"不等于"旧值为空"）。
+    // 遗留的纯文本候选（无任何结构化字段）退回一行中性说明，approve/reject 流程不变。
+    function pendingFactDiffHtml(m) {
+        m = m || {};
+        function has(v) {
+            return !(v === null || v === undefined || String(v).trim() === '');
+        }
+        if (!has(m.fact_kind) && !has(m.fact_key) && !has(m.fact_value)) {
+            return '<span class="kbd-hint">纯文本候选（无结构化字段）</span>';
+        }
+        var existing = m.existing_fact_value;
+        var html = '<div class="fact-diff">' +
+            '<div class="fd-line"><span class="fd-label">kind</span>' +
+            '<span class="fd-kind">' + esc(m.fact_kind || '-') + '</span></div>' +
+            '<div class="fd-line"><span class="fd-label">key</span>' +
+            '<span class="fd-key">' + esc(m.fact_key || '-') + '</span></div>';
+        if (has(existing)) {
+            html += '<div class="fd-line"><span class="fd-label">既有值</span>' +
+                '<span class="fd-old">' + esc(existing) + '</span></div>';
+        } else {
+            html += '<div class="fd-line"><span class="fd-label">既有值</span>' +
+                '<span class="fd-new">（新增，无既有值）</span></div>';
+        }
+        html += '<div class="fd-line"><span class="fd-label">候选值</span>' +
+            '<span class="fd-new">' + esc(m.fact_value || '-') + '</span></div></div>';
+        return html;
+    }
+
     function loadPendingMemories() {
         return api('/api/memory/pending?status=pending').then(function (data) {
             var list = (data && data.data) || [];
@@ -399,6 +438,7 @@
                     '<td>#' + m.id + '</td>' +
                     '<td>' + esc(m.vendor || '') + '</td>' +
                     '<td style="max-width:420px; white-space:pre-wrap;">' + esc(m.content || '') + '</td>' +
+                    '<td class="fact-diff-td">' + pendingFactDiffHtml(m) + '</td>' +
                     '<td>' + esc(refs.map(function (r) { return '#' + r; }).join(' ') || '-') + '</td>' +
                     '<td>' + esc(m.status) + '</td>' +
                     '<td><div class="reflow-actions">' +
@@ -487,4 +527,7 @@
     window.batchConfirmUntouched = batchConfirmUntouched;
     window.promoteCandidate = promoteCandidate;
     window.rejectCandidate = rejectCandidate;
+    // W-10 字段级 diff：暴露给 node vm 脚手架直接断言渲染产物（本页无其它导出面）。
+    window.pendingFactDiffHtml = pendingFactDiffHtml;
+    window.loadPendingMemories = loadPendingMemories;
 })();

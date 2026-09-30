@@ -18,7 +18,12 @@
       "metrics": {
         "recall": 96.0,
         "false_alarm_rate": 3.5,
-        "injection_defense_rate": 100.0,
+        "injection_defense_rate": null,
+        "claim_unsupported": true,
+        "claim_unsupported_note": "原登记 injection_defense_rate=100.0 无任何评测集/脚本/报告支撑，判定为虚假指标并纠正（改为 null）。审核腿的注入防线同识别腿：一律经 XML 数据沙箱包裹（结构性隔离），检出能力见 prompt_injection_guard 的实测口径（字符层绕过 14/14，语义型无通用检出率）。",
+        "sandbox_isolation_rate": 100.0,
+        "sandbox_isolation_rate_scope": "结构性保证：审核 prompt 中的非受信内容一律进入 XML 数据沙箱；与检出能力无关",
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap8_prompt_injection_defense.py tests/test_injection_guard_v1_1.py -q",
         "avg_tokens": 520
       },
       "changelog": [

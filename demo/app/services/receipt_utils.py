@@ -48,6 +48,31 @@ def _track_internal(event_type, receipt_id=None, properties=None):
         pass
 
 
+def _apply_snapshot_credential(cfg, snap, side, applied):
+    """把 A/B 快照的 <side>_api_key 应用到 cfg，并处理「换端点不换密钥」的凭据外泄。
+
+    规则（凭据保护）：
+      - 快照提供了 <side>_api_key：采用该密钥，applied["api_key_source"] = "snapshot"。
+      - 快照覆盖了 <side>_base_url 但未提供对应密钥：显式清空 cfg.openai_rec_api_key，
+        applied["api_key_source"] = "cleared"。
+
+    why（为什么必须清空）：base_url 被快照改写后，库中真实密钥若不清空，会被当作
+    Authorization 发往实验指定的第三方端点，构成凭据外泄；清空后该次调用会因缺密钥
+    失败，属可观测的失败而非静默外泄。仅当 base_url 也未被覆盖时才保留库内密钥。
+
+    applied：调用方的 _applied 字典，就地记录 api_key_source，供 experiment_override
+    透传与日志留痕（不静默）。
+    """
+    key_field = f"{side}_api_key"
+    base_field = f"{side}_base_url"
+    if snap.get(key_field):
+        cfg.openai_rec_api_key = snap[key_field]
+        applied["api_key_source"] = "snapshot"
+    elif snap.get(base_field):
+        cfg.openai_rec_api_key = ""
+        applied["api_key_source"] = "cleared"
+
+
 def _db_path_switched(job_id, stage):
     """后台 Job 跨库写入前哨：库路径在任务执行期间被切换 → 放弃写入并置可辨失败态。
 
@@ -101,12 +126,23 @@ def _log_gate_rejects(result):
 # AI 管线：异步 Job
 # -------------------------------------------------------------
 def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
-                          tenant_id=None):
+                          tenant_id=None, image_guard=None,
+                          vendor_hint_origin="", raw_image_path=None):
     """启动后台识别 Job。返回 job_id。
 
     线程执行识别管线；完成后写回收据行并更新 JOBS。
     P0-1 写入链路租户透传：tenant_id 为上传入口的租户键，缺省 "default"
     向后兼容；必须在派发后台线程前捕获为局部变量，Job 线程内不得读 request。
+    P2-1 图内隐藏文字检测结果（image_guard）：上传入口在 preprocess.apply_pipeline
+    之前对**原图**算出，随 job 透传——落 receipts.image_guard_json（供 build_detail
+    详情与前端横幅）、进 JOBS（供轮询），并转交 supervisor 写入 extract 决策 extra。
+    缺省 None 时不写、行为零变化；异常只告警不阻断。
+    vendor_hint_origin（可观测性，additive）：显式 vendor_hint 的来源
+    （"user"=用户手填 / "precheck"=上传端点预判填充），随管线 state → Job result /
+    extract 决策 extra 透传。缺省空串时管线行为与接线前一致（不写 extra 键、
+    result 字段为空串）。
+    raw_image_path（真理源保护）：单据入库持久化的原始上传图片路径。若传入，
+    receipts.image_path 恒指向 raw_image_path，识别管线使用 image_path（可为预处理图）。
     """
     job_id = db.new_id()
     # R1：捕获任务创建时的库路径，随后台线程一起带走。每次写库前校验生效的
@@ -115,11 +151,21 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     _tenant = str(tenant_id or "default").strip() or "default"
     if receipt_id is None:
         receipt_id = db.create_receipt(status="uploaded", tenant_id=_tenant)
-    db.update_receipt(receipt_id, status="parsing", image_path=image_path)
+    _guard_json = None
+    if isinstance(image_guard, dict):
+        try:
+            _guard_json = json.dumps(image_guard, ensure_ascii=False)
+        except Exception as e:
+            logging.getLogger("receipt_utils").warning(
+                "[WARN] image_guard 序列化失败，跳过落库: %s", e)
+    db_image_path = raw_image_path if raw_image_path else image_path
+    db.update_receipt(receipt_id, status="parsing", image_path=db_image_path,
+                      image_guard_json=_guard_json)
 
     with JOBS_LOCK:
         JOBS[job_id] = {"job_id": job_id, "job_status": "queued",
-                        "receipt_id": receipt_id, "started_ts": time.time()}
+                        "receipt_id": receipt_id, "started_ts": time.time(),
+                        "image_guard": image_guard}
     _track_internal("ocr_parse_started", receipt_id, {"job_id": job_id})
 
     def _run():
@@ -183,8 +229,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         if snap.get("treatment_base_url"):
                             cfg.openai_rec_base_url = snap["treatment_base_url"]
                             _applied["base_url"] = cfg.openai_rec_base_url
-                        if snap.get("treatment_api_key"):
-                            cfg.openai_rec_api_key = snap["treatment_api_key"]
+                        _apply_snapshot_credential(cfg, snap, "treatment", _applied)
                     else:
                         if snap.get("control_model"):
                             cfg.openai_rec_model = snap["control_model"]
@@ -192,19 +237,20 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         if snap.get("control_base_url"):
                             cfg.openai_rec_base_url = snap["control_base_url"]
                             _applied["base_url"] = cfg.openai_rec_base_url
-                        if snap.get("control_api_key"):
-                            cfg.openai_rec_api_key = snap["control_api_key"]
+                        _apply_snapshot_credential(cfg, snap, "control", _applied)
                     if _applied:
                         experiment_override = {
                             "experiment_id": experiment_id,
                             "grp": grp,
                             "model": cfg.openai_rec_model,
                             "base_url": cfg.openai_rec_base_url,
+                            "api_key_source": _applied.get("api_key_source"),
                         }
                         logging.getLogger("receipt_utils").warning(
-                            "A/B 实验 #%s(%s) 已覆盖管理台引擎配置：model=%s base_url=%s",
+                            "A/B 实验 #%s(%s) 已覆盖管理台引擎配置：model=%s base_url=%s api_key_source=%s",
                             experiment_id, grp, cfg.openai_rec_model,
-                            cfg.openai_rec_base_url)
+                            cfg.openai_rec_base_url,
+                            _applied.get("api_key_source") or "unchanged")
             except Exception as exp_err:
                 logging.getLogger("receipt_utils").warning(f"解析运行中 A/B 实验路由失败: {exp_err}")
             # Job 级透传：错误/进行中轮询也能看到本次是否被实验覆盖
@@ -214,12 +260,25 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             from app.chains import supervisor
             if _db_path_switched(job_id, "before_pipeline"):
                 return
+            # 可观测性：显式 vendor_hint 的来源（"user"/"precheck"）随管线透传，落
+            # extract 决策 extra 与 Job result。仅在非空时传参 —— 缺省语义等价
+            # （管线侧形参缺省即空串），又不必破坏固定签名的替身/直接调用消费方
+            # （既有 run_pipeline 打桩惯例，见 test_rag_hint_source_persistence 等）。
+            _pipeline_kwargs = {}
+            if str(vendor_hint_origin or "").strip():
+                _pipeline_kwargs["vendor_hint_origin"] = vendor_hint_origin
             result = supervisor.run_pipeline(
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
                 receipt_id=receipt_id,  # U-2: 透传 receipt_id，AI 决策履历落库关联单据
                 experiment_id=experiment_id,
                 on_event=_on_event,
+                image_guard=image_guard,  # P2-1 图内隐藏文字 flags 随管线落 extract 决策 extra
+                # Gap H1：把 Job 启动时捕获的租户带进识别管线，VendorMemory 读侧与
+                # approve 写侧（api_receipts 回写）因此同租户；_tenant 是派发线程前的
+                # 局部变量（见本函数开头），Job 线程内不读 request。
+                tenant_id=_tenant,
+                **_pipeline_kwargs,
             )
             data = result.get("data")
             if data is None:
@@ -276,11 +335,21 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "image_url": image_url,
                         "version": version,
                         "quality_warnings": quality_warnings,
+                        # P2-1：图内隐藏文字检测结果随 job 结果透传（前端轮询可见）
+                        "image_guard": image_guard,
                         "fallback_triggered": result.get("fallback_triggered", False),
                         "fallback_reason": result.get("fallback_reason", ""),
                         "fallback_from": result.get("fallback_from", ""),
                         "fallback_engine": result.get("fallback_engine", ""),
                         "experiment_override": experiment_override,
+                        # FP-1：run 级 hint 来源标记随 Job result 透传（"first_round"
+                        # 或空串）。恒有键：Job result 是内存态非落盘，新增键对前端纯增量；
+                        # 开关关/显式 hint 时为空串（get_job 的兜底分支刻意不补，无 state 可取）。
+                        "rag_hint_source": result.get("rag_hint_source") or "",
+                        # 可观测性：显式 vendor_hint 的来源（"user"=用户手填 /
+                        # "precheck"=上传端点预判填充）随 Job result 透传。同款恒有键
+                        # 纯增量手法；无显式 hint / 未接线调用方时为空串。
+                        "vendor_hint_origin": result.get("vendor_hint_origin") or "",
                     },
                 })
             # R4：看板口径修复。该事件此前只带 Job 生命周期的 status="done"，
@@ -322,35 +391,133 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     return job_id, receipt_id
 
 
-def sweep_parsing_timeout(timeout_seconds=300):
-    """Gate-2：扫描超时的 parsing 单据，强制置为 error(parsing_timeout)。
+# Gate-2 parsing 超时阈值（秒）：settings 键 parsing_timeout_seconds 可覆盖。这里必须把
+# 两件事分开陈述，不要合并成一句「无变化」（P23 与 P29 两波独立复现过这处不准确表述）：
+#   ① 阈值缺省值：300，与接线前的硬编码值一致 —— 这一项确实未变；
+#   ② 执行时机：接线前 sweep_parsing_timeout **零调用方**（从不执行），接线后由
+#      app/main.py:181 的启动自检（_sweep_stale_parsing_startup）在**每次服务启动**时
+#      执行 —— 这是有意的行为变更。
+# ② 的可观测后果：卡在 parsing 超过该阈值的单据会在服务启动时被置为
+# error(parsing_timeout) 并落 audit_logs_json 审计留痕（实测 live 原有 7 张卡 26-33 天的
+# 单据已因此被清扫，首次返回 7 个 id、再次返回 [] 即幂等）。
+PARSING_TIMEOUT_SECONDS_DEFAULT = 300
+PARSING_TIMEOUT_SETTINGS_KEY = "parsing_timeout_seconds"
 
-    可由定时任务或请求入口调用，幂等、无副作用于已完成单据。
-    返回被置为 error 的 receipt_id 列表。
+# 超期 parsing 行被强制置为 error 时写进 audit_logs_json 的 reason；前端与巡检
+# 据此把「识别超时」与「识别失败」区分开。
+PARSING_TIMEOUT_REASON = "parsing_timeout"
+
+
+def parsing_timeout_seconds():
+    """超期 parsing 阈值（秒）：settings 键 parsing_timeout_seconds，缺省 300。
+
+    why 抽成函数而不是把缺省直接写成形参默认值：写侧 `sweep_parsing_timeout` 与只读
+    巡检端点 `GET /api/admin/parsing-stale` 必须读**同一个**阈值 —— 各写一份读取就是
+    本仓①类「同一口径多份实现，只改一份」，管理台改完阈值后两侧会静默分叉（一处按新
+    值判、另一处仍按 300 判）。settings_service.get_int 本身已对「库不可用 / 值非法」
+    回退缺省；这里再钳一次非正值 —— 0/负数会让 cutoff 落到未来，把**正在解析中**的
+    单据误判成超期并置 error。
+    """
+    from app.services import settings_service
+    try:
+        value = settings_service.get_int(PARSING_TIMEOUT_SETTINGS_KEY,
+                                        PARSING_TIMEOUT_SECONDS_DEFAULT)
+    except Exception as e:
+        logging.getLogger("receipt_utils").warning(
+            "[parsing_sweep] 读取 %s 失败，回退缺省 %d: %s",
+            PARSING_TIMEOUT_SETTINGS_KEY, PARSING_TIMEOUT_SECONDS_DEFAULT, e)
+        return PARSING_TIMEOUT_SECONDS_DEFAULT
+    if not value or int(value) <= 0:
+        return PARSING_TIMEOUT_SECONDS_DEFAULT
+    return int(value)
+
+
+def stale_parsing_query(session, timeout_seconds=None, tenant_id=None, now=None):
+    """构造「超期 parsing 单据」查询（唯一识别口径，只构造不执行）。
+
+    why 必须只有一份：写侧 `sweep_parsing_timeout`（置 error）与只读巡检端点
+    `GET /api/admin/parsing-stale`（列清单）必须看到**同一批**行 —— 端点在别处重写
+    一遍扫描 SQL 就是本仓①类「同一根因多份实现，只改一份」：两处判定一旦分叉，会出现
+    「管理台显示无超期行、而 sweep 实际在把它们置 error」且无人察觉。
+
+    识别口径（三条件同时成立）：status == 'parsing'、created_at 早于 cutoff、
+    未软删（deleted_at IS NULL）；cutoff = now - 阈值秒数，阈值经
+    `parsing_timeout_seconds()` 读 settings。**缺省不含租户过滤**（sweep 是全租户语义，
+    巡检必须与它同范围才能解释「sweep 会动哪些行」）；tenant_id 给值时只做额外收窄。
+
+    `now` 仅供测试注入固定「当前时刻」（边界用例需要确定性的阈值上下分类），生产不传。
     """
     import datetime as _dt
-    cutoff = (_dt.datetime.now() - _dt.timedelta(seconds=timeout_seconds)).isoformat(timespec="seconds")
+    if timeout_seconds is None:
+        timeout_seconds = parsing_timeout_seconds()
+    if now is None:
+        now = _dt.datetime.now()
+    cutoff = (now - _dt.timedelta(seconds=int(timeout_seconds))).isoformat(timespec="seconds")
+    q = session.query(db._ReceiptRow).filter(
+        db._ReceiptRow.status == "parsing",
+        db._ReceiptRow.created_at < cutoff,
+        db._ReceiptRow.deleted_at.is_(None),
+    )
+    if tenant_id:
+        q = q.filter(db._ReceiptRow.tenant_id == tenant_id)
+    return q.order_by(db._ReceiptRow.id)
+
+
+def list_stale_parsing_receipts(timeout_seconds=None, tenant_id=None):
+    """只读列出当前超期 parsing 单据（dict 列表），复用 `stale_parsing_query` 口径。
+
+    why 存在：`GET /api/admin/parsing-stale` 需要一份「sweep 会动哪些行」的只读视图，
+    且必须与 sweep 同口径。这里只 SELECT、不 commit、不改 status —— 端点因此天然无副作用
+    （带副作用的「强制清扫」另有显式入口，不由 GET 触发）。
+
+    返回前端巡检清单所需的最小字段集。
+    """
     s = db.get_session()
     try:
-        rows = s.query(db._ReceiptRow).filter(
-            db._ReceiptRow.status == "parsing",
-            db._ReceiptRow.created_at < cutoff,
-            db._ReceiptRow.deleted_at.is_(None),
-        ).all()
+        rows = stale_parsing_query(s, timeout_seconds=timeout_seconds,
+                                   tenant_id=tenant_id).all()
+        return [{
+            "id": r.id,
+            "status": r.status,
+            "created_at": r.created_at or "",
+            "updated_at": r.updated_at or "",
+            "supplier_name": r.supplier_name or "",
+            "doc_form": r.doc_form or "",
+            "tenant_id": r.tenant_id or "default",
+        } for r in rows]
+    finally:
+        s.close()
+
+
+def sweep_parsing_timeout(timeout_seconds=None):
+    """Gate-2：扫描超时的 parsing 单据，强制置为 error(parsing_timeout)。
+
+    生产触发方：`app/main.py::_sweep_stale_parsing_startup`（启动自检）—— 本函数此前
+    **零调用方**（全仓 grep 只有这一处定义），所以这条清扫从未跑过，超期单据状态永久假
+    「在途」（live 曾积压 7 张、26–33 天）。判定复用 `stale_parsing_query`（唯一口径），
+    与只读端点 `GET /api/admin/parsing-stale` 同源。
+
+    幂等：不触碰非 parsing / 未超期 / 已软删的行。返回被置为 error 的 receipt_id 列表。
+    """
+    s = db.get_session()
+    try:
+        rows = stale_parsing_query(s, timeout_seconds=timeout_seconds).all()
         ids = []
         for r in rows:
             r.status = "error"
             # reason 写入 audit_logs_json 供前端标红“识别超时”
-            logs = __import__("json").loads(r.audit_logs_json or "[]")
-            logs.append({"who": "system", "action": "timeout", "field": "status", "old": "parsing", "new": "error", "reason": "parsing_timeout", "ts": db.now_iso()})
-            r.audit_logs_json = __import__("json").dumps(logs, ensure_ascii=False)
+            logs = json.loads(r.audit_logs_json or "[]")
+            logs.append({"who": "system", "action": "timeout", "field": "status",
+                         "old": "parsing", "new": "error",
+                         "reason": PARSING_TIMEOUT_REASON, "ts": db.now_iso()})
+            r.audit_logs_json = json.dumps(logs, ensure_ascii=False)
             r.updated_at = db.now_iso()
             ids.append(r.id)
         if ids:
             s.commit()
         for rid in ids:
             _track_internal("ocr_error", rid, {
-                "status": "timeout", "reason": "parsing_timeout",
+                "status": "timeout", "reason": PARSING_TIMEOUT_REASON,
             })
         return ids
     finally:
@@ -413,6 +580,79 @@ def _merge_math_warnings(problems, warnings):
     return merged
 
 
+def _resolve_supplier_anchor(vendor_name, tenant_id):
+    """在当前租户内按「精确名 -> canonical_supplier_key 归一」解析供应商档案 id。
+
+    返回三态语义必须区分清楚：
+      - 命中的 int id；
+      - None（读取成功但**确实没有**匹配档案）；
+      - 抛异常（读取本身失败）—— 调用方据此放弃刷新，绝不当成"无档案"而清锚点。
+
+    口径与 db._backfill_receipt_supplier_ids（D17）同款：先按档案名精确匹配，再按
+    canonical_supplier_key 归一匹配，且不按 active 过滤（D17 回填同样扫描全量档案）。
+    只读：仅 db.list_suppliers，不写任何表。
+    """
+    from app.services.supplier_normalizer import canonical_supplier_key
+    suppliers = db.list_suppliers(include_inactive=True, tenant_id=tenant_id)
+    for sup in suppliers:
+        if (sup.name or "") == vendor_name:
+            return int(sup.id)
+    key = canonical_supplier_key(vendor_name)
+    if not key:
+        return None
+    for sup in suppliers:
+        if canonical_supplier_key(sup.name or "") == key:
+            return int(sup.id)
+    return None
+
+
+def _refresh_receipt_supplier_anchor(receipt_id, vendor_name, tenant_id):
+    """回写 supplier_name 后同步刷新 receipts.supplier_id（修复 D17 锚点陈旧缺陷）。
+
+    why：save_parsed_data 用识别出的 vendor 覆盖 receipts.supplier_name，却从不更新
+    supplier_id，于是重新识别把供应商名改写后锚点仍指向旧档案 —— supplier_name 与
+    supplier_id 互相矛盾（独立复核实测：receipt 45 名=鴻運餐飲 却挂 supplier_id=4）。
+    本函数让锚点始终是"当前名字"的解析结果，两者不再分叉。
+
+    口径：`_resolve_supplier_anchor`（精确名 -> canonical 归一，当前租户内）。解析不出
+    档案则写 NULL，**绝不凭空建档**（与 db.resolve_supplier_id / D17 同一条纪律）。
+    名字为空（未改写的空 vendor）时不刷新，保留原锚点 —— 没有可对齐的名字就无从判断。
+
+    幂等：解析结果与当前 supplier_id 相同则纯读、不落库（连 updated_at 都不触碰）。
+    update_receipt 会跳过 None 值（无法把陈旧锚点清成 NULL），故这里用独立会话直接写；
+    同时复用 db.job_db_path_mismatch 复刻 Job 跨库写入闸门，避免库在任务执行期间被
+    切换时把锚点写进新库。
+    """
+    name = str(vendor_name or "").strip()
+    if not name:
+        return
+    try:
+        resolved = _resolve_supplier_anchor(name, tenant_id)
+    except Exception as e:
+        logging.getLogger("receipt_utils").warning(
+            "[supplier_anchor] 读取供应商档案失败（receipt=%s vendor=%r tenant=%r），"
+            "保留原 supplier_id: %s", receipt_id, name, tenant_id, e)
+        return
+    if db.job_db_path_mismatch() is not None:
+        return
+    try:
+        s = db.get_session()
+        try:
+            row = s.get(db._ReceiptRow, int(receipt_id))
+            if row is None:
+                return
+            if getattr(row, "supplier_id", None) != resolved:
+                row.supplier_id = resolved
+                row.updated_at = db.now_iso()
+                s.commit()
+        finally:
+            s.close()
+    except Exception as e:
+        logging.getLogger("receipt_utils").warning(
+            "[supplier_anchor] 刷新 receipts.supplier_id 失败（receipt=%s vendor=%r）: %s",
+            receipt_id, name, e)
+
+
 def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
     from app.services.contract import sanitize_nan, normalize_evidence
@@ -423,6 +663,38 @@ def save_parsed_data(receipt_id, data, result):
     _tenant_ctx = None
     if _ctx_row is not None:
         _tenant_ctx = (getattr(_ctx_row, "tenant_id", "") or "").strip() or None
+    # P2-T2：供应商上下文同样从单据行派生（别名表按供应商建键）。行上已锚定时直接
+    # 用锚点；未锚定（新上传的单据在解析阶段通常还没写入 supplier_id）则按本次识别
+    # 出的 vendor 名解析一次 —— 复用 db.resolve_supplier_id 这一唯一解析实现，
+    # 解析不出留 None（宁可回落全局匹配，也不新建成一条假供应商档案）。
+    _supplier_ctx = getattr(_ctx_row, "supplier_id", None) if _ctx_row is not None else None
+    if not _supplier_ctx:
+        _vendor_name = getattr(data, "vendor", "") or ""
+        if _vendor_name:
+            _supplier_ctx = db.resolve_supplier_id(_vendor_name, tenant_id=_tenant_ctx)
+    # L0 锚点回退链（只追加、既有两档顺序与实现不动；每档成功即止）：
+    # ③ vendor_hint 档 —— result["vendor_hint"] 同时承载用户手填 hint 与首轮预判供应商
+    #   （supervisor 首轮注入分支在无显式 hint 时覆写为预判结果），是对锚点的两个上游
+    #   信号在 parse 期的唯一可得形态；同名不重复解析（hint == vendor 时 ② 已试过）。
+    # ④ 记忆先验档 —— db.resolve_supplier_id_from_memory（唯一实现）：同名字历史记忆行
+    #   携带的锚点，唯一候选才用（不猜）。全落空 → 保持 None（现状语义，回落全局匹配）。
+    # 注意：这里只影响解析期 _match_sku 的供应商收窄，**不改** receipts.supplier_id
+    # 落库值 —— D17 锚点持久化仍只认识别 vendor 名（_refresh_receipt_supplier_anchor）。
+    if not _supplier_ctx:
+        _hint = str(result.get("vendor_hint") or "").strip()
+        if _hint and _hint != (getattr(data, "vendor", "") or ""):
+            _supplier_ctx = db.resolve_supplier_id(_hint, tenant_id=_tenant_ctx)
+            if _supplier_ctx:
+                logging.getLogger("receipt_utils").info(
+                    "[supplier_anchor] parse 期回退锚定 receipt=%s 档=vendor_hint "
+                    "supplier_id=%s", receipt_id, _supplier_ctx)
+    if not _supplier_ctx:
+        _supplier_ctx = db.resolve_supplier_id_from_memory(
+            getattr(data, "vendor", ""), tenant_id=_tenant_ctx)
+        if _supplier_ctx:
+            logging.getLogger("receipt_utils").info(
+                "[supplier_anchor] parse 期回退锚定 receipt=%s 档=memory_prior "
+                "supplier_id=%s", receipt_id, _supplier_ctx)
 
     # 使用模块顶层单例，避免每次实例化
     _sanitizer = _sanitizer_singleton
@@ -461,7 +733,7 @@ def save_parsed_data(receipt_id, data, result):
             "actual_qty": getattr(it, "actual_qty", None),
             "evidence": normalize_evidence(_ev),
         })
-        _match_sku(items_raw[-1], tenant_id=_tenant_ctx)
+        _match_sku(items_raw[-1], tenant_id=_tenant_ctx, supplier_id=_supplier_ctx)
 
     anomaly_items = [it for it in items_raw if it.get("price_anomaly")]
     if anomaly_items:
@@ -532,6 +804,9 @@ def save_parsed_data(receipt_id, data, result):
             ensure_ascii=False),
         payment_evidence=str(getattr(data, "payment_evidence", "") or ""),
     )
+    # D17 锚点陈旧修复：supplier_name 已按识别结果回写，supplier_id 必须同步刷新，
+    # 否则重新识别改写供应商名后锚点仍指向旧档案（名/id 互相矛盾）。
+    _refresh_receipt_supplier_anchor(receipt_id, data.vendor, _tenant_ctx)
     db.set_receipt_items(receipt_id, items_raw)
     return build_detail(db.get_receipt_row(receipt_id))
 
@@ -561,18 +836,30 @@ def _normalize_sku_name(name):
     return text
 
 
-def _match_sku(item, tenant_id=None):
-    """按商品名匹配 SKU（精确 → 核心词匹配）。
+def _match_sku(item, tenant_id=None, supplier_id=None):
+    """按商品名匹配 SKU（供应商别名 → 精确 → 核心词匹配）。
 
     匹配到则回填 sku_id / last_price。匹配规则收紧：
-    - 优先精确匹配
-    - 模糊匹配要求：核心词长度 ≥2，且 SKU 名包含商品核心词（双向包含）
+    - **P2-T2 新增供应商维度优先**：先查「该供应商历史用这个写法指哪个 SKU」
+      （`db.find_vendor_sku_alias`，命中即回，并累加 hit_count）
+    - 未命中别名再走原全局口径：优先精确匹配；模糊匹配要求核心词长度 ≥2，
+      且 SKU 名包含商品核心词（双向包含）
     - 避免"茶"这类单字误配（核心词最短 2 字符）
     P2-2：tenant_id 从所属单据行派生传入，SKU 检索限定本租户；
     缺省 None 时不过滤（既有调用向后兼容）。
+    P2-T2：supplier_id 同样从单据行派生（行上没有锚点时由调用方按 vendor 名解析）。
+    缺省 None 时不查别名表 —— 别名表按 (租户, 供应商) 建键，没有供应商维度就无从
+    判定"同一写法指哪个 SKU"，故回落全局匹配（不猜、也不全量）。
     """
     name = item["name"] or ""
-    sku = db.find_sku_by_name(name, tenant_id=tenant_id)
+    sku = None
+    if supplier_id:
+        # 别名通道内部已吞异常并留 warning，返回 None 时按"未命中"继续走全局匹配
+        sku = db.find_vendor_sku_alias(
+            name, tenant_id=tenant_id, supplier_id=supplier_id,
+            canonical_name=_normalize_sku_name(name))
+    if sku is None:
+        sku = db.find_sku_by_name(name, tenant_id=tenant_id)
     if sku is None:
         core = _normalize_sku_name(name)
         if len(core) >= 2:
@@ -603,6 +890,15 @@ def _load_json_list(raw):
     except (TypeError, ValueError):
         return []
     return val if isinstance(val, list) else []
+
+
+def _load_json_obj(raw):
+    """JSON object 列安全解析（非 dict/空/坏 JSON → {}）。"""
+    try:
+        val = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return val if isinstance(val, dict) else {}
 
 
 def build_detail(row):
@@ -655,6 +951,9 @@ def build_detail(row):
         "tax_amount": float(getattr(row, "tax_amount", 0.0) or 0.0),
         "adjustment_notes": _load_json_list(getattr(row, "adjustment_notes_json", None)),
         "payment_evidence": str(getattr(row, "payment_evidence", "") or ""),
+        # P2-1：图内隐藏文字检测结果（{flagged, reasons, metrics}）；缺省 {} = 未检测/无结果。
+        # 新增字段，既有字段不变；只告警不拦截，前端据此决定是否显示人话横幅。
+        "image_guard": _load_json_obj(getattr(row, "image_guard_json", None)),
         # U-2: AI 决策履历（extract 各轮 + audit），单表索引查询，detail 频次可接受
         "ai_decisions": db.list_ai_decisions(row.id),
     }
@@ -693,7 +992,7 @@ def _patch_audit_reason(audit_result):
 
 
 # -------------------------------------------------------------
-# 原图 URL：按格式分流 + HMAC 签名防枚举
+# 原图 URL：统一签名端点 + HMAC 签名防枚举
 # -------------------------------------------------------------
 def _sign_tenant(tenant_id):
     """签名与 URL 共用的租户归一：空 / None → default。
@@ -710,6 +1009,12 @@ def preview_image_signature(receipt_id, stem, tenant_id="default"):
     why: 该端点匿名可取图（`<img src>` 无法携带请求头），而 receipt_id 自增可枚举；
     签名让「URL 由后端签发」成为取图前提，堵住遍历 id 的横向枚举。复用 app.auth
     的 _sign / _TOKEN_SECRET，不新造密钥：轮换 DEMO_TOKEN_SECRET 即让旧签名全部失效。
+
+    强度如实陈述（D21，不得美化）：密钥仍是仓库内置默认值（
+    auth.token_secret_is_weak() 为真，/api/health 的 signature_secret_weak=true）时，
+    签名**只防误撞、不防构造** —— 任何读过源码的人都能用公开常量自行签发任意
+    receipt_id / 文件名主体 / 租户的合法 sig。此形态下签名不构成访问控制，真正的边界
+    是端点的租户归属校验与「文件必须落在 UPLOAD_DIR 内」的路径收敛。
     """
     from app.auth import _sign
     payload = "%d|%s|%s" % (int(receipt_id), stem, _sign_tenant(tenant_id))
@@ -722,6 +1027,34 @@ def verify_preview_image_signature(receipt_id, stem, tenant_id, sig):
         return False
     try:
         expected = preview_image_signature(receipt_id, stem, tenant_id)
+    except (TypeError, ValueError):
+        return False
+    return hmac.compare_digest(expected, str(sig))
+
+
+def voucher_image_signature(name, tenant_id="default"):
+    """付款凭证取图 URL 的 HMAC 签名：绑定 凭证文件名 + 租户。
+
+    why: 与单据原图端点同构 —— 凭证端点也由浏览器原生发起（`<a href>` 带不了请求头），
+    而凭证文件名可枚举/可猜；签名让「URL 由后端签发」成为取图前提。复用 app.auth
+    的 _sign / _TOKEN_SECRET，不新造密钥：轮换 DEMO_TOKEN_SECRET 即让旧签名全部失效。
+
+    强度如实陈述（D21）：与 preview_image_signature 同一密钥，故在弱密钥形态下同样
+    **只防误撞、不防构造**（签名不构成访问控制，见该函数 docstring 与 /api/health 的
+    signature_secret_weak）；凭证端点的真实边界是 `_voucher_tenant_owns` 的租户归属
+    校验与 VOUCHER_DIR 的路径收敛。
+    """
+    from app.auth import _sign
+    payload = "voucher|%s|%s" % (str(name or ""), _sign_tenant(tenant_id))
+    return _sign(payload)
+
+
+def verify_voucher_image_signature(name, tenant_id, sig):
+    """常量时间比对凭证签名；缺签名 / 篡改 / 参数非法一律 False。"""
+    if not sig:
+        return False
+    try:
+        expected = voucher_image_signature(name, tenant_id)
     except (TypeError, ValueError):
         return False
     return hmac.compare_digest(expected, str(sig))
@@ -740,38 +1073,39 @@ def _quote_query_value(value):
 
 
 def public_image_url(receipt_id, image_path, tenant_id="default"):
-    """收据原图对外 URL：Web 格式沿用 /uploads 静态地址，非 Web 格式走转码端点。
+    """收据原图对外 URL：一律指向签名取图端点 GET /api/receipt/{id}/image。
 
-    why: `.heic/.tiff` 经 StaticFiles 返回 text/plain，浏览器不渲染；非 Web 格式
-    改指 GET /api/receipt/{id}/image 按需转码。Web 格式保持 `/uploads/<basename>`
-    逐字节不变（1490 张 jpg/png 零回归）。
-    `?v=<stem>` 兼作版本参数：replace-image 换图后 receipt_id 不变，不带版本参数
-    会命中旧图的浏览器/HTTP 缓存。
-    `&sig=<HMAC(id|stem|租户)>` 是该端点的取图凭证（端点为浏览器原生发起、带不了
-    请求头，故不能靠 RBAC）；签名随 URL 由后端签发，前端零改动，见
-    verify_preview_image_signature。
+    why: 原图曾经有两条出口 —— Web 格式直链 `/uploads/<basename>` 静态目录，非 Web
+    格式（`.heic/.tiff` 经 StaticFiles 返回 text/plain、浏览器不渲染）走按需转码端点。
+    `/uploads` 静态挂载本身零鉴权、零租户校验，属未授权文件面，已整体撤销；原图不再有
+    「直链文件」形态，Web 与非 Web 统一走同一签名端点。运行时无额外成本：Web 格式在
+    端点侧由 web_preview_path 原样返回源文件、不做转码（见 api_receipts._preview_media_type）。
+    `?v=<stem>` 兼作版本参数：replace-image 换图后 receipt_id 不变，不带版本参数会命中
+    旧图的浏览器/HTTP 缓存；它同时参与签名载荷，端点据此把签名与「当前真实原图文件名
+    主体」绑定，换图后旧 URL 立即失效。
+    `&sig=<HMAC(id|stem|租户)>` 是该端点的取图凭证（端点为浏览器原生发起、带不了请求头，
+    故不能靠 RBAC）；签名随 URL 由后端签发，前端零改动，见 verify_preview_image_signature。
+    非默认租户追加 `&tenant_id=`，端点据此完成租户归属校验；default 省略该参数。
 
     URL 只对查询参数值做 percent 编码（见 _quote_query_value）：签名基于未编码的
     原值，端点由 query 解析自动解回原值，故签名与取图行为不受编码影响。
 
-    行为变更（相对旧实现，显式记录）：旧实现是
-    `"/uploads/" + (image_path.split("/")[-1] if image_path else "")`，即
-    image_path 为空时返回 `"/uploads/"` —— 一个指向目录、浏览器打不开的无效 URL
-    （live 库有 238 条空 image_path 单据走这条分支）。本函数对空 image_path 返回
-    `""`，语义为「无图」，由消费方按空值降级处理（前端须有 `if (url)` /
-    `|| fallback` 守卫，见 main.js 归档弹窗）。
+    无图即空串：image_path 为空、或 receipt_id 无法解析为整数（None/空串/非数字）时
+    返回 `""` —— 签不出有效 URL 就不产出任何形态的地址，语义为「无图」，由消费方按
+    空值降级处理（前端须有 `if (url)` / `|| fallback` 守卫，见 main.js 归档弹窗）。
     """
     if not image_path:
-        # 空路径 = 无图：返回空串（不是 "/uploads/"），避免调用方拿到无效 URL
+        # 空路径 = 无图：返回空串，避免调用方拿到指向目录的无效 URL
         return ""
     name = str(image_path).split("/")[-1]
-    if not image_web.is_non_web_image_path(name):
-        return "/uploads/" + name
-    # 非 Web 格式：receipt_id 缺失/非法时退回静态地址，保持旧行为不退化为坏 URL
+    if not name:
+        # 路径只由目录成分构成（如 "uploads/"）→ 同样无图
+        return ""
     try:
         rid = int(receipt_id)
     except (TypeError, ValueError):
-        return "/uploads/" + name
+        # receipt_id 缺失/非法 → 无可用签名主体，按无图处理
+        return ""
     stem = image_web.preview_stem(name)
     tenant = _sign_tenant(tenant_id)
     url = "/api/receipt/%d/image?v=%s&sig=%s" % (

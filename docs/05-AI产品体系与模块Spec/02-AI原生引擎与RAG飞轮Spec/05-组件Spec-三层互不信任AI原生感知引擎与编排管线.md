@@ -24,7 +24,7 @@
 │                                          ▼                                             │
 │   【第 2 层：确定性代码契约与算术门禁层 (Deterministic Gate)】                          │
 │    · 执行者：Pydantic Schema (contract.py) + Canary Token 验签 + math_engine.py         │
-│    · 职责：① 验证 Canary Token 防上游篡改；② 阻断 Schema 外部字段；③ 强制算术勾稽守恒 │
+│    · 职责：① 校验 Canary 错配/降级（非防篡改）；② 阻断 Schema 外部字段；③ 强制算术勾稽守恒 │
 │    · 纪律：校验并提供建议，不静默改写；发现不一致反馈至 Prompt 触发自愈重试            │
 │                                                                                        │
 │                                          │ （输出 Verified Draft）                     │

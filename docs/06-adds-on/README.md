@@ -10,4 +10,5 @@
 | [02-PGM实习背景叙事包.md](02-PGM实习背景叙事包.md) | PGM 实习背景、角色边界与贡献叙事统一口径 |
 | [03-压力面问答演练.md](03-压力面问答演练.md) | 四轮 16 问压力面实战演练与应答要点 |
 | [04-自进化飞轮与平台架构Gap分析.md](04-自进化飞轮与平台架构Gap分析.md) | 自进化飞轮对照 Document AI 平台架构的 Gap 分析 |
+| [05-VendorMemory现状与大厂标准Gap分析.md](05-VendorMemory现状与大厂标准Gap分析.md) | VendorMemory 实现现状调查，对照 AgentCore/Vertex/mem0 等行业标准的 Gap 分析 |
 | [document-ai-system-architecture.html](document-ai-system-architecture.html) | Document AI 系统架构可视化图（浏览器打开） |

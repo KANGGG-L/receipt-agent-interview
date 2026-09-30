@@ -2,28 +2,138 @@
 """支付 + 对账端点（简化实现，界面可用的最小功能）。"""
 
 import json
+import logging
+import mimetypes
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, File, Form, Request, UploadFile
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional
 
 from app import db
-from app.auth import require_role
+from app.auth import require_role, resolve_tenant
+from app.services.receipt_utils import (
+    verify_voucher_image_signature, voucher_image_signature,
+)
 
 router = APIRouter()
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 VOUCHER_DIR = BASE_DIR / "uploads" / "vouchers"
 VOUCHER_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# -------------------------------------------------------------
+# 付款凭证取图：签名端点（/uploads 静态挂载已撤销后的唯一出口）
+# -------------------------------------------------------------
+def _resolve_voucher_file(raw):
+    """把库里的凭证名归一到 VOUCHER_DIR 内的绝对路径；越界返回 None。
+
+    why: 凭证端点不经请求头鉴权对外暴露，必须防 `../` 路径穿越与绝对路径注入。先
+    basename 归一（丢弃任何目录成分），再 resolve 后校验父目录链落在模块级
+    VOUCHER_DIR 内（resolve 同时穿透符号链接）。用模块级常量以便测试 monkeypatch 到
+    临时目录。与 api_receipts._resolve_upload_file 同构，后者收敛的是原图目录
+    （uploads/），凭证目录是它的子目录，故各用各的模块级根。
+    """
+    if not raw:
+        return None
+    name = os.path.basename(str(raw).strip())
+    if not name or name in (".", ".."):
+        return None
+    base = Path(VOUCHER_DIR).resolve()
+    try:
+        candidate = (base / name).resolve()
+    except OSError:
+        return None
+    if base not in candidate.parents:
+        return None
+    return candidate
+
+
+def _voucher_basename(raw):
+    """库内凭证字段 → 纯文件名。
+
+    兼容两种写法：早期落库的 `/uploads/vouchers/<name>` 路径，与当前落库的相对名
+    `<name>`。两者一律按 basename 归一，读侧无需 DB 迁移（旧数据继续可用）。
+    """
+    if not raw:
+        return ""
+    return os.path.basename(str(raw).strip().replace("\\", "/"))
+
+
+def public_voucher_url(name, tenant_id="default"):
+    """付款凭证对外 URL：签名取图端点 GET /api/payment/voucher/{name}。
+
+    why: `/uploads` 静态挂载已撤销，凭证不再有「直链文件」形态。签名绑定
+    「凭证文件名 + 租户」，与收据原图端点同构（见 receipt_utils.voucher_image_signature）；
+    `?v=` 与路径段同为该文件名，端点据此把签名主体与真实资源严格对齐。
+    非默认租户追加 `&tenant_id=`，端点据此完成租户归属校验；default 省略该参数。
+    凭证名为空时返回 ""（语义为「无凭证」），由消费方按空值降级。
+    """
+    bare = _voucher_basename(name)
+    if not bare:
+        return ""
+    tenant = str(tenant_id or "").strip() or "default"
+    url = "/api/payment/voucher/%s?v=%s&sig=%s" % (
+        quote(bare, safe=""), quote(bare, safe=""),
+        voucher_image_signature(bare, tenant))
+    if tenant != "default":
+        url += "&tenant_id=" + quote(tenant, safe="")
+    return url
+
+
+def _voucher_tenant_owns(name, tenant):
+    """该租户的付款行里是否存在引用此凭证名的行（租户归属校验）。
+
+    why: 凭证文件名可猜，签名只保证「URL 由后端签发」；同一目录下的文件不区分租户，
+    必须再按「本租户确有付款行引用它」判定归属，避免 A 租户拿到的签名 URL 读到
+    B 租户的凭证。判定失败一律视为无归属（宁拒不放）。
+    """
+    try:
+        for p in db.list_payments(tenant_id=tenant):
+            if _voucher_basename(p.get("voucher_image_url")) == name:
+                return True
+    except Exception as e:
+        logging.getLogger("api_finance").warning(f"[WARN] 凭证租户归属判定失败: {e}")
+        return False
+    return False
+
+
+@router.get("/api/payment/voucher/{name}")
+def get_payment_voucher(name: str, request: Request):
+    """返回付款凭证原件（图片原样透传，内容类型按扩展名判定）。
+
+    why 刻意不加 require_role：凭证由 `<a href target=_blank>` 在浏览器原生发起，
+    无法携带 X-Role / Authorization 等请求头，加请求头 RBAC 会让凭证请求全部 401。
+    防护改为三重业务校验：HMAC 签名（绑定 凭证名 + 租户）、租户归属（本租户确有付款行
+    引用它）、文件落在 VOUCHER_DIR 内（防路径穿越）。签名校验置于任何 DB / 磁盘访问
+    之前，未签名扫描不产生查询与 IO 开销。
+    """
+    tenant = (request.query_params.get("tenant_id") or "").strip() or _tenant_id(request)
+    bare = _voucher_basename(name)
+    stem = (request.query_params.get("v") or "").strip()
+    if not bare or stem != bare or not verify_voucher_image_signature(
+            bare, tenant, request.query_params.get("sig")):
+        return JSONResponse(status_code=403, content={
+            "status": "error", "code": "VOUCHER_SIGNATURE_INVALID",
+            "msg": "凭证链接签名无效或缺失"})
+    if not _voucher_tenant_owns(bare, tenant):
+        return JSONResponse(status_code=404, content={
+            "status": "error", "code": "VOUCHER_NOT_FOUND", "msg": "凭证不存在"})
+    src = _resolve_voucher_file(bare)
+    if src is None or not src.is_file():
+        return JSONResponse(status_code=404, content={
+            "status": "error", "code": "VOUCHER_NOT_FOUND", "msg": "凭证文件缺失"})
+    guessed, _ = mimetypes.guess_type(str(src))
+    return FileResponse(str(src), media_type=guessed or "application/octet-stream")
 
 
 # -------------------------------------------------------------
@@ -33,20 +143,30 @@ VOUCHER_DIR.mkdir(parents=True, exist_ok=True)
 def list_payments(request: Request, supplier_id: int = None):
     """支付列表。supplier_id 非空时只返回该供应商的支付。
 
-    why（与 list_reconciliation 同源的口径分叉修复）：原先写成
-    `if supplier_id: sup = ...; if sup: data = [...]` —— 当 supplier_id 不存在
-    **或属于别的租户**时，`sup` 为 None，过滤整段被跳过，于是**静默退回全量**：
-    筛选看上去生效、实际把不属于该供应商（甚至跨租户）的支付一并返回。
-    现改为「找不到就是空列表」，与 list_reconciliation 的过滤口径一致。
+    why（口径分叉修复 + D16 租户隔离）：原先 `data = db.list_payments()` 无任何
+    过滤，不带 supplier_id 时把**全租户**付款一并返回；带 supplier_id 时又用
+    「按供应商名匹配」这套跨租户回退口径（同名档案会串号）。
+    现改为：
+    - 基础列表透传请求租户（db.list_payments(tenant_id=...)），天然只返回本租户；
+    - supplier_id 过滤改按付款行自带的 supplier_id 精确关联（删除按名匹配的
+      跨租户回退逻辑）；供应商不存在或跨租户 -> 空列表（不退回全量）。
+
+    凭证 URL 在返回前就地改写为后端签发的签名端点地址：历史遗留的库内字符串
+    `/uploads/vouchers/<name>` 与当前落库的相对名走同一条 basename 归一逻辑，免
+    DB 迁移（旧数据继续可用），且响应里不再出现任何 `/uploads/` 出口。
     """
     require_role("owner")(request)
-    data = db.list_payments()
+    tenant_id = _tenant_id(request)
+    data = db.list_payments(tenant_id=tenant_id)
+    for p in data:
+        p["voucher_image_url"] = public_voucher_url(
+            p.get("voucher_image_url"), tenant_id)
     if supplier_id:
-        # 供应商按租户校验：不存在或跨租户 → 空列表（不退回全量）
-        sup = db.get_supplier(supplier_id, tenant_id=_tenant_id(request))
+        # 供应商按租户校验：不存在或跨租户 -> 空列表（不退回全量）
+        sup = db.get_supplier(supplier_id, tenant_id=tenant_id)
         if not sup:
             return {"status": "success", "data": []}
-        data = [p for p in data if p["supplier_name"] == sup.name]
+        data = [p for p in data if p.get("supplier_id") == supplier_id]
     return {"status": "success", "data": data}
 
 
@@ -62,17 +182,20 @@ async def create_payment(
     voucher: UploadFile = File(None),
 ):
     require_role("owner")(request)
-    voucher_path = ""
+    voucher_name = ""
     if voucher and voucher.filename:
         ext = os.path.splitext(voucher.filename)[1].lower() or ".jpg"
         path = VOUCHER_DIR / f"{db.new_id()}{ext}"
         with open(path, "wb") as f:
             import shutil
             shutil.copyfileobj(voucher.file, f)
-        voucher_path = "/uploads/vouchers/" + path.name
+        # 落库存相对名（不含任何 `/uploads/vouchers/` 前缀）：库内不再出现指向静态
+        # 目录的字符串，URL 一律由读侧按租户签发（见 public_voucher_url）。
+        voucher_name = path.name
 
     payment_id = db.create_payment(supplier_id, amount, method, paid_at,
-                                   notes, voucher_path, receipt_ids or [])
+                                   notes, voucher_name, receipt_ids or [],
+                                   tenant_id=_tenant_id(request))
     return {"status": "success", "msg": "付款已登记", "id": payment_id}
 
 

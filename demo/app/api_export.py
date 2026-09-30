@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app import db
 from app.api_receipts import _mask_sensitive
-from app.auth import require_role, resolve_account
+from app.auth import require_role, resolve_account, resolve_tenant
 from app.services.costing_service import CostingService
 from app.services.recipe_cost import compute_recipe_theory
 
@@ -22,11 +22,8 @@ router = APIRouter()
 
 
 def _tenant_id(request: Request) -> str:
-    return (
-        request.headers.get("X-Tenant-Id")
-        or request.headers.get("x-tenant-id")
-        or "default"
-    ).strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 
 def _sanitize_csv_cell(val: Any) -> Any:
@@ -1238,7 +1235,7 @@ class ExportDataProcessor:
                     round(amt, 2),
                     p.get("method", "银行转账"),
                     rc_str,
-                    "已上传" if p.get("voucher_path") else "无凭证",
+                    "已上传" if p.get("voucher_image_url") else "无凭证",
                     p.get("notes", ""),
                 ]
             )

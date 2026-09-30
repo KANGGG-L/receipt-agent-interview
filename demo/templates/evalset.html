@@ -80,6 +80,15 @@
                       border-bottom: 1px solid #e2e8f0; font-weight: 600; }
     table.reflow td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
     .reflow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .fact-diff { display: flex; flex-direction: column; gap: 2px; }
+    .fd-line { display: flex; gap: 6px; align-items: baseline; }
+    .fd-label { color: #64748b; min-width: 44px; font-size: 0.76rem; }
+    .fd-kind { display: inline-block; background: #e0e7ff; color: #3730a3; border-radius: 4px;
+               padding: 0 6px; font-size: 0.74rem; font-weight: 600; }
+    .fd-key { font-family: monospace; font-size: 0.78rem; color: #334155;
+              word-break: break-all; }
+    .fd-old { color: #b45309; text-decoration: line-through; word-break: break-all; }
+    .fd-new { color: #15803d; font-weight: 600; word-break: break-all; }
     .single-surface-note { font-size: 0.78rem; color: #64748b; margin-bottom: 8px; }
     @media (max-width: 900px) { .main { grid-template-columns: 1fr; }
         .img-box { height: 46vh; } }
@@ -190,10 +199,10 @@
             </div>
             <div style="overflow:auto; max-height: 40vh;">
                 <table class="reflow">
-                    <thead><tr><th>ID</th><th>供应商</th><th>记忆内容</th><th>触发单据</th>
+                    <thead><tr><th>ID</th><th>供应商</th><th>记忆内容</th><th>字段级 diff</th><th>触发单据</th>
                         <th>状态</th><th style="width:230px;">操作</th></tr></thead>
                     <tbody id="pendingMemoryBody">
-                        <tr><td colspan="6" class="loading-note">加载中…</td></tr>
+                        <tr><td colspan="7" class="loading-note">加载中…</td></tr>
                     </tbody>
                 </table>
             </div>

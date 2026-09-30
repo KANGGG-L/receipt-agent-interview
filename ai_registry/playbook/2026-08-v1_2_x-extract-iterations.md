@@ -102,8 +102,11 @@
   保留飞轮先验收益的同时阻断注入
 - **改动 diff**：`v1_2_8_anti_injection.py`（Gap 1–8 聚合版）；配套
   `tools/prompt_injection_guard`；metadata 注明「文本零改动的补登记」
-- **val 结果**：注入防御率 100%（出处：`metadata.json` v1_2_8.metrics）；
-  回归测试集 `tests/test_gap8_prompt_injection_defense.py` 3 条用例全绿
+- **val 结果**：XML 沙箱结构性隔离（供应商先验一律经沙箱包裹；注入「检出」能力见
+  `tools/prompt_injection_guard` 实测——字符层有限语料命中，语义型无通用检出率）。
+  本提示词自身**无可量化的「注入防御率」**：原 metadata 登记的 `injection_defense_rate=100.0`
+  无评测集支撑，已纠偏为 `null` + `claim_unsupported`（D13）；
+  回归测试集 `tests/test_gap8_prompt_injection_defense.py` 全绿
 - **结论**：有效（置 production，active）
 - **下次别再试**：不要把外部记忆原文直接拼进系统提示词，必须先过沙箱
 

@@ -7,9 +7,11 @@
       "test_cases": 120,
       "metrics": {
         "interception_rate": 100.0,
+        "interception_rate_scope": "算术守恒门禁对「数量×单价 != 金额 / 明细守恒 != 总额」为确定性 100% 拦截；覆盖 tests/test_hallucination_adversarial.py（类型2 错读数量）、tests/test_gap3_discount_deposit_math.py、tests/test_fix_p1_1_service_tax_rounding.py。**不是**语义型/捏造品名类幻觉的拦截率。",
         "latency_ms": 2.1,
         "zero_token": true
-      }
+      },
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_hallucination_adversarial.py tests/test_gap3_discount_deposit_math.py -q"
     },
     {
       "date": "2026-08-01",
@@ -35,7 +37,43 @@
         "overtrim_rate": 0.0,
         "latency_ms": 1.2,
         "zero_token": true
-      }
+      },
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap4_multi_pack_units.py tests/test_sku_cleaning_benchmark.py -q"
+    },
+    {
+      "date": "2026-09-06",
+      "tool_name": "prompt_injection_guard",
+      "version": "v1_0_0",
+      "test_cases": 14,
+      "metrics": {
+        "injection_detection_rate": 0.0,
+        "audit_reported_detection_rate": 14.3,
+        "claim_unsupported": true,
+        "sandbox_isolation_rate": 100.0
+      },
+      "note": "审计纠偏：登记的 injection_detection_rate=100.0 无评测集支撑。本仓重建 14 条绕过语料实测 0/14；审计口径原始载荷串为 2/14（两条串未留档，无法逐字节复现）。",
+      "evidence": "ai_registry/benchmarks/injection_guard_bypass_eval.json",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_injection_guard_v1_1.py::test_v1_0_0_baseline_on_reconstructed_corpus_is_recorded -q"
+    },
+    {
+      "date": "2026-09-06",
+      "tool_name": "prompt_injection_guard",
+      "version": "v1_1_0_normalize",
+      "test_cases": 111,
+      "metrics": {
+        "bypass_detection_rate": 100.0,
+        "bypass_corpus_total": 14,
+        "legacy_baseline_detection_rate": 100.0,
+        "legacy_baseline_total": 18,
+        "false_positive_rate": 0.0,
+        "negative_corpus_total": 30,
+        "known_undetectable_cases": 12,
+        "sandbox_isolation_rate": 100.0,
+        "zero_token": true
+      },
+      "note": "归一化后匹配版本。bypass_detection_rate 仅指 14 条字符层/词汇层绕过语料，不是通用拦截率；12 条语义型/编码型载荷单列为已知检不出（仅断言沙箱隔离）。",
+      "evidence": "ai_registry/benchmarks/injection_guard_bypass_eval.json",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_injection_guard_v1_1.py -q"
     }
   ]
 }

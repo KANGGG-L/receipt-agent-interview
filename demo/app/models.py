@@ -244,6 +244,7 @@ def env_model_or_default(raw, fallback: str) -> str:
 #   2. db.hydrate_engine_config_from_env —— 存量 DB 值归一（消除「显示 90 实际 60」的误导）
 #   3. api_admin PUT /api/admin/engine-config —— 保存时归一，使落库值恒等于生效值
 MAX_CALL_TIMEOUT_SECONDS = 60
+VALID_REASONING_EFFORTS = frozenset({"", "low", "medium", "high", "xhigh", "max"})
 
 
 def clamp_call_timeout(value):
@@ -325,6 +326,37 @@ class EngineConfig(BaseModel):
         for field in cls._ENGINE_FIELDS:
             if is_legacy_cli_engine(out.get(field)):
                 out[field] = "openai"
+
+        # API format 双向同步与缺省归一
+        if "openai_rec_api_format" in out and "api_format" in out:
+            if out["openai_rec_api_format"] != "chat_completion" and out["api_format"] == "chat_completion":
+                out["api_format"] = out["openai_rec_api_format"]
+            elif out["api_format"] != "chat_completion" and out["openai_rec_api_format"] == "chat_completion":
+                out["openai_rec_api_format"] = out["api_format"]
+        elif "openai_rec_api_format" in out:
+            out["api_format"] = out["openai_rec_api_format"]
+        elif "api_format" in out:
+            out["openai_rec_api_format"] = out["api_format"]
+
+        if "grey_openai_rec_api_format" in out and "grey_api_format" in out:
+            if out["grey_openai_rec_api_format"] != "chat_completion" and out["grey_api_format"] == "chat_completion":
+                out["grey_api_format"] = out["grey_openai_rec_api_format"]
+            elif out["grey_api_format"] != "chat_completion" and out["grey_openai_rec_api_format"] == "chat_completion":
+                out["grey_openai_rec_api_format"] = out["grey_api_format"]
+        elif "grey_openai_rec_api_format" in out:
+            out["grey_api_format"] = out["grey_openai_rec_api_format"]
+        elif "grey_api_format" in out:
+            out["grey_openai_rec_api_format"] = out["grey_api_format"]
+
+        # 思考强度合法值归一（非法值回落到 ""）
+        for rf in (
+            "openai_rec_reasoning_effort", "openai_aud_reasoning_effort", "openai_parse_reasoning_effort",
+            "grey_openai_rec_reasoning_effort", "grey_openai_aud_reasoning_effort", "grey_openai_parse_reasoning_effort"
+        ):
+            if rf in out and out[rf] is not None:
+                v = str(out[rf]).strip().lower()
+                out[rf] = v if v in VALID_REASONING_EFFORTS else ""
+
         return out
 
     # 配置来源（T1）：auto=.env 启动装配，重启后按 .env 重新装配；manual=管理台手工保存，
@@ -380,6 +412,8 @@ class EngineConfig(BaseModel):
         default_factory=lambda: env_model_or_default(
             os.environ.get("OPENAI_REC_MODEL"), DASHSCOPE_DEFAULT_REC_MODEL)
     )
+    openai_rec_api_format: str = Field(default="chat_completion", description="主识别引擎 API 格式协议")
+    api_format: str = Field(default="chat_completion", description="主识别引擎 API 格式兼容字段")
     openai_aud_base_url: str = Field(
         default_factory=lambda: os.environ.get("OPENAI_AUD_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
     )
@@ -391,12 +425,69 @@ class EngineConfig(BaseModel):
             os.environ.get("OPENAI_AUD_MODEL") or os.environ.get("SILICONFLOW_AUDIT_MODEL"),
             "zai-org/GLM-4.5V")
     )
+    openai_aud_api_format: str = Field(default="chat_completion")
     # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s。
     # T9（P8）：默认值 60 与 llm._resolve_timeout 的硬钳 min(v,60) 对齐——旧默认 90
     # 实际只生效 60，属误导；60 对 omni（实测单张 2.6-7.1s）结余充足且禁止长期空转。
     # 硬钳保留：无论管理台填多大，实际超时都不超过 MAX_CALL_TIMEOUT_SECONDS（60）。
     # 三处钳制（运行期 / hydrate 存量归一 / 保存归一）统一走 clamp_call_timeout。
     call_timeout_seconds: int = MAX_CALL_TIMEOUT_SECONDS
+
+    # 常规三腿独立超时（秒）：未设置/None 时优雅回退至 call_timeout_seconds
+    rec_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="常规识别引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+    aud_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="常规审核引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+    parse_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="常规解析 LLM 独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+
+    # 灰测三腿独立超时（秒）：未设置/None 时优雅回退至 call_timeout_seconds
+    grey_rec_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="灰测识别引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+    grey_aud_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="灰测审核引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+    grey_parse_timeout_seconds: Optional[int] = Field(
+        default=None,
+        description="灰测解析 LLM 独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
+
+    # 常规三腿思考强度（Reasoning Effort）：空字符串表示不指定/关闭
+    openai_rec_reasoning_effort: str = Field(
+        default="",
+        description="常规识别引擎思考强度。可选值：'' (默认/不指定), 'low', 'medium', 'high', 'xhigh', 'max'。为 '' 时底层不向 API 请求体注入该字段。"
+    )
+    openai_aud_reasoning_effort: str = Field(
+        default="",
+        description="常规审核引擎思考强度。可选值同上。"
+    )
+    openai_parse_reasoning_effort: str = Field(
+        default="",
+        description="常规解析 LLM 思考强度。可选值同上。"
+    )
+
+    # 灰测三腿思考强度（Reasoning Effort）
+    grey_openai_rec_reasoning_effort: str = Field(
+        default="",
+        description="灰测识别引擎思考强度。可选值同上。"
+    )
+    grey_openai_aud_reasoning_effort: str = Field(
+        default="",
+        description="灰测审核引擎思考强度。可选值同上。"
+    )
+    grey_openai_parse_reasoning_effort: str = Field(
+        default="",
+        description="灰测解析 LLM 思考强度。可选值同上。"
+    )
     # 整图识别重试上限（T11/P10）：识别失败或门禁不过时最多跑几轮（含首轮）。
     # 默认 3；与 call_timeout_seconds 同样不在契约层做范围钳制（管理台/DB 可直接改），
     # 由 supervisor.resolve_max_retry 在运行时钳制到 [1, MAX_RETRY_LIMIT]，
@@ -422,6 +513,7 @@ class EngineConfig(BaseModel):
         default_factory=lambda: env_model_or_default(
             os.environ.get("OPENAI_PARSE_MODEL") or os.environ.get("OPENAI_MODEL"), "")
     )
+    openai_parse_api_format: str = Field(default="chat_completion")
 
     # ---- 分组测试（灰测）配置：与常规完全隔离 ----
     grey_enabled: bool = False                       # 是否启用灰测
@@ -439,9 +531,12 @@ class EngineConfig(BaseModel):
     grey_openai_rec_base_url: str = ""
     grey_openai_rec_api_key: str = ""
     grey_openai_rec_model: str = ""
+    grey_openai_rec_api_format: str = Field(default="chat_completion", description="灰测识别引擎 API 格式协议")
+    grey_api_format: str = Field(default="chat_completion", description="灰测识别引擎 API 格式兼容字段")
     grey_openai_aud_base_url: str = ""
     grey_openai_aud_api_key: str = ""
     grey_openai_aud_model: str = ""
+    grey_openai_aud_api_format: str = Field(default="chat_completion")
     # 灰测组解析 LLM
     grey_parse_llm_enabled: bool = False
     grey_parse_llm_engine: EngineKind = EngineKind.OPENAI
@@ -449,6 +544,46 @@ class EngineConfig(BaseModel):
     grey_openai_parse_base_url: str = ""
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""
+    grey_openai_parse_api_format: str = Field(default="chat_completion")
+    # ---- 各引擎腿供应商名称（用于预设网关标识，不影响实际调用） ----
+    vendor_name_rec: str = ""     # 识别引擎供应商名
+    vendor_name_aud: str = ""     # 审核引擎供应商名
+    vendor_name_parse: str = ""   # 解析 LLM 供应商名
+    vendor_name_grey_rec: str = ""    # 灰测识别引擎供应商名
+    vendor_name_grey_aud: str = ""    # 灰测审核引擎供应商名
+    vendor_name_grey_parse: str = ""  # 灰测解析 LLM 供应商名
+
+    # ---- 各引擎腿自定义 Token 单价（单位：元/1M Token，None 表示使用模型刊例价默认档位） ----
+    # 常规识别引擎价格
+    price_input_rec: Optional[float] = Field(default=None, ge=0, description="常规识别引擎 Input 单价（元/1M）")
+    price_cached_input_rec: Optional[float] = Field(default=None, ge=0, description="常规识别引擎 Cached Input 单价（元/1M）")
+    price_output_rec: Optional[float] = Field(default=None, ge=0, description="常规识别引擎 Output 单价（元/1M）")
+
+    # 常规审核引擎价格
+    price_input_aud: Optional[float] = Field(default=None, ge=0, description="常规审核引擎 Input 单价（元/1M）")
+    price_cached_input_aud: Optional[float] = Field(default=None, ge=0, description="常规审核引擎 Cached Input 单价（元/1M）")
+    price_output_aud: Optional[float] = Field(default=None, ge=0, description="常规审核引擎 Output 单价（元/1M）")
+
+    # 常规解析 LLM 价格
+    price_input_parse: Optional[float] = Field(default=None, ge=0, description="常规解析 LLM Input 单价（元/1M）")
+    price_cached_input_parse: Optional[float] = Field(default=None, ge=0, description="常规解析 LLM Cached Input 单价（元/1M）")
+    price_output_parse: Optional[float] = Field(default=None, ge=0, description="常规解析 LLM Output 单价（元/1M）")
+
+    # 灰测识别引擎价格
+    price_input_grey_rec: Optional[float] = Field(default=None, ge=0, description="灰测识别引擎 Input 单价（元/1M）")
+    price_cached_input_grey_rec: Optional[float] = Field(default=None, ge=0, description="灰测识别引擎 Cached Input 单价（元/1M）")
+    price_output_grey_rec: Optional[float] = Field(default=None, ge=0, description="灰测识别引擎 Output 单价（元/1M）")
+
+    # 灰测审核引擎价格
+    price_input_grey_aud: Optional[float] = Field(default=None, ge=0, description="灰测审核引擎 Input 单价（元/1M）")
+    price_cached_input_grey_aud: Optional[float] = Field(default=None, ge=0, description="灰测审核引擎 Cached Input 单价（元/1M）")
+    price_output_grey_aud: Optional[float] = Field(default=None, ge=0, description="灰测审核引擎 Output 单价（元/1M）")
+
+    # 灰测解析 LLM 价格
+    price_input_grey_parse: Optional[float] = Field(default=None, ge=0, description="灰测解析 LLM Input 单价（元/1M）")
+    price_cached_input_grey_parse: Optional[float] = Field(default=None, ge=0, description="灰测解析 LLM Cached Input 单价（元/1M）")
+    price_output_grey_parse: Optional[float] = Field(default=None, ge=0, description="灰测解析 LLM Output 单价（元/1M）")
+
     # 推全回滚快照（一次：prev 为推全前常规组配置，meta 为操作信息）
     rollback_snapshot: Optional[dict] = None
 

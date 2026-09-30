@@ -118,10 +118,11 @@ flowchart TD
 1. **网络层 SSRF 阻断与敏感凭证脱敏**：
    - 部署 `security_guard.py`，对外呼 Base URL 执行域名解析与 IP 范围双重审查，严格封锁私网网段 (RFC 1918)、本地回环 (`127.0.0.1`, `localhost`)、CGNAT (`100.64.0.0/10`) 与云元数据地址 (`169.254.169.254`)；
    - 禁用 30x HTTP 重定向（`allow_redirects=False`），并在配置接口与审计日志中对 API Key 实施掩码脱敏（保留前3后4位）。
-2. **协议层 Canary Token 动态握手防上游篡改**：
+2. **协议层 Canary Token 动态握手（上游错配 / 静默降级检测）**：
    - 每次调用生成单次高熵暗号 `CANARY_<HEX>`，在 User 消息尾部与 System 消息中实施双重锚定；
-   - 若上游中转代理剥离或篡改了 System Prompt，模型回包必然缺失 `__guard_token`，系统执行 Fail-Fast 快速熔断拦截；
-   - 恒定时间校验比对通过后，在 Pydantic 校验前自动弹出安全令牌，保持业务 Schema 洁净。
+   - 若上游中转代理剥离或错配本轮锚定指令，模型回包缺失 `__guard_token`，系统执行 Fail-Fast 快速熔断拦截；
+   - 能力边界（如实登记）：token 明文随 prompt 下发，恶意 provider 原样回填即可通过校验并篡改数据字段。故本机制**不是认证、也不提供完整性保护**，它只检测「上游根本没收到本轮锚定指令」这类错配 / 静默降级；真正的完整性护栏是契约 `extra="forbid"` 门禁、算术校验、生成器-评估器交叉审核与人审。
+   - 恒定时间比对的校验函数为非破坏性：返回清洗副本（已剥除 `__guard_token`）供调用方显式使用，保持 Pydantic `extra="forbid"` 契约洁净；不匹配的错误文案不回显预期 token 原文（该文案会经接口返回并落库）。
 3. **数据层进站隔离与 XML 数据沙箱**：
    - 升级 `PromptInjectionGuardTool`，扩充凭证嗅探关键词库（阻断针对 `OPENAI_API_KEY`, `process.env`, `os.environ` 等敏感信息的窃取）；
    - 将不可信先验、历史备注与反馈文本封入 `<untrusted_input data_only="true" security="untrusted_external_data">` 沙箱，强制 HTML/XML 实体转义剥夺其可执行权限。

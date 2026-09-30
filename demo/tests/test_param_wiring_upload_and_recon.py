@@ -155,9 +155,11 @@ def test_reconciliation_filters_by_supplier(recon_env):
 # ------------------------------------------------------------------
 @pytest.fixture
 def payments_env(monkeypatch):
-    monkeypatch.setattr(api_finance.db, "list_payments", lambda: [
-        {"id": 1, "supplier_name": "供应商11", "amount": 100.0},
-        {"id": 2, "supplier_name": "供应商22", "amount": 200.0},
+    # D16：付款行自带 supplier_id 并透传租户（list_payments(tenant_id=...)）；
+    # 筛选口径由「按供应商名」改为「按 supplier_id 精确关联」，假数据据此对齐。
+    monkeypatch.setattr(api_finance.db, "list_payments", lambda tenant_id=None: [
+        {"id": 1, "supplier_id": 11, "supplier_name": "供应商11", "amount": 100.0},
+        {"id": 2, "supplier_id": 22, "supplier_name": "供应商22", "amount": 200.0},
     ])
     # 只认 11 / 22；99 视为「不存在或跨租户」
     monkeypatch.setattr(

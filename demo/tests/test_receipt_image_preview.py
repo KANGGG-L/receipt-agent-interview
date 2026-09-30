@@ -2,11 +2,12 @@
 """单据原图预览测试：HEIC/TIFF 经端点按需转 JPEG，Web 格式逐字节透传。
 
 覆盖计划「HEIC 原图可见」缺口的验收点：
-- public_image_url 对非 Web 格式分流到 /api/receipt/{id}/image?v=<stem>&sig=<HMAC>
+- public_image_url 对**所有格式**统一分流到 /api/receipt/{id}/image?v=<stem>&sig=<HMAC>
+  （P0-4 撤销 /uploads 静态挂载后，Web 格式不再有直链文件形态）
 - 新端点不带任何身份头即可取图（<img src> 带不了请求头），返回真 JPEG
 - W7 签名防枚举：正确签名 200 / 篡改签名 403 / 无签名旧式请求 403 /
   签名绑定单据 id 与租户（换 id 或换租户取不到图）
-- 预览副本缓存复用、Web 格式透传零回归
+- 预览副本缓存复用、Web 格式经端点原样透传零回归
 - 业务防护：跨租户 / 文件缺失 / 转码失败 / 软删 / 路径穿越 均正确拒绝
 - api_admin 灰测样本 image_url 回归守卫（修复悬空 404 后必须路由可达）
 - W5 预览缓存孤儿治理：换图后旧缓存被清理、仍被引用的缓存（含软删单据的引用）保留、
@@ -133,8 +134,9 @@ def _tampered_signature_url(rid, name, tenant="default"):
 def _manual_signed_url(rid, stem, tenant="default"):
     """手工按 stem 拼签名 URL：用于 image_path 非图片扩展名的越界用例。
 
-    why: public_image_url 对非图片扩展名会回落 /uploads 静态地址，拿不到端点 URL；
-    越界用例需要「签名有效但路径非法」这一组合，才能验证 404 而非 403。
+    why: 越界用例的 image_path 是 `../../etc/passwd` 这类形态，public_image_url 会按其
+    basename（如 passwd）签发 URL，但越界用例需要「签名有效但路径非法」这一组合，
+    才能验证 404 而非 403，故这里独立于 public_image_url 手工拼 URL。
     """
     from app.services.receipt_utils import preview_image_signature
     url = (f"/api/receipt/{rid}/image?v={stem}"
@@ -304,16 +306,22 @@ def test_preview_cache_file_mode_is_0644(client, upload_dir):
 
 
 # -------------------------------------------------------------
-# 5. Web 格式零回归
+# 5. Web 格式零回归（URL 形态改为统一签名端点，字节仍逐字节透传）
 # -------------------------------------------------------------
-def test_web_format_keeps_uploads_url_and_passthrough(client, upload_dir):
-    """jpg 仍走 /uploads/ 静态地址（逐字节不变）；端点透传字节与源文件逐字节一致。"""
+def test_web_format_uses_signed_endpoint_and_passthrough(client, upload_dir):
+    """jpg 的规范 URL 也是签名取图端点；端点透传字节与源文件逐字节一致。
+
+    旧契约是 Web 格式直链 `/uploads/plain.jpg`（逐字节不变）；P0-4 撤销 /uploads
+    静态挂载后，Web 与非 Web 统一走签名端点，故此处改为形态断言。
+    """
     rid, src = _mk_receipt(upload_dir, "plain.jpg", _jpeg_bytes())
     body = client.get(f"/api/receipt/{rid}", headers={"X-Role": "staff"}).json()
-    assert body["image_url"] == "/uploads/plain.jpg"
+    url = body["image_url"]
+    assert url.startswith(f"/api/receipt/{rid}/image?v=plain&sig="), url
+    assert "/uploads/" not in url
 
-    # 端点侧（Web 格式的规范 URL 仍是 /uploads，故这里手工构造带签名的端点 URL）
-    r = client.get(_manual_signed_url(rid, "plain"))
+    # 后端签发的 URL 原样 GET：Web 格式走端点仍原样透传，且不生成缓存副本
+    r = client.get(url)
     assert r.status_code == 200
     assert r.content == src.read_bytes(), "Web 格式必须原样透传，不得二次编码"
     assert not (upload_dir / "plain_web.jpg").exists(), "Web 格式不应生成缓存副本"
@@ -513,17 +521,24 @@ def test_heif_decoder_missing_does_not_break_web_formats(monkeypatch, tmp_path):
 
 
 def test_convert_image_endpoint_ok_without_heif(client, monkeypatch):
-    """端点级：解码器缺失时 POST jpg 仍 200 JPEG；POST HEIC 才 500 且原因可读。"""
+    """端点级：解码器缺失时 POST jpg 仍 200 JPEG；POST HEIC 才 500 且原因可读。
+
+    P0-4：/api/convert-image 已补 require_role("staff")，故请求须带身份头
+    （前端经 apiFetch 会带 X-Role / Bearer，演示不受影响）。
+    """
     heic = _heic_bytes()
     _break_heif_registration(monkeypatch)
 
+    staff = {"X-Role": "staff"}
     ok = client.post("/api/convert-image",
-                     files={"file": ("a.jpg", _jpeg_bytes(), "image/jpeg")})
+                     files={"file": ("a.jpg", _jpeg_bytes(), "image/jpeg")},
+                     headers=staff)
     assert ok.status_code == 200, ok.text
     assert ok.content[:3] == b"\xff\xd8\xff"
 
     bad = client.post("/api/convert-image",
-                      files={"file": ("a.heic", heic, "image/heic")})
+                      files={"file": ("a.heic", heic, "image/heic")},
+                      headers=staff)
     assert bad.status_code == 500
     assert "解码器不可用" in bad.json()["msg"], bad.text
 
@@ -844,9 +859,13 @@ def test_replace_image_invalidates_old_signed_url(client, job_stub, upload_dir):
     assert r.status_code == 200, r.text
     assert client.get(old_url).status_code == 403, "换图后旧 URL 必须失效"
 
-    # 新原图是 Web 格式（retake.png），规范 URL 回落 /uploads/ 且与旧 URL 不同
+    # 新原图是 Web 格式（retake.png），规范 URL 同样是签名取图端点且与旧 URL 不同
+    # （旧契约是 Web 格式回落 "/uploads/"，P0-4 撤销静态挂载后统一走签名端点）
     new_url = r.json()["image_url"]
-    assert new_url.startswith("/uploads/") and new_url != old_url
+    assert new_url.startswith(f"/api/receipt/{rid}/image?v="), new_url
+    assert "sig=" in new_url
+    assert "/uploads/" not in new_url
+    assert new_url != old_url
 
 
 # -------------------------------------------------------------

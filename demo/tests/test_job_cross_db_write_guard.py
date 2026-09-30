@@ -105,7 +105,8 @@ def _make_blocking_pipeline(started, release):
     """
 
     def _fake_pipeline(image_path, vendor_hint="", config=None, supplier_name="",
-                       receipt_id=None, experiment_id=None, on_event=None):
+                       receipt_id=None, experiment_id=None, on_event=None,
+                       image_guard=None, tenant_id="default"):
         started.set()
         assert release.wait(timeout=15), "测试未能及时切换库路径"
         db.log_ai_decision(receipt_id=receipt_id, decision_type="extract")
@@ -202,7 +203,8 @@ def test_job_writes_normally_when_db_path_unchanged(tmp_path, monkeypatch, caplo
     _use_db(str(tmp_path / "job_db_ok.db"))
 
     def _fake_pipeline(image_path, vendor_hint="", config=None, supplier_name="",
-                       receipt_id=None, experiment_id=None, on_event=None):
+                       receipt_id=None, experiment_id=None, on_event=None,
+                       image_guard=None, tenant_id="default"):
         db.log_ai_decision(receipt_id=receipt_id, decision_type="extract")
         db.log_user_event(account_id="system", event_type="contract_guard_checked",
                           receipt_id=receipt_id)

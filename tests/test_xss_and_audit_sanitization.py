@@ -226,3 +226,83 @@ def test_frontend_escape_html_present_and_safe():
     res = subprocess.run(["node", "-e", eval_script], capture_output=True, text=True)
     assert res.returncode == 0, f"Node.js eval failed: {res.stderr}"
     assert "OK" in res.stdout
+
+
+def test_export_center_esc_neutralizes_ocr_derived_markup():
+    """Verify demo/static/js/export_center.js 的本地 esc() 逐值转义（Node 真实执行）。
+
+    why: export_center.js 此前是本仓库唯一把后端字段（报表标题、供应商名、部门名、表头、
+    预览单元格等 OCR 派生数据）裸拼进 innerHTML / document.write 的文件。修复引入的本地
+    esc() 与 evalset.js 的 esc() 同实现（临时 div 的 textContent → innerHTML）。
+
+    Node 里没有浏览器 DOM，故按 HTML 规范补一个最小替身：文本节点序列化只转义
+    & < > 与不换行空格（引号在文本上下文不转义）。替身只服务的正是被断言的语义 ——
+    「`<` / `>` 必须被吃掉」，因此恶意载荷不可能在 innerHTML / document.write 里被解析成标签。
+    """
+    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "export_center.js"))
+    assert os.path.isfile(js_path)
+    with open(js_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    match = re.search(r"function esc\s*\([^)]*\)\s*\{([\s\S]*?)\n\}", content)
+    assert match is not None, "esc function not found in export_center.js"
+    fn_body = match.group(0)
+    # 实现守卫：必须是「textContent → innerHTML」同源实现，不得自行拼正则（规则会漂移）
+    assert "createElement" in fn_body and "textContent" in fn_body and "innerHTML" in fn_body
+
+    malicious_img = "<img src=x onerror=alert('v')>"
+    malicious_script = "<script>alert('xss_vendor')</script>"
+    malicious_svg = "<svg onload=alert('item')>"
+    malicious_iframe = "<iframe src='javascript:alert(1)'></iframe>"
+    benign = "德利行 Tak Lee Hong"
+
+    test_cases_json = json.dumps([
+        [None, ""],
+        # 文本上下文里只转义 & < >，引号原样保留（与浏览器 textContent → innerHTML 一致）
+        [malicious_img, "&lt;img src=x onerror=alert('v')&gt;"],
+        [malicious_script, "&lt;script&gt;alert('xss_vendor')&lt;/script&gt;"],
+        [malicious_svg, "&lt;svg onload=alert('item')&gt;"],
+        [malicious_iframe, "&lt;iframe src='javascript:alert(1)'&gt;&lt;/iframe&gt;"],
+        ["Foo & Bar <Baz>", "Foo &amp; Bar &lt;Baz&gt;"],
+        [benign, benign],
+    ])
+
+    eval_script = (
+        "// 浏览器 DOM 替身：只实现 esc() 用到的 textContent → innerHTML 序列化语义\n"
+        "const document = {\n"
+        "    createElement() {\n"
+        "        let text = '';\n"
+        "        return {\n"
+        "            set textContent(v) { text = v == null ? '' : String(v); },\n"
+        "            get textContent() { return text; },\n"
+        "            get innerHTML() {\n"
+        "                return text.replace(/&/g, '&amp;').replace(/</g, '&lt;')\n"
+        "                           .replace(/>/g, '&gt;').replace(/\\u00a0/g, '&nbsp;');\n"
+        "            }\n"
+        "        };\n"
+        "    }\n"
+        "};\n"
+        + fn_body + "\n"
+        "const testCases = " + test_cases_json + ";\n"
+        "for (const [input, expected] of testCases) {\n"
+        "    const escaped = esc(input);\n"
+        "    if (escaped !== expected) {\n"
+        "        console.error('Mismatch for ' + JSON.stringify(input) + ': got ' +"
+        " JSON.stringify(escaped) + ', expected ' + JSON.stringify(expected));\n"
+        "        process.exit(1);\n"
+        "    }\n"
+        "    if (escaped.includes('<') || escaped.includes('>')) {\n"
+        "        console.error('Unescaped HTML delimiter in ' + JSON.stringify(escaped));\n"
+        "        process.exit(1);\n"
+        "    }\n"
+        "}\n"
+        "if (esc(undefined) !== '' || esc(0) !== '0') {\n"
+        "    console.error('nullish / falsy 处理错误');\n"
+        "    process.exit(1);\n"
+        "}\n"
+        "console.log('EXPORT_CENTER_ESC_VERIFIED');\n"
+    )
+
+    res = subprocess.run(["node", "-e", eval_script], capture_output=True, text=True)
+    assert res.returncode == 0, f"Node.js eval failed: {res.stderr}"
+    assert "EXPORT_CENTER_ESC_VERIFIED" in res.stdout

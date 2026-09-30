@@ -151,10 +151,12 @@ def perform_engine_rollback(who="guardian"):
     # N4：回滚是把「人工推全」还原，属人工改配的延续 —— 必须显式置 manual，
     # 否则该配置仍是 auto，下次重启会被 hydrate 按 .env 打回（推全/回滚白做）。
     db.set_engine_config(new_cfg, source="manual")
+    old_model = cfg.recognition_model or cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
+    new_model = new_cfg.recognition_model or new_cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
     try:
         db.append_system_audit_log(
-            who, "rollback_engine_config", "recognition_engine",
-            str(old_engine), str(new_cfg.recognition_engine))
+            who, "rollback_engine_config", "recognition_model",
+            str(old_model), str(new_model))
     except Exception as e:
         logger.warning("[guardian] 审计写入失败(action=rollback_engine_config who=%s): %s", who, e)
     return True, new_cfg

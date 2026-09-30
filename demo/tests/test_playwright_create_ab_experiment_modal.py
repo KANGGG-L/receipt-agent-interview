@@ -5,6 +5,7 @@ Playwright E2E 验证：系统与引擎配置中的「新建 A/B 科学实验」
 
 import os
 import time
+import pytest
 from playwright.sync_api import sync_playwright
 
 BASE_URL = "http://127.0.0.1:15010"
@@ -12,6 +13,7 @@ SCREENSHOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 
+@pytest.mark.usefixtures("playwright_live_server")
 def test_playwright_create_ab_experiment_modal():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

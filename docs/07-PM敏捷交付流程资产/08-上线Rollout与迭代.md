@@ -24,7 +24,7 @@
 
 ```mermaid
 flowchart LR
-    A[新 prompt/模型<br/>进 ai_registry] --> B[金丝雀 Canary Token<br/>防上游 prompt 篡改]
+    A[新 prompt/模型<br/>进 ai_registry] --> B[金丝雀 Canary Token<br/>检上游 prompt 错配]
     B --> C[灰测分流<br/>use_grey 真实分组]
     C --> D[AB 门禁<br/>双比例双尾 z 检验]
     D -->|显著优于| E[放量全量]
@@ -42,7 +42,7 @@ flowchart LR
 
 `step14` 定义的回滚路径，工程上落地为三条：
 1. **模型层**：重启即回「标准双腿」（Qwen-VL 识别 + GLM-4.5V 审核），不读 DB 旧值（commit `1170333`）。
-2. **prompt 层**：ai_registry SemVer 版本化，回滚 = 指回上一版本号，Canary Token 校验确保上游未被篡改。
+2. **prompt 层**：ai_registry SemVer 版本化，回滚 = 指回上一版本号，Canary Token 校验确保本轮锚定指令未被剥离 / 错配（非认证，不提供数据完整性保护）。
 3. **数据层**：库存只在 Approve 时幂等写入，回滚不产生脏数据；导出/报表为只读旁路。
 
 **监控告警矩阵**（step14 + 治理观测台）：识别延迟 P50/P95、门禁拦截率、复核采纳率、点赞/点踩比、异常预警数（>10% 价格异动），任何指标越界先回滚再排查。

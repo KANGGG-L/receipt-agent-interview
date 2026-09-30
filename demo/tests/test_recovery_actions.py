@@ -174,7 +174,11 @@ def test_replace_image_success(client, job_stub, upload_dir, tmp_path):
     assert body["status"] == "queued"
     assert body["receipt_id"] == rid
     assert body["job_id"] == "job-test-1"
-    assert body["image_url"].startswith("/uploads/")
+    # P0-4：Web 格式不再直链 "/uploads/"（静态挂载已撤销），改为签名取图端点形态
+    new_url = body["image_url"]
+    assert new_url.startswith(f"/api/receipt/{rid}/image?v="), new_url
+    assert "sig=" in new_url
+    assert "/uploads/" not in new_url
 
     # 换图落库：新图存在且指向新文件（旧图保留不删）
     row = db.get_receipt_row(rid)

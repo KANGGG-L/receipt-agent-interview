@@ -24,8 +24,12 @@
       "description": "验货划线作废商品判定与手写短装/拒收注记结构化抽取 (Gap 6 专项治理)",
       "metrics": {
         "strikethrough_detection_rate": 100.0,
+        "strikethrough_detection_rate_scope": "确定性工具，行为由 tests/test_gap6_strikethrough_notes.py 的用例集覆盖（划线/拒收行全部识别并转 adjustment_notes）；不是通用检出率",
         "note_extraction_recall": 100.0,
-        "clean_item_precision": 100.0
+        "note_extraction_recall_scope": "同上：受测样本中的手写注记全部被抽取；非通用召回率",
+        "clean_item_precision": 100.0,
+        "clean_item_precision_scope": "由 tests/test_gap1_stamp_anti_pollution.py / test_gap2_disclaimer_anti_pollution.py / test_gap6_strikethrough_notes.py 覆盖：受测样本中合法商品行零误删、杂质行被剔除；非通用精确率",
+        "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap1_stamp_anti_pollution.py tests/test_gap2_disclaimer_anti_pollution.py tests/test_gap6_strikethrough_notes.py -q"
       }
     }
   }

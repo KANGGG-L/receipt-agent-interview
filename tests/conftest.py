@@ -18,15 +18,35 @@ app.auth 的判定函数，而不是放开这里的全局开关。
 遗留在 db.DB_PATH 上的临时库」误当成「本用例自己的隔离」而整体跳过，泄漏便自我
 延续。现在用进程级 registry 区分「本模块自己切过的库」（尊重）与「别的模块遗留的
 库」（判为泄漏，强制隔离救回），判据与记录逻辑见 `_classify_db_path` / 夹具本体。
+
+向量库落盘隔离（P0-T2）：`_isolate_rag_dir` 把 `RAG_DIR` 与 `rag.PERSIST_DIR`
+指向 tmp_path 并清 `rag._vs` / `rag._vs_tenant`。why：rag.PERSIST_DIR 缺省是 cwd
+相对路径 "./.rag_chroma"，只隔离 DB 时「DB 进临时库、向量进 live 向量库」——
+live 向量库里那批 vendor 为测试夹具名的孤儿即由此而来。
+
+产物目录落盘隔离（Q3-M4）：`_isolate_artifacts_dir` 把 `ARTIFACTS_DIR` 指向本轮
+tmp_path。why：`_finalize` 每完成一次识别就向仓库内
+`artifacts/memory/parse_log.jsonl` **追加**一行（P2d-metrics 审核 M4 实测该文件会被
+测试写到 1.4MB）；该路径按模块 __file__ 计算，DB / RAG / 图片隔离都覆盖不到它，
+故单独设一个可覆盖点（supervisor._memory_log_path 读 ARTIFACTS_DIR）。
 """
 
+import ipaddress
 import os
+import socket
 import sys
 
 import pytest
 
 # 鉴权关闭，必须在 import app.* 之前
 os.environ["AUTH_ENABLED"] = "0"
+
+# 嵌入档锁定为离线 hash，必须在 import app.* 之前（O1 起 rag 的嵌入档由
+# app/services/embeddings.get_embeddings() 决定）。why：接线后默认档是 hash 且不需要
+# 网络，但若开发机 shell / .env 里恰好设了 RAG_EMBEDDING_PROVIDER=siliconflow，
+# 任何走记忆写入/检索的用例都会真发 HTTP（慢、需要凭据、失败还会回落）—— 测试必须
+# 自足可复现。需要其他档的用例请在用例内 monkeypatch（见 tests/test_embeddings_provider.py）。
+os.environ["RAG_EMBEDDING_PROVIDER"] = "hash"
 
 # demo 应用根目录（tests 与 demo/tests 都能 import app.*）
 _DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo"))
@@ -43,6 +63,9 @@ _LIVE_DB_PATH = os.path.abspath(os.path.join(_DEMO_DIR, "receipt_demo.db"))
 
 # live 图片输出目录：只在某模块的落盘常量仍指向它时才改写，尊重已有隔离设置
 _LIVE_UPLOAD_DIR = os.path.abspath(os.path.join(_DEMO_DIR, "uploads"))
+
+# rag.py 源码路径：用来识别「同一个 rag.py 被多个模块名导入」产生的别名模块
+_RAG_SOURCE = os.path.abspath(os.path.join(_DEMO_DIR, "app", "services", "rag.py"))
 
 
 def _redirect_image_output_dirs(monkeypatch, tmp_path):
@@ -78,6 +101,46 @@ def _redirect_image_output_dirs(monkeypatch, tmp_path):
             continue
         monkeypatch.setattr(mod, attr, target)
     return upload_dir
+
+
+# -------------------------------------------------------------
+# 环境锁定（D20）：域名 DNS 解析固定为一个公网地址
+# -------------------------------------------------------------
+_DNS_PIN_IP = "1.1.1.1"
+
+
+@pytest.fixture(autouse=True)
+def _pin_dns_resolution(monkeypatch):
+    """把 socket.getaddrinfo 固定解析到公网地址，消除「本机解析器行为」这道隐藏变量。
+
+    why：本套件大量用例用真实域名（https://api.siliconflow.cn/v1 等）作为引擎 base_url，
+    而 security_guard.validate_safe_external_url 对域名做 DNS 解析、再按 IP 段判安全性，
+    于是这些用例的结论取决于运行机器的解析器。D20 起 198.18.0.0/15（RFC 2544 基准段）
+    被列为阻断段：在启用 fake-IP DNS 代理（Clash/Surge 等把**任意**域名解析成 198.18.x.x）
+    的机器上，一切域名校验都会被正确拒绝，进而让「保存引擎配置」类用例整片假失败——
+    那是本机解析器行为泄漏进用例，不是产品缺陷。本夹具把解析锁成公网地址，
+    使域名形态的用例在离线/代理环境下结论一致（与套件「离线可跑的环境锁定」目标一致）。
+
+    只锁定「域名」的解析：host 已是 IP 字面量（127.0.0.1 / ::1 等）时本就不经 DNS，
+    沿用真实实现——否则会把浏览器用例的本地服务探测
+    （如 socket.create_connection(("127.0.0.1", 15010))）错解析到公网地址，
+    令服务自举的「是否已在监听」误判为真、跳过启动，最终 ERR_CONNECTION_REFUSED。
+
+    需要特定解析行为的用例（SSRF 重绑定、解析失败 fail-closed，以及 D20 新用例的
+    「解析到 198.18.x.x」形态）在用例内自行 monkeypatch socket.getaddrinfo；用例内的
+    setattr 在 autouse 夹具之后执行，优先级更高，故这些断言完全不受本夹具影响。
+    """
+    _real_getaddrinfo = socket.getaddrinfo
+
+    def _public_getaddrinfo(host, port, *args, **kwargs):
+        try:
+            ipaddress.ip_address(str(host))
+        except ValueError:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                     (_DNS_PIN_IP, int(port or 0)))]
+        return _real_getaddrinfo(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", _public_getaddrinfo)
 
 
 # -------------------------------------------------------------
@@ -286,3 +349,104 @@ def _isolate_test_db(tmp_path, monkeypatch, request):
         _record_module_local(module_key, expected_path, _db, aliases)
         if isolated:
             _sync_db_path([_db] + aliases, restore_to)
+
+
+# -------------------------------------------------------------
+# P0-T2：RAG（向量库）落盘隔离
+# -------------------------------------------------------------
+def _loaded_rag_modules():
+    """已加载的全部 rag 模块实例（主名与 demo.app.services.rag 这类别名各一份）。
+
+    why：与 db 的别名模块同源 —— demo/ 没有 __init__.py，`from app.services import rag`
+    与 `from demo.app.services import rag` 会各按源码导入一次，得到两个模块实例、各自
+    持有 PERSIST_DIR 与 `_vs` 缓存。兜底只改主模块时，别名模块仍指向 live 向量库。
+    """
+    out = []
+    for _name, mod in list(sys.modules.items()):
+        if mod is None:
+            continue
+        try:
+            if os.path.abspath(str(getattr(mod, "__file__", ""))) != _RAG_SOURCE:
+                continue
+        except Exception:
+            continue
+        if hasattr(mod, "PERSIST_DIR") and hasattr(mod, "_store"):
+            out.append(mod)
+    return out
+
+
+def _sync_rag_dir(mods, path):
+    """把若干 rag 模块实例统一指向 path，并清空进程内 collection 缓存。
+
+    why 清缓存：`_vs` / `_vs_tenant` 记住的是「上一次用那个 persist_directory 打开的
+    Chroma 句柄」，只改常量不清缓存会继续沿用旧目录读写 —— 隔离只做一半。
+    """
+    for mod in mods:
+        try:
+            mod.PERSIST_DIR = path
+            mod._vs = None
+            mod._vs_tenant = {}
+        except Exception:
+            continue
+
+
+@pytest.fixture(autouse=True)
+def _isolate_rag_dir(tmp_path, monkeypatch):
+    """P0-T2：未显式隔离时，强制把向量库落盘目录指向本轮临时目录。
+
+    why：`rag.PERSIST_DIR` 的缺省落点由 `app/services/rag_paths.py` 按**应用根**定位
+    （P8a-R7 前为 cwd 相对 "./.rag_chroma"，故从仓库根跑测试会落到 `<repo>/.rag_chroma`），
+    而 conftest 只隔离了 DB 与图片目录 —— 于是测试写入会落到 **live 向量库
+    demo/.rag_chroma**。live 向量库里已积累多批带 memory_id 的孤儿（vendor 全是测试
+    夹具名「测试供应商」），根因即此。
+
+    隔离落点固定用本轮 tmp_path（不同于 DB 夹具「优先沿用 env 声明的环境库」）：向量库
+    没有「模块级声明的环境库必须全局共享」的既有语义，逐用例独立目录可同时消除跨用例
+    串扰（同名 collection 残留）。
+
+    只处理已经加载的 rag 模块（含 demo.app.services.rag 这类别名实例）；尚未 import 时
+    设置 env 即足够 —— rag.py 在 import 时读 RAG_DIR。
+
+    收尾不把 PERSIST_DIR 还原成进入时的值：缺省值可能就是 live 路径，还原会给「用例
+    结束后仍可能调用 rag 的代码」留一个写 live 向量库的窗口（与 DB 夹具 leak 分支同理）。
+    PERSIST_DIR 保持指向本轮临时目录，下一个用例的夹具再覆盖。
+    """
+    rag_dir = tmp_path / "rag_chroma"
+    rag_dir.mkdir(parents=True, exist_ok=True)
+    target = str(rag_dir)
+    monkeypatch.setenv("RAG_DIR", target)
+
+    _sync_rag_dir(_loaded_rag_modules(), target)
+    yield
+
+
+# -------------------------------------------------------------
+# Q3-M4：artifacts/ 产物目录落盘隔离
+# -------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def _isolate_artifacts_dir(tmp_path, monkeypatch):
+    """Q3-M4：把产物目录 artifacts/ 重定向到本轮临时目录，避免测试往仓库内追加写。
+
+    why：supervisor 记忆落盘（`_finalize` → `app/chains/supervisor._memory_log_path()`）
+    的缺省落点是仓库内 artifacts/memory/parse_log.jsonl，且是**追加写**；该路径按模块
+    __file__ 计算，DB / RAG / 图片隔离都覆盖不到它 —— 任何真正跑识别链路的用例（含门禁、
+    重试、租户等不调 VLM 的分支用例）都会往仓库里留下记录（实测该文件已累积 1.4MB）。
+
+    这里设置 ARTIFACTS_DIR，supervisor 在**每次落盘时**读它（见 _memory_log_path 的
+    docstring），因此对「用例内才 import supervisor」的时序同样生效：不依赖模块是否
+    已加载、也不受 `app.chains.supervisor` / `demo.app.chains.supervisor` 别名模块影响
+    （环境变量是进程级的）。这与 DB_PATH / RAG_DIR 两条隔离面同款机制。不采用
+    「monkeypatch 已加载模块的落盘常量」的做法，正因它只能覆盖夹具跑之前就已 import
+    的模块，那正是本仓高发的「隔离只做一半」（①类：同根因的多个入口只堵一个）；
+    覆盖点本身落在产品代码里（supervisor._memory_log_path 读 ARTIFACTS_DIR）。
+
+    落点固定用本轮 tmp_path（同 `_isolate_rag_dir`）：产物目录没有「模块级声明的环境
+    目录必须全局共享」的既有语义，逐用例独立目录同时消除跨用例串扰。
+
+    与 tests/conftest.py 的同名夹具互为镜像；两处独立实现是因为 pytest 只加载各目录
+    自己的 conftest，不做跨目录夹具继承。
+    """
+    artifacts_dir = tmp_path / "artifacts" / "memory"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("ARTIFACTS_DIR", str(tmp_path / "artifacts"))
+    yield

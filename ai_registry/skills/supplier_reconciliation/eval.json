@@ -6,6 +6,8 @@
   "pass_rate": 99.0,
   "metrics": {
     "reconciliation_accuracy": 98.5,
-    "missing_receipt_recall": 100.0
+    "missing_receipt_recall": null,
+    "claim_unsupported": true,
+    "claim_unsupported_note": "原登记 missing_receipt_recall=100.0 无任何评测集/脚本/报告支撑，判定为虚假指标并纠正（改为 null）。本技能无独立评测语料，亦无任何测试引用（statement_reconciler 工具亦无测试与生产消费者）。"
   }
 }

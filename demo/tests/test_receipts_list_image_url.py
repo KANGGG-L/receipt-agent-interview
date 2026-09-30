@@ -3,16 +3,21 @@
 
 背景：live 库有 928 条历史 pytest 污染单据，image_path 指向已被清理的临时文件
 （形如 '/uploads/img_2.png'、'/uploads/eval_reflow_src_*.png' 或 pytest 临时目录的
-绝对路径）。public_image_url 仍按其 basename 产出 URL，导致归档列表逐行 404 破图。
-修复只做展示层兜底：文件不存在时 image_url 返回空串，字段保留、不删历史行、不改
-image_path、不影响任何仍可访问的 URL。
+绝对路径）。public_image_url 仍按其 basename 产出签名取图端点 URL，导致归档列表逐行
+404 破图。修复只做展示层兜底：文件不存在时 image_url 返回空串，字段保留、不删历史行、
+不改 image_path、不影响任何仍可访问的 URL。
+
+URL 契约（P0-4 变更，旧契约作废）：`/uploads` 静态挂载已整体撤销，Web 格式不再直链
+`/uploads/<name>`；所有格式统一产出签名取图端点
+`/api/receipt/{id}/image?v=<stem>&sig=<HMAC>`（非默认租户追加 `&tenant_id=`）。
 
 覆盖点：
-- 文件存在的行：URL 原样保留（Web 格式仍是 /uploads/<name>）
+- 文件存在的行：URL 为签名取图端点形态（以 /api/receipt/ 开头且带 ?v= 与 &sig=）
 - 文件缺失的行：URL 置空（Web 与非 Web 两种格式）
 - image_path 为空的行：保持空串
 - 绝对路径（pytest 污染形态）按其 basename 判定
 - 字段结构不变：image_url 键仍存在、其余字段不受影响
+- tenant_id 语义：非默认租户的 URL 带 &tenant_id=，default 不带
 
 不写 live 库：沿用 isolated_db + tmp_path + monkeypatch UPLOAD_DIR 模式。
 """
@@ -89,7 +94,10 @@ def test_missing_file_url_is_blanked_and_existing_kept(client, upload_dir):
     gone = _mk_receipt("uploads/gone.jpg")
 
     rows = _list(client)
-    assert rows[ok]["image_url"] == "/uploads/ok.jpg"
+    ok_url = rows[ok]["image_url"]
+    # 旧契约是与 "/uploads/ok.jpg" 逐字节相等；P0-4 撤销 /uploads 挂载后改为签名端点形态
+    assert ok_url.startswith("/api/receipt/%d/image?v=ok&sig=" % ok), ok_url
+    assert "/uploads/" not in ok_url
     assert rows[gone]["image_url"] == ""
 
 
@@ -105,7 +113,7 @@ def test_missing_file_row_keeps_field_and_other_data(client, upload_dir):
 
 
 # -------------------------------------------------------------
-# 2. 非 Web 格式：源文件缺失同样置空；存在则仍是转码端点 URL
+# 2. 非 Web 格式：源文件缺失同样置空；存在则仍是签名取图端点 URL
 # -------------------------------------------------------------
 def test_non_web_missing_source_is_blanked(client, upload_dir):
     rid = _mk_receipt("uploads/gone.heic")
@@ -134,7 +142,9 @@ def test_absolute_pytest_path_judged_by_basename(client, upload_dir):
 
     here = _mk_receipt("/private/var/folders/xx/pytest-of-ethan/pytest-8/img_1.png")
     (upload_dir / "img_1.png").write_bytes(b"x")
-    assert _list(client)[here]["image_url"] == "/uploads/img_1.png"
+    # 旧契约是与 "/uploads/img_1.png" 逐字节相等；改为签名端点形态
+    here_url = _list(client)[here]["image_url"]
+    assert here_url.startswith("/api/receipt/%d/image?v=img_1&sig=" % here), here_url
 
 
 # -------------------------------------------------------------
@@ -160,3 +170,32 @@ def test_list_is_idempotent(client, upload_dir):
     second = _list(client)
     assert {i: r["image_url"] for i, r in first.items()} == \
            {i: r["image_url"] for i, r in second.items()}
+
+
+# -------------------------------------------------------------
+# 5. URL 形态契约（P0-4）：所有格式统一签名端点；无图一律空串
+# -------------------------------------------------------------
+def test_public_image_url_unified_signed_endpoint():
+    """Web 与非 Web 格式产出同一种签名取图端点；无图形态一律空串。
+
+    why: `/uploads` 静态挂载已撤销，Web 格式的 `/uploads/<name>` 直链不再是合法契约；
+    receipt_id 非法（None / 非数字）签不出有效凭证，按「无图」返回空串而非任何地址。
+    """
+    from app.services.receipt_utils import public_image_url
+
+    for name in ("x.jpg", "x.png", "x.webp", "x.heic", "x.tiff"):
+        url = public_image_url(42, "uploads/" + name, "default")
+        assert url.startswith("/api/receipt/42/image?v=x&sig="), url
+        assert "/uploads/" not in url
+
+    # 租户语义：非默认租户带 tenant_id，端点据此做租户归属校验；default 省略该参数
+    assert public_image_url(42, "uploads/x.jpg", "tenant_b").endswith(
+        "&tenant_id=tenant_b")
+    assert "tenant_id=" not in public_image_url(42, "uploads/x.jpg", "default")
+
+    # 无图形态：image_path 为空 / 只由目录成分构成 / receipt_id 非法
+    assert public_image_url(42, "") == ""
+    assert public_image_url(42, None) == ""
+    assert public_image_url(42, "uploads/") == ""
+    assert public_image_url(None, "uploads/x.jpg") == ""
+    assert public_image_url("not-a-number", "uploads/x.jpg") == ""

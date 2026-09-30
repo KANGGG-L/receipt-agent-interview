@@ -22,13 +22,22 @@ def show_summary():
     for item in matrix.get("prompts", []):
         name = item["scene"]
         ver = item["active_version"]
-        metric_str = f"Acc: {item['accuracy']}% | CER: {item.get('cer', 'N/A')}%"
+        # 指标为 null = 无支撑、已纠偏（与 tools 段同口径），不要印成 "None%"
+        if item.get("accuracy") is None:
+            metric_str = "N/A（无支撑，claim_unsupported）"
+        else:
+            metric_str = f"Acc: {item['accuracy']}% | CER: {item.get('cer', 'N/A')}%"
         print(f"{'Prompt':<10} | {name:<20} | {ver:<16} | {metric_str:<25}")
 
     for item in matrix.get("tools", []):
         name = item["tool_name"]
         ver = item["active_version"]
-        metric_str = f"Pass: {item['interception_rate']}% | Latency: {item['latency_ms']}ms"
+        rate = item.get("interception_rate")
+        if rate is None:
+            shown = "N/A（无支撑，claim_unsupported）" if item.get("claim_unsupported") else "N/A"
+        else:
+            shown = f"{rate}%"
+        metric_str = f"Pass: {shown} | Latency: {item['latency_ms']}ms"
         print(f"{'Tool':<10} | {name:<20} | {ver:<16} | {metric_str:<25}")
 
     for item in matrix.get("skills", []):

@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db
+from app.auth import EarlyAuthMiddleware
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
 from app.api_dishes import router as dishes_router
@@ -46,6 +47,13 @@ app.include_router(phase2_router)
 app.include_router(evalset_router)
 app.include_router(memory_router)
 app.include_router(export_router)
+
+# D23：/api/* 早鉴权中间件——在路由分发（参数校验）之前强制「必须先有身份」，
+# 消除匿名请求因请求体非法而返回 422（而非 401）所能暴露的端点探测面。白名单端点
+# （/api/auth/login、/api/auth/me、/api/health、/api/receipt/{id}/image、
+# /api/payment/voucher/{name}）保持匿名可用；端点内的角色阈值不受影响。详见
+# app/auth.py 的 EarlyAuthMiddleware。
+app.add_middleware(EarlyAuthMiddleware)
 
 
 @app.on_event("startup")
@@ -116,6 +124,71 @@ def _sync_evalset_receipts_startup():
 
 
 @app.on_event("startup")
+def _check_memory_consistency_startup():
+    """启动自检：跑一次记忆表 ↔ 向量库一致性巡检，不一致时告警（只读，不阻断）。
+
+    why：巡检工具 app/services/memory_consistency.py 早已实现（B0 审核 mustFix），
+    但**零生产触发方** —— 它能检出 gap 05 §H2 那类「DB 有行无向量 / 向量有 mid 无行」
+    的静默脱钩，却没人跑它，结果永远不会被任何人看到（本仓高发的「定义了没接线」）。
+    启动是它的生产触发方：每次服务拉起都自动核一遍，不一致即在启动日志里告警。
+
+    容错（不得阻断启动）：记忆库 / 向量库不存在是**正常状态**（全新环境、刚清退过
+    向量库），巡检函数对二者缺席都返回 0 行而不是抛错；此外这里再兜一层 try/except，
+    任何异常只 warning，绝不冒泡 —— 巡检是观测手段，不该把服务启不起来。
+    只读：巡检以 sqlite3 mode=ro 打开两侧，不写记忆库、不写向量库、不创建向量目录。
+    """
+    try:
+        import logging
+        from app.services import memory_consistency as mc
+        report = mc.check_memory_consistency(db_path=db.DB_PATH)
+        log = logging.getLogger("startup")
+        if report["consistent"]:
+            log.info("[memory_consistency] 记忆表与向量库一致（active 行=%d，向量=%d）",
+                     report["db_rows_active"], report["vectors"])
+        else:
+            log.warning(
+                "[memory_consistency] 记忆表与向量库不一致：孤儿向量=%d、缺向量行=%d、"
+                "交集=%d（记忆库=%s，向量库=%s）；只读巡检，不自动修复，"
+                "可查 GET /api/admin/memory-consistency。",
+                len(report["orphan_mids"]), len(report["missing_vector_mids"]),
+                len(report["intersection"]), report["db_path"], report["rag_dir"])
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(
+            f"[memory_consistency] 启动巡检失败(不阻断): {e}")
+
+
+@app.on_event("startup")
+def _sweep_stale_parsing_startup():
+    """启动自愈：把**超期**卡在 parsing 的单据置为 error(parsing_timeout)。
+
+    why：`receipt_utils.sweep_parsing_timeout` 早已实现（Gate-2），但**零生产触发方**
+    —— 全仓 grep 只有它自己的定义，所以这条清扫从未跑过，超期单据状态永久假「在途」
+    （live 曾积压 7 张、updated_at 距今 26–33 天，列表与看板把它们当在跑的任务）。
+    本启动自检与只读端点 `GET /api/admin/parsing-stale` 是它的两个消费方，二者都复用
+    同一识别口径 `receipt_utils.stale_parsing_query`（不允许任一侧重写扫描 SQL）。
+
+    边界（不得误伤在跑的解析）：判定要求 created_at 早于「now - 阈值」，阈值由
+    settings 键 parsing_timeout_seconds 配置（缺省 300 秒）。刚上传/刚开始解析的单据
+    created_at 晚于 cutoff，不会被扫到。
+
+    容错（不得阻断启动）：DB 不可用、表未迁移等任何异常只 warning，绝不冒泡 ——
+    清扫是自愈手段，不该把服务启不起来。
+    """
+    try:
+        import logging
+        from app.services import receipt_utils as ru
+        swept = ru.sweep_parsing_timeout()
+        if swept:
+            logging.getLogger("startup").info(
+                "[parsing_sweep] 超期 parsing 单据置为 error(parsing_timeout): %s", swept)
+    except Exception as e:
+        import logging
+        logging.getLogger("startup").warning(
+            f"[parsing_sweep] 启动清扫失败(不阻断): {e}")
+
+
+@app.on_event("startup")
 def _sweep_orphan_preview_caches():
     """启动自愈：清理 uploads 下无主的 `<stem>_web.jpg` 预览缓存（幂等，源原图不删）。
 
@@ -142,18 +215,21 @@ def _sweep_orphan_preview_caches():
 
 @app.on_event("startup")
 def _warn_weak_token_secret():
-    """生产环境缺 DEMO_TOKEN_SECRET 时启动告警（不拒绝启动）。
+    """启动期密钥强度处置：鉴权开启则强制，否者仅告警。
 
-    why: 预览端点匿名可取图，靠 HMAC 签名（复用 app.auth._TOKEN_SECRET）防 id 枚举；
-    生产不设该环境变量就会用仓库内置默认值签名，防枚举等同混淆。这里选择「告警而非
-    拒绝启动」：拒绝启动会把「已上线但漏配环境变量」直接变成服务全不可用，影响面远大于
-    该签名本身的强度问题（密钥只护预览 URL，不是认证凭据）。开发/演示环境（非
-    production）保持既有行为，缺密钥照常启动。
+    AUTH_ENABLED=1（生产鉴权）时，Bearer 令牌是唯一身份凭据来源，弱密钥等同无鉴权，
+    故调用 auth.enforce_production_secret() 拒绝启动（RuntimeError 直传，不吞）。
+
+    AUTH_ENABLED=0（本地演示免密）时，密钥只护「匿名预览 URL 的 HMAC 签名」，拒绝启动会把
+    「已上线但漏配环境变量」直接变成服务全不可用，影响面大于该签名本身的强度问题，故维持
+    既有语义：仅告警不拒绝启动。DEV_MODE（非 production）下连告警都保持既有行为（直接返回）。
     """
+    from app import auth
+    # 生产强制项：AUTH_ENABLED=1 且仍是内置默认密钥 → 抛错拒绝启动（演示态不触发）。
+    auth.enforce_production_secret()
     if DEV_MODE:
         return
     try:
-        from app import auth
         if auth.token_secret_is_weak():
             import logging
             logging.getLogger("startup").warning(
@@ -246,7 +322,10 @@ def evalset_workbench_page(sample_id: str):
 
 
 app.mount("/static", NoStoreStaticFiles(directory=str(STATIC_DIR), no_store=DEV_MODE), name="static")
-app.mount("/uploads", NoStoreStaticFiles(directory=str(UPLOAD_DIR), no_store=DEV_MODE), name="uploads")
+# 刻意不挂载 /uploads：静态直挂零鉴权、零租户校验，任何知道文件名的人都能读取全部
+# 原图与付款凭证，属未授权文件面。原图与凭证分别改由签名端点
+# GET /api/receipt/{id}/image 与 GET /api/payment/voucher/{name} 提供，
+# 两条端点都做 HMAC 签名 + 租户归属 + basename/realpath 收敛。
 
 
 @app.get("/api/health")
@@ -315,6 +394,12 @@ def health():
     wal_size, wal_ok, wal_err = _wal_health()
     engines = _engine_health()
     backup_ok, backup_err = _backup_health()
+    # D21：签名密钥强度如实暴露给运维。AUTH_ENABLED=0（本地演示）下弱密钥不拒绝启动
+    # （保住演示取图），但「签名其实只防误撞、不防构造」这一事实必须可见，否则运维
+    # 会把预览/凭证的 HMAC 签名当成访问控制。口径与启动告警、auth.token_secret_is_weak
+    # 一致；判断只看环境变量，不触发任何 IO。
+    from app import auth as _auth
+    signature_secret_weak = _auth.token_secret_is_weak()
 
     problems = []
     if not db_ok:
@@ -333,6 +418,9 @@ def health():
         "engine": engines,
         "backup": {"dir_writable": backup_ok, "error": backup_err},
         "time": datetime.now(timezone.utc).isoformat(),
+        # D21：签名密钥强度标志（true = 仍是仓库内置默认密钥）。为 true 时预览/凭证
+        # 的 HMAC 签名只防误撞、不防构造，不构成访问控制；请设置 DEMO_TOKEN_SECRET。
+        "signature_secret_weak": signature_secret_weak,
     }
 
 

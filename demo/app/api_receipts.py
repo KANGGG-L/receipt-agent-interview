@@ -16,8 +16,11 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from app import db
-from app.auth import require_role
+from app.auth import require_role, resolve_request_tenant, resolve_tenant
 from app.services import image_web
+# P3-T2（K3）：用户修正 → 候选事实抽取。三个模块都是纯逻辑层（不 import 引擎层、
+# 不碰向量库），故可放在模块级；`memory_extract` 内部对 `app.llm` 是惰性 import。
+from app.services import memory_consolidate, memory_extract, memory_facts, settings_service
 from app.services.contract import payment_mark_from_image, sanitize_nan
 from app.services.receipt_utils import (
     build_detail, build_row, compute_review_diff, get_job, public_image_url,
@@ -26,9 +29,8 @@ from app.services.receipt_utils import (
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 
 def _supplement_payment_mark(receipt_row) -> str:
@@ -263,6 +265,27 @@ def _laplacian_variance(image_path: str):
     return None
 
 
+def _run_image_guard(image_path: str):
+    """P2-1 图内隐藏文字检测（原图、CLAHE 提亮之前）。
+
+    必须在 preprocess.apply_pipeline 之前对**原图**执行：CLAHE 提亮会把淡墨拉亮、
+    使 faint_ink 判定失真。只告警不拦截——返回值随 job 透传，不改变上传/识别/
+    approve 的任何既有成功路径；连工具都 import 不进来时也返回安全缺省
+    （flagged=False + reason），绝不阻断上传。
+    """
+    try:
+        from ai_registry.tools.image_injection_guard.v1_0_0 import Tool
+        return Tool().execute(image_path)
+    except Exception as e:
+        logging.getLogger("api_receipts").warning(
+            "[WARN] image_injection_guard 调用降级 (path=%s): %s", image_path, e)
+        return {
+            "flagged": False,
+            "reasons": ["图片无法读取，已跳过隐藏文字检查，请照常对照原图核对"],
+            "metrics": {"degraded": True, "error": e.__class__.__name__},
+        }
+
+
 # -------------------------------------------------------------
 # HEIC / 非 Web 格式即时转换接口
 # -------------------------------------------------------------
@@ -277,7 +300,11 @@ async def convert_image(
     `except Exception: pass` 静默吞掉 pillow_heif 注册失败，并硬编码 quality=92、
     不套 MAX_PREVIEW_SIDE，与 /api/receipt/{id}/image 的预览转码路径行为漂移。
     统一入口后两条路径共享同一套解码/EXIF 矫正/RGB 归一/缩放语义。
+
+    鉴权：该端点按上传件收原始图片字节，只服务已认证的店员及以上角色（前端经
+    apiFetch 会带 X-Role / Bearer，不破坏演示）。
     """
+    require_role("staff")(request)
     try:
         content = await file.read()
         if not content:
@@ -336,8 +363,8 @@ def get_receipt_image(receipt_id: int, request: Request):
     why 刻意不加 require_role：`<img src>` / `<a target=_blank>` 由浏览器原生发起，
     无法携带 X-Role / Authorization 等请求头，加请求头 RBAC 会让所有图片请求 401、
     功能直接不可用。防护改为四重业务校验：单据存在 + 未软删 + 租户归属 +
-    文件落在 uploads 目录内（后者防路径穿越）。暴露面不大于既有的 /uploads 静态挂载
-    （后者零鉴权零租户校验）。
+    文件落在 uploads 目录内（后者防路径穿越）。该端点是原图对外的唯一出口
+    （此前并存的 `/uploads` 静态挂载零鉴权零租户校验，已整体撤销）。
 
     W7 追加签名门槛：receipt_id 自增可枚举，四重校验只挡越权、挡不住遍历 id 扫描
     （租户隔离是「知道 tenant 才能过」的知识型约束）。URL 必须带 public_image_url
@@ -405,6 +432,38 @@ def _resolve_treatment(request: Request, form_value: str) -> str:
     return form_value if raw is None else raw
 
 
+def _vendor_hint_from_row(row, tenant_id=None) -> str:
+    """P2-T6：从已落库的单据行派生识别先验（vendor_hint），供重试/重解析入口复用。
+
+    why：重试与重解析场景单据行上**已经有**供应商信息（`supplier_name`，可能还有
+    `supplier_id`），这是零成本、零模型调用的先验来源；此前这两条入口都不传
+    `vendor_hint`，等于「已经知道供应商却仍不注入记忆」，首轮命中率因此被压低。
+
+    口径（与 P2-T6「不编造供应商」纪律一致，三条都可判定）：
+    1. `supplier_name` 非空 → 用它作为 hint（hint 是自由文本名称，与
+       `rag.retrieve_context(vendor)` 的入参口径一致，锚定交给读侧自己做）；
+    2. 行上已有 `supplier_id` 时**不再查库**；未锚定时用 `db.resolve_supplier_id`
+       做一次**只读**解析，仅用于留痕（不改变 hint 取值形态、失败不阻断）——why：
+       让运维能从日志区分「没供应商可用」与「有名字但没锚定到档案」两种未命中；
+    3. `supplier_name` 为空 → 返回空串：不猜、不编造、不调预判模型。
+    """
+    name = str(getattr(row, "supplier_name", "") or "").strip()
+    if not name:
+        return ""
+    if getattr(row, "supplier_id", None) is None:
+        try:
+            if db.resolve_supplier_id(name, tenant_id=tenant_id) is None:
+                # 用 warning 而非 info：默认日志级别下 info 不可见，运维就没法区分
+                # 「没供应商可用」与「有名字但没锚定到档案」——而这正是该分支存在的
+                # 理由；同函数下方解析失败那条用的也是 warning，口径保持一致。
+                logging.getLogger("api_receipts").warning(
+                    "[memory] 派生 vendor_hint 未锚定到供应商档案，按名字注入首轮先验: %s", name)
+        except Exception as e:
+            logging.getLogger("api_receipts").warning(
+                "[WARN] 派生 vendor_hint 时解析供应商失败（仍按名字注入）: %s", e)
+    return name
+
+
 @router.post("/api/upload")
 async def upload_receipt(
     request: Request,
@@ -446,21 +505,58 @@ async def upload_receipt(
                 ["image_blur"],
                 blur_score=round(float(blur_score), 2), confidence=0.35)
 
+    # P2-1 图内隐藏文字检测：必须在 preprocess.apply_pipeline（CLAHE 提亮）之前的
+    # 原图上执行（顺序重要：提亮会让淡墨检测失真）。只告警不拦截，结果随 job 透传。
+    image_guard = _run_image_guard(image_path)
+
+    raw_image_path = image_path
+    pipeline_image_path = image_path
     # T10 预处理纠偏（上传后、抽取前）：开关 'preprocess_enabled' 默认 OFF；
     # 任何失败回落原图，绝不阻断识别主链路
     try:
         from app.services import preprocess
-        image_path, _prep_meta = preprocess.apply_pipeline(image_path)
+        pipeline_image_path, _prep_meta = preprocess.apply_pipeline(raw_image_path)
         if _prep_meta.get("applied"):
             quality_warnings.append("preprocess_applied")
     except Exception:
-        pass
+        pipeline_image_path = raw_image_path
+
+    # P2-T6 首轮供应商预判（后端）：前端手选优先——仅在 vendor_hint 为空时预判，
+    # 避免预判覆盖用户明确选择。开关走 settings 键 vendor_precheck_enabled，缺省 false
+    # （零行为变化）；predict_vendor 内部已兜底（裁剪/引擎/超时/解析失败一律空串、
+    # 不抛异常），这里只再防一层导入期意外，且必须留痕不静默吞掉。
+    # cfg 必须显式传：build_recognition_model(cfg=None) 会走硬编码默认模型、绕过管理台
+    # 配置的识别引擎（P1 审核 mustFix M1）；get_engine_config 读失败时传 None，
+    # 由 predict_vendor 内部兜底解析。
+    # 可观测性（additive）：区分显式 vendor_hint 的两个来源 —— 用户手填（"user"）与
+    # 预判填充（"precheck"，仅原 hint 为空且 predict_vendor 给出非空值时）。两者皆无
+    # （预判失败/关闭）保持空串：下游 extra 不写键、Job result 字段为空串。只做来源
+    # 标记，不改变 hint 取值与识别链路任何行为。
+    _hint_origin = "user" if str(vendor_hint or "").strip() else ""
+    if not vendor_hint:
+        try:
+            from app.services import vendor_precheck
+            try:
+                _vp_cfg = db.get_engine_config()
+            except Exception as _cfg_err:
+                logging.getLogger("api_receipts").warning(
+                    "[WARN] 预判读取引擎配置失败，回落默认模型: %s", _cfg_err)
+                _vp_cfg = None
+            vendor_hint = vendor_precheck.predict_vendor(pipeline_image_path, cfg=_vp_cfg)
+            if str(vendor_hint or "").strip():
+                _hint_origin = "precheck"
+        except Exception as _vp_err:
+            logging.getLogger("api_receipts").warning(
+                "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
 
     job_id, receipt_id = start_recognition_job(
-        image_path, vendor_hint=vendor_hint or "",
-        tenant_id=_tenant_id(request))  # P0-1: 上传链路租户透传
+        pipeline_image_path, vendor_hint=vendor_hint or "",
+        tenant_id=_tenant_id(request),  # P0-1: 上传链路租户透传
+        image_guard=image_guard,
+        vendor_hint_origin=_hint_origin,
+        raw_image_path=raw_image_path)
 
-    image_url = public_image_url(receipt_id, image_path, _tenant_id(request))
+    image_url = public_image_url(receipt_id, raw_image_path, _tenant_id(request))
     # 灰测分组标签（与批量上传同一口径，见 _resolve_treatment）
     grp = "treatment" if _resolve_treatment(request, treatment).lower() == "true" else "control"
     # PDPO 红线（11-组件Spec §8）：vendor_hint 是用户输入明文，只落布尔位，禁落原文
@@ -489,7 +585,12 @@ async def upload_receipt(
 
 
 @router.get("/api/job/{job_id}")
-def job_status(job_id: str):
+def job_status(job_id: str, request: Request):
+    """识别任务轮询。返回体含单据结果与原图 URL，只服务已认证的店员及以上角色。
+
+    前端轮询经 apiFetch 会带 X-Role / Bearer，不破坏演示；匿名访问改 401。
+    """
+    require_role("staff")(request)
     job = get_job(job_id)
     if job is None:
         return JSONResponse(content={"status": "error", "msg": "未找到该识别任务"},
@@ -504,6 +605,20 @@ async def upload_batch(
     treatment: str = Form("true"),
     force: str = Form("false"),
 ):
+    """批量上传（不做手选供应商先验，显式标记为范围外）。
+
+    P2-T6 入口覆盖结论 —— **批量手选 vendor_hint 判定为范围外**，三条理由：
+    1. 结构上表达不了「每张各自的供应商」：本端点契约为扁平的 `list[UploadFile]`，
+       一个 `vendor_hint` 只能整批共用（1:N）。若整批来自不同供应商，等于给其余
+       子单据注入**错误**的供应商先验（D2/D3 的防污染纪律优先于命中率）。
+       要支持必须前端逐文件配对（如按 index 的 JSON sidecar），属接口契约变更。
+    2. 单方面加 Form 形参会构成「定义了没接线」：前端批量路径
+       （`main.js` 的批量上传）当前与设计都未发送该字段，新增形参没有消费方。
+    3. 批量子单据的记忆收益由**解析后的行**承接：解析完成即落 `supplier_name`，
+       此后重试 / 换图重解析入口会经 `_vendor_hint_from_row` 派生 hint（见下），
+       即批量入口不需要在派发时刻猜供应商。
+    故此处**不新增** `vendor_hint` 形参、也不调用供应商预判模型（保持零行为变化）。
+    """
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
     # 灰测分组标签：与单张上传同一口径（此前该形参在批量链路里零使用，勾选被静默忽略）
@@ -557,17 +672,23 @@ async def upload_batch(
             })
             continue
         seen_hashes.add(file_hash)
+        # P2-1 图内隐藏文字检测：与单张同口径，在 apply_pipeline（CLAHE 提亮）之前
+        # 对原图执行，结果随 job 透传。只告警不拦截。
+        image_guard = _run_image_guard(image_path)
+        raw_image_path = image_path
+        pipeline_image_path = image_path
         # T10 预处理纠偏（上传后、抽取前，与单张同口径；失败回落原图不阻断）
         try:
             from app.services import preprocess
-            image_path, _prep_meta = preprocess.apply_pipeline(image_path)
+            pipeline_image_path, _prep_meta = preprocess.apply_pipeline(raw_image_path)
             if _prep_meta.get("applied"):
                 photo_warnings.append("preprocess_applied")
         except Exception:
-            pass
+            pipeline_image_path = raw_image_path
         # P0-1: 批量上传链路租户透传（在派发 Job 线程前捕获，线程内不读 request）
         job_id, receipt_id = start_recognition_job(
-            image_path, tenant_id=_tenant_id(request))
+            pipeline_image_path, tenant_id=_tenant_id(request),
+            image_guard=image_guard, raw_image_path=raw_image_path)
         # 埋点与单张上传同口径（漏斗按 receipt_id 去重；批量此前完全不上报 upload 事件，
         # 灰测分组标签也随之丢失）
         _track_event(account, getattr(request.state, "session_id", job_id),
@@ -578,7 +699,7 @@ async def upload_batch(
         queue_pos += 1
         results.append({
             "status": "queued", "receipt_id": receipt_id,
-            "image_url": public_image_url(receipt_id, image_path, _tenant_id(request)),
+            "image_url": public_image_url(receipt_id, raw_image_path, _tenant_id(request)),
             "engine_used": None,
             "quality_warnings": photo_warnings,
             "version": row.version if row else None,
@@ -623,8 +744,7 @@ def _image_url_target_exists(image_path) -> bool:
     why: 列表每行都要判一次，必须只做一次 os.stat —— 不复用 `_resolve_upload_file`
     是因为它会 `Path.resolve()`（realpath 逐段 lstat），实测 1362 行要 268ms，而本
     探测只需 11ms。差异仅在「uploads 内的符号链接指向目录外」这一种情形：端点
-    会拒绝、此处会放行，但列表只输出 URL 不打开文件，且 `/uploads` 静态挂载本身
-    同样跟随符号链接，不构成新的可达面。
+    会拒绝、此处会放行，但列表只输出 URL 不打开文件，不构成可达面。
 
     刻意不做进程内缓存：11ms 远低于噪声；加缓存要么引入 TTL 失效语义（新上传
     的图可能被短暂判为不存在），要么需要按 UPLOAD_DIR 失效（测试会 monkeypatch
@@ -656,16 +776,15 @@ def _blank_unreachable_image_urls(rows, data):
     why: live 库存在 928 条历史 pytest 污染单据（image_path 形如
     '/uploads/img_2.png'、'/uploads/eval_reflow_src_*.png' 或已删除的 pytest 临时
     绝对路径），其 basename 在 uploads/ 下没有对应文件，`public_image_url` 仍会按其
-    basename 产出 `/uploads/<name>`（非 Web 格式则产出转码端点 URL），前端渲染即
-    404 破图。这里只做展示层兜底：文件不存在时返回空串，字段保留、响应结构不变，
-    不删历史数据行、不改 image_path。非 Web 格式源的判据同为「basename 是否有
-    文件」—— 端点转码读的就是这个 src，文件缺失时端点必 404。
+    basename 产出签名取图端点 URL，前端渲染即 404 破图。这里只做展示层兜底：文件不
+    存在时返回空串，字段保留、响应结构不变，不删历史数据行、不改 image_path。判据
+    统一为「basename 是否有文件」—— 端点读的就是这个 src，文件缺失时端点必 404。
 
     性能：只做路径归一 + os.stat，绝不打开/解码图片；且只在 image_url 非空时执行，
     空 image_path 的行（live 库 238 条）零开销。
 
     刻意不放进 build_row / public_image_url：那两处被详情、上传、Job 回写等路径共用，
-    改动会波及「Web 格式 URL 逐字节不变」的既有契约；死链治理只针对展示层（列表入口
+    改动会波及所有产出 URL 的链路；死链治理只针对展示层（列表入口
     与本文件 get_receipt 详情入口，后者见 Y1），故收在入口。
 
     逐行逻辑复用 _blank_unreachable_image_url，列表与详情两侧判据保证同源。
@@ -766,10 +885,10 @@ def get_receipt(receipt_id: int, request: Request):
         if not data.get("rag_context"):
             data["rag_context"] = getattr(row, "rag_context_json", None) or ""
     # Y1 详情侧死链兜底：live 库 928 条历史 pytest 污染单据「DB 有行、磁盘无文件」，
-    # 详情仍会产出 /uploads/<name>（非 Web 格式则产出转码端点 URL），归档弹窗打开时
-    # 404 破图/死链（前端只有空值守卫，挡不住非空死链）。判据与 X1 列表侧同源
+    # 详情仍会产出签名取图端点 URL，归档弹窗打开时 404 破图/死链（前端只有空值守卫，
+    # 挡不住非空死链）。判据与 X1 列表侧同源
     # （_blank_unreachable_image_url → _image_url_target_exists，只 os.stat 不解码）。
-    # 单条查询，一次 stat 开销可忽略；文件存在时 URL 逐字节不变（含 HEIC 的签名 URL）。
+    # 单条查询，一次 stat 开销可忽略；文件存在时 URL 不变。
     image_url = _blank_unreachable_image_url(
         public_image_url(row.id, row.image_path, _tenant_id(request)), row.image_path)
     return {"status": "success", "receipt_id": row.id,
@@ -857,6 +976,403 @@ def _recompute_math_warnings(body: "SaveEditedBody", currency: str) -> list:
         import logging
         logging.getLogger("api_receipts").warning(f"[WARN] save_edited 算术门禁重算失败: {e}")
         return []
+
+
+# -------------------------------------------------------------
+# P3-T2（K3）：用户修正 → 候选事实抽取（记忆飞轮的写侧入口）
+# -------------------------------------------------------------
+# 为什么要有这一段：记忆要"越用越准"就必须有人把「人的修正」翻译成结构化先验。现状
+# 写入侧只有 approve 处的两段自由文本（notes / sample），gap 05 §H2/H4 实测语义通道
+# 线上产出为 0。抽取产物**不直接生效**：按计划 C6 的写入双轨，规则级（memory_facts
+# 的四类白名单）一律经 pending 人工闸；案例级（单据明细语料）由 approve 处既有的
+# ingest_memory 自由文本回写承接 —— 那是双轨的另一半，本函数不重复实现。
+#
+# 两处触发共用本函数（计划 §10.2 明确「两处都要接」，本仓高发「修 A 漏 B」）：
+#   - save_edited（复核保存）
+#   - approve_receipt（入账）
+# 实现只此一份，两个调用点都调 `_extract_and_enqueue_memory_facts`，避免"同一根因
+# 多份实现，只改一份"。两处各自传 `trigger=` 声明入口（只进运行记录，不参与业务判定）。
+#
+# P3-T4/B6 运行记录：每次"真的发起了抽取"的运行都会写一行 `memory_extract_runs`
+# （经 `_persist_extract_run` → `db.record_memory_extract_run`），使
+# `memory_extract.get_last_run()` 的内存态不再"进程重启即丢"。查询侧是
+# `db.list_memory_extract_runs`（消费方：P8b·AA2 的重跑脚本 + 本波用例）。
+MEMORY_EXTRACT_SETTINGS_KEY = "memory_extract_enabled"
+
+
+def _memory_extract_enabled() -> bool:
+    """抽取开关（settings 键 memory_extract_enabled，缺省 False = 零行为变化）。
+
+    为什么缺省关闭：抽取在写请求（复核保存 / 入账）路径上发一次外部模型调用，缺省不额外
+    消耗额度、也不改变既有端点耗时 —— 与 vendor_precheck_enabled（P2-T6）同口径。
+    为什么读不到设置时按关闭处理：宁可这次不抽，也不在不确定状态下发外呼。
+    """
+    try:
+        return bool(settings_service.get_bool(MEMORY_EXTRACT_SETTINGS_KEY, False))
+    except Exception as e:
+        logging.getLogger("api_receipts").warning(
+            "[memory_extract] 开关读取失败，按关闭处理: %s", e)
+        return False
+
+
+def _ai_prefill_payload(row) -> dict:
+    """解析 `receipts.ai_prefill_json` 为 dict（AI 预填原版：vendor/date/total/items）。
+
+    解析失败 / 非对象一律返回 {}：空 dict 与「本单确实没有 AI 预填」在下游完全同形
+    （都不产生字段级差异、也都不触发抽取），故解析失败必须单独记一条 warning，把
+    receipt_id 与原始值前 200 字符一并留痕，供事后区分「确实没有 AI 值」与「ai_prefill
+    脏了解析不了」—— 不记日志的话脏 json 会静默改变行为而无从归因。warning 口径与
+    `_ai_prefill_items`（P23·AQ2）共用此处唯一实现，避免同口径抄两份。
+    """
+    raw = getattr(row, "ai_prefill_json", "") or ""
+    try:
+        payload = json.loads(raw or "{}")
+    except (TypeError, ValueError) as e:
+        logging.getLogger("api_receipts").warning(
+            "[memory_extract] ai_prefill 解析失败，本次将按『无字段差异』处理 —— "
+            "注意这与『本单确实没有人工修正』在运行记录上同形（都表现为不触发抽取）；"
+            "排查方向：receipts.ai_prefill_json 损坏 "
+            "(receipt_id=%s, 原始值前 200 字符=%r, 原因=%s)",
+            getattr(row, "id", None), str(raw)[:200], e)
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _ai_prefill_items(row) -> list:
+    """取单据的 AI 预填明细（`receipts.ai_prefill_json` 的 items）。
+
+    解析失败 / 无预填一律返回 []：空列表会让字段级 diff 为空 → 不触发抽取。对新建
+    手工单（本就是"没有 AI 值可比"）与脏行都是安全方向（不抛、不猜）。解析失败时的
+    warning 由 `_ai_prefill_payload` 统一发出（两种成因同形，需要留痕区分）。
+    """
+    items = _ai_prefill_payload(row).get("items")
+    return items if isinstance(items, list) else []
+
+
+def _ai_prefill_present(v) -> bool:
+    """AI 对该字段是否有可用预填值：None / 空串 / 空容器 / 数值 0 都视为「未预填」。
+
+    数值 0 也算未预填：OCR 未识别与「识别成 0」在单据上无从区分，而把 0 当成 AI 值
+    会让「用户填空字段」被误判为「用户改了 AI 值」（W-8 要收窄的正是这种误伤）。
+    """
+    if v is None:
+        return False
+    if isinstance(v, str):
+        return v.strip() != ""
+    if isinstance(v, (list, dict)):
+        return bool(v)
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return float(v) != 0.0
+    return True
+
+
+def _ai_prefill_num(v) -> float:
+    """AI 预填数值的宽松归一：坏值按 0 处理（与 compute_review_diff 的 `float(av or 0)` 同口径）。"""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _ai_prefill_corrected_fields(row, items_raw, body) -> bool:
+    """W-8：本次保存是否属于「AI 预填过某字段，店员改成了别的值」。
+
+    旧实现在「unit_price/amount/supplier_name/total_amount 任一与**库中旧值**不同」时
+    就扣记忆衰减分（见 save_edited 调用点），把「用户补填空字段 / 供应商改名 / 价格正常
+    波动」等业务合理变更也误判为「AI 错被纠正」并连带归档该供应商全部历史记忆。调用点
+    原注释自称「店员真的改了 AI 预填值」，但实现根本没读 `ai_prefill_json`（该字段当时
+    仅用于埋点）。本函数把它收窄为对**AI 预填过**的字段判定。
+
+    判定口径（字段级，与前端 diff 同口径）：AI 预填值非空（`_ai_prefill_present`）且与
+    最终提交值不同 → 计一次 AI 纠错。
+      - 行级 unit_price / amount：与 `ai_prefill.items` 按位置对齐（同 `compute_review_diff`）；
+      - 表头 total_amount：对应 `ai_prefill.total`，与提交总额比较。
+    「AI 未预填」「用户补填空字段」都不计入 —— 这也是供应商改名不扣分的成因：改名场景下
+    AI 往往没有可比的预填名（补填）或改的是标识而非值。
+
+    `ai_prefill_json` 缺失 / 损坏时 `_ai_prefill_payload` 返回 {} → 无法判定为 AI 错，
+    **返回 False（不扣分）**，且已由该函数留 warning（P23·AQ2 口径）；不会静默退化成
+    「全量扣分」—— 收窄后的默认方向是保守不扣。
+    """
+    payload = _ai_prefill_payload(row)
+    if not payload:
+        return False
+    items_raw = items_raw or []
+    ai_items = payload.get("items")
+    ai_items = ai_items if isinstance(ai_items, list) else []
+    for ai_it, fin_it in zip(ai_items, items_raw):
+        if not isinstance(ai_it, dict):
+            continue
+        for f in ("unit_price", "amount"):
+            av = ai_it.get(f)
+            if _ai_prefill_present(av) and _ai_prefill_num(av) != _ai_prefill_num(fin_it.get(f)):
+                return True
+    if _ai_prefill_present(payload.get("total")) \
+            and _ai_prefill_num(payload.get("total")) != _ai_prefill_num(body.total_amount):
+        return True
+    return False
+
+
+def _pending_fact_content(fact, decision=None) -> str:
+    """候选事实 (+ 整合判定) → 人工闸里可读的一行（也是 approve 后落 notes 的文本）。
+
+    为什么把判定并进 content 而不是只打日志：pending 表没有 action 列，而审核者必须能
+    区分「新增」与「覆盖旧值 X」—— 只看「alias：A → B」看不出这条会不会顶掉既有先验。
+    content 本身是 approve 后注射进 prompt 的记忆文本，故用括号补充，不加机器可读前缀。
+    kind 用白名单字面量（alias/unit/layout/price_range）：不另建一份中文标签表，
+    避免"同一口径多份实现"（kind 的中文说明只有 memory_extract._KIND_HINTS 一处）。
+
+    decision 为 None（Q2：写入侧闸门直接拒绝，还没走到 decide_action）时只给事实本身
+    的一行 —— 仍然复用本函数，而不是在调用点再拼一份同样的格式。
+    """
+    line = f"{fact.kind}：{fact.fact_key} → {fact.value}"
+    if decision is not None and decision.superseded_value and decision.action in (
+            memory_consolidate.ACTION_UPDATE, memory_consolidate.ACTION_DELETE):
+        line += f"（{decision.action} 既有值：{decision.superseded_value}）"
+    return line
+
+
+def _record_refused_candidate(vendor, tenant_id, receipt_id, reason, fact=None,
+                              content=None, source_kind=None):
+    """把"被拒 / 落选"的候选记为 status='rejected' 的审计行（Q2：reject_reason 的写入方）。
+
+    K2 给 pending_memory 建了 reject_reason 列，但**零写入方**，于是"上次为什么没进来"
+    在库里查不到（审核者只能翻日志，被拒方的下一次写入也不知道）。本函数就是那个写入方，
+    由 `_extract_and_enqueue_memory_facts` 在三条"候选没进队列"的分支上调用。
+
+    为什么记成 status='rejected' 而不是 'pending'：被拒候选的载荷必然过不了
+    `validate_fact`，若以待审行入队，审核者点"批准"时 approve 链路会回落自由文本路径，
+    把非法候选写成一条自由文本记忆（人工闸给闸门开后门）；且 pending 列表与角标只列
+    待批项，混进去会把人工闸刷成噪声。故被拒行只作审计载体，不进可批准队列。
+
+    fact 为 None 时（抽取侧闸门只有逐条理由字符串、拿不到归一后的 fact）载荷列留 NULL，
+    content 直接放理由本身 —— 该行永远不会被 approve，故 content 不进任何记忆库。
+    消费方：`db._pending_row_to_dict` → `GET /api/memory/pending`（含 status=rejected）。
+
+    失败只告警：审计是次要产物，绝不能把抽取链（乃至保存/入账主流程）带崩；但也不许
+    静默（本仓③类缺陷），故理由之外还带上异常类型与内容。
+    """
+    try:
+        db.enqueue_pending_memory(
+            str(vendor or ""), content or str(reason or ""),
+            tenant_id=tenant_id,
+            source_kind=source_kind or memory_facts.SOURCE_EXTRACT,
+            source_receipt_ids=[receipt_id],
+            supplier_id=getattr(fact, "supplier_id", None),
+            fact_kind=getattr(fact, "kind", None),
+            fact_key=getattr(fact, "fact_key", None),
+            fact_value=getattr(fact, "value", None),
+            reject_reason=reason, status="rejected")
+    except Exception as e:
+        logging.getLogger("api_receipts").warning(
+            "[memory_extract] 拒绝理由落库失败（不影响保存/入账主流程）"
+            "receipt_id=%s：%s: %s", receipt_id, type(e).__name__, e)
+
+
+def _persist_extract_run(receipt_id, row, tenant_id, supplier_id, trigger,
+                         diffs_count, facts_produced, facts_rejected,
+                         reject_reasons, prompt_source, error):
+    """把一次抽取的运行记录落库（P3-T4 / B6：中间产物可查、失败可复盘）。
+
+    why 单独一层 try/except：写运行记录是**次要产物**，但它与主链路共用同一个库会话工厂
+    —— 让它的异常冒泡到 `_extract_and_enqueue_memory_facts` 的外层 except，会把一次**成功**的
+    保存/入账降级成 stats=None，并打出一条误导性的"抽取链路异常"（失败原因被张冠李戴）。
+    需求 ③ 明确要求"不得因写记录而影响主流程"，故这里独立兜底（同 `_record_refused_candidate`）。
+    """
+    try:
+        db.record_memory_extract_run(
+            tenant_id=tenant_id, receipt_id=receipt_id,
+            vendor=getattr(row, "supplier_name", "") if row is not None else "",
+            supplier_id=supplier_id, trigger=trigger,
+            diffs_count=diffs_count, facts_produced=facts_produced,
+            facts_rejected=facts_rejected, reject_reasons=reject_reasons,
+            prompt_source=prompt_source, error=error)
+    except Exception as e:
+        logging.getLogger("api_receipts").warning(
+            "[memory_extract] 运行记录落库失败（不影响保存/入账主流程）"
+            "receipt_id=%s trigger=%s：%s: %s",
+            receipt_id, trigger, type(e).__name__, e)
+
+
+def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
+                                     ai_items, user_items, trigger=""):
+    """把「用户对 AI 预填的修正」抽成候选事实，规则级候选入 pending 人审队列。
+
+    管线（分工：`memory_extract` 出候选 / `memory_facts` 是写入侧唯一闸门 /
+    `memory_consolidate` 定动作 / `pending_memory` 是人审队列）：
+
+    ① 纯代码算字段级差异（`compute_field_diffs`）。无差异 = 这张单没有"人的修正"可学
+       → 直接返回，**不建模型、不发调用**（零成本、零噪声）。
+    ② 交给模型判断"值不值得记 + 归哪一类 + 怎么写 key/value"
+       （`extract_candidate_facts` 只把差异发给模型，不是整张单据）。
+    ③ 逐条复核 `validate_fact`（写入侧唯一闸门）：非法丢弃并**计数 + 落日志**（不得静默）。
+    ④ 与既有同 scope 事实做 `decide_action`（ADD/UPDATE/DELETE/NOOP）；**NOOP 不入队**
+       —— 同值事实、以及"低可信不得覆盖高可信"这两种情形入队，只会让审核者看到一条
+       没有任何变更的行，人工闸的可用性会被自己的噪声吃光。
+    ⑤ 有变更（ADD/UPDATE/DELETE）的候选入 pending，载荷带 supplier_id / fact_kind /
+       fact_key / fact_value（K2 的列；消费方＝`GET /api/memory/pending` 的字段级 diff 视图，
+       见 db._pending_row_to_dict）。
+
+    Q2（reject_reason 的写入方）：**没进队列的候选也要留下可查的理由**。三条"没进队列"
+    的分支（抽取侧闸门拒绝 / 写入侧闸门拒绝 / decide_action 判 NOOP）各自调一次
+    `_record_refused_candidate`，把理由写进 `pending_memory.reject_reason`。这些行落
+    `status='rejected'`，是**审计载体**而非待批项：人工闸列表与角标只列
+    `status='pending'`，故"不入队"（不进可批准队列）的语义未变，但"为什么没进来"从此在
+    库里可查（此前只打日志，`GET /api/memory/pending` 里永远看不到）。
+
+    scope 锚点：行上的权威 `supplier_id` 优先（P2-T1），缺失才按 vendor 名解析一次（与
+    `db._memory_anchor_for_write` 同口径）。**有值却不传**会让候选在 validate_fact 处因
+    "缺 supplier_id"被整体丢掉 —— 那才是真正的"定义了没接线"。
+
+    参数 `trigger`：调用方声明"这次抽取是被哪个入口触发的"（`save_edited` / `approve`），
+    只用于**运行记录**的分桶（P3-T4/B6），不参与任何业务判定。两个调用点都必须传
+    （本仓高发「修 A 漏 B」：save_edited 与 approve 是两条独立入口）。
+
+    运行记录（P3-T4/B6）：每一次"真的发起了抽取"的调用都会经 `_persist_extract_run` 写一行
+    `memory_extract_runs`（成功、降级、无锚点、抛异常都写），供事后复盘"为什么没有产出"。
+    为什么这一步必须落在本函数内、而不是在两个调用点各写一次：本函数是**唯一实现**，
+    两处触发共用它；在调用点各写一次就是"同一根因多份实现"，迟早只改一处。写记录本身
+    失败只 warning（见 `_persist_extract_run`），绝不会把已成功的保存/入账变成 500。
+    **只记"发起了抽取"的调用**：开关关闭 / row 为空（抽取根本没被请求）不写 —— 否则
+    生产上每次保存都会留一行噪声（开关缺省关闭时尤其如此）。
+
+    失败语义：任何异常一律 logger.error（带 receipt_id / supplier / 原因），并把
+    `memory_extract.get_last_error()` 的摘要一并落日志后返回 None —— 抽取是可选增益，
+    绝不阻断保存/入账主链路；但也绝不静默（抽取内部把异常降级成"空列表"，只看返回值会
+    与"这张单没什么可记的"混淆，本仓高发的"异常被静默吞掉导致功能静默失效"）。
+
+    返回统计字典（diff_count / candidates / rejected / enqueued / error）；开关关闭、
+    无差异、无锚点时返回 None。超时由引擎自身 `call_timeout` 兜底（已由
+    MAX_CALL_TIMEOUT_SECONDS 钳到 ≤60s），不另起第二套超时 —— 避免"同一根因多份实现"。
+    """
+    log = logging.getLogger("api_receipts")
+    # 供外层 except 写运行记录用：try 内可能在任何一步就抛（连 supplier_id 都还没解析出），
+    # 这些名字必须预先存在 —— 用 locals() 反射取"可能没赋值的名字"既隐晦又容易在改名后
+    # 静默退化成 0/NULL（本仓高发的静默失效）。
+    run_supplier_id = None
+    run_diff_count = 0
+    try:
+        if row is None or not _memory_extract_enabled():
+            return None
+        vendor = str(getattr(row, "supplier_name", "") or "").strip()
+        supplier_id = getattr(row, "supplier_id", None)
+        if supplier_id in (None, ""):
+            supplier_id = db.resolve_supplier_id(vendor, tenant_id=tenant_id)
+        run_supplier_id = supplier_id
+        if not supplier_id:
+            log.warning(
+                "[memory_extract] 单据 %s 的供应商 %r 解析不出 supplier_id，跳过抽取"
+                "（记忆以供应商为锚点，无锚点候选必然过不了校验）", receipt_id, vendor)
+            # 无锚点是**可复盘的失败态**（不是"没什么可记的"）：写一行带 error 的运行记录，
+            # 否则复盘时只能看到"这张单没有记忆产出"，看不出是被锚点卡住的。
+            _persist_extract_run(
+                receipt_id, row, tenant_id, None, trigger, 0, 0, 0, [],
+                memory_extract.PROMPT_SOURCE_NONE,
+                "缺 supplier_id：供应商 %r 解析不出锚点，跳过抽取" % vendor)
+            return None
+
+        diffs = memory_extract.compute_field_diffs(ai_items, user_items)
+        run_diff_count = len(diffs)
+        if not diffs:
+            # 无差异 = 这件"抽取"从未发生（不建模型、不发调用）。仍写一行（diffs_count=0、
+            # prompt_source="" 明确表示没用到文案），把"为什么没有产出"变成可查事实 ——
+            # 但**刻意不读 get_last_run()**：本次没调 extract_candidate_facts，那里的状态
+            # 仍是上一次调用的残留，读它会把别的单据的统计写进这一行（伪造数据）。
+            _persist_extract_run(
+                receipt_id, row, tenant_id, supplier_id, trigger, 0, 0, 0, [],
+                memory_extract.PROMPT_SOURCE_NONE, "")
+            return None
+
+        cfg = db.get_engine_config()
+        facts = memory_extract.extract_candidate_facts(
+            ai_items, user_items, str(supplier_id), tenant_id,
+            max_facts=memory_extract.DEFAULT_MAX_FACTS, cfg=cfg)
+        run = memory_extract.get_last_run()
+        extract_error = str(run.get("error") or "")
+        if extract_error:
+            log.error("[memory_extract] 抽取降级 receipt_id=%s supplier=%s(%s)：%s",
+                      receipt_id, vendor, supplier_id, extract_error)
+        # 抽取侧闸门（validate_fact 的第一道）被拒的候选必须逐条可见：只留计数会让人
+        # 分不清"模型没给出候选"与"候选全被拒"。理由同时**落库**（Q2）：K2 的
+        # reject_reason 列此前零写入方，只打日志时库里查不到"上次为什么没进来"。
+        for reason in run.get("reject_reasons") or []:
+            log.warning("[memory_extract] 候选被抽取侧闸门拒绝 receipt_id=%s：%s",
+                        receipt_id, reason)
+            _record_refused_candidate(vendor, tenant_id, receipt_id, reason)
+        stats = {"diff_count": len(diffs), "candidates": len(facts),
+                 "rejected": 0, "enqueued": 0, "error": extract_error}
+        # 抽取侧闸门的拒绝条数（run["rejected"]）与写入侧复核的拒绝条数（stats["rejected"]）
+        # 在运行记录里合并成 facts_rejected：两者的业务含义都是"候选被闸门丢掉了"，
+        # 分开存会让复盘多一次心算。`stats` 的对外语义不变（仍只含写入侧，调用方依赖它）。
+        gate_rejected = int(run.get("rejected") or 0)
+
+        existing = db.list_vendor_memory(vendor=vendor, tenant_id=tenant_id,
+                                        supplier_id=supplier_id) if facts else []
+        for fact in facts:
+            # ③ 写入侧唯一闸门：抽取侧已过一遍，这里是**写入点**的复核（本函数是写方，
+            #    写方必须自己校验，不能依赖"上游一定筛过"）
+            ok, reason = memory_facts.validate_fact(fact)
+            if not ok:
+                stats["rejected"] += 1
+                log.warning(
+                    "[memory_extract] 候选被写入侧闸门拒绝（不入队）receipt_id=%s "
+                    "kind=%s key=%s：%s", receipt_id, fact.kind, fact.fact_key, reason)
+                # 该分支是**防御性复核**：生产链路上本函数的候选都出自
+                # `memory_extract._to_facts`，那里已用同一份 validate_fact 筛过，故这里
+                # 通常不可达；但"写方必须自己校验"不能省，理由也必须可查（Q2）。
+                _record_refused_candidate(
+                    vendor, tenant_id, receipt_id, reason, fact=fact,
+                    content=_pending_fact_content(fact),
+                    source_kind=fact.source_kind)
+                continue
+            # ④ 与既有同 (tenant, supplier, fact_key) 事实定动作
+            decision = memory_consolidate.decide_action(existing, fact)
+            if decision.action == memory_consolidate.ACTION_NOOP:
+                log.info(
+                    "[memory_extract] 候选无需变更（不入队）receipt_id=%s kind=%s "
+                    "key=%s：%s", receipt_id, fact.kind, fact.fact_key, decision.reason)
+                # "没进队列"的理由与"被闸门拒绝"的理由同样要可查（Q2）：本列的口径是
+                # 「拒绝/落选的可读理由」，NOOP 正属"落选"（同值不变 / 低可信不得覆盖
+                # 高可信 / 候选非法）。仍记 status='rejected' 的审计行，不占用人工闸。
+                _record_refused_candidate(
+                    vendor, tenant_id, receipt_id, decision.reason, fact=fact,
+                    content=_pending_fact_content(fact, decision),
+                    source_kind=fact.source_kind)
+                continue
+            # ⑤ 规则级候选一律入人审队列（计划 C6 双轨制的"规则必须人审"半）
+            db.enqueue_pending_memory(
+                vendor, _pending_fact_content(fact, decision), tenant_id=tenant_id,
+                source_kind=fact.source_kind, source_receipt_ids=[receipt_id],
+                supplier_id=fact.supplier_id, fact_kind=fact.kind,
+                fact_key=fact.fact_key, fact_value=fact.value)
+            stats["enqueued"] += 1
+            log.info(
+                "[memory_extract] 候选入人审队列 receipt_id=%s supplier=%s kind=%s "
+                "key=%s action=%s", receipt_id, vendor, fact.kind, fact.fact_key,
+                decision.action)
+        # 运行记录（P3-T4/B6）：**唯一持久化点**，覆盖"成功 / 抽取降级 / 0 候选"三种终态。
+        # 放在循环之后才能带上写入侧复核的计数；循环内没有任何 return，故这里必被执行到。
+        _persist_extract_run(
+            receipt_id, row, tenant_id, supplier_id, trigger,
+            len(diffs), len(facts), gate_rejected + stats["rejected"],
+            run.get("reject_reasons") or [], run.get("prompt_source") or "",
+            extract_error)
+        return stats
+    except Exception as e:
+        log.error(
+            "[memory_extract] 抽取链路异常（不阻断主流程）receipt_id=%s supplier=%s："
+            "%s: %s；last_error=%s", receipt_id,
+            getattr(row, "supplier_name", "") if row is not None else "",
+            type(e).__name__, e, memory_extract.get_last_error() or "无")
+        # 未预期异常同样要留运行记录（error 非空）：只打日志时，"这次抽取整个没跑成"
+        # 与"这张单没什么可记的"在库里长得一样（需求 ②：成功与失败都要写）。
+        _persist_extract_run(
+            receipt_id, row, tenant_id, run_supplier_id, trigger,
+            run_diff_count, 0, 0, [], memory_extract.PROMPT_SOURCE_NONE,
+            "%s: %s" % (type(e).__name__, e))
+        return None
 
 
 @router.post("/api/save_edited")
@@ -968,28 +1484,27 @@ def save_edited(body: SaveEditedBody, request: Request):
     db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 
     # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
-    _manual_changed = False
     if not is_auto and body.receipt_id is not None and row is not None:
         for old_it, new_it in zip(old_items, items_raw):
             if old_it.get("unit_price") != new_it.get("unit_price"):
                 db.append_audit_log(rid, who, "save_edited", "unit_price",
                                     old_it.get("unit_price"), new_it.get("unit_price"))
-                _manual_changed = True
             if old_it.get("amount") != new_it.get("amount"):
                 db.append_audit_log(rid, who, "save_edited", "amount",
                                     old_it.get("amount"), new_it.get("amount"))
-                _manual_changed = True
         if row.supplier_name != body.supplier_name:
             db.append_audit_log(rid, who, "save_edited", "supplier_name",
                                 row.supplier_name, body.supplier_name)
-            _manual_changed = True
         if row.total_amount != body.total_amount:
             db.append_audit_log(rid, who, "save_edited", "total_amount",
                                 row.total_amount, body.total_amount)
-            _manual_changed = True
-        # T8 非对称淘汰（覆写 -0.12 口径）：店员真的改了 AI 预填值 → 该供应商
-        # 活跃记忆扣分，低于归档阈值自动 archived 停止注入。失败不阻断保存。
-        if _manual_changed:
+        # T8 非对称淘汰（覆写 -0.12 口径）：**只有**「AI 预填过该字段 且 店员改成了别的
+        # 值」才算 AI 错被纠正 → 该供应商活跃记忆扣分，低于归档阈值自动 archived 停止注入。
+        # W-8 收窄：旧实现按 old/new 全量 diff 扣分，把「用户补填空字段 / 供应商改名 /
+        # 价格正常波动」也误判为 AI 错；判定改由 `_ai_prefill_corrected_fields` 对比
+        # ai_prefill_json 得出（ai_prefill 缺失/损坏 → 不扣分 + warning，不静默全量扣分）。
+        # 失败不阻断保存。
+        if _ai_prefill_corrected_fields(row, items_raw, body):
             try:
                 db.apply_vendor_memory_override_penalty(
                     row.supplier_name or "", tenant_id=tenant_id)
@@ -1059,9 +1574,7 @@ def save_edited(body: SaveEditedBody, request: Request):
         ai_row = db.get_receipt_row(rid, tenant_id=tenant_id)
         if ai_row:
             try:
-                import json as _j
-                ai_prefill = _j.loads(ai_row.ai_prefill_json or "{}")
-                ai_items = ai_prefill.get("items", [])
+                ai_items = _ai_prefill_items(ai_row)
                 for i, new_it in enumerate(items_raw):
                     if i < len(ai_items):
                         ai_val = ai_items[i].get("unit_price", "")
@@ -1075,6 +1588,13 @@ def save_edited(body: SaveEditedBody, request: Request):
             except Exception as e:
                 import logging
                 logging.getLogger("api_receipts").warning(f"[WARN] 记录编辑 AI 决策失败: {e}")
+    # P3-T2（K3）触发点之一：复核保存。只在"人改过"的路径上抽取 —— auto_save（识别
+    # 主链路自动回写）没有"人的修正"，且它跑在后台 Job 线程里，不该在那里发外呼。
+    # 无字段差异时本调用直接返回（不建模型、不发模型调用），故对无改动保存零成本。
+    if not is_auto and body.receipt_id is not None:
+        _extract_and_enqueue_memory_facts(
+            rid, row, tenant_id, _ai_prefill_items(row), items_raw,
+            trigger="save_edited")
     return {"status": "success", "receipt_id": rid, "version": row.version}
 
 
@@ -1115,16 +1635,22 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
         db.create_supplier(row.supplier_name, tenant_id=_tenant_id(request))
     # 回写 VendorMemory（只认正向信号：老板批准）
     # T3 Gap B1：透传 tenant_id 与触发 receipt_id（source_ref 可回溯）
+    # J3：同时透传单据行上的权威主体锚点 supplier_id —— 本行是同一租户的档案主键，
+    # 比"用 supplier_name 反查档案"可靠（名字在重名变体/自动建档前后可能解析到别的
+    # 档案）。行上没有锚点（新上传单据尚未回填）时传 None，由 db 侧按名解析一次。
     from app.services.rag import ingest_memory
     items_text = "\n".join(f"- {i['name']} {i['quantity']}{i['unit']} @{i['unit_price']} = {i['amount']}"
                            for i in db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request)))
     ingest_memory(row.supplier_name, items_text, notes=f"版式：{row.doc_form}",
-                  tenant_id=_tenant_id(request), receipt_id=receipt_id)
+                  tenant_id=_tenant_id(request), receipt_id=receipt_id,
+                  supplier_id=getattr(row, "supplier_id", None),
+                  # U1 审计链：自由文本回写行也要可追溯写入者 —— 与人工闸路径
+                  # （api_memory.approve_pending 的 written_by=who）同源，均为本次
+                  # 操作者身份；不写则该行 written_by 落 NULL，审计 A1 口径出现缺口。
+                  written_by=who)
     # C6 ai_decision_log：approve 回填最终确认 + 幻觉判定
     try:
-        import json as _j
-        ai_prefill = _j.loads(row.ai_prefill_json or "{}")
-        ai_items = ai_prefill.get("items", [])
+        ai_items = _ai_prefill_items(row)
         final_items = db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request))
         for i, fi in enumerate(final_items):
             if i < len(ai_items):
@@ -1139,6 +1665,12 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     except Exception as e:
         import logging
         logging.getLogger("api_receipts").warning(f"[WARN] 记录审批 AI 决策失败: {e}")
+    # P3-T2（K3）触发点之二：入账。放在供应商自动建档（上方）之后 —— 锚点解析按
+    # vendor 名回退时，这里才能查得到刚建的档案；无字段差异时本调用直接返回。
+    _extract_and_enqueue_memory_facts(
+        receipt_id, row, _tenant_id(request), _ai_prefill_items(row),
+        db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request)),
+        trigger="approve")
     # 埋点（规范事件 #8 receipt_approved，北极星终态）：e2e 耗时
     try:
         from datetime import datetime as _dt
@@ -1199,8 +1731,12 @@ def retry_receipt(receipt_id: int, request: Request):
                      "msg": f"原图缺失（{row.image_path}），无法重试；请重新上传或转手工录入。"},
             status_code=400)
     # P0-1: 重试链路租户透传（row 已按租户校验归属）
-    job_id, _ = start_recognition_job(row.image_path, receipt_id=receipt_id,
-                                      tenant_id=_tenant_id(request))
+    # P2-T6: 从单据行派生 vendor_hint（不调预判模型）——行上已有供应商即可注入首轮
+    # 供应商记忆；行上为空时 hint 为空、行为与接线前一致。
+    job_id, _ = start_recognition_job(
+        row.image_path, receipt_id=receipt_id,
+        vendor_hint=_vendor_hint_from_row(row, _tenant_id(request)),
+        tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version}
 
@@ -1267,8 +1803,12 @@ async def replace_receipt_image(
                  "image_replaced", receipt_id=receipt_id,
                  properties={"old_image": old_image_name, "trigger": "retake"},
                  tenant_id=_tenant_id(request))
-    job_id, _ = start_recognition_job(image_path, receipt_id=receipt_id,
-                                      tenant_id=_tenant_id(request))
+    # P2-T6: 换图重跑同 /retry 口径——从单据行派生 vendor_hint（不调预判模型）。
+    # 注意 supplier_name 取自换图前的 row（本次 update 只改 image_path，未动供应商）。
+    job_id, _ = start_recognition_job(
+        image_path, receipt_id=receipt_id,
+        vendor_hint=_vendor_hint_from_row(row, _tenant_id(request)),
+        tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version,
             "image_url": public_image_url(receipt_id, image_path, _tenant_id(request))}
@@ -1435,15 +1975,12 @@ class FeedbackBody(BaseModel):
 @router.post("/api/receipt/{receipt_id}/feedback")
 def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     require_role("staff")(request)
-    # 租户口径（P3-4 收敛）：服务端 header X-Tenant-Id 优先，body.tenant_id 仅在
-    # 无 header 时兜底兼容（老客户端/脚本）。归属校验与 receipt_feedback 落库
-    # 必须使用同一解析值，且客户端 body 不得覆盖服务端 header 用于归属判定。
-    # 前端（demo/static/js/main.js）目前对两处传同值（localStorage demo_tenant_id），
-    # 本口径变更对其无行为影响。
-    tenant_id = (request.headers.get("X-Tenant-Id")
-                 or request.headers.get("x-tenant-id")
-                 or body.tenant_id or "default")
-    tenant_id = str(tenant_id).strip() or "default"
+    # 租户口径（P3-4 收敛 + D19）：生产态租户**只**取自身份（token 载荷，见
+    # resolve_request_tenant → resolve_tenant），客户端 X-Tenant-Id 头与 body.tenant_id
+    # 一律不采信 —— 两者都是客户端可任意声明的，采信等于让 staff 令牌把反馈写进他租。
+    # 开发/演示态维持既有通道：服务端 header X-Tenant-Id 优先，body.tenant_id 仅在无
+    # header 时兜底兼容（老客户端/脚本）；归属校验与 receipt_feedback 落库使用同一解析值。
+    tenant_id = resolve_request_tenant(request, client_claimed=body.tenant_id)
     # 单据归属校验：跨租户单据视为不存在（Gap E2）
     row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
@@ -1544,15 +2081,14 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
 @router.get("/api/receipt/{receipt_id}/feedback")
 def list_feedback(receipt_id: int, request: Request):
     require_role("staff")(request)
-    row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
+    # 租户过滤统一走 _tenant_id（生产态=身份租户，开发态=X-Tenant-Id 或 default）并下推
+    # 到 db 层：读侧同理不得采信「只在请求头里声明」的租户，否则他租反馈可被读出。
+    tenant_id = _tenant_id(request)
+    row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
         return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
                             status_code=404)
-    tenant_id = request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id")
-    fbs = db.list_receipt_feedbacks(receipt_id=receipt_id)
-    # 租户过滤：若传了租户则只返回该租户的
-    if tenant_id:
-        fbs = [f for f in fbs if f.get("tenant_id") == tenant_id]
+    fbs = db.list_receipt_feedbacks(receipt_id=receipt_id, tenant_id=tenant_id)
     return {"status": "success", "receipt_id": receipt_id, "feedbacks": fbs}
 
 

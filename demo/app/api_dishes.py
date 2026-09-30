@@ -25,7 +25,7 @@ from sqlalchemy import or_
 import logging
 
 from app import db
-from app.auth import require_role, resolve_account
+from app.auth import require_role, resolve_tenant
 
 logger = logging.getLogger("dishes")
 from app.services.costing_service import CostingService, convert_unit_quantity, check_unit_compatibility
@@ -35,19 +35,23 @@ router = APIRouter()
 
 
 def _actor(request: Request) -> str:
-    """操作人标识（BOM 版本快照 changed_by）：优先账号邮箱，其次角色名。"""
+    """操作人标识（BOM 版本快照 changed_by）：账号邮箱优先，其次角色名。
+
+    身份只取 request.state.account —— 由 require_role / require_admin 依赖在权限校验
+    通过后注入。刻意**不读任何请求头**：X-Role / X-Email 是客户端可任意声明的，采信即
+    等于让「谁改了配方」这一审计字段可被伪造（生产态虽不可达，语义上也不该留这类回落）。
+    取不到账号（例如未来出现未经 RBAC 依赖的调用路径）时回落固定字面量 "unknown"。
+    """
     try:
-        acct = resolve_account(request) or {}
-    except Exception:
+        acct = getattr(request.state, "account", None) or {}
+    except AttributeError:
         acct = {}
-    return (acct.get("email") or acct.get("role")
-            or request.headers.get("X-Role") or "unknown")
+    return acct.get("email") or acct.get("role") or "unknown"
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 
 # -------------------------------------------------------------

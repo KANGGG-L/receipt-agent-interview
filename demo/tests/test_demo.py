@@ -240,8 +240,12 @@ def test_supplier_autocreate_on_approve():
 # U-2：AI 决策履历断链修复（extract 各轮决策落库 / 查询 / 详情透出）
 # -------------------------------------------------------------
 def _fake_extract_ok(image_path, vendor_hint, config, use_grey, retry_feedback, attempt,
-                     vendor_prior="", on_event=None):
-    """mock 单轮 extract 成功（不调外部 LLM）。on_event 为实时回退事件回调，mock 忽略。"""
+                     vendor_prior="", on_event=None, tenant_id="default"):
+    """mock 单轮 extract 成功（不调外部 LLM）。on_event 为实时回退事件回调，mock 忽略。
+
+    tenant_id 为 Gap H1 租户透传形参：显式对齐生产签名（不用 **kwargs 兜底，
+    否则今后同类签名漂移会被静默吞掉而不再暴露）。mock 不读该值。
+    """
     from app.models import ReceiptData
     data = ReceiptData(doc_form="printed_delivery_note", vendor="祥興", date="2024-03-25",
                        items=[{"name": "菜心", "qty": 5, "unit": "斤",

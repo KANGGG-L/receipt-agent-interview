@@ -8,7 +8,9 @@
       "status": "experimental",
       "note": "无生产消费者（T12 如实登记：demo 运行时未调用本工具；生产 PII 脱敏由 app/api_receipts._mask_sensitive 承担）",
       "interception_rate": 100.0,
-      "latency_ms": 0.8
+      "interception_rate_scope": "确定性脱敏：tests/test_registry_ssot.py::test_ac17_pii_masker_importable 覆盖 HKID / 私人手机 / 银行卡三类样例全部被脱敏。**不是**通用 PII 召回率（该用例集仅三类样例）。",
+      "latency_ms": 0.8,
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_registry_ssot.py::test_ac17_pii_masker_importable -q"
     }
   }
 }

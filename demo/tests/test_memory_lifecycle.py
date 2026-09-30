@@ -6,7 +6,8 @@
 2. 未 approve 的记忆不参与检索注入
 3. approve 后生效（写入 vendor_memory + 向量库，可被检索）
 4. reject 不注入
-5. 非对称衰减数值断言：命中 +0.05 / 用户覆写 -0.12 / <=0.5 归档且停止注入
+5. 非对称衰减数值断言：起始分 0.7（< 上限 1.0）/ 命中 +0.05 / 用户覆写 -0.12 /
+   <=0.5 归档且停止注入
 6. retrieve_context 只召回 status=active 且 decay_score > 归档阈值 的记忆
 
 全部离线假数据：独立临时 DB + 临时 RAG 目录，零外部调用。
@@ -40,6 +41,7 @@ rag._vs = None
 rag._vs_tenant = {}
 
 # 非对称衰减缺省口径（settings 缺省值，测试按数值断言）
+INITIAL_DECAY = 0.7      # P1-T2：新记忆起始分，刻意低于上限 1.0
 HIT_BONUS = 0.05
 OVERRIDE_PENALTY = 0.12
 ARCHIVE_THRESHOLD = 0.5
@@ -126,7 +128,8 @@ def test_approve_makes_memory_retrievable():
                        headers={"X-Role": "admin"})
     assert resp.status_code == 200, resp.text
 
-    rows = _db.list_pending_memory(tenant_id="default")
+    # AH3：缺省只列 pending，读已批准行必须显式传 status（否则这里会拿到空列表）
+    rows = _db.list_pending_memory(status="approved", tenant_id="default")
     assert rows[0]["status"] == "approved"
     assert rows[0]["reviewed_by"]
     assert rows[0]["reviewed_at"]
@@ -156,7 +159,8 @@ def test_reject_not_injected():
                        headers={"X-Role": "admin"})
     assert resp.status_code == 200, resp.text
 
-    rows = _db.list_pending_memory(tenant_id="default")
+    # AH3：缺省只列 pending，读其它状态的行必须显式传 status
+    rows = _db.list_pending_memory(status="rejected", tenant_id="default")
     assert rows[0]["status"] == "rejected"
     assert _db.list_vendor_memory(vendor, tenant_id="default") == []
     assert rag.retrieve_context(vendor, tenant_id="default").strip() == ""
@@ -183,20 +187,21 @@ def test_decay_hit_bonus_and_override_penalty():
     vendor = "衰減商戶D"
     mid = _approved_vendor_memory(_db, client, vendor)
 
-    # 初始 decay_score = 1.0
+    # 初始 decay_score = memory_initial_decay_score（缺省 0.7，P1-T2 起不再恒 1.0）
     mem = _db.list_vendor_memory(vendor, tenant_id="default")[0]
-    assert abs(mem["decay_score"] - 1.0) < 1e-9
+    assert abs(mem["decay_score"] - INITIAL_DECAY) < 1e-9
 
-    # 用户覆写一次：-0.12 → 0.88
+    # 用户覆写一次：-0.12 → 0.58
     _db.apply_vendor_memory_override_penalty(vendor, tenant_id="default")
     mem = _db.list_vendor_memory(vendor, tenant_id="default")[0]
-    assert abs(mem["decay_score"] - (1.0 - OVERRIDE_PENALTY)) < 1e-9
+    assert abs(mem["decay_score"] - (INITIAL_DECAY - OVERRIDE_PENALTY)) < 1e-9
 
-    # 检索命中一次：+0.05 → 0.93
+    # 检索命中一次：+0.05 → 0.63（起始分低于上限，强化真的抬升分数）
     ctx = rag.retrieve_context(vendor, tenant_id="default")
     assert ctx.strip() != ""
     mem = _db.list_vendor_memory(vendor, tenant_id="default")[0]
-    assert abs(mem["decay_score"] - (1.0 - OVERRIDE_PENALTY + HIT_BONUS)) < 1e-9
+    assert abs(mem["decay_score"]
+               - (INITIAL_DECAY - OVERRIDE_PENALTY + HIT_BONUS)) < 1e-9
     assert mem["hit_count"] >= 1
 
 
@@ -206,11 +211,10 @@ def test_override_penalty_archives_and_stops_injection():
     vendor = "歸檔商戶E"
     _approved_vendor_memory(_db, client, vendor)
 
-    # 连续覆写 5 次：1.0 - 5*0.12 = 0.40 <= 0.5 → archived
-    for i in range(4):
-        _db.apply_vendor_memory_override_penalty(vendor, tenant_id="default")
-        mem = _db.list_vendor_memory(vendor, tenant_id="default")[0]
-        assert mem["status"] == "active", f"第{i+1}次覆写后不应归档"
+    # 起始 0.7：第一次覆写 0.58 仍 active；第二次 0.46 <= 0.5 → archived
+    _db.apply_vendor_memory_override_penalty(vendor, tenant_id="default")
+    mem = _db.list_vendor_memory(vendor, tenant_id="default")[0]
+    assert mem["status"] == "active", "第1次覆写后不应归档"
     _db.apply_vendor_memory_override_penalty(vendor, tenant_id="default")
     mem = _db.list_vendor_memory(vendor, tenant_id="default",
                                  include_archived=True)[0]
@@ -233,7 +237,7 @@ def test_retrieve_context_filters_by_status_and_decay():
     _approved_vendor_memory(_db, client, vendor_bad)
     _approved_vendor_memory(_db, client, vendor_good)
 
-    # 把劣化商户的活跃记忆压到阈值以下（-0.12 * 5 = 0.40）
+    # 把劣化商户的活跃记忆压到阈值以下（起始 0.7，扣两次即 0.46 <= 0.5）
     for _ in range(5):
         _db.apply_vendor_memory_override_penalty(vendor_bad, tenant_id="default")
 

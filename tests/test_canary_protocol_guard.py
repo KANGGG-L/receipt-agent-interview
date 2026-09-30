@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
-"""Canary Token 动态协议签名防上游篡改测试集。
+"""Canary Token 动态协议握手（上游错配/静默降级检测）测试集。
 
 验证:
 1. Canary Token 生成: 前缀、长度、随机性
-2. verify_canary_token: 正常校验通过、__guard_token 弹出
-3. verify_canary_token: 篡改阻断 (非字典、缺失 token、token 不匹配)
+2. verify_canary_token: 正常校验通过；非破坏性——返回清洗副本（已剥除 __guard_token），
+   且绝不就地修改入参 dict
+3. verify_canary_token: 篡改阻断 (非字典、缺失 token、token 不匹配)；不匹配的错误文案
+   只给实际值摘要/长度，绝不回显预期 token 原文
 4. inject_canary_instructions: 双重锚定与多模态结构保持
 5. extract_chain 联动与向后兼容: 阻断与放行
 """
@@ -47,56 +49,79 @@ def test_canary_verification_success():
         "vendor": "ABC Supplier",
         "total": 100.0,
     }
-    ok, err = verify_canary_token(payload, token)
+    snapshot = dict(payload)
+    ok, err, cleaned = verify_canary_token(payload, token)
     assert ok is True
     assert err is None
-    # 验证字段必须在校验成功后被弹出，防止破坏 Pydantic extra="forbid"
-    assert CANARY_FIELD not in payload
+    # 非破坏性：入参 dict 不得被就地修改……
+    assert payload == snapshot
+    assert CANARY_FIELD in payload
+    # ……而返回的清洗副本必须已剥除 __guard_token，防止破坏 Pydantic extra="forbid"
+    assert CANARY_FIELD not in cleaned
+    assert cleaned["vendor"] == "ABC Supplier"
 
     # 兼容预期 token 两端有空白字符场景
     payload2 = {CANARY_FIELD: token}
-    ok2, err2 = verify_canary_token(payload2, f"  {token}  ")
+    payload2_snapshot = dict(payload2)
+    ok2, err2, cleaned2 = verify_canary_token(payload2, f"  {token}  ")
     assert ok2 is True
     assert err2 is None
-    assert CANARY_FIELD not in payload2
+    assert payload2 == payload2_snapshot      # 入参未被就地修改
+    assert CANARY_FIELD not in cleaned2
 
 
 def test_canary_verification_tampered_fails():
     token = generate_canary_token()
 
     # 1. 输出非字典结构
-    ok, err = verify_canary_token(["not", "a", "dict"], token)
+    ok, err, cleaned = verify_canary_token(["not", "a", "dict"], token)
     assert ok is False
     assert "模型输出必须为字典结构" in err
+    assert cleaned == {}
 
     # 2. 缺失 __guard_token
     payload_missing = {"vendor": "ABC Supplier", "total": 100.0}
-    ok, err = verify_canary_token(payload_missing, token)
+    payload_missing_snapshot = dict(payload_missing)
+    ok, err, cleaned = verify_canary_token(payload_missing, token)
     assert ok is False
     assert "上游响应缺失安全握手令牌" in err
     assert "System Prompt 遭到代理篡改或剥离" in err
+    assert payload_missing == payload_missing_snapshot  # 非破坏性
+    assert CANARY_FIELD not in cleaned
 
-    # 3. __guard_token 为空字符或 None
+    # 3. __guard_token 为空字符或 None（非破坏性：入参保留字段，清洗副本剥除字段）
     payload_empty = {CANARY_FIELD: "", "vendor": "ABC"}
-    ok, err = verify_canary_token(payload_empty, token)
+    payload_empty_snapshot = dict(payload_empty)
+    ok, err, cleaned_empty = verify_canary_token(payload_empty, token)
     assert ok is False
     assert "上游响应缺失安全握手令牌" in err
-    assert CANARY_FIELD not in payload_empty
+    assert payload_empty == payload_empty_snapshot
+    assert CANARY_FIELD in payload_empty
+    assert CANARY_FIELD not in cleaned_empty
 
     payload_none = {CANARY_FIELD: None, "vendor": "ABC"}
-    ok, err = verify_canary_token(payload_none, token)
+    payload_none_snapshot = dict(payload_none)
+    ok, err, cleaned_none = verify_canary_token(payload_none, token)
     assert ok is False
     assert "上游响应缺失安全握手令牌" in err
-    assert CANARY_FIELD not in payload_none
+    assert payload_none == payload_none_snapshot
+    assert CANARY_FIELD in payload_none
+    assert CANARY_FIELD not in cleaned_none
 
     # 4. __guard_token 不匹配
     payload_mismatch = {CANARY_FIELD: "CANARY_WRONGTOKEN", "vendor": "ABC"}
-    ok, err = verify_canary_token(payload_mismatch, token)
+    payload_mismatch_snapshot = dict(payload_mismatch)
+    ok, err, cleaned_mismatch = verify_canary_token(payload_mismatch, token)
     assert ok is False
     assert "安全握手令牌不匹配" in err
-    assert f"预期 {token}" in err
-    assert "实际 CANARY_WRONGTOKEN" in err
-    assert CANARY_FIELD not in payload_mismatch
+    # 错误文案只给实际值摘要/长度，绝不回显预期 token 原文（会落库并经 API 返回）
+    assert token not in err
+    assert "CANARY_WRONGTOKEN" not in err
+    assert "长度 17" in err
+    assert payload_mismatch == payload_mismatch_snapshot  # 非破坏性
+    assert CANARY_FIELD in payload_mismatch
+    assert CANARY_FIELD not in cleaned_mismatch
+    assert cleaned_mismatch["vendor"] == "ABC"
 
 
 def test_inject_canary_instructions():

@@ -55,6 +55,104 @@
             resize:vertical; box-sizing:border-box;
         }
         .feedback-submit { padding:3px 8px; font-size:0.75rem; align-self:flex-end; }
+        /* 统一筛选控件规格类 (SPEC-ANALYTICS-PARSING-LOG-001) */
+        .parsing-log-filter-control {
+            height: 34px !important;
+            line-height: 20px !important;
+            font-size: 13px !important; /* 0.82rem */
+            padding: 6px 10px !important;
+            border-radius: 6px !important;
+            border: 1px solid var(--border-color, #cbd5e1) !important;
+            background-color: var(--bg-card, #ffffff) !important;
+            color: var(--text-primary, #1e293b) !important;
+            box-sizing: border-box !important;
+            vertical-align: middle !important;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+        }
+        .parsing-log-filter-control:focus {
+            border-color: #2563eb !important;
+            outline: none !important;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
+        }
+        .parsing-log-filter-label {
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            color: var(--text-muted, #64748b) !important;
+            white-space: nowrap !important;
+            margin-right: 6px !important;
+        }
+        .parsing-log-filter-btn {
+            height: 34px !important;
+            padding: 0 14px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            border-radius: 6px !important;
+            box-sizing: border-box !important;
+            display: inline-flex !important;
+            align-items: center !important;
+        }
+        /* 时间跨度单行不换行布局规范 */
+        #filterTimeRange {
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+        #filterTimeRange .btn-group {
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            flex-shrink: 0;
+        }
+        #filterTimeRange .btn {
+            height: 28px !important;
+            min-height: 28px !important;
+            line-height: 24px !important;
+            padding: 2px 10px !important;
+            font-size: 0.78rem !important;
+            box-sizing: border-box !important;
+        }
+        /* 观测中心 8 大核心 KPI 卡片可交互态与下钻规范 (PRD-TELEMETRY-KPI-TREND-001) */
+        .kpi-trend-card {
+            cursor: pointer !important;
+            transition: all 0.2s ease-in-out !important;
+            position: relative !important;
+            outline: none !important;
+        }
+        .kpi-trend-card:hover {
+            transform: translateY(-2px) !important;
+            border-color: #2563eb !important;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.14) !important;
+        }
+        .kpi-trend-card:focus-visible {
+            outline: 2px solid #2563eb !important;
+            outline-offset: 2px !important;
+        }
+        /* 观测中心 KPI 下钻切片表格规范 */
+        .kpi-trend-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .kpi-trend-table th {
+            padding: 9px 12px;
+            font-weight: 600;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            color: var(--text-muted, #64748b);
+            white-space: nowrap;
+        }
+        .kpi-trend-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+        }
+        .kpi-trend-table tbody tr.kpi-trend-row {
+            transition: background-color 0.15s ease;
+        }
+        .kpi-trend-table tbody tr.kpi-trend-row:hover {
+            background-color: #f8fafc;
+        }
     </style>
 </head>
 <body>
@@ -111,9 +209,9 @@
                     <span>系统与引擎配置</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
-                <button class="sidebar-btn admin-only" id="analyticsBoardBtn" data-target="tab-analytics" data-title="AI 效果观测与评测中心">
+                <button class="sidebar-btn admin-only" id="analyticsBoardBtn" data-target="tab-analytics" data-title="观测中心">
                     <span class="icon"></span>
-                    <span>AI 效果观测与评测中心</span>
+                    <span>观测中心</span>
                     <span style="color:var(--danger); font-size:0.7rem; margin-left:auto; border:1px solid var(--danger); border-radius:4px; padding:0 4px;">admin</span>
                 </button>
             </nav>
@@ -418,10 +516,6 @@
                                         </div>
                                         <button type="button" id="inpPaymentMark" class="payment-mark-toggle payment-mark-unpaid" data-marked="false" aria-pressed="false" title="点击在「已付款 / 未付款」之间切换" onclick="togglePaymentMarkBadge()">未付款</button>
                                     </div>
-                                    <div class="form-group" style="grid-column: span 2;">
-                                        <label>付款证据（系统自动识别，无需填写）</label>
-                                        <div id="inpPaymentEvidenceAuto" class="payment-evidence-auto">未识别到付款证据描述</div>
-                                    </div>
                                 </div>
 
                                 <!-- 附加费用可折叠小抽屉 -->
@@ -497,13 +591,15 @@
                                         <button id="btnSaveReview" class="btn btn-success" onclick="submitSaveEdited()"> 确认上传单据</button>
                                         <!-- 挽回动作栏（复核工作台 Spec 2.3）：解析完成后常驻，与点踩/编辑保存并存 -->
                                         <button id="btnReparse" class="btn btn-secondary" style="display:none;" onclick="onReparseClick()" title="复用原图重新识别（怀疑模型解析错了）">重新解析</button>
+                                        <button id="btnReparseRotated" class="btn btn-primary" style="display:none;" onclick="onReparseRotatedClick()" title="按当前旋转后的新视角重新发起 AI 识别">按当前视角重新识别</button>
                                         <button id="btnRetake" class="btn btn-secondary" style="display:none;" onclick="onRetakeClick()" title="换新图重新识别（怀疑图拍坏了）">重拍</button>
                                         <input type="file" id="retakeFile" accept="image/*" class="hide" style="display: none !important;" hidden>
                                         <span id="feedbackInline" class="feedback-inline" style="display:none;">
+                                            <span style="font-size: 0.82rem; color: var(--text-muted); margin-right: 2px;">体验反馈:</span>
                                             <button type="button" class="feedback-btn feedback-btn-up"
-                                                    onclick="onFeedbackClick(1)" title="满意当前解析结果" aria-label="点赞"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg></button>
+                                                    onclick="onFeedbackClick(1, 'prefill_footer')" title="满意当前解析或体验" aria-label="点赞"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg></button>
                                             <button type="button" class="feedback-btn feedback-btn-down"
-                                                    onclick="onFeedbackClick(-1)" title="不满意当前解析结果" aria-label="点踩"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg></button>
+                                                    onclick="onFeedbackClick(-1, 'prefill_footer')" title="不满意解析质量或操作流程" aria-label="点踩"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg></button>
                                         </span>
                                     </div>
                                 </div>
@@ -525,6 +621,9 @@
                                         <button class="btn btn-primary" id="btnReupload" onclick="reuploadFromErrorCard()" title="换一张更清晰的收据照片，自动重新识别">
                                             重新上传
                                         </button>
+                                        <button class="btn btn-primary hide" id="btnRetryRotated" onclick="retryRotatedFromErrorCard()" title="按当前旋转后的新视角重新发起 AI 识别">
+                                            按当前视角重试
+                                        </button>
                                         <button class="btn btn-success" id="btnForceRetry" onclick="retryFromErrorCard(true)" title="忽略画质警告，继续 AI 智能解析">
                                             继续 AI 解析
                                         </button>
@@ -534,6 +633,13 @@
                                         <button class="btn btn-secondary" id="btnRetryNormal" onclick="retryFromErrorCard(false)" title="重新发起识别">
                                             重试
                                         </button>
+                                    </div>
+                                    <div id="feedbackErrorCard" class="feedback-inline" style="display:none; margin-top: 16px; justify-content: center;">
+                                        <span style="font-size: 0.85rem; color: var(--text-muted); margin-right: 4px;">体验反馈:</span>
+                                        <button type="button" class="feedback-btn feedback-btn-up"
+                                                onclick="onFeedbackClick(1, 'error_card')" title="满意当前解析或体验" aria-label="点赞"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"></path></svg></button>
+                                        <button type="button" class="feedback-btn feedback-btn-down"
+                                                onclick="onFeedbackClick(-1, 'error_card')" title="不满意解析质量或操作流程" aria-label="点踩"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3"></path></svg></button>
                                     </div>
                                 </div>
                             </div>
@@ -1164,18 +1270,18 @@
                             <button class="btn btn-secondary" onclick="loadReceiptsHistory()"> 刷新列表</button>
                         </div>
                         <div class="table-container">
-                            <table class="data-table" style="table-layout: fixed; width: 100%;">
+                            <table class="data-table" id="archiveTable" style="table-layout: auto; width: 100%; min-width: 1060px;">
                                 <colgroup>
-                                    <col style="width: 65px;">   <!-- 单据ID -->
-                                    <col style="min-width: 110px; width: 110px;">   <!-- 供应商名称 · 23字长名 word-break 无截断 -->
-                                    <col style="width: 95px;">   <!-- 上传日期 -->
-                                    <col style="width: 95px;">   <!-- 最后编辑日期 -->
-                                    <col style="width: 90px;">   <!-- 开单日期 -->
-                                    <col style="width: 130px;">   <!-- 总金额 -->
-                                    <col style="width: 60px;">   <!-- 部门 -->
-                                    <col style="width: 80px;">   <!-- 状态 -->
+                                    <col style="width: 70px;">   <!-- 单据ID -->
+                                    <col style="min-width: 140px;">   <!-- 供应商名称 · 23字长名 word-break 无截断 -->
+                                    <col style="width: 130px;">   <!-- 上传日期 -->
+                                    <col style="width: 130px;">   <!-- 最后编辑日期 -->
+                                    <col style="width: 110px;">   <!-- 开单日期 -->
+                                    <col style="width: 120px;">   <!-- 总金额 -->
+                                    <col style="width: 70px;">   <!-- 部门 -->
+                                    <col style="width: 90px;">   <!-- 状态 -->
                                     <col style="width: 110px;">  <!-- 付款状态 -->
-                                    <col style="width: 110px;">  <!-- 操作列 -->
+                                    <col style="width: 120px;">  <!-- 操作列 -->
                                 </colgroup>
                                 <thead>
                                     <tr>
@@ -1238,7 +1344,7 @@
                         <!-- 应付清单：默认列全部供应商赊单（03 章二） -->
                         <div id="payablesArea" style="margin-top:8px;">
                             <div class="table-container" style="max-height:420px; overflow-y:auto; overflow-x:auto;">
-                                <table class="data-table" style="table-layout: fixed;">
+                                <table class="data-table" id="payablesTable" style="table-layout: auto; width: 100%; min-width: 880px;">
                                     <colgroup>
                                         <col style="width: 20%;">
                                         <col style="width: 12%;">
@@ -1267,8 +1373,8 @@
                         <!-- 支付履历 -->
                         <div id="paymentHistoryArea" class="hide" style="margin-top:12px;">
                             <div id="paymentHistoryTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 支付履历</div>
-                            <div class="table-container" style="max-height:220px; overflow-y:auto;">
-                                <table class="data-table">
+                            <div class="table-container" style="max-height:220px; overflow-y:auto; overflow-x:auto;">
+                                <table class="data-table" id="paymentHistoryTable" style="width:100%; min-width:760px; table-layout:auto;">
                                     <thead>
                                         <tr>
                                             <th>支付编号</th><th>供应商</th><th>支付日期</th><th>金额</th><th>方式</th>
@@ -1283,8 +1389,8 @@
                         <!-- 对账任务列表与差异明细 -->
                         <div id="reconTaskArea" class="hide" style="margin-top:14px;">
                             <div id="reconTaskTitle" style="font-size:0.85rem; font-weight:600; color:var(--text-muted); margin-bottom:6px;"> 对账任务</div>
-                            <div class="table-container" style="max-height:240px; overflow-y:auto;">
-                                <table class="data-table">
+                            <div class="table-container" style="max-height:240px; overflow-y:auto; overflow-x:auto;">
+                                <table class="data-table" id="reconTaskTable" style="width:100%; min-width:860px; table-layout:auto;">
                                     <thead>
                                         <tr>
                                             <th>任务ID</th><th>供应商</th><th>对账期间</th><th>周期</th><th>状态</th>
@@ -1300,8 +1406,8 @@
                                     <div style="font-size:0.88rem; font-weight:600;"> 对账差异明细 <span id="reconDetailTitle" style="color:var(--text-muted); font-weight:400;"></span></div>
                                     <button id="btnConfirmRecon" class="btn btn-success" style="padding:5px 14px; font-size:0.85rem;" onclick="confirmReconTask()"> 确认对账完成</button>
                                 </div>
-                                <div class="table-container" style="max-height:340px; overflow-y:auto;">
-                                    <table class="data-table">
+                                <div class="table-container" style="max-height:340px; overflow-y:auto; overflow-x:auto;">
+                                    <table class="data-table" id="reconLineTable" style="width:100%; min-width:760px; table-layout:auto;">
                                         <thead>
                                             <tr>
                                                 <th>行类型</th><th>日期</th><th>单号</th><th>金额</th>
@@ -1328,8 +1434,8 @@
                             </div>
                         </summary>
                         <div style="margin-top:12px;">
-                            <div class="table-container" style="max-height:320px; overflow-y:auto;">
-                                <table class="data-table">
+                            <div class="table-container" style="max-height:320px; overflow-y:auto; overflow-x:auto;">
+                                <table class="data-table" id="departmentAdminTable" style="width:100%; min-width:560px; table-layout:auto;">
                                     <colgroup>
                                         <col style="width: 55%;">
                                         <col style="width: 20%;">
@@ -1378,7 +1484,7 @@
                         </div>
                         <div id="costReportSummary" style="color:var(--text-muted); font-size:0.9rem; padding:6px 2px;"></div>
                         <div class="table-container" style="overflow-x:auto;" aria-label="部门花销报表" role="region">
-                            <table class="data-table" aria-label="部门花销报表">
+                            <table class="data-table" id="costReportTable" aria-label="部门花销报表" style="width:100%; min-width:680px; table-layout:auto;">
                                 <colgroup>
                                     <col style="width: 34%;">
                                     <col style="width: 22%;">
@@ -1475,7 +1581,7 @@
                         <div id="enginePriorityGuideCard" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="const el=document.getElementById('enginePriorityContent'); const icon=this.querySelector('.priority-toggle-icon'); if (el.style.display==='none'){ el.style.display='block'; icon.textContent='[收起]'; } else { el.style.display='none'; icon.textContent='[展开说明]'; }">
                                 <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-                                    <span style="font-weight:700; font-size:0.85rem; color:#1e293b;">引擎分流与规则优先级仲裁机制 (Rule Priority & Conflict Resolution)</span>
+                                    <span style="font-weight:700; font-size:0.85rem; color:#1e293b;">引擎分流与规则优先级仲裁机制</span>
                                     <span class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.7rem;">多规则同时开启生效规范</span>
                                 </div>
                                 <span class="priority-toggle-icon" style="font-size:0.75rem; color:#64748b;">[收起]</span>
@@ -1484,33 +1590,33 @@
                                 <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-bottom:8px;">
                                     <!-- 分流层级优先级 -->
                                     <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
-                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流量路由仲裁层级 (Traffic Routing Hierarchy)</div>
+                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流量路由仲裁层级</div>
                                         <div style="display:flex; flex-direction:column; gap:6px;">
                                             <div style="display:flex; align-items:baseline; gap:6px;">
                                                 <span class="badge" style="background:#dbeafe; color:#1e40af; font-size:0.68rem; font-weight:700;">P0 最高</span>
-                                                <div><strong>A/B 科学实验 (Running)</strong>：当有实验处于运行中，优先接管分流（默认 50:50），暂停灰测分流以防统计样本污染。</div>
+                                                <div><strong>A/B 科学实验</strong>：当有实验处于运行中，优先接管分流，暂停灰测分流以防统计样本污染。</div>
                                             </div>
                                             <div style="display:flex; align-items:baseline; gap:6px;">
                                                 <span class="badge" style="background:#fef3c7; color:#92400e; font-size:0.68rem; font-weight:700;">P1 次高</span>
-                                                <div><strong>金丝雀灰度发布 (Canary)</strong>：无运行实验且启用灰测时生效，按单据随机或供应商哈希分流至新引擎，支持秒级回滚与一键推全。</div>
+                                                <div><strong>金丝雀灰度发布</strong>：无运行实验且启用灰测时生效，按单据随机或供应商哈希分流至新引擎，支持秒级回滚与一键推全。</div>
                                             </div>
                                             <div style="display:flex; align-items:baseline; gap:6px;">
                                                 <span class="badge" style="background:#f1f5f9; color:#475569; font-size:0.68rem; font-weight:700;">P2 兜底</span>
-                                                <div><strong>生产基线引擎 (Production)</strong>：无实验且未命中灰测时，全量单据运行常规识别引擎。</div>
+                                                <div><strong>生产基线引擎</strong>：无实验且未命中灰测时，全量单据运行常规识别引擎。</div>
                                             </div>
                                         </div>
                                     </div>
 
                                     <!-- 执行阶段优先级 -->
                                     <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
-                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流水线阶段协同 (Pipeline Execution Stages)</div>
+                                        <div style="font-weight:700; color:#1e293b; margin-bottom:6px; font-size:0.82rem;">流水线阶段协同</div>
                                         <div style="display:flex; flex-direction:column; gap:4px; font-size:0.76rem;">
-                                            <div><strong>Stage 0 预处理与质检</strong>：极模糊阈值 (Laplacian &lt; 30) 优先熔断拦截，零 Token 消耗。</div>
-                                            <div><strong>Stage 1 动态 RAG 检索</strong>：注入历史经验，受预算 (800字符/6条) 硬上限约束。</div>
+                                            <div><strong>Stage 0 预处理与质检</strong>：极模糊阈值优先熔断拦截，零 Token 消耗。</div>
+                                            <div><strong>Stage 1 动态 RAG 检索</strong>：注入历史经验，受预算硬上限约束。</div>
                                             <div><strong>Stage 2 多模态 VLM 识别</strong>：由 P0~P2 路由决策的模型执行结构化抽取。</div>
                                             <div><strong>Stage 3 二次解析 LLM</strong>：仅在语法结构异常且开关打开时触发语义自愈。</div>
                                             <div><strong>Stage 4 交叉审核引擎</strong>：审核开关打开时执行双盲复核、单价乘法校验与置信度评估。</div>
-                                            <div><strong>Stage 5 治理飞轮回流</strong>：低置信度 (&lt; 0.6) 自动沉淀评测集候选池，连续点踩触发记忆蒸馏。</div>
+                                            <div><strong>Stage 5 治理飞轮回流</strong>：低置信度自动沉淀评测集候选池，连续点踩触发记忆蒸馏。</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1523,7 +1629,9 @@
                             <div id="adminRecognitionCard" class="engine-card">
                                 <div class="engine-card-header">
                                     <div class="engine-card-title" style="color:#1565c0;">识别引擎</div>
-                                    <div style="display:flex; align-items:center; gap:6px;">
+                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                        <input type="text" id="adminVendorNameRec" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1539,6 +1647,14 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
+                                        <div class="form-group" style="grid-column: span 2;">
+                                            <label for="adminOpenaiRecApiFormat">接口协议格式</label>
+                                            <select id="adminOpenaiRecApiFormat" name="cfg-engine-api-format" class="form-control">
+                                                <option value="chat_completion">Chat Completion</option>
+                                                <option value="response">Response</option>
+                                                <option value="anthropic">Anthropic</option>
+                                            </select>
+                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminOpenaiRecApiKey" class="form-control" placeholder="sk-...">
@@ -1546,6 +1662,33 @@
                                         <div class="form-group">
                                             <label>模型名</label>
                                             <input type="text" id="adminOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminRecTimeoutSeconds">调用超时</label>
+                                            <input type="number" id="adminRecTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminOpenaiRecReasoningEffort">思考强度</label>
+                                            <select id="adminOpenaiRecReasoningEffort" class="form-control">
+                                                <option value="">默认</option>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                                <option value="xhigh">X-High</option>
+                                                <option value="max">Max</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceInputRec">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceOutputRec">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                         </div>
                                     </div>
                                 </div>
@@ -1572,7 +1715,9 @@
                                             <option value="false">关</option>
                                         </select>
                                     </div>
-                                    <div style="display:flex; align-items:center; gap:6px;">
+                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                        <input type="text" id="adminVendorNameAud" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1588,6 +1733,14 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
+                                        <div class="form-group" style="grid-column: span 2;">
+                                            <label for="adminOpenaiAudApiFormat">接口协议格式</label>
+                                            <select id="adminOpenaiAudApiFormat" class="form-control">
+                                                <option value="chat_completion">Chat Completion</option>
+                                                <option value="response">Response</option>
+                                                <option value="anthropic">Anthropic Messages</option>
+                                            </select>
+                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminOpenaiAudApiKey" class="form-control" placeholder="sk-...">
@@ -1595,6 +1748,33 @@
                                         <div class="form-group">
                                             <label>模型名</label>
                                             <input type="text" id="adminOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminAudTimeoutSeconds">调用超时</label>
+                                            <input type="number" id="adminAudTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminOpenaiAudReasoningEffort">思考强度</label>
+                                            <select id="adminOpenaiAudReasoningEffort" class="form-control">
+                                                <option value="">默认</option>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                                <option value="xhigh">X-High</option>
+                                                <option value="max">Max</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceInputAud">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceOutputAud">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                         </div>
                                     </div>
                                 </div>
@@ -1620,7 +1800,9 @@
                                             <option value="false">关</option>
                                         </select>
                                     </div>
-                                    <div style="display:flex; align-items:center; gap:6px;">
+                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                        <input type="text" id="adminVendorNameParse" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1636,6 +1818,14 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
+                                        <div class="form-group" style="grid-column: span 2;">
+                                            <label for="adminParseOpenaiApiFormat">接口协议格式</label>
+                                            <select id="adminParseOpenaiApiFormat" class="form-control">
+                                                <option value="chat_completion">Chat Completion</option>
+                                                <option value="response">Response</option>
+                                                <option value="anthropic">Anthropic Messages</option>
+                                            </select>
+                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminParseOpenaiApiKey" class="form-control" placeholder="sk-...">
@@ -1643,6 +1833,33 @@
                                         <div class="form-group">
                                             <label>模型名</label>
                                             <input type="text" id="adminParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminParseTimeoutSeconds">调用超时</label>
+                                            <input type="number" id="adminParseTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminParseOpenaiReasoningEffort">思考强度</label>
+                                            <select id="adminParseOpenaiReasoningEffort" class="form-control">
+                                                <option value="">默认</option>
+                                                <option value="low">Low</option>
+                                                <option value="medium">Medium</option>
+                                                <option value="high">High</option>
+                                                <option value="xhigh">X-High</option>
+                                                <option value="max">Max</option>
+                                            </select>
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceInputParse">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceCachedInputParse">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceCachedInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceOutputParse">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceOutputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                         </div>
                                     </div>
                                 </div>
@@ -1653,8 +1870,8 @@
                         <div id="adminGreyDrawer" class="engine-drawer collapsed">
                             <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminGreyDrawer'); } else { document.getElementById('adminGreyDrawer').classList.toggle('collapsed'); }">
                                 <div class="engine-drawer-title" title="金丝雀灰度发布：控制新引擎流量配比、版本晋级与快速回滚">
-                                    <span style="color:#b8860b;">高级配置 · 金丝雀灰度发布 (Canary Rollout)</span>
-                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">(流量灰度、版本晋级与快速回滚)</span>
+                                    <span style="color:#b8860b;">高级配置 · 金丝雀灰度发布</span>
+                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">流量灰度、版本晋级与快速回滚</span>
                                 </div>
                                 <div class="engine-drawer-indicator">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -1671,7 +1888,7 @@
                                 <div id="adminGreyBody">
                                     <div class="form-grid" style="margin-bottom:12px;">
                                         <div class="form-group">
-                                            <label>随机分配概率 (%)</label>
+                                            <label>随机分配概率</label>
                                             <input type="number" id="adminGreyPercent" class="form-control" min="0" max="100" step="1" placeholder="0-100">
                                         </div>
                                         <div class="form-group">
@@ -1687,7 +1904,9 @@
                                     <div id="adminGreyOpenaiRecBox" style="margin-top:12px; padding:12px; border:1px solid #f0c14b; border-radius:8px;">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                                             <div style="font-size:0.82rem; font-weight:600; color:#1565c0;">灰测识别参数</div>
-                                            <div style="display:flex; align-items:center; gap:6px;">
+                                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                                <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                                <input type="text" id="adminVendorNameGreyRec" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                 <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                 <select id="adminGreyOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                     <option value="">— 手动填写 —</option>
@@ -1702,6 +1921,14 @@
                                                 <label>Base URL</label>
                                                 <input type="text" id="adminGreyOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                             </div>
+                                            <div class="form-group" style="grid-column: span 2;">
+                                                <label for="adminGreyOpenaiRecApiFormat">灰度接口协议格式</label>
+                                                <select id="adminGreyOpenaiRecApiFormat" name="cfg-grey-engine-api-format" class="form-control">
+                                                    <option value="chat_completion">Chat Completion</option>
+                                                    <option value="response">Response</option>
+                                                    <option value="anthropic">Anthropic</option>
+                                                </select>
+                                            </div>
                                             <div class="form-group">
                                                 <label>API Key</label>
                                                 <input type="password" id="adminGreyOpenaiRecApiKey" class="form-control" placeholder="sk-...">
@@ -1709,6 +1936,33 @@
                                             <div class="form-group">
                                                 <label>模型名</label>
                                                 <input type="text" id="adminGreyOpenaiRecModel" class="form-control" placeholder="gpt-4o-mini">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyRecTimeoutSeconds">灰度调用超时</label>
+                                                <input type="number" id="adminGreyRecTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyOpenaiRecReasoningEffort">思考强度</label>
+                                                <select id="adminGreyOpenaiRecReasoningEffort" class="form-control">
+                                                    <option value="">默认</option>
+                                                    <option value="low">Low</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="high">High</option>
+                                                    <option value="xhigh">X-High</option>
+                                                    <option value="max">Max</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceInputRec">Input 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceOutputRec">Output 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                             </div>
                                         </div>
                                     </div>
@@ -1725,7 +1979,9 @@
                                                     </select>
                                                 </div>
                                             </div>
-                                            <div style="display:flex; align-items:center; gap:6px;">
+                                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                                <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                                <input type="text" id="adminVendorNameGreyAud" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                 <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                 <select id="adminGreyOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                     <option value="">— 手动填写 —</option>
@@ -1740,6 +1996,14 @@
                                                 <label>Base URL</label>
                                                 <input type="text" id="adminGreyOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                             </div>
+                                            <div class="form-group" style="grid-column: span 2;">
+                                                <label for="adminGreyOpenaiAudApiFormat">灰度接口协议格式</label>
+                                                <select id="adminGreyOpenaiAudApiFormat" class="form-control">
+                                                    <option value="chat_completion">Chat Completion</option>
+                                                    <option value="response">Response</option>
+                                                    <option value="anthropic">Anthropic Messages</option>
+                                                </select>
+                                            </div>
                                             <div class="form-group">
                                                 <label>API Key</label>
                                                 <input type="password" id="adminGreyOpenaiAudApiKey" class="form-control" placeholder="sk-...">
@@ -1747,6 +2011,33 @@
                                             <div class="form-group">
                                                 <label>模型名</label>
                                                 <input type="text" id="adminGreyOpenaiAudModel" class="form-control" placeholder="gpt-4o-mini">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyAudTimeoutSeconds">灰度调用超时</label>
+                                                <input type="number" id="adminGreyAudTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyOpenaiAudReasoningEffort">思考强度</label>
+                                                <select id="adminGreyOpenaiAudReasoningEffort" class="form-control">
+                                                    <option value="">默认</option>
+                                                    <option value="low">Low</option>
+                                                    <option value="medium">Medium</option>
+                                                    <option value="high">High</option>
+                                                    <option value="xhigh">X-High</option>
+                                                    <option value="max">Max</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceInputAud">Input 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="adminGreyPriceOutputAud">Output 价格 (元/1M)</label>
+                                                <input type="number" id="adminGreyPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                             </div>
                                         </div>
                                     </div>
@@ -1764,7 +2055,9 @@
                                             <div id="adminGreyParseOpenaiBox" style="margin-top:10px; padding:10px; border:1px solid #f0c14b; border-radius:8px;">
                                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                                                     <div style="font-size:0.78rem; font-weight:600; color:#6a1b9a;">灰测解析参数</div>
-                                                    <div style="display:flex; align-items:center; gap:6px;">
+                                                    <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
+                                                        <input type="text" id="adminVendorNameGreyParse" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                         <select id="adminGreyParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                             <option value="">— 手动填写 —</option>
@@ -1779,6 +2072,14 @@
                                                         <label>Base URL</label>
                                                         <input type="text" id="adminGreyParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                                     </div>
+                                                    <div class="form-group" style="grid-column: span 2;">
+                                                        <label for="adminGreyParseOpenaiApiFormat">灰度接口协议格式</label>
+                                                        <select id="adminGreyParseOpenaiApiFormat" class="form-control">
+                                                            <option value="chat_completion">Chat Completion</option>
+                                                            <option value="response">Response</option>
+                                                            <option value="anthropic">Anthropic Messages</option>
+                                                        </select>
+                                                    </div>
                                                     <div class="form-group">
                                                         <label>API Key</label>
                                                         <input type="password" id="adminGreyParseOpenaiApiKey" class="form-control" placeholder="sk-...">
@@ -1786,6 +2087,33 @@
                                                     <div class="form-group">
                                                         <label>模型名</label>
                                                         <input type="text" id="adminGreyParseOpenaiModel" class="form-control" placeholder="gpt-4o-mini / meituan-longcat/LongCat-2.0">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyParseTimeoutSeconds">灰度调用超时</label>
+                                                        <input type="number" id="adminGreyParseTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyParseOpenaiReasoningEffort">思考强度</label>
+                                                        <select id="adminGreyParseOpenaiReasoningEffort" class="form-control">
+                                                            <option value="">默认</option>
+                                                            <option value="low">Low</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="high">High</option>
+                                                            <option value="xhigh">X-High</option>
+                                                            <option value="max">Max</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyPriceInputParse">Input 价格 (元/1M)</label>
+                                                        <input type="number" id="adminGreyPriceInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyPriceCachedInputParse">Cached Input 价格 (元/1M)</label>
+                                                        <input type="number" id="adminGreyPriceCachedInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyPriceOutputParse">Output 价格 (元/1M)</label>
+                                                        <input type="number" id="adminGreyPriceOutputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
                                                     </div>
                                                 </div>
                                             </div>
@@ -1819,8 +2147,8 @@
                         <div id="adminExperimentDrawer" class="engine-drawer collapsed" style="margin-top:14px;">
                             <div class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false" onclick="if (typeof toggleEngineDrawer === 'function') { toggleEngineDrawer('adminExperimentDrawer'); } else { document.getElementById('adminExperimentDrawer').classList.toggle('collapsed'); }">
                                 <div class="engine-drawer-title" title="A/B 科学实验编排：多模型对等双盲对照、假设设定、分流规则与状态控制">
-                                    <span style="color:#2563eb;">高级配置 · A/B 科学实验编排 (A/B Experimentation)</span>
-                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">(双盲对照实验、假设设定、50:50分流与科学决策)</span>
+                                    <span style="color:#2563eb;">高级配置 · A/B 科学实验编排</span>
+                                    <span style="font-size:0.75rem; color:#888; margin-left:6px; font-weight:normal;">双盲对照实验、假设设定、50:50分流与科学决策</span>
                                 </div>
                                 <div class="engine-drawer-indicator">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
@@ -1834,7 +2162,7 @@
                                         <select id="adminExpSelect" class="form-control" style="width:auto; min-width:220px; padding:4px 8px; font-size:0.8rem;" onchange="if(typeof onAdminExpSelectChange==='function') onAdminExpSelectChange(this.value)">
                                             <option value="">加载实验列表中...</option>
                                         </select>
-                                        <span id="adminExpStatusBadge" class="badge badge-secondary">—</span>
+                                        <span id="adminExpStatusBadge" class="badge badge-secondary">-</span>
                                     </div>
                                     <div style="display:flex; gap:8px;">
                                         <button type="button" class="btn btn-secondary" style="font-size:0.8rem; padding:4px 10px;" onclick="if(typeof loadAdminExperimentsList==='function') loadAdminExperimentsList()">刷新实验</button>
@@ -1846,20 +2174,20 @@
                                 <div id="adminExpDetailCard" style="border:1px solid #e2e8f0; border-radius:8px; padding:14px; background:#f8fafc; margin-bottom:14px;">
                                     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:12px;">
                                         <div>
-                                            <div style="font-size:0.75rem; color:var(--text-muted);">实验假设 (Hypothesis)</div>
-                                            <div id="adminExpHypothesis" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">—</div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">实验假设</div>
+                                            <div id="adminExpHypothesis" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">-</div>
                                         </div>
                                         <div>
                                             <div style="font-size:0.75rem; color:var(--text-muted);">主判定指标</div>
-                                            <div id="adminExpMetric" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">accuracy (准确率)</div>
+                                            <div id="adminExpMetric" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">accuracy</div>
                                         </div>
                                         <div>
                                             <div style="font-size:0.75rem; color:var(--text-muted);">分流策略与配比</div>
                                             <div id="adminExpTraffic" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">50% Control : 50% Treatment</div>
                                         </div>
                                         <div>
-                                            <div style="font-size:0.75rem; color:var(--text-muted);">最小统计样本量 (min_sample)</div>
-                                            <div id="adminExpMinSample" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">—</div>
+                                            <div style="font-size:0.75rem; color:var(--text-muted);">最小统计样本量</div>
+                                            <div id="adminExpMinSample" style="font-size:0.85rem; font-weight:600; color:#1e293b; margin-top:2px;">-</div>
                                         </div>
                                     </div>
 
@@ -1867,22 +2195,22 @@
                                     <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:12px; margin-top:10px;">
                                         <div style="border:1px solid #cbd5e1; border-radius:6px; padding:10px; background:#ffffff;">
                                             <div style="font-size:0.78rem; font-weight:700; color:#475569; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                                <span>对照组 A (Control - 基线方案)</span>
+                                                <span>对照组 A</span>
                                                 <span class="badge" style="background:#f1f5f9; color:#475569;">生产主力</span>
                                             </div>
                                             <div style="font-size:0.8rem; color:#334155; line-height:1.6;">
                                                 <div>模型：<code id="adminExpCtrlModel">主力识别引擎</code></div>
-                                                <div style="color:var(--text-muted); font-size:0.75rem;">生产环境运行的基线方案 (50% 流量)</div>
+                                                <div style="color:var(--text-muted); font-size:0.75rem;">生产环境运行的基线方案</div>
                                             </div>
                                         </div>
                                         <div style="border:1px solid #93c5fd; border-radius:6px; padding:10px; background:#eff6ff;">
                                             <div style="font-size:0.78rem; font-weight:700; color:#1d4ed8; margin-bottom:6px; display:flex; justify-content:space-between;">
-                                                <span>实验组 B (Treatment - 候选方案)</span>
+                                                <span>实验组 B</span>
                                                 <span class="badge" style="background:#dbeafe; color:#1e40af;">实验候选</span>
                                             </div>
                                             <div style="font-size:0.8rem; color:#1e3a8a; line-height:1.6;">
                                                 <div>模型：<code id="adminExpTreatModel">待测对比模型</code></div>
-                                                <div style="color:var(--text-muted); font-size:0.75rem;">双盲对决的候选方案 (50% 流量)</div>
+                                                <div style="color:var(--text-muted); font-size:0.75rem;">双盲对决的候选方案</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1911,7 +2239,7 @@
                             <!-- 配置来源（T1）：manual=管理台保存，重启保留；auto=.env 启动装配，重启会重装 -->
                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                                 <span style="font-size:0.85rem; color:var(--text-secondary, #666);">配置来源:</span>
-                                <span id="adminEngineConfigSource" class="badge badge-secondary">—</span>
+                                <span id="adminEngineConfigSource" class="badge badge-secondary">-</span>
                                 <span id="adminEngineConfigSourceHint" style="font-size:0.75rem; color:var(--text-muted, #888);"></span>
                                 <button type="button" class="btn btn-outline" id="adminResetEngineConfigBtn" style="font-size:0.8rem; padding:4px 10px;" onclick="resetAdminEngineConfig()">复位为 .env 默认</button>
                             </div>
@@ -1928,71 +2256,71 @@
 
                     <!-- T10 Gap E3：系统配置（阈值规则配置化 + 预处理纠偏开关） -->
                     <div class="card" style="max-width:960px; margin:24px auto;">
-                        <div class="card-title"><span>系统配置（阈值规则 / 预处理纠偏）</span></div>
+                        <div class="card-title"><span>系统配置</span></div>
                         <p style="font-size:0.82rem; color:var(--text-muted,#666); margin:0 0 14px 0;">
                             以下阈值改动保存后即时生效，无需重启。留空或非法值会自动回退缺省值。
                         </p>
 
                         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
                             <div class="form-group">
-                                <label>极模糊拦截阈值（Laplacian 方差，缺省 30）</label>
-                                <input type="number" step="0.1" min="0" id="setBlurLaplacianThreshold" class="form-control" style="min-height:38px;">
+                                <label>极模糊拦截阈值</label>
+                                <input type="number" step="0.1" min="0" id="setBlurLaplacianThreshold" class="form-control" placeholder="30" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>低置信回流阈值（低于该值回流评测候选，缺省 0.6）</label>
-                                <input type="number" step="0.01" min="0" max="1" id="setEvalCandidateLowConfidence" class="form-control" style="min-height:38px;">
+                                <label>低置信回流阈值</label>
+                                <input type="number" step="0.01" min="0" max="1" id="setEvalCandidateLowConfidence" class="form-control" placeholder="0.6" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>候选池 pending 上限（缺省 500）</label>
-                                <input type="number" step="1" min="0" id="setEvalCandidateMaxPending" class="form-control" style="min-height:38px;">
+                                <label>候选池 pending 上限</label>
+                                <input type="number" step="1" min="0" id="setEvalCandidateMaxPending" class="form-control" placeholder="500" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>审核分歧严重度条数门槛（缺省 2）</label>
-                                <input type="number" step="1" min="0" id="setAuditDiscrepancySevereMinCount" class="form-control" style="min-height:38px;">
+                                <label>审核分歧严重度条数门槛</label>
+                                <input type="number" step="1" min="0" id="setAuditDiscrepancySevereMinCount" class="form-control" placeholder="2" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>连续点踩蒸馏阈值（缺省 3 次）</label>
-                                <input type="number" step="1" min="1" id="setFeedbackDistillThreshold" class="form-control" style="min-height:38px;">
+                                <label>连续点踩蒸馏阈值</label>
+                                <input type="number" step="1" min="1" id="setFeedbackDistillThreshold" class="form-control" placeholder="3" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>价格异动阈值（最新单价较均价涨幅 %，缺省 10）</label>
-                                <input type="number" step="0.1" min="0" id="setPriceAnomalyThresholdPct" class="form-control" style="min-height:38px;">
+                                <label>价格异动阈值</label>
+                                <input type="number" step="0.1" min="0" id="setPriceAnomalyThresholdPct" class="form-control" placeholder="10" style="min-height:38px;">
                             </div>
                         </div>
 
                         <div class="card-title" style="margin-top:18px;"><span>记忆读取预算与衰减</span></div>
                         <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
                             <div class="form-group">
-                                <label>注入总预算（字符，缺省 800）</label>
-                                <input type="number" step="1" min="1" id="setMemoryBudgetFactsTokens" class="form-control" style="min-height:38px;">
+                                <label>注入总预算</label>
+                                <input type="number" step="1" min="1" id="setMemoryBudgetFactsTokens" class="form-control" placeholder="800" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>单条记忆截断（字符，缺省 200）</label>
-                                <input type="number" step="1" min="1" id="setMemoryBudgetPerItemTokens" class="form-control" style="min-height:38px;">
+                                <label>单条记忆截断</label>
+                                <input type="number" step="1" min="1" id="setMemoryBudgetPerItemTokens" class="form-control" placeholder="200" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>最多注入条数（缺省 6）</label>
-                                <input type="number" step="1" min="1" id="setMemoryBudgetMaxItems" class="form-control" style="min-height:38px;">
+                                <label>最多注入条数</label>
+                                <input type="number" step="1" min="1" id="setMemoryBudgetMaxItems" class="form-control" placeholder="6" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>命中强化步长（缺省 +0.05）</label>
-                                <input type="number" step="0.01" min="0" id="setMemoryDecayHitBonus" class="form-control" style="min-height:38px;">
+                                <label>命中强化步长</label>
+                                <input type="number" step="0.01" min="0" id="setMemoryDecayHitBonus" class="form-control" placeholder="+0.05" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>覆写淘汰步长（缺省 -0.12）</label>
-                                <input type="number" step="0.01" min="0" id="setMemoryDecayOverridePenalty" class="form-control" style="min-height:38px;">
+                                <label>覆写淘汰步长</label>
+                                <input type="number" step="0.01" min="0" id="setMemoryDecayOverridePenalty" class="form-control" placeholder="-0.12" style="min-height:38px;">
                             </div>
                             <div class="form-group">
-                                <label>归档阈值（低于该值归档停用，缺省 0.5）</label>
-                                <input type="number" step="0.01" min="0" max="1" id="setMemoryArchiveThreshold" class="form-control" style="min-height:38px;">
+                                <label>归档阈值</label>
+                                <input type="number" step="0.01" min="0" max="1" id="setMemoryArchiveThreshold" class="form-control" placeholder="0.5" style="min-height:38px;">
                             </div>
                         </div>
 
-                        <div class="card-title" style="margin-top:18px;"><span>预处理纠偏（上传后、抽取前）</span></div>
+                        <div class="card-title" style="margin-top:18px;"><span>预处理纠偏</span></div>
                         <div class="form-group">
                             <label style="display:flex; align-items:center; gap:10px; cursor:pointer; min-height:38px;">
                                 <input type="checkbox" id="setPreprocessEnabled" style="width:20px; height:20px; cursor:pointer;">
-                                <span>启用预处理纠偏（自动摆正倾斜 + 增强对比度）。默认关闭，待灰测数据决定是否开启；处理失败自动回落原图。</span>
+                                <span>启用预处理纠偏。默认关闭，待灰测数据决定是否开启；处理失败自动回落原图。</span>
                             </label>
                         </div>
 
@@ -2004,13 +2332,13 @@
                 </section>
                 <!-- TAB: 治理与埋点观测台（11-组件Spec §7.1；admin 可见，staff/owner 前端隐藏 + 后端 403 兜底） -->
                 <section id="tab-analytics" class="tab-content">
-                    <div style="max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
+                    <div style="max-width:1440px; width:100%; margin:0 auto; display:flex; flex-direction:column; gap:20px;">
                         
                         <!-- 顶部四大独立功能区分段选项卡 (Segmented Control) -->
-                        <div class="analytics-segmented-bar analytics-segmented-nav" role="tablist" aria-label="AI效果观测与评测中心功能区">
+                        <div class="analytics-segmented-bar analytics-segmented-nav" role="tablist" aria-label="观测中心功能区">
                             <button type="button" class="analytics-segment-btn active" id="btnSubViewTelemetry" data-view="sec-telemetry" role="tab" aria-selected="true" onclick="switchAnalyticsSubView('sec-telemetry')">
                                 <span class="analytics-segment-num segment-num">01</span>
-                                <span class="analytics-segment-text">埋点分布与挽回</span>
+                                <span class="analytics-segment-text">线上体验感知与链路审计</span>
                             </button>
                             <button type="button" class="analytics-segment-btn" id="btnSubViewCanary" data-view="sec-canary" role="tab" aria-selected="false" onclick="switchAnalyticsSubView('sec-canary')">
                                 <span class="analytics-segment-num segment-num">02</span>
@@ -2026,33 +2354,217 @@
                             </button>
                         </div>
 
-                        <!-- 功能区一：线上体验感知与埋点监控 (独立视图) -->
+                        <!-- 功能区一：线上体验感知与链路审计 (独立视图 · 统一收敛中枢) -->
+                        <div id="sec-parsing-logs" style="display:none;"></div>
                         <section id="sec-telemetry" class="analytics-section-block analytics-subview-panel active">
                             <div class="analytics-section-header">
                                 <div class="analytics-section-title-wrap">
                                     <span class="analytics-section-badge">01</span>
                                     <div>
-                                        <div class="analytics-section-title">线上体验感知与埋点监控</div>
-                                        <div class="analytics-section-desc">实时观测全链路事件漏斗流向、点踩纠偏与交互挽回指标</div>
+                                        <div class="analytics-section-title">链路审计</div>
                                     </div>
                                 </div>
                             </div>
-                            <div class="card">
-                                <div class="card-title" style="justify-content:space-between; align-items:center;">
-                                    <span>全量埋点事件分布</span>
-                                    <div style="display:inline-flex; align-items:center; gap:8px;">
-                                        <label for="analyticsTenantSelect" style="font-size:0.8rem; color:var(--text-muted); font-weight:normal;">租户：</label>
-                                        <select id="analyticsTenantSelect" style="font-size:0.8rem; padding:2px 8px; border-radius:4px; border:1px solid var(--border-color); background:var(--bg-main);" onchange="onAnalyticsTenantChange(this.value)">
-                                            <option value="all">全部租户</option>
+
+                            <!-- 第一层：统一 8 大核心 KPI 概览卡片组 (区块 A: 模型吞吐与系统质量 + 区块 B: 用户体验感知与挽回漏斗) -->
+                            <div style="margin-bottom:16px;">
+                                <!-- 区块 A -->
+                                <div style="margin-bottom:10px;">
+                                    <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+                                        <span style="display:inline-block; width:4px; height:12px; background:#2563eb; border-radius:2px;"></span>
+                                        <span>区块 A：模型吞吐与系统质量 (Quality & Latency)</span>
+                                    </div>
+                                    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+                                        <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('total_parses')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('total_parses');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">解析总单量</div>
+                                            <div id="parsingKpiTotal" style="font-size:1.35rem; font-weight:700; color:var(--text-primary);">-</div>
+                                        </div>
+                                        <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('success_rate')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('success_rate');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">解析成功率</div>
+                                            <div id="parsingKpiSuccessRate" style="font-size:1.35rem; font-weight:700; color:#2e7d32;">-</div>
+                                        </div>
+                                        <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('avg_elapsed_ms')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('avg_elapsed_ms');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">平均解析耗时</div>
+                                            <div id="parsingKpiAvgElapsed" style="font-size:1.35rem; font-weight:700; color:var(--text-primary);">-</div>
+                                        </div>
+                                        <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('avg_tokens')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('avg_tokens');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                            <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">平均 Token 消耗</div>
+                                            <div id="parsingKpiAvgTokens" style="font-size:1.35rem; font-weight:700; color:var(--text-primary);">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 区块 B -->
+                                <div>
+                                    <div style="font-size:0.8rem; font-weight:600; color:var(--text-muted); margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+                                        <span style="display:inline-block; width:4px; height:12px; background:#10b981; border-radius:2px;"></span>
+                                        <span>区块 B：用户体验感知与挽回漏斗 (UX & Recovery)</span>
+                                    </div>
+                                    <div id="analyticsRecoveryBody">
+                                        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px;">
+                                            <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('positive_rate')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('positive_rate');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">综合好评率</div>
+                                                <div id="parsingKpiPositiveRate" style="font-size:1.35rem; font-weight:700; color:#0284c7; font-variant-numeric:tabular-nums;">-</div>
+                                                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">点踩率 <span id="telemetryKpiDislikeRate">-</span></div>
+                                            </div>
+                                            <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('edit_rate')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('edit_rate');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">人工修正率</div>
+                                                <div id="parsingKpiEditRate" style="font-size:1.35rem; font-weight:700; color:#b8860b; font-variant-numeric:tabular-nums;">-</div>
+                                                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">人工改动单据占比</div>
+                                            </div>
+                                            <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('recovery_entry_rate')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('recovery_entry_rate');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">异常挽回触发率</div>
+                                                <div id="telemetryKpiRecoveryEntry" style="font-size:1.35rem; font-weight:700; color:#b45309; font-variant-numeric:tabular-nums;">-</div>
+                                                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">重拍 <span id="telemetryKpiRetakeAttribution">-</span> ｜ 重解析 <span id="telemetryKpiReparseAttribution">-</span></div>
+                                            </div>
+                                            <div class="card kpi-trend-card" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻" onclick="openKpiTrendModal('recovery_success_rate')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openKpiTrendModal('recovery_success_rate');}" style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                                    <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">挽回成功率</div>
+                                                <div id="telemetryKpiRecoverySuccess" style="font-size:1.35rem; font-weight:700; color:#16a34a; font-variant-numeric:tabular-nums;">-</div>
+                                                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">闭环入库转化</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 第二层：全维度联合筛选与控制栏 -->
+                            <div class="card" style="padding:12px; margin-bottom:16px; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px;">
+                                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                                    <div style="display:inline-flex; align-items:center;">
+                                        <label for="analyticsTenantSelect" class="parsing-log-filter-label">租户:</label>
+                                        <input type="text" id="analyticsTenantSelect" class="parsing-log-filter-control" list="tenantIdSuggestions" placeholder="全部租户" title="留空 = 全部租户；可输入任意租户 ID" style="width:130px;" onchange="onUnifiedTenantChange(this.value)">
+                                        <input type="text" id="parsingLogTenantSelect" style="display:none;" value="">
+                                        <datalist id="tenantIdSuggestions"></datalist>
+                                    </div>
+                                    <div id="filterParsingStatus" style="display:inline-flex; align-items:center;">
+                                        <label for="parsingLogStatusSelect" class="parsing-log-filter-label">解析状态:</label>
+                                        <select id="parsingLogStatusSelect" class="parsing-log-filter-control" style="width:auto;" onchange="loadParsingLogs(1)">
+                                            <option value="all">全部状态</option>
+                                            <option value="success">解析成功</option>
+                                            <option value="warning">告警通过</option>
+                                            <option value="error">解析失败</option>
                                         </select>
-                                        <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadAnalyticsBoard()">刷新</button>
+                                    </div>
+                                    <div id="filterGate" style="display:inline-flex; align-items:center;">
+                                        <label for="parsingLogGateSelect" class="parsing-log-filter-label">门禁触发:</label>
+                                        <select id="parsingLogGateSelect" class="parsing-log-filter-control" style="width:auto;" onchange="loadParsingLogs(1)">
+                                            <option value="all">全部门禁状态</option>
+                                            <option value="triggered">已触发门禁 (告警/拦截)</option>
+                                            <option value="none">无门禁 (平算通过)</option>
+                                            <option value="rejected">仅门禁拦截 (Reject)</option>
+                                            <option value="warning">仅门禁告警 (Warning)</option>
+                                        </select>
+                                    </div>
+                                    <div id="filterFeedback" style="display:inline-flex; align-items:center;">
+                                        <label for="parsingLogFeedbackSelect" class="parsing-log-filter-label">用户反馈:</label>
+                                        <select id="parsingLogFeedbackSelect" class="parsing-log-filter-control" style="width:auto;" onchange="loadParsingLogs(1)">
+                                            <option value="all">全部反馈</option>
+                                            <option value="liked">仅点赞</option>
+                                            <option value="disliked">仅点踩</option>
+                                            <option value="unrated">未评</option>
+                                        </select>
+                                    </div>
+                                    <div id="filterModified" style="display:inline-flex; align-items:center;">
+                                        <label for="parsingLogModifiedSelect" class="parsing-log-filter-label">人工干预:</label>
+                                        <select id="parsingLogModifiedSelect" class="parsing-log-filter-control" style="width:auto;" onchange="loadParsingLogs(1)">
+                                            <option value="all">全部</option>
+                                            <option value="yes">仅有人工改动</option>
+                                            <option value="no">零人工改动(全采纳)</option>
+                                        </select>
+                                    </div>
+                                    <div id="filterTimeRange" style="display:inline-flex; align-items:center; gap:8px; flex-wrap:nowrap; white-space:nowrap; flex:1 1 100%; padding-top:2px;">
+                                        <label class="parsing-log-filter-label" style="margin-bottom:0; white-space:nowrap;">时间跨度:</label>
+                                        <div class="btn-group" role="group" aria-label="时间跨度周期" style="flex-shrink:0;">
+                                            <button type="button" id="btnLogRangeAll" class="btn btn-sm btn-primary" onclick="setParsingLogPeriod('all')" style="padding:2px 10px; font-size:0.78rem; font-weight:600;">全部</button>
+                                            <button type="button" id="btnLogRange24h" class="btn btn-sm btn-secondary" onclick="setParsingLogPeriod('24h')" style="padding:2px 10px; font-size:0.78rem;">24小时</button>
+                                            <button type="button" id="btnLogRange7d" class="btn btn-sm btn-secondary" onclick="setParsingLogPeriod('7d')" style="padding:2px 10px; font-size:0.78rem;">7天</button>
+                                            <button type="button" id="btnLogRange14d" class="btn btn-sm btn-secondary" onclick="setParsingLogPeriod('14d')" style="padding:2px 10px; font-size:0.78rem;">14天</button>
+                                            <button type="button" id="btnLogRange30d" class="btn btn-sm btn-secondary" onclick="setParsingLogPeriod('30d')" style="padding:2px 10px; font-size:0.78rem;">30天</button>
+                                        </div>
+                                        <span class="parsing-log-filter-label" style="white-space:nowrap;">自定义:</span>
+                                        <input type="date" id="parsingLogStartDate" class="form-control" style="font-size:0.78rem; padding:2px 6px; width:128px; height:28px; flex-shrink:0;" title="留空默认从最早一条记录开始" onchange="applyParsingLogCustomPeriod(true)" />
+                                        <span class="parsing-log-filter-label" style="white-space:nowrap;">至</span>
+                                        <input type="date" id="parsingLogEndDate" class="form-control" style="font-size:0.78rem; padding:2px 6px; width:128px; height:28px; flex-shrink:0;" onchange="applyParsingLogCustomPeriod(true)" />
+                                    </div>
+                                    <div id="filterSearch" style="display:inline-flex; align-items:center; flex:1; min-width:220px;">
+                                        <input type="text" id="parsingLogSearchInput" class="parsing-log-filter-control" placeholder="搜索单据ID / 链路ID / 供应商..." style="width:100%;" onkeydown="if(event.key==='Enter') loadParsingLogs(1)">
+                                    </div>
+                                    <div style="display:inline-flex; gap:8px;">
+                                        <button class="btn btn-primary parsing-log-filter-btn" onclick="refreshUnifiedTelemetry()">查询/刷新</button>
+                                        <button class="btn btn-secondary parsing-log-filter-btn" onclick="resetParsingLogFilters()">重置</button>
                                     </div>
                                 </div>
-                                <div id="analyticsEventDistBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
                             </div>
-                            <div class="card">
-                                <div class="card-title"><span>挽回与点踩指标</span></div>
-                                <div id="analyticsRecoveryBody" style="font-size:0.85rem; color:var(--text-muted);">加载中</div>
+
+                            <!-- 第三层：子视图切换控制器 (Segmented Tab Bar) -->
+                            <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); margin-bottom:16px;">
+                                <div class="analytics-sub-tabs" role="tablist" style="display:flex; gap:6px;">
+                                    <button type="button" class="btn active" id="btnTelemetrySubTabAudit" role="tab" aria-selected="true" style="border-radius:6px 6px 0 0; padding:8px 16px; font-weight:600; font-size:0.85rem; border-bottom:2px solid #2563eb; background:transparent;" onclick="switchTelemetrySubTab('audit')">
+                                        单据解析与链路审计
+                                    </button>
+                                    <button type="button" class="btn" id="btnTelemetrySubTabEvents" role="tab" aria-selected="false" style="border-radius:6px 6px 0 0; padding:8px 16px; font-weight:normal; font-size:0.85rem; border-bottom:2px solid transparent; background:transparent; color:var(--text-muted);" onclick="switchTelemetrySubTab('events')">
+                                        全量埋点分布与事件流
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Tab A：单据解析与链路审计 (默认展示) -->
+                            <div id="telemetrySubContentAudit" style="display:block;">
+                                <div class="card" style="padding:0; overflow:hidden; border:1px solid var(--border-color); border-radius:8px;">
+                                    <div style="padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-card);">
+                                        <span style="font-weight:600; font-size:0.85rem;">单据解析流水明细</span>
+                                        <span id="parsingLogTableCount" style="font-size:0.78rem; color:var(--text-muted);">共 0 条</span>
+                                    </div>
+                                    <div class="table-container" style="max-height:560px; overflow-x:auto; overflow-y:auto; scrollbar-width:thin;">
+                                        <table class="data-table" id="parsingLogsTable" style="min-width:1680px; width:100%; border-collapse:collapse;">
+                                            <thead>
+                                                <tr style="background:var(--bg-main); font-size:0.78rem;">
+                                                    <th style="padding:10px 12px; width:90px; text-align:center;">单据 ID</th>
+                                                    <th style="padding:10px 12px; width:180px; min-width:180px; text-align:left;">日期时间 (最新在前)</th>
+                                                    <th style="padding:10px 12px; width:120px; min-width:120px; text-align:center;">租户 ID</th>
+                                                    <th style="padding:10px 12px; width:150px; min-width:150px; text-align:left;">链路 Graph ID</th>
+                                                    <th style="padding:10px 12px; width:200px; min-width:200px; text-align:left;">单据供应商 / 形态</th>
+                                                    <th style="padding:10px 12px; width:260px; min-width:260px; text-align:left;">模型引擎</th>
+                                                    <th style="padding:10px 12px; width:180px; min-width:170px; text-align:left;">门禁状态与原因</th>
+                                                    <th style="padding:10px 12px; width:130px; min-width:130px; text-align:right;">Token 消耗</th>
+                                                    <th style="padding:10px 12px; width:110px; min-width:110px; text-align:right;">解析用时</th>
+                                                    <th style="padding:10px 12px; width:110px; min-width:110px; text-align:center;">解析状态</th>
+                                                    <th style="padding:10px 12px; width:110px; min-width:110px; text-align:center;">用户反馈</th>
+                                                    <th style="padding:10px 12px; width:130px; min-width:130px; text-align:center;">人工改动</th>
+                                                    <th style="padding:10px 12px; width:100px; min-width:100px; text-align:center;">操作</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="parsingLogsTableBody" style="font-size:0.8rem;">
+                                                <tr><td colspan="13" style="text-align:center; padding:30px; color:var(--text-muted);">加载中...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <!-- 分页栏 -->
+                                    <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 14px; border-top:1px solid var(--border-color); background:var(--bg-card); font-size:0.8rem;">
+                                        <div id="parsingLogsPageInfo" style="color:var(--text-muted);">第 1 / 1 页</div>
+                                        <div style="display:flex; gap:6px; align-items:center;">
+                                            <button class="btn btn-secondary" id="btnParsingLogsPrev" style="padding:3px 8px; font-size:0.78rem;" onclick="onParsingLogsPageChange(-1)" disabled>上一页</button>
+                                            <span id="parsingLogsCurrentPageSpan" style="padding:0 4px; font-weight:600;">1</span>
+                                            <button class="btn btn-secondary" id="btnParsingLogsNext" style="padding:3px 8px; font-size:0.78rem;" onclick="onParsingLogsPageChange(1)" disabled>下一页</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Tab B：全量埋点事件流与挽回分布 -->
+                            <div id="telemetrySubContentEvents" style="display:none;">
+                                <div class="card" style="padding:0; overflow:hidden; border:1px solid var(--border-color); border-radius:8px; margin-bottom:16px;">
+                                    <div style="padding:10px 14px; border-bottom:1px solid var(--border-color); display:flex; justify-content:space-between; align-items:center; background:var(--bg-card);">
+                                        <span style="font-weight:600; font-size:0.85rem;">全量埋点事件分布</span>
+                                        <div style="display:inline-flex; align-items:center; gap:12px;">
+                                            <span id="analyticsEventDistCount" style="font-size:0.78rem; color:var(--text-muted);">共 0 条事件、0 类</span>
+                                            <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.78rem;" onclick="loadRecoverySummaryBlocks()">刷新埋点</button>
+                                        </div>
+                                    </div>
+                                    <div id="analyticsEventDistBody">
+                                        <div style="padding:24px; text-align:center; color:var(--text-muted); font-size:0.85rem;">加载中...</div>
+                                    </div>
+                                </div>
                             </div>
                         </section>
 
@@ -2133,7 +2645,7 @@
                                     <table class="data-table" id="adminCanaryHistoryTable" style="min-width:880px; width:100%;">
                                         <thead>
                                             <tr>
-                                                <th style="width:140px;">时间</th>
+                                                <th style="width:170px; text-align:left;">变更时间 (最新在前)</th>
                                                 <th style="width:110px;">变更动作</th>
                                                 <th style="min-width:180px;">模型变更</th>
                                                 <th style="min-width:260px;">说明与策略</th>
@@ -2247,7 +2759,7 @@
                                                     <th style="min-width:120px;">测试模型</th>
                                                     <th style="width:100px;">准确率</th>
                                                     <th style="min-width:120px;">反馈比对</th>
-                                                    <th style="width:130px; text-align:right;">分配时间</th>
+                                                    <th style="width:160px; min-width:160px; text-align:right;">分配时间 (最新在前)</th>
                                                 </tr>
                                             </thead>
                                             <tbody id="expSampleTableBody">
@@ -2302,7 +2814,7 @@
                                     </div>
                                 </div>
                                 <div class="table-container" style="max-height:440px; overflow:auto;">
-                                    <table class="data-table golden-board-table" style="min-width:880px;">
+                                    <table class="data-table golden-board-table" id="goldenBoardTable" style="min-width:880px;">
                                         <thead>
                                             <tr>
                                                 <th style="padding:10px 12px; width:70px;">编号</th>
@@ -2318,7 +2830,6 @@
                                         <tbody id="goldenBoardBody"><tr><td colspan="8" style="text-align:center; color:var(--text-muted); padding:24px;">加载中...</td></tr></tbody>
                                     </table>
                                 </div>
-                            </div>
                         </section>
                     </div>
                 </section>
@@ -2414,6 +2925,355 @@
 
             <div class="modal-footer" style="border-top:1px solid #e2e8f0; padding:10px 20px; display:flex; justify-content:flex-end; flex-shrink:0;">
                 <button class="btn btn-secondary" onclick="closeGreySampleModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 05 解析日志与链路审计：下钻多维审计抽屉/模态弹窗 -->
+    <div id="parsingLogModal" class="modal-backdrop hide" style="z-index:10000; padding:16px; box-sizing:border-box;">
+        <div id="parsingLogDetailModal" class="modal-card" style="max-width:1280px; width:95vw; height:88vh; max-height:88vh; display:flex; flex-direction:column; box-sizing:border-box; border-radius:12px; box-shadow:0 20px 40px rgba(0,0,0,0.18);">
+            <div class="modal-header" style="border-bottom:1px solid #e2e8f0; padding:12px 20px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <h3 id="plModalTitle" style="margin:0; font-size:1.05rem; font-weight:700; color:var(--text-primary);">单据解析全流程审计详情</h3>
+                    <span id="plModalStatusBadge" class="badge" style="font-size:0.75rem;">-</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="modal-close-btn" onclick="closeParsingLogModal()" style="font-size:1.2rem; cursor:pointer;">x</button>
+                </div>
+            </div>
+
+            <!-- 顶部核心元数据条 -->
+            <div style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:10px 20px; display:flex; flex-wrap:wrap; gap:18px; font-size:0.8rem; flex-shrink:0;">
+                <div><span style="color:var(--text-muted);">单据 ID:</span> <strong id="plMetaRecordId">-</strong></div>
+                <div><span style="color:var(--text-muted);">链路 Graph ID:</span> <code id="plMetaGraphId">-</code></div>
+                <div><span style="color:var(--text-muted);">租户:</span> <span id="plMetaTenantId" class="badge badge-light">-</span></div>
+                <div><span style="color:var(--text-muted);">供应商:</span> <strong id="plMetaSupplier">-</strong></div>
+                <div><span style="color:var(--text-muted);">引擎/模型:</span> <span id="plMetaModel">-</span></div>
+                <div><span style="color:var(--text-muted);">日期时间:</span> <span id="plMetaCreatedAt">-</span></div>
+                <div><span style="color:var(--text-muted);">门禁结论:</span> <span id="plMetaGateBadge" class="badge">-</span></div>
+            </div>
+
+            <!-- 审计选项卡导航 -->
+            <div style="display:flex; border-bottom:1px solid #e2e8f0; background:#f1f5f9; padding:0 20px; gap:8px; flex-shrink:0;">
+                <button type="button" class="btn" id="btnPLTabDiff" onclick="switchParsingLogTab('diff')" style="border-radius:0; border-bottom:2px solid #2563eb; background:transparent; font-weight:600; padding:8px 14px; font-size:0.82rem; color:#2563eb;">Tab 1: 字段修改对照 (Diff)</button>
+                <button type="button" class="btn" id="btnPLTabToken" onclick="switchParsingLogTab('token')" style="border-radius:0; border-bottom:2px solid transparent; background:transparent; font-weight:normal; padding:8px 14px; font-size:0.82rem; color:var(--text-muted);">Tab 2: Token 消耗与性能瀑布</button>
+                <button type="button" class="btn" id="btnPLTabGuard" onclick="switchParsingLogTab('guard')" style="border-radius:0; border-bottom:2px solid transparent; background:transparent; font-weight:normal; padding:8px 14px; font-size:0.82rem; color:var(--text-muted);">Tab 3: 质检与门禁规则审计</button>
+                <button type="button" class="btn" id="btnPLTabAudit" onclick="switchParsingLogTab('audit')" style="border-radius:0; border-bottom:2px solid transparent; background:transparent; font-weight:normal; padding:8px 14px; font-size:0.82rem; color:var(--text-muted);">Tab 4: 全息生命周期与操作审计流</button>
+                <button type="button" class="btn" id="btnPLTabLlm" onclick="switchParsingLogTab('llm')" style="border-radius:0; border-bottom:2px solid transparent; background:transparent; font-weight:normal; padding:8px 14px; font-size:0.82rem; color:var(--text-muted);">Tab 5: LLM 原生调用审计 (LLM Prompt & IO)</button>
+            </div>
+
+            <div class="modal-body" style="padding:16px 20px; flex:1; min-height:0; overflow-y:auto; box-sizing:border-box;">
+                <!-- Tab 1: 字段级 Diff 对比 -->
+                <div id="plTabContentDiff" style="display:block;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <span style="font-weight:600; font-size:0.85rem;">AI 原始直出 vs 店员确认入库 字段级对比</span>
+                        <span id="plDiffSummaryBadge" class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem;">-</span>
+                    </div>
+                    <div class="table-container" style="border:1px solid #e2e8f0; border-radius:6px; margin-bottom:0;">
+                        <table class="data-table" style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+                            <thead>
+                                <tr style="background:#f8fafc;">
+                                    <th style="padding:8px 10px; width:180px;">比对字段</th>
+                                    <th style="padding:8px 10px; min-width:220px;">AI 预填初始值</th>
+                                    <th style="padding:8px 10px; min-width:220px;">人工修正最终值</th>
+                                    <th style="padding:8px 10px; width:100px; text-align:center;">状态判定</th>
+                                </tr>
+                            </thead>
+                            <tbody id="plDiffTableBody">
+                                <tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">无字段差异</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Token 消耗与性能瀑布图 -->
+                <div id="plTabContentToken" style="display:none;">
+                    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:16px;">
+                        <!-- Token 消耗面板 -->
+                        <div class="card" style="padding:14px; margin-bottom:0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:12px; color:var(--text-primary);">Token 消耗与单价核算</div>
+                            <div style="display:flex; flex-direction:column; gap:8px; font-size:0.82rem;">
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span style="color:var(--text-muted);">提示词输入 (Prompt Tokens):</span>
+                                    <strong id="plTokenPrompt">0</strong>
+                                </div>
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span style="color:var(--text-muted);">生成输出 (Completion Tokens):</span>
+                                    <strong id="plTokenCompletion">0</strong>
+                                </div>
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span style="color:var(--text-muted);">缓存命中 (Cached Tokens):</span>
+                                    <strong id="plTokenCached" style="color:#059669;">0</strong>
+                                </div>
+                                <div style="display:flex; justify-content:space-between;">
+                                    <span style="color:var(--text-muted);">缓存命中率 (Cache Hit %):</span>
+                                    <strong id="plTokenCacheHitRate" style="color:#059669;">0.0%</strong>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; border-top:1px dashed #cbd5e1; padding-top:6px;">
+                                    <span>总消耗 (Total Tokens):</span>
+                                    <strong id="plTokenTotal" style="color:#0284c7;">0</strong>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; border-top:1px dashed #cbd5e1; padding-top:6px;">
+                                    <span style="color:var(--text-muted);">折算成本 (HKD):</span>
+                                    <strong id="plCostHkd" style="color:#b8860b;">$0.0000</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 耗时拆解瀑布面板 -->
+                        <div class="card" style="padding:14px; margin-bottom:0; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:12px; color:var(--text-primary);">耗时阶段分段瀑布</div>
+                            <div style="display:flex; flex-direction:column; gap:10px; font-size:0.82rem;">
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                        <span style="color:var(--text-muted);">VLM 抽取用时 (Extract):</span>
+                                        <span id="plElapsedExtractText">0 ms</span>
+                                    </div>
+                                    <div class="batch-progress-track" style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                                        <div id="plElapsedExtractBar" style="height:100%; width:0%; background:#3b82f6;"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                        <span style="color:var(--text-muted);">RAG 检索上下文 (RAG):</span>
+                                        <span id="plElapsedRagText">0 ms</span>
+                                    </div>
+                                    <div class="batch-progress-track" style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                                        <div id="plElapsedRagBar" style="height:100%; width:0%; background:#10b981;"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                                        <span style="color:var(--text-muted);">门禁校验用时 (Audit):</span>
+                                        <span id="plElapsedAuditText">0 ms</span>
+                                    </div>
+                                    <div class="batch-progress-track" style="height:6px; background:#e2e8f0; border-radius:3px; overflow:hidden;">
+                                        <div id="plElapsedAuditBar" style="height:100%; width:0%; background:#8b5cf6;"></div>
+                                    </div>
+                                </div>
+                                <div style="display:flex; justify-content:space-between; border-top:1px dashed #cbd5e1; padding-top:6px;">
+                                    <span>端到端总耗时 (Total):</span>
+                                    <strong id="plElapsedTotalText" style="color:var(--text-primary);">0 ms</strong>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: 质检与门禁规则审计 -->
+                <div id="plTabContentGuard" style="display:none;">
+                    <div style="display:flex; flex-direction:column; gap:12px;">
+                        <div class="card" style="padding:12px; margin-bottom:0; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:6px; color:var(--text-primary);">模块 1：门禁综合触发决策流水</div>
+                            <div id="plGateDecisionBody" style="font-size:0.8rem; color:var(--text-muted);">-</div>
+                        </div>
+                        <div class="card" style="padding:12px; margin-bottom:0; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:6px; color:var(--text-primary);">模块 2：算术一致性检查 (Math Guard)</div>
+                            <div id="plMathWarningsBody" style="font-size:0.8rem; color:var(--text-muted);">无算术异常</div>
+                        </div>
+                        <div class="card" style="padding:12px; margin-bottom:0; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:6px; color:var(--text-primary);">模块 3：契约门禁与结构有效性 (Contract Guard)</div>
+                            <div id="plContractGuardBody" style="font-size:0.8rem; color:var(--text-muted);">无契约异常</div>
+                        </div>
+                        <div class="card" style="padding:12px; margin-bottom:0; border:1px solid #e2e8f0; border-radius:8px;">
+                            <div style="font-weight:600; font-size:0.85rem; margin-bottom:6px; color:var(--text-primary);">模块 4：质量与安全隐写门禁 (Quality & Image Guard)</div>
+                            <div id="plQualityWarningsBody" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">无花码告警</div>
+                            <div id="plImageGuardBody" style="font-size:0.8rem; color:var(--text-muted);">正常，未检出隐藏文字风险</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 4: 全息生命周期与操作审计流 -->
+                <div id="plTabContentAudit" style="display:none;">
+                    <div style="margin-bottom:12px; padding:10px 14px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                        <div style="font-weight:600; font-size:0.82rem; color:var(--text-primary); margin-bottom:6px;">单据全息生命周期时序流转轨迹</div>
+                        <div id="plLifecycleFlowChain" style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:0.75rem;">
+                            <span style="color:var(--text-muted);">暂无时序事件</span>
+                        </div>
+                    </div>
+                    <div style="font-weight:600; font-size:0.85rem; margin-bottom:10px;">端到端执行履历与操作审计流水</div>
+                    <div class="table-container" style="border:1px solid #e2e8f0; border-radius:6px;">
+                        <table class="data-table" style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+                            <thead>
+                                <tr style="background:#f8fafc;">
+                                    <th style="padding:8px 10px; width:180px; min-width:180px; text-align:left;">发生时间 (最新在前)</th>
+                                    <th style="padding:8px 10px; width:140px;">动作阶段</th>
+                                    <th style="padding:8px 10px; width:120px;">操作主体</th>
+                                    <th style="padding:8px 10px;">详细负载信息</th>
+                                </tr>
+                            </thead>
+                            <tbody id="plTimelineBody">
+                                <tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">暂无审计事件</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tab 5: LLM 原生调用审计 (LLM Prompt & IO) -->
+                <div id="plTabContentLlm" style="display:none;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                        <div style="font-weight:600; font-size:0.85rem; color:var(--text-primary);">全链路多轮多腿模型原生 I/O 与缓存命中审计</div>
+                        <span id="plLlmSummaryBadge" class="badge" style="background:#e0f2fe; color:#0369a1; font-size:0.75rem;">0 次调用</span>
+                    </div>
+                    <div id="plLlmAccordionContainer" style="display:flex; flex-direction:column; gap:12px;">
+                        <div style="text-align:center; padding:30px; color:var(--text-muted); background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px;">
+                            暂无 LLM 原生调用审计记录
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="border-top:1px solid #e2e8f0; padding:10px 20px; display:flex; justify-content:flex-end; flex-shrink:0;">
+                <button class="btn btn-secondary" onclick="closeParsingLogModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 01 埋点事件下钻审计专属模态弹窗 (Event Detail Drill-down Modal) -->
+    <div id="analyticsEventModal" class="modal-backdrop hide" style="z-index:10050; padding:16px; box-sizing:border-box;">
+        <div class="modal-card" style="max-width:1240px; width:94vw; height:85vh; max-height:85vh; display:flex; flex-direction:column; box-sizing:border-box; border-radius:12px; box-shadow:0 20px 40px rgba(0,0,0,0.18);">
+            <!-- 模态框头部 -->
+            <div class="modal-header" style="border-bottom:1px solid #e2e8f0; padding:12px 20px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                    <h3 id="analyticsEventModalTitle" style="margin:0; font-size:1.05rem; font-weight:700; color:var(--text-primary);">事件审计日志</h3>
+                    <span id="analyticsEventModalAliasBadge" class="badge badge-light" style="font-size:0.75rem; background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">-</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <button class="btn btn-secondary btn-sm" onclick="closeAnalyticsEventModal()" style="font-size:0.8rem; padding:3px 10px;">[关闭]</button>
+                    <button class="modal-close-btn" onclick="closeAnalyticsEventModal()" style="font-size:1.2rem; cursor:pointer;" aria-label="关闭">x</button>
+                </div>
+            </div>
+
+            <!-- 元数据标签条 -->
+            <div style="background:#f8fafc; border-bottom:1px solid #e2e8f0; padding:8px 20px; display:flex; flex-wrap:wrap; gap:18px; font-size:0.8rem; flex-shrink:0; align-items:center;">
+                <div><span style="color:var(--text-muted);">事件代码:</span> <code id="analyticsEventModalTypeCode" style="font-family:monospace; font-weight:600;">-</code></div>
+                <div><span style="color:var(--text-muted);">生效租户:</span> <span id="analyticsEventModalTenant" class="badge badge-light">-</span></div>
+                <div><span style="color:var(--text-muted);">事件总计数:</span> <strong id="analyticsEventModalTotalCount">0</strong> 条</div>
+            </div>
+
+            <!-- 工具栏: 搜索与就地刷新 -->
+            <div style="padding:10px 20px; border-bottom:1px solid #e2e8f0; background:var(--bg-main); display:flex; justify-content:space-between; align-items:center; gap:12px; flex-shrink:0; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:260px;">
+                    <input type="text" id="analyticsEventSearchInput" class="form-control" placeholder="按单据 ID / 操作账号 / 属性关键词搜索..." style="font-size:0.82rem; height:32px; padding:4px 10px; width:100%; max-width:400px;" onkeydown="if(event.key==='Enter') searchAnalyticsEventLogs()">
+                    <button class="btn btn-secondary" style="height:32px; padding:0 12px; font-size:0.8rem;" onclick="searchAnalyticsEventLogs()">搜索</button>
+                    <button class="btn btn-secondary" style="height:32px; padding:0 10px; font-size:0.8rem;" onclick="resetAnalyticsEventSearch()">重置</button>
+                </div>
+                <div>
+                    <button class="btn btn-secondary" style="height:32px; padding:0 12px; font-size:0.8rem;" onclick="refreshAnalyticsEventLogs()">[刷新本事件流]</button>
+                </div>
+            </div>
+
+            <!-- 模态框主体: 数据表格容器 -->
+            <div class="modal-body" id="analyticsEventTableContainer" style="padding:16px 20px; flex:1; min-height:0; overflow-y:auto; box-sizing:border-box;">
+                <div style="text-align:center; padding:30px; color:var(--text-muted);">加载中...</div>
+            </div>
+
+            <!-- 模态框分页底栏 -->
+            <div class="modal-footer" style="border-top:1px solid #e2e8f0; padding:10px 20px; display:flex; justify-content:space-between; align-items:center; flex-shrink:0;">
+                <div id="analyticsEventPageInfo" style="font-size:0.8rem; color:var(--text-muted);">第 1 / 1 页 (共 0 条记录)</div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <button class="btn btn-secondary" id="btnAnalyticsEventPrev" style="padding:4px 12px; font-size:0.8rem;" onclick="changeAnalyticsEventPage(-1)" disabled>[上一页]</button>
+                    <span id="analyticsEventCurrentPageSpan" style="padding:0 6px; font-weight:600; font-size:0.82rem;">1</span>
+                    <button class="btn btn-secondary" id="btnAnalyticsEventNext" style="padding:4px 12px; font-size:0.8rem;" onclick="changeAnalyticsEventPage(1)" disabled>[下一页]</button>
+                    <button class="btn btn-secondary" style="padding:4px 14px; font-size:0.8rem; margin-left:12px;" onclick="closeAnalyticsEventModal()">[关闭]</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 8 大核心 KPI 时序趋势与多维下钻分析模态框 (PRD-TELEMETRY-KPI-TREND-001) -->
+    <div id="kpiTrendModal" class="modal-backdrop hide" style="z-index:10060; padding:16px; box-sizing:border-box;">
+        <div class="modal-card" style="max-width:960px; width:92vw; max-height:90vh; display:flex; flex-direction:column; box-sizing:border-box; border-radius:12px; box-shadow:0 20px 40px rgba(0,0,0,0.22); overflow:hidden;">
+            <!-- 模态框头部导引区 -->
+            <div class="modal-header" style="border-bottom:1px solid #e2e8f0; padding:14px 20px; flex-shrink:0; display:flex; justify-content:space-between; align-items:center; background:#ffffff;">
+                <div>
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                        <h3 id="kpiTrendModalTitle" style="margin:0; font-size:1.1rem; font-weight:700; color:var(--text-primary);">[指标名称]</h3>
+                        <span id="kpiTrendModalSectionBadge" style="display:none;"></span>
+                        <span id="kpiTrendModalTenantBadge" class="badge badge-light" style="font-size:0.75rem; display:none;"></span>
+                        <span id="kpiTrendModalMetricKey" style="display:none;">-</span>
+                        <span id="kpiTrendModalUnit" style="display:none;">-</span>
+                        <span id="kpiTrendModalPeriodSpan" style="display:none;">最近 7 天</span>
+                    </div>
+                </div>
+                <div style="display:flex; align-items:center;">
+                    <button class="modal-close-btn" onclick="closeKpiTrendModal()" style="font-size:1.2rem; cursor:pointer;" aria-label="关闭">x</button>
+                </div>
+            </div>
+
+            <!-- 控制栏与时序切片切换 -->
+            <div style="padding:10px 20px; border-bottom:1px solid #e2e8f0; background:#f8fafc; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-shrink:0; flex-wrap:wrap;">
+                <div style="display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted);">统计周期:</span>
+                    <div class="btn-group" role="group" aria-label="统计天数周期">
+                        <button type="button" id="btnKpiTrend7D" class="btn btn-sm btn-primary" onclick="switchKpiTrendDays(7)" style="padding:4px 12px; font-size:0.8rem; font-weight:600;">7天</button>
+                        <button type="button" id="btnKpiTrend14D" class="btn btn-sm btn-secondary" onclick="switchKpiTrendDays(14)" style="padding:4px 12px; font-size:0.8rem;">14天</button>
+                        <button type="button" id="btnKpiTrend30D" class="btn btn-sm btn-secondary" onclick="switchKpiTrendDays(30)" style="padding:4px 12px; font-size:0.8rem;">30天</button>
+                    </div>
+                    <div style="display:inline-flex; align-items:center; gap:6px; margin-left:8px;">
+                        <span style="font-size:0.8rem; font-weight:600; color:var(--text-muted);">自定义:</span>
+                        <input type="date" id="kpiTrendStartDate" class="form-control" style="padding:2px 6px; font-size:0.8rem; width:130px; height:28px;" />
+                        <span style="color:var(--text-muted); font-size:0.8rem;">至</span>
+                        <input type="date" id="kpiTrendEndDate" class="form-control" style="padding:2px 6px; font-size:0.8rem; width:130px; height:28px;" />
+                        <button type="button" id="btnKpiTrendCustomApply" class="btn btn-sm btn-secondary" onclick="applyKpiTrendCustomDate()" style="padding:4px 10px; font-size:0.8rem;">[应用]</button>
+                    </div>
+                </div>
+                <div style="display:inline-flex; align-items:center; gap:8px;">
+                    <button class="btn btn-secondary btn-sm" onclick="loadKpiTrendData()" style="padding:4px 12px; font-size:0.8rem;">刷新数据</button>
+                </div>
+            </div>
+
+            <!-- 模态框主体滚动区 -->
+            <div class="modal-body" style="padding:16px 20px; flex:1; min-height:0; overflow-y:auto; box-sizing:border-box; background:#ffffff;">
+                <!-- 统计卡片摘要区 (4 张区间概览卡片) -->
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:16px;">
+                    <div class="card" style="padding:10px 14px; margin-bottom:0; background:var(--bg-card, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">区间均值 / 累计</div>
+                        <div id="kpiTrendSummaryAvg" style="font-size:1.25rem; font-weight:700; color:var(--text-primary); font-variant-numeric:tabular-nums;">-</div>
+                    </div>
+                    <div class="card" style="padding:10px 14px; margin-bottom:0; background:var(--bg-card, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">最新单日数值</div>
+                        <div id="kpiTrendSummaryCurrent" style="font-size:1.25rem; font-weight:700; color:#2563eb; font-variant-numeric:tabular-nums;">-</div>
+                    </div>
+                    <div class="card" style="padding:10px 14px; margin-bottom:0; background:var(--bg-card, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">区间极值 (最高/最低)</div>
+                        <div id="kpiTrendSummaryExtremes" style="font-size:1.1rem; font-weight:700; color:var(--text-primary); font-variant-numeric:tabular-nums;">-</div>
+                    </div>
+                    <div class="card" style="padding:10px 14px; margin-bottom:0; background:var(--bg-card, #f8fafc); border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                        <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px;">区间变动趋势 (较首日)</div>
+                        <div id="kpiTrendSummaryTrend" style="font-size:1.1rem; font-weight:700; color:var(--text-primary); font-variant-numeric:tabular-nums;">-</div>
+                    </div>
+                </div>
+
+                <!-- 原生 SVG 时序趋势图画布容器 -->
+                <div class="card" style="padding:14px; margin-bottom:16px; background:#ffffff; border:1px solid var(--border-color, #e2e8f0); border-radius:8px; position:relative;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <span style="font-size:0.82rem; font-weight:600; color:var(--text-primary);">时序走势与异动检测</span>
+                        <div style="display:flex; gap:12px; font-size:0.72rem; color:var(--text-muted); align-items:center;">
+                            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:3px; background:#2563eb;"></span>趋势折线</span>
+                            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:0; border-top:1.5px dashed #94a3b8;"></span>区间均值</span>
+                            <span style="display:inline-flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444;"></span>异常波动点</span>
+                        </div>
+                    </div>
+                    <div id="kpiTrendChartContainer" style="width:100%; position:relative; min-height:240px; display:flex; align-items:center; justify-content:center; overflow-x:auto;">
+                        <div style="color:var(--text-muted); font-size:0.85rem;">正在加载图表数据...</div>
+                    </div>
+                    <!-- 交互浮层 Tooltip -->
+                    <div id="kpiTrendChartTooltip" style="position:absolute; display:none; pointer-events:none; background:rgba(15, 23, 42, 0.92); color:#ffffff; padding:8px 12px; border-radius:6px; font-size:0.75rem; z-index:10; box-shadow:0 4px 12px rgba(0,0,0,0.25); white-space:nowrap; transform:translate(-50%, -110%); transition:opacity 0.15s ease;">
+                    </div>
+                </div>
+
+                <!-- 每日数据切片明细表与样本回溯区 -->
+                <div class="card" style="padding:14px; margin-bottom:0; background:#ffffff; border:1px solid var(--border-color, #e2e8f0); border-radius:8px;">
+                    <div style="font-size:0.82rem; font-weight:600; color:var(--text-primary); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;">
+                        <span>切片明细</span>
+                        <button class="btn btn-secondary btn-sm" onclick="drillDownKpiRange()" title="按当前统计周期（含自定义时间段）自动填充单据解析流水明细的时间筛选" style="font-size:0.75rem; padding:2px 10px;">查看详情</button>
+                    </div>
+                    <div id="kpiTrendTableContainer" style="overflow-x:auto;">
+                        <div style="text-align:center; padding:20px; color:var(--text-muted); font-size:0.82rem;">加载明细数据中...</div>
+                    </div>
+                </div>
+                <span id="kpiTrendFooterSummary" style="display:none;"></span>
             </div>
         </div>
     </div>
@@ -3414,7 +4274,7 @@
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
-    <script src="/static/js/main.js?v=20260908a"></script>
-    <script src="/static/js/export_center.js?v=20260907a"></script>
+    <script src="/static/js/main.js?v=20260930_kpi_trend_drilldown"></script>
+    <script src="/static/js/export_center.js?v=20260930_recovery_block_b"></script>
 </body>
 </html>

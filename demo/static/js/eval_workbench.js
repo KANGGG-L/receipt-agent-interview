@@ -29,6 +29,13 @@
 
     function headers(extra) {
         var h = { 'X-Role': role() };
+        // 本页不经过 main.js 的 apiFetch 统一出口，需自行带上 Bearer 令牌：
+        // AUTH_ENABLED=1 时后端只认令牌，缺了它工作台所有请求都会 401。
+        // 令牌键名与 main.js 的 AUTH_TOKEN_KEY 一致；无令牌时不注入（演示态照常放行）。
+        try {
+            var token = localStorage.getItem('receipt_auth_token');
+            if (token) { h['Authorization'] = 'Bearer ' + token; }
+        } catch (e) { /* localStorage 不可用时降级为不带令牌 */ }
         if (extra) { for (var k in extra) { h[k] = extra[k]; } }
         return h;
     }

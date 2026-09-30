@@ -1,17 +1,19 @@
 {
-  "last_updated": "2026-08-21T15:08:00+08:00",
+  "last_updated": "2026-09-22T00:00:00+08:00",
+  "honesty_note": "D13 指标纠偏：本汇总表原含多处无评测集/脚本/报告支撑的 100.0 指标与陈旧 active_version，均已纠正——有可复现测试支撑的确定性工具保留数值并补 *_scope 与 reproduce_command；无支撑的一律置 null 并标注 claim_unsupported。各资产权威口径以其自身 metadata.json / eval.json 为准。",
   "benchmark_dataset": "Hong Kong F&B Golden Samples 57 Receipts + 38 SKU Clean Benchmark Cases",
   "prompts": [
     {
       "scene": "extract",
-      "active_version": "v1_2_0_sku_clean",
+      "active_version": "v1_2_8_anti_injection",
       "accuracy": 98.2,
       "cer": 1.8,
       "clean_name_accuracy": 99.1,
       "overtrim_rate": 0.0,
       "code_extraction_recall": 98.6,
       "avg_tokens": 820,
-      "description": "品名纯净性规范与流水号/条形码智能剥离版"
+      "description": "Gap1-8 聚合版：供应商记忆 RAG 注入防御 XML 数据沙箱",
+      "metrics_provenance": "以上 accuracy/cer/clean_name_accuracy/code_extraction_recall 系 v1_2_0_sku_clean 黄金样本评测批次（2026-08-21）的快照，未对 active 版本 v1_2_8 重测，仅作该系谱历史参考，不得当作 v1_2_8 的实测值"
     },
     {
       "scene": "parse",
@@ -25,11 +27,12 @@
     },
     {
       "scene": "audit",
-      "active_version": "v2_0_0_reason",
+      "active_version": "v2_1_0_overall_schema",
       "accuracy": 96.0,
       "cer": 0.5,
       "avg_tokens": 520,
-      "description": "自然语言对比 Reason + 间接注入防御"
+      "description": "收据审核员逐字段复核（overall_consistent schema，与 audit_chain 解析逻辑匹配）",
+      "metrics_provenance": "以上 accuracy/cer 系前身 v2_0_0_reason 评测批次的快照，未对 active 版本 v2_1_0_overall_schema 重测（该版本为字节等价继承，豁免新评测）"
     },
     {
       "scene": "review",
@@ -45,45 +48,55 @@
       "accuracy": 97.0,
       "cer": 0.1,
       "avg_tokens": 420,
-      "description": "对话式跨表比价 + 提示词注入拦截"
+      "description": "对话式跨表比价；SQL 安全口径见 query_sql_gen 工具（本行原写「提示词注入拦截」为无支撑表述，已删除）"
     },
     {
       "scene": "memory",
       "active_version": "v1_0_0",
-      "accuracy": 94.2,
-      "cer": 1.2,
-      "avg_tokens": 380,
-      "description": "正向单据特征提取与 Few-shot 知识沉淀"
+      "accuracy": null,
+      "cer": null,
+      "avg_tokens": null,
+      "description": "正向单据特征提取与 Few-shot 知识沉淀",
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原登记 accuracy=94.2 / cer=1.2 / avg_tokens=380 无任何评测集/脚本/报告支撑（v1_0_0 的 PROMPT 至今零调用方），已置 null 并纠偏——与 ai_registry/prompts/memory/metadata.json 的登记同口径，出处见 docs/06-adds-on/05-VendorMemory现状与大厂标准Gap分析.md 的 L4 条目"
     }
   ],
   "tools": [
     {
       "tool_name": "math_engine",
-      "active_version": "v2_0_0",
+      "active_version": "v2_1_0",
       "interception_rate": 100.0,
+      "interception_rate_scope": "确定性算术门禁：对「数量×单价 != 金额 / 明细守恒 != 总额」100% 拦截；覆盖 tests/test_hallucination_adversarial.py（类型2）、tests/test_gap3_discount_deposit_math.py。非语义型幻觉拦截率。",
       "latency_ms": 2.1,
-      "description": "确定性代码数量*单价及求和守恒硬校验"
+      "description": "确定性代码数量*单价及求和守恒硬校验",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_hallucination_adversarial.py tests/test_gap3_discount_deposit_math.py -q"
     },
     {
       "tool_name": "smart_splitter",
-      "active_version": "v1_1_0_sku_clean",
+      "active_version": "v1_2_0_multi_pack",
       "interception_rate": 99.6,
+      "interception_rate_scope": "确定性剥离：覆盖 tests/test_gap4_multi_pack_units.py / tests/test_sku_cleaning_benchmark.py。",
       "clean_accuracy": 99.4,
       "overtrim_rate": 0.0,
       "latency_ms": 1.2,
-      "description": "品名规格解耦与流水号/条形码确定性剥离"
+      "description": "品名规格解耦与流水号/条形码确定性剥离",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_gap4_multi_pack_units.py tests/test_sku_cleaning_benchmark.py -q"
     },
     {
       "tool_name": "sku_matcher",
       "active_version": "v1_0_0",
-      "interception_rate": 99.0,
+      "interception_rate": null,
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原 99.0 无任何评测集/脚本/报告支撑，且无测试与生产消费者；已按 metadata 纠正。",
       "latency_ms": 1.8,
       "description": "品名核心词提取与单字防合并 SKU 归一工具"
     },
     {
       "tool_name": "statement_reconciler",
       "active_version": "v1_0_0",
-      "interception_rate": 100.0,
+      "interception_rate": null,
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原 100.0 无任何评测集/脚本/报告支撑，且无测试与生产消费者；已按 metadata 纠正。",
       "latency_ms": 3.2,
       "description": "供应商月结 Statement 散单自动勾稽比对工具"
     },
@@ -91,22 +104,28 @@
       "tool_name": "pii_masker",
       "active_version": "v1_0_0",
       "interception_rate": 100.0,
+      "interception_rate_scope": "确定性脱敏：覆盖 tests/test_registry_ssot.py::test_ac17_pii_masker_importable（HKID/手机/银行卡三类样例全部脱敏）。非通用召回率。",
       "latency_ms": 0.8,
-      "description": "香港身份证/银行卡/私人手机号敏感脱敏"
+      "description": "香港身份证/银行卡/私人手机号敏感脱敏",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_registry_ssot.py::test_ac17_pii_masker_importable -q"
     },
     {
       "tool_name": "currency_unit_converter",
       "active_version": "v1_0_0",
-      "interception_rate": 99.2,
+      "interception_rate": null,
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原 99.2 无任何评测集/脚本/报告支撑；确定性换算正确性由 tests/test_fix_p2_quality_and_currency.py 覆盖，不存在可量化拦截率。",
       "latency_ms": 0.5,
       "description": "司马斤(600g)/公斤/磅/打/板标准换算"
     },
     {
       "tool_name": "query_sql_gen",
-      "active_version": "v1_0_0",
+      "active_version": "v1_1_0",
       "interception_rate": 100.0,
+      "interception_rate_scope": "有限语料：tests/test_query_sql_gen_guard.py::ATTACK_CORPUS（22 条）全部拦截 22/22；非通用拦截率。v1_0_0 同语料实测 6/22=27.3%。",
       "latency_ms": 5.4,
-      "description": "租户隔离只读聚合安全 SQL 生成器"
+      "description": "租户隔离只读聚合安全 SQL 生成器",
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_query_sql_gen_guard.py -q"
     }
   ],
   "skills": [

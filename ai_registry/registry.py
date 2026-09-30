@@ -153,3 +153,35 @@ class AIRegistry:
 
 # 全局单例
 ai_registry = AIRegistry()
+
+
+def load_prompt(scene: str, version: Optional[str] = None) -> str:
+    """按 scene + version 载入 prompt 文本；version 缺省取 metadata.json 的 active_version。
+
+    why 需要这个模块级入口（而不是让消费方自己去拿 `ai_registry.get_prompt`）：
+    1. **版本必须已登记**。`AIRegistry.get_prompt` 只校验「版本文件存在」——目录里放一个
+       `v9_9_9.py` 而 metadata 里没登记，它照样能加载出来，于是 prompt 版本治理被绕过
+       （「文件在、登记没有」正是 tests/test_registry_ssot.py AC-10 要拦的漂移）。本函数
+       额外要求版本出现在 `versions` 里，未登记即抛 KeyError 并列出可用版本。
+    2. **失败可见、绝不静默回退**。找不到场景/版本/文件时一律抛错，不返回空串、不退回
+       别的版本、不退回内置文案 —— 「注册表读不到就悄悄用旧文案」会让版本治理整体失效，
+       属本仓高发的「异常被静默吞掉导致功能静默失效」。需要降级的调用方自己 except 并
+       显式 warning（如 `app/services/memory_extract._load_registry_prompt`）。
+
+    实现只委托单例，是一个**唯一实现**：不要在图里或调用方另抄一份「拼模块路径 + 读
+    metadata」的逻辑。
+    """
+    meta = ai_registry.get_prompt_metadata(scene)
+    if not isinstance(meta, dict) or not meta.get("versions"):
+        raise KeyError(
+            f"Prompt 场景不存在或 metadata.json 无 versions: '{scene}'. "
+            f"可选场景: {ai_registry.list_prompt_scenes()}")
+    target_version = version or meta.get("active_version")
+    if not target_version:
+        raise ValueError(f"场景 '{scene}' 未指定版本且 metadata.json 中无 active_version")
+    versions = meta["versions"]
+    if target_version not in versions:
+        raise KeyError(
+            f"场景 '{scene}' 的版本 '{target_version}' 未在 metadata.json 登记"
+            f"（可用版本: {sorted(versions)}）。未登记的版本文件不得被加载。")
+    return ai_registry.get_prompt(scene, target_version)

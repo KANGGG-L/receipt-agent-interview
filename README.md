@@ -68,6 +68,31 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 - **VendorMemory RAG**：按供应商积累别称/单位/版式记忆，越用越准（护城河）
 - **算术不交给 LLM**：数量×单价、Σ总额用确定性代码校验，校验+建议不静默改
 
+#### 3.2.1 防护边界与已知不可防场景（如实口径）
+
+「三层互不信任」给出的是可信度**叠加**，不是「全链路防篡改」，也不存在任何 100% 的
+注入防御。下列能力一律**不得**表述为「防盗用 / 防篡改」：
+
+- **provider 可读全量 prompt**：每次识别/审核调用把 System 指令、用户提示词与图片全量
+  发给模型服务商。System Prompt 不是秘密，也不能假设 provider 不会复用其中内容。
+- **Canary Token 只作上游错配 / 静默降级检测**：`canary_guard.py` 每次调用生成高熵 token
+  并在 System 与 User 双重锚定，用于确定性检出「上游代理根本没收到本轮指令」这类错配。
+  token 明文随 prompt 下发，**对 provider 不构成秘密**——恶意 provider 原样回填即可通过
+  校验并任意篡改数据字段。故它**不是认证、也不提供完整性保护**（边界用例见
+  `tests/test_canary_boundary.py`）。
+- **注入黑名单可被语义改写绕过**：`prompt_injection_guard` 挡住的是字符层/词汇层绕过
+  （有限语料），对**语义型注入**（换说法 / 跨轮指代 / 拼音转写）无通用检出率。XML 数据
+  沙箱提供的是「指令与数据结构可分」的隔离，不等于「内容无害」。
+- **图内隐藏文字检测只告警、不拦截**：`image_injection_guard` 对淡墨层 / 极小字 / 边距外
+  文字产出信号，但热敏纸收据天然低对比度，为避免误伤只告警，不阻断上传。
+- **契约/算术门禁只保证结构与守恒**：Pydantic `extra="forbid"` 拒绝 schema 外字段，
+  算术门禁只保证「数量×单价 / Σ明细」守恒——两者都不保证语义正确（捏造品名、重复行等
+  幻觉无自动处置，见 `tests/test_hallucination_adversarial.py`）。
+- **弱密钥下的签名只防误撞**：未设置 `DEMO_TOKEN_SECRET` 时，预览/凭证 URL 的 HMAC 签名
+  退化为「只防偶然撞出合法 URL」，不防构造（`/api/health` 的 `signature_secret_weak` 暴露该事实）。
+- **最终边界是人眼**：所有自动层之上，唯一能对照图面判断真伪的环节是人工在 Side-by-Side
+  复核界面**逐张对照原图**；approve 才写库，库存与台账的最终正确性由人负责。
+
 ### 3.3 平台能力
 
 - **三层 RBAC**：admin / owner / staff，无密码下拉切换，权限即时生效
@@ -78,7 +103,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 ### 3.4 测试体系
 
-- **确定性单测**：契约门禁/算术门禁/RBAC/乐观锁/幂等入库/租户隔离/记忆治理 —— 全量回归 **307 passed + 1 条件 skip**（根 `tests/` 163 + `demo/tests/` 144+1），确定性部分秒级；另含 1 个活体 E2E 用例（需本地服务与 playwright，已实测通过）
+- **确定性单测**：契约门禁/算术门禁/RBAC/乐观锁/幂等入库/租户隔离/记忆治理 —— 根 `tests/` 全量回归 **512 passed + 1 条件 skip**，确定性部分秒级；`demo/tests/` 套件另行维护，另含 1 个活体 E2E 用例（需本地服务与 playwright，已实测通过）
 - **完整业务流**：上传→识别→复核→审批→库存→成本→复盘→对账→支付 全链路
 - **黄金样本（历史导入口径）**：57 张真实香港收据 + 人工标注，可导入平台做回归（该批为早期导入口径；后续评测语料已升级为下述评测集三分法）
 - **实测数据（历史导入口径）**：导入黄金样本后形成 55 SKU / 5 供应商 / 成本 5.9 万 的完整环境（为导入批次快照，非实时数据）
@@ -89,7 +114,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 所有 AI 资产——**Prompt / Skills / Tools / MCP**——统一收口在 [`ai_registry/`](ai_registry/README.md)（AI 工程化能力资产库与评测中心）进行工程化管理，它是本项目 AI 资产的**唯一来源（Single Source of Truth）**：
 
 - **版本化**：Prompt 按 SemVer 独立成文件（如 `prompts/extract/v1_2_8_anti_injection.py`）+ `metadata.json` 记录评测指标与准入状态，经 `registry.py` 加载激活版本，迭代不覆盖旧版
-- **确定性工具**：算术门禁/品名剥离/日期归一/花码识别等 12 个 Tools 收口在 `ai_registry/tools/`，业务代码经包导入复用，不在链路里内联复制逻辑
+- **确定性工具**：算术门禁/品名剥离/日期归一/花码识别等 13 个 Tools 收口在 `ai_registry/tools/`，业务代码经包导入复用，不在链路里内联复制逻辑
 - **Skills 能力矩阵**：收据审核/供应商对账/自然语言查价等 Skills 带独立 `eval.json`，效果可对比
 - **MCP 收口**：MCP servers 与 configs 统一放 `ai_registry/mcp/`
 - **评测中心**：`benchmarks/` 存放全量资产评测矩阵与版本对比，改动可回溯；生产准入走 SemVer + 准入规则（准确率/拦截率门槛）
@@ -123,7 +148,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 - **识别链路**：40s~4min 走通全流程（免费模型），多引擎可切换
 - **可信度**：三层门禁（契约/算术/人工）拦截错误，AI 只预填、人工背书
-- **可测性**：全量回归 307 passed + 1 条件 skip（根 `tests/` 163 + `demo/tests/` 144+1）+ 163 张真实语料评测集三分法回归（test 33 张，本地不入库）
+- **可测性**：全量回归（根 `tests/`）512 passed + 1 条件 skip + 163 张真实语料评测集三分法回归（test 33 张，本地不入库）
 
 ## 五、Workflow 详解与实现
 
@@ -186,6 +211,10 @@ run_pipeline(image_path, config)
 | 人工背书 | 老板 | `api_receipts.py` approve | Side-by-Side 复核后审批 | 库存只在 approve 写入 |
 
 核心纪律：**AI 只预填、人工背书；校验+建议、不静默改写**。AI 算错金额不会悄悄改掉，而是报出来等人工裁决——错误模式因此可见、可审计。
+
+> 边界提示：本表的「三层互不信任」是可信度**叠加**，不是「防篡改」。其中 Canary Token
+> 仅用于检出上游错配 / 静默降级，token 对 provider 不构成秘密，**不提供认证或完整性
+> 保护**；注入防护对语义型注入无通用检出率。完整的防护边界与已知不可防场景见 **§3.2.1**。
 
 ### 5.4 模型引擎怎么做到可插拔
 
@@ -256,7 +285,7 @@ cp .env.example .env        # 默认识别腿百炼 DashScope qwen3.5-omni-flash
 pip install -r requirements.txt
 
 ./demo.sh run               # 启动 http://127.0.0.1:15010
-./demo.sh test              # 快速单测子集（test_demo.py，30 passed；全量 307 passed+1 条件 skip，见「测试体系」）
+./demo.sh test              # 快速单测子集（test_demo.py）；根 tests/ 全量 512 passed+1 条件 skip，见「测试体系」
 ./demo.sh workflow          # 完整业务流测试
 ./demo.sh smoke <图路径>     # 单图冒烟
 ```

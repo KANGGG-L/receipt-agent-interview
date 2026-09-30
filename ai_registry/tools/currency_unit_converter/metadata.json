@@ -6,8 +6,11 @@
     "v1_0_0": {
       "release_date": "2026-08-01",
       "status": "production",
-      "interception_rate": 99.2,
-      "latency_ms": 0.5
+      "interception_rate": null,
+      "claim_unsupported": true,
+      "claim_unsupported_note": "原登记 interception_rate=99.2 无任何评测集/脚本/报告支撑，判定为无支撑指标并纠正（改为 null）。本工具为确定性换算，换算正确性由 tests/test_fix_p2_quality_and_currency.py 覆盖（司马斤/磅->kg、HKD/CNY 换算），不存在可量化的「拦截率」。",
+      "latency_ms": 0.5,
+      "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_fix_p2_quality_and_currency.py::test_currency_and_unit_converter -q"
     }
   }
 }

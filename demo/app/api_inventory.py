@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app import db
-from app.auth import require_role
+from app.auth import require_role, resolve_tenant
 from app.services.costing_service import CostingService
 
 # B-P0-1 流水号后缀正则（FR-7 品名归一）与归一辅助
@@ -31,9 +31,8 @@ router = APIRouter()
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 # 单位换算走 services.unit_factors 单一事实源（SSOT）：与成本层同源同系数。
 from app.services import unit_factors
@@ -186,12 +185,38 @@ def delete_sku_endpoint(sku_id: int, request: Request):
 class SkuMergeBody(BaseModel):
     primary_sku_id: int
     secondary_sku_ids: list[int]
-    sync_vendor_memory: bool = True
 
 
 @router.post("/api/inventory/skus/merge")
 def merge_skus_endpoint(body: SkuMergeBody, request: Request):
-    """合并 SKU：迁移历史流水至主 SKU，停用副 SKU，并自动反哺供应商别名记忆。"""
+    """合并 SKU：迁移历史流水至主 SKU，停用副 SKU，并把供应商别名改指到主 SKU。
+
+    M8 处置（K4，结论＝判死删除）：本端点原先在合并后额外调一次
+    `ingest_memory("全局品类库", "SKU同义合并映射：…")` 反哺 VendorMemory。该写入
+    **永远不可召回**且**无任何消费方**，故删除。三条证据（均可复算）：
+
+    1. 召回门（前端不可达）：检索侧 `rag._vendor_related` 用「供应商名」判定相关
+       性，对任何真实供应商名都返回 False —— 实测
+       `_vendor_related('德利行 Tak Lee Hong', '全局品类库') = False`（只有查询名
+       自身含"全局"才放行）。因此精确通道与 fuzzy 通道都取不到这条记忆。
+    2. 无消费方（即便可达也不产生价值）：全仓读 `vendor_memory` 的只有
+       `rag.retrieve_context` 与 `db.list_vendor_memory`；而 SKU 匹配链路
+       （`_match_sku` → `find_vendor_sku_alias` / `find_sku_by_name` /
+       `list_skus`）**从不读 vendor_memory**。所以就算把它接进识别 prompt，也不会
+       改变任何一次 SKU 匹配结果。
+    3. 租户错位：该调用未传 `tenant_id`（恒落 default 桶），与读侧自 H1 起「租户
+       必填、读写同口径」相矛盾 —— 在一个租户维度的端点上，写 default 本身就是错的。
+
+    接替者（谁承担了这件事）：合并结果由 `vendor_sku_alias` 表（P2-T2）承担 ——
+    `db.merge_skus` 内部调 `db._repoint_vendor_sku_alias`（db.py:2305）把原先指向
+    副 SKU 的别名全部改指到主 SKU，消费方是 `db.find_vendor_sku_alias`（`_match_sku`
+    的第一优先通道，命中即累加 hit_count）。第二个合并入口（启动自愈的
+    `deduplicate_skus_by_canonical`，db.py:2617）走同一钩子，两处口径一致。
+
+    `sync_vendor_memory` 形参随之移除：它**只**控制上面那条死写入（别名改指在
+    `db.merge_skus` 内部无条件执行，不受它控制），保留会变成"定义了没接线"的空开关。
+    旧前端缓存仍可能发送该字段，Pydantic 默认忽略多余字段，不会 422。
+    """
     require_role("owner")(request)
     tenant_id = _tenant_id(request)
     primary_sku = db.get_sku(body.primary_sku_id, tenant_id=tenant_id)
@@ -206,16 +231,10 @@ def merge_skus_endpoint(body: SkuMergeBody, request: Request):
     if err:
         return {"status": "error", "code": err, "msg": f"合并失败：{err}"}
 
-    # 反哺 VendorMemory 记忆库（实现同义别名自学习）
-    if body.sync_vendor_memory and result:
-        from app.services.rag import ingest_memory
-        primary_name = result.get("primary_name", "")
-        merged_names = result.get("merged_names", [])
-        if primary_name and merged_names:
-            alias_note = f"SKU同义合并映射：[{', '.join(merged_names)}] 统一映射为标准品类 [{primary_name}]"
-            ingest_memory("全局品类库", alias_note, notes=f"SKU别名合并学习：{primary_name}")
-
-    return {"status": "success", "data": result, "msg": "SKU 合并成功并已沉淀别名记忆"}
+    # 别名沉淀无需在此处补写：db.merge_skus 已通过 _repoint_vendor_sku_alias 把
+    # 指向副 SKU 的别名改指到主 SKU（见 db.py:2305，别名表的唯一写入实现）。
+    return {"status": "success", "data": result,
+            "msg": "SKU 合并成功（历史流水与供应商别名已归集到主 SKU）"}
 
 
 class StocktakeBody(BaseModel):
