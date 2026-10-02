@@ -805,6 +805,9 @@ TELEMETRY_EVENT_ALIASES = {
     "math_guard_checked": "金额与数量计算一致性校验（数学护栏）",
     "contract_guard_checked": "字段完整性与 Schema 契约校验（契约护栏）",
     "price_anomaly_flagged": "采购单价波动超阈值告警",
+    # WS5：价格异动处置闭环（owner 对异动作忽略/采纳后由内部埋点通道发出）
+    "price_anomaly_adopted": "价格异动采纳并纳入跟进（处置闭环）",
+    "price_anomaly_dismissed": "价格异动忽略（处置闭环）",
     "reconciliation_completed": "供应商账期对账完成",
 }
 

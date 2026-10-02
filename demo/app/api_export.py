@@ -114,7 +114,7 @@ REPORTS_META = [
         "category": "inventory",
         "category_name": "实时库存与价格",
         "title": "采购进价波动与比价分析表",
-        "description": "比对最新进价与30日均价涨跌幅、历史极值，标红涨幅超10%异动食材，辅助议价与选品。",
+        "description": "比对最新进价与30日均价涨跌幅、历史极值，标红涨幅超{threshold}异动食材，辅助议价与选品。",
         "filters": ["category"],
         "supports_desensitization": False,
         "supports_drafts": False,
@@ -125,7 +125,7 @@ REPORTS_META = [
         "category_name": "实时库存与价格",
         "title": "出入库全量流水综合台账",
         "description": "整合采购入库、餐品消耗、后厨报损、盘点调整的完整物理库存变动日记账。",
-        "filters": ["date_range", "log_kind"],
+        "filters": ["date_range", "log_kind", "sku_id"],
         "supports_desensitization": True,
         "supports_drafts": False,
     },
@@ -237,9 +237,33 @@ REPORTS_META = [
 
 @router.get("/api/export/reports")
 def get_available_reports(request: Request):
-    """获取所有可用导出的报表定义元数据。"""
+    """获取所有可用导出的报表定义元数据。
+
+    价格异动报表的 description 由**本租户生效阈值**动态渲染（WS6：消除硬编码 10%，
+    与 api_inventory 的 price_anomaly_threshold_pct 同源；阈值可由 admin 全局默认 /
+    owner 门店覆盖更改，写死数字会立刻失真）。
+    """
     require_role("staff")(request)
-    return {"status": "success", "data": REPORTS_META}
+    tenant_id = _tenant_id(request)
+    return {"status": "success", "data": _reports_meta_for_tenant(tenant_id)}
+
+
+def _reports_meta_for_tenant(tenant_id=None):
+    """REPORTS_META 的租户视图：仅把价格异动报表描述里的 {threshold} 占位替换为
+    本租户生效阈值（单一事实源仍在 REPORTS_META 的模板文案里，不另抄一份）。"""
+    import copy
+
+    try:
+        from app.services.price_anomaly import get_threshold_pct
+        pct = get_threshold_pct(tenant_id)
+    except Exception:
+        pct = None
+    pct_text = f"{pct:g}%" if isinstance(pct, (int, float)) else "预警阈值"
+    meta = copy.deepcopy(REPORTS_META)
+    for r in meta:
+        if isinstance(r.get("description"), str) and "{threshold}" in r["description"]:
+            r["description"] = r["description"].replace("{threshold}", pct_text)
+    return meta
 
 
 # --------------------------------------------------------------------------
@@ -420,7 +444,8 @@ class ExportDataProcessor:
         for s in skus:
             if cat and s.category != cat:
                 continue
-            vs_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(s.id)
+            vs_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(
+                s.id, tenant_id=tenant_id)
             if is_anomaly:
                 anomaly_count += 1
 
@@ -458,6 +483,8 @@ class ExportDataProcessor:
         start = params.get("start_date", "")
         end = params.get("end_date", "")
         kind = params.get("log_kind", "")
+        # WS4-4：新增 sku_id 过滤（走 db.scoped 同源租户口径；与台账接口同源）。
+        sku_id_flt = params.get("sku_id", "")
 
         session = db.get_session()
         try:
@@ -465,6 +492,13 @@ class ExportDataProcessor:
             q = db.scoped(q, db._StockLogRow, tenant_id)
             if kind:
                 q = q.filter(db._StockLogRow.kind == kind)
+            if sku_id_flt not in (None, ""):
+                try:
+                    q = q.filter(db._StockLogRow.sku_id == int(sku_id_flt))
+                except (TypeError, ValueError):
+                    # 非法 sku_id：不静默全量，落到空结果（避免把"筛选条件写错"
+                    # 当成"无条件"从而导出全表）。
+                    q = q.filter(db._StockLogRow.sku_id == -1)
             q = q.order_by(db._StockLogRow.id.desc())
             db_rows = q.all()
 

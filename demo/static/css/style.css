@@ -3064,6 +3064,112 @@ table.data-table tr.inv-row-low-stock td {
     color: var(--success);
 }
 
+/* WS4-6：价格走势 Modal 内的「SKU 概览」区块（当前结存 / 加权成本 / 最近单价 / 警戒线） */
+.price-history-sku-overview {
+    margin-top: 10px;
+}
+
+.price-history-sku-overview:empty {
+    display: none;
+}
+
+.ph-overview-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.ph-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.ph-overview-item {
+    background: var(--bg-main);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    min-width: 0;
+}
+
+.ph-overview-label {
+    display: block;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ph-overview-value {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-main);
+    font-variant-numeric: tabular-nums;
+}
+
+.ph-overview-fail {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 6px 0;
+}
+
+/* WS4-6：SKU 概览的「在库批次」区块（价格走势 Modal 内，固定高度可滚动） */
+.ph-overview-batches-title {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin: 8px 0 4px;
+}
+
+.ph-overview-batches {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 132px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    background: var(--bg-main);
+}
+
+.ph-overview-batch {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 6px;
+    padding: 5px 10px;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-main);
+    font-variant-numeric: tabular-nums;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.ph-overview-batch > span {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ph-overview-batch:last-child {
+    border-bottom: none;
+}
+
+.ph-overview-batch-qty {
+    text-align: right;
+}
+
+.ph-overview-batches-empty {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    padding: 6px 0;
+}
+
 .price-history-chart-wrap {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -3110,6 +3216,20 @@ table.data-table tr.inv-row-low-stock td {
 
 .ph-avg-label {
     fill: var(--brand-soft);
+    font-size: 10px;
+    font-family: var(--font-mono);
+}
+
+/* WS3：阈值参考线（上界 = 均价 x (1+阈值)），与均价线用不同样式区分 */
+.ph-threshold-line {
+    stroke: var(--danger);
+    stroke-width: 1.5;
+    stroke-dasharray: 2 3;
+    opacity: 0.85;
+}
+
+.ph-threshold-label {
+    fill: var(--danger);
     font-size: 10px;
     font-family: var(--font-mono);
 }
@@ -3162,6 +3282,15 @@ table.data-table tr.inv-row-low-stock td {
 
 .ph-dot-anomaly {
     background: var(--danger);
+}
+
+/* WS3：阈值参考线图例项（与均价虚线区分） */
+.ph-dot-threshold {
+    background: transparent;
+    border: 2px dashed var(--danger);
+    border-radius: 0;
+    height: 0;
+    width: 14px;
 }
 
 .price-history-table-head {

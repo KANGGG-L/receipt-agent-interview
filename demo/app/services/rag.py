@@ -772,7 +772,7 @@ def _mask_memory_text(text, *, field: str, vendor=None) -> str:
 # 生成 prompt 有两条实证风险：① anchoring（模型照抄上一单，把上单内容当本单结果）；
 # ② 历史错误被反复复制（live 语料里冻存过一条**已不存在的重复错误行**：旧 sample 里
 # `ANIKAR A雞粉` 出现两次，而该单当前明细无重复）。故把"默认载荷"换成结构化事实，
-# 明细级对照留给复核侧（api_admin.py 的 /api/vendor_price_hint 通道）。
+# 明细级逐行对照留给复核侧的「供应商历史报价区间」提示通道（不进生成侧 prompt）。
 # -------------------------------------------------------------
 # 四种事实 kind → 中文标签。kind 白名单的唯一权威定义在 `memory_facts.ALLOWED_KINDS`，
 # 这里只负责"怎么显示"；键与那份 schema 对齐，不在本模块再抄一份白名单（本仓①类缺陷）。

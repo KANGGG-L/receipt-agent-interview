@@ -63,6 +63,7 @@ _SessionLocal = None
 
 _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
+_AppSettingOverrideRow = None
 _VendorSkuAliasRow = None
 _DecisionLogRow = _SnapshotRow = _UserEventRow = _ExperimentRow = _ExperimentAssignRow = None
 _ReceiptFeedbackRow = None
@@ -121,12 +122,15 @@ def bypass_tenant_isolation():
         yield
     finally:
         _bypass_tenant_isolation_ctx.reset(token)
+# WS5：价格异动处置留痕表（ignore / adopt 的持久化状态）
+_PriceAnomalyAckRow = None
 
 
 def _make_engine():
     global _engine, _SessionLocal
     global _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow, _SupplierRow
     global _DeptRow, _PaymentRow, _VendorMemoryRow, _AppSettingRow
+    global _AppSettingOverrideRow
     global _VendorSkuAliasRow
     global _DecisionLogRow, _SnapshotRow, _UserEventRow, _ExperimentRow, _ExperimentAssignRow
     global _ReceiptFeedbackRow
@@ -139,6 +143,7 @@ def _make_engine():
     global _LlmCallLogRow, LLMCallLogRow
     global _EngineConfigHistoryRow
     global _SecurityEventRow
+    global _PriceAnomalyAckRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -424,7 +429,26 @@ def _make_engine():
 
     class AppSettingRow(Base):
         __tablename__ = "app_settings"
+        # WS3：本表只承载**全局桶**（admin 全局默认值），门店覆盖归 app_setting_overrides（见下）。
+        # key 单列主键即提供全局唯一约束，历史 `insert ... on conflict(key) do update`
+        # 契约因此天然成立（无复合主键第二列、无额外唯一索引、无数据保全式重建）。
+        # 读取口径：settings_service.get 先查门店覆盖（app_setting_overrides），
+        # 再回落本表（全局），最后回落 SETTINGS_DEFAULTS。
         key = Column(String, primary_key=True)
+        value = Column(Text, default="")
+
+    class AppSettingOverrideRow(Base):
+        """WS3 门店级覆盖行（复合主键 (key, tenant_id)），全局桶 app_settings 之外的归属。
+
+        why 独立成表：app_settings 只承载全局桶（key 单列主键，历史 ON CONFLICT(key)
+        契约依赖 key 单列唯一）；同一 key 的「全局默认行」与「门店覆盖行」因此分表存放，
+        覆盖行在本表按 (key, tenant_id) 唯一。读取口径：settings_service.get 先查本表
+        （该租户覆盖）再回落 app_settings（全局），最后回落 SETTINGS_DEFAULTS。
+        """
+        __tablename__ = "app_setting_overrides"
+        key = Column(String, primary_key=True)
+        tenant_id = Column(String(64), default="default", server_default="default",
+                           primary_key=True)
         value = Column(Text, default="")
 
     # -------------------------------------------------------------
@@ -809,6 +833,32 @@ def _make_engine():
 
     _LlmCallLogRow = LLMCallLogRow = LlmCallLogRow
     _EngineConfigHistoryRow = EngineConfigHistoryRow
+
+    class PriceAnomalyAckRow(Base):
+        """WS5 价格异动处置留痕表（经营处置闭环，不参与异动判定本身）。
+
+        语义：owner 对某 SKU 的价格异动做「忽略 / 采纳」处置后落痕，使前端跨刷新
+        保留处置状态，并让埋点 `price_anomaly_adopted` / `price_anomaly_dismissed`
+        可采集（此前「忽略」只是会话级内存 Set，刷新即复位，指标恒为 0）。
+
+        - 同一 (sku_id, tenant_id) 只保留一行：重复处置是**更新**而非堆叠
+          （唯一索引 ux_price_anomaly_ack_sku_tenant 兜底，upsert 走先查后写）。
+        - threshold_pct / snapshot_vs_pct 记录**处置当时**的阈值与涨幅快照：阈值可被
+          门店覆盖实时改动，事后按当前配置回算会得到不同数字，故必须留痕供回溯。
+        """
+        __tablename__ = "price_anomaly_ack"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        tenant_id = Column(String(64), default="default", server_default="default", index=True)
+        sku_id = Column(Integer, index=True, nullable=False)
+        action = Column(String, default="ignore")          # ignore | adopt
+        threshold_pct = Column(Float, default=0.0)         # 判定当时所用阈值（百分数）
+        snapshot_vs_pct = Column(Float, default=0.0)       # 判定当时涨幅（vs 30 日均价）
+        created_at = Column(String, default="")
+        __table_args__ = (
+            Index("ux_price_anomaly_ack_sku_tenant", "sku_id", "tenant_id", unique=True),
+        )
+
+    _PriceAnomalyAckRow = PriceAnomalyAckRow
 
     Base.metadata.create_all(_engine)
 
@@ -1257,6 +1307,29 @@ def _make_engine():
     ):
         _apply_migration_ddl(_engine, _ddl)
 
+    # WS5：价格异动处置留痕表（幂等 CREATE TABLE IF NOT EXISTS + 索引，覆盖裸库场景；
+    # 新库由上方 create_all 按 ORM 声明建出等价 schema；仅新建表/索引，禁重建表）。
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS price_anomaly_ack ("
+        " id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) DEFAULT 'default',"
+        " sku_id INTEGER NOT NULL,"
+        " action VARCHAR DEFAULT 'ignore',"
+        " threshold_pct FLOAT DEFAULT 0,"
+        " snapshot_vs_pct FLOAT DEFAULT 0,"
+        " created_at VARCHAR DEFAULT '')",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS ix_price_anomaly_ack_tenant_id"
+        " ON price_anomaly_ack (tenant_id)",
+        "CREATE INDEX IF NOT EXISTS ix_price_anomaly_ack_sku_id"
+        " ON price_anomaly_ack (sku_id)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_price_anomaly_ack_sku_tenant"
+        " ON price_anomaly_ack (sku_id, tenant_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
     # WS4：一次性幂等回填 —— 存量消耗行按关联 dish 补 tenant_id。
     # 判据（关键修正）：ADD COLUMN ... DEFAULT 'default' 会把存量行填成占位值
     # 'default'（而非 NULL），故待回填集合必须含 NULL / '' / 占位 'default' 三种；
@@ -1292,10 +1365,17 @@ def _make_engine():
     _rebuild_legacy_skus_name_unique(_engine)
     _rebuild_legacy_suppliers_name_unique(_engine)
     _rebuild_legacy_dish_ingredients(_engine)
+    # WS3：门店覆盖归属 app_setting_overrides（与 app_settings 全局桶分表）。
+    # app_settings 保持单列主键 (key) 形态 —— 新库由 create_all 直建，旧库/漂移库
+    # 物理形态原样保留即可照常读写（key 单列在主键或唯一索引上均已唯一）。
+    # 曾经的复合主键重建机器已移除（消除「第二列退化为常量 + 多余重建」的冗余）。
+    _ensure_app_setting_overrides_table(_engine)
+    _migrate_app_settings_overrides(_engine)
 
     _ReceiptRow, _ItemRow, _SkuRow, _StockLogRow = ReceiptRow, ItemRow, SkuRow, StockLogRow
     _SupplierRow, _DeptRow, _PaymentRow = SupplierRow, DeptRow, PaymentRow
     _VendorMemoryRow, _AppSettingRow = VendorMemoryRow, AppSettingRow
+    _AppSettingOverrideRow = AppSettingOverrideRow
     _VendorSkuAliasRow = VendorSkuAliasRow
     _DecisionLogRow = DecisionLogRow
     _SnapshotRow = SnapshotRow
@@ -1784,6 +1864,54 @@ def _rebuild_legacy_dish_ingredients(engine):
     except Exception as e:
         logger.warning("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+
+
+def _ensure_app_setting_overrides_table(engine):
+    """幂等确保 app_setting_overrides 表存在（WS3 门店覆盖的唯一归属）。
+
+    新库由上方 create_all 按 ORM 声明直建等价 schema；旧库/裸库由此
+    CREATE TABLE IF NOT EXISTS 兜底。只建表，**不动 app_settings 物理形态**：
+    app_settings 保持单列主键 (key) 的全局桶，门店覆盖一律落本表。
+    幂等：表已存在时 _apply_migration_ddl 静默跳过；失败只告警不阻断启动。
+    """
+    _apply_migration_ddl(
+        engine,
+        "CREATE TABLE IF NOT EXISTS app_setting_overrides ("
+        " key VARCHAR NOT NULL,"
+        " tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',"
+        " value TEXT, PRIMARY KEY (key, tenant_id))")
+
+
+def _migrate_app_settings_overrides(engine):
+    """WS3：把 app_settings 里遗留的非全局行（tenant_id != 'default'）迁到
+    app_setting_overrides，使 app_settings 真正只余全局桶。
+
+    why 需要：历史中间态把「门店覆盖行」也存在 app_settings 里（同 key 多行）。
+    本设计下 app_settings 单列主键只放全局行，全局读取按 key 取值若残留门店行
+    会误命中；迁走后读全局只命中全局行。
+    幂等：无遗留行则零动作（新库 app_settings 无 tenant_id 列，直接返回）；
+    只做 INSERT OR IGNORE + DELETE，绝不丢数据；失败只 logger.warning 不阻断启动。
+    """
+    try:
+        from sqlalchemy import text as _t
+        with engine.begin() as conn:
+            cols = _table_columns(conn, "app_settings")
+            if not cols or "tenant_id" not in cols:
+                return  # 无需搬迁（新库/原始旧库的 app_settings 无 tenant_id 列）
+            res = conn.execute(_t(
+                "INSERT OR IGNORE INTO app_setting_overrides (key, tenant_id, value) "
+                "SELECT key, tenant_id, value FROM app_settings "
+                "WHERE tenant_id IS NOT NULL AND tenant_id != '' AND tenant_id != 'default'"))
+            moved = getattr(res, "rowcount", 0) or 0
+            conn.execute(_t(
+                "DELETE FROM app_settings "
+                "WHERE tenant_id IS NOT NULL AND tenant_id != '' AND tenant_id != 'default'"))
+            if moved:
+                logger.warning(
+                    "[migrate] app_settings -> app_setting_overrides moved %s tenant row(s)",
+                    moved)
+    except Exception as e:
+        logger.warning("[migrate] app_settings override migration skipped: %s", e)
 
 
 def _backfill_receipt_supplier_ids(engine):
@@ -3281,6 +3409,143 @@ def price_history(sku_id, tenant_id=None):
                 "source": "receipt",
             }))
         return out
+    finally:
+        s.close()
+
+
+def vendor_price_history(sku_id, vendor, tenant_id=None):
+    """某 SKU 在某供应商处的历史进货单价（供应商 × SKU 报价区间，供复核侧对照）。
+
+    数据源严格为库存流水（inventory_log，kind == 'in'），单价 unit_price = amount / qty；
+    仅保留单价 > 0 的行（qty <= 0 或 amount <= 0 的行剔除，含赠品/冲销/异常行）。
+    vendor 先 strip 再与原字符串精确匹配（不做大小写/模糊归一）。
+    返回 [(date, unit_price, qty, receipt_id)]，按 date 升序；无历史返回 []。
+    注意：**不**回退读 sku.last_unit_price —— 该列只存「最新一笔」，无法构成区间。
+    """
+    name = str(vendor or "").strip()
+    if not name:
+        return []
+    s = get_session()
+    try:
+        rows = scoped(s.query(_StockLogRow), _StockLogRow, tenant_id).filter(
+            _StockLogRow.sku_id == int(sku_id),
+            _StockLogRow.kind == "in",
+            _StockLogRow.vendor == name,
+        ).order_by(_StockLogRow.date.asc()).all()
+        out = []
+        for r in rows:
+            qty = float(r.qty or 0.0)
+            amount = float(r.amount or 0.0)
+            if qty <= 0 or amount <= 0:
+                continue
+            out.append((r.date, amount / qty, qty, r.receipt_id))
+        return out
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# WS5：价格异动处置留痕（ignore / adopt 的持久化状态）
+# -------------------------------------------------------------
+def _ack_tenant_key(tenant_id):
+    """处置行租户键归一：空值一律落 'default'（与 _event_tenant_id 同口径）。"""
+    return _event_tenant_id(tenant_id, None)
+
+
+def _ack_row_dict(row):
+    return {
+        "id": row.id,
+        "tenant_id": row.tenant_id or "default",
+        "sku_id": row.sku_id,
+        "action": row.action or "",
+        "threshold_pct": row.threshold_pct,
+        "snapshot_vs_pct": row.snapshot_vs_pct,
+        "created_at": row.created_at or "",
+    }
+
+
+def upsert_price_anomaly_ack(sku_id, action, threshold_pct, snapshot_vs_pct,
+                             tenant_id=None):
+    """写入/更新某 SKU 的价格异动处置（同一 sku 重复操作是更新，不堆叠）。
+
+    threshold_pct / snapshot_vs_pct 为**处置当时**的阈值与涨幅快照（回溯用）。
+    action 的合法性由调用方（API 层）校验，本层只落库。
+    返回写入后的行 dict；异常向上抛（由调用方决定降级策略）。
+    """
+    t_id = _ack_tenant_key(tenant_id)
+    s = get_session()
+    try:
+        rows = s.query(_PriceAnomalyAckRow).filter(
+            _PriceAnomalyAckRow.sku_id == int(sku_id),
+            _PriceAnomalyAckRow.tenant_id == t_id,
+        ).order_by(_PriceAnomalyAckRow.id.asc()).all()
+        now = now_iso()
+        if rows:
+            row = rows[0]
+            row.action = str(action)
+            row.threshold_pct = float(threshold_pct or 0.0)
+            row.snapshot_vs_pct = float(snapshot_vs_pct or 0.0)
+            row.created_at = now
+            # 历史重复行（唯一索引生效前写入的）一并清理，维持「一 sku 一行」。
+            for dup in rows[1:]:
+                s.delete(dup)
+        else:
+            row = _PriceAnomalyAckRow(
+                tenant_id=t_id,
+                sku_id=int(sku_id),
+                action=str(action),
+                threshold_pct=float(threshold_pct or 0.0),
+                snapshot_vs_pct=float(snapshot_vs_pct or 0.0),
+                created_at=now,
+            )
+            s.add(row)
+        s.commit()
+        return _ack_row_dict(row)
+    finally:
+        s.close()
+
+
+def list_price_anomaly_acks(tenant_id=None):
+    """本租户全部价格异动处置，返回 {sku_id: {...}}（供前端判定忽略/采纳）。"""
+    t_id = _ack_tenant_key(tenant_id)
+    s = get_session()
+    try:
+        rows = s.query(_PriceAnomalyAckRow).filter(
+            _PriceAnomalyAckRow.tenant_id == t_id
+        ).order_by(_PriceAnomalyAckRow.id.asc()).all()
+        out = {}
+        for r in rows:
+            out[int(r.sku_id)] = _ack_row_dict(r)
+        return out
+    finally:
+        s.close()
+
+
+def get_price_anomaly_ack(sku_id, tenant_id=None):
+    """取单个 SKU 的处置行（无则 None），供 API 回显与撤销。"""
+    t_id = _ack_tenant_key(tenant_id)
+    s = get_session()
+    try:
+        row = s.query(_PriceAnomalyAckRow).filter(
+            _PriceAnomalyAckRow.sku_id == int(sku_id),
+            _PriceAnomalyAckRow.tenant_id == t_id,
+        ).order_by(_PriceAnomalyAckRow.id.asc()).first()
+        return _ack_row_dict(row) if row is not None else None
+    finally:
+        s.close()
+
+
+def clear_price_anomaly_ack(sku_id, tenant_id=None):
+    """撤销某 SKU 的处置（DELETE 端点用）。返回删除的行数（幂等：无行返回 0）。"""
+    t_id = _ack_tenant_key(tenant_id)
+    s = get_session()
+    try:
+        n = s.query(_PriceAnomalyAckRow).filter(
+            _PriceAnomalyAckRow.sku_id == int(sku_id),
+            _PriceAnomalyAckRow.tenant_id == t_id,
+        ).delete(synchronize_session=False)
+        s.commit()
+        return int(n or 0)
     finally:
         s.close()
 
@@ -5059,36 +5324,77 @@ def revive_vendor_memory(memory_id, tenant_id=None):
 # -------------------------------------------------------------
 # app_settings 通用键值读写（T10 Gap E3）：settings_service 的底层。
 # engine_config / system_audit_json 是历史专用键，其余键走通用读写。
+# WS3：全部追加**末位可选参数** tenant_id —— None / 空串等价 'default'（全局桶）。
+# 全局桶 = app_settings（key 单列主键）；门店覆盖 = app_setting_overrides。
+# 三类读写口径一致：tenant_id 缺省即全局桶，既有调用点零改动。
 # -------------------------------------------------------------
-def get_app_setting(key, default=None):
-    """读取 app_settings 单个键；不存在返回 default（None）。"""
+def _setting_tenant(tenant_id):
+    """租户键归一：None / 空串 / 纯空白 → 'default'（全局桶）。"""
+    if tenant_id is None:
+        return "default"
+    t = str(tenant_id).strip()
+    return t or "default"
+
+
+def get_app_setting(key, default=None, tenant_id=None):
+    """读取配置单个键；不存在返回 default（None）。
+
+    tenant_id 缺省（None / 空串）读全局桶 app_settings；
+    传入租户则读该门店的覆盖行 app_setting_overrides。
+    """
+    tenant = _setting_tenant(tenant_id)
     s = get_session()
     try:
-        row = s.get(_AppSettingRow, str(key))
+        if tenant == "default":
+            row = s.query(_AppSettingRow).filter_by(key=str(key)).first()
+        else:
+            row = s.query(_AppSettingOverrideRow).filter_by(
+                key=str(key), tenant_id=tenant).first()
         return row.value if row is not None else default
     finally:
         s.close()
 
 
-def set_app_setting(key, value):
-    """写入 app_settings 单个键（幂等 upsert，值一律文本化）。"""
+def set_app_setting(key, value, tenant_id=None):
+    """写入配置单个键（幂等 upsert，值一律文本化）。
+
+    tenant_id 缺省（None / 空串）写全局桶 app_settings；
+    传入租户则写该门店的覆盖行 app_setting_overrides。
+    """
+    tenant = _setting_tenant(tenant_id)
     s = get_session()
     try:
-        row = s.get(_AppSettingRow, str(key))
-        if row is None:
-            row = _AppSettingRow(key=str(key))
-            s.add(row)
+        if tenant == "default":
+            row = s.query(_AppSettingRow).filter_by(key=str(key)).first()
+            if row is None:
+                row = _AppSettingRow(key=str(key))
+                s.add(row)
+        else:
+            row = s.query(_AppSettingOverrideRow).filter_by(
+                key=str(key), tenant_id=tenant).first()
+            if row is None:
+                row = _AppSettingOverrideRow(key=str(key), tenant_id=tenant)
+                s.add(row)
         row.value = "" if value is None else str(value)
         s.commit()
     finally:
         s.close()
 
 
-def list_app_settings():
-    """全量 app_settings 键值 dict（含 engine_config 等历史键，调用方自滤）。"""
+def list_app_settings(tenant_id=None):
+    """配置键值 dict（含 engine_config 等历史键，调用方自滤）。
+
+    tenant_id 缺省（None / 空串）返回全局桶 app_settings；
+    传入租户则返回该门店的覆盖键 app_setting_overrides。
+    """
+    tenant = _setting_tenant(tenant_id)
     s = get_session()
     try:
-        rows = s.query(_AppSettingRow).all()
+        if tenant == "default":
+            rows = s.query(_AppSettingRow).all()
+        else:
+            rows = s.query(_AppSettingOverrideRow).filter_by(
+                tenant_id=tenant).all()
         return {r.key: r.value for r in rows}
     finally:
         s.close()

@@ -1527,8 +1527,12 @@ def get_admin_settings(request: Request):
 
 
 @router.put("/api/admin/settings")
-async def update_admin_settings(request: Request):
-    """批量保存系统配置：body 为 {key: value}；仅接受已登记键，未知键 400。"""
+async def update_admin_settings(request: Request, tenant_id: str = None):
+    """批量保存系统配置：body 为 {key: value}；仅接受已登记键，未知键 400。
+
+    tenant_id（可选查询参数，WS3）：缺省写入**全局默认**（'default' 桶）；传入则写入该
+    租户的**覆盖值**（admin 全局默认 + owner 门店覆盖）。审计载荷记录 old→new。
+    """
     require_admin(request)
     from app.services import settings_service
     try:
@@ -1547,20 +1551,25 @@ async def update_admin_settings(request: Request):
             status_code=400)
     changed = {}
     for key, value in body.items():
-        old = settings_service.get(key)
-        settings_service.set_value(key, value)
-        changed[key] = {"old": old, "new": settings_service.get(key)}
+        old = settings_service.get(key, tenant_id=tenant_id)
+        settings_service.set_value(key, value, tenant_id=tenant_id)
+        changed[key] = {"old": old,
+                        "new": settings_service.get(key, tenant_id=tenant_id)}
     account = getattr(request.state, "account", {})
     who = account.get("email", "admin") if isinstance(account, dict) else "admin"
+    # WS3：审计记录 old→new（此前 old 未落审计，只落了 new），并标注写入的租户维度。
+    audit_field = "app_settings" if not tenant_id else f"app_settings (tenant={tenant_id})"
     try:
         db.append_system_audit_log(
-            who, "settings_update", "app_settings",
-            "", {k: v["new"] for k, v in changed.items()})
+            who, "settings_update", audit_field,
+            {k: v["old"] for k, v in changed.items()},
+            {k: v["new"] for k, v in changed.items()})
     except Exception as e:
         logging.getLogger("api_admin").warning(
             "审计写入失败(action=settings_update who=%s keys=%s): %s",
             who, list(changed.keys()), e)
-    return {"status": "success", "data": settings_service.all_settings(),
+    return {"status": "success",
+            "data": settings_service.all_settings(tenant_id=tenant_id),
             "changed": changed}
 
 
@@ -3427,4 +3436,6 @@ def get_security_stats_admin(request: Request, tenant_id: Optional[str] = None):
         "status": "success",
         "data": stats
     }
+
+
 

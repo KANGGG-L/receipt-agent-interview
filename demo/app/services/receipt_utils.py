@@ -48,8 +48,12 @@ JOBS = {}
 JOBS_LOCK = threading.Lock()
 
 
-def _track_internal(event_type, receipt_id=None, properties=None):
-    """埋点内部封装：Job 线程内无 request context，直写 user_event，失败静默。"""
+def _track_internal(event_type, receipt_id=None, properties=None, tenant_id=None):
+    """埋点内部封装：Job 线程内无 request context，直写 user_event，失败静默。
+
+    tenant_id（WS5 新增，末位可选）：前台请求路径下由调用方传入本租户，使内部事件
+    与请求租户同源；缺省沿用既有缺省链（receipt 回填 → 'default'），既有调用点零改动。
+    """
     try:
         db.log_user_event(
             account_id="system",
@@ -57,6 +61,7 @@ def _track_internal(event_type, receipt_id=None, properties=None):
             event_type=str(event_type),
             receipt_id=int(receipt_id) if receipt_id else None,
             properties=properties or {},
+            tenant_id=tenant_id,
         )
     except Exception:
         pass
@@ -902,7 +907,16 @@ def _match_sku(item, tenant_id=None, supplier_id=None):
         if sku.last_unit_price and item["unit_price"]:
             diff_pct = round((item["unit_price"] - sku.last_unit_price) / sku.last_unit_price * 100, 1)
             item["price_diff_percent"] = diff_pct
-            if abs(diff_pct) > 10:
+            # WS3：行级阈值改由 settings 实时读取（本链路租户维度），消除硬编码 10。
+            # ⚠️ 基准说明（前端标注依赖）：此处是**行级**判定 —— 本笔进价 vs 该 SKU 的
+            # **上一笔进价**；与 price_anomaly.compute_vs_avg_and_anomaly 的 **SKU 级**
+            # 判定（最新进价 vs 近 30 日均价）是两套不同基准。二者共用同一阈值数值，但
+            # 语义不同，前端须各自标注基准：库存角标=「较 30 日均价」、收据行角标=
+            # 「较上一笔进价」。
+            # 方向语义保留（UI 已有「↓ 偏低」）：down=低于上笔、up=高于上笔。
+            from app.services.price_anomaly import get_threshold_pct
+            _threshold_pct = get_threshold_pct(tenant_id)
+            if abs(diff_pct) > _threshold_pct:
                 item["price_anomaly"] = 1
                 item["price_anomaly_direction"] = "up" if diff_pct > 0 else "down"
 

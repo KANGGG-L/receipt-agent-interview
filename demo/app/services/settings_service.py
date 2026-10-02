@@ -168,6 +168,14 @@ _TRUE_WORDS = ("1", "true", "yes", "on", "y", "t")
 _FALSE_WORDS = ("0", "false", "no", "off", "n", "f")
 
 
+def _norm_tenant(tenant_id):
+    """租户键归一（WS3）：None / 空串 / 纯空白 → 'default'（全局桶）。"""
+    if tenant_id is None:
+        return "default"
+    t = str(tenant_id).strip()
+    return t or "default"
+
+
 def _coerce(raw, default):
     """按 default 的类型解析 db 里的字符串值；解析失败返回 default。"""
     if raw is None:
@@ -192,15 +200,25 @@ def _coerce(raw, default):
         return default
 
 
-def get(key, default=None):
-    """读取配置：db 覆盖值 > 显式 default 参数 > SETTINGS_DEFAULTS 缺省。
+def get(key, default=None, tenant_id=None):
+    """读取配置：租户覆盖值 > 全局(db 'default')值 > 显式 default / SETTINGS_DEFAULTS。
 
+    解析优先级（WS3，务必精确）：
+      1) 该租户的覆盖行（app_setting_overrides 中 (key, tenant_id) 命中）；
+      2) 全局桶行（app_settings 中 (key) 命中；单列主键表只放全局默认）；
+      3) SETTINGS_DEFAULTS（未传 default 参数时）或缺省值。
+
+    tenant_id 缺省（None / 空串）等价 'default'，即只读全局桶——既有调用点零改动。
     任何异常（db 不可用等）回退缺省值，绝不向上抛错阻断业务。
     """
     fallback = SETTINGS_DEFAULTS.get(key) if default is None else default
+    tenant = _norm_tenant(tenant_id)
     try:
         from app import db
-        raw = db.get_app_setting(key)
+        raw = db.get_app_setting(key, tenant_id=tenant)
+        if raw is None and tenant != "default":
+            # 门店无覆盖 → 回落全局 default 行（三级解析的中间层）
+            raw = db.get_app_setting(key)
     except Exception as e:
         logger.warning("[settings] read %s failed, fallback default: %s", key, e)
         return fallback
@@ -209,20 +227,20 @@ def get(key, default=None):
     return _coerce(raw, fallback)
 
 
-def get_int(key, default=None):
-    return int(get(key, default))
+def get_int(key, default=None, tenant_id=None):
+    return int(get(key, default, tenant_id=tenant_id))
 
 
-def get_float(key, default=None):
-    return float(get(key, default))
+def get_float(key, default=None, tenant_id=None):
+    return float(get(key, default, tenant_id=tenant_id))
 
 
-def get_bool(key, default=None):
-    return bool(get(key, default))
+def get_bool(key, default=None, tenant_id=None):
+    return bool(get(key, default, tenant_id=tenant_id))
 
 
-def get_str(key, default=None):
-    return str(get(key, default))
+def get_str(key, default=None, tenant_id=None):
+    return str(get(key, default, tenant_id=tenant_id))
 
 
 def coerce_bool_raw(raw, default=True):
@@ -240,20 +258,30 @@ def coerce_bool_raw(raw, default=True):
     return _coerce(raw, default)
 
 
-def set_value(key, value):
-    """写入配置（布尔序列化为 true/false）。写入后即刻对后续 get 可见。"""
+def set_value(key, value, tenant_id=None):
+    """写入配置（布尔序列化为 true/false）。写入后即刻对后续 get 可见。
+
+    tenant_id 缺省（None / 空串）写全局 'default' 桶；传入租户则写该门店覆盖行。
+    返回写入后的**生效值**（该租户视角：租户覆盖 → 全局 → 缺省）。
+    """
+    tenant = _norm_tenant(tenant_id)
     if isinstance(value, bool):
         raw = "true" if value else "false"
     else:
         raw = str(value)
     from app import db
-    db.set_app_setting(key, raw)
-    return get(key)
+    db.set_app_setting(key, raw, tenant_id=tenant)
+    return get(key, tenant_id=tenant)
 
 
-def all_settings():
-    """全量配置视图（缺省键全部列出，含当前生效值），供管理台表单渲染。"""
+def all_settings(tenant_id=None):
+    """全量配置视图（缺省键全部列出，含当前生效值），供管理台表单渲染。
+
+    tenant_id 缺省（None / 空串）= 全局视图（即 GET /api/admin/settings 的口径，
+    读全局桶 app_settings）；传入租户则返回该门店的**生效值**
+    （app_setting_overrides 覆盖 → 全局 → 缺省）。
+    """
     out = {}
     for key in SETTINGS_DEFAULTS:
-        out[key] = get(key)
+        out[key] = get(key, tenant_id=tenant_id)
     return out

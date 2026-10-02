@@ -93,6 +93,39 @@ class CostingService:
         )
 
     @staticmethod
+    def current_avg_cost(session, sku_id: int) -> float:
+        """派生当前加权平均成本：Σ(remaining_qty × unit_cost) / Σ remaining_qty。
+
+        口径：仅纳入「未关闭且仍有剩余」的批次 —— 复用 get_active_batches 的同一
+        集合（is_closed == 0 且 remaining_qty > 0），以批次池为成本的单一事实源。
+        加权按批次的「自身单位」计（unit_cost 即该批次单位成本），与被扣减批次同量纲。
+
+        刻意**不**新增 `skus.avg_cost` 存储列：批次池已是成本的唯一事实源，一旦引入
+        冗余存储列，入库 / 消耗 / 作废 / 盘点四处都必须同步维护，任何一处遗漏即产生
+        「账面成本」与「批次实况」不一致的双源风险（尤其作废回滚与盘点盘盈盘亏的
+        分支最难同步）。故 avg_cost 以派生视图列落地：每次读取即时按批次重算。
+
+        Σ remaining_qty <= 0（无可用批次 / 批次已被扣空）或该 SKU 无任何批次时，
+        返回 0.0 —— 不抛异常、不返回 None，调用方无需再做空值分支。
+        """
+        if session is None:
+            raise ValueError("session is required")
+
+        batches = CostingService.get_active_batches(session, sku_id)
+        total_qty = 0.0
+        total_cost = 0.0
+        for b in batches:
+            qty = float(b.remaining_qty or 0.0)
+            if qty <= 0:
+                continue
+            total_qty += qty
+            total_cost += qty * float(b.unit_cost or 0.0)
+
+        if total_qty <= 0:
+            return 0.0
+        return round(total_cost / total_qty, 4)
+
+    @staticmethod
     def deduct_consumption_fifo(
         session,
         sku_id: int,

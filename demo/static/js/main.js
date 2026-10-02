@@ -4358,6 +4358,12 @@ function renderEditForm(data) {
     syncFeedbackVisibility(data);
     syncRecoveryVisibility(data);
     document.getElementById('inpSupplier').value = data.supplier_name || '';
+    // WS2：供应商变化 → 整表重取「供应商历史报价」提示（单据级维度）。
+    const _hintSupplierInput = document.getElementById('inpSupplier');
+    if (_hintSupplierInput && !_hintSupplierInput.__vendorHintBound) {
+        _hintSupplierInput.__vendorHintBound = true;
+        _hintSupplierInput.addEventListener('change', () => refreshAllVendorPriceHints());
+    }
     document.getElementById('inpDate').value = data.date || '';
     document.getElementById('inpSheet').value = data.sheet_name || (data.date ? data.date.slice(0, 7) : '');
     const rawTotal = (data.total_amount != null) ? data.total_amount : ((data.total != null) ? data.total : 0);
@@ -5512,6 +5518,23 @@ function clearItemTablePlaceholder(tbody) {
     });
 }
 
+// WS5-3：行级红色异动角标点击下钻 —— 复用 WS2 的供应商历史报价提示通道
+// （refreshVendorPriceHint + 行内 vendor-price-hint-box），不新造第二套下钻 Modal。
+// 角标与提示同源基准（「较上一笔进价」）；无 SKU / 无供应商时由提示函数自身
+// 走「清空 + 不发请求」分支，不会抛错。
+function drillIntoRowVendorPriceHint(el) {
+    const tr = el && el.closest ? el.closest('tr') : null;
+    if (!tr) return;
+    const box = tr.querySelector('.vendor-price-hint-box');
+    if (!box) {
+        showToast('该行暂不支持历史报价下钻', 'info');
+        return;
+    }
+    box.classList.remove('hide');
+    refreshVendorPriceHint(tr);
+    if (box.scrollIntoView) box.scrollIntoView({block: 'nearest'});
+}
+
 function appendTableRow(item = {}) {
     const tbody = document.getElementById('itemTableBody');
 
@@ -5605,9 +5628,18 @@ function appendTableRow(item = {}) {
         tr.style.opacity = '0.5';
     }
 
+    // WS6：删除 `|| 10` 兜底 —— 0 或缺失绝不显示成假数字 10.0%。
+    // 缺失 → '-'（不展示任何假数字）；0 → '0.0%'；符号方向由 ↓/↑ 角标显式表达。
+    const rawDiffPct = item.price_diff_percent;
+    const diffPctNum = (rawDiffPct === null || rawDiffPct === undefined || rawDiffPct === '')
+        ? null : Number(rawDiffPct);
+    const diffPctText = (diffPctNum !== null && Number.isFinite(diffPctNum))
+        ? Math.abs(diffPctNum).toFixed(1) + '%' : '-';
+
+    // WS5-3：角标改为可点击（cursor:pointer + title 说明），点击下钻到该行供应商历史报价。
     const anomalyHtml = isAnomaly ? `
-        <span class="badge ${item.price_anomaly_direction === 'down' ? 'badge-info' : 'badge-danger'} anomaly-pill" title="价格偏离历史均值">
-            ${item.price_anomaly_direction === 'down' ? '↓ 偏低' : '↑ 偏高'}${Number(item.price_diff_percent || 10).toFixed(1)}%
+        <span class="badge ${item.price_anomaly_direction === 'down' ? 'badge-info' : 'badge-danger'} anomaly-pill" style="cursor:pointer;" title="较上一笔进价偏离超过 ${currentThresholdPctLabel()}%（点击查看该行供应商的历史报价区间）" onclick="drillIntoRowVendorPriceHint(this)">
+            ${item.price_anomaly_direction === 'down' ? '↓ 偏低' : '↑ 偏高'}${diffPctText}
         </span>
     ` : '';
 
@@ -6638,10 +6670,28 @@ function loadInventoryData() {
     apiFetch('/api/inventory?' + params.toString())
     .then(res => res.json())
     .then(ret => {
-        if (ret.status !== 'success') return;
+        if (ret.status !== 'success') {
+            // WS5-1：接口"成功响应但业务失败"同样不得静默 —— 走同一降级路径。
+            console.warn('[inventory] 库存接口返回非成功状态，保留上一次数据：', ret);
+            degradeInventoryLoad();
+            return;
+        }
 
         const skus = ret.data || [];
         const meta = ret.meta || {};
+
+        // WS3：用后端下发的本租户生效阈值回填可变阈值（百分数 → 小数）。
+        // 缺省保持 0.10（接口未返回 meta 时不报错、不写成 undefined）。
+        if (meta.price_anomaly_threshold_pct != null
+            && Number.isFinite(Number(meta.price_anomaly_threshold_pct))) {
+            PRICE_ANOMALY_THRESHOLD = Number(meta.price_anomaly_threshold_pct) / 100;
+        }
+        // 成功加载即清除降级标记（旧数据已由新数据替换）
+        clearInventoryStale();
+        // WS3：加载库存数据时回填 owner 门店阈值控件当前值（owner-only；staff 不请求）
+        if (isOwnerRoleNow()) loadPriceThresholdControl();
+        // WS5-2：处置状态来自后端持久化映射（不再用会话级内存 Set），刷新页面后仍有效
+        priceAnomalyAckMap = meta.price_anomaly_ack_map || {};
 
         inventorySkusMap.clear();
         skus.forEach(s => inventorySkusMap.set(s.id, s));
@@ -6655,8 +6705,14 @@ function loadInventoryData() {
         const priceEl = document.getElementById('valPriceAnomaly');
         if (priceEl) priceEl.innerText = meta.price_anomaly_count != null ? meta.price_anomaly_count : skus.filter(s => s.price_anomaly).length;
 
+        // WS5-4：老板看板「价格异动雷达」置顶区块（先于 AI 洞察渲染，供横幅可见性判定）
+        renderPriceAnomalyRadar(skus);
+
         // 同步加载极简 AI 发现胶囊
         loadAiLeanInsights();
+
+        // WS4-5：库存数据刷新后同步刷新流水台账（含空态；不只在首次加载时取一次）
+        if (typeof loadInventoryLedger === 'function') loadInventoryLedger();
 
         const tbody = document.getElementById('inventoryTableBody');
         if (!tbody) return;
@@ -6704,7 +6760,9 @@ function loadInventoryData() {
                 const pctLabel = vsAvgPct != null
                     ? `涨价 +${vsAvgPct.toFixed(1)}%`
                     : '涨价异动';
-                priceAnomalyBadge = `<span class="badge badge-danger" title="相对 30 日均价涨幅超过 10%">${w2Escape(pctLabel)}</span>`;
+                // WS3：阈值与基准均由后端同源动态给出 —— 库存角标基准是「较 30 日均价」
+                // （与收据行级「较上一笔进价」是两套不同基准，此处显式标注，避免混读）。
+                priceAnomalyBadge = `<span class="badge badge-danger" title="较 30 日均价涨幅超过 ${currentThresholdPctLabel()}%">${w2Escape(pctLabel)}</span>`;
             }
             const priceBtnCls = priceAnomaly ? 'btn btn-price-anomaly' : 'btn btn-secondary';
 
@@ -6722,6 +6780,18 @@ function loadInventoryData() {
             // 已停用 / 分类 等同属标签胶囊，统一走 .badge.badge-secondary（去掉内联自定义样式与间距，间距交由 .inv-name-cell 的 gap 控制）
             const activeBadge = !isActive
                 ? `<span class="badge badge-secondary">已停用</span>`
+                : '';
+            // WS5-2：价格异动处置状态（后端持久化，刷新后仍保留）——渲染「已忽略 / 已采纳」，
+            // 并给 owner 一个撤销入口（撤销属经营决策，与处置同权限）。
+            const ackAction = sku.ack_action || '';
+            const ackBadge = ackAction === 'adopt'
+                ? `<span class="badge badge-info" title="已采纳该价格异动并纳入跟进（处置状态已持久化）">已采纳</span>`
+                : (ackAction === 'ignore'
+                    ? `<span class="badge badge-secondary" title="已忽略该价格异动（处置状态已持久化）">已忽略</span>`
+                    : '');
+            const ackRevokeHtml = (ackAction && isOwnerRoleNow())
+                ? `<button class="btn btn-secondary" style="padding:2px 6px; font-size:0.72rem;"
+                        onclick="revokePriceAnomalyAck(${Number(sku.id)})" title="撤销该价格异动处置（回到未处置）">撤销处置</button>`
                 : '';
             // kg 列：仅重量单位显示折算（系数与后端 unit_factors 同源）；计件单位显示 -
             let kgCell = '<span style="color:var(--text-muted);">-</span>';
@@ -6741,7 +6811,7 @@ function loadInventoryData() {
                 kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
             }
             tr.innerHTML = `
-                <td class="inv-name-cell"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${w2Escape(sku.name)}</strong></span>${activeBadge}</div></td>
+                <td class="inv-name-cell"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${w2Escape(sku.name)}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
                 <td><span class="badge badge-secondary">${w2Escape(sku.category || '其他')}</span></td>
                 <td class="col-right inv-metric-cell">
                     <div class="inv-metric-stack">
@@ -6767,10 +6837,148 @@ function loadInventoryData() {
             `;
             tbody.appendChild(tr);
         });
+    })
+    .catch(err => {
+        // WS5-1：接口失败绝不静默留在旧 UI —— 保留已有可用行（不清空到白屏）、
+        // 给出可见提示与 console.warn 留痕，并标注「数据可能不是最新」。
+        // 只用 warn：契约测试断言 console.error 调用次数为 0。
+        console.warn('[inventory] 库存列表加载失败，保留上一次数据：', err);
+        degradeInventoryLoad();
     });
 }
 
+// WS5-1：库存加载降级 —— 保留旧行并标注「可能不是最新」；再次成功加载时清除标记。
+function degradeInventoryLoad() {
+    showToast('库存加载失败，当前显示的数据可能不是最新', 'warning');
+    const tbody = document.getElementById('inventoryTableBody');
+    // 非库存页（无表格）时只留 toast，零 DOM 副作用。
+    if (!tbody) return;
+    if (typeof tbody.querySelectorAll === 'function') {
+        tbody.querySelectorAll('tr').forEach(tr => {
+            if (tr && tr.classList) tr.classList.add('inv-row-stale');
+        });
+    }
+    if (document.getElementById('invStaleNotice')) return;   // 幂等：不重复插入
+    const notice = document.createElement('div');
+    notice.id = 'invStaleNotice';
+    notice.className = 'inv-stale-notice';
+    notice.style.cssText = 'margin:8px 0; padding:8px 12px; border-radius:6px;'
+        + ' background:#fef3c7; color:#92400e; font-size:0.85rem;';
+    notice.textContent = '库存数据加载失败，当前显示的是上一次成功加载的结果，可能不是最新。';
+    const host = (tbody.closest && tbody.closest('.table-container'))
+        || tbody.parentElement || null;
+    if (host && host.insertBefore) host.insertBefore(notice, host.firstChild);
+}
+
+function clearInventoryStale() {
+    const notice = document.getElementById('invStaleNotice');
+    if (notice && notice.remove) notice.remove();
+    const tbody = document.getElementById('inventoryTableBody');
+    if (tbody && typeof tbody.querySelectorAll === 'function') {
+        tbody.querySelectorAll('tr').forEach(tr => {
+            if (tr && tr.classList) tr.classList.remove('inv-row-stale');
+        });
+    }
+}
+
+// -------------------------------------------------------------
+// WS4-5：库存流水台账（只读；数据取自 GET /api/inventory/logs）
+// -------------------------------------------------------------
+function invLedgerKindLabel(kind) {
+    // 与后端 api_export.py 既有 kind_map 同源口径（in/consume/waste/stocktake）。
+    // 用词对齐：同一业务动作在系统里只能有一个中文名 —— 一律以 api_export.py 的
+    // kind_map 为准，台账侧不得另起一套译名。
+    const map = {
+        'in': '采购入库',
+        'consume': '餐品消耗',
+        'waste': '后厨报损',
+        'stocktake': '盘点调整',
+    };
+    return map[kind] || kind || '-';
+}
+
+function _invLedgerEmptyRow(msg) {
+    return `<tr><td colspan="9" class="col-center" style="padding:24px 16px; color:var(--text-muted, #6b7280);">${w2Escape(msg)}</td></tr>`;
+}
+
+function loadInventoryLedger() {
+    const tbody = document.getElementById('inventoryLedgerBody');
+    if (!tbody) return;   // 台账卡片不在当前 DOM（非库存页 / 测试沙箱）：零动作
+
+    const skuSel = document.getElementById('invLedgerSkuSelect');
+    const kindSel = document.getElementById('invLedgerKindSelect');
+    const startEl = document.getElementById('invLedgerStartDate');
+    const endEl = document.getElementById('invLedgerEndDate');
+
+    // 品名/SKU 下拉：从已加载的库存数据回填（数据刷新后选项同步，不只在首次加载时取一次）
+    if (skuSel && typeof inventorySkusMap !== 'undefined' && inventorySkusMap && inventorySkusMap.size > 0) {
+        const cur = skuSel.value;
+        const opts = ['<option value="">全部食材</option>'];
+        inventorySkusMap.forEach(s => {
+            opts.push(`<option value="${Number(s.id)}">${w2Escape(s.name || ('#' + s.id))}</option>`);
+        });
+        const sig = String(inventorySkusMap.size);
+        if (skuSel.dataset.optsSig !== sig) {
+            skuSel.innerHTML = opts.join('');
+            skuSel.dataset.optsSig = sig;
+            if (cur && skuSel.querySelector(`option[value="${cur}"]`)) skuSel.value = cur;
+        }
+    }
+
+    const params = new URLSearchParams();
+    if (skuSel && skuSel.value) params.set('sku_id', skuSel.value);
+    if (kindSel && kindSel.value) params.set('kind', kindSel.value);
+    if (startEl && startEl.value) params.set('start_date', startEl.value);
+    if (endEl && endEl.value) params.set('end_date', endEl.value);
+
+    apiFetch('/api/inventory/logs?' + params.toString())
+        .then(res => res.json())
+        .then(ret => {
+            if (!ret || ret.status !== 'success') {
+                tbody.innerHTML = _invLedgerEmptyRow('加载库存流水失败');
+                return;
+            }
+            const rows = ret.data || [];
+            if (rows.length === 0) {
+                tbody.innerHTML = _invLedgerEmptyRow('暂无库存流水记录');
+                return;
+            }
+            tbody.innerHTML = '';
+            rows.forEach(r => {
+                const tr = document.createElement('tr');
+                const qty = Number(r.qty || 0);
+                const qtyText = (qty > 0 ? '+' : '') + qty;
+                const amt = (r.amount != null && Number.isFinite(Number(r.amount))) ? Number(r.amount) : null;
+                const rid = (r.receipt_id != null && Number(r.receipt_id) > 0) ? Number(r.receipt_id) : null;
+                const receiptCell = rid
+                    ? `<button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="openReceiptFromPriceHistory(${rid})">#${rid}</button>`
+                    : '-';
+                tr.innerHTML = `
+                    <td>${w2Escape(r.date || '')}</td>
+                    <td><span class="badge badge-secondary">${w2Escape(invLedgerKindLabel(r.kind))}</span></td>
+                    <td>${w2Escape(r.name || '')}</td>
+                    <td class="col-right">${w2Escape(qtyText)}</td>
+                    <td>${w2Escape(r.unit || '')}</td>
+                    <td class="col-right">${amt != null ? amt.toFixed(2) : '-'}</td>
+                    <td>${w2Escape(r.vendor || '')}</td>
+                    <td class="col-center">${receiptCell}</td>
+                    <td>${w2Escape(r.note || '')}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        })
+        .catch(e => {
+            tbody.innerHTML = _invLedgerEmptyRow('加载库存流水失败，请稍后重试');
+            console.warn('[inventory-ledger] 台账加载失败', e);
+        });
+}
+
 function deduplicateSkus() {
+    // WS1 防御性门禁：越权直达（staff 直接调用）时拒绝，不发出写请求。
+    if (!isOwnerRoleNow()) {
+        showToast('权限不足：仅老板（owner）可执行一键清理重复食材', 'error');
+        return;
+    }
     if (!confirm('确认一键清理重复食材？将按 canonical 归一合并所有 _\\d{10} 流水号变体（幂等、迁移流水、停用副 SKU、审计留痕）。')) return;
     apiFetch('/api/admin/maintenance/deduplicate', {
         method: 'POST',
@@ -6804,6 +7012,11 @@ function _resolveSkuObject(skuTarget) {
 }
 
 function toggleInventoryMoreMenu(btn, skuTarget) {
+    // WS1 防御性门禁：越权直达（staff 直接调用）时拒绝，不打开 owner 级菜单。
+    if (!isOwnerRoleNow()) {
+        showToast('权限不足：仅老板（owner）可操作该菜单', 'error');
+        return;
+    }
     const sku = _resolveSkuObject(skuTarget);
     if (!sku) {
         showToast('无法读取食材档案信息', 'error');
@@ -7094,6 +7307,11 @@ function openSkuMergeModalFromInv() {
 }
 
 function submitSkuMerge() {
+    // WS1 防御性门禁：越权直达（staff 直接调用）时拒绝，不发出合并写请求。
+    if (!isOwnerRoleNow()) {
+        showToast('权限不足：仅老板（owner）可执行食材合并', 'error');
+        return;
+    }
     const primaryId = parseInt(document.getElementById('skuMergePrimarySelect').value);
     const secCheckboxes = document.querySelectorAll('.chk-sku-sec:checked');
     const secIds = Array.from(secCheckboxes).map(c => parseInt(c.value));
@@ -7106,6 +7324,9 @@ function submitSkuMerge() {
     const btn = document.getElementById('skuMergeSubmitBtn');
     if (btn) btn.disabled = true;
 
+    // WS6：已废弃的「合并期记忆同步」死勾选已删除 —— 后端合并端点早已无该空开关形参
+    // （供应商别名改指在 db.merge_skus 内无条件执行，不受任何开关控制），
+    // 前端不再收集这个半死不活的字段。
     apiFetch('/api/inventory/skus/merge', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -7159,7 +7380,77 @@ function deleteSkuDirect(skuId, skuName) {
 // 极简 AI 发现逻辑 (Lean AI Insights Banner & Cards)
 // -------------------------------------------------------------
 let aiLeanInsightsData = null;
-let aiLeanIgnoredSkuIds = new Set();
+// WS5-2：价格异动处置状态改为**后端持久化**（price_anomaly_ack 表），
+// 键 = sku_id 字符串，值 = {action: 'ignore'|'adopt', threshold_pct, snapshot_vs_pct, ...}。
+// 由 loadInventoryData 从 /api/inventory 的 meta 回填（不再有会话级内存 Set，刷新即失效）。
+let priceAnomalyAckMap = {};
+// WS5-4：价格异动雷达命中的异动 SKU 数（供横幅可见性判定：有异动即展示横幅）
+let priceAnomalyRadarCount = 0;
+
+// WS5-4：横幅可见性统一判定 —— AI 洞察有内容或价格异动雷达有异动时展示。
+function setAiLeanBannerVisible(visible) {
+    const banner = document.getElementById('aiLeanBanner');
+    if (!banner) return;
+    if (isStaffRoleNow()) { banner.classList.add('hide'); return; }
+    if (visible) banner.classList.remove('hide');
+    else banner.classList.add('hide');
+}
+
+// WS5-4：老板看板「价格异动雷达」置顶区块 —— 按涨幅（vs_avg_pct）降序列出异动 SKU
+// （Top N），每条可下钻价格走势 Modal；无异动时给出明确空态文案。
+const PRICE_ANOMALY_RADAR_TOP_N = 5;
+
+function _radarPctValue(s) {
+    const v = (s && s.vs_avg_pct != null) ? Number(s.vs_avg_pct) : NaN;
+    return Number.isFinite(v) ? v : null;
+}
+
+function renderPriceAnomalyRadar(skus) {
+    const list = document.getElementById('priceAnomalyRadarList');
+    if (!list) return;   // 容器不在当前 DOM（非库存页 / 测试沙箱）：零动作
+    const sub = document.getElementById('priceAnomalyRadarSub');
+    const anomalies = (skus || []).filter(s => s && s.price_anomaly).slice().sort((a, b) => {
+        const av = _radarPctValue(a);
+        const bv = _radarPctValue(b);
+        // 无涨幅读数的项排在最后（不给假数字撑排序）
+        return (bv === null ? -Infinity : bv) - (av === null ? -Infinity : av);
+    });
+    priceAnomalyRadarCount = anomalies.length;
+
+    if (anomalies.length === 0) {
+        list.innerHTML = '<div style="padding:6px 2px; color:var(--text-muted, #6b7280); font-size:0.85rem;">'
+            + '当前没有价格异动食材（全部在预警阈值内）。</div>';
+        if (sub) sub.textContent = '';
+        return;
+    }
+
+    const top = anomalies.slice(0, PRICE_ANOMALY_RADAR_TOP_N);
+    if (sub) {
+        sub.textContent = `共 ${anomalies.length} 项，按涨幅降序`
+            + (anomalies.length > top.length ? `（仅显示前 ${top.length} 项）` : '');
+    }
+    list.innerHTML = top.map(s => {
+        const pct = _radarPctValue(s);
+        const pctText = (pct === null) ? '-' : ('+' + pct.toFixed(1) + '%');
+        const ack = priceAnomalyAckMap[String(s.id)] || null;
+        const ackText = ack && ack.action === 'adopt' ? '已采纳'
+            : (ack && ack.action === 'ignore' ? '已忽略' : '');
+        const ackBadge = ackText
+            ? `<span class="badge ${ack.action === 'adopt' ? 'badge-info' : 'badge-secondary'}"
+                   style="font-size:0.68rem; padding:1px 6px;">${ackText}</span>`
+            : '';
+        return `<button type="button" class="price-anomaly-radar-item"
+                        style="display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+                               background:transparent; border:0; border-top:1px dashed rgba(148,163,184,0.4);
+                               padding:5px 2px; cursor:pointer; font-size:0.85rem;
+                               opacity:${ackText === '已忽略' ? '0.55' : '1'};"
+                        onclick="viewPriceHistory(${Number(s.id)})"
+                        title="点击查看该食材价格走势（较 30 日均价涨幅 ${w2Escape(pctText)}）">
+                    <span style="flex:1; color:var(--text-primary, #1f2937);">${w2Escape(s.name)}</span>
+                    <span style="color:#dc2626; font-weight:600;">${pctText}</span>${ackBadge}
+                </button>`;
+    }).join('');
+}
 
 function loadAiLeanInsights() {
     const banner = document.getElementById('aiLeanBanner');
@@ -7171,16 +7462,19 @@ function loadAiLeanInsights() {
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success' || !ret.data) {
-            banner.classList.add('hide');
+            // WS5-4：AI 洞察缺失不再无条件隐藏 —— 价格异动雷达有异动时横幅仍需展示
+            setAiLeanBannerVisible(priceAnomalyRadarCount > 0);
             return;
         }
         const data = ret.data;
         aiLeanInsightsData = data;
         const rawItems = data.top_price_risers || [];
-        const activeItems = rawItems.filter(it => !aiLeanIgnoredSkuIds.has(it.sku_id));
+        // WS5-2：处置状态来自后端持久化映射；已忽略项不再提醒（状态跨刷新保留）。
+        const activeItems = rawItems.filter(
+            it => (priceAnomalyAckMap[String(it.sku_id)] || {}).action !== 'ignore');
 
         if (activeItems.length === 0) {
-            banner.classList.add('hide');
+            setAiLeanBannerVisible(priceAnomalyRadarCount > 0);
             return;
         }
 
@@ -7190,11 +7484,12 @@ function loadAiLeanInsights() {
         }
 
         renderAiLeanCards(activeItems);
-        banner.classList.remove('hide');
+        setAiLeanBannerVisible(true);
     })
     .catch(err => {
         if (!window.__roleSwitchPending) console.error('加载极简 AI 发现异常:', err);
-        if (banner) banner.classList.add('hide');
+        // WS5-4：失败时也按雷达是否有异动决定可见性（不把有异动的看板一并藏掉）
+        setAiLeanBannerVisible(priceAnomalyRadarCount > 0);
     });
 }
 
@@ -7222,12 +7517,27 @@ function renderAiLeanCards(items) {
         card.className = 'ai-lean-card-item';
         card.id = `aiLeanCard_${it.sku_id}`;
 
+        // WS5-2：处置状态（后端持久化）——已处置的项不再展示对应动作按钮，
+        // 采纳/忽略都走后端，成功后 toast 并刷新列表（状态跨刷新保留）。
+        const ack = priceAnomalyAckMap[String(it.sku_id)] || null;
+        const ackAction = ack ? ack.action : '';
+        const ackBadge = ackAction === 'adopt'
+            ? '<span class="badge badge-info" style="font-size:0.7rem; padding:1px 6px;">已采纳</span>'
+            : (ackAction === 'ignore'
+                ? '<span class="badge badge-secondary" style="font-size:0.7rem; padding:1px 6px;">已忽略</span>'
+                : '');
+        const adoptBtn = ackAction === 'adopt' ? '' :
+            `<button type="button" class="btn-lean-act" onclick="ackPriceAnomaly(${Number(it.sku_id)}, 'adopt')" title="采纳该价格异动并发起跟进（owner）">采纳</button>`;
+        const ignoreBtn = ackAction === 'ignore' ? '' :
+            `<button type="button" class="btn-lean-act" style="color:var(--text-muted);" onclick="ackPriceAnomaly(${Number(it.sku_id)}, 'ignore')" title="忽略该价格异动（处置状态持久化）">忽略</button>`;
+
         card.innerHTML = `
             <div class="ai-lean-card-left">
                 <div class="ai-lean-card-title">
                     <span style="color:#dc2626;">${w2Escape(it.name)}</span>
                     <span style="font-size:0.75rem; color:var(--text-muted);">· ${w2Escape(it.vendor)}</span>
                     <span class="badge badge-danger" style="font-size:0.7rem; padding:1px 6px;">涨幅 +${it.change_pct}%</span>
+                    ${ackBadge}
                 </div>
                 <div class="ai-lean-card-desc">
                     单价 $${it.earliest_price} -&gt; <strong style="color:#dc2626;">$${it.latest_price}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">HK$ ${it.impact_amount}</strong>
@@ -7236,7 +7546,8 @@ function renderAiLeanCards(items) {
             <div class="ai-lean-card-actions">
                 ${it.sku_id ? `<button type="button" class="btn-lean-act" onclick="viewPriceHistory(${Number(it.sku_id)})">查看走势</button>` : ''}
                 <button type="button" class="btn-lean-act" onclick="copyAiLeanEvidence(${Number(it.sku_id)})" title="复制异动记录明细">复制记录</button>
-                <button type="button" class="btn-lean-act" style="color:var(--text-muted);" onclick="ignoreAiLeanItem(${Number(it.sku_id)})">忽略</button>
+                ${adoptBtn}
+                ${ignoreBtn}
             </div>
         `;
         container.appendChild(card);
@@ -7255,14 +7566,51 @@ function copyAiLeanEvidence(skuId) {
     });
 }
 
-function ignoreAiLeanItem(skuId) {
-    aiLeanIgnoredSkuIds.add(skuId);
-    const card = document.getElementById(`aiLeanCard_${skuId}`);
-    if (card) card.style.opacity = '0';
-    setTimeout(() => {
-        loadAiLeanInsights();
-        showToast('已忽略本次异动提醒', 'info');
-    }, 200);
+// WS5-2：价格异动处置（采纳 / 忽略）—— 走后端持久化 `POST /api/inventory/{id}/price_anomaly_ack`，
+// 成功 toast 并刷新列表（处置状态跨刷新保留；adopt 埋点 price_anomaly_adopted 由后端发出）。
+function ackPriceAnomaly(skuId, action) {
+    const id = Number(skuId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    if (action !== 'ignore' && action !== 'adopt') return;
+    apiFetch(`/api/inventory/${id}/price_anomaly_ack`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    })
+    .then(res => res.json())
+    .then(ret => {
+        if (ret.status === 'success') {
+            showToast(action === 'adopt' ? '已采纳该价格异动并纳入跟进' : '已忽略该价格异动', 'success');
+            loadInventoryData();
+        } else {
+            showToast('处置失败：' + (ret.msg || ret.message || '请稍后重试'), 'error');
+        }
+    })
+    .catch(err => {
+        // 只用 warn：不把可恢复的写失败升级成 error 日志（契约测试断言 error 为 0）
+        console.warn('[price-anomaly-ack] 处置请求失败：', err);
+        showToast('处置失败，请检查网络后重试', 'error');
+    });
+}
+
+// WS5-2：撤销处置（回到未处置态）—— owner 专用，成功后刷新列表。
+function revokePriceAnomalyAck(skuId) {
+    const id = Number(skuId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    apiFetch(`/api/inventory/${id}/price_anomaly_ack`, {method: 'DELETE'})
+    .then(res => res.json())
+    .then(ret => {
+        if (ret.status === 'success') {
+            showToast('已撤销该价格异动处置', 'success');
+            loadInventoryData();
+        } else {
+            showToast('撤销失败：' + (ret.msg || ret.message || '请稍后重试'), 'error');
+        }
+    })
+    .catch(err => {
+        console.warn('[price-anomaly-ack] 撤销请求失败：', err);
+        showToast('撤销失败，请检查网络后重试', 'error');
+    });
 }
 
 function toggleSkuActive(skuTarget) {
@@ -8452,11 +8800,23 @@ function applyArchiveImgTransform() {
 
 // -------------------------------------------------------------
 // M5 价格走势：专业 Modal（曲线 + 30 日均价/异动指标 + 明细表）
-// 替代原生 alert；口径对齐 PRD >10% / 技术方案「价格走势可视化」
+// 替代原生 alert；异动阈值**不再硬编码**（由后端 app_settings 下发，见下方
+// PRICE_ANOMALY_THRESHOLD 与 currentThresholdPctLabel），口径与 /api/inventory 同源。
 // 纯函数 computePriceHistorySummary / buildPriceChartSvg 可测
 // -------------------------------------------------------------
-// var：便于 node vm 逻辑测读取；与 code_engine.check_price_anomaly 阈值一致
-var PRICE_ANOMALY_THRESHOLD = 0.10;
+// WS3：阈值改为**可变**并由后端回填（SSOT 在后端 app_settings：admin 全局默认 + owner
+// 门店覆盖）。默认 0.10 仅作接口未返回 meta/summary 时的缺省；/api/inventory 成功回调用
+// meta.price_anomaly_threshold_pct、renderPriceHistoryModal 用 summary.threshold_pct 回填。
+// 用 let 而非 var：getter 仍是同一词法绑定，纯函数 computePriceHistorySummary /
+// buildPriceChartSvg 可经 opts.threshold 注入，保持"纯函数可测"性质。
+let PRICE_ANOMALY_THRESHOLD = 0.10;
+
+// 阈值百分数标签（整数不补小数位；用于 tooltip / 图例动态文案）
+function currentThresholdPctLabel() {
+    const pct = Number(PRICE_ANOMALY_THRESHOLD) * 100;
+    if (!Number.isFinite(pct)) return '10';
+    return Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+}
 
 /**
  * 从价格点序列计算看板摘要（与后端 summary 同语义，前端可独立重算/回退）。
@@ -8554,6 +8914,14 @@ function buildPriceChartSvg(points, opts) {
         minY = Math.min(minY, avgLine);
         maxY = Math.max(maxY, avgLine);
     }
+    // WS3：阈值参考线（上界 = 均价 x (1+阈值)），须一并纳入 y 轴范围，否则可能画出画布外
+    const thresholdUpper = (avgLine != null && Number.isFinite(avgLine) && avgLine > 0
+        && Number.isFinite(threshold) && threshold > 0)
+        ? avgLine * (1 + threshold) : null;
+    if (thresholdUpper != null) {
+        minY = Math.min(minY, thresholdUpper);
+        maxY = Math.max(maxY, thresholdUpper);
+    }
     if (maxY - minY < 1e-9) {
         minY = Math.max(0, minY * 0.9);
         maxY = maxY * 1.1 || 1;
@@ -8609,6 +8977,16 @@ function buildPriceChartSvg(points, opts) {
         `;
     }
 
+    // WS3：阈值参考线（独立样式类 ph-threshold-line，与均价线区分；图例中亦有一项）
+    let thresholdSvg = '';
+    if (thresholdUpper != null) {
+        const ty = yAt(thresholdUpper);
+        thresholdSvg = `
+            <line x1="${padL}" y1="${ty.toFixed(1)}" x2="${width - padR}" y2="${ty.toFixed(1)}" class="ph-threshold-line"/>
+            <text x="${width - padR}" y="${(ty - 6).toFixed(1)}" class="ph-threshold-label" text-anchor="end">阈值 $${thresholdUpper.toFixed(2)}</text>
+        `;
+    }
+
     let dots = '';
     coords.forEach((c, i) => {
         let anomaly = false;
@@ -8633,6 +9011,7 @@ function buildPriceChartSvg(points, opts) {
   <polygon points="${areaPts}" fill="url(#phAreaGrad)" class="ph-area"/>
   <polyline points="${linePts}" class="ph-line" fill="none"/>
   ${avgSvg}
+  ${thresholdSvg}
   ${dots}
   ${xLabels}
 </svg>`.trim();
@@ -8722,6 +9101,18 @@ function renderPriceHistoryModal(ret) {
         ? ret.summary
         : computePriceHistorySummary(points);
 
+    // WS3：阈值与后端**同源** —— summary.threshold_pct（本租户生效值）驱动曲线阈值线、
+    // 图例文案与明细行 ph-row-hot 判定；接口未给时回退当前可变阈值。图表与表格不再各算一套。
+    const backendThresholdPct = (summary.threshold_pct != null
+        && Number.isFinite(Number(summary.threshold_pct)))
+        ? Number(summary.threshold_pct) : PRICE_ANOMALY_THRESHOLD * 100;
+    const threshold = backendThresholdPct / 100;
+    PRICE_ANOMALY_THRESHOLD = threshold;   // 回填全局可变阈值，供其它展示（库存角标 tooltip）同源
+    const thresholdLabel = Number.isInteger(backendThresholdPct)
+        ? String(backendThresholdPct) : backendThresholdPct.toFixed(1);
+    const legendEl = document.getElementById('phLegendThresholdText');
+    if (legendEl) legendEl.textContent = `涨幅 >${thresholdLabel}%`;
+
     const titleEl = document.getElementById('priceHistoryTitle');
     const subEl = document.getElementById('priceHistorySubtitle');
     if (titleEl) titleEl.textContent = `${skuName} · 价格走势`;
@@ -8775,7 +9166,7 @@ function renderPriceHistoryModal(ret) {
         ` : '';
         chartEl.innerHTML = noticeHtml + buildPriceChartSvg(points, {
             avgLine: summary.avg_30d,
-            threshold: PRICE_ANOMALY_THRESHOLD,
+            threshold: threshold,
         });
     }
 
@@ -8804,7 +9195,7 @@ function renderPriceHistoryModal(ret) {
             let deltaCell = '<span class="ph-delta-na">—</span>';
             if (delta != null) {
                 const up = delta > 0;
-                const big = delta > PRICE_ANOMALY_THRESHOLD * 100;
+                const big = delta > backendThresholdPct;
                 const cls = big ? 'ph-delta-up ph-delta-hot' : (up ? 'ph-delta-up' : (delta < 0 ? 'ph-delta-down' : 'ph-delta-flat'));
                 deltaCell = `<span class="${cls}">${w2Escape(formatPctSigned(delta))}</span>`;
             }
@@ -8819,7 +9210,7 @@ function renderPriceHistoryModal(ret) {
                     + `onclick="openReceiptFromPriceHistory(${rid})">查看</button>`;
             }
             const tr = document.createElement('tr');
-            if (delta != null && delta > PRICE_ANOMALY_THRESHOLD * 100) tr.classList.add('ph-row-hot');
+            if (delta != null && delta > backendThresholdPct) tr.classList.add('ph-row-hot');
             if (rid && Number.isFinite(rid) && rid > 0) {
                 tr.classList.add('ph-row-clickable');
                 tr.title = '双击打开原单';
@@ -8837,6 +9228,86 @@ function renderPriceHistoryModal(ret) {
             tbody.appendChild(tr);
         }
     }
+}
+
+// -------------------------------------------------------------
+// WS4-6：价格走势 Modal 内的「SKU 概览」（数据取自 GET /api/inventory/skus/{id}）
+// -------------------------------------------------------------
+function renderSkuOverview(data) {
+    const el = document.getElementById('priceHistorySkuOverview');
+    if (!el) return;
+    if (!data) {
+        // 取详情失败：仅本块降级为提示，价格曲线照常渲染；不抛出、不用 console.error。
+        el.innerHTML = '<div class="ph-overview-title">SKU 概览</div>'
+            + '<div class="ph-overview-fail">详情加载失败</div>';
+        return;
+    }
+    const unit = data.base_unit || '';
+    const stock = (data.current_stock != null) ? data.current_stock : '-';
+    // 折算 kg：None（计件/体积）显示 -，绝不显示 0。
+    const kg = (data.standard_kg != null && Number.isFinite(Number(data.standard_kg)))
+        ? (Number(data.standard_kg).toFixed(3) + ' kg') : '-';
+    const avgCost = (data.avg_cost != null && Number.isFinite(Number(data.avg_cost)) && Number(data.avg_cost) > 0)
+        ? formatHkd(data.avg_cost) : '-';
+    const lastPrice = (data.last_unit_price != null && Number.isFinite(Number(data.last_unit_price)) && Number(data.last_unit_price) > 0)
+        ? formatHkd(data.last_unit_price) : '-';
+    const alertLine = (data.min_stock_alert != null && Number.isFinite(Number(data.min_stock_alert)) && Number(data.min_stock_alert) > 0)
+        ? (Number(data.min_stock_alert) + (unit ? ' ' + unit : '')) : '-';
+    // WS4-6：SKU 概览补「在库批次」（口径与后端 avg_cost 同源：未关闭且剩余 > 0，FIFO 序）。
+    const batches = Array.isArray(data.batches) ? data.batches : [];
+    el.innerHTML = `
+        <div class="ph-overview-title">SKU 概览</div>
+        <div class="ph-overview-grid">
+            <div class="ph-overview-item"><span class="ph-overview-label">当前结存</span><span class="ph-overview-value">${w2Escape(String(stock))}${unit ? ' ' + w2Escape(unit) : ''}</span></div>
+            <div class="ph-overview-item"><span class="ph-overview-label">单位</span><span class="ph-overview-value">${w2Escape(unit || '-')}</span></div>
+            <div class="ph-overview-item"><span class="ph-overview-label">折算 kg</span><span class="ph-overview-value">${w2Escape(kg)}</span></div>
+            <div class="ph-overview-item"><span class="ph-overview-label">加权成本</span><span class="ph-overview-value">${w2Escape(avgCost)}</span></div>
+            <div class="ph-overview-item"><span class="ph-overview-label">最近单价</span><span class="ph-overview-value">${w2Escape(lastPrice)}</span></div>
+            <div class="ph-overview-item"><span class="ph-overview-label">警戒线</span><span class="ph-overview-value">${w2Escape(alertLine)}</span></div>
+        </div>
+        <div class="ph-overview-batches-title">在库批次 ${batches.length} 个（入库日期 / 单价 / 剩余）</div>
+        ${renderSkuOverviewBatches(batches, unit)}`;
+}
+
+// WS4-6：SKU 概览的批次区块。批次可能很多，列表放在固定高度可滚动区，
+// 避免把价格走势 Modal 撑爆；无批次时给出明确空态（不留白）。
+function renderSkuOverviewBatches(batches, unit) {
+    if (!Array.isArray(batches) || batches.length === 0) {
+        return '<div class="ph-overview-batches-empty">暂无在库批次</div>';
+    }
+    const rows = batches.map(b => {
+        const date = (b && b.inbound_date) ? String(b.inbound_date) : '-';
+        const cost = (b && b.unit_cost != null && Number.isFinite(Number(b.unit_cost)) && Number(b.unit_cost) > 0)
+            ? formatHkd(b.unit_cost) : '-';
+        const qty = (b && b.remaining_qty != null && Number.isFinite(Number(b.remaining_qty)))
+            ? String(b.remaining_qty) : '-';
+        const bu = (b && b.unit) ? String(b.unit) : (unit || '');
+        return '<li class="ph-overview-batch">'
+            + `<span class="ph-overview-batch-date">${w2Escape(date)}</span>`
+            + `<span class="ph-overview-batch-cost">${w2Escape(cost)}</span>`
+            + `<span class="ph-overview-batch-qty">${w2Escape(qty)} ${w2Escape(bu)}</span>`
+            + '</li>';
+    }).join('');
+    return `<ul class="ph-overview-batches">${rows}</ul>`;
+}
+
+function loadSkuOverview(skuId) {
+    const el = document.getElementById('priceHistorySkuOverview');
+    if (el) el.innerHTML = '<div class="ph-overview-title">SKU 概览</div><div class="ph-overview-fail">加载中…</div>';
+    apiFetch(`/api/inventory/skus/${skuId}`)
+        .then(res => res.json().then(body => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+            if (!ok || !body || body.status !== 'success' || !body.data) {
+                renderSkuOverview(null);
+                return;
+            }
+            renderSkuOverview(body.data);
+        })
+        .catch(err => {
+            // 详情失败不得让 Modal 崩掉：价格曲线已独立渲染，这里只降级本块并留痕。
+            renderSkuOverview(null);
+            console.warn('[price-history-sku-overview] 详情加载失败', err);
+        });
 }
 
 /** P0：从价格走势钻取原单 —— 关闭走势 Modal，打开归档详情 */
@@ -8890,6 +9361,58 @@ function viewPriceHistory(skuId) {
             if (empty) empty.textContent = '加载价格走势失败';
             console.error('加载价格走势失败', err);
             showToast('加载价格走势失败' + toastFailDetail(err), 'error');
+        });
+
+    // WS4-6：并行取一次 SKU 详情填充「SKU 概览」；其失败/异常独立于价格曲线。
+    loadSkuOverview(id);
+}
+
+// -------------------------------------------------------------
+// WS3：owner 门店级价格预警阈值控件（owner-only）
+// 读取/保存 GET / PUT /api/inventory/price_threshold（本租户覆盖值）
+// -------------------------------------------------------------
+function loadPriceThresholdControl() {
+    const input = document.getElementById('invPriceThresholdInput');
+    if (!input) return;   // 控件不在当前 DOM（非库存页 / 测试沙箱）：零动作
+    apiFetch('/api/inventory/price_threshold')
+        .then(res => res.json())
+        .then(body => {
+            if (!body || body.status !== 'success' || !body.data) return;
+            const v = Number(body.data.threshold_pct);
+            if (Number.isFinite(v)) input.value = String(v);
+            const hint = document.getElementById('invPriceThresholdHint');
+            if (hint && body.data.global_default_pct != null) {
+                hint.textContent = '全局默认 ' + body.data.global_default_pct + '%';
+            }
+        })
+        .catch(e => console.warn('[price-threshold] 读取失败', e));
+}
+
+function savePriceThreshold() {
+    const input = document.getElementById('invPriceThresholdInput');
+    if (!input) return;
+    const v = Number(input.value);
+    if (!Number.isFinite(v) || !(v > 0) || v > 100) {
+        showToast('阈值必须为正数且不超过 100', 'error');
+        return;
+    }
+    apiFetch('/api/inventory/price_threshold', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold_pct: v })
+    })
+        .then(res => res.json().then(body => ({ ok: res.ok, body })))
+        .then(({ ok, body }) => {
+            if (!ok || !body || body.status !== 'success') {
+                showToast('保存阈值失败：' + ((body && body.msg) || '未知错误'), 'error');
+                return;
+            }
+            showToast('价格预警阈值已保存为 ' + body.data.threshold_pct + '%', 'success');
+            loadInventoryData();   // 即时刷新列表，使异动角标按新阈值重算
+        })
+        .catch(e => {
+            console.warn('[price-threshold] 保存失败', e);
+            showToast('保存阈值失败（网络错误）', 'error');
         });
 }
 
@@ -11705,6 +12228,16 @@ function applyRoleVisibility(role) {
         const scanBtn = document.querySelector('.sidebar-btn[data-target="tab-scan"]');
         if (scanBtn) scanBtn.click();
     }
+    // WS1：按 class 收敛 owner-only / admin-only 元素（每次调用都执行）。
+    // 先捕获 baseDisplay 原值再改写（=== undefined 守卫保证幂等，重复调用/角色切换不破坏恢复）。
+    document.querySelectorAll('.admin-only').forEach(el => {
+        if (el.dataset.baseDisplay === undefined) el.dataset.baseDisplay = el.style.display || '';
+        el.style.display = (role === 'admin') ? el.dataset.baseDisplay : 'none';
+    });
+    document.querySelectorAll('.owner-only').forEach(el => {
+        if (el.dataset.baseDisplay === undefined) el.dataset.baseDisplay = el.style.display || '';
+        el.style.display = (role === 'staff') ? 'none' : el.dataset.baseDisplay;
+    });
     applyModalRoleVisibility(role);
     applyDishRoleVisibility(role);
 }
@@ -12118,6 +12651,45 @@ function loadAdminEngineConfig() {
             renderEngineModuleC(cfg);
             syncAdminEnginePresetOptions(cfg);
 
+            bindAdvParamListeners();
+            ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(legId => {
+                updateAdvBadge(legId);
+                checkTempWarn(legId);
+            });
+
+            // 高级模型推理参数回显与防呆
+            const setElVal = (id, val, fallback) => {
+                const el = document.getElementById(id);
+                if (el) el.value = (val !== null && val !== undefined && val !== '') ? val : fallback;
+            };
+
+            // Rec
+            setElVal('adminRecMaxTokens', cfg.openai_rec_max_tokens, 4096);
+            setElVal('adminRecImageDetail', cfg.openai_rec_image_detail, 'high');
+            setElVal('adminRecTemperature', cfg.openai_rec_temperature !== undefined && cfg.openai_rec_temperature !== null ? cfg.openai_rec_temperature : 0.0, 0.0);
+
+            // Aud
+            setElVal('adminAudMaxTokens', cfg.openai_aud_max_tokens, 4096);
+            setElVal('adminAudTemperature', cfg.openai_aud_temperature !== undefined && cfg.openai_aud_temperature !== null ? cfg.openai_aud_temperature : 0.0, 0.0);
+
+            // Parse
+            setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 4096);
+            setElVal('adminParseTemperature', cfg.openai_parse_temperature !== undefined && cfg.openai_parse_temperature !== null ? cfg.openai_parse_temperature : 0.0, 0.0);
+
+            // Grey Rec
+            setElVal('adminGreyRecMaxTokens', cfg.grey_openai_rec_max_tokens, 4096);
+            setElVal('adminGreyRecImageDetail', cfg.grey_openai_rec_image_detail, 'high');
+            setElVal('adminGreyRecTemperature', cfg.grey_openai_rec_temperature !== undefined && cfg.grey_openai_rec_temperature !== null ? cfg.grey_openai_rec_temperature : 0.0, 0.0);
+
+            // Grey Aud
+            setElVal('adminGreyAudMaxTokens', cfg.grey_openai_aud_max_tokens, 4096);
+            setElVal('adminGreyAudTemperature', cfg.grey_openai_aud_temperature !== undefined && cfg.grey_openai_aud_temperature !== null ? cfg.grey_openai_aud_temperature : 0.0, 0.0);
+
+            // Grey Parse
+            setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 4096);
+            setElVal('adminGreyParseTemperature', cfg.grey_openai_parse_temperature !== undefined && cfg.grey_openai_parse_temperature !== null ? cfg.grey_openai_parse_temperature : 0.0, 0.0);
+
+            // 绑定事件并刷新 Badge 与温度警告
             bindAdvParamListeners();
             ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(legId => {
                 updateAdvBadge(legId);

@@ -265,10 +265,10 @@
 ### Gap E3　模板中心 / 规则引擎未配置化（P1）
 
 - **要求**：字段 schema、校验规则、阈值、审核策略应可配置，避免每加一种单据都改代码。
-- **现状**：字段 schema 硬编码为 Pydantic 契约（`models.py:28-59`）；阈值硬编码为常量（`PRICE_ANOMALY_THRESHOLD_PCT`、`FEEDBACK_DISTILL_THRESHOLD`、模糊拦截 Laplacian 阈值）；管理台**无**模板/规则/阈值的配置入口。
-- **证据**：`demo/app/models.py:109,116`；`demo/app/api_receipts.py:111`；`api_admin.py` 中无 template/rule/threshold 相关端点。
+- **现状**：字段 schema 仍硬编码为 Pydantic 契约（`models.py:28-59`）；**阈值已配置化**（消灭多处硬编码）——**价格异动阈值**由 `app_settings` 键 `price_anomaly_threshold_pct` 承载（模块常量 `PRICE_ANOMALY_THRESHOLD_PCT=10.0` 仅作缺省值），支持 **admin 全局默认 + owner 门店覆盖**（全局默认存 `app_settings` 全局桶（单列主键 `key`），门店覆盖存 `app_setting_overrides`（复合主键 `(key, tenant_id)`），owner 经 `GET|PUT /api/inventory/price_threshold` 调整）；`FEEDBACK_DISTILL_THRESHOLD`、模糊拦截 Laplacian 阈值亦已改由 `settings_service` 实时读取（模块常量仅作缺省，见 `SETTINGS_DEFAULTS`）。模板/规则（doc_form、审核策略）的配置入口仍缺失。
+- **证据**：`demo/app/services/settings_service.py:42-163`（`SETTINGS_DEFAULTS`，含 `price_anomaly_threshold_pct`/`feedback_distill_threshold`/`blur_laplacian_threshold`）；`demo/app/models.py:134-144`（常量仅余缺省值）；`demo/app/services/price_anomaly.py:22-33`（实时读取）；`demo/app/api_inventory.py:644,662`（`GET|PUT /api/inventory/price_threshold`）；`demo/app/api_admin.py:1302,1312`（`GET|PUT /api/admin/settings`）。`api_admin.py` 中仍无 template/rule 相关端点。
 - **风险**：架构文档明确警告「过早承诺 100% 自动化」的解法是配置化 —— 当前新增一种单据形态必须改代码。
-- **建议**：把阈值与 doc_form 相关规则抽到 `app_settings` 表 + 管理台配置页。schema 本身可暂不配置化（改动成本大，收益在支持第 4+ 种单据时才显现）。
+- **建议**：阈值已抽到 `app_settings` 表 + 管理台配置页（见现状）；余下把 doc_form 相关规则也配置化。schema 本身可暂不配置化（改动成本大，收益在支持第 4+ 种单据时才显现）。
 
 ### Gap E4　预处理 Pipeline 缺失（P1）
 

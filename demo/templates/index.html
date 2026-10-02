@@ -700,6 +700,17 @@
                 <section id="tab-inventory" class="tab-content">
                     <!-- 极简 AI 发现胶囊条 (40px，平时收起/无异常隐藏，点击滑出紧凑卡片) -->
                     <div id="aiLeanBanner" class="ai-lean-banner hide">
+                        <!-- WS5-4：老板看板「价格异动雷达」置顶区块（banner 内最靠前位置）。
+                             按涨幅（vs_avg_pct）降序列出异动食材（Top 5），每条可下钻价格走势；
+                             无异动时由 renderPriceAnomalyRadar 写入明确空态文案。 -->
+                        <div id="priceAnomalyRadar" class="price-anomaly-radar"
+                             style="border-bottom:1px solid rgba(148,163,184,0.45); padding:4px 0 6px;">
+                            <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+                                <span class="ai-lean-badge" style="background:#fee2e2; color:#b91c1c;">价格异动雷达</span>
+                                <span id="priceAnomalyRadarSub" style="font-size:0.78rem; color:var(--text-muted, #6b7280);"></span>
+                            </div>
+                            <div id="priceAnomalyRadarList" class="price-anomaly-radar-list"></div>
+                        </div>
                         <div class="ai-lean-banner-header" onclick="toggleAiLeanDetails()">
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <span class="ai-lean-badge">AI 发现</span>
@@ -767,6 +778,15 @@
                                 <button class="btn btn-secondary owner-only" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openSkuMergeModalFromInv()"> 合并食材</button>
                                 <button class="btn btn-warning owner-only" style="padding: 5px 12px; font-size: 0.85rem;" onclick="deduplicateSkus()" title="一键清理 _\d{10} 流水号重复食材，幂等自愈（迁移流水、停用副 SKU、审计留痕）">一键清理重复食材</button>
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryData()">刷新数据</button>
+                                <!-- WS3：owner 门店级价格预警阈值（owner-only；staff/角色收敛隐藏）。
+                                     读取/保存 GET/PUT /api/inventory/price_threshold（本租户覆盖值）。 -->
+                                <span class="owner-only inv-price-threshold" style="display:flex; align-items:center; gap:6px; font-size:0.85rem; white-space:nowrap;">
+                                    价格预警阈值
+                                    <input type="number" step="0.1" min="0.1" max="100" id="invPriceThresholdInput" class="form-control" style="width:84px; padding:4px 6px; font-size:0.85rem;" placeholder="10" title="较 30 日均价涨幅告警阈值（本店）">
+                                    <span>%</span>
+                                    <button type="button" class="btn btn-secondary owner-only" id="invPriceThresholdSaveBtn" style="padding:4px 10px; font-size:0.82rem;" onclick="savePriceThreshold()">保存</button>
+                                    <span id="invPriceThresholdHint" style="color:var(--text-muted); font-size:0.78rem;"></span>
+                                </span>
                             </div>
                         </div>
 
@@ -794,6 +814,51 @@
                                 </thead>
                                 <tbody id="inventoryTableBody">
                                     <!-- 动态渲染库存 -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- WS4-5：库存流水台账（只读台账视图，数据取自 GET /api/inventory/logs） -->
+                    <div class="card" style="margin-top: 16px;">
+                        <div class="inv-toolbar" style="justify-content: space-between;">
+                            <div class="inv-toolbar-filters">
+                                <span style="font-weight: 600; font-size: 0.95rem; margin-right: 4px;">库存流水台账</span>
+                                <select id="invLedgerSkuSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 180px;" onchange="loadInventoryLedger()">
+                                    <option value="">全部食材</option>
+                                </select>
+                                <select id="invLedgerKindSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 120px;" onchange="loadInventoryLedger()">
+                                    <option value="">全部类型</option>
+                                    <option value="in">采购入库</option>
+                                    <option value="consume">餐品消耗</option>
+                                    <option value="waste">后厨报损</option>
+                                    <option value="stocktake">盘点调整</option>
+                                </select>
+                                <input type="date" id="invLedgerStartDate" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
+                                <span style="color: var(--text-muted); font-size: 0.85rem;">至</span>
+                                <input type="date" id="invLedgerEndDate" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
+                            </div>
+                            <div class="inv-toolbar-actions">
+                                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryLedger()">刷新台账</button>
+                            </div>
+                        </div>
+                        <div class="table-container">
+                            <table id="inventoryLedgerTable" class="data-table" style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th>日期</th>
+                                        <th>类型</th>
+                                        <th>品名</th>
+                                        <th class="col-right">变动数量</th>
+                                        <th>单位</th>
+                                        <th class="col-right">金额</th>
+                                        <th>供应商</th>
+                                        <th class="col-center">关联单据</th>
+                                        <th>备注</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="inventoryLedgerBody">
+                                    <tr><td colspan="9" class="col-center" style="padding: 24px 16px; color: var(--text-muted, #6b7280);">加载中…</td></tr>
                                 </tbody>
                             </table>
                         </div>
@@ -1768,6 +1833,38 @@
                                             </div>
                                         </div>
                                     </div>
+                                    <!-- 高级模型推理参数折叠面板 (Rec) -->
+                                    <div id="adminAdvParams_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('rec')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                <span id="adminAdvBadge_rec" class="engine-adv-badge">[4096 tokens | high detail | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_rec" class="engine-adv-toggle-text">[展开]</span>
+                                        </div>
+                                        <div id="adminAdvBody_rec" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
+                                                <div class="form-group">
+                                                    <label for="adminRecMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminRecMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminRecImageDetail">视觉切片粒度 (Image Detail)</label>
+                                                    <select id="adminRecImageDetail" class="form-control">
+                                                        <option value="high">High (全切片·高精度)</option>
+                                                        <option value="auto">Auto (自适应)</option>
+                                                        <option value="low">Low (低开销·粗粒度)</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminRecTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminRecTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                    <div id="adminRecTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                </div>
+
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1851,6 +1948,29 @@
                                                         <option value="max">Max</option>
                                                     </select>
                                                 </div>
+                                                <div class="form-group">
+                                                    <label for="adminAudMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminAudTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminAudTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0" title="审核引擎强制温度为 0.0（运行时确定性硬锁定）">
+                                                    <div id="adminAudTempWarn" class="temp-warn-box hide">[WARN] 审核引擎强制温度为 0.0，高于 0.2 可能增加格式破坏风险</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <!-- 高级模型推理参数折叠面板 (Aud) -->
+                                    <div id="adminAdvParams_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('aud')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                <span id="adminAdvBadge_aud" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_aud" class="engine-adv-toggle-text">[展开]</span>
+                                        </div>
+                                        <div id="adminAdvBody_aud" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
                                                 <div class="form-group">
                                                     <label for="adminAudMaxTokens">Max Tokens [512-16384]</label>
                                                     <input type="number" id="adminAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
@@ -2012,6 +2132,29 @@
                                         <div class="form-group">
                                             <label for="adminPriceOutputParse">Output 价格 (元/1M)</label>
                                             <input type="number" id="adminPriceOutputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                    <!-- 高级模型推理参数折叠面板 (Parse) -->
+                                    <div id="adminAdvParams_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('parse')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                <span id="adminAdvBadge_parse" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_parse" class="engine-adv-toggle-text">[展开]</span>
+                                        </div>
+                                        <div id="adminAdvBody_parse" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
+                                                <div class="form-group">
+                                                    <label for="adminParseMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminParseMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminParseTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminParseTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                    <div id="adminParseTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2189,6 +2332,37 @@
                                                 </div>
                                             </div>
                                         </div>
+                                        <!-- 高级模型推理参数折叠面板 (Grey Rec) -->
+                                        <div id="adminAdvParams_grey_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                            <div class="engine-adv-header" onclick="toggleAdvParams('grey_rec')">
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                    <span id="adminAdvBadge_grey_rec" class="engine-adv-badge">[4096 tokens | high detail | T=0.0]</span>
+                                                </div>
+                                                <span id="adminAdvToggleText_grey_rec" class="engine-adv-toggle-text">[展开]</span>
+                                            </div>
+                                            <div id="adminAdvBody_grey_rec" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                <div class="form-grid">
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecMaxTokens">Max Tokens [512-16384]</label>
+                                                        <input type="number" id="adminGreyRecMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecImageDetail">视觉切片粒度 (Image Detail)</label>
+                                                        <select id="adminGreyRecImageDetail" class="form-control">
+                                                            <option value="high">High (全切片·高精度)</option>
+                                                            <option value="auto">Auto (自适应)</option>
+                                                            <option value="low">Low (低开销·粗粒度)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                        <input type="number" id="adminGreyRecTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                        <div id="adminGreyRecTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <!-- 灰测审核 -->
@@ -2253,6 +2427,29 @@
                                                             <option value="max">Max</option>
                                                         </select>
                                                     </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyAudMaxTokens">Max Tokens [512-16384]</label>
+                                                        <input type="number" id="adminGreyAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyAudTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                        <input type="number" id="adminGreyAudTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0" title="审核引擎强制温度为 0.0（运行时确定性硬锁定）">
+                                                        <div id="adminGreyAudTempWarn" class="temp-warn-box hide">[WARN] 审核引擎强制温度为 0.0，高于 0.2 可能增加格式破坏风险</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- 高级模型推理参数折叠面板 (Grey Aud) -->
+                                        <div id="adminAdvParams_grey_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                            <div class="engine-adv-header" onclick="toggleAdvParams('grey_aud')">
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                    <span id="adminAdvBadge_grey_aud" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                                </div>
+                                                <span id="adminAdvToggleText_grey_aud" class="engine-adv-toggle-text">[展开]</span>
+                                            </div>
+                                            <div id="adminAdvBody_grey_aud" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                <div class="form-grid">
                                                     <div class="form-group">
                                                         <label for="adminGreyAudMaxTokens">Max Tokens [512-16384]</label>
                                                         <input type="number" id="adminGreyAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
@@ -2330,6 +2527,29 @@
                                                                     <option value="max">Max</option>
                                                                 </select>
                                                             </div>
+                                                            <div class="form-group">
+                                                                <label for="adminGreyParseMaxTokens">Max Tokens [512-16384]</label>
+                                                                <input type="number" id="adminGreyParseMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="adminGreyParseTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                                <input type="number" id="adminGreyParseTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                                <div id="adminGreyParseTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <!-- 高级模型推理参数折叠面板 (Grey Parse) -->
+                                                <div id="adminAdvParams_grey_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                                    <div class="engine-adv-header" onclick="toggleAdvParams('grey_parse')">
+                                                        <div style="display:flex; align-items:center; gap:8px;">
+                                                            <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级模型推理参数</span>
+                                                            <span id="adminAdvBadge_grey_parse" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                                        </div>
+                                                        <span id="adminAdvToggleText_grey_parse" class="engine-adv-toggle-text">[展开]</span>
+                                                    </div>
+                                                    <div id="adminAdvBody_grey_parse" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                        <div class="form-grid">
                                                             <div class="form-group">
                                                                 <label for="adminGreyParseMaxTokens">Max Tokens [512-16384]</label>
                                                                 <input type="number" id="adminGreyParseMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
@@ -4280,12 +4500,16 @@
                 <div id="priceHistoryEmpty" class="price-history-empty hide">暂无历史价格记录。审核入库后将在此形成进价曲线。</div>
                 <div id="priceHistoryContent" class="hide">
                     <div id="priceHistoryMetrics" class="price-history-metrics"></div>
+                    <!-- WS4-6：SKU 概览（当前结存 / 单位 / 折算 kg / 加权成本 / 最近单价 / 警戒线）。
+                         数据取自 GET /api/inventory/skus/{id}；取详情失败仅本块降级，不影响价格曲线。 -->
+                    <div id="priceHistorySkuOverview" class="price-history-sku-overview"></div>
                     <div class="price-history-chart-wrap">
                         <div id="priceHistoryChart" class="price-history-chart" role="img" aria-label="进货单价走势图"></div>
                         <div class="price-history-chart-legend">
                             <span class="ph-legend-item"><i class="ph-dot ph-dot-line"></i>进货单价</span>
                             <span class="ph-legend-item"><i class="ph-dot ph-dot-avg"></i>30 日均价</span>
-                            <span class="ph-legend-item"><i class="ph-dot ph-dot-anomaly"></i>涨幅 &gt;10%</span>
+                            <span class="ph-legend-item"><i class="ph-dot ph-dot-threshold"></i>阈值参考线</span>
+                            <span class="ph-legend-item"><i class="ph-dot ph-dot-anomaly"></i><span id="phLegendThresholdText">涨幅阈值</span></span>
                         </div>
                     </div>
                     <div class="price-history-table-head">
