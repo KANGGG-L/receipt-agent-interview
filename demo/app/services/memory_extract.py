@@ -396,13 +396,22 @@ def _to_facts(payload: list, supplier_id: str, tenant_id: str) -> List[MemoryFac
             reasons.append(
                 f"候选[{idx}] 不是对象（实得 {type(entry).__name__}），无法构造 fact")
             continue
+        kind = _as_text(entry.get("kind"))
+        value = _as_text(entry.get("value"))
+        if kind == "unit":
+            # 工作项①（收尾波次）：unit 候选落库前过规范写法 —— pending 人审队列里
+            # 人看到的就是规范值（「司馬斤」→「斤」）。惰性 import 同本模块惯例；
+            # canonical_unit 幂等且只改写法不改语义，发生在批准之前，人工闸动作本身
+            # 零改动。其余 kind（含 alias）原文保留，不做任何改写。
+            from app.services.unit_normalization import canonical_unit
+            value = canonical_unit(value)
         fact = MemoryFact(
             # 一律 str 归一：模型可能回 dict/list（如 {"kind": {...}}）。直接传进
             # validate_fact 会在 `x in ALLOWED_KINDS`（frozenset 成员测试）处抛
             # TypeError —— 变成"异常"，而不是一条可读的拒绝理由。
-            kind=_as_text(entry.get("kind")),
+            kind=kind,
             fact_key=_as_text(entry.get("fact_key")),
-            value=_as_text(entry.get("value")),
+            value=value,
             supplier_id=_as_text(supplier_id),
             tenant_id=_as_text(tenant_id),
             source_kind=SOURCE_EXTRACT,

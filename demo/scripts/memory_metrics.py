@@ -55,6 +55,9 @@ import os
 import sqlite3
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import residue_rules  # noqa: E402  纯函数模块（零 DB 依赖），残渣判别式只此一份
+
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DB = os.environ.get("DB_PATH") or os.path.join(REPO, "demo", "receipt_demo.db")
 
@@ -76,6 +79,15 @@ _MATCHED_FLAG_NOTE = (
     "%s（它复放了 _match_sku）。两者都常被叫作「SKU 匹配率」但口径不同（分子口径不同："
     "本指标只认标记、后者真跑匹配），不可混读、不可相互比较。"
     % (SKU_MATCH_FLAG_KEY, SIMULATED_MATCH_RATE_KEY)
+)
+
+# --exclude-residue 新增键的口径自述（R9 纪律：新键必须带 note；只剔除分母、原键原值不动）
+_EXCLUDE_RESIDUE_NOTE = (
+    "分母剔除确定性残渣规则 7 类 %d 行（判别式唯一出处 residue_rules.py；本口径不含 '0T' 型 "
+    "OCR 废码，后者单独类别、另有 %d 行），%s_excluded = 剩余行中 matched=1 占比。"
+    "原 items/matched/%s 原值原键不动，两套分母不可混读。与 ERRORS §1.2 的 94/551 口径差异"
+    "见 SPEC_PHASE1 §8；评分口径（run_eval.py）不动——GT 侧残渣由 "
+    "validate_gt_consistency.py 的复核清单承接，复标后走基线重冻结流程。"
 )
 
 # -------------------------------------------------------------
@@ -306,7 +318,7 @@ def _collect_memory_hit_effective(c):
     }
 
 
-def collect(db_path=None):
+def collect(db_path=None, exclude_residue=False):
     path = db_path or DB
     c = _conn(path)
     try:
@@ -355,6 +367,30 @@ def collect(db_path=None):
             "incomparable_with": SIMULATED_MATCH_RATE_KEY,
             "note": _MATCHED_FLAG_NOTE,
         }
+        if exclude_residue:
+            # --exclude-residue（默认关）：只**新增**键，上列原键原值一字不动（看板与
+            # test_memory_metrics_dashboard.py 按原键消费）。残渣行只剔出分母统计，
+            # 零写库（本脚本 mode=ro 打开）。'0T' 不在此分母口径内（SPEC_PHASE1 §3.2：
+            # excluded 分母 = 645 − 93 = 552；'0T' 的 7 行由候选生成器口径处理）。
+            _res_rows = c.execute(
+                "select i.name, r.supplier_name, i.matched from receipt_items i"
+                " join receipts r on r.id = i.receipt_id").fetchall()
+            _excluded = _kept = _kept_matched = 0
+            for _name, _supplier, _m in _res_rows:
+                _is_res, _ = residue_rules.classify(_name, _supplier)
+                if _is_res:
+                    _excluded += 1
+                else:
+                    _kept += 1
+                    if (_m or 0) == 1:
+                        _kept_matched += 1
+            out["sku_match"]["excluded_residue_rows"] = _excluded
+            out["sku_match"]["sku_denominator_after_exclusion"] = _kept
+            out["sku_match"]["matched_flag_rate_excluded"] = (
+                round(100.0 * _kept_matched / _kept, 2) if _kept else 0.0)
+            _ot_rows = sum(1 for _n, _s, _m in _res_rows if residue_rules.is_unmatchable(_n))
+            out["sku_match"]["excluded_note"] = _EXCLUDE_RESIDUE_NOTE % (
+                _excluded, _ot_rows, SKU_MATCH_FLAG_KEY, SKU_MATCH_FLAG_KEY)
 
         dec, not_adopted, halluc = c.execute(
             "select count(*), sum(case when adopted=0 then 1 else 0 end), "
@@ -380,8 +416,11 @@ def main():
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--save")
     ap.add_argument("--compare")
+    ap.add_argument("--exclude-residue", action="store_true",
+                    help="sku_match 新增残渣剔除口径键（excluded_residue_rows 等）；"
+                         "默认关，关闭时输出与既有口径逐键一致")
     a = ap.parse_args()
-    cur = collect()
+    cur = collect(exclude_residue=a.exclude_residue)
     if a.save:
         with open(a.save, "w", encoding="utf-8") as f:
             json.dump(cur, f, ensure_ascii=False, indent=2)

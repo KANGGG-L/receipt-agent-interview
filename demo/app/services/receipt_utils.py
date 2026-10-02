@@ -23,6 +23,20 @@ from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool
 # B-P0-1 专用：流水号后缀正则 (FR-7 品名归一) —— 有机菜心_1787140420→有机菜心, 本地新鲜菜心_1787140411→本地新鲜菜心
 _SERIAL_SUFFIX_RE = re.compile(r"_\d{10}$")
 
+# 阶段 2A 工作项③：名称后缀剥离规则单例（懒加载 + 缓存，避免每次明细行读盘）。
+# 规则表 name_suffix_rules.yaml 与消费方同目录；缺文件/坏规则 fail-fast SystemExit，
+# 不得静默按"无后缀剥离"降级。_match_sku 双侧归一、L1 钩子 canonical_name、
+# 候选生成器分组全部消费 _normalize_sku_name —— 一处接线三处生效。
+_SUFFIX_RULES = None
+
+
+def _suffix_rules():
+    global _SUFFIX_RULES
+    if _SUFFIX_RULES is None:
+        from app.services.name_suffix_rules import load_rules
+        _SUFFIX_RULES = load_rules()
+    return _SUFFIX_RULES
+
 # 模块顶层单例：避免 save_parsed_data/canonical_sku_name 每次实例化
 try:
     _sanitizer_singleton = _S()
@@ -832,6 +846,10 @@ def _normalize_sku_name(name):
     text = re.sub(r"^\d+(\.\d+)?(x\d+)*\s*(包裝|包|毫升|mL|ml|升|L|瓶|罐|條|盒|個|合|箱|隻)?\s*", "", text)
     # 去掉结尾规格（括号内容 / 数字x数字 / 体积容量）
     text = re.sub(r"[（(][^）)]*[)）]\s*$", "", text)
+    # 阶段 2A 工作项③：显式数量/规格后缀剥离（YAML 规则表，匹配与候选生成同一份）。
+    # 只剥锚定结尾且含显式单位/容器词的后缀（斤/司馬斤 族、裸数字、NxM 货号禁入）。
+    from app.services.name_suffix_rules import strip_suffix
+    text = strip_suffix(text, _suffix_rules())
     text = re.sub(r"[\s·•：:]*$", "", text)
     return text
 

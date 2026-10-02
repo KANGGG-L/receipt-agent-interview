@@ -323,7 +323,7 @@ class OpenAIChatModel(BaseChatModel):
     api_key: str = ""
     model: str = ""
     temperature: float = 0.0
-    max_tokens: int = 4096
+    max_tokens: int = 4000
     image_detail: str = "high"
     call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build / build_parse_model 注入
     reasoning_effort: str = ""  # 思考强度，仅在有效档位时向请求体注入
@@ -401,11 +401,27 @@ class OpenAIChatModel(BaseChatModel):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = "Bearer " + self.api_key
+        # F1 基线运行注记（phase0-measurement，非口径分：不改任何评分行为）：
+        # 推理型模型（如 deepseek-v4.1-flash）的思考段同样消耗 completion 预算，
+        # 写死 4000 时 reasoning 会在长图任务上耗尽预算 → finish_reason=length、content 空。
+        # 允许 OPENAI_REC_MAX_TOKENS 显式抬高上限；未设置/非法值时沿用 self.max_tokens
+        # （主仓引擎配置腿解析出的值，缺省 4000）原口径不变。
+        max_tokens = self.max_tokens
+        _mt_env = _os.environ.get("OPENAI_REC_MAX_TOKENS", "").strip()
+        if _mt_env.isdigit() and int(_mt_env) > 0:
+            max_tokens = int(_mt_env)
+        # 同批注记：60s 硬上限是高压后厨交互场景的产品护栏；离线评测批量跑推理型模型
+        # （单张实测 ~56s）会被频繁掐断。允许 OPENAI_REC_CALL_TIMEOUT 抬高传输超时
+        # （硬顶 600s），仅影响本传输参数；未设置/非法时保持 self.call_timeout 原口径。
+        call_timeout = self.call_timeout
+        _ct_env = _os.environ.get("OPENAI_REC_CALL_TIMEOUT", "").strip()
+        if _ct_env.isdigit() and int(_ct_env) > 0:
+            call_timeout = min(int(_ct_env), 600)
         payload = {
             "model": self.model,
             "messages": payload_messages,
             "temperature": self.temperature,
-            "max_tokens": self.max_tokens,
+            "max_tokens": max_tokens,
         }
         if self.reasoning_effort and self.reasoning_effort in {"low", "medium", "high", "xhigh", "max"}:
             payload["reasoning_effort"] = self.reasoning_effort
@@ -414,7 +430,7 @@ class OpenAIChatModel(BaseChatModel):
             resp = requests.post(
                 url, headers=headers,
                 json=payload,
-                timeout=self.call_timeout,
+                timeout=call_timeout,
                 allow_redirects=False,
             )
             _call_ms = round((_t.time() - _call_start) * 1000, 1)

@@ -14,19 +14,40 @@
 报告里 engine 字段会如实写 "stub"。
 
 契约：run_eval(split, prompt_version, engine, model) -> EvalReport
-    EvalReport = {accuracy, cer, per_field_accuracy, edit_proxy, evidence_coverage,
-                  avg_tokens, p50_latency_ms, gt_status_breakdown, sample_ids[]}
+    EvalReport = {accuracy, cer, per_field_accuracy, per_field_f1, field_f1_groups,
+                  edit_proxy, evidence_coverage, avg_tokens, p50_latency_ms,
+                  gt_status_breakdown, sample_ids[]}
+
+per-field P/R/F1（阶段 0 工作项①，并列新增口径，不替换 accuracy）——
+TP/FP/FN 唯一权威口径（对字段 f 的每个计分实例）：
+
+    | 情形                                            | 判定        |
+    |-------------------------------------------------|------------|
+    | 对齐对 (e,p)，e 与 p 的 f 双 present 且相等       | TP +1      |
+    | 对齐对 (e,p)，双 present 但不等                   | FP +1 且 FN +1（值错误） |
+    | 对齐对 (e,p)，e present、p 缺失（None/空）        | FN +1      |
+    | 对齐对 (e,p)，e 缺失、p present                  | FP +1（多抽） |
+    | 双缺失                                           | 不计分（跳过） |
+    | 未配对 GT 行 (e, None)：e 的 f present            | FN +1      |
+    | 未配对预测行 (None, p)：p 的 f present            | FP +1      |
+
+聚合一律 **micro**（整集 tp/fp/fn 直接累加后再算 P/R/F1），明令禁止样本级 F1 求平均
+（macro）——33 张小分母上单张 1.0 会稀释真实错误。precision=tp/(tp+fp)、
+recall=tp/(tp+fn)、f1=2PR/(P+R)，分母 0 取 0.0；P/R/F1 round 4，tp/fp/fn 为 int。
+item_count / CER / evidence_coverage 非抽取字段，不进 F1 体系。
 """
 
 import argparse
 import csv
+import enum
+import hashlib
 import json
 import os
 import re
 import statistics
 import sys
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEMO_DIR = os.path.abspath(os.path.join(_HERE, ".."))
@@ -50,12 +71,30 @@ ITEM_FIELDS = ("name", "qty", "unit", "unit_price", "amount")
 GT_V2_FEE_FIELDS = ("discount_amount", "deposit_amount", "delivery_fee",
                     "service_fee", "tax_amount", "rounding_adjustment")
 
+# ------------------------------------------------------------------
+# 阶段 0 评测器口径常量（以下均为「口径分」：只修尺子不修模型，任何分数变化
+# 须与模型/数据改进分句陈述，见 EXPLORATION_REPORT §4.1 披露纪律）
+# ------------------------------------------------------------------
+# E2 品名对齐容差：编辑距离 ≤ max(2, 30%·len) 才允许模糊配对（保守，宁漏勿错）
+NAME_FUZZY_REL_TOL = 0.3        # [口径分]
+NAME_FUZZY_MIN_EDIT = 2         # [口径分]
+# E5a vendor 包含式：互为子串且短边归一后长度 ≥ 4 才算等价（防短串蹭分）
+VENDOR_CONTAIN_MIN_LEN = 4      # [口径分]
+
 
 # ------------------------------------------------------------------
 # 归一化
 # ------------------------------------------------------------------
 def _norm_text(s):
-    """文本归一：去空白/常见标点 + 全角半角 + 大小写。"""
+    """文本归一：去空白/常见标点 + 全角半角 + 大小写。
+
+    [口径分] E1：pydantic>=2 的 model_dump(mode="python") 对 str-Enum 返回**枚举成员**
+    而非字符串（见 app.models.DocForm / supervisor.data.model_dump()），str() 成员得到
+    "DocForm.PRINTED" 而非 "printed_delivery_note"，导致 doc_form 恒错。首行先做枚举
+    转型，同时覆盖未来任何 enum 字段；不改 app/models.py、不改 eval_norm.py。
+    """
+    if isinstance(s, enum.Enum):
+        s = s.value          # pydantic v2 model_dump() 对 str-Enum 返回成员而非字符串
     s = str(s if s is not None else "").strip().lower()
     s = re.sub(r"[\s　]+", "", s)
     s = re.sub(r"[()（）\[\]【】,，.。:：\-_/\\|]", "", s)
@@ -99,6 +138,32 @@ def _norm_num(v, ndigits=2):
 _norm_payment_marked = eval_norm.coerce_payment_marked
 
 
+# ------------------------------------------------------------------
+# 单位语义等价（阶段 0 工作项③，[口径分]）：阶段 2A 工作项②起，实现整体上收至
+# app/services/unit_normalization.py（评分器与 unit 类记忆事实共用同一把尺子，
+# 消灭两份归一/判等逻辑）。本文件只保留同名别名符号——阶段 0 测试
+# （test_eval_unit_equivalence.py）对这些符号的行为级断言零改动全绿（零漂移判据）。
+# why：旧口径对 item.unit 只做归一后字符串严格相等（P5），司马斤/斤、瓶/樽/btl 等
+# 等价写法被判错；换算索引已存在且与权威一致，但未接进评分。
+# ------------------------------------------------------------------
+from app.services.unit_normalization import (  # noqa: E402
+    load_unit_equivalence, norm_unit, units_equal)
+
+UNIT_EQUIV_PATH = os.path.join(DEMO_DIR, "app", "services", "unit_equivalence.yaml")
+_load_unit_equivalence = load_unit_equivalence  # 模块别名（测试直接传 tmp 路径仍成立）
+_UNIT_EQUIV = load_unit_equivalence(UNIT_EQUIV_PATH)
+
+
+def _norm_unit(raw):
+    """单位归一（[口径分]）：枚举转型 → 规格污染括号剥离 → _norm_text。"""
+    return norm_unit(raw, _UNIT_EQUIV)
+
+
+def _units_equal(a_raw, b_raw):
+    """单位等价判定（[口径分]）：短路顺序 1/2/3 见 unit_normalization.units_equal。"""
+    return units_equal(a_raw, b_raw, _UNIT_EQUIV)
+
+
 def normalize(payload):
     """把 GT / 预测统一成比对用的结构（兼容 supplier_name / total_amount / quantity 等别名）。
 
@@ -124,7 +189,9 @@ def normalize(payload):
         items.append({
             "name": _norm_name(name),
             "qty": _norm_num(qty),
-            "unit": _norm_text(it.get("unit", "")),
+            # [口径分] ③：unit 归一改走 _norm_unit（枚举转型 + 规格括号剥离 + _norm_text），
+            # 使「箱（48罐）」在比对前先剥成「箱」；空串语义不变（空 = 缺失）
+            "unit": _norm_unit(it.get("unit", "")),
             "unit_price": _norm_num(it.get("unit_price")),
             "amount": _norm_num(it.get("amount")),
             "evidence": it.get("evidence"),
@@ -194,30 +261,187 @@ def _evidence_coverage(items):
 # 单张比对
 # ------------------------------------------------------------------
 def _align_items(exp_items, pred_items):
-    """明细行对齐：先按归一化品名贪心配对，剩下按下标对齐。
+    """明细行对齐（[口径分] 三段式，宁漏勿错）。
 
-    返回 [(exp_item|None, pred_item|None)]，未配上的一侧为 None（计为全错）。
+    段 A（优先级不变）：归一品名严格相等贪心——完全匹配 GT 的路径逐字节同结果。
+    段 B（模糊对齐）：剩余行按品名编辑距离配对，阈值
+        dist ≤ min(max(NAME_FUZZY_MIN_EDIT, floor(NAME_FUZZY_REL_TOL·len)), len-1)
+    按 (距离, exp 下标, pred 下标) 升序贪心取不冲突对（确定性）。
+    段 C（数字签名兜底）：仍剩余者按 (qty, unit_price, amount)（经 _norm_num）完全
+    相等、且 sig 至少一个非 None、且该 sig 在剩余 exp 与剩余 pred 中**各自唯一**
+    （并列即不配）才配对；按 (exp 下标, pred 下标) 升序。
+
+    why [口径分]：旧实现按品名严格相等配对，1 处品名 OCR 误读（S030 江團魚 vs 江鱸魚）
+    把 qty/price/amount 全对的整行 5 字段级联计错（E2 对齐级联放大）。段 B 的
+    `min(…, len-1)` 上限是防短名被 max(2,…) 下限整个吃进容差：2 字名 dist=2 等于整个
+    名字都换掉（白菜 vs 蘿蔔），相对容差 100% 不应配对。
+    只修尺子不修模型。返回 [(exp_item|None, pred_item|None)]，未配上的一侧为 None。
     """
-    pairs = []
-    used = set()
-    for e in exp_items:
+    used_e = set()
+    used_p = set()
+    pairs_idx = []
+    # 段 A：归一品名严格相等贪心（原口径，行为不变）
+    for i, e in enumerate(exp_items):
         ename = e.get("name", "")
         matched = None
         for j, p in enumerate(pred_items):
-            if j in used:
+            if j in used_p:
                 continue
             if ename and p.get("name") == ename:
                 matched = j
                 break
-        if matched is None:
-            pairs.append((e, None))
-        else:
-            used.add(matched)
-            pairs.append((e, pred_items[matched]))
+        if matched is not None:
+            used_e.add(i)
+            used_p.add(matched)
+            pairs_idx.append((i, matched))
+    # 段 B：品名编辑距离模糊配对（确定性：按 (距离, exp 下标, pred 下标) 升序贪心）
+    cands = []
+    for i, e in enumerate(exp_items):
+        if i in used_e:
+            continue
+        ename = e.get("name", "")
+        if not ename:
+            continue
+        tol = min(max(NAME_FUZZY_MIN_EDIT, int(NAME_FUZZY_REL_TOL * len(ename))),
+                  max(len(ename) - 1, 0))
+        for j, p in enumerate(pred_items):
+            if j in used_p:
+                continue
+            if _levenshtein(ename, p.get("name", "")) <= tol:
+                cands.append((_levenshtein(ename, p.get("name", "")), i, j))
+    for _d, i, j in sorted(cands):
+        if i in used_e or j in used_p:
+            continue
+        used_e.add(i)
+        used_p.add(j)
+        pairs_idx.append((i, j))
+    # 段 C：数字签名兜底（两侧各自唯一才配，并列即不配，宁漏勿错）
+    def _sig(item):
+        return tuple(_norm_num(item.get(k)) for k in ("qty", "unit_price", "amount"))
+
+    from collections import Counter
+    rem_e = [(i, _sig(e)) for i, e in enumerate(exp_items) if i not in used_e]
+    rem_p = [(j, _sig(p)) for j, p in enumerate(pred_items) if j not in used_p]
+    exp_sig_count = Counter(s for _, s in rem_e)
+    pred_sig_count = Counter(s for _, s in rem_p)
+    for i, j in sorted((i, j) for i, si in rem_e for j, sj in rem_p
+                       if si == sj and any(v is not None for v in si)
+                       and exp_sig_count[si] == 1 and pred_sig_count[sj] == 1):
+        if i in used_e or j in used_p:
+            continue
+        used_e.add(i)
+        used_p.add(j)
+        pairs_idx.append((i, j))
+    # 组装：保持原顺序语义——按 exp 下标输出配对/未配对行，尾部追加未配对预测行
+    by_e = dict(pairs_idx)
+    used_p_final = set(by_e.values())
+    out = []
+    for i, e in enumerate(exp_items):
+        j = by_e.get(i)
+        out.append((e, pred_items[j]) if j is not None else (e, None))
     for j, p in enumerate(pred_items):
-        if j not in used:
-            pairs.append((None, p))
-    return pairs
+        if j not in used_p_final:
+            out.append((None, p))
+    return out
+
+
+class FieldStat(list):
+    """field_stats 行：[total, matched, tp, fp, fn]（前两位语义冻结）。
+
+    why 子类定 __eq__：既有断言（test_eval_harness / test_eval_payment_marked_norm）
+    写作 `field_stats["payment_marked"] == [1, 1]`——扩出 F1 三元组后该断言形式必须
+    继续成立，故前两位与两位 list 判等兼容；len!=2 的普通 list 语义不变。
+    """
+    def __eq__(self, other):
+        if isinstance(other, list) and len(other) == 2 and len(self) == 5:
+            return self[0] == other[0] and self[1] == other[1]
+        return list.__eq__(self, other)
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+# F1 presence 的文本类字段（归一后非空 = present）；其余数值/布尔字段 not None 即 present
+_F1_TEXT_FIELDS = ("vendor", "date", "doc_form", "currency", "item.name", "item.unit")
+# 不进 F1 体系的字段（非抽取字段，避免双重计分；维持 accuracy 键）
+_NON_F1_FIELDS = ("item_count",)
+
+
+def _field_present(field, value):
+    """字段计分实例的 presence 判定：文本类归一后非空；数值/布尔 not None；
+    adjustment_notes 为非空 list。"""
+    if field in _F1_TEXT_FIELDS:
+        return bool(value)
+    if field == "adjustment_notes":
+        return isinstance(value, list) and bool(value)
+    return value is not None
+
+
+def _vendor_equal(a, b):
+    """vendor 等价判定（[口径分] E5a）：相等，或互为子串（任一方向）且短边归一后
+    长度 ≥ VENDOR_CONTAIN_MIN_LEN。why：预测只出中文段 vs GT 全称必错的假错
+    （ERRORS §3.2 E5）；短串下限防「公司」这类通用词蹭分。"""
+    if a == b:
+        return True
+    if not a or not b:
+        return False
+    short, long_s = (a, b) if len(a) <= len(b) else (b, a)
+    if len(short) < VENDOR_CONTAIN_MIN_LEN:
+        return False
+    return short in long_s
+
+
+def _prf(tp, fp, fn):
+    """P/R/F1（分母 0 取 0.0；P/R/F1 round 4）。"""
+    precision = tp / float(tp + fp) if (tp + fp) else 0.0
+    recall = tp / float(tp + fn) if (tp + fn) else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if (precision + recall) else 0.0
+    return round(precision, 4), round(recall, 4), round(f1, 4)
+
+
+def _per_field_f1_from_stats(field_stats):
+    """由聚合 field_stats（值含 tp/fp/fn 位）产出 per_field_f1（micro 口径）。
+
+    只输出有计分实例（tp+fp+fn>0）的字段；tp/fp/fn 保留原始 int 供 QA 手算复核。
+    """
+    out = {}
+    for name, stat in sorted(field_stats.items()):
+        if name in _NON_F1_FIELDS:
+            continue
+        tp, fp, fn = stat[2], stat[3], stat[4]
+        if tp + fp + fn == 0:
+            continue
+        precision, recall, f1 = _prf(tp, fp, fn)
+        out[name] = {"tp": tp, "fp": fp, "fn": fn,
+                     "precision": precision, "recall": recall, "f1": f1}
+    return out
+
+
+# 口径拆分（工作项④）：high_freq / line_item 两口径组内 micro 聚合，两口径
+# 不得互相搬家（防 86.4/98.2 式跨口径复发的机制性约束）。费用与 adjustment_notes
+# 实例归入 high_freq。
+F1_GROUP_HIGH_FREQ = ("vendor", "date", "total", "doc_form", "payment_marked",
+                      "currency") + GT_V2_FEE_FIELDS + ("adjustment_notes",)
+F1_GROUP_LINE_ITEM = tuple("item." + f for f in ITEM_FIELDS)
+
+
+def _field_f1_groups(field_stats):
+    """field_f1_groups：两组各 micro 聚合（tp/fp/fn 求和后算 P/R/F1）。"""
+    groups = {}
+    for gname, fields in (("high_freq", F1_GROUP_HIGH_FREQ),
+                          ("line_item", F1_GROUP_LINE_ITEM)):
+        tp = fp = fn = 0
+        for f in fields:
+            stat = field_stats.get(f)
+            if not stat:
+                continue
+            tp += stat[2]
+            fp += stat[3]
+            fn += stat[4]
+        precision, recall, f1 = _prf(tp, fp, fn)
+        groups[gname] = {"fields": list(fields), "tp": tp, "fp": fp, "fn": fn,
+                         "precision": precision, "recall": recall, "f1": f1}
+    return groups
 
 
 def compare(expected, predicted):
@@ -225,31 +449,59 @@ def compare(expected, predicted):
 
     返回 {ok, field_total, field_matched, mismatched_fields, field_stats,
           cer, cer_dist, cer_chars, item_total, items_with_evidence}
-    field_stats 为 {字段名: [total, matched]}，供整集层面精确聚合 per_field_accuracy。
+    field_stats 为 {字段名: FieldStat([total, matched, tp, fp, fn])}：
+    前两位 [total, matched] 语义冻结（供整集层面精确聚合 per_field_accuracy，与
+    历史报告可比）；后三位 tp/fp/fn 为并列新增的 F1 口径（[口径分]，唯一权威
+    定义见模块 docstring），accuracy 位口径一字不动。
     """
     exp = normalize(expected)
     pred = normalize(predicted)
     mismatched = []
     field_stats = {}
 
-    def _cmp(field, a, b):
-        stat = field_stats.setdefault(field, [0, 0])
+    def _cmp(field, a, b, equal=None):
+        """accuracy 位（旧口径不动，unpaired 行维持旧计错语义）。"""
+        stat = field_stats.setdefault(field, FieldStat([0, 0, 0, 0, 0]))
         stat[0] += 1
-        if a == b:
+        ok = (a == b) if equal is None else equal(a, b)
+        if ok:
             stat[1] += 1
         else:
             mismatched.append(field)
 
+    def _f1(field, a, b, equal=None):
+        """F1 位（TP/FP/FN 见模块 docstring 权威表）；双缺失不计分。"""
+        stat = field_stats.setdefault(field, FieldStat([0, 0, 0, 0, 0]))
+        e_present, p_present = _field_present(field, a), _field_present(field, b)
+        if not e_present and not p_present:
+            return
+        ok = (a == b) if equal is None else equal(a, b)
+        if e_present and p_present:
+            if ok:
+                stat[2] += 1
+            else:
+                stat[3] += 1
+                stat[4] += 1
+        elif e_present:
+            stat[4] += 1
+        else:
+            stat[3] += 1
+
     for field in TOP_FIELDS:
-        _cmp(field, exp.get(field), pred.get(field))
+        equal = _vendor_equal if field == "vendor" else None
+        _cmp(field, exp.get(field), pred.get(field), equal)
+        _f1(field, exp.get(field), pred.get(field), equal)
 
     # v2（合并反馈①）：payment_marked 必须——GT 有该字段即比对（识别契约必含，
-    # 缺失即「已付款印章漏识别/多识别」，直接计错）
+    # 缺失即「已付款印章漏识别/多识别」，直接计错）。F1 实例同口径：GT 非 None
+    # 才产生实例（GT 未知 = None 时不反推 FP）。
     if exp.get("payment_marked") is not None:
         _cmp("payment_marked", exp.get("payment_marked"), pred.get("payment_marked"))
+        _f1("payment_marked", exp.get("payment_marked"), pred.get("payment_marked"))
     # 币种：GT 声明了币种才比对（识别侧恒有，默认 HKD）
     if exp.get("currency"):
         _cmp("currency", exp.get("currency"), pred.get("currency"))
+        _f1("currency", exp.get("currency"), pred.get("currency"))
     # 费用与注记按「GT 与识别双有」原则：GT 非零/非空才比对——
     # 恒 0 字段双边天然相等，计入只稀释分数，不提供区分度
     exp_fees = exp.get("fees") or {}
@@ -258,8 +510,10 @@ def compare(expected, predicted):
         ev = exp_fees.get(key)
         if ev is not None and ev != 0:
             _cmp(key, ev, pred_fees.get(key))
+            _f1(key, ev, pred_fees.get(key))
     if exp.get("adjustment_notes"):
         _cmp("adjustment_notes", exp.get("adjustment_notes"), pred.get("adjustment_notes"))
+        _f1("adjustment_notes", exp.get("adjustment_notes"), pred.get("adjustment_notes"))
 
     exp_items = exp["items"]
     pred_items = pred["items"]
@@ -269,7 +523,22 @@ def compare(expected, predicted):
     chars = 0
     for e, p in _align_items(exp_items, pred_items):
         for field in ITEM_FIELDS:
-            _cmp("item.%s" % field, (e or {}).get(field), (p or {}).get(field))
+            fname = "item.%s" % field
+            ev_ = (e or {}).get(field)
+            pv_ = (p or {}).get(field)
+            # accuracy 位：unit 从 a==b 改为 _units_equal（[口径分] ③），其余字段
+            # 判等逻辑一字不动；unpaired 行维持旧计错语义（None==None 计 match）
+            equal = _units_equal if field == "unit" else None
+            _cmp(fname, ev_, pv_, equal)
+            # F1 位：未配对行按权威表只计 FN/FP（e 侧 present→FN，p 侧 present→FP）
+            if e is None:
+                if _field_present(fname, pv_):
+                    field_stats.setdefault(fname, FieldStat([0, 0, 0, 0, 0]))[3] += 1
+            elif p is None:
+                if _field_present(fname, ev_):
+                    field_stats.setdefault(fname, FieldStat([0, 0, 0, 0, 0]))[4] += 1
+            else:
+                _f1(fname, ev_, pv_, equal)
         # CER 统计文本转录质量：品名逐行累加编辑距离
         e_name = (e or {}).get("name", "") or ""
         p_name = (p or {}).get("name", "") or ""
@@ -371,9 +640,48 @@ def _real_predictor(engine, model, prompt_version):
 # ------------------------------------------------------------------
 # 主流程
 # ------------------------------------------------------------------
+def _baseline_sha256(payload):
+    """基线文件 sha256：对不含 sha256 键的 canonical JSON（ensure_ascii=False、
+    sort_keys=True、indent=2）的 UTF-8 字节计算。"""
+    body = {k: v for k, v in payload.items() if k != "sha256"}
+    canonical = json.dumps(body, ensure_ascii=False, sort_keys=True, indent=2)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _count_gt_items(gt):
+    """GT 明细分母计数（收尾波次④c）：freeze_eval_baseline.count_gt_items 的消费别名。
+
+    why 不本地再写一份：冻结侧与 run 侧的计数口径必须**逐字节同源**（同一根因一份
+    实现），否则显式比对会因两套实现漂移出假差异。惰性 import 同目录模块（scripts
+    已在 sys.path，与上方 import eval_norm 同机制）。
+    """
+    from freeze_eval_baseline import count_gt_items
+    return count_gt_items(gt)
+
+
+def _denominator_mismatches(b_denoms, actual_denoms):
+    """冻结件 denominators 与 run 侧实际分母的逐键差异（④c）。
+
+    返回 [{"key", "baseline", "actual"}]；空列表 = 逐键一致。两键集合取并：
+    冻结件多出的键（baseline 独有）与 run 侧多出的键都是漂移，不得静默忽略。
+    """
+    out = []
+    for k in sorted(set(b_denoms) | set(actual_denoms)):
+        bv, av = b_denoms.get(k), actual_denoms.get(k)
+        if bv != av:
+            out.append({"key": k, "baseline": bv, "actual": av})
+    return out
+
+
+def _format_denominator_mismatches(mismatches):
+    """逐键差异的一行文本（stdout 警告 / strict 报文共用，口径单一）。"""
+    return ", ".join("%s baseline=%s actual=%s" % (m["key"], m["baseline"], m["actual"])
+                     for m in mismatches)
+
+
 def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", model=None,
              limit=None, evalset_dir=None, report_dir=None, predictor=None,
-             require_confirmed=None):
+             require_confirmed=None, baseline=None, baseline_strict=False):
     """跑一个 split 的评测，返回 EvalReport（dict）。
 
     predictor（可选）：自定义预测器 `(image_path, sample_id) -> (payload|None, meta)`，
@@ -386,6 +694,13 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
     抽检确认的 GT，分数不得作为生产基线），CLI 侧同时在 stdout 大字警告。
     为 True 时，该 split 存在任何未 confirmed 的 GT（missing/draft）即拒绝出分
     （SystemExit），保证报告只由人工抽检确认过的 GT 产生。
+
+    baseline（可选，工作项④）：冻结周基线分母文件路径（freeze_eval_baseline.py
+    产出）。传入时报告新增 baseline_file / baseline_sha256 / baseline_match /
+    baseline_missing_samples / baseline_extra_samples 键：冻结文件 sha256 自校验
+    不符（被篡改）→ stdout 警告且 match=false；本次实际读到 GT 的 sample 集合与
+    冻结 sample_ids 的差集任一非空 → match=false。baseline_strict=True 时
+    match=false 直接 SystemExit（周报流水线门禁用），默认只警告（向后兼容）。
     """
     evalset_dir = os.path.abspath(evalset_dir or DEFAULT_EVALSET_DIR)
     report_dir = os.path.abspath(report_dir or DEFAULT_REPORT_DIR)
@@ -432,6 +747,11 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
     latencies, tokens_list = [], []
     gt_status_breakdown = {}
     scored = ok_count = error_count = 0
+    scored_sample_ids = []   # 成功读到 GT 的样本（基线分母比对用，工作项④）
+    # run 侧 GT 明细计数（收尾波次④c）：与冻结件 denominators 显式逐键比对用。
+    # 只对 readable GT 计数 —— 与 freeze 的口径一致（缺 GT 样本计 samples 不计 items_gt）。
+    run_items_gt = 0
+    run_unit_present_gt = 0
 
     for row in rows:
         sample_id = row["sample_id"]
@@ -439,6 +759,11 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         expected = _load_expected(evalset_dir, sample_id)
         if expected is None:
             gt_status = "missing"
+        else:
+            scored_sample_ids.append(sample_id)
+            _n_items, _n_unit = _count_gt_items(expected)
+            run_items_gt += _n_items
+            run_unit_present_gt += _n_unit
         gt_status_breakdown[gt_status] = gt_status_breakdown.get(gt_status, 0) + 1
 
         record = {
@@ -487,10 +812,10 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         items_with_evidence += res["items_with_evidence"]
         cer_dist += res["cer_dist"]
         cer_chars += res["cer_chars"]
-        for name, (t, m) in res["field_stats"].items():
-            stat = field_stats.setdefault(name, [0, 0])
-            stat[0] += t
-            stat[1] += m
+        for name, stat in res["field_stats"].items():
+            agg = field_stats.setdefault(name, [0, 0, 0, 0, 0])
+            for k in range(5):
+                agg[k] += stat[k]
         if res["ok"]:
             ok_count += 1
         record["ok"] = res["ok"]
@@ -501,6 +826,9 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         name: round(stat[1] / float(stat[0]), 4)
         for name, stat in sorted(field_stats.items()) if stat[0]
     }
+    # F1 并列新增口径（[口径分]）：整集 tp/fp/fn 累加后算 P/R/F1（micro，禁 macro）
+    per_field_f1 = _per_field_f1_from_stats(field_stats)
+    field_f1_groups = _field_f1_groups(field_stats)
 
     report = {
         "split": split,
@@ -514,6 +842,8 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         "accuracy": round(ok_count / float(scored), 4) if scored else 0.0,
         "cer": round(cer_dist / float(cer_chars), 4) if cer_chars else 0.0,
         "per_field_accuracy": per_field_accuracy,
+        "per_field_f1": per_field_f1,
+        "field_f1_groups": field_f1_groups,
         "edit_proxy": round((field_total - field_matched) / float(scored), 4) if scored else 0.0,
         "evidence_coverage": round(items_with_evidence / float(items_total), 4) if items_total else 0.0,
         "avg_tokens": round(statistics.mean(tokens_list), 1) if tokens_list else 0.0,
@@ -526,6 +856,60 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         # L2：test split 显式 --no-require-confirmed 时带 partial 标记，
         # 下游与评审一眼识别「含未确认 GT 的分数」
         report["gt_status"] = "partial"
+
+    # ④c：分母显式比对的报告键 —— baseline 未传时恒 None（消费方按 None 判"无基线"）
+    report["baseline_denominators_baseline"] = None
+    report["baseline_denominators_actual"] = None
+
+    if baseline:
+        # 工作项④：冻结周基线分母消费（sha256 自校验 + sample 集合差集）
+        # ④c 追加：denominators 数值显式逐键比对 —— sha256 只保护文件完整性，
+        # 篡改分母并重算 sha 仍能过自校验（G3 场景的分母版），必须数值比对兜底。
+        bpath = os.path.abspath(baseline)
+        with open(bpath, encoding="utf-8") as f:
+            bpayload = json.load(f)
+        declared_sha = bpayload.get("sha256")
+        calc_sha = _baseline_sha256(bpayload)
+        b_ids = list(bpayload.get("sample_ids") or [])
+        b_set, a_set = set(b_ids), set(scored_sample_ids)
+        missing = [s for s in b_ids if s not in a_set]
+        extra = [s for s in scored_sample_ids if s not in b_set]
+        # run 侧四值与冻结件 denominators 同源同键（samples=len(rows)，与 freeze
+        # len(sample_ids) 同源；confirmed/draft 来自 gt_status_breakdown；GT 明细
+        # 计数经 count_gt_items 唯一实现累计）
+        actual_denoms = {
+            "samples": len(rows),
+            "confirmed": gt_status_breakdown.get("confirmed", 0),
+            "draft": gt_status_breakdown.get("draft", 0),
+            "items_gt": run_items_gt,
+            "unit_present_gt": run_unit_present_gt,
+        }
+        b_denoms = bpayload.get("denominators") or {}
+        denom_mismatches = _denominator_mismatches(b_denoms, actual_denoms)
+        match = ((declared_sha == calc_sha) and not missing and not extra
+                 and not denom_mismatches)
+        if declared_sha != calc_sha:
+            print("!! 警告：基线文件被篡改（sha256 自校验失败）：%s" % bpath)
+        if denom_mismatches:
+            print("!! 警告：基线分母不一致（显式比对）：%s"
+                  % _format_denominator_mismatches(denom_mismatches))
+        report["baseline_file"] = bpath
+        report["baseline_sha256"] = declared_sha
+        report["baseline_match"] = match
+        report["baseline_missing_samples"] = missing
+        report["baseline_extra_samples"] = extra
+        report["baseline_denominators_baseline"] = b_denoms
+        report["baseline_denominators_actual"] = actual_denoms
+        report["baseline_denominator_mismatches"] = denom_mismatches
+        if baseline_strict and not match:
+            if denom_mismatches:
+                raise SystemExit(
+                    "基线分母不一致（--baseline-strict 拒绝出分）：%s（%s）"
+                    % (bpath, _format_denominator_mismatches(denom_mismatches)))
+            raise SystemExit(
+                "基线分母校验失败（--baseline-strict 拒绝出分）：%s"
+                "（missing=%d extra=%d sha_ok=%s）"
+                % (bpath, len(missing), len(extra), declared_sha == calc_sha))
 
     os.makedirs(report_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -552,6 +936,19 @@ def _print_summary(report):
     print("  p50_latency_ms    %.1f" % report["p50_latency_ms"])
     print("  gt_status         %s" % report["gt_status_breakdown"])
     print("  per_field         %s" % json.dumps(report["per_field_accuracy"], ensure_ascii=False))
+    # [口径分] F1 为并列新增口径（micro 聚合），与 accuracy 分列陈述，不得混用
+    print("  per_field_f1      %s   （micro，[口径分]）"
+          % json.dumps(report.get("per_field_f1", {}), ensure_ascii=False, sort_keys=True))
+    for gname in ("high_freq", "line_item"):
+        g = (report.get("field_f1_groups") or {}).get(gname) or {}
+        print("  %-12s F1=%.4f (P=%.4f R=%.4f tp=%d fp=%d fn=%d)   [口径分·两口径不得互相搬家]"
+              % (gname, g.get("f1", 0.0), g.get("precision", 0.0), g.get("recall", 0.0),
+                 g.get("tp", 0), g.get("fp", 0), g.get("fn", 0)))
+    if "baseline_match" in report:
+        print("  baseline          %s (sha=%s, missing=%d, extra=%d)"
+              % (report["baseline_match"], (report.get("baseline_sha256") or "")[:12],
+                 len(report.get("baseline_missing_samples") or []),
+                 len(report.get("baseline_extra_samples") or [])))
     print("report → %s" % report["report_path"])
     print("=" * 68)
 
@@ -574,12 +971,19 @@ def main():
                          "test split 默认强制（生产准入），可用 --no-require-confirmed 显式关闭"
                          "（报告带 gt_status=partial 标记并大字警告）；val/train 默认关闭，"
                          "需显式 --require-confirmed 才开启")
+    ap.add_argument("--baseline", default=None,
+                    help="冻结周基线分母文件（freeze_eval_baseline.py 产出）；传入后报告带"
+                         " baseline_match 等键，sample 集合与冻结分母不一致即 match=false")
+    ap.add_argument("--baseline-strict", action="store_true", default=False,
+                    help="baseline_match=false 时直接 SystemExit（周报流水线门禁用）；"
+                         "默认只警告（向后兼容）")
     args = ap.parse_args()
 
     report = run_eval(split=args.split, prompt_version=args.prompt, engine=args.engine,
                       model=args.model, limit=args.limit,
                       evalset_dir=args.evalset_dir, report_dir=args.report_dir,
-                      require_confirmed=args.require_confirmed)
+                      require_confirmed=args.require_confirmed,
+                      baseline=args.baseline, baseline_strict=args.baseline_strict)
     if report.get("gt_status") == "partial":
         # L2 大字警告：test split 被显式关闭 GT 确认门禁，分数仅作调参参考
         print("!" * 68)

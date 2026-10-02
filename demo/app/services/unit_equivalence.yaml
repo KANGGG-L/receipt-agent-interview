@@ -1,0 +1,18 @@
+# 单位语义等价表 —— 评分与 unit 类记忆事实共用（阶段 2A 起）；新增等价组须注明对
+# per_field_f1(item.unit) 的影响量级。
+# 维护纪律：新增等价组须在 PR 描述注明对 per_field_f1(item.unit) 的影响量级。
+version: "2026-09-27"
+# 组内任一写法互相等价（归一 _norm_text 后大小写不敏感比对）
+groups:
+  - [瓶, 樽, btl]           # 87 行覆盖（ERRORS §2.2 ①）
+  - [箱, case, ctn]         # 45 行
+  - [包, pack, bag]         # 82 行
+  - [支, 枝]                # 10 行
+  - [kg, 千克, 公斤]        # 与换算表同义双保险
+  - [lb, lbs, 磅]           # 56 行
+  - [斤, 司马斤, 司馬斤, 港斤, catty]   # 同系数 0.6048，换算路径双保险
+# 规格污染剥离：箱（48罐）→ 箱（括号内容剥离后再比对）
+strip_paren_spec: true
+# 换算等价：两侧都能被 currency_unit_converter.UNIT_TO_KG 映射到相同系数才等价。
+# 注意：斤(0.6048) vs 磅(0.4536) 系数不同 → 必须判错（这是语义，不是噪声）。
+convert_via_converter: true

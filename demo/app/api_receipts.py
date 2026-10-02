@@ -549,6 +549,34 @@ async def upload_receipt(
             logging.getLogger("api_receipts").warning(
                 "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
 
+    # P2-T6 首轮供应商预判（后端）：前端手选优先——仅在 vendor_hint 为空时预判，
+    # 避免预判覆盖用户明确选择。开关走 settings 键 vendor_precheck_enabled，缺省 false
+    # （零行为变化）；predict_vendor 内部已兜底（裁剪/引擎/超时/解析失败一律空串、
+    # 不抛异常），这里只再防一层导入期意外，且必须留痕不静默吞掉。
+    # cfg 必须显式传：build_recognition_model(cfg=None) 会走硬编码默认模型、绕过管理台
+    # 配置的识别引擎（P1 审核 mustFix M1）；get_engine_config 读失败时传 None，
+    # 由 predict_vendor 内部兜底解析。
+    # 可观测性（additive）：区分显式 vendor_hint 的两个来源 —— 用户手填（"user"）与
+    # 预判填充（"precheck"，仅原 hint 为空且 predict_vendor 给出非空值时）。两者皆无
+    # （预判失败/关闭）保持空串：下游 extra 不写键、Job result 字段为空串。只做来源
+    # 标记，不改变 hint 取值与识别链路任何行为。
+    _hint_origin = "user" if str(vendor_hint or "").strip() else ""
+    if not vendor_hint:
+        try:
+            from app.services import vendor_precheck
+            try:
+                _vp_cfg = db.get_engine_config()
+            except Exception as _cfg_err:
+                logging.getLogger("api_receipts").warning(
+                    "[WARN] 预判读取引擎配置失败，回落默认模型: %s", _cfg_err)
+                _vp_cfg = None
+            vendor_hint = vendor_precheck.predict_vendor(image_path, cfg=_vp_cfg)
+            if str(vendor_hint or "").strip():
+                _hint_origin = "precheck"
+        except Exception as _vp_err:
+            logging.getLogger("api_receipts").warning(
+                "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
+
     job_id, receipt_id = start_recognition_job(
         pipeline_image_path, vendor_hint=vendor_hint or "",
         tenant_id=_tenant_id(request),  # P0-1: 上传链路租户透传
@@ -1260,6 +1288,16 @@ def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
         supplier_id = getattr(row, "supplier_id", None)
         if supplier_id in (None, ""):
             supplier_id = db.resolve_supplier_id(vendor, tenant_id=tenant_id)
+        if not supplier_id:
+            # E2E 注记②（收尾波次工作项②）：抽取期也镜像 parse 期的记忆先验档
+            # （receipt_utils 供应商锚点第四档同款）—— vendor 按名解析不出档案时，
+            # 同名唯一 active 记忆行携带的锚点兜底（唯一候选才用，不猜）。db 函数
+            # 本体只读、带租户门，零改动复用。先验也落空 → 走下方"缺 supplier_id"
+            # 失败分支语义不变（可复盘失败态保留）。
+            supplier_id = db.resolve_supplier_id_from_memory(vendor, tenant_id=tenant_id)
+            if supplier_id:
+                log.info("[supplier_anchor] 抽取期回退锚定 receipt=%s 档=memory_prior "
+                         "supplier_id=%s（vendor=%r）", receipt_id, supplier_id, vendor)
         run_supplier_id = supplier_id
         if not supplier_id:
             log.warning(
@@ -1624,15 +1662,22 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
         return ver_err
 
     old_status = row.status
-    # 幂等入账：写 SKU 库存流水 + 累计（P1-1: 入库链路租户透传，SKU 匹配/建档/流水限定本租户）
+    # 供应商自动建档（approve 后成为正式供应商，归入当前租户）—— 收尾波次工作项③：
+    # 上移到入账之前。新商首单 W1：apply_receipt_to_inventory 期的 SKU 匹配收窄与
+    # vendor_sku_alias 别名登记都以供应商锚点为前提，建档先于入账，首单别名登记才
+    # 有锚点可用（E2E 注记①：原时序下 apply 先跑，首单别名登记恒 NO_SUPPLIER）。
+    # 重排不新增任何建档时机（本块本就是人工闸后动作：owner 点了 approve 才执行），
+    # 幂等守卫 find_supplier_by_name 原样保留；建档失败（create_supplier 返回 err）
+    # 不阻断 approve 主链路 —— 沿用原错误语义（返回值不抛出）。
+    if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=_tenant_id(request)) is None:
+        db.create_supplier(row.supplier_name, tenant_id=_tenant_id(request))
+    # 幂等入账：写 SKU 库存流水 + 累计（P1-1: 入库链路租户透传，SKU 匹配/建档/流水限定
+    # 本租户）—— 在新商建档之后执行，apply 期的锚点解析才查得到刚建的档案。
     from app.services.inventory import apply_receipt_to_inventory
     apply_receipt_to_inventory(row, tenant_id=_tenant_id(request))
     db.update_receipt(receipt_id, status="approved", version=row.version + 1)
     db.append_audit_log(receipt_id, who, "approve_receipt", "status", old_status, "approved")
     row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
-    # 供应商自动建档（approve 后成为正式供应商，归入当前租户）
-    if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=_tenant_id(request)) is None:
-        db.create_supplier(row.supplier_name, tenant_id=_tenant_id(request))
     # 回写 VendorMemory（只认正向信号：老板批准）
     # T3 Gap B1：透传 tenant_id 与触发 receipt_id（source_ref 可回溯）
     # J3：同时透传单据行上的权威主体锚点 supplier_id —— 本行是同一租户的档案主键，

@@ -4,6 +4,14 @@
 - /api/admin/engine-config（GET/PUT）：换识别/审核模型、切灰测模式
 - /api/admin/grey-test：灰测状态可视化
 - /api/review：AI 复盘（价格异动/供应商洞察，owner 可用）
+- /api/vendor_price_hint：复核侧「供应商×SKU 历史价格区间」只读提示（不上生成侧）
+- /api/admin/vendor-memory（GET）与 /api/admin/vendor-memory/{memory_id}（GET）：
+  已生效记忆的治理视图（D5 人可查看的记忆界面），取数一律复用 db.list_vendor_memory
+- /api/admin/memory-consistency 与 /api/admin/vendor-sku-alias-consistency（GET）：
+  两个只读巡检端点，判定分别复用 services/memory_consistency 与
+  scripts/check_vendor_sku_alias.py 的**既有实现**（不在端点里重写巡检 SQL）
+- /api/admin/parsing-stale（GET）：超期卡在 parsing 的单据清单（只读），判定复用
+  services/receipt_utils.stale_parsing_query —— 与启动自检同一识别口径
 """
 
 import logging
@@ -15,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import re
 from app import db
-from app.auth import require_admin, require_role
+from app.auth import require_admin, require_role, resolve_tenant
 from app.services.engine_config_diff import engine_config_field_diff
 from app.services.security_guard import mask_secret_key
 
@@ -117,9 +125,8 @@ def record_engine_config_history(version, actor, action, snapshot, changed_keys)
 
 
 def _tenant_id(request: Request) -> str:
-    """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
-    return (request.headers.get("X-Tenant-Id")
-            or request.headers.get("x-tenant-id") or "default").strip() or "default"
+    """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
+    return resolve_tenant(request)
 
 
 def resolve_tenant_filter(request: Request, query_value=None):
@@ -878,7 +885,13 @@ def diff_regular_vs_grey(request: Request):
 
 @router.get("/api/admin/engine-presets")
 def get_engine_presets(request: Request):
-    """返回常用预设网关配置，自动融入 .env 中的真实密钥。"""
+    """返回常用预设网关配置，密钥经脱敏后回显（不回传明文）。
+
+    why: 本端点此前把 .env 中的真实 API Key 明文返回给浏览器，与同文件 /api/admin/engine-config
+    的脱敏口径不一致，属明文密钥外泄。现统一经 mask_secret_key 脱敏。
+    保存链路兼容掩码值：PUT /api/admin/engine-config 经 _normalize_and_sync_engine_updates
+    检测到含 "****" 的密钥时会替换为库中既有真实密钥（不会把掩码写回库）。
+    """
     require_admin(request)
     dashscope_key = (
         os.environ.get("DASHSCOPE_API_KEY", "")
@@ -889,6 +902,8 @@ def get_engine_presets(request: Request):
         or (os.environ.get("OPENAI_API_KEY", "") if "siliconflow" in os.environ.get("OPENAI_BASE_URL", "").lower() else "")
         or os.environ.get("OPENAI_REC_API_KEY", "")
     )
+    dashscope_key = mask_secret_key(dashscope_key)
+    siliconflow_key = mask_secret_key(siliconflow_key)
     
     presets = {
         "agnes": {
@@ -1549,6 +1564,374 @@ async def update_admin_settings(request: Request):
             "changed": changed}
 
 
+# -------------------------------------------------------------
+# 记忆度量看板（收敛计划 P2-T5 / 概念 C11）：四项指标只读端点
+# -------------------------------------------------------------
+_MEMORY_METRICS_MODULE = None
+
+
+def _load_memory_metrics_module():
+    """加载 demo/scripts/memory_metrics.py 作为**唯一口径实现**（按文件路径，结果缓存）。
+
+    why 不在这里重写一份 SQL：本仓高发的「同一口径多份实现」正是本任务要防的缺陷 ——
+    看板与基线脚本必须给出同一组数字，否则「看板显示 23.7% 而基线脚本 17.0%」这类分叉
+    没有任何人能察觉。脚本带 __main__ 守卫、只依赖 sqlite3，可安全按模块加载；该脚本
+    的所有权归主 agent（计划 §9），本处只读调用，不修改它。
+    """
+    global _MEMORY_METRICS_MODULE
+    if _MEMORY_METRICS_MODULE is None:
+        import importlib.util
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "scripts", "memory_metrics.py")
+        spec = importlib.util.spec_from_file_location("memory_metrics_ssot", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("度量脚本不可加载: %s" % path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _MEMORY_METRICS_MODULE = mod
+    return _MEMORY_METRICS_MODULE
+
+
+@router.get("/api/admin/memory-consistency")
+def memory_consistency_report(request: Request, tenant: Optional[str] = None):
+    """记忆表与向量库一致性巡检（只读）：孤儿向量 / 缺向量 / 交集。
+
+    why：巡检工具 `app/services/memory_consistency.py` 早已实现（B0 审核 mustFix），
+    但它此前**零生产触发方** —— 工具能检出 DB↔向量的层级脱钩，却没有任何人被
+    告知结果，属本仓高发的「定义了没接线」（工具写好了却没人跑＝这个能力不存在）。
+    本端点与 `app/main.py` 的启动自检是它的两个消费方；二者都**复用同一份实现**
+    （`memory_consistency.check_memory_consistency`），不允许在此重写一份巡检 SQL
+    —— 那正是「同一口径多份实现」的①类缺陷。
+
+    DB 取数显式改为 `db.DB_PATH`：使巡检始终看「应用当前使用的库」，测试把
+    DB_PATH 指到临时库时随之跟随，不会误读 live。向量目录由
+    `memory_consistency._resolve_rag_dir` 按 RAG_DIR 解析（与 rag.py 同口径）。
+
+    只读：巡检以 sqlite3 mode=ro 打开记忆库与 Chroma 持久化表，不写任何一侧。
+    失败语义：巡检异常一律返回 status=error + msg（HTTP 200），不抛 500 ——
+    巡检故障不得把管理台打崩；此时 report=None，调用方据此显示错误态而非「一致」。
+    """
+    require_admin(request)
+    try:
+        from app.services import memory_consistency as mc
+        report = mc.check_memory_consistency(tenant_id=tenant, db_path=db.DB_PATH)
+    except Exception as e:
+        logging.getLogger("api_admin").error("记忆一致性巡检失败: %s", e)
+        return {"status": "error", "msg": "记忆一致性巡检失败: %s" % e, "report": None}
+    return {"status": "success", "report": report}
+
+
+# -------------------------------------------------------------
+# 供应商×SKU 别名一致性巡检（残债 D3）：只读端点
+# -------------------------------------------------------------
+_VENDOR_SKU_ALIAS_CHECK_MODULE = None
+
+
+def _load_vendor_sku_alias_check_module():
+    """加载 demo/scripts/check_vendor_sku_alias.py 作为**唯一巡检实现**（按文件路径，缓存）。
+
+    why 不在这里重写巡检 SQL：该脚本已实现四类别名异常的判定（死链 / 同键多条 active /
+    canonical 与目标 SKU 归一后不一致 / 供应商缺失），重写一份就是本仓高发的「同一根因
+    多份实现，只改一份」—— 两处判定一旦分叉，管理台结论与 CLI/CI 结论会不一致且无人
+    察觉。脚本带 `__main__` 守卫、只依赖 sqlite3（归一实现惰性加载），可安全按模块加载；
+    该脚本的所有权归主 agent（计划 §9），本处只读调用，不修改它。
+    """
+    global _VENDOR_SKU_ALIAS_CHECK_MODULE
+    if _VENDOR_SKU_ALIAS_CHECK_MODULE is None:
+        import importlib.util
+        path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "scripts", "check_vendor_sku_alias.py")
+        spec = importlib.util.spec_from_file_location("vendor_sku_alias_check_ssot", path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError("别名巡检脚本不可加载: %s" % path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _VENDOR_SKU_ALIAS_CHECK_MODULE = mod
+    return _VENDOR_SKU_ALIAS_CHECK_MODULE
+
+
+@router.get("/api/admin/vendor-sku-alias-consistency")
+def vendor_sku_alias_consistency(request: Request, tenant: Optional[str] = None):
+    """供应商×SKU 别名表一致性巡检（只读）：四类异常。
+
+    why：`demo/scripts/check_vendor_sku_alias.py` 早已实现全部判定（能检出「别名被翻转
+    指向重复 SKU / 死链 / 同键多条 active / 未锚定供应商」），但**零生产触发方** —— 与
+    `memory_consistency`（R4）完全同族：工具写好了却没人跑，等于这个能力不存在（本仓
+    高发的「定义了没接线」）。本端点与 CLI 是它的两个消费方；判定**一律复用脚本实现**
+    （见 `_load_vendor_sku_alias_check_module`），不允许在此重写巡检 SQL。
+
+    「是否一致」的唯一判据是返回体 `report["verdict"]`：
+      clean    = 一致（`findings_total` 为 0）；
+      polluted = 有异常，计数见 `report["findings_total"]` 与 `report["checks"]` 各类的
+                 `count` / `by_reason`；
+      no_db / no_table = **无法巡检**（库不存在 / 别名表未迁移）—— 与「无污染」不是一回事。
+    why 不在这里另算一个 `consistent` 布尔：那会让同一口径有两份表达，脚本改判据时端点
+    静默分叉（本仓①类缺陷）；调用方按 verdict 判即可。
+
+    tenant：None = 全租户；给值 = 只判该租户的行（SKU/供应商索引仍取全库，否则跨租户
+    错挂会被过滤掉、检测不出来）。
+
+    **回填预演（`report["backfill_simulation"]`）在端点里固定为 None**：它需要加载回填
+    脚本的 `plan()` 做全表投票扫描，且脚本的归一实现与 import 期沙箱是**进程级缓存**
+    （按首次目标库建立），外加沙箱会**临时改写 `DB_PATH` / `RAG_DIR` 环境变量** —— 这几
+    条都不适合由常驻服务进程在每个请求上触发。它是「若把已确认写法回填会落入哪几类」的
+    规划问题，入口保留在 CLI（`python demo/scripts/check_vendor_sku_alias.py`，缺省开）。
+    巡检主体（四类异常）不依赖预演，故端点仍给出完整结论。
+
+    DB 取数显式用 `db.DB_PATH`：使巡检始终看「应用当前使用的库」，测试把 DB_PATH 指到
+    临时库时随之跟随，不会误读 live。只读：脚本以 sqlite3 `mode=ro` 打开目标库，不写
+    任何一侧（也不写 live 向量库）。
+    失败语义：巡检异常一律返回 status=error + msg（HTTP 200），不抛 500 —— 巡检故障
+    不得把管理台打崩；此时 report=None，调用方据此显示错误态而非「一致」。
+    """
+    require_admin(request)
+    try:
+        mod = _load_vendor_sku_alias_check_module()
+        report = mod.check_vendor_sku_alias(
+            db_path=db.DB_PATH, tenant_id=tenant, simulate_backfill=False)
+    except Exception as e:
+        logging.getLogger("api_admin").error("别名一致性巡检失败: %s", e)
+        return {"status": "error", "msg": "别名一致性巡检失败: %s" % e, "report": None}
+    return {"status": "success", "report": report}
+
+
+@router.get("/api/admin/parsing-stale")
+def parsing_stale_report(request: Request, tenant: Optional[str] = None):
+    """超期卡在 parsing 的单据清单（只读）：列出的正是启动自检会置 error 的那些行。
+
+    why：`receipt_utils.sweep_parsing_timeout` 早已实现（Gate-2），但此前**零生产触发
+    方** —— 全仓 grep 只有它自己的定义，所以这条清扫从未跑过，超期单据状态永久假「在途」
+    （live 曾积压 7 张、26–33 天，列表/看板看起来仍像有任务在跑）。本端点与
+    `app/main.py::_sweep_stale_parsing_startup` 是它的两个消费方；判定**一律复用**
+    `receipt_utils.stale_parsing_query`（不允许在这里重写一份扫描 SQL —— 那正是「同一
+    根因多份实现，只改一份」的①类缺陷：两处阈值/条件一旦分叉，会出现「管理台显示无超期
+    行、而 sweep 实际在把它们置 error」且无人察觉）。
+
+    只读：底层只 SELECT、不 commit、不改 status。**GET 不得产生副作用** ——
+    带写动作的「强制清扫」若要做，必须另开显式 opt-in 的 POST 入口，不由本端点触发。
+
+    tenant：None = 全部租户（与 sweep 的作用域一致，故默认值能解释「sweep 会动哪些行」）；
+    给值 = 只列该租户的行（额外收窄，不改变识别口径）。
+
+    失败语义：DB 不可用等异常返回 status=error + msg（HTTP 200）并附 rows=None，不抛
+    500 —— 巡检故障不得把管理台打崩；调用方据此显示错误态而非「无超期行」（两者并不相同，
+    与同文件其余只读巡检端点同款口径）。
+    """
+    require_admin(request)
+    try:
+        from app.services import receipt_utils as ru
+        rows = ru.list_stale_parsing_receipts(tenant_id=tenant)
+        timeout_seconds = ru.parsing_timeout_seconds()
+    except Exception as e:
+        logging.getLogger("api_admin").error("超期 parsing 巡检失败: %s", e)
+        return {"status": "error", "msg": "超期 parsing 巡检失败: %s" % e,
+                "rows": None, "count": None}
+    return {"status": "success", "timeout_seconds": timeout_seconds,
+            "count": len(rows), "rows": rows}
+
+
+# 读路径失败计数的口径说明。why 必须随计数一起返回：计数器是**进程级**的（重启归零），
+# 若只裸给 {阶段: 次数}，读的人会把它当成历史累计或跨实例指标而据此误判。
+_RETRIEVE_FAILURES_NOTE = (
+    "读路径各阶段静默降级次数的进程级快照（fail-open 不阻断识别，故此前无观测）。"
+    "注意：这是进程级计数器，进程重启即归零，不持久化、不跨实例聚合，"
+    "不是历史累计指标；只反映本进程内最近是否在降级。")
+
+
+def _collect_retrieve_failures() -> dict:
+    """读路径静默降级计数快照（只读上报，不改变任何检索行为）。
+
+    why：`rag.get_retrieve_failure_counts()`（P4a·U2 建的读侧可观测）此前**零生产消费
+    方** —— 计数器一直在涨、warning 一直在打，却没有任何人能读到聚合结果，属本仓高发的
+    「定义了没接线」：能力存在但等于不存在（残债 R10）。本函数是它**唯一的生产消费点**，
+    接在管理台度量端点的返回体里。
+
+    why 必须直接调 `rag.get_retrieve_failure_counts()`：阶段名与计数口径只有 rag 一份实现
+    （RETRIEVE_STAGE_* 常量 + `_note_retrieve_failure`），在此重写一遍聚合就是本仓①类
+    缺陷「同一根因多份实现，只改一份」；本函数只做包装与容错，不产出任何自己的计数。
+
+    失败语义：计数读取本身异常时返回空 counts + error 标记，**绝不抛出** —— 一个诊断
+    计数器坏了不该把整个度量端点打成 500（与同文件其余只读端点的失败语义一致）。
+    """
+    try:
+        from app.services import rag
+        counts = rag.get_retrieve_failure_counts()
+    except Exception as e:
+        logging.getLogger("api_admin").warning("读取读路径失败计数失败: %s", e)
+        return {"counts": {}, "process_scoped": True,
+                "note": _RETRIEVE_FAILURES_NOTE,
+                "error": "读路径失败计数读取失败: %s" % e}
+    return {"counts": counts, "process_scoped": True, "note": _RETRIEVE_FAILURES_NOTE}
+
+
+@router.get("/api/admin/memory-metrics")
+def memory_metrics_dashboard(request: Request):
+    """记忆度量看板（只读）：记忆命中率 / SKU 匹配率 / 有-无记忆修改率 / 字段级未采纳率。
+
+    why：计划 P2-T5 要求给出「记忆是否降低修正次数」的可复算数字，而这些数字此前只有
+    CLI（demo/scripts/memory_metrics.py）能拿到。看板把它搬进管理台，但**口径必须与脚本
+    同源** —— 因此这里直接调用脚本的 collect()，不重写任何 SQL。
+
+    DB 取数：脚本默认取仓库 demo/ 库，这里显式改写为 `db.DB_PATH`，使看板始终看「应用
+    当前使用的库」；测试把 DB_PATH 指到临时库时看板跟随，不会误读 live。
+    只读：脚本以 sqlite3 mode=ro 打开，本端点不做任何写入。
+    失败语义：取数异常一律返回 status=error + msg（HTTP 200），不抛 500 —— 度量故障
+    不得把管理台打崩；此时 metrics=None，前端据此显示「无数据」，不用 0% 冒充。
+    分母随分子一并返回（total_receipts / items / 该组 receipts / decisions），
+    由前端判断是否显示「无数据」，后端不另算一份「展示口径」。
+    memory_enabled：复用 C1 的唯一实现 rag.memory_enabled()，不在此另读一次设置键
+    （否则「开关显示」与「开关生效」可能分叉）。读取失败返回 None（前端显示状态未知）。
+    retrieve_failures：读路径静默降级计数快照（残债 R10 的接线点）。它**不是真值指标**，
+    而是「这个供应商真的没有记忆」与「检索坏了」这两种同样返回空串的情形之间唯一的
+    观测分界，故与四项比率并列返回；计数实现只有 rag 一份（见 `_collect_retrieve_failures`），
+    本端点不重写任何计数逻辑，也不因它的存在改变任何检索行为。读取失败只在该字段内返回
+    error 标记，不影响其余字段与 HTTP 状态码（仍为 200）。
+    """
+    require_admin(request)
+    try:
+        from app.services import rag
+        memory_on = bool(rag.memory_enabled())
+    except Exception as e:
+        logging.getLogger("api_admin").warning("读取 memory_enabled 失败: %s", e)
+        memory_on = None
+    retrieve_failures = _collect_retrieve_failures()
+    try:
+        mod = _load_memory_metrics_module()
+        mod.DB = db.DB_PATH
+        metrics = mod.collect()
+    except Exception as e:
+        logging.getLogger("api_admin").error("记忆度量取数失败: %s", e)
+        return {"status": "error", "msg": "记忆度量取数失败: %s" % e,
+                "memory_enabled": memory_on, "metrics": None,
+                "retrieve_failures": retrieve_failures}
+    return {"status": "success", "memory_enabled": memory_on, "metrics": metrics,
+            "retrieve_failures": retrieve_failures}
+
+
+# -------------------------------------------------------------
+# D5 治理视图（收敛计划 P8 / 闭环 R1）：已生效记忆的只读列表 / 详情
+# -------------------------------------------------------------
+# 分页上限：治理视图面向人眼审阅（单页几十条），给上限是为了避免一次拉全租户记忆
+# 把响应体撑大；调用方要全量时按 offset 翻页，而不是把 limit 开到很大。
+_MEMORY_GOVERNANCE_MAX_LIMIT = 200
+
+
+@router.get("/api/admin/vendor-memory")
+def list_vendor_memory_governance(request: Request, vendor: str = "",
+                                  supplier_id: Optional[int] = None,
+                                  status: str = "",
+                                  limit: int = 50, offset: int = 0):
+    """记忆治理视图：列出本租户的记忆（只读，admin）。
+
+    why 需要这个可见面：`db.list_vendor_memory` 此前只有测试与内部回填脚本调用，
+    界面上没有任何地方能看到「系统到底记住了哪些供应商、这条是谁写的、被命中过几次、
+    是否已过期」。缺了这层可见面，「记忆治理」只存在于代码里 —— 这正是 gap 文档把
+    「查看已生效记忆」记为缺失能力的原因（对应行业最小集 D5「人可查看/编辑的记忆
+    界面」）。
+
+    why 直接复用 `db.list_vendor_memory`：取数口径只有一份（supplier_id 锚点优先、
+    名字相关度回退、锚点零命中返回空而不退回全量、status/TTL 与同键去重规则）。在此
+    重写一份取数语句就是本仓①类缺陷「同一根因多份实现，只改一份」—— 两份实现的
+    tenant 过滤或名字相关度门只要有一处漏了，就是一条越权/漏召回的路径。该函数现有
+    形参已够本端点使用，无需扩展。
+
+    取数口径刻意是**治理口径**（include_archived=True）：归档行与已被 supersede 的
+    旧行必须可见，否则「这条记忆为什么不再生效」在界面上无从回答。注意它与注入/读取
+    口径不同（后者只列 active 且应用 TTL 与同键去重）；此处不应用 TTL，已过期的行
+    照常返回并把 valid_to 原值交给人判读（是否过期由人看，不由端点替人决定）。
+
+    status 过滤在 Python 侧做（`list_vendor_memory` 的 include_archived 是布尔开关、
+    没有 status 形参）：它只筛展示、不改变取数口径，避免出现第二份 status 判据。
+    缺省 status="" = 全部状态；前端「已生效记忆」区应显式传 status=active。
+    vendor / supplier_id 的语义完全交给 `list_vendor_memory`（锚点优先、找不到即空），
+    本端点不复述一遍过滤逻辑。**注意**：只给 supplier_id 而不给 vendor 时，该函数会把
+    同租户内「尚未锚定（supplier_id IS NULL）的遗留行」一并并入（回填上线前的存量行
+    不能因为锚点反而读不到）；要精确到某一家，请同时传 vendor 名。
+
+    租户：tenant_id 由 `_tenant_id(request)` 派生（本文件统一口径），跨租户不可见。
+    只读：不下发任何写操作。
+    失败语义：参数越界返回 400 + status=error + code（不抛 500）；取数异常返回
+    status=error + code（HTTP 200），不抛 500 —— 读不到数据时要有明确错误态，而不是
+    静默返回空列表（空列表会被读成「这个租户没有记忆」，是最坏的谎报）。
+    """
+    require_admin(request)
+    tenant_id = _tenant_id(request)
+    if limit < 1 or limit > _MEMORY_GOVERNANCE_MAX_LIMIT:
+        return JSONResponse(
+            content={"status": "error", "code": "INVALID_PAGINATION",
+                     "msg": "limit 需在 1..%d 之间（当前 %s）"
+                            % (_MEMORY_GOVERNANCE_MAX_LIMIT, limit)},
+            status_code=400)
+    if offset < 0:
+        return JSONResponse(
+            content={"status": "error", "code": "INVALID_PAGINATION",
+                     "msg": "offset 不得为负（当前 %s）" % offset},
+            status_code=400)
+    st = (status or "").strip()
+    try:
+        rows = db.list_vendor_memory(vendor or None, tenant_id=tenant_id,
+                                     include_archived=True,
+                                     supplier_id=supplier_id)
+    except Exception as e:
+        logging.getLogger("api_admin").error("记忆治理视图取数失败: %s", e)
+        return {"status": "error", "code": "MEMORY_LIST_FAILED",
+                "msg": "记忆列表取数失败: %s" % e, "data": None}
+    if st:
+        rows = [r for r in rows if (r.get("status") or "active") == st]
+    total = len(rows)
+    return {"status": "success", "data": rows[offset:offset + limit],
+            "total": total, "limit": limit, "offset": offset,
+            "tenant_id": tenant_id}
+
+
+@router.get("/api/admin/vendor-memory/{memory_id}")
+def get_vendor_memory_governance(memory_id: str, request: Request):
+    """单条记忆的治理详情（只读，admin）：含 written_by 等全部治理元数据。
+
+    why 走列表而不是叫 `db.get_vendor_memory`：后者是**按供应商名**查最新一条 active
+    行的读口径函数，签名 `get_vendor_memory(vendor, tenant_id)`，只返回
+    {vendor, notes, sample} 三个字段 —— 它既接不住 memory_id，也丢光本端点要的全部
+    治理元数据（written_by / decay_score / valid_to / status / trust_level…）。本波
+    次的文件归属只有 api_admin.py（db.py 正被其他波次占用），故在此复用
+    `db.list_vendor_memory(include_archived=True)` 后按 memory_id 匹配：仍是**同一份**
+    取数实现，端点内零取数语句。建议签名（待 db.py 空闲时再实施，本波次不动它）：
+        db.get_vendor_memory(memory_id=None, vendor=None, tenant_id="default",
+                             include_archived=True) -> dict | None
+    即让它同时接受 (memory_id | vendor) 两种键，并返回 `list_vendor_memory` 的完整行
+    字典；届时本端点改为直调它即可（结果逐字段相同）。
+
+    written_by 的意义：它回答「这条记忆是谁写的 / 谁批准的」，是记忆写入的问责面
+    （P4a 接的审计列）。缺了它，治理者只能看到「系统记住了什么」，看不到「这一切是谁
+    做的决定」。
+
+    跨租户与不存在一律 404 且文案相同：memory_id 全局唯一，若对「别人的 memory_id」
+    回 403、对「不存在」回 404，就等于给出一个探测他租户记忆是否存在的接口（与
+    api_memory 的删除/恢复端点同口径）。
+    归档/superseded 行同样可见（治理口径）：审核者要能看到被淘汰的值与 superseded_by
+    指向，否则「历史不可查」。
+    失败语义：取数异常返回 status=error + code（HTTP 200），不抛 500。
+    """
+    require_admin(request)
+    tenant_id = _tenant_id(request)
+    mid = str(memory_id or "").strip()
+    if not mid:
+        return JSONResponse(content={"status": "error", "code": "NOT_FOUND",
+                                     "msg": "未找到该记忆"}, status_code=404)
+    try:
+        rows = db.list_vendor_memory(tenant_id=tenant_id, include_archived=True)
+    except Exception as e:
+        logging.getLogger("api_admin").error("记忆治理详情取数失败: %s", e)
+        return {"status": "error", "code": "MEMORY_READ_FAILED",
+                "msg": "记忆详情取数失败: %s" % e, "data": None}
+    for r in rows:
+        if str(r.get("memory_id") or "") == mid:
+            return {"status": "success", "data": r}
+    return JSONResponse(content={"status": "error", "code": "NOT_FOUND",
+                                 "msg": "未找到该记忆"}, status_code=404)
+
+
 @router.post("/api/admin/guardian/check")
 def guardian_check(request: Request):
     """T9（Gap C3）：手动触发实验守护巡检（与后台线程同一入口）。
@@ -1567,11 +1950,12 @@ def admin_metrics(request: Request):
 
     从 ai_decision_log.extra 提取 {tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms, success}，
     聚合 avg_tokens, avg_elapsed, success_rate；同时尝试读 artifacts/memory/parse_log.jsonl 求文件层均值。
+    文件层**读路径与写路径同源**：经 `supervisor._memory_log_path()` 解析（含 ARTIFACTS_DIR
+    重定向），返回体 `data.file.path` 给出实际读取的那一份路径（见该段注释的 why）。
     对应 spec：GET /api/admin/metrics 聚合 avg_tokens, avg_elapsed, success_rate
     """
     require_admin(request)
     import json as _json
-    import os
     from pathlib import Path
     # DB 聚合（extract 决策）
     try:
@@ -1653,35 +2037,26 @@ def admin_metrics(request: Request):
     success_rate = round(success_cnt / n, 4) if n else 0
     avg_cost = round(sum(cost_vals) / len(cost_vals), 6) if cost_vals else None
     # 文件层补充（artifacts/memory/parse_log.jsonl）
-    file_stats = {"count": 0, "avg_tokens": 0, "avg_elapsed": 0, "success_rate": 0}
+    # why 读路径必须与写路径**同源**：落盘方 `supervisor._finalize` 走的是
+    # `supervisor._memory_log_path()`，它按 `ARTIFACTS_DIR` 重定向（容器/测试场景下落
+    # 到临时目录）。此处原先是 4 个按 `__file__` 拼出来的候选路径 —— 设了 ARTIFACTS_DIR
+    # 时**写侧落临时目录、读侧仍找仓库**，于是文件层 tokens/elapsed/success 读到的是
+    # 陈旧或不存在的那一份，且两种情形在读数上同形（P3x2 审核 mustFix 2 / 残债 AH2）。
+    # 路径口径只有 `_memory_log_path()` 一份实现，此处直接调它、**不再保留第二份路径
+    # 解析**（本仓①类缺陷：同一根因多份实现，只改一份）。
+    # path 一并返回：让「读的到底是哪一份文件」在接口层面可核对，而不是只能靠推断。
+    file_stats = {"count": 0, "avg_tokens": 0, "avg_elapsed": 0, "success_rate": 0,
+                  "path": None}
     try:
-        # 项目根 artifacts/memory
-        base = Path(__file__).resolve().parent.parent.parent
-        candidates = [
-            base / "artifacts" / "memory" / "parse_log.jsonl",
-            Path(__file__).resolve().parent / "../../artifacts/memory/parse_log.jsonl",
-        ]
-        fpath = None
-        for c in candidates:
-            if c.exists():
-                fpath = c
-                break
-        if fpath is None:
-            # 绝对路径回退（supervisor 写入路径）
-            import os as _os
-            alt = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "../../artifacts/memory/parse_log.jsonl"))
-            if _os.path.exists(alt):
-                fpath = Path(alt)
-            else:
-                alt2 = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "../../../artifacts/memory/parse_log.jsonl"))
-                if _os.path.exists(alt2):
-                    fpath = Path(alt2)
-        if fpath and fpath.exists():
+        from app.chains import supervisor as _supervisor
+        fpath = Path(_supervisor._memory_log_path())
+        file_stats["path"] = str(fpath)
+        if fpath.exists():
             f_tokens = []
             f_elapsed = []
             f_success = 0
             f_count = 0
-            with open(fpath, "r", encoding="utf-8") as fh:
+            with open(str(fpath), "r", encoding="utf-8") as fh:
                 for line in fh:
                     line=line.strip()
                     if not line:
@@ -1707,13 +2082,17 @@ def admin_metrics(request: Request):
                         f_success += 1
             if f_count:
                 file_stats = {
+                    "path": file_stats["path"],
                     "count": f_count,
                     "avg_tokens": round(sum(f_tokens)/f_count, 2) if f_count else 0,
                     "avg_elapsed": round(sum(f_elapsed)/f_count, 2) if f_count else 0,
                     "success_rate": round(f_success/f_count, 4) if f_count else 0,
                 }
-    except Exception:
-        pass
+    except Exception as e:
+        # 文件层是**补充**读数，失败不得影响 DB 层聚合（保持原行为）；但必须留痕：
+        # 「读文件层失败」与「文件本来就没有内容」在返回体里同形（都是 count=0、path 有值），
+        # 只靠返回值分辨不出来，故把原因记进日志。
+        logging.getLogger("api_admin").warning("读取记忆落盘文件层失败: %s", e)
     return {
         "status": "success",
         "data": {
@@ -1728,7 +2107,9 @@ def admin_metrics(request: Request):
             "success_count": success_cnt,
             "file": file_stats,
         },
-        "hint": "DB 可查 ai_decision_log.extra tokens_total/cost_hkd/elapsed_ms/success；文件可追溯 artifacts/memory/parse_log.jsonl",
+        "hint": "DB 可查 ai_decision_log.extra tokens_total/cost_hkd/elapsed_ms/success；"
+                "文件层读的是 data.file.path（与写入方 supervisor._memory_log_path() 同源，"
+                "含 ARTIFACTS_DIR 重定向）",
     }
 
 
@@ -1903,6 +2284,70 @@ def cost_summary(request: Request):
     require_role("owner")(request)
     from app.services.inventory import cost_summary as get_cost
     return {"status": "success", "data": get_cost(tenant_id=_tenant_id(request))}
+
+
+# -------------------------------------------------------------
+# 复核侧提示：供应商×SKU 历史价格区间（收敛计划 P2-T4 / 概念 C5）
+# -------------------------------------------------------------
+@router.get("/api/vendor_price_hint")
+def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
+                      unit_price: Optional[float] = None):
+    """某「供应商×SKU」的历史进货单价区间（只读，供 Side-by-Side 复核界面的人眼提示）。
+
+    why：双通道注入里的**复核侧通道**。历史价格区间刻意**不进生成侧 prompt** ——
+    生成侧只放结构化确定性事实（别名/单位/版式），否则模型会照抄上一单的价格（锚定）。
+    放在 admin 路由只是因为本波次的文件归属：它服务的是复核界面而非后台管理台。
+
+    数据源：复用 `db.price_history`（inventory_log kind=in，自带 vendor 字段），
+    按供应商过滤 —— 与库存页/成本层同一口径，不另建一份「价格历史」。
+
+    区间（min/max）与「当前单价是否超出区间」**全部由后端计算**：前端不得自己算，
+    否则会与库存页阈值口径分叉（本仓高发的「同一口径多份实现」）。
+    无该供应商的历史 → `has_history=False`（前端据此隐藏，不显示空壳）。
+    """
+    require_role("staff")(request)
+    vendor_name = (vendor or "").strip()
+    if not vendor_name:
+        return {"status": "success", "has_history": False, "count": 0, "vendor": ""}
+
+    tenant_id = _tenant_id(request)
+    sku = db.get_sku(int(sku_id), tenant_id=tenant_id)
+    if sku is None:
+        # 跨租户同样落到这里（get_sku 对跨租户返回 None）—— 一律视为不存在
+        return {"status": "error", "msg": "SKU 不存在"}
+
+    prices = []
+    for row in db.price_history(int(sku_id), tenant_id=tenant_id):
+        if (row.vendor or "").strip() != vendor_name:
+            continue
+        price = float(row.unit_price or 0)
+        if price > 0:
+            prices.append(price)
+
+    if not prices:
+        return {"status": "success", "has_history": False, "count": 0,
+                "vendor": vendor_name, "sku_name": sku.name}
+
+    low, high = min(prices), max(prices)
+    out_of_range = None       # None = 未提供当前单价 → 不做判定（不猜）
+    direction = ""
+    if unit_price is not None:
+        try:
+            current = float(unit_price)
+        except (TypeError, ValueError):
+            current = None
+        if current is not None and current > 0:
+            if current < low:
+                out_of_range, direction = True, "down"
+            elif current > high:
+                out_of_range, direction = True, "up"
+            else:
+                out_of_range, direction = False, ""
+
+    return {"status": "success", "has_history": True, "count": len(prices),
+            "low": round(low, 2), "high": round(high, 2),
+            "out_of_range": out_of_range, "direction": direction,
+            "vendor": vendor_name, "sku_name": sku.name}
 
 
 # -------------------------------------------------------------
@@ -2127,9 +2572,9 @@ def get_grey_test_samples(request: Request):
             feedback_badge_bg = "#e2e3e5"
 
         # W8：历史 pytest 污染单据的 image_path 指向已被清理的临时测试文件
-        # （如 /uploads/img_2.png、/uploads/eval_reflow_src_*.png），public_image_url
-        # 仍会按其 basename 生成 URL，前端打开即 404 破图。展示层兜底：源文件不存在
-        # 时返回空串（字段保留、响应结构不变，前端按 if(url) 降级）；不删任何历史数据行。
+        # （如 '/uploads/img_2.png'、'/uploads/eval_reflow_src_*.png'），public_image_url
+        # 仍会按其 basename 产出签名取图端点 URL，前端打开即 404 破图。展示层兜底：源文件
+        # 不存在时返回空串（字段保留、响应结构不变，前端按 if(url) 降级）；不删任何历史数据行。
         image_url = public_image_url(r.id, r.image_path,
                                      getattr(r, "tenant_id", None)) if r.id else ""
         if image_url:
@@ -2461,15 +2906,51 @@ class AdminExpCreateBody(BaseModel):
     control_api_key: Optional[str] = None
 
 
+def _mask_experiment_secrets(exp):
+    """脱敏实验返回体中的快照密钥（grey_snapshot 内的 treatment/control_api_key）。
+
+    why: 实验快照会保存覆盖用的第三方 api_key，列表/详情端点此前原样回传明文。
+    复用 mask_engine_config_dict 的递归口径（键名以 _api_key 结尾即 mask_secret_key），
+    返回脱敏副本，不修改传入对象。非 dict（None 等）原样返回。
+    """
+    return mask_engine_config_dict(exp)
+
+
+def _validate_experiment_base_urls(body):
+    """校验实验快照覆盖的 treatment/control Base URL，返回 (是否通过, 拒绝原因)。
+
+    fail-closed：任一侧不安全都拒绝创建（400）。这些 URL 会被 receipt_utils 在识别时
+    用作真实外呼端点，不校验等于允许把内网/云元数据地址写入实验配置，形成 SSRF 与
+    凭据外泄路径（见 create_experiment_admin 调用点）。
+    """
+    from app.services.security_guard import validate_safe_external_url
+    for field, label in (("treatment_base_url", "实验组 Base URL"),
+                         ("control_base_url", "对照组 Base URL")):
+        val = getattr(body, field, None)
+        if val and str(val).strip():
+            is_safe, reason = validate_safe_external_url(str(val).strip())
+            if not is_safe:
+                return False, f"{label} 安全校验未通过: {reason}"
+    return True, ""
+
+
 @router.get("/api/admin/experiments")
 def list_experiments_admin(request: Request):
     require_admin(request)
-    return {"status": "success", "data": db.list_experiments()}
+    return {"status": "success",
+            "data": [_mask_experiment_secrets(e) for e in db.list_experiments()]}
 
 
 @router.post("/api/admin/experiments")
 def create_experiment_admin(body: AdminExpCreateBody, request: Request):
     require_admin(request)
+    ok, reason = _validate_experiment_base_urls(body)
+    if not ok:
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "code": "EXPERIMENT_BASE_URL_INVALID",
+            "msg": reason,
+        })
     created = db.create_experiment(
         name=body.name,
         hypothesis=body.hypothesis,
@@ -2502,7 +2983,8 @@ def create_experiment_admin(body: AdminExpCreateBody, request: Request):
         finally:
             s.close()
     exp = db.get_experiment(created["id"]) or created
-    return {"status": "success", "id": created["id"], "experiment": exp}
+    return {"status": "success", "id": created["id"],
+            "experiment": _mask_experiment_secrets(exp)}
 
 
 @router.post("/api/admin/experiments/{exp_id}/start")
@@ -2513,7 +2995,7 @@ def start_experiment_admin(exp_id: int, request: Request):
         return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
     snap = existing.get("grey_snapshot") or {}
     exp = db.start_experiment(exp_id, grey_snapshot=snap)
-    return {"status": "success", "experiment": exp}
+    return {"status": "success", "experiment": _mask_experiment_secrets(exp)}
 
 
 @router.post("/api/admin/experiments/{exp_id}/stop")
@@ -2522,7 +3004,7 @@ def stop_experiment_admin(exp_id: int, request: Request):
     exp = db.stop_experiment(exp_id)
     if not exp:
         return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
-    return {"status": "success", "experiment": exp}
+    return {"status": "success", "experiment": _mask_experiment_secrets(exp)}
 
 
 @router.get("/api/admin/experiments/{exp_id}")
@@ -2538,7 +3020,7 @@ def get_experiment_admin(exp_id: int, request: Request):
     snapshots = db.list_experiment_snapshots(exp_id, limit=5) if hasattr(db, "list_experiment_snapshots") else []
     return {
         "status": "success",
-        "experiment": row,
+        "experiment": _mask_experiment_secrets(row),
         "metrics": metrics,
         "detail": detail,
         "guardrail_events": guardrail_events,

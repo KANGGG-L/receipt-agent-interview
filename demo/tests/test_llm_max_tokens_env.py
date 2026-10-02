@@ -1,0 +1,85 @@
+# -*- coding: utf-8 -*-
+"""F1 基线运行配套判别式单测：OpenAIChatModel 的 max_tokens 环境变量覆盖。
+
+背景：phase0-measurement 分支跑 deepseek/deepseek-v4.1-flash（推理型模型）做首次真实
+per-field F1 基线时，其 reasoning 段也消耗 completion 预算，llm.py 写死 max_tokens=4000
+导致长图任务 finish_reason=length、content 为空（"空输出"）。
+本用例用 mock requests.post 判别两种端点形态：
+  1) 未设 OPENAI_REC_MAX_TOKENS → 载荷 max_tokens 保持 4000 原口径（回归守卫）；
+  2) 设 OPENAI_REC_MAX_TOKENS=16384 → 载荷 max_tokens=16384，且请求路径仍是
+     base_url + "/chat/completions"（非 /responses，判别端点形态不漂移）。
+"""
+import os
+import sys
+import unittest
+from unittest import mock
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from app.llm import OpenAIChatModel  # noqa: E402
+from langchain_core.messages import HumanMessage  # noqa: E402
+
+
+def _fake_response(content="ok"):
+    resp = mock.Mock()
+    resp.status_code = 200
+    resp.json.return_value = {
+        "choices": [{"message": {"role": "assistant", "content": content}}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+    }
+    return resp
+
+
+class TestMaxTokensEnv(unittest.TestCase):
+    def _invoke(self, captured):
+        m = OpenAIChatModel(base_url="https://api.commandcode.ai/provider/v1",
+                            api_key="k", model="deepseek/deepseek-v4.1-flash")
+        with mock.patch("app.llm.requests.post",
+                        side_effect=lambda url, **kw: (captured.append((url, kw)), _fake_response())[1]):
+            m.invoke([HumanMessage(content="hi")])
+
+    def test_default_keeps_4000(self):
+        captured = []
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OPENAI_REC_MAX_TOKENS", None)
+            self._invoke(captured)
+        url, kw = captured[0]
+        self.assertTrue(url.endswith("/chat/completions"))
+        self.assertEqual(kw["json"]["max_tokens"], 4000)
+
+    def test_env_override_raises_budget(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_MAX_TOKENS": "16384"}):
+            self._invoke(captured)
+        url, kw = captured[0]
+        self.assertTrue(url.endswith("/chat/completions"))
+        self.assertEqual(kw["json"]["max_tokens"], 16384)
+
+    def test_invalid_env_falls_back_to_4000(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_MAX_TOKENS": "abc"}):
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["json"]["max_tokens"], 4000)
+
+    def test_call_timeout_default_unchanged(self):
+        captured = []
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("OPENAI_REC_CALL_TIMEOUT", None)
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["timeout"], 60)  # CALL_TIMEOUT_SECONDS 硬上限原口径
+
+    def test_call_timeout_env_raises_transport_cap(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "300"}):
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["timeout"], 300)
+
+    def test_call_timeout_env_clamped_to_600(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "9999"}):
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["timeout"], 600)
+
+
+if __name__ == "__main__":
+    unittest.main()

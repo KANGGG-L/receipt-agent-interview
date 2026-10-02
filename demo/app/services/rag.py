@@ -787,6 +787,12 @@ def _render_fact_row(row) -> str:
         return ""
     kind = str(row.get("fact_kind") or "").strip()
     value = str(row.get("fact_value") or "").strip()
+    if kind == "unit":
+        # 工作项①（收尾波次）：读侧覆盖存量 vendor_memory 行的原文值（免迁移）——
+        # 渲染前过规范写法（「司馬斤」→「斤」），幂等，对已规范值 NOOP。缺省表
+        # 缺失/坏 YAML 时 SystemExit（与写侧 memory_consolidate 同纪律，不静默降级）。
+        from app.services.unit_normalization import canonical_unit
+        value = canonical_unit(value)
     subject = _fact_key_subject(row.get("fact_key"))
     label = _FACT_KIND_LABELS.get(kind, kind)
     if kind == "alias":
@@ -1241,6 +1247,12 @@ def _pending_memory_fact(vendor, tid, kind, ref, supplier_id,
     val = str(fact_value or "").strip()
     if not (k and key and val):
         return None
+    if k == "unit":
+        # 工作项①（收尾波次）：approve 期写入防线 —— 旧 pending 行可能仍存模型原文
+        # （写侧规范上线前入队的），落库前再过一次规范写法（幂等，对已规范值 NOOP）。
+        # 只改写法不改语义，人工闸的批准动作本身零改动。
+        from app.services.unit_normalization import canonical_unit
+        val = canonical_unit(val)
     from app.services.memory_facts import MemoryFact, validate_fact
     fact = MemoryFact(
         kind=k, fact_key=key, value=val,

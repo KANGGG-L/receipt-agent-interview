@@ -62,6 +62,11 @@ if _DEMO_DIR not in sys.path:
 
 import app.db as db  # noqa: E402  （import 即执行幂等迁移，保证别名表存在）
 
+_SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPTS_DIR)
+import residue_rules  # noqa: E402  纯函数模块（零 DB 依赖），残渣判别式只此一份
+
 logger = logging.getLogger(__name__)
 
 _SOURCE_DB_PATH = db.DB_PATH
@@ -82,6 +87,17 @@ _SELECT_MATCHED = (
 # tests/test_metric_wording_no_confusion.py 能按名断言。
 SIMULATED_MATCH_RATE_KEY = "simulated_match_rate"
 MATCHED_FLAG_RATE_KEY = "matched_flag_rate"
+# --exclude-residue 新增口径键（R9：带口径名 + note，与上面两个键并列，不可混读）
+SIMULATED_MATCH_RATE_EXCLUDED_KEY = "simulated_match_rate_excluded"
+
+_EXCLUDE_RESIDUE_NOTE = (
+    "本指标（%s）是分母剔除确定性残渣规则 7 类 %d 行（判别式唯一出处 residue_rules.py）后"
+    "的 %s 同源口径：同样的 _match_sku 全局回放、同样的分子规则，仅残渣行不参与回放与统计。"
+    "与不带后缀的 %s 不可混读（分母定义不同）；与 memory_metrics.py 的 matched_flag_rate_excluded"
+    " 亦不可混读（分子口径不同：落库标记 vs 真跑匹配）。'0T' 型 OCR 废码另属单独类别，"
+    "由 gen_sku_alias_candidates.py 的候选口径处理。评分口径（run_eval.py）不动——GT 侧残渣"
+    "由 validate_gt_consistency.py 的复核清单承接，复标后走基线重冻结流程。"
+)
 
 # 交叉引用自述（对侧键名由常量插值保证，防「改了命名忘了改文案」）
 _SIMULATED_MATCH_NOTE = (
@@ -242,6 +258,9 @@ def _load_items(path, cache=None):
         "supplier_id": (int(supplier_id) if supplier_id
                         else _resolve_cached(supplier_name, tenant_id, resolve_cache)),
         "matched": int(matched or 0),
+        # 原始供应商名：--exclude-residue 的 receipt 级残渣规则（默認來源測試/临时单）
+        # 要按它判定；仅随行携带，不参与匹配与既有统计逻辑
+        "supplier_name": supplier_name or "",
     } for name, unit, unit_price, rid, tenant_id, supplier_id, supplier_name, matched in rows]
 
 
@@ -495,11 +514,15 @@ def _holdout_savings(full_items, eval_items, mid):
     }
 
 
-def replay(holdout=False):
+def replay(holdout=False, exclude_residue=False):
     """在 DB_PATH 的临时副本上度量三组口径，返回报告 dict（源库全程只读）。
 
     新增「避免重复建档数」主口径 + 反事实对照（放最后跑：反事实会在独立副本上
     执行 create_sku，不能污染前面的匹配率读数）。
+
+    exclude_residue（默认关）：把残渣行（residue_rules.classify 命中）剔出回放样本——
+    只剔除**统计分母**，不写库、不删行（操作对象本就是临时副本，源库全程只读）。
+    关闭时样本集与报告与既有口径完全一致（逐字节回归门禁）。
     """
     tmpdir = tempfile.mkdtemp(prefix="sku_alias_replay_")
     copy_path = os.path.join(tmpdir, "replay.db")
@@ -512,6 +535,14 @@ def replay(holdout=False):
     # 不改变任何读数。
     resolve_cache = {}
     all_items = _load_items(copy_path, cache=resolve_cache)
+    excluded_residue_rows = 0
+    if exclude_residue:
+        def _keep(it):
+            is_res, _rule = residue_rules.classify(it["name"], it.get("supplier_name"))
+            return not is_res
+
+        excluded_residue_rows = len(all_items) - sum(1 for it in all_items if _keep(it))
+        all_items = [it for it in all_items if _keep(it)]
     items = all_items
     candidates, stats = plan(_SOURCE_DB_PATH, cache=resolve_cache)
     holdout_mid = None
@@ -571,6 +602,21 @@ def replay(holdout=False):
             "incomparable_with": MATCHED_FLAG_RATE_KEY,
             "note": _SIMULATED_MATCH_NOTE,
         },
+        **(
+            {
+                "excluded_residue_rows": excluded_residue_rows,
+                SIMULATED_MATCH_RATE_EXCLUDED_KEY: {
+                    "numerator": baseline,
+                    "denominator": total,
+                    "rate_pct": pct(baseline),
+                    "incomparable_with": (MATCHED_FLAG_RATE_KEY, SIMULATED_MATCH_RATE_KEY),
+                    "note": _EXCLUDE_RESIDUE_NOTE % (
+                        SIMULATED_MATCH_RATE_EXCLUDED_KEY, excluded_residue_rows,
+                        SIMULATED_MATCH_RATE_KEY, SIMULATED_MATCH_RATE_KEY),
+                },
+            }
+            if exclude_residue else {}
+        ),
         "alias_fires": collect["alias_fires"],
         "alias_same_as_global": collect["alias_same_as_global"],
         "alias_differs_from_global": collect["alias_differs_from_global"],
@@ -584,11 +630,14 @@ def main():
     ap.add_argument("--apply", action="store_true", help="把预演结果写进 DB_PATH 库")
     ap.add_argument("--replay", action="store_true", help="在临时副本上回放 SKU 匹配率")
     ap.add_argument("--holdout", action="store_true", help="回放时用前半段训练/后半段评估")
+    ap.add_argument("--exclude-residue", action="store_true",
+                    help="replay 时把残渣行（residue_rules.py 判别式）剔出回放分母；"
+                         "默认关，关闭时输出与既有口径逐字节一致")
     ap.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     args = ap.parse_args()
 
     if args.replay:
-        report = replay(holdout=args.holdout)
+        report = replay(holdout=args.holdout, exclude_residue=args.exclude_residue)
         if args.json:
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0
@@ -596,6 +645,11 @@ def main():
         print("副本            : %s" % report["db_copy"])
         print("评估明细行      : %d%s" % (report["items"],
                                        "（holdout：仅后半段单据）" if report["holdout"] else ""))
+        if report.get("excluded_residue_rows"):
+            _ex = report[SIMULATED_MATCH_RATE_EXCLUDED_KEY]
+            print("残渣剔除        : %d 行（判别式 residue_rules.py）；%s = %d/%d (%.2f%%)"
+                  % (report["excluded_residue_rows"], SIMULATED_MATCH_RATE_EXCLUDED_KEY,
+                     _ex["numerator"], _ex["denominator"], _ex["rate_pct"]))
         print("基线(全局口径)  : %d (%.2f%%)  [口径名 %s：分子 %d/分母 %d；"
               "非落库标记口径，后者见 memory_metrics.py 的 %s，不可混读]"
               % (report["baseline_matched"], report["baseline_rate"],

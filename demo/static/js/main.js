@@ -136,7 +136,8 @@ function isBrowserDisplayableImageUrl(url) {
     const path = url.split('?')[0].toLowerCase();
     if (/\.(heic|heif|tif|tiff)$/.test(path)) return false;
     if (/\.(jpe?g|png|webp|gif|bmp)$/.test(path)) return true;
-    // /uploads/xxx_norm.jpg 等无扩展名兜底：无明确非 web 后缀则允许尝试
+    // 无扩展名的取图 URL（签名端点 /api/receipt/{id}/image?v=...&sig=...）兜底：
+    // 无明确非 web 后缀则允许尝试
     return !/\.(heic|heif|tif|tiff)(\.|$)/i.test(path);
 }
 
@@ -443,9 +444,17 @@ function track(eventType, receiptId, properties) {
 window.track = track;
 
 // 纯函数：/api/auth/me 探测结果的进入决策
-function decideAuthProbe(httpStatus, _body) {
+function decideAuthProbe(httpStatus, body) {
     if (httpStatus === 401) return 'login';
-    // 2xx 正常进入；其他状态（含网络层已 catch）不阻断进入，后端异常会自行暴露
+    // /api/auth/me 在鉴权白名单内（匿名恒 200）——只按 2xx 放行的话，「未登录 → 面板」会
+    // 退化成依赖后续首屏数据端点 401 的时序。故首屏判定**直接**用 /me 已回显的
+    // auth_enabled + account：鉴权已开启却没有身份 → 判「需要登录」。
+    // auth_enabled=false（开发态）不受影响——免登录直通语义不变。
+    if (httpStatus >= 200 && httpStatus < 300) {
+        const b = body || {};
+        if (b.auth_enabled && !b.account) return 'login';
+    }
+    // 其他状态（含网络层已 catch）不阻断进入，后端异常会自行暴露
     return 'proceed';
 }
 
@@ -1207,6 +1216,7 @@ function initDeptAdminDetails() {
     restoreBatchFromManifest(); // 刷新浏览器不丢失解析进度（从 manifest 恢复单据及解析状态）
     initFocalZoomAndCrop();
     initAutoAnalyzeSetting();
+    initVendorHintSelect();     // 上传前可选供应商：恢复该设备上次选择
     updateGlobalDatalistUnits();
     loadInventoryData();
     loadSuppliersData();
@@ -1283,6 +1293,72 @@ function initAutoAnalyzeSetting() {
     }
     chkAuto.addEventListener('change', () => {
         localStorage.setItem('auto_analyze_receipt', chkAuto.checked);
+    });
+}
+
+// -------------------------------------------------------------
+// 上传前可选供应商（vendor_hint）
+// why：供应商记忆注入此前只有 vendor_hint 一条通道，而后端 Form 形参虽然存在
+// （api_receipts.py 的 vendor_hint: str = Form("")），前端却从不发送该字段
+// （grep vendor_hint demo/static demo/templates 零命中）→ 首轮恒不检索，命中率长期极低。
+// 这里补上成本最低的一条来源：上传前手选供应商，选项复用既有数据源 GET /api/suppliers，
+// 该设备上次的选择用 localStorage 记住（key：vendor_hint_last）。
+// 范围：只接单张上传（triggerAnalysisNow）；批量路径未纳入本任务（批量端点不读 vendor_hint）。
+// -------------------------------------------------------------
+const VENDOR_HINT_STORAGE_KEY = 'vendor_hint_last';
+// 该设备上次选择的供应商名。选项列表是异步加载的（loadSuppliersData），
+// 先用它记住取值，待选项就绪后再回填，避免「记住上次选择」在首屏被静默重置。
+let _vendorHintSaved = '';
+
+/** 读取当前手选的供应商名。未选择或元素缺失一律返回空串，与后端 Form 缺省值同口径。 */
+function getVendorHintValue() {
+    const sel = document.getElementById('vendorHintSelect');
+    return (sel && sel.value) ? sel.value : '';
+}
+
+/** 用供应商列表填充上传卡片的下拉。软停用的供应商不进下拉（与复核 combobox U-06 同口径）。 */
+function populateVendorHintOptions(suppliers) {
+    const sel = document.getElementById('vendorHintSelect');
+    if (!sel) return;
+    const names = [];
+    (suppliers || []).forEach(sup => {
+        if (!sup || !sup.name) return;
+        if (sup.active === 0 || sup.active === '0' || sup.active === false) return;
+        names.push(sup.name);
+    });
+    sel.innerHTML = '';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '未选择（自动识别）';
+    sel.appendChild(blank);
+    names.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+    });
+    // 回填上次选择；若该供应商已不在列表（停用/改名/合并），补一个同名选项兜底，
+    // 否则浏览器的 select 会把不存在的值落回空选项 = 静默丢失用户的选择。
+    if (_vendorHintSaved) {
+        if (names.indexOf(_vendorHintSaved) === -1) {
+            const keep = document.createElement('option');
+            keep.value = _vendorHintSaved;
+            keep.textContent = _vendorHintSaved;
+            sel.appendChild(keep);
+        }
+        sel.value = _vendorHintSaved;
+    }
+}
+
+function initVendorHintSelect() {
+    const sel = document.getElementById('vendorHintSelect');
+    if (!sel) return;
+    try { _vendorHintSaved = localStorage.getItem(VENDOR_HINT_STORAGE_KEY) || ''; } catch (e) { _vendorHintSaved = ''; }
+    // 选项可能尚未加载：此处赋值对不存在的选项无效，靠 populateVendorHintOptions 再回填一次
+    if (_vendorHintSaved) sel.value = _vendorHintSaved;
+    sel.addEventListener('change', () => {
+        _vendorHintSaved = sel.value || '';
+        try { localStorage.setItem(VENDOR_HINT_STORAGE_KEY, _vendorHintSaved); } catch (e) { /* 隐私模式等 localStorage 不可用：仅本次会话生效，不影响上传 */ }
     });
 }
 
@@ -1992,6 +2068,24 @@ function showQualityWarnings(warnings) {
     }
 }
 
+// P2-1：图内隐藏文字检测提示（只告警不拦截）。命中时显示人话横幅；未命中什么都不显示
+// （不出现「未检出」噪声）。reasons 来自后端，一律过 w2Escape 再插 innerHTML（P0 硬规则）。
+function showImageGuardNotice(guard) {
+    const banner = document.getElementById('imageGuardBanner');
+    if (!banner) return;
+    banner.innerHTML = '';
+    const reasons = (guard && guard.flagged && Array.isArray(guard.reasons))
+        ? guard.reasons.filter(r => r != null && String(r).trim() !== '')
+        : [];
+    if (reasons.length === 0) {
+        banner.classList.add('hide');
+        return;
+    }
+    banner.innerHTML = reasons.map(r => '<div>[提示] ' + w2Escape(String(r)) + '</div>').join('');
+    banner.classList.remove('hide');
+}
+window.showImageGuardNotice = showImageGuardNotice;
+
 // Q34：上传响应带 duplicate_of → 给可点击关联动作（toast + 确认「查看原单」）
 function offerDuplicateAction(ret) {
     if (!ret || ret.duplicate_of == null) return;
@@ -2058,6 +2152,9 @@ function triggerAnalysisNow(forceFlag = false) {
     const formData = new FormData();
     formData.append('receipt', selectedFile);
     formData.append('force', isForce ? 'true' : 'false');
+    // B3：上传前手选的供应商作为识别先验（vendor_hint）。未选择时传空串，
+    // 与后端 Form("") 缺省同口径 = 行为与接线前完全一致。
+    formData.append('vendor_hint', getVendorHintValue());
 
     const useTreatment = document.getElementById('chkTreatment').checked;
 
@@ -3708,6 +3805,9 @@ function selectSupplierItem(itemElem) {
             menu.classList.add('hide');
         }
     }
+    // 下拉选中是「程序化赋值」，不会触发 input 的 change 事件 → 显式重取提示
+    // （P2-T4：供应商变了，历史价格区间的口径也变了）。
+    refreshAllVendorPriceHints();
     setTimeout(() => {
         isSelectingSupplier = false;
     }, 300);
@@ -4085,6 +4185,8 @@ function selectSkuItem(itemElem) {
         const menu = wrap.querySelector('.unit-dropdown-menu');
         if (menu) menu.classList.add('hide');
     }
+    // SKU 是「供应商×SKU 历史价格区间」的另一维 → 换绑后重取该行提示（P2-T4）。
+    refreshVendorPriceHint(itemElem.closest('tr'));
     track('field_edited', currentReceiptId,
           { field_name: 'sku_binding', sku_id: skuId, sku_name: skuName });
     setTimeout(() => { isSelectingSku = false; }, 200);
@@ -4356,7 +4458,14 @@ function renderEditForm(data) {
         });
     }
 
+    // P2-T4：供应商是「供应商×SKU 历史价格区间」的维度之一 → 供应商改了，整表提示重取，
+    // 否则提示会停留在上一个供应商的结果上（比没有提示更糟）。
+    const hintSupplierInput = document.getElementById('inpSupplier');
+    if (hintSupplierInput) hintSupplierInput.onchange = refreshAllVendorPriceHints;
+
     showQualityWarnings(data.quality_warnings);
+    // P2-1：图内隐藏文字命中时显示人话横幅（未命中不显示）
+    showImageGuardNotice(data.image_guard);
     renderCurrencySymbol();
 }
 window.renderEditForm = renderEditForm;
@@ -5294,6 +5403,111 @@ function readReceiptLevelReviewSignals() {
     }
 }
 
+// -------------------------------------------------------------
+// 复核侧「供应商×SKU 历史价格区间」提示（收敛计划 P2-T4 / 概念 C5）
+// -------------------------------------------------------------
+// 定位：Side-by-Side 复核界面的人眼提示 —— **只做人类可见提示，绝不写入生成侧 prompt**
+// （若注入生成侧，模型会照抄上一单的价格形成锚定；生成侧只放别名/单位/版式等确定性事实）。
+// 数据源：GET /api/vendor_price_hint（只读），后端复用 db.price_history（inventory_log
+// kind=in 自带 vendor 字段）按供应商过滤 —— 与库存页/成本层同一口径，不另建一份价格历史。
+// 边界：① 无该供应商的历史一律隐藏（不渲染空壳）；
+//      ② 区间与「当前单价是否超出」全部由后端算 —— 前端不得自己算，否则会与库存页阈值
+//         口径分叉（本仓高发的「同一口径多份实现」）；
+//      ③ 供应商 / SKU / 单价任一变化都重取（这三者都是区间判定的输入），并用序号丢弃
+//         过期响应，避免慢响应回来把新结果盖掉。
+
+// 纯渲染：hint 为 null / 无历史 / 数字非法 → 返回空串（调用方据此隐藏，绝不显示空壳）。
+function vendorPriceHintHtml(hint) {
+    if (!hint || !hint.has_history) return '';
+    const low = Number(hint.low);
+    const high = Number(hint.high);
+    const count = Number(hint.count || 0);
+    if (!isFinite(low) || !isFinite(high) || count <= 0) return '';
+    const sym = currencySymbol(currentCurrencyCode());
+    const range = (low === high)
+        ? sym + low.toFixed(2)
+        : sym + low.toFixed(2) + '–' + high.toFixed(2);
+    const text = '供应商历史区间 ' + range + '（' + count + ' 次）';
+    const why = '该供应商在本店此 SKU 的历史进货单价区间（来自库存流水），仅供参考';
+    if (hint.out_of_range) {
+        // direction 缺省/异常时不猜方向，只说「超出」（后端 out_of_range=true 必带方向）
+        const beyond = (hint.direction === 'down') ? '低于区间'
+            : (hint.direction === 'up' ? '高于区间' : '超出区间');
+        return '<div class="vendor-price-hint vendor-price-hint-out" title="' + w2Escape(why + '；本次' + beyond) + '"'
+            + ' style="font-size:0.7rem; line-height:1.25; color:#b45309; background:#fef3c7;'
+            + ' border-radius:4px; padding:1px 5px; max-width:100%; word-break:break-word;">'
+            + w2Escape(text + ' · 本次' + beyond) + '</div>';
+    }
+    return '<div class="vendor-price-hint" title="' + w2Escape(why) + '"'
+        + ' style="font-size:0.7rem; line-height:1.25; color:#64748b; max-width:100%; word-break:break-word;">'
+        + w2Escape(text) + '</div>';
+}
+
+// 提示的「供应商」维度来源：实时读表单字段（而非渲染时快照），
+// 这样用户改了供应商，提示会跟着变而不是停留在旧供应商的结果上。
+function currentSupplierForHint() {
+    try {
+        const el = document.getElementById('inpSupplier');
+        return el ? String(el.value || '').trim() : '';
+    } catch (e) {
+        // 读不到就按「无供应商」处理（提示会隐藏）—— 但必须留痕，不静默吞掉异常
+        console.warn('[vendor-price-hint] 读取供应商输入框失败，按「无供应商」处理：', e);
+        return '';
+    }
+}
+
+// 拉取并渲染某一行的历史价格区间提示；非明细行（无提示容器）直接忽略。
+// 返回 Promise（渲染完成）——调用方多为 fire-and-forget，测试可据此等待收敛。
+function refreshVendorPriceHint(tr) {
+    if (!tr || typeof tr.querySelector !== 'function') return Promise.resolve();
+    const box = tr.querySelector('.vendor-price-hint-box');
+    if (!box) return Promise.resolve();
+    const idInput = tr.querySelector('.inp-sku-id');
+    const skuId = idInput ? String(idInput.value || '').trim() : '';
+    const vendor = currentSupplierForHint();
+    // 「供应商×SKU」两维缺一即无从取值 → 清空（既不留空壳，也不留上一次的结果）
+    if (!skuId || !vendor) { box.innerHTML = ''; return Promise.resolve(); }
+
+    const priceInput = tr.querySelector('.inp-price');
+    const price = priceInput ? Number(priceInput.value) : NaN;
+    const qs = '/api/vendor_price_hint?sku_id=' + encodeURIComponent(skuId)
+        + '&vendor=' + encodeURIComponent(vendor)
+        + ((isFinite(price) && price > 0) ? '&unit_price=' + encodeURIComponent(price) : '');
+
+    const seq = String((Number(box.dataset.hintSeq) || 0) + 1);
+    box.dataset.hintSeq = seq;
+    return apiFetch(qs)
+        .then(res => res.json())
+        .then(ret => {
+            if (box.dataset.hintSeq !== seq) return;   // 过期响应（价格/SKU/供应商已变）
+            box.innerHTML = (ret && ret.status === 'success') ? vendorPriceHintHtml(ret) : '';
+        })
+        .catch(err => {
+            // 提示属辅助信息：失败隐藏，但不静默 —— 留痕，避免本仓「异常被吞掉 → 功能静默失效」
+            console.warn('[vendor-price-hint] 读取供应商历史价格区间失败，已隐藏该提示：', err);
+            if (box.dataset.hintSeq === seq) box.innerHTML = '';
+        });
+}
+
+// 整表重取（供应商变化时调用；动态行也一并覆盖）。
+function refreshAllVendorPriceHints() {
+    const tbody = document.getElementById('itemTableBody');
+    if (!tbody || typeof tbody.querySelectorAll !== 'function') return;
+    tbody.querySelectorAll('tr').forEach(tr => refreshVendorPriceHint(tr));
+}
+
+// 空明细占位行判据（renderEditForm 在 items=[] 时写入的 tr.warning-row，行内无任何
+// 输入控件）。用户补录第一行明细前必须先移除它：占位行与真行共存时，采集侧对无 input
+// 的行取 .inp-name.value 会抛 TypeError —— 异常冒泡出 submitSaveEdited，表现为
+// 「点确认上传单据后不发任何请求、界面无任何提示」。
+const ITEM_TABLE_PLACEHOLDER_SELECTOR = 'tr.warning-row';
+function clearItemTablePlaceholder(tbody) {
+    if (!tbody || typeof tbody.querySelectorAll !== 'function') return;
+    tbody.querySelectorAll(ITEM_TABLE_PLACEHOLDER_SELECTOR).forEach(ph => {
+        if (ph && typeof ph.remove === 'function') ph.remove();
+    });
+}
+
 function appendTableRow(item = {}) {
     const tbody = document.getElementById('itemTableBody');
 
@@ -5421,6 +5635,9 @@ function appendTableRow(item = {}) {
             <div class="price-input-wrap">
                 <input type="number" step="0.01" class="inp-price form-control text-right" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
                 ${anomalyHtml}
+                <!-- P2-T4：供应商×SKU 历史价格区间提示（只做人类可见提示，不进生成侧 prompt）。
+                     挂在单价单元格内 —— 不新增列、不改列序。 -->
+                <div class="vendor-price-hint-box"></div>
             </div>
         </td>
         <td>
@@ -5439,6 +5656,8 @@ function appendTableRow(item = {}) {
             </div>
         </td>
     `;
+    // 真行落表前先移除空明细占位行（否则占位行残留 → 采集侧取 .inp-name 抛错）
+    clearItemTablePlaceholder(tbody);
     tbody.appendChild(tr);
 
     tr.dataset.confidence = (itemConfRaw !== null) ? String(itemConfRaw) : '';
@@ -5450,6 +5669,12 @@ function appendTableRow(item = {}) {
 
     tr.addEventListener('input', () => { tr.dataset.manual = '1'; });
     tr.addEventListener('change', () => { tr.dataset.manual = '1'; });
+
+    // P2-T4：单价是本行提示的判定输入（是否超出历史区间）→ 失焦时重取。
+    // 区间仍由后端算，前端只负责「价格变了就再问一次」。
+    const priceInput = tr.querySelector('.inp-price');
+    if (priceInput) priceInput.addEventListener('change', () => refreshVendorPriceHint(tr));
+    refreshVendorPriceHint(tr);
 }
 
 function addEmptyRow(opts) {
@@ -5737,7 +5962,13 @@ function submitArcFeedback(btn) {
             showToast('归档反馈已提交', 'success');
             _qualityWarningsLink(comment, likeVal);
             if (body.distilled) {
-                showToast('已记入待确认记忆队列（连续3次纠偏触发，管理员确认后生效）', 'info', TOAST_DURATION.long);
+                // P1-T5 发现性：此前只报「已记入队列」却不给入口，用户收到提示后无处可去
+                // （gap 分析 M11）。行动点走 showToast 既有 action 机制：文案仍是文本节点，
+                // 新标签打开队列页，不打断当前复核。
+                showToast('已记入待确认记忆队列（连续3次纠偏触发，管理员确认后生效）', 'info', {
+                    duration: TOAST_DURATION.long,
+                    action: { label: '查看待确认记忆', onClick: openPendingMemoryQueue },
+                });
             }
         } else {
             if (statusEl) statusEl.textContent = prevStatus || '提交失败';
@@ -5794,14 +6025,24 @@ function collectReviewFormData() {
 
     const items = [];
     rows.forEach(tr => {
+        // 采集侧兜底：不含 .inp-name 的行（空明细占位行 tr.warning-row）整行跳过，
+        // 绝不进提交、也不抛错。旧实现对占位行无条件取 .inp-name.value → TypeError
+        // 冒泡出 submitSaveEdited（不发请求、无提示）。
+        const nameInput = tr.querySelector('.inp-name');
+        if (!nameInput) return;
+        // 行内取值一律走软取（缺控件按空串），避免个别畸形行中断整次保存
+        const rowVal = (sel) => {
+            const el = tr.querySelector(sel);
+            return (el && el.value != null) ? String(el.value) : '';
+        };
         const deptInput = tr.querySelector('.inp-dept');
-        const actualQtyRaw = tr.querySelector('.inp-actual-qty') ? tr.querySelector('.inp-actual-qty').value.trim() : '';
+        const actualQtyRaw = rowVal('.inp-actual-qty').trim();
         const item = {
-            name: tr.querySelector('.inp-name').value.trim(),
-            quantity: parseFloat(tr.querySelector('.inp-qty').value) || 1.0,
-            unit: tr.querySelector('.inp-unit').value.trim(),
-            unit_price: parseFloat(tr.querySelector('.inp-price').value) || 0.00,
-            amount: parseFloat(tr.querySelector('.inp-amount').value) || 0.00,
+            name: rowVal('.inp-name').trim(),
+            quantity: parseFloat(rowVal('.inp-qty')) || 1.0,
+            unit: rowVal('.inp-unit').trim(),
+            unit_price: parseFloat(rowVal('.inp-price')) || 0.00,
+            amount: parseFloat(rowVal('.inp-amount')) || 0.00,
             // Gap 6：手写实收数量（actual_qty），留空则按 quantity 计
             actual_qty: actualQtyRaw !== '' && !isNaN(parseFloat(actualQtyRaw)) ? parseFloat(actualQtyRaw) : null,
             // Wave 2（D44）：明细行成本中心——行内下拉实际显示值（未打部门 → null）
@@ -6077,7 +6318,16 @@ let isSavingReview = false;
 function submitSaveEdited() {
     if (isSavingReview) return;   // Q32: 保存进行中，忽略重复点击
 
-    const data = collectReviewFormData();
+    // 采集失败绝不允许静默：异常一旦冒泡出去，用户看到的就是「点了保存毫无反应」
+    // （无请求、无提示）。此处兜住并给人话提示，保证保存按钮永远有回音。
+    let data;
+    try {
+        data = collectReviewFormData();
+    } catch (err) {
+        console.warn('[WARN] 复核表单内容读取失败，已中止本次保存并明确提示用户:', err);
+        showToast('保存没有完成：请检查明细表格里的每一行是否填写完整，然后重新保存', 'error');
+        return;
+    }
 
     if (isManualEntry) {
         // D12：手工新建前端校验——与后端 save_edited 手工分支 400 语义一致
@@ -6454,6 +6704,17 @@ function loadInventoryData() {
             }
             const priceBtnCls = priceAnomaly ? 'btn btn-price-anomaly' : 'btn btn-secondary';
 
+            // F5-L1：店员隐藏 owner-only 行内操作（价格走势 / 盘点 / 编辑 / 更多）。
+            // 四个入口的后端接口均为 require_role("owner")，店员点击必 403，故渲染期直接不输出。
+            const skuActionsHtml = isOwnerRoleNow() ? `
+                        <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.85rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>` : '';
+
             // 已停用 / 分类 等同属标签胶囊，统一走 .badge.badge-secondary（去掉内联自定义样式与间距，间距交由 .inv-name-cell 的 gap 控制）
             const activeBadge = !isActive
                 ? `<span class="badge badge-secondary">已停用</span>`
@@ -6477,7 +6738,7 @@ function loadInventoryData() {
             }
             tr.innerHTML = `
                 <td class="inv-name-cell"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${w2Escape(sku.name)}</strong></span>${activeBadge}</div></td>
-                <td><span class="badge badge-secondary">${w2Escape(sku.category || 'N/A')}</span></td>
+                <td><span class="badge badge-secondary">${w2Escape(sku.category || '其他')}</span></td>
                 <td class="col-right inv-metric-cell">
                     <div class="inv-metric-stack">
                         ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
@@ -6496,13 +6757,7 @@ function loadInventoryData() {
                 </td>
                 <td class="col-center">
                     <div class="inv-actions">
-                        <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.85rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>
+                        ${skuActionsHtml}
                     </div>
                 </td>
             `;
@@ -6838,7 +7093,6 @@ function submitSkuMerge() {
     const primaryId = parseInt(document.getElementById('skuMergePrimarySelect').value);
     const secCheckboxes = document.querySelectorAll('.chk-sku-sec:checked');
     const secIds = Array.from(secCheckboxes).map(c => parseInt(c.value));
-    const syncMemory = document.getElementById('skuMergeSyncMemory')?.checked ?? true;
 
     if (!primaryId || secIds.length === 0) {
         showToast('请至少选择一个被合并的副食材', 'warning');
@@ -6853,8 +7107,7 @@ function submitSkuMerge() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             primary_sku_id: primaryId,
-            secondary_sku_ids: secIds,
-            sync_vendor_memory: syncMemory
+            secondary_sku_ids: secIds
         })
     })
     .then(res => res.json())
@@ -7055,6 +7308,8 @@ function loadSuppliersData() {
         const suppliers = ret.data || [];
         // 供应商 combobox 联想数据源
         availableSuppliers = suppliers;
+        // 上传卡片「供应商（可选）」下拉同源填充（同一份列表，不额外发请求）
+        populateVendorHintOptions(suppliers);
         // 兼容旧 datalist（可能不存在于当前页面，做 null 防护）
         const datalist = document.getElementById('dlSuppliers');
         if (datalist) {
@@ -10831,6 +11086,14 @@ function renderSupplierAdminRows(suppliers) {
 
         const prefText = ({cash:'现结', credit:'赊账', mixed:'混合'})[s.settlement_pref] || '';
 
+        // F5-L2：店员隐藏 owner-only 行内写操作（查看单据 / 编辑 / 更多）。
+        // 查看单据=GET /api/suppliers/{id}/receipts、编辑=PATCH /api/suppliers/{id}、
+        // 更多内「停用/启用/合并」亦为 owner 域，后端均 require_role("owner")，店员点击必 403。
+        const supplierActionsHtml = isOwnerRoleNow() ? `
+                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="viewSupplierReceipts(${Number(s.id)})">查看单据</button>
+                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="openSupplierModal(${Number(s.id)})">编辑</button>
+                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="event.stopPropagation(); toggleSupplierMore(this, ${Number(s.id)}, ${active})">更多 ▾</button>` : '';
+
         const tr = document.createElement('tr');
         if (!active) tr.className = 'sup-row-inactive';
         tr.innerHTML = `
@@ -10849,9 +11112,7 @@ function renderSupplierAdminRows(suppliers) {
             <td>${w2Escape(s.contact_phone || '-')}</td>
             <td class="col-center">${statusBadge}</td>
             <td class="col-center">
-                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="viewSupplierReceipts(${Number(s.id)})">查看单据</button>
-                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="openSupplierModal(${Number(s.id)})">编辑</button>
-                <button class="btn btn-secondary" style="padding:3px 8px; font-size:0.78rem;" onclick="event.stopPropagation(); toggleSupplierMore(this, ${Number(s.id)}, ${active})">更多 ▾</button>
+                ${supplierActionsHtml}
             </td>`;
         body.appendChild(tr);
     });
@@ -11413,6 +11674,18 @@ function applyRoleVisibility(role) {
     ['adminSidebarSection', 'adminEngineBtn', 'analyticsBoardBtn'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';
+    });
+    // 通用可见性收敛（class 声明，供静态模板使用；动态行内按钮由 render* 按 isOwnerRoleNow 直接不输出）：
+    //   .admin-only → 仅超管可见（F1 RAG data_only 调试入口）
+    //   .owner-only → 超管/老板可见、店员隐藏（F5 库存/供应商 owner 级工具条；后端均 require_role("owner")）
+    // 记住模板原始内联 display（如 form-group 的 flex），恢复时回写原值，避免改坏布局。
+    document.querySelectorAll('.admin-only').forEach(el => {
+        if (el.dataset.baseDisplay === undefined) el.dataset.baseDisplay = el.style.display || '';
+        el.style.display = isAdmin ? el.dataset.baseDisplay : 'none';
+    });
+    document.querySelectorAll('.owner-only').forEach(el => {
+        if (el.dataset.baseDisplay === undefined) el.dataset.baseDisplay = el.style.display || '';
+        el.style.display = (role === 'staff') ? 'none' : el.dataset.baseDisplay;
     });
     const reportBtn = document.querySelector('.sidebar-btn[data-target="tab-report"]');
     if (reportBtn) reportBtn.style.display = (role === 'staff') ? 'none' : '';
@@ -14064,6 +14337,47 @@ function loadGTEvalsetStats() {
         .catch(() => { el.textContent = '确权进度加载失败'; });
 }
 
+// =====================================================================
+// P1-T5 人工闸入口发现性：待确认记忆队列的可达性
+// why：连续 3 次纠偏蒸馏出的记忆先进 pending 队列、人工批准后才注入识别，
+// 但主台此前只有一句 toast 文案，既无跳转也无任何带「记忆」语义的入口/角标
+// -> 人工闸在主台上实际不可达（gap 分析 M11）。这里只补入口，不改评测台页面：
+// 落点用评测台「待确认记忆」区块表格现有的 id（pendingMemoryBody）做锚点。
+// =====================================================================
+
+const PENDING_MEMORY_URL = '/evalset#pendingMemoryBody';
+
+// 在主台新标签打开待确认记忆队列（与主台既有 /evalset 入口的 target="_blank" 同口径）。
+// 由 toast 行动点触发 = 用户点击，不会被弹窗拦截器挡下。
+function openPendingMemoryQueue() {
+    window.open(PENDING_MEMORY_URL, '_blank');
+}
+
+/**
+ * 刷新「待确认记忆」角标，条数取自只读接口 GET /api/memory/pending?status=pending。
+ * why 静默：角标是补充入口而非核心数据——无 pending、无权限、网络失败一律隐藏角标，
+ * 既不打断主台也不抛未捕获异常。
+ * 非 admin 直接跳过请求：该接口 require_admin，评测中心对 owner/staff 一进去就是 403，
+ * 与 applyRoleVisibility「避免进入即 403 弹窗」同口径，不给页面加无意义的权限提示。
+ */
+function loadPendingMemoryBadge() {
+    const el = document.getElementById('pendingMemoryBadge');
+    if (!el) return;
+    const serverRole = AuthState.account && AuthState.account.role;
+    const localRole = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
+    const role = serverRole || localRole;
+    if (role && role !== 'admin') { el.classList.add('hide'); return; }
+    apiFetch('/api/memory/pending?status=pending')
+        .then(res => (res && res.ok) ? res.json().catch(() => null) : null)
+        .then(ret => {
+            const list = (ret && Array.isArray(ret.data)) ? ret.data : [];
+            if (!list.length) { el.classList.add('hide'); return; }
+            el.textContent = '待确认记忆 ' + list.length + ' 条';
+            el.classList.remove('hide');
+        })
+        .catch(() => { el.classList.add('hide'); });
+}
+
 // 加入/移出黄金基准集（可逆策展标记；移出需二次确认）
 function toggleGoldenSample(receiptId, inSet) {
     if (!inSet && !confirm('确认将单据 #' + receiptId + ' 移出黄金基准集？单据本体与审计记录不受影响，可随时重新加入。')) return;
@@ -14225,6 +14539,7 @@ function loadAnalyticsBoard(tenantId) {
     } else if (activeView === 'sec-eval') {
         loadGoldenBoard();
         loadGTEvalsetStats();
+        loadPendingMemoryBadge();
     }
 }
 window.loadAnalyticsBoard = loadAnalyticsBoard;
@@ -14298,6 +14613,7 @@ function switchAnalyticsSubView(targetViewId) {
     } else if (targetViewId === 'sec-eval') {
         if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
         if (typeof loadGTEvalsetStats === 'function') loadGTEvalsetStats();
+        if (typeof loadPendingMemoryBadge === 'function') loadPendingMemoryBadge();
     }
 }
 window.switchAnalyticsSubView = switchAnalyticsSubView;

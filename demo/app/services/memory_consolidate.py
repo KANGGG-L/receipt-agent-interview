@@ -71,6 +71,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from app.services.memory_facts import (
     ALLOWED_SOURCE_KINDS,
     KIND_PRICE_RANGE,
+    KIND_UNIT,
     MemoryFact,
     SOURCE_APPROVE,
     SOURCE_EXTRACT,
@@ -343,19 +344,39 @@ def _parse_range(value: Any) -> Optional[Tuple[float, float]]:
     return (min(first, second), max(first, second))
 
 
+_UNIT_EQUIV_SHARED = None
+
+
+def _get_unit_equiv_shared():
+    """unit 等价表共享单例（惰性加载 + 缓存，避免每次明细行读盘；缺表 fail-fast，
+    与评分侧同一份资产 app/services/unit_equivalence.yaml）。"""
+    global _UNIT_EQUIV_SHARED
+    if _UNIT_EQUIV_SHARED is None:
+        from app.services.unit_normalization import load_unit_equivalence
+        _UNIT_EQUIV_SHARED = load_unit_equivalence()
+    return _UNIT_EQUIV_SHARED
+
+
 def _normalize_value(kind: Any, value: Any) -> str:
     """值 → 可比较的归一字符串（带前缀，避免两种口径的产物撞车）。
 
     - `price_range`：按区间端点比（`{:.6g}` 吸收 8.0/8/8.000 这类写法差异）；
       端点解析不出来时退回文本口径，并加 `unparsed:` 前缀 —— 不能让 "8-10" 这样的
       合法区间与恰好长得一样的自由文本被判成同一件事。
-    - 其余三类：去空白 + 折叠大小写。
+    - `unit`：走 unit_normalization.unit_value_key（阶段 2A 工作项②接线）——与评分器
+      units_equal 同源的三层短路（归一相等 / 同等价组 / 同换算系数），unit 事实去重
+      自此有单位语义：「司马斤=斤」「瓶=樽」「箱（48罐）=箱」判同（NOOP），
+      「斤 vs 磅」（0.6048 vs 0.4536）仍判不同。本模块不再自持第二把单位尺子。
+    - 其余两类（alias/layout）：去空白 + 折叠大小写（口径一字不动）。
     """
     if kind == KIND_PRICE_RANGE:
         rng = _parse_range(value)
         if rng is None:
             return "unparsed:" + _normalize_text(value)
         return "range:{:.6g}:{:.6g}".format(rng[0], rng[1])
+    if kind == KIND_UNIT:
+        from app.services.unit_normalization import unit_value_key  # 惰性 import（本模块惯例）
+        return "unit:" + unit_value_key(value, _get_unit_equiv_shared())
     return "text:" + _normalize_text(value)
 
 

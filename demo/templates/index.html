@@ -248,6 +248,18 @@
                                 <input type="checkbox" id="chkAutoAnalyze"> 无需编辑图片，即刻开始分析
                             </label>
                         </div>
+                        <!-- 上传前可选供应商：手选值作为识别先验（vendor_hint）随单张上传提交，
+                             供后端落 has_vendor_hint 布尔位并进入识别首轮供应商记忆注入。
+                             不选择时提交空串，行为与既有完全一致；选项由 main.js
+                             populateVendorHintOptions() 用 GET /api/suppliers 填充。 -->
+                        <div style="margin-bottom: 16px; display: flex; justify-content: center; align-items: center; gap: 8px; flex-wrap: wrap;">
+                            <label for="vendorHintSelect" style="font-size: 0.9rem; color: var(--text-muted); cursor: pointer;">供应商（可选）</label>
+                            <select id="vendorHintSelect" class="form-control"
+                                    style="font-size: 0.85rem; padding: 6px 10px; min-width: 190px; width: auto;"
+                                    title="选择单据所属供应商，识别时会参考该供应商的历史记忆；不选则按图片内容自动识别">
+                                <option value="">未选择（自动识别）</option>
+                            </select>
+                        </div>
                         <input type="file" id="receiptFile" accept="image/*" multiple class="hide" style="display: none !important;" hidden>
                         <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
                             <button class="btn btn-primary" onclick="document.getElementById('receiptFile').click()">
@@ -443,6 +455,11 @@
                                      style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
                                 </div>
 
+                                <!-- P2-1: 图内隐藏文字检测提示（只告警不拦截；命中才显示，未命中什么都不显示） -->
+                                <div id="imageGuardBanner" class="alert-banner hide" role="alert" aria-live="polite" aria-label="图内隐藏文字提示"
+                                     style="border-color: rgba(180, 83, 9, 0.45); background: var(--warning-bg); color: var(--warning);">
+                                </div>
+
                                 <!-- 表头元数据 (供应商, 日期, 归档月份, 总额, 结算方式, 单据形态, 币种, 部门) -->
                                 <div class="form-grid">
                                      <div class="form-group" style="grid-column: span 2;">
@@ -571,7 +588,7 @@
                                                 <th style="width:30%;">消费项目 / SKU</th>
                                                 <th style="width:10%; text-align:right;">数量</th>
                                                 <th style="width:10%; text-align:center;">单位</th>
-                                                <th style="width:14%; text-align:right;">单价 ($)</th>
+                                                <th style="width:14%; text-align:right;" title="单价下方的「供应商历史区间」来自该供应商在本店此 SKU 的进货流水（库存流水 kind=in），只作复核参考，不参与识别">单价 ($)</th>
                                                 <th style="width:14%; text-align:right;">金额 ($)</th>
                                                 <th style="width:12%; text-align:center;">部门</th>
                                                 <th style="width:10%; text-align:center;">操作</th>
@@ -742,8 +759,8 @@
 
                             <div class="inv-toolbar-actions">
                                 <button class="btn btn-primary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openAddSkuModal()">+ 新增食材</button>
-                                <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openSkuMergeModalFromInv()"> 合并食材</button>
-                                <button class="btn btn-warning" style="padding: 5px 12px; font-size: 0.85rem;" onclick="deduplicateSkus()" title="一键清理 _\d{10} 流水号重复食材，幂等自愈（迁移流水、停用副 SKU、审计留痕）">一键清理重复食材</button>
+                                <button class="btn btn-secondary owner-only" style="padding: 5px 12px; font-size: 0.85rem;" onclick="openSkuMergeModalFromInv()"> 合并食材</button>
+                                <button class="btn btn-warning owner-only" style="padding: 5px 12px; font-size: 0.85rem;" onclick="deduplicateSkus()" title="一键清理 _\d{10} 流水号重复食材，幂等自愈（迁移流水、停用副 SKU、审计留痕）">一键清理重复食材</button>
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryData()">刷新数据</button>
                             </div>
                         </div>
@@ -1090,7 +1107,7 @@
                             <label style="font-size:0.82rem; display:flex; align-items:center; gap:4px; cursor:pointer;">
                                 <input type="checkbox" id="supShowInactive" onchange="loadSupplierAdmin()"> 显示已停用
                             </label>
-                            <button class="btn btn-primary" style="padding:5px 12px; font-size:0.82rem;" onclick="openSupplierModal()">+ 新增供应商</button>
+                            <button class="btn btn-primary owner-only" style="padding:5px 12px; font-size:0.82rem;" onclick="openSupplierModal()">+ 新增供应商</button>
                         </div>
                         <div class="table-container" style="max-height:360px; overflow-y:auto; overflow-x:auto;">
                             <table class="data-table">
@@ -2564,6 +2581,25 @@
                             </div>
                         </div>
 
+                        <!-- P28-AU2：解析超时清扫阈值（settings 键 parsing_timeout_seconds）。
+                             为什么必须能在管理台调：它决定「卡在识别中的单据多久算超期」，
+                             是治理「状态永久假在途」的运维旋钮。此前这个键只在 settings_service
+                             登记、消费方（启动自检与只读巡检 GET /api/admin/parsing-stale）都在跑，
+                             管理台却看不见它 —— 登记 != 可见，等于不可运营。
+                             该控件走 ADMIN_SETTINGS_FIELDS 既有机制（int），load / collect / reset
+                             三处由同一张表驱动，无需另写特判。 -->
+                        <div class="card-title" style="margin-top:18px;"><span>解析超时清扫（单据状态治理）</span></div>
+                        <div class="form-group">
+                            <label>解析超时阈值（秒，缺省 300）</label>
+                            <input type="number" step="1" min="1" id="setParsingTimeoutSeconds" class="form-control" style="min-height:38px; max-width:320px;">
+                            <span style="display:block; font-size:0.78rem; color:var(--text-muted, #666); margin-top:6px;">
+                                卡在「识别中」超过该秒数的单据，会在服务下次启动时（启动自检，每次启动执行一次）
+                                被清扫器标为失败（error / parsing_timeout），不再永久停留在假「在途」状态。
+                                GET /api/admin/parsing-stale 是同一判据的只读查询（只列出、不改状态，供巡检）。
+                                留空不覆盖；0 或负值会被消费方钳回缺省 300。
+                            </span>
+                        </div>
+
                         <div class="card-title" style="margin-top:18px;"><span>记忆读取预算与衰减</span></div>
                         <div class="memory-budget-grid">
                             <div class="form-group">
@@ -2600,9 +2636,66 @@
                             </label>
                         </div>
 
+                        <!-- Y3-P2b：首轮供应商记忆注入的两条来源之一（未手选供应商时的抬头预判）。
+                             为什么必须能被管理台一键开关：开关缺省 false（零行为变化），但它一旦打开
+                             会真发一次模型调用（有成本），管理员必须能自行发现并承担这个成本，而不是
+                             只能靠改库/改代码。手选优先——预判仅在 vendor_hint 为空时生效。 -->
+                        <div class="card-title" style="margin-top:18px;"><span>首轮供应商预判（未手选供应商时）</span></div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; min-height:38px;">
+                                <input type="checkbox" id="setVendorPrecheckEnabled" style="width:20px; height:20px; cursor:pointer;">
+                                <span>启用首轮供应商预判（上传时未手选供应商 → 裁抬头小模型预判供应商名，作为识别先验注入该供应商的历史记忆）。默认关闭：打开后每张未手选供应商的单据会多发一次模型调用（增加成本与耗时）；失败一律回落空串，不阻断识别。</span>
+                            </label>
+                        </div>
+
+                        <!-- P23-AQ1：LLM 抽取开关（settings 键 memory_extract_enabled）。
+                             为什么必须能被管理台一键开关：它缺省 false（零行为变化），
+                             打开后会在「复核保存 / 入账」两条写请求路径上真发一次模型调用
+                             （有成本），属运营决策 —— 管理员必须能自行发现并承担，而不是
+                             只能靠改库/改代码；在此之前 grep 这个键在 static/templates 里
+                             零命中，整条抽取链在生产上从未执行过。 -->
+                        <div class="card-title" style="margin-top:18px;"><span>LLM 抽取（把人工修正沉淀成候选事实）</span></div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; min-height:38px;">
+                                <input type="checkbox" id="setMemoryExtractEnabled" style="width:20px; height:20px; cursor:pointer;">
+                                <span>启用 LLM 抽取：打开后，用户在复核时修正过的字段会被抽成候选事实，进入「待确认队列」——<strong>不会直接生效</strong>，需人工确认后才写入记忆。默认关闭：打开后每张有修正的单据在保存/入账时会多发一次模型调用（增加成本与耗时）；抽取失败一律不阻断保存。</span>
+                            </label>
+                        </div>
+
                         <div style="display:flex; justify-content:flex-end; align-items:center; gap:16px; margin-top:18px;">
                             <button class="btn btn-secondary" id="btnResetAdminSettings" onclick="resetAdminSettingsToDefaults()">恢复缺省值</button>
                             <button class="btn btn-primary" id="btnSaveAdminSettings" onclick="saveAdminSettings()">保存系统配置</button>
+                        </div>
+                    </div>
+
+                    <!-- 记忆度量看板（收敛计划 P2-T5）：四项只读指标 + 记忆总开关状态 -->
+                    <div class="card" style="max-width:960px; margin:24px auto;">
+                        <div class="card-title"><span>供应商记忆度量看板（只读）</span></div>
+                        <p style="font-size:0.82rem; color:var(--text-muted,#666); margin:0 0 14px 0;">
+                            口径与 CLI 基线脚本 demo/scripts/memory_metrics.py 同源（后端直接调用同一实现，不另算一份）。
+                            分母为 0 时显示「无数据」，不用 0% 冒充；两组修改率之差为负即目标方向（有记忆组修改更少），
+                            但该分组键是「供应商是否有记忆行」这一观察性代理口径，真注入分组见 demo/scripts/memory_ab_baseline.py。
+                            看板并列展示两个命中率：旧口径（分母=全部单据，含供应商不可确定、该供应商无可用记忆两类无缘命中的单据）
+                            与有效命中率（分母=供应商可确定且有可用记忆的单据），两者数值不可混读、不可相互比较。
+                        </p>
+                        <div id="memoryMetricsPanel">
+                            <div style="font-size:0.85rem; color:var(--text-muted,#666);">度量加载中...</div>
+                        </div>
+                    </div>
+
+                    <!-- 已生效记忆治理区（收敛计划 P8 / AC2）：可见治理元数据 + 调 P1-T1 已有删除端点 -->
+                    <div class="card" style="max-width:960px; margin:24px auto;">
+                        <div class="card-title" style="justify-content:space-between; align-items:center;">
+                            <span>已生效记忆（只读 + 可删除）</span>
+                            <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadVendorMemoryGovernance()">刷新</button>
+                        </div>
+                        <p style="font-size:0.82rem; color:var(--text-muted,#666); margin:0 0 14px 0;">
+                            只列当前生效（status=active）的供应商记忆，数据来自只读治理端点 GET /api/admin/vendor-memory，
+                            信任度 / 衰减分 / 命中次数等数值均由后端给出、前端不重算。删除调用已有的单条删除端点
+                            DELETE /api/memory/{memory_id}（DB 行 + 向量级联），删除前会二次确认、删除后列表自动重载。
+                        </p>
+                        <div id="vendorMemoryGovernancePanel">
+                            <div style="font-size:0.85rem; color:var(--text-muted,#666);">加载中...</div>
                         </div>
                     </div>
                 </section>
@@ -3068,7 +3161,14 @@
                             <div class="card">
                                 <div class="card-title" style="justify-content:space-between; align-items:center;">
                                     <span>GT 抽检确权</span>
-                                    <a href="/evalset" target="_blank" class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px; text-decoration:none;" title="在新标签页中打开独立的 GT 抽检确权队列">打开 GT 抽检确权台</a>
+                                    <div style="display:flex; align-items:center; gap:10px;">
+                                        <!-- P1-T5 发现性：待确认记忆角标（条数来自只读接口 GET /api/memory/pending?status=pending）。
+                                             无 pending / 接口失败时由 loadPendingMemoryBadge() 加 .hide 隐藏，不留空壳。 -->
+                                        <a id="pendingMemoryBadge" class="badge badge-warning hide" href="/evalset#pendingMemoryBody"
+                                           target="_blank" style="text-decoration:none;"
+                                           title="有供应商记忆等待人工确认，点击前往确权台的待确认记忆区块处理">待确认记忆 0 条</a>
+                                        <a href="/evalset" target="_blank" class="btn btn-primary" style="font-size:0.8rem; padding:4px 10px; text-decoration:none;" title="在新标签页中打开独立的 GT 抽检确权队列">打开 GT 抽检确权台</a>
+                                    </div>
                                 </div>
                                 <div style="font-size:0.82rem; color:var(--text-muted); line-height:1.8;">
                                     确权闭环：低置信回流 / 灰测样本进入候选池 → 在 GT 抽检确权台人工核对 → 晋升为黄金基准集样本 → 供基准回归与评测消费。<br>
@@ -3655,8 +3755,8 @@
                                     <option value="SGD">SGD 新币</option>
                                 </select>
                             </div>
-                            <!-- D-P1-3 RAG data_only 调试开关 -->
-                            <div class="form-group" style="display:flex; align-items:center; gap:8px; padding-top:18px;">
+                            <!-- D-P1-3 RAG data_only 调试开关（admin-only：店员/老板不可见） -->
+                            <div class="form-group admin-only" style="display:flex; align-items:center; gap:8px; padding-top:18px;">
                                 <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; margin:0;">
                                     <input type="checkbox" id="arcDataOnlyToggle" onchange="toggleRagDataOnly()"> 调试：显示 RAG 上下文 (data_only)
                                 </label>
@@ -3683,8 +3783,8 @@
                             </table>
                         </div>
 
-                         <!-- D-P1-3 RAG 上下文调试卡（默认隐藏，data_only 开启时展示） -->
-                        <div id="arcRagContextCard" class="hide" style="margin-top: 12px; border:1px solid #b8daff; background:#e7f3ff; border-radius:8px; padding:10px 12px;">
+                         <!-- D-P1-3 RAG 上下文调试卡（默认隐藏，data_only 开启时展示；admin-only） -->
+                        <div id="arcRagContextCard" class="hide admin-only" style="margin-top: 12px; border:1px solid #b8daff; background:#e7f3ff; border-radius:8px; padding:10px 12px;">
                             <div style="font-size:0.82rem; font-weight:600; color:#004085; margin-bottom:6px; display:flex; align-items:center; justify-content:space-between;">
                                 <span>RAG 上下文 (data_only 调试)</span>
                                 <span id="arcRagContextTag" class="badge" style="background:#cce5ff; color:#004085; font-size:0.7rem;">vendor_context</span>
@@ -4108,7 +4208,7 @@
             </div>
             <div class="modal-body">
                 <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px;">
-                    将多个同义或误建的食材合并为一个主 SKU。历史流水与库存将自动归集，副 SKU 将安全停用并沉淀供应商别名记忆。
+                    将多个同义或误建的食材合并为一个主 SKU。历史流水与库存将自动归集，副 SKU 将安全停用，原先指向副 SKU 的供应商别名将自动改指到主 SKU。
                 </p>
                 <div class="form-group" style="margin-bottom:12px;">
                     <label>选择保留的主 SKU (Primary)</label>
@@ -4117,12 +4217,6 @@
                 <div class="form-group" style="margin-bottom:12px;">
                     <label>被合并的副 SKU 列表 (将被停用并迁移流水)</label>
                     <div id="skuMergeSecondaryList" style="background:var(--bg-input); padding:8px 12px; border-radius:8px; font-size:0.85rem; max-height:120px; overflow-y:auto;"></div>
-                </div>
-                <div class="form-group" style="margin-bottom:12px;">
-                    <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; cursor:pointer;">
-                        <input type="checkbox" id="skuMergeSyncMemory" checked>
-                        <span>自动将副品名沉淀至供应商别名知识库（RAG 自学习）</span>
-                    </label>
                 </div>
                 <div style="display:flex; justify-content:flex-end; gap:10px; margin-top:16px;">
                     <button class="btn btn-secondary" onclick="closeModalById('skuMergeModal')">取消</button>
