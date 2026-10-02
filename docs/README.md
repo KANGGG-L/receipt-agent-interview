@@ -66,4 +66,4 @@
 | **[`06-adds-on/`](06-adds-on/)** | 面试叙事附录：OCR 讲述手册、PGM 背景叙事包、压力面演练与平台架构 Gap 分析，入口：[README](06-adds-on/README.md)。 |
 | **[`07-PM敏捷交付流程资产/`](07-PM敏捷交付流程资产/)** | **PM 岗位申请专用**——按敏捷交付九要素组织的完整交付经历（Workflow / User Stories / AC / 测试用例 / UAT / 沟通跟进 / Sprint 追踪 / Rollout / Bug 管理），入口：[README](07-PM敏捷交付流程资产/README.md)。 |
 | **[`09-测试与UAT报告/`](09-测试与UAT报告/)** | QA 真机实操 UAT 复验报告（QA Round 2），与 AC 规格书逐条对照。 |
-| **[`issues/`](issues/)** | 按日期归档的真实缺陷工单（GUI 走查、观测台真实性治理等 4 份），入口：[README](issues/README.md)。 |
+| **[`issues/`](issues/)** | 按日期归档的真实缺陷工单与安全/合规设计档案（GUI 走查、观测台真实性治理，及 2026-09-27 安全加固 / 护栏网关 / 合规路线三份，共 7 份），入口：[README](issues/README.md)。 |

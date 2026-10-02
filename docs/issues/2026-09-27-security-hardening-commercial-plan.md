@@ -4,9 +4,13 @@
 > 输入来源：① 本仓全量安全审计（API 端点威胁模型 + 图片链路审计，结论见 §1）；② 业界商业化落地标准联网调研（OWASP LLM Top 10 2025、多租户隔离架构、多模态注入攻防研究、商业 Guardrail 产品能力、Agent 安全基准、国内合规），结论见 §2。
 > 目标：把系统从「demo 级有意识防护」推进到「商业化可交付」的防护水位，并给出可验收的工作项。
 
+> **落地状态（2026-10-02 更新）**：**M1（P0）与 M2（P1）均已落地**，集成于 `integration/worktree-consolidation`（HEAD `c9b1b79`；安全加固 M1/M2 落地提交为 `057f3c6`，随后的库存/价格提交 `c9b1b79` 亦叠加其上）。**M3（P2）为已设计未实现**：设计文档已产出——W-CMP-1 见 [`2026-09-27-compliance-roadmap.md`](2026-09-27-compliance-roadmap.md)，W-ARCH-2 见 [`2026-09-27-guardrail-gateway-design.md`](2026-09-27-guardrail-gateway-design.md)；对应实现尚未落地。详见 §5 里程碑状态表。
+
 ---
 
 ## §1 本地审计现状（结论摘要）
+
+> 时点说明：本节为 2026-09-27 审计时点的现状快照。下表 P0 三项与多数 P1/P2 缺口已由 M1/M2 落地收口（提交 `057f3c6`，见 §5）；保留原文以记录审计基线，请勿据此判为当前未修。两项例外仍如实保留：Canary 对「拿到 prompt 的恶意 provider」的固有边界（本就不在 M1/M2 范围），以及图内**语义型**注入（清晰印刷指令）无通用检出——M2 仅扩至 EXIF/二维码/边缘覆盖层等载体，语义层仍靠人审兜底。
 
 ### 已达标的防线（主链路，强制生效）
 - **归一化过滤器 + XML 数据沙箱**（`ai_registry/tools/prompt_injection_guard/v1_1_0_normalize.py`）：NFKC 归一 / 零宽剔除 / 同形字折叠 / leet 折叠后匹配，不可信文本统一包进 `security="untrusted_external_data"` 沙箱。主识别/审核/复盘三条 LLM 腿的调用点全部强制接线（extract_chain L293/566/809/834、audit_chain L75、review_chain L71）。
@@ -152,11 +156,14 @@
 
 ## §5 里程碑与验收总览
 
-| 里程碑 | 内容 | 出口标准 |
-|---|---|---|
-| M1（P0 完成） | W-SEC-1/2/3 | 无裸拼调用点；三上传入口全扫；伪图片/炸弹全拒；对抗冒烟通过 |
-| M2（P1 完成） | W-ISO-1/2、W-SEC-4/5/6 | DB 层租户兜底；出站 PII 脱敏默认开；image_guard 进决策；对抗套件 ≥50 用例进 CI；安全看板可用 |
-| M3（P2 完成） | W-CMP-1、W-ARCH-2 | 数据分级文档 + 加密 + 合规评估启动；guardrail 网关化方案评审 |
+| 里程碑 | 状态 | 内容 | 出口标准 |
+|---|---|---|---|
+| M1（P0 完成） | **已落地（LANDED）** — `057f3c6` | W-SEC-1/2/3 | 无裸拼调用点；三上传入口全扫；伪图片/炸弹全拒；对抗冒烟通过 |
+| M2（P1 完成） | **已落地（LANDED）** — `057f3c6` | W-ISO-1/2、W-SEC-4/5/6 | DB 层租户兜底；出站 PII 脱敏默认开；image_guard 进决策；对抗套件 ≥50 用例进 CI；安全看板可用 |
+| M3（P2 完成） | **已设计未实现（designed-not-implemented）** | W-CMP-1、W-ARCH-2 | 数据分级文档 + 加密 + 合规评估启动；guardrail 网关化方案评审 |
+
+> 落地证据（M1/M2，提交 `057f3c6`）：`tests/adversarial/`（文本/图片/恶意 provider 三类对抗矩阵，87 passed）、`tests/test_memory_write_side_guard.py`、`tests/test_image_guard_v1_1_decision.py`、`tests/test_security_observability.py`、`tests/test_tenant_isolation.py`、`demo/tests/test_upload_content_security.py`、`demo/tests/test_image_guard_entry_coverage.py`；代码侧 `security_guard.py`（`ADMITTED_PROVIDER_DOMAINS` / `is_provider_admitted` / `check_outbound_image_provider` / `log_security_event`）、`db.py`（`security_events` 表 + 租户边界机制）等。
+> M3 的设计文档已产出（`2026-09-27-compliance-roadmap.md`、`2026-09-27-guardrail-gateway-design.md`），代码（SQLCipher/KMS 加密、MFA、独立护栏网关服务化）尚未落地。
 
 ## 附：主要参考来源
 - [OWASP LLM Top 10: Mapped to Real Gateway Controls (TrueFoundry)](https://www.truefoundry.com) / [OWASP 官方 Prompt Injection 预防指南](https://www.scribd.com) / [Aurascape 安全清单](https://aurascape.ai)
