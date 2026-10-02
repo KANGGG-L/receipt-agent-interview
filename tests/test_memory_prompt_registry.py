@@ -29,6 +29,7 @@ import importlib
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 from typing import List, Tuple
@@ -315,7 +316,52 @@ class _StubModel:
 
     def invoke(self, messages):
         self.messages = messages
-        return self.output
+        return _with_canary_handshake(self.output, messages)
+
+
+# 生产链路的 canary 握手是 fail-closed 的：真实模型会按锚定指令回填 __guard_token，
+# stub 也必须按同一协议回填，否则合规输出会被误判成协议错配（error 置位）。
+_CANARY_TOKEN_RE = re.compile(r'"__guard_token"\s*:\s*"([^"]+)"')
+
+
+def _with_canary_handshake(output, messages):
+    content = output if isinstance(output, str) else getattr(output, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        return output
+    prompt = "\n".join(
+        getattr(m, "content", "") or "" for m in (messages or []))
+    matched = _CANARY_TOKEN_RE.search(prompt)
+    if not matched:
+        return output
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(s)
+    except (TypeError, ValueError):
+        return output
+    token = {"__guard_token": matched.group(1)}
+    if isinstance(data, list):
+        return json.dumps(data + [token], ensure_ascii=False)
+    if isinstance(data, dict):
+        return json.dumps({**data, **token}, ensure_ascii=False)
+    return output
+
+
+def _expected_system_with_canary(prompt_text, model):
+    """注册表/回退 prompt + 调用期注入的 canary 数组通道锚定指令。
+
+    canary 锚定是调用期行为（inject_canary_instructions 双重锚定），不属于注册表
+    治理文本本身；token 是动态生成的，从 stub 收到的 HumanMessage 里取回后重建
+    完整期望值 —— 保持逐字节精确断言，不放宽成 startswith。
+    """
+    from app.services.canary_guard import CANARY_ARRAY_INSTRUCTION_TEMPLATE
+    human_text = "\n".join(
+        getattr(m, "content", "") or "" for m in model.messages or []
+        if type(m).__name__ == "HumanMessage")
+    matched = _CANARY_TOKEN_RE.search(human_text)
+    assert matched, "HumanMessage 里应有 canary 锚定指令"
+    return prompt_text + CANARY_ARRAY_INSTRUCTION_TEMPLATE.format(token=matched.group(1))
 
 
 def _system_message_contents(model) -> list:
@@ -333,7 +379,8 @@ def test_extraction_sends_registry_prompt_to_model():
         [{"name": "黑牛", "qty": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
         [{"name": "黑牛腩", "quantity": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
         "sup-0001", "tenant-a", model=stub)
-    assert _system_message_contents(stub) == [_prompt_text("v1_1_0_extract")]
+    assert _system_message_contents(stub) == [
+        _expected_system_with_canary(_prompt_text("v1_1_0_extract"), stub)]
     # 这里原先写的是「内置常量必须与注册表版本不同，否则本用例无法区分是否真走了注册表」——
     # 那条断言把「回退文案比注册表少防注入条款」固化成合法行为（缺陷固化断言：任何修复都会
     # 被自己的用例判红）。现改为断言**两侧条款等价**（四类 kind / JSON 数组契约 / 防注入）。
@@ -358,7 +405,8 @@ def test_extraction_prefers_registry_when_both_texts_are_available(monkeypatch):
         [{"name": "黑牛", "qty": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
         [{"name": "黑牛腩", "quantity": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
         "sup-0001", "tenant-a", model=stub)
-    assert _system_message_contents(stub) == [sentinel]
+    assert _system_message_contents(stub) == [
+        _expected_system_with_canary(sentinel, stub)]
     assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_REGISTRY
 
 
@@ -391,7 +439,8 @@ def test_fallback_run_is_marked_in_last_run(monkeypatch, caplog):
             [{"name": "黑牛腩", "quantity": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
             "sup-0001", "tenant-a", model=stub)
     assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_BUILTIN_FALLBACK
-    assert _system_message_contents(stub) == [mx._SYSTEM_PROMPT]
+    assert _system_message_contents(stub) == [
+        _expected_system_with_canary(mx._SYSTEM_PROMPT, stub)]
     # 回退不是 error：文案条款等价、结果可用；它是治理信号，不是本次失败
     assert mx.get_last_run()["error"] == ""
 

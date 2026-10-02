@@ -7,8 +7,8 @@ why: 修复前 `extract_chain._image_data_url` 把 PIL 整段包在 try 里，�
 二进制冒充 image/jpeg 发给 VLM，触发上游 400/500；而这类失败会被误读成
 "模型能力不行"。修复后：
   - 非 Web 格式解码失败 → 抛 ImageDecodeError（可读原因），不再发送损坏数据；
-  - Web 格式（mime 可信）保留原文件回退，但先补一次限边重编码，仍失败才原样回退
-    并受体积上限约束；
+  - Web 格式（mime 可信）保留原文件回退，并受体积上限约束；
+  - 超像素上限 → 受控拒绝（W-SEC-3：删除了旧的「临时置 None 放宽重试」，见第 4 节）；
   - 正常 jpg 路径逐字节不变（本文件用旧实现复刻做对照）。
 """
 
@@ -177,40 +177,54 @@ def test_normal_tiff_that_decodes_is_accepted(tmp_path):
 
 
 # ---------------------------------------------------------------
-# 4. 限边救援：超像素上限的合法原图走小 JPEG，且不污染 PIL 全局状态
+# 4. W-SEC-3：超像素上限受控拒绝，且全程不改写 PIL 全局状态
+#    （旧的「临时置 None 再还原」的放宽重试已删除——那是进程级竞态）
 # ---------------------------------------------------------------
-def test_oversized_pixel_image_rescued_and_global_restored(tmp_path, monkeypatch):
+def test_oversized_pixel_image_rejected_and_global_untouched(tmp_path, monkeypatch):
+    """超过进程级像素上限（image_web.MAX_IMAGE_PIXELS 单一口径）→ ImageDecodeError。
+
+    反证（mutation 说明）：若有人把「放宽重试」加回来，本用例以 DID NOT RAISE
+    暴露回归；若实现重新出现 Image.MAX_IMAGE_PIXELS 全局写入，末尾的全局值断言
+    失败。
+    """
     from PIL import Image as PILImage
+    from app.services import image_web
 
     p = str(tmp_path / "huge_pixels.jpg")
     Image.new("RGB", (300, 300), (7, 7, 7)).save(p, format="JPEG", quality=90)
 
-    # 把 Pillow 像素上限压到极小，令首次解码抛 DecompressionBombError
+    # 把进程级像素上限压到极小（唯一口径是 image_web.MAX_IMAGE_PIXELS）
+    monkeypatch.setattr(image_web, "MAX_IMAGE_PIXELS", 10)
+    before = PILImage.MAX_IMAGE_PIXELS
+    with pytest.raises(ImageDecodeError) as ei:
+        _image_data_url(p)
+    assert "像素" in str(ei.value) and "上限" in str(ei.value)
+    # 全程不改写 PIL 全局（旧实现会在救援路径临时置 None）
+    assert PILImage.MAX_IMAGE_PIXELS == before
+
+
+def test_pillow_bomb_error_wrapped_as_decode_error(tmp_path, monkeypatch):
+    """声明维度触发 Pillow DecompressionBombError 时同样受控拒绝（不裸抛）。"""
+    from PIL import Image as PILImage
+
+    p = str(tmp_path / "bomb.jpg")
+    Image.new("RGB", (300, 300), (7, 7, 7)).save(p, format="JPEG", quality=90)
+    # 300*300 > 2*10 → Image.open 即抛 DecompressionBombError
     monkeypatch.setattr(PILImage, "MAX_IMAGE_PIXELS", 10)
-    mime, payload = _data_url_payload(_image_data_url(p))
-    assert mime == "data:image/jpeg"
-    assert payload[:3] == b"\xff\xd8\xff", "救援结果必须是真 JPEG"
-    # 校验尺寸时需临时放宽上限（此时全局值被压到 10，读图本身也会触发炸弹检查）
-    prev = PILImage.MAX_IMAGE_PIXELS
-    PILImage.MAX_IMAGE_PIXELS = None
-    try:
-        with Image.open(io.BytesIO(payload)) as img:
-            assert img.format == "JPEG"
-            assert img.size == (300, 300)
-    finally:
-        PILImage.MAX_IMAGE_PIXELS = prev
-    # 救援路径临时放宽上限后必须还原，不能污染同进程其它 PIL 使用方
-    assert PILImage.MAX_IMAGE_PIXELS == 10
+    with pytest.raises(ImageDecodeError):
+        _image_data_url(p)
 
 
 def test_pixel_limit_restored_even_when_decode_fails(tmp_path, monkeypatch):
+    """Web 格式解码失败的原始回退路径保持，且不改写 PIL 全局。"""
     from PIL import Image as PILImage
 
     p = _write(tmp_path / "still_broken.jpg", _GARBAGE)
     monkeypatch.setattr(PILImage, "MAX_IMAGE_PIXELS", 12)
+    before = PILImage.MAX_IMAGE_PIXELS
     url = _image_data_url(p)  # Web 格式 → 回退原文件，不抛错
     assert _data_url_payload(url)[1] == _GARBAGE
-    assert PILImage.MAX_IMAGE_PIXELS == 12
+    assert PILImage.MAX_IMAGE_PIXELS == before
 
 
 # ---------------------------------------------------------------

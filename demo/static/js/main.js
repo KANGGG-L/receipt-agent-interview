@@ -582,6 +582,10 @@ function probeAuthAndEnter(reloadData) {
             }
             AuthState.enabled = !!(body && body.auth_enabled);
             AuthState.account = (body && body.account) || null;
+            const banner = document.getElementById('demoModeBanner');
+            if (banner) {
+                banner.style.display = AuthState.enabled ? 'none' : 'block';
+            }
             hideLoginPanel();
             syncManualEntryVisibility();   // D12：按角色显隐「新建手工单」入口
             if (reloadData) {

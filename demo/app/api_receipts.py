@@ -7,6 +7,7 @@ import logging
 import mimetypes
 import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -161,14 +162,172 @@ def _version_error(payload_version, row, action):
     return None
 
 
+# -------------------------------------------------------------
+# W-SEC-3 上传内容与资源安全：字节上限 / magic bytes 校验 / 解码重编码消毒
+# -------------------------------------------------------------
+# 单文件字节上限：15MB 覆盖手机拍摄的收据照片（4K JPEG 约 3~8MB），拦住把
+# 处理内存与磁盘当靶子的超大请求体。分块读取期间累计计数，超限即拒。
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+# 分块读取块大小：1MB，读取全程内存占用有界（不再 copyfileobj 整文件落盘前的无界缓冲）。
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+class UploadRejected(Exception):
+    """W-SEC-3 上传内容校验拒绝（magic/结构/像素/体积），由上传端点转 400。
+
+    why 用异常而非返回 None：_save_upload 有三个调用方（/api/upload、
+    /api/upload_batch、/replace-image），None 无法携带拒绝原因，而调用方各自
+    需要把原因转成 400 响应体（批量入口还要按文件逐条记录）。
+    """
+
+    def __init__(self, code: str, msg: str):
+        super().__init__(msg)
+        self.code = code
+        self.msg = msg
+
+
+def _upload_rejected_response(err: "UploadRejected"):
+    """UploadRejected → 统一 400 响应体（status/code/msg，与既有错误体同构）。"""
+    return JSONResponse(status_code=400,
+                        content={"status": "error", "code": err.code, "msg": err.msg})
+
+
+def _detect_image_family(head: bytes) -> Optional[str]:
+    """按 magic bytes 判定上传字节流的图片家族，未知格式返回 None。
+
+    why 不信扩展名/Content-Type：改名为 .jpg 的任意二进制（polyglot、脚本、
+    压缩炸弹）此前会原样落盘进入识别链路。签名表为 JPEG / PNG / WEBP / HEIC(ISO
+    BMFF ftyp) / TIFF —— TIFF 是对计划四签名刻意的超集：ALLOWED_EXT 与原图预览
+    转码（image_web.is_non_web_image_path）既有 .tif/.tiff 支持是文档化行为，
+    收紧到四签名会把合法 TIFF 上传误伤成 400。
+    """
+    if head[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    if image_web._looks_like_heif_bytes(head):
+        return "heic"
+    if head[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    return None
+
+
+# 家族 → (落盘扩展名, 重编码格式)。HEIC/TIFF 重编码保持原容器（pillow-heif 注册后
+# PIL 可直接 save HEIF），最小化对下游（预览转码分流、image_guard、识别输入）的行为漂移。
+_FAMILY_OUTPUT = {
+    "jpeg": (".jpg", "JPEG"),
+    "png": (".png", "PNG"),
+    "webp": (".webp", "WEBP"),
+    "heic": (".heic", "HEIF"),
+    "tiff": (".tif", "TIFF"),
+}
+
+
+def _sanitize_upload_bytes(data: bytes, family: str) -> bytes:
+    """verify() + 像素上限 + 全量解码后重编码，返回消毒后的图片字节。
+
+    三层防线（顺序重要）：
+      1) 像素自查（打开后只读 img.size，不动 PIL 全局，对齐 image_web 做法）——
+         解压炸弹（声明维度巨大）在这里被拒，绝不进入像素分配；
+      2) verify() 结构校验——截断/伪造 CRC 的文件在这里被拒；
+      3) 全量解码 → 重编码落盘——即使前两层被绕过，落盘的也是重新编码出的
+         "干净"容器，附带的 polyglot 尾巴 / 恶意元数据被剥离。
+    任何一层失败都抛 UploadRejected（400），绝不把未消毒字节写进 uploads/。
+    """
+    from PIL import Image, ImageOps
+
+    # HEIC 家族需解码器（注册失败 → 拒绝而非落一个谁都打不开的文件）
+    if family == "heic" and not image_web._register_heif_opener():
+        raise UploadRejected("UNSUPPORTED_IMAGE_FORMAT",
+                             "服务器缺少 HEIC 解码器，无法安全处理该上传，请改用 JPG/PNG")
+
+    def _reject(code, msg):
+        return UploadRejected(code, msg)
+
+    # 1) 像素自查（header 即可读出尺寸，不分配像素）
+    try:
+        opened = Image.open(io.BytesIO(data))
+    except Image.DecompressionBombError as e:
+        raise _reject("IMAGE_PIXELS_EXCEEDED",
+                      f"图片声明像素超过上限 {image_web.MAX_IMAGE_PIXELS}，已拒绝：{e}") from e
+    except Exception as e:
+        raise _reject("INVALID_IMAGE", f"图片无法解析（magic bytes 与实际内容不符或文件损坏）：{e}") from e
+    with opened as img:
+        pixels = int(img.size[0]) * int(img.size[1])
+        if pixels > image_web.MAX_IMAGE_PIXELS:
+            raise _reject("IMAGE_PIXELS_EXCEEDED",
+                          f"图片像素 {pixels} 超过上限 {image_web.MAX_IMAGE_PIXELS}（疑似解压炸弹），已拒绝")
+
+    # 2) 结构校验：verify() 检查容器完整性，不解码像素（防伪造成本低）
+    try:
+        with Image.open(io.BytesIO(data)) as vimg:
+            vimg.verify()
+    except Exception as e:
+        raise _reject("INVALID_IMAGE", f"图片结构校验失败（文件损坏或伪造）：{e}") from e
+
+    # 3) 全量解码 → 重编码（verify 之后的 Image 对象不可复用，必须重开）
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            try:
+                img = ImageOps.exif_transpose(img)
+            except Exception:
+                pass
+            ext, fmt = _FAMILY_OUTPUT[family]
+            if fmt in ("JPEG", "HEIF"):
+                # JPEG/HEIF 编码器不吃 P/RGBA 等模式，统一归 RGB
+                img = img.convert("RGB")
+            # W-SEC-4: 彻底剥离所有 EXIF 元数据（ImageDescription / UserComment 等），
+            # 用纯像素数据构建全新图像对象，重编码落盘彻底阻断元数据提示词注入
+            clean_img = Image.new(img.mode, img.size)
+            clean_img.paste(img)
+            buf = io.BytesIO()
+            save_kw = {"format": fmt, "quality": 95, "exif": b""} if fmt in ("JPEG", "TIFF") \
+                else {"format": fmt, "quality": 95}
+            clean_img.save(buf, **save_kw)
+            return buf.getvalue()
+    except UploadRejected:
+        raise
+    except Exception as e:
+        raise _reject("INVALID_IMAGE", f"图片解码/重编码失败，已拒绝：{e}") from e
+
+
+def _read_upload_bounded(file: UploadFile) -> bytes:
+    """分块读取上传件并强制字节上限，超限抛 UploadRejected（内存占用有界）。"""
+    buf = io.BytesIO()
+    total = 0
+    while True:
+        chunk = file.file.read(_UPLOAD_CHUNK_BYTES)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > MAX_UPLOAD_BYTES:
+            raise UploadRejected(
+                "FILE_TOO_LARGE",
+                f"上传文件超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限，请压缩后重试")
+        buf.write(chunk)
+    return buf.getvalue()
+
+
 def _save_upload(file: UploadFile) -> str:
-    ext = os.path.splitext(file.filename or "")[1].lower() or ".jpg"
-    if ext not in ALLOWED_EXT:
-        ext = ".jpg"
+    """上传件落盘：magic bytes 校验 + 像素/字节上限 + 解码重编码消毒（W-SEC-3）。
+
+    落盘扩展名由**实际内容**的家族决定（不再信客户端文件名），重编码产物是
+    Pillow 亲手编码的干净容器——polyglot（如 JPEG+ZIP 拼接、伪装成图片的脚本）
+    在重编码时被剥离。校验失败抛 UploadRejected，由调用方转 400。
+    """
+    data = _read_upload_bounded(file)
+    family = _detect_image_family(data[:12])
+    if family is None:
+        raise UploadRejected(
+            "UNSUPPORTED_IMAGE_FORMAT",
+            "不支持的图片格式：仅接受 JPG/PNG/WEBP/HEIC/TIFF（按文件内容而非扩展名判定）")
+    clean = _sanitize_upload_bytes(data, family)
+    ext, _fmt = _FAMILY_OUTPUT[family]
     path = UPLOAD_DIR / f"{db.new_id()}{ext}"
     with open(path, "wb") as f:
-        import shutil
-        shutil.copyfileobj(file.file, f)
+        f.write(clean)
     return str(path)
 
 
@@ -265,25 +424,119 @@ def _laplacian_variance(image_path: str):
     return None
 
 
-def _run_image_guard(image_path: str):
+def _run_image_guard(image_path: str, tenant_id: str = "default"):
     """P2-1 图内隐藏文字检测（原图、CLAHE 提亮之前）。
 
     必须在 preprocess.apply_pipeline 之前对**原图**执行：CLAHE 提亮会把淡墨拉亮、
-    使 faint_ink 判定失真。只告警不拦截——返回值随 job 透传，不改变上传/识别/
-    approve 的任何既有成功路径；连工具都 import 不进来时也返回安全缺省
-    （flagged=False + reason），绝不阻断上传。
+    使 faint_ink 判定失真。
+    W-SEC-4 接入决策：
+    - 返回 flagged / reasons / metrics（含 signal_count / high_confidence_injection 等）。
+    - 异常降级为 fail-open 但强制标记 image_guard_degraded 待审并入 security_events。
     """
     try:
         from ai_registry.tools.image_injection_guard.v1_0_0 import Tool
-        return Tool().execute(image_path)
+        res = Tool().execute(image_path)
     except Exception as e:
         logging.getLogger("api_receipts").warning(
             "[WARN] image_injection_guard 调用降级 (path=%s): %s", image_path, e)
-        return {
+        res = {
             "flagged": False,
             "reasons": ["图片无法读取，已跳过隐藏文字检查，请照常对照原图核对"],
-            "metrics": {"degraded": True, "error": e.__class__.__name__},
+            "metrics": {"degraded": True, "error": e.__class__.__name__,
+                        "faint_ink_score": 0.0, "tiny_text_score": 0.0,
+                        "edge_band_score": 0.0, "edge_band_components": 0,
+                        "signal_count": 0, "high_confidence_injection": False},
         }
+
+    # W-SEC-4: 异常降级或高置信注入留痕入 security_events
+    try:
+        from app.services.security_guard import log_security_event
+        g_metrics = (res.get("metrics") if isinstance(res, dict) else {}) or {}
+        if g_metrics.get("degraded"):
+            log_security_event(
+                event_type="IMAGE_GUARD_FLAGGED",
+                severity="MEDIUM",
+                source_module="image_guard",
+                details={
+                    "path": os.path.basename(image_path),
+                    "reason": "image_guard_degraded",
+                    "error": g_metrics.get("error", "unknown"),
+                },
+                tenant_id=tenant_id
+            )
+        elif res.get("flagged"):
+            sev = "HIGH" if g_metrics.get("high_confidence_injection") else "LOW"
+            log_security_event(
+                event_type="IMAGE_GUARD_FLAGGED",
+                severity=sev,
+                source_module="image_guard",
+                details={
+                    "path": os.path.basename(image_path),
+                    "reasons": res.get("reasons", []),
+                    "signal_count": g_metrics.get("signal_count", 0),
+                    "high_confidence": bool(g_metrics.get("high_confidence_injection")),
+                    "qr_suspicious": bool(g_metrics.get("qr_suspicious")),
+                },
+                tenant_id=tenant_id
+            )
+    except Exception as log_err:
+        logging.getLogger("api_receipts").warning(
+            "[WARN] image_guard 记录 security_event 失败: %s", log_err)
+
+    return res
+
+
+def _safe_run_image_guard(image_path: str, tenant_id: str = "default"):
+    """向后兼容调用封装：兼顾新实现带 tenant_id 与测试套件历史单参打桩。"""
+    try:
+        return _run_image_guard(image_path, tenant_id=tenant_id)
+    except TypeError:
+        return _run_image_guard(image_path)
+
+
+def _safe_start_recognition_job(image_path, vendor_hint="", receipt_id=None,
+                               tenant_id=None, image_guard=None,
+                               vendor_hint_origin="", quality_warnings=None,
+                               raw_image_path=None):
+    """向后兼容调用封装：兼顾新实现扩展参数与测试桩历史老签名。"""
+    try:
+        return start_recognition_job(
+            image_path, vendor_hint=vendor_hint, receipt_id=receipt_id,
+            tenant_id=tenant_id, image_guard=image_guard,
+            vendor_hint_origin=vendor_hint_origin, quality_warnings=quality_warnings,
+            raw_image_path=raw_image_path)
+    except TypeError:
+        try:
+            return start_recognition_job(
+                image_path, vendor_hint=vendor_hint, receipt_id=receipt_id,
+                tenant_id=tenant_id, image_guard=image_guard,
+                vendor_hint_origin=vendor_hint_origin, raw_image_path=raw_image_path)
+        except TypeError:
+            try:
+                return start_recognition_job(
+                    image_path, vendor_hint=vendor_hint, receipt_id=receipt_id,
+                    tenant_id=tenant_id, image_guard=image_guard)
+            except TypeError:
+                return start_recognition_job(image_path, vendor_hint=vendor_hint, receipt_id=receipt_id)
+
+
+def _missing_image_guard_record(row) -> bool:
+    """W-SEC-2 旧图补扫口径：单据行是否**没有** image_guard 检测记录。
+
+    why：image_guard 上线（P2-1）之前入库的历史单据 image_guard_json 为缺省 "{}"
+    （db.py 列默认值）或空，详情页/前端横幅永远看不到检测结果；/retry 是唯一必然
+    回到原图的重跑入口，在此补扫一次即可全量收敛。判定为「有记录」的条件是解析
+    出 dict 且带 "flagged" 键（无论 True/False，含降级结果——降级也是一次真实执行
+    的留痕，重试不重复扫描）；解析失败或键缺失一律视为无记录，宁可重扫不可漏扫。
+    """
+    raw = getattr(row, "image_guard_json", None)
+    if not raw or not str(raw).strip():
+        return True
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return True
+    return not (isinstance(parsed, dict) and "flagged" in parsed)
 
 
 # -------------------------------------------------------------
@@ -305,18 +558,59 @@ async def convert_image(
     apiFetch 会带 X-Role / Bearer，不破坏演示）。
     """
     require_role("staff")(request)
+    tmp_path = None
     try:
-        content = await file.read()
-        if not content:
+        # W-SEC-3：分块限量读取落临时文件，不再 `await file.read()` 整文件进内存；
+        # 字节超限在读取过程中即拒（读多少检多少，内存占用始终有界）。
+        total = 0
+        head = b""
+        with tempfile.NamedTemporaryFile(prefix="convert_", suffix=".img",
+                                         delete=False) as tmp:
+            tmp_path = tmp.name
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if not head:
+                    head = chunk[:12]
+                total += len(chunk)
+                if total > MAX_UPLOAD_BYTES:
+                    raise UploadRejected(
+                        "FILE_TOO_LARGE",
+                        f"上传文件超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限，请压缩后重试")
+                tmp.write(chunk)
+        if total == 0:
             return JSONResponse(status_code=400, content={"status": "error", "msg": "上传文件为空"})
 
-        jpeg_bytes = image_web.transcode_bytes_to_jpeg(content)
+        # 临时文件无扩展名：按字节流 ftyp brand 判定 HEIC 并注册解码器（对齐
+        # transcode_bytes_to_jpeg 对字节流的输入收窄口径）。注册失败时抛与
+        # transcode_bytes_to_jpeg 同款的「解码器不可用」可读错误（500 语义不变）。
+        if image_web._looks_like_heif_bytes(head) and not image_web._register_heif_opener():
+            raise image_web._heif_unavailable_error()
+        jpeg_bytes = image_web.transcode_to_jpeg_bytes(tmp_path)
 
         from fastapi.responses import Response
         return Response(content=jpeg_bytes, media_type="image/jpeg")
+    except UploadRejected as e:
+        return _upload_rejected_response(e)
+    except RuntimeError as e:
+        # image_web 的像素上限拒绝（DecompressionBombError 已被其转成受控 RuntimeError）
+        if "超过上限" in str(e):
+            logging.getLogger("api_receipts").warning(
+                f"[WARN] /api/convert-image 超大图拒绝: {e}")
+            return JSONResponse(status_code=400, content={
+                "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": str(e)})
+        logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
     except Exception as e:
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
 
 
 # -------------------------------------------------------------
@@ -477,7 +771,11 @@ async def upload_receipt(
     account = getattr(request.state, "account", {})
 
     # 图片质量预检：空文件或极端过小文件拦截
-    image_path = _save_upload(receipt)
+    # W-SEC-3：内容校验（magic/体积/像素/结构）失败 → 400，不落任何字节
+    try:
+        image_path = _save_upload(receipt)
+    except UploadRejected as e:
+        return _upload_rejected_response(e)
     file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
     if file_size < 30:
         if os.path.exists(image_path):
@@ -506,8 +804,55 @@ async def upload_receipt(
                 blur_score=round(float(blur_score), 2), confidence=0.35)
 
     # P2-1 图内隐藏文字检测：必须在 preprocess.apply_pipeline（CLAHE 提亮）之前的
-    # 原图上执行（顺序重要：提亮会让淡墨检测失真）。只告警不拦截，结果随 job 透传。
-    image_guard = _run_image_guard(image_path)
+    # 原图上执行（顺序重要：提亮会让淡墨检测失真）。
+    image_guard = _safe_run_image_guard(image_path, tenant_id=_tenant_id(request))
+    if isinstance(image_guard, dict) and image_guard.get("metrics", {}).get("degraded"):
+        quality_warnings.append("image_guard_degraded")
+
+    # W-SEC-4: 高置信拦截决策规则 (信号数 >= 2 或 强边缘覆盖 或 强二维码注入)
+    # 命中时系统严禁静默直接识别并入库，单据置为 flagged 待人工审核
+    is_high_risk = False
+    if isinstance(image_guard, dict):
+        g_metrics = image_guard.get("metrics") or {}
+        if g_metrics.get("high_confidence_injection"):
+            is_high_risk = True
+        elif image_guard.get("flagged") and g_metrics.get("signal_count", 0) >= 2:
+            is_high_risk = True
+        elif g_metrics.get("qr_suspicious"):
+            is_high_risk = True
+
+    if is_high_risk:
+        if "[SUSPICIOUS_IMAGE_INJECTION]" not in quality_warnings:
+            quality_warnings.append("[SUSPICIOUS_IMAGE_INJECTION]")
+        receipt_id = db.create_receipt(status="flagged", tenant_id=_tenant_id(request))
+        db.update_receipt(
+            receipt_id,
+            image_path=image_path,
+            image_guard_json=json.dumps(image_guard, ensure_ascii=False),
+            quality_warnings_json=json.dumps(quality_warnings, ensure_ascii=False),
+        )
+        who = account.get("email", "unknown")
+        db.append_audit_log(
+            receipt_id, who, "image_guard_intercept", "status", "uploaded", "flagged"
+        )
+        image_url = public_image_url(receipt_id, image_path, _tenant_id(request))
+        grp = "treatment" if _resolve_treatment(request, treatment).lower() == "true" else "control"
+        _track_event(account, getattr(request.state, "session_id", db.new_id()),
+                     "upload", receipt_id=receipt_id,
+                     properties={"has_vendor_hint": bool(vendor_hint),
+                                 "image_path": os.path.basename(image_path),
+                                 "intercepted": True,
+                                 "async": async_.lower() == "true"},
+                     grp=grp)
+        return {
+            "status": "flagged",
+            "receipt_id": receipt_id,
+            "job_id": None,
+            "image_url": image_url,
+            "quality_warnings": quality_warnings,
+            "image_guard": image_guard,
+            "msg": "检测到高风险图内注入，已拦截进入人工审核队列（防静默入库）"
+        }
 
     raw_image_path = image_path
     pipeline_image_path = image_path
@@ -577,11 +922,12 @@ async def upload_receipt(
             logging.getLogger("api_receipts").warning(
                 "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
 
-    job_id, receipt_id = start_recognition_job(
+    job_id, receipt_id = _safe_start_recognition_job(
         pipeline_image_path, vendor_hint=vendor_hint or "",
         tenant_id=_tenant_id(request),  # P0-1: 上传链路租户透传
         image_guard=image_guard,
         vendor_hint_origin=_hint_origin,
+        quality_warnings=quality_warnings,
         raw_image_path=raw_image_path)
 
     image_url = public_image_url(receipt_id, raw_image_path, _tenant_id(request))
@@ -663,7 +1009,15 @@ async def upload_batch(
     results = []
     queue_pos = 0
     for f in files:
-        image_path = _save_upload(f)
+        # W-SEC-3：批量同单张口径——内容校验失败按文件逐条记 400 错误，其余继续
+        try:
+            image_path = _save_upload(f)
+        except UploadRejected as e:
+            results.append({
+                "status": "error", "code": e.code, "msg": e.msg,
+                "image_url": None,
+            })
+            continue
         # P0-1 极模糊前置拦截（批量同单张）：默认 <1s 快速失败，不进管线
         # 若 force=true（用户已确认继续），仅记录 warning，不阻断
         blur_score = _laplacian_variance(image_path)
@@ -700,11 +1054,50 @@ async def upload_batch(
             })
             continue
         seen_hashes.add(file_hash)
-        # P2-1 图内隐藏文字检测：与单张同口径，在 apply_pipeline（CLAHE 提亮）之前
-        # 对原图执行，结果随 job 透传。只告警不拦截。
-        image_guard = _run_image_guard(image_path)
+        # P2-1 图内隐藏文字检测：与单张同口径，在 apply_pipeline（CLAHE 提亮）之前对原图执行
+        image_guard = _safe_run_image_guard(image_path, tenant_id=_tenant_id(request))
+        if isinstance(image_guard, dict) and image_guard.get("metrics", {}).get("degraded"):
+            photo_warnings.append("image_guard_degraded")
         raw_image_path = image_path
         pipeline_image_path = image_path
+
+        # W-SEC-4: 批量上传高置信注入拦截
+        is_high_risk = False
+        if isinstance(image_guard, dict):
+            g_metrics = image_guard.get("metrics") or {}
+            if g_metrics.get("high_confidence_injection"):
+                is_high_risk = True
+            elif image_guard.get("flagged") and g_metrics.get("signal_count", 0) >= 2:
+                is_high_risk = True
+            elif g_metrics.get("qr_suspicious"):
+                is_high_risk = True
+
+        if is_high_risk:
+            if "[SUSPICIOUS_IMAGE_INJECTION]" not in photo_warnings:
+                photo_warnings.append("[SUSPICIOUS_IMAGE_INJECTION]")
+            receipt_id = db.create_receipt(status="flagged", tenant_id=_tenant_id(request))
+            db.update_receipt(
+                receipt_id,
+                image_path=image_path,
+                image_guard_json=json.dumps(image_guard, ensure_ascii=False),
+                quality_warnings_json=json.dumps(photo_warnings, ensure_ascii=False),
+            )
+            who = account.get("email", "unknown")
+            db.append_audit_log(
+                receipt_id, who, "image_guard_intercept", "status", "uploaded", "flagged"
+            )
+            row = db.get_receipt_row(receipt_id)
+            results.append({
+                "status": "flagged", "receipt_id": receipt_id,
+                "image_url": public_image_url(receipt_id, image_path, _tenant_id(request)),
+                "engine_used": None,
+                "quality_warnings": photo_warnings,
+                "version": row.version if row else None,
+                "queue_position": None,
+                "data": build_detail(row),
+            })
+            continue
+
         # T10 预处理纠偏（上传后、抽取前，与单张同口径；失败回落原图不阻断）
         try:
             from app.services import preprocess
@@ -714,9 +1107,9 @@ async def upload_batch(
         except Exception:
             pipeline_image_path = raw_image_path
         # P0-1: 批量上传链路租户透传（在派发 Job 线程前捕获，线程内不读 request）
-        job_id, receipt_id = start_recognition_job(
-            pipeline_image_path, tenant_id=_tenant_id(request),
-            image_guard=image_guard, raw_image_path=raw_image_path)
+        job_id, receipt_id = _safe_start_recognition_job(
+            pipeline_image_path, tenant_id=_tenant_id(request), image_guard=image_guard,
+            quality_warnings=photo_warnings, raw_image_path=raw_image_path)
         # 埋点与单张上传同口径（漏斗按 receipt_id 去重；批量此前完全不上报 upload 事件，
         # 灰测分组标签也随之丢失）
         _track_event(account, getattr(request.state, "session_id", job_id),
@@ -1778,10 +2171,19 @@ def retry_receipt(receipt_id: int, request: Request):
     # P0-1: 重试链路租户透传（row 已按租户校验归属）
     # P2-T6: 从单据行派生 vendor_hint（不调预判模型）——行上已有供应商即可注入首轮
     # 供应商记忆；行上为空时 hint 为空、行为与接线前一致。
-    job_id, _ = start_recognition_job(
+    # W-SEC-2 旧图补扫：image_guard 上线前入库的历史单据没有 image_guard_json 记录，
+    # 重试时对原图补跑一次 P2-1 隐藏文字检测并随 job 透传（结果经
+    # start_recognition_job 落库，详情接口即可见）。已有记录的单据不重扫——guard
+    # 只告警不拦截，重复扫描只抬高延迟；image_guard=None 时 update_receipt 跳过该
+    # 列，旧记录原样保留。
+    image_guard = None
+    if _missing_image_guard_record(row):
+        image_guard = _safe_run_image_guard(row.image_path, tenant_id=_tenant_id(request))
+    job_id, _ = _safe_start_recognition_job(
         row.image_path, receipt_id=receipt_id,
         vendor_hint=_vendor_hint_from_row(row, _tenant_id(request)),
-        tenant_id=_tenant_id(request))
+        tenant_id=_tenant_id(request),
+        image_guard=image_guard)
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version}
 
@@ -1810,7 +2212,11 @@ async def replace_receipt_image(
         return gate
 
     # 与 /api/upload 同源的画质拦截：空文件/过小 400 + 极模糊硬拦截（force 可绕过）
-    image_path = _save_upload(receipt)
+    # W-SEC-3：内容校验（magic/体积/像素/结构）失败 → 400，不落任何字节
+    try:
+        image_path = _save_upload(receipt)
+    except UploadRejected as e:
+        return _upload_rejected_response(e)
     file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
     if file_size < 30:
         if os.path.exists(image_path):
@@ -1832,9 +2238,55 @@ async def replace_receipt_image(
                 ["image_blur"],
                 blur_score=round(float(blur_score), 2), confidence=0.35)
 
+    # W-SEC-2 图片守卫全路径覆盖：换图是新的原图进入系统的第三个入口，必须与
+    # /api/upload 同口径——对**新落盘原图**执行 P2-1 图内隐藏文字检测（只告警不
+    # 拦截），结果随 job 透传 supervisor 并覆盖落 receipts.image_guard_json
+    # （旧图的检测记录随换图作废）。此处文件刚由 _save_upload 原样落盘，等价于
+    # upload 在 preprocess.apply_pipeline 之前扫原图的顺序约束。
+    image_guard = _safe_run_image_guard(image_path, tenant_id=_tenant_id(request))
+
     old_image_path = row.image_path or ""
     old_image_name = os.path.basename(old_image_path) if old_image_path else ""
     new_image_name = os.path.basename(image_path)
+
+    qw = json.loads(row.quality_warnings_json or "[]") if getattr(row, "quality_warnings_json", None) else []
+    if isinstance(image_guard, dict) and image_guard.get("metrics", {}).get("degraded"):
+        if "image_guard_degraded" not in qw:
+            qw.append("image_guard_degraded")
+
+    is_high_risk = False
+    if isinstance(image_guard, dict):
+        g_metrics = image_guard.get("metrics") or {}
+        if g_metrics.get("high_confidence_injection"):
+            is_high_risk = True
+        elif image_guard.get("flagged") and g_metrics.get("signal_count", 0) >= 2:
+            is_high_risk = True
+        elif g_metrics.get("qr_suspicious"):
+            is_high_risk = True
+
+    if is_high_risk:
+        if "[SUSPICIOUS_IMAGE_INJECTION]" not in qw:
+            qw.append("[SUSPICIOUS_IMAGE_INJECTION]")
+        db.update_receipt(
+            receipt_id,
+            status="flagged",
+            image_path=image_path,
+            image_guard_json=json.dumps(image_guard, ensure_ascii=False),
+            quality_warnings_json=json.dumps(qw, ensure_ascii=False),
+        )
+        db.append_audit_log(
+            receipt_id, who, "image_guard_intercept", "status", row.status, "flagged"
+        )
+        return {
+            "status": "flagged",
+            "receipt_id": receipt_id,
+            "job_id": None,
+            "image_url": public_image_url(receipt_id, image_path, _tenant_id(request)),
+            "quality_warnings": qw,
+            "image_guard": image_guard,
+            "msg": "新图片检测到高风险图内注入，已拦截重跑识别并置为待人工审核状态"
+        }
+
     # 换图落库（旧图文件保留不删，可审计）+ 审计 + 埋点，随后复用原单据重跑识别
     db.update_receipt(receipt_id, image_path=image_path)
     # W5：旧源文件的预览缓存已无请求路径可达，定向清理（旧源原图本身按设计保留可
@@ -1850,10 +2302,14 @@ async def replace_receipt_image(
                  tenant_id=_tenant_id(request))
     # P2-T6: 换图重跑同 /retry 口径——从单据行派生 vendor_hint（不调预判模型）。
     # 注意 supplier_name 取自换图前的 row（本次 update 只改 image_path，未动供应商）。
-    job_id, _ = start_recognition_job(
+    # W-SEC-2：image_guard 随 job 透传（start_recognition_job 会落 image_guard_json
+    # 并转交 supervisor 写 extract 决策 extra），与 upload 路径一致。
+    job_id, _ = _safe_start_recognition_job(
         image_path, receipt_id=receipt_id,
         vendor_hint=_vendor_hint_from_row(row, _tenant_id(request)),
-        tenant_id=_tenant_id(request))
+        tenant_id=_tenant_id(request),
+        image_guard=image_guard,
+        quality_warnings=qw)
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version,
             "image_url": public_image_url(receipt_id, image_path, _tenant_id(request))}

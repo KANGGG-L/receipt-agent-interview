@@ -54,9 +54,13 @@ def job_stub(monkeypatch):
     """替换后台识别 Job 派发：记录调用参数，不真正跑识别管线。"""
     calls = []
 
-    def _stub(image_path, vendor_hint="", receipt_id=None, tenant_id=None):
-        calls.append({"image_path": image_path, "vendor_hint": vendor_hint,
-                      "receipt_id": receipt_id, "tenant_id": tenant_id})
+    def _stub(image_path, vendor_hint="", receipt_id=None, tenant_id=None,
+              image_guard=None, **kwargs):
+        call_item = {"image_path": image_path, "vendor_hint": vendor_hint,
+                     "receipt_id": receipt_id, "tenant_id": tenant_id,
+                     "image_guard": image_guard}
+        call_item.update(kwargs)
+        calls.append(call_item)
         return ("job-test-1", receipt_id)
 
     from app import api_receipts
@@ -231,15 +235,20 @@ def test_replace_image_status_gate_and_manual(client, job_stub, upload_dir, tmp_
     assert job_stub == []
 
 
-def test_replace_image_too_small_400(client, job_stub, upload_dir, tmp_path):
-    """<30 字节 → 400 IMAGE_QUALITY_ERROR。"""
+def test_replace_image_invalid_content_400(client, job_stub, upload_dir, tmp_path):
+    """W-SEC-3：非图片内容 → 400 UNSUPPORTED_IMAGE_FORMAT（内容校验拒绝）。
+
+    why 改口径：_save_upload 现在先做 magic bytes/结构校验再落盘，任真图片经
+    重编码落盘后必然 >30 字节，旧的「<30 字节 → IMAGE_QUALITY_ERROR」分支对
+    合法上传已不可达；「二字节伪图片」现在在内容校验层被拒（更早、语义更准）。
+    """
     rid, _ = _mk_receipt(tmp_path, status="edited")
     r = client.post(
         f"/api/receipt/{rid}/replace-image",
         files={"receipt": ("tiny.jpg", b"xx", "image/jpeg")},
         headers={"X-Role": "staff"})
     assert r.status_code == 400
-    assert r.json()["code"] == "IMAGE_QUALITY_ERROR"
+    assert r.json()["code"] == "UNSUPPORTED_IMAGE_FORMAT"
     assert job_stub == []
 
 

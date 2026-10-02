@@ -492,6 +492,49 @@ def ingest_memory(vendor: str, items_text: str, notes: str = "",
     # 只作用于记忆语料，不改动单据本身的 receipts / receipt_items。
     notes = _mask_memory_text(notes, field="notes", vendor=vendor)
     items_text = _mask_memory_text(items_text, field="sample", vendor=vendor)
+
+    # W-ISO-2 记忆写入侧注入审查与消毒拦截
+    try:
+        from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import PromptInjectionGuardTool
+        _inj_guard = PromptInjectionGuardTool()
+        _has_inj = False
+        _all_snips = []
+        for _txt in (notes, items_text, vendor):
+            if _txt:
+                _, _hit, _snips = _inj_guard.detect_and_neutralize_injections(_txt)
+                if _hit:
+                    _has_inj = True
+                    _all_snips.extend(_snips)
+        if _has_inj:
+            logger.warning("[rag] 记忆写入载荷检测到潜在注入攻击，拦截入库待审: %s", _all_snips)
+            try:
+                from app import db as _db
+                _db.enqueue_pending_memory(
+                    vendor=vendor,
+                    content=f"notes: {notes}\nsample: {items_text}",
+                    tenant_id=tid,
+                    source_kind=kind,
+                    source_receipt_ids=[receipt_id] if receipt_id else [],
+                    supplier_id=supplier_id,
+                    reject_reason=f"[PROMPT_INJECTION_DETECTED] 载荷命中注入指令: {','.join(_all_snips)}",
+                    status="rejected",
+                )
+            except Exception as _e:
+                logger.warning("[rag] 记忆注入拦截写入 pending_memory 失败: %s", _e)
+            try:
+                from app.services.security_guard import log_security_event
+                log_security_event(
+                    event_type="PROMPT_INJECTION_DETECTED",
+                    severity="HIGH",
+                    source_module="rag_ingest_memory",
+                    details={"vendor": vendor, "receipt_id": receipt_id, "snippets": _all_snips},
+                    tenant_id=tid,
+                )
+            except Exception:
+                pass
+            return vendor
+    except Exception as _e:
+        logger.warning("[rag] 记忆写入审查执行异常(fail-safe): %s", _e)
     # 先落库拿治理主键；同 (vendor, tenant) 内容完全相同的 active 行已存在时
     # 复用既有 memory_id（幂等去重）。落库失败则整条不写向量。
     persisted = _persist_memory_row(vendor, notes, items_text, tid, kind, ref, mid, ts,
@@ -674,33 +717,26 @@ def _pii_masker_tool():
 
 
 def _pii_mask_enabled() -> bool:
-    """记忆语料 PII 脱敏开关：settings 键 memory_pii_mask_enabled（缺省 False）。
+    """记忆语料 PII 脱敏开关：settings 键 memory_pii_mask_enabled（缺省 True，W-ISO-2）。
 
-    读取失败（无 DB / 表缺失 / settings 入口不可用）一律视为**关闭**：脱敏是合规加固，
-    其缺省态就是「不改动既有写入内容」—— 配置系统故障时不得反过来擅自改写记忆语料
-    （与 memory_enabled 故障时视为开启的方向相反，因为两者缺省态不同）。
+    遵循个人信息保护最小化原则，缺省开启；读取失败亦视为开启。
     """
     try:
         from app.services import settings_service
-        return settings_service.get_bool(MEMORY_PII_MASK_KEY, False)
+        return settings_service.get_bool(MEMORY_PII_MASK_KEY, True)
     except Exception as e:
-        logger.warning("[rag] read %s failed, treat PII mask as disabled: %s",
+        logger.warning("[rag] read %s failed, default to True: %s",
                        MEMORY_PII_MASK_KEY, e)
-        return False
+        return True
 
 
 def _mask_memory_text(text, *, field: str, vendor=None) -> str:
     """记忆语料 PII 脱敏（写入侧**唯一实现**）：开关关闭时逐字节原样返回。
 
     契约：
-    - 关闭（缺省）→ 返回入参的**逐字节等值**文本（含 None → ""，与既有 `notes or ""`
-      落库形态一致），调用方按原样落库/写向量，零行为变化；
-    - 开启 → 复用 `ai_registry.tools.pii_masker.v1_0_0` 做确定性脱敏（HKID / 私人手机 /
-      银行卡三类），并按**命中的 PII 类型计数**打 logger.info 留痕（只记类型与条数，
-      **不打印原文**，避免把 PII 从语料搬到日志）。
-    计数用的是工具自带的已编译 pattern（`findall`），不是另写一份正则 —— 脱敏逻辑与
-    类型口径都以工具为唯一事实源。
-    只作用于**记忆语料**（notes/sample），不改动单据本身的 receipts / receipt_items。
+    - 关闭 → 返回入参的**逐字节等值**文本；
+    - 开启（缺省）→ 复用 `ai_registry.tools.pii_masker.v1_0_0` 做确定性脱敏（HKID / 私人手机 /
+      银行卡三类），并按命中的 PII 类型计数记录日志并埋点安全事件（不打印原文）。
     """
     s = text if isinstance(text, str) else ("" if text is None else str(text))
     if not _pii_mask_enabled():
@@ -716,6 +752,16 @@ def _mask_memory_text(text, *, field: str, vendor=None) -> str:
     if hits:
         logger.info("[rag] memory PII masked field=%s vendor=%r counts=%s",
                     field, vendor, hits)
+        try:
+            from app.services.security_guard import log_security_event
+            log_security_event(
+                event_type="OUTBOUND_PII_MASKED",
+                severity="MEDIUM",
+                source_module="rag_memory",
+                details={"field": field, "vendor": vendor, "counts": hits}
+            )
+        except Exception:
+            pass
     return masked
 
 

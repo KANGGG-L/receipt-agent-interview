@@ -2904,6 +2904,7 @@ class AdminExpCreateBody(BaseModel):
     control_base_url: Optional[str] = None
     treatment_api_key: Optional[str] = None
     control_api_key: Optional[str] = None
+    production_data_outbound_acknowledged: bool = False
 
 
 def _mask_experiment_secrets(exp):
@@ -2951,6 +2952,38 @@ def create_experiment_admin(body: AdminExpCreateBody, request: Request):
             "code": "EXPERIMENT_BASE_URL_INVALID",
             "msg": reason,
         })
+    # 灰测实验生产数据出站准入与免责二次确认 (W-ISO-2 / EC-7.2)
+    from app.services.security_guard import is_provider_admitted, log_security_event
+    outbound_warnings = []
+    for field, label in (("treatment_base_url", "实验组 Base URL"),
+                         ("control_base_url", "对照组 Base URL")):
+        val = getattr(body, field, None)
+        if val and str(val).strip():
+            u = str(val).strip()
+            admitted, adm_reason = is_provider_admitted(u)
+            if not admitted:
+                if not body.production_data_outbound_acknowledged:
+                    log_security_event(
+                        event_type="SSRF_ATTEMPT_BLOCKED",
+                        severity="HIGH",
+                        source_module="experiment_outbound",
+                        details={"url": u, "label": label, "reason": adm_reason, "action": "blocked"},
+                        tenant_id=_tenant_id(request),
+                    )
+                    return JSONResponse(status_code=400, content={
+                        "status": "error",
+                        "code": "OUTBOUND_DISCLAIMER_REQUIRED",
+                        "msg": f"{label} ({u}) 未在合规准入白名单中，向未经备案的节点外发数据必须显式勾选出站免责声明 (production_data_outbound_acknowledged: true)",
+                    })
+                outbound_warnings.append(f"[WARN] 生产单据数据将出站发送至实验节点: {u}")
+                log_security_event(
+                    event_type="OUTBOUND_PII_MASKED",
+                    severity="MEDIUM",
+                    source_module="experiment_outbound",
+                    details={"url": u, "label": label, "action": "acknowledged"},
+                    tenant_id=_tenant_id(request),
+                )
+
     created = db.create_experiment(
         name=body.name,
         hypothesis=body.hypothesis,
@@ -2983,8 +3016,11 @@ def create_experiment_admin(body: AdminExpCreateBody, request: Request):
         finally:
             s.close()
     exp = db.get_experiment(created["id"]) or created
-    return {"status": "success", "id": created["id"],
-            "experiment": _mask_experiment_secrets(exp)}
+    resp_data = {"status": "success", "id": created["id"],
+                 "experiment": _mask_experiment_secrets(exp)}
+    if outbound_warnings:
+        resp_data["warnings"] = outbound_warnings
+    return resp_data
 
 
 @router.post("/api/admin/experiments/{exp_id}/start")
@@ -3350,4 +3386,45 @@ def analytics_parsing_log_detail(
     finally:
         s.close()
 
+# ---------------------------------------------------------------------------
+# W-SEC-6 安全可观测性与审计看板管理接口
+# ---------------------------------------------------------------------------
+@router.get("/api/admin/security-events")
+def list_security_events_admin(
+    request: Request,
+    tenant_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    severity: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """安全事件明细查询接口 (W-SEC-6)。支持按 tenant_id / event_type / severity 过滤与分页。"""
+    require_admin(request)
+    filter_tenant = resolve_tenant_filter(request, tenant_id)
+    events = db.list_security_events(
+        tenant_id=filter_tenant,
+        event_type=event_type,
+        severity=severity,
+        limit=limit,
+        offset=offset
+    )
+    return {
+        "status": "success",
+        "data": events,
+        "total": len(events),
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/api/admin/security-stats")
+def get_security_stats_admin(request: Request, tenant_id: Optional[str] = None):
+    """安全运营看板聚合统计接口 (W-SEC-6)。提供事件总数、分类聚合、24小时高危趋势等。"""
+    require_admin(request)
+    filter_tenant = resolve_tenant_filter(request, tenant_id)
+    stats = db.get_security_stats(tenant_id=filter_tenant)
+    return {
+        "status": "success",
+        "data": stats
+    }
 

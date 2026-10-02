@@ -82,19 +82,34 @@ def auth_enabled():
     return os.environ.get("AUTH_ENABLED", "0").strip().lower() in ("1", "true", "yes")
 
 
-def enforce_production_secret():
-    """生产态强制项：鉴权开启却仍用仓库内置默认密钥时，抛错拒绝启动。
+def enforce_production_checklist():
+    """生产环境强启动安全核验（Production Startup Gate，W-ISO-1）。
 
-    why: AUTH_ENABLED=1 时 Bearer 令牌是本系统唯一的身份凭据来源，而令牌的安全性直接
-    绑定 HMAC 密钥。若密钥仍是仓库内置的公开默认值（token_secret_is_weak 为真），任何
-    读过源码的人都能用公开常量自行签发 admin 令牌，等同于无鉴权——此时「已开鉴权」是
-    虚假安全感，必须拒绝启动而不是仅告警。
-
-    AUTH_ENABLED=0（本地演示免密角色切换）时不抛错：由 app/main.py 的启动钩子维持既有
-    「只告警不拒绝启动」语义，演示体验不受影响。注意 AUTH_ENABLED=0 下弱密钥仍会让
-    预览/凭证签名退化为「只防误撞」——该事实由 /api/health 的 signature_secret_weak
-    标志与 token_secret_is_weak 的 docstring 如实披露，不再让运维误以为签名是保护。
+    当 AUTH_ENABLED=1 时强制核验：
+    1. DEMO_TOKEN_SECRET 不得为空且不得等于仓库内置默认值；
+    2. 生产环境预置密码核验：预置账号不得使用内置默认弱口令（admin123, boss123, staff123）。
+    任一项违规直接抛出 RuntimeError 拒绝服务拉起并打印修复指引。
     """
+    if not auth_enabled():
+        return
+    if token_secret_is_weak():
+        raise RuntimeError(
+            "生产环境鉴权已开启（AUTH_ENABLED=1），但 DEMO_TOKEN_SECRET 未设置或仍是"
+            "仓库内置默认值。该密钥用于签发与校验登录令牌，使用公开默认值等同于任何人都能"
+            "伪造管理员令牌。请在部署环境显式设置一个随机长字符串（例如 openssl rand -hex 32）"
+            "后重启服务。"
+        )
+    weak_passwords = {"admin123", "boss123", "staff123"}
+    for email, creds in ACCOUNTS.items():
+        if creds[0] in weak_passwords:
+            raise RuntimeError(
+                f"生产环境鉴权已开启（AUTH_ENABLED=1），但预置账号 {email} 仍在使用内置默认弱口令 ({creds[0]})。"
+                "生产环境严禁使用默认弱口令，请重设密码或在生产配置中禁用预置账号后重启服务。"
+            )
+
+
+def enforce_production_secret():
+    """生产态强制项：仅检查密钥强度（保持向后兼容）。"""
     if auth_enabled() and token_secret_is_weak():
         raise RuntimeError(
             "生产环境鉴权已开启（AUTH_ENABLED=1），但 DEMO_TOKEN_SECRET 未设置或仍是"
@@ -362,4 +377,24 @@ class EarlyAuthMiddleware:
             )
             await response(scope, receive, send)
             return
-        await self.app(scope, receive, send)
+
+        from app import db as _db
+        tenant_id = account.get("tenant")
+        has_header_tid = False
+        for k, v in scope.get("headers", []):
+            if k.lower() == b"x-tenant-id":
+                has_header_tid = True
+                break
+
+        if auth_enabled() or has_header_tid:
+            _db.set_current_tenant_id(tenant_id or _DEFAULT_TENANT)
+        try:
+            await self.app(scope, receive, send)
+        except _db.TenantBoundaryViolationError:
+            response = _JSONResponse(
+                status_code=404,
+                content={"status": "error", "msg": "未找到指定资源", "code": "RESOURCE_NOT_FOUND"},
+            )
+            await response(scope, receive, send)
+        finally:
+            _db.set_current_tenant_id(None)

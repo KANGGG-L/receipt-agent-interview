@@ -257,6 +257,17 @@ def test_api_suppliers_isolated_via_header():
 # -------------------------------------------------------------
 # 7. API 层：上传识别主链路租户透传（P0-1 返工）
 # -------------------------------------------------------------
+def _tiny_jpeg_bytes(color=(30, 120, 200)):
+    """真 JPEG 字节：W-SEC-3 起 /api/upload 按**内容**校验（magic/结构/像素），
+    伪字节样本会被 400 拒绝，租户透传断言必须用可解码的真图。"""
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (48, 32), color).save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 def test_api_upload_receipts_isolated_via_header():
     """A 租户经 /api/upload 上传入口创建的单据：A 租户列表可见，B 租户不可见。
 
@@ -284,7 +295,7 @@ def test_api_upload_receipts_isolated_via_header():
 
         resp_a = client.post(
             "/api/upload", headers=ha,
-            files={"receipt": ("fake_a.jpg", b"fake-jpeg-bytes-tenantA" * 8, "image/jpeg")},
+            files={"receipt": ("fake_a.jpg", _tiny_jpeg_bytes((30, 120, 200)), "image/jpeg")},
             data={"async_": "true", "force": "true"})
         assert resp_a.status_code == 200, resp_a.text
         body_a = resp_a.json()
@@ -293,7 +304,7 @@ def test_api_upload_receipts_isolated_via_header():
 
         resp_b = client.post(
             "/api/upload", headers=hb,
-            files={"receipt": ("fake_b.jpg", b"fake-jpeg-bytes-tenantB" * 8, "image/jpeg")},
+            files={"receipt": ("fake_b.jpg", _tiny_jpeg_bytes((200, 30, 90)), "image/jpeg")},
             data={"async_": "true", "force": "true"})
         assert resp_b.status_code == 200, resp_b.text
         rid_b = int(resp_b.json()["receipt_id"])
@@ -580,3 +591,50 @@ def test_api_daily_consumption_isolated_and_void_guarded():
         assert s.get(_db._DailyConsumptionRow, cid).is_void == 1
     finally:
         s.close()
+
+
+# -------------------------------------------------------------
+# W-ISO-1：SQLite 数据库级纵深隔离兜底（防代码遗漏 tenant_id）
+# -------------------------------------------------------------
+def test_db_level_tenant_enforcement_omitted_filter():
+    """验证当应用层查询故意遗漏 tenant_id 时，DB 兜底层自动注入当前租户约束，防止跨租户越权。"""
+    _db = _fresh_db()
+    rid_a = _mk_receipt(_db, "Vendor_A", tenant_id=TENANT_A)
+    rid_b = _mk_receipt(_db, "Vendor_B", tenant_id=TENANT_B)
+
+    # 1. 在 tenantA 严格上下文（strict=True）中：裸查询故意遗漏 tenant_id 必须抛错阻断
+    with _db.tenant_context(TENANT_A, strict=True):
+        s = _db.get_session()
+        try:
+            import pytest
+            with pytest.raises(_db.TenantBoundaryViolationError):
+                s.query(_db._ReceiptRow).filter(_db._ReceiptRow.id == rid_b).first()
+
+            with pytest.raises(_db.TenantBoundaryViolationError):
+                s.query(_db._ReceiptRow).all()
+
+            # 正确使用 db.scoped 带租户查询 -> 放行
+            row_a = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow, TENANT_A).filter(_db._ReceiptRow.id == rid_a).first()
+            assert row_a is not None and row_a.id == rid_a
+        finally:
+            s.close()
+
+    # 2. 在普通 tenantA 上下文（strict=False）中：scoped 即使不传 tenant_id 也自动补齐
+    with _db.tenant_context(TENANT_A, strict=False):
+        s = _db.get_session()
+        try:
+            scoped_rows = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow).all()
+            ids = [r.id for r in scoped_rows]
+            assert rid_a in ids and rid_b not in ids, "scoped 自动使用当前租户补全过滤"
+        finally:
+            s.close()
+
+    # 2. 在 bypass_tenant_isolation 维护上下文下可以全量扫描
+    with _db.bypass_tenant_isolation():
+        s = _db.get_session()
+        try:
+            all_bypassed = s.query(_db._ReceiptRow).all()
+            all_ids = [r.id for r in all_bypassed]
+            assert rid_a in all_ids and rid_b in all_ids, "维护上下文应当支持 bypass 隔离"
+        finally:
+            s.close()

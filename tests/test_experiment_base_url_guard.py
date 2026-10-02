@@ -152,6 +152,7 @@ def test_experiments_endpoints_mask_snapshot_api_keys():
         "treatment_base_url": "https://93.184.216.34/v1",
         "treatment_api_key": "sk-treatment-secret-abcdef123456",
         "control_api_key": "sk-control-secret-abcdef123456",
+        "production_data_outbound_acknowledged": True,
     })
     assert resp.status_code == 200
     created = resp.json()
@@ -172,3 +173,29 @@ def test_experiments_endpoints_mask_snapshot_api_keys():
     # 库内仍是明文，后端调用不受影响
     internal = db.get_experiment(exp_id)
     assert internal["grey_snapshot"]["treatment_api_key"] == "sk-treatment-secret-abcdef123456"
+
+
+def test_create_experiment_requires_outbound_disclaimer_for_unadmitted_domain():
+    """W-ISO-2 / EC-7.2: 未准入域名若未显式勾选出站免责，必须拦截并返回 400 OUTBOUND_DISCLAIMER_REQUIRED。"""
+    # 1. 未勾选免责 -> 400
+    resp = client.post("/api/admin/experiments", json={
+        "name": "unadmitted-outbound-test",
+        "treatment_base_url": "https://93.184.216.34/v1",
+        "production_data_outbound_acknowledged": False,
+    })
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["code"] == "OUTBOUND_DISCLAIMER_REQUIRED"
+    assert "未在合规准入白名单中" in data["msg"]
+
+    # 2. 显式勾选免责 -> 200 并返回警告标记
+    resp_ok = client.post("/api/admin/experiments", json={
+        "name": "unadmitted-outbound-acknowledged",
+        "treatment_base_url": "https://93.184.216.34/v1",
+        "production_data_outbound_acknowledged": True,
+    })
+    assert resp_ok.status_code == 200
+    ok_data = resp_ok.json()
+    assert "warnings" in ok_data
+    assert any("生产单据数据将出站发送至实验节点" in w for w in ok_data["warnings"])
+

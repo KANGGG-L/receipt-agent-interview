@@ -37,6 +37,12 @@ _ORTHO_RATIO_FILTER = 0.95
 # （唯一消费方：app/services/vendor_precheck.py 的供应商预判）
 HEADER_ROI_DEFAULT_TOP_RATIO = 0.25
 
+# W-SEC-3 解码资源上限（_imread 的 PIL 主路径与 cv2 回退路径共用）：
+# - 像素上限单一来源 image_web.MAX_IMAGE_PIXELS（120M，见 _max_image_pixels）
+# - 字节上限 30MB：uploads 入口（api_receipts.MAX_UPLOAD_BYTES=15MB）的一倍余量，
+#   覆盖 _prep 重编码产物（同图 q95 JPEG 可能略大于原图）
+MAX_IMAGE_BYTES = 30 * 1024 * 1024
+
 
 def _laplacian_variance_gray(gray_arr):
     """灰度 ndarray 的 Laplacian 方差（与 api_receipts._laplacian_variance 同口径）。"""
@@ -55,7 +61,32 @@ def _imread(image_path):
     EXIF 处理：优先走 PIL + ImageOps.exif_transpose（cv2.imread 无 EXIF），
     成功则直接返回已校正的 BGR；失败再回退 cv2，确保带 EXIF 的正交图被
     矫正且与 apply_pipeline 的 EXIF 逻辑不重复丢失（幂等）。
+
+    W-SEC-3 资源上限：解码前先做字节 + 像素双自查（像素仅读 header 尺寸、
+    不分配内存），超限**拒绝**（返回 None，调用方按既有约定回落原图）而非
+    告警放行——解压炸弹/超大图在像素分配之前即被拦下，PIL 主路径与 cv2 回退
+    路径同受保护。像素上限复用 image_web.MAX_IMAGE_PIXELS（进程级单一口径，
+    不改写 PIL.Image.MAX_IMAGE_PIXELS 全局量——那是进程级状态，会污染同进程
+    其它 PIL 使用方，且 Pillow 只在 >2×上限时 raise、>上限时仅 warn，不构成
+    硬边界）。
     """
+    # 字节上限：超限直接拒绝。uploads 入口已限 15MB（api_receipts.MAX_UPLOAD_BYTES），
+    # 这里放宽到 30MB 覆盖 _prep 重编码产物（同图 q95 JPEG 可能略大于原图）。
+    try:
+        size = os.path.getsize(str(image_path))
+        if size > MAX_IMAGE_BYTES:
+            logger.warning("[WARN] _imread 拒绝解码超大文件 (%d 字节 > %d 上限): %s",
+                           size, MAX_IMAGE_BYTES, image_path)
+            return None
+    except OSError:
+        pass  # stat 失败不替下游做决定，交给解码自然失败
+
+    # 像素自查：仅读 header 声明尺寸，不解码（成本极低，两条解码路径共享）
+    if _header_pixels_exceed_limit(image_path):
+        logger.warning("[WARN] _imread 拒绝解码超大像素图 (header 声明像素超过 %d): %s",
+                       _max_image_pixels(), image_path)
+        return None
+
     # PIL 主路径：自带 exif_transpose，覆盖 HEIC 与 EXIF 正交
     try:
         # HEIF 注册统一走 image_web._register_heif_opener（加锁、失败只 WARN 一次并记录
@@ -78,7 +109,8 @@ def _imread(image_path):
                 return arr
     except Exception:
         pass
-    # 回退 cv2（无 EXIF，但兼容 PIL 未覆盖的解码路径）
+    # 回退 cv2（无 EXIF，但兼容 PIL 未覆盖的解码路径；像素/字节上限已在上方自查，
+    # cv2 自己的 CV_IO_MAX_IMAGE_PIXELS 默认 2^30 像素远宽于本处口径，不构成保护）
     try:
         import cv2
         img = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
@@ -87,6 +119,31 @@ def _imread(image_path):
     except Exception:
         pass
     return None
+
+
+def _max_image_pixels() -> int:
+    """进程级像素上限：单一来源 image_web.MAX_IMAGE_PIXELS（120M）。"""
+    from app.services import image_web
+    return image_web.MAX_IMAGE_PIXELS
+
+
+def _header_pixels_exceed_limit(image_path) -> bool:
+    """仅凭 header 声明尺寸判断是否超像素上限（不分配像素、不解码）。
+
+    why 独立函数：_imread 的 PIL/cv2 两条路径共用同一个前置判断；Pillow 的
+    DecompressionBombError（声明像素 > 2×PIL 默认上限时 raise）明确视为超限，
+    而非「读不出」——否则炸弹会漏过自查落到 cv2 回退路径（cv2 默认像素限
+    2^30 远宽于本口径）。header 读不出（缺解码器等）返回 False 交由解码自然
+    失败：cv2 能解而 PIL 打不开的实际格式在本仓库处理范围内不存在。
+    """
+    from PIL import Image
+    try:
+        with Image.open(str(image_path)) as img:
+            return int(img.size[0]) * int(img.size[1]) > _max_image_pixels()
+    except Image.DecompressionBombError:
+        return True
+    except Exception:
+        return False
 
 
 def _estimate_skew_angle(gray):

@@ -553,7 +553,8 @@ def job_stub(monkeypatch):
     """替换后台识别派发：换图用例只验证缓存清理，不真正跑识别管线。"""
     calls = []
 
-    def _stub(image_path, vendor_hint="", receipt_id=None, tenant_id=None):
+    def _stub(image_path, vendor_hint="", receipt_id=None, tenant_id=None,
+              image_guard=None):
         calls.append({"image_path": image_path, "receipt_id": receipt_id})
         return ("job-test-w5", receipt_id)
 

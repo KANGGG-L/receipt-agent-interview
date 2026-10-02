@@ -37,6 +37,8 @@ import os
 import threading
 import uuid
 from collections import defaultdict
+import contextvars
+from contextlib import contextmanager
 from collections.abc import Mapping as _Mapping
 from datetime import datetime, timedelta
 
@@ -72,6 +74,53 @@ _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _Dai
 _DishRecipeVersionRow = None
 _LlmCallLogRow = LLMCallLogRow = None
 _EngineConfigHistoryRow = None
+_SecurityEventRow = None
+
+# W-ISO-1 租户隔离纵深兜底上下文变量
+_current_tenant_ctx = contextvars.ContextVar("current_tenant", default=None)
+_bypass_tenant_isolation_ctx = contextvars.ContextVar("bypass_tenant_isolation", default=False)
+
+
+_strict_tenant_ctx = contextvars.ContextVar("strict_tenant", default=False)
+
+
+class TenantBoundaryViolationError(RuntimeError):
+    """跨租户边界违规或未带租户过滤条件。"""
+    pass
+
+
+def set_current_tenant_id(tenant_id):
+    """设置当前线程/协程请求的租户上下文。"""
+    val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
+    _current_tenant_ctx.set(val)
+
+
+def get_current_tenant_id():
+    """获取当前租户上下文。"""
+    return _current_tenant_ctx.get()
+
+
+@contextmanager
+def tenant_context(tenant_id, strict=False):
+    """租户上下文管理器：在作用域内绑定租户身份；strict=True 时启用 DB 层漏带租户强制阻断。"""
+    val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
+    t1 = _current_tenant_ctx.set(val)
+    t2 = _strict_tenant_ctx.set(bool(strict))
+    try:
+        yield
+    finally:
+        _current_tenant_ctx.reset(t1)
+        _strict_tenant_ctx.reset(t2)
+
+
+@contextmanager
+def bypass_tenant_isolation():
+    """后台离线维护或跨租户聚合时的隔离豁免上下文。"""
+    token = _bypass_tenant_isolation_ctx.set(True)
+    try:
+        yield
+    finally:
+        _bypass_tenant_isolation_ctx.reset(token)
 
 
 def _make_engine():
@@ -89,6 +138,7 @@ def _make_engine():
     global _DishRecipeVersionRow
     global _LlmCallLogRow, LLMCallLogRow
     global _EngineConfigHistoryRow
+    global _SecurityEventRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -793,6 +843,42 @@ def _make_engine():
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_receipt_id ON llm_call_log (receipt_id)")
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_tenant_id ON llm_call_log (tenant_id)")
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_created_at ON llm_call_log (created_at)")
+    class SecurityEventRow(Base):
+        """W-SEC-6 安全事件审计流表：记录拦截、告警、Canary、SSRF、脱敏与越权事件。"""
+        __tablename__ = "security_events"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        event_id = Column(String(64), unique=True, nullable=False, index=True)
+        tenant_id = Column(String(64), default="default", nullable=False, index=True)
+        event_type = Column(String(32), nullable=False, index=True)
+        severity = Column(String(16), nullable=False)
+        source_module = Column(String(64), nullable=False)
+        details_json = Column(Text, default="{}")
+        ip_address = Column(String(45), default="")
+        user_email = Column(String(128), default="")
+        created_at = Column(String(32), nullable=False, index=True)
+
+    Base.metadata.create_all(_engine)
+
+    # SQLite 迁移（W-SEC-6）：创建 security_events 表并建索引
+    _apply_migration_ddl(
+        _engine,
+        "CREATE TABLE IF NOT EXISTS security_events ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " event_id VARCHAR(64) UNIQUE NOT NULL,"
+        " tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',"
+        " event_type VARCHAR(32) NOT NULL,"
+        " severity VARCHAR(16) NOT NULL,"
+        " source_module VARCHAR(64) NOT NULL,"
+        " details_json TEXT NOT NULL DEFAULT '{}',"
+        " ip_address VARCHAR(45) DEFAULT '',"
+        " user_email VARCHAR(128) DEFAULT '',"
+        " created_at VARCHAR(32) NOT NULL)",
+    )
+    for _ddl in (
+        "CREATE INDEX IF NOT EXISTS ix_sec_events_tenant_type ON security_events (tenant_id, event_type)",
+        "CREATE INDEX IF NOT EXISTS ix_sec_events_created_at ON security_events (created_at)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
 
     # SQLite 迁移：给 receipts 表补 use_grey 列（阶段 1：AI 可见性与信任）
     # R5 静默幂等：先查再执行 —— 列已存在静默跳过（零日志）；仅真实异常
@@ -1225,6 +1311,57 @@ def _make_engine():
     _DishRecipeVersionRow = DishRecipeVersionRow
     _InventoryBatchRow = InventoryBatchRow
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
+    _SecurityEventRow = SecurityEventRow
+
+    # W-ISO-1：SQLite 数据库级租户行隔离兜底钩子（before_cursor_execute）
+    from sqlalchemy import event
+    import re as _re
+
+    _TENANT_PROTECTED_TABLES = (
+        "receipts", "receipt_items", "suppliers", "skus",
+        "inventory_log", "vendor_memory", "dishes", "payments",
+    )
+
+    @event.listens_for(_engine, "before_cursor_execute")
+    def _enforce_tenant_isolation(conn, cursor, statement, parameters, context, executemany):
+        if _bypass_tenant_isolation_ctx.get():
+            return
+        if not _strict_tenant_ctx.get():
+            return
+        tenant = _current_tenant_ctx.get()
+        if not tenant:
+            return
+        s = statement.lower()
+        # 仅对 SELECT / UPDATE / DELETE 做行级隔离拦截，放行 INSERT / PRAGMA / DDL
+        if not (s.startswith("select") or s.startswith("update") or s.startswith("delete")):
+            return
+        # 检查是否涉及核心业务表
+        matched_table = None
+        for tbl in _TENANT_PROTECTED_TABLES:
+            if _re.search(rf"\b{tbl}\b", s):
+                matched_table = tbl
+                break
+        if not matched_table:
+            return
+        # 检查是否具备 WHERE 过滤子句且 WHERE 子句中包含 tenant_id
+        m = _re.search(r"\bwhere\b", s)
+        if not m or "tenant_id" not in s[m.end():]:
+            err_msg = (
+                f"数据库层拦截跨租户越权查询：作用于业务表 '{matched_table}' 的 SQL "
+                f"缺失 tenant_id 隔离条件（当前租户={tenant}）"
+            )
+            try:
+                record_security_event(
+                    event_type="TENANT_VIOLATION_BLOCKED",
+                    severity="CRITICAL",
+                    source_module="db_enforcement",
+                    details={"table": matched_table, "tenant_id": tenant, "sql": statement[:200]},
+                    tenant_id=tenant,
+                )
+            except Exception:
+                pass
+            raise TenantBoundaryViolationError(err_msg)
+
     return Base
 
 
@@ -1733,13 +1870,18 @@ def get_session(tenant_id=None):
 def scoped(query, model, tenant_id=None):
     """Gap E2 统一租户过滤封装。
 
-    语义：tenant_id 为 None/空 时不过滤（内部脚本与既有测试路径向后兼容）；
-    传了就追加 filter(model.tenant_id == tenant_id)。
-    用法：db.scoped(s.query(Model), Model, tenant_id).all()
+    语义：若传入了 tenant_id，按该 tenant_id 过滤；
+    若未传入 tenant_id 但当前上下文设置了租户且未 bypass，自动使用上下文租户过滤（DB 级兜底安全收敛）；
+    若均未设置，则不过滤（内部脚本与既有测试路径向后兼容）。
     """
-    if tenant_id is None or not str(tenant_id).strip():
+    tid = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
+    if tid is None and not _bypass_tenant_isolation_ctx.get():
+        tid = _current_tenant_ctx.get()
+    if tid is None or not str(tid).strip():
         return query
-    return query.filter(model.tenant_id == str(tenant_id))
+    if hasattr(model, "tenant_id"):
+        return query.filter(model.tenant_id == str(tid))
+    return query
 
 
 def _tenant_ok(row, tenant_id):
@@ -1869,13 +2011,11 @@ def create_receipt_record(**kwargs):
 
 
 def get_receipt_row(receipt_id, tenant_id=None):
-    """按 id 取单据。tenant_id 非空时校验归属，跨租户视为不存在（返回 None）。"""
+    """按 id 取单据。tenant_id 非空时在 DB 过滤条件中带上 tenant_id，跨租户直接返回 None。"""
     s = get_session()
     try:
-        row = s.get(_ReceiptRow, int(receipt_id))
-        if row is not None and not _tenant_ok(row, tenant_id):
-            return None
-        return row
+        q = scoped(s.query(_ReceiptRow), _ReceiptRow, tenant_id).filter(_ReceiptRow.id == int(receipt_id))
+        return q.first()
     finally:
         s.close()
 
@@ -7308,3 +7448,131 @@ def set_eval_candidate_status(candidate_id, status, tenant_id=None):
 # 幂等：仅补「零快照」餐品，二次 import 零动作；失败仅告警不阻断。
 # -----------------------------------------------------------------
 backfill_dish_recipe_snapshots()
+
+
+# -----------------------------------------------------------------
+# W-SEC-6：安全事件审计与统计（持久化到 security_events 表）
+# -----------------------------------------------------------------
+def record_security_event(event_type: str, severity: str, source_module: str,
+                          details: dict = None, tenant_id: str = "default",
+                          ip_address: str = "", user_email: str = ""):
+    """写入一条安全事件（持久化到 security_events 表）。"""
+    if _SecurityEventRow is None:
+        return None
+    tid = str(tenant_id or "default").strip() or "default"
+    eid = f"sec_{uuid.uuid4().hex}"
+    ts = now_iso()
+    det_json = _safe_json(details or {})
+    s = get_session()
+    try:
+        with bypass_tenant_isolation():
+            row = _SecurityEventRow(
+                event_id=eid,
+                tenant_id=tid,
+                event_type=str(event_type),
+                severity=str(severity).upper(),
+                source_module=str(source_module),
+                details_json=det_json,
+                ip_address=str(ip_address or ""),
+                user_email=str(user_email or ""),
+                created_at=ts,
+            )
+            s.add(row)
+            s.commit()
+            return {
+                "event_id": eid,
+                "tenant_id": tid,
+                "event_type": str(event_type),
+                "severity": str(severity).upper(),
+                "source_module": str(source_module),
+                "details": details or {},
+                "ip_address": str(ip_address or ""),
+                "user_email": str(user_email or ""),
+                "created_at": ts,
+            }
+    except Exception as e:
+        logger.warning(f"[security_event] record failed: {e}")
+        return None
+    finally:
+        s.close()
+
+
+def list_security_events(tenant_id=None, event_type=None, severity=None,
+                         limit=100, offset=0):
+    """查询安全事件列表，支持按 tenant_id / event_type / severity 过滤。"""
+    if _SecurityEventRow is None:
+        return []
+    s = get_session()
+    try:
+        q = scoped(s.query(_SecurityEventRow), _SecurityEventRow, tenant_id)
+        if event_type:
+            q = q.filter(_SecurityEventRow.event_type == str(event_type))
+        if severity:
+            q = q.filter(_SecurityEventRow.severity == str(severity).upper())
+        rows = q.order_by(_SecurityEventRow.id.desc()).offset(int(offset or 0)).limit(int(limit or 100)).all()
+        result = []
+        for r in rows:
+            result.append({
+                "id": r.id,
+                "event_id": r.event_id,
+                "tenant_id": r.tenant_id,
+                "event_type": r.event_type,
+                "severity": r.severity,
+                "source_module": r.source_module,
+                "details": _parse_json(r.details_json),
+                "ip_address": r.ip_address,
+                "user_email": r.user_email,
+                "created_at": r.created_at,
+            })
+        return result
+    finally:
+        s.close()
+
+
+def get_security_stats(tenant_id=None):
+    """安全大屏聚合分析：事件总数、按类型聚合、按严重等级聚合、按租户聚合、最近 24 小时高危事件统计。"""
+    if _SecurityEventRow is None:
+        return {
+            "total_events": 0,
+            "by_type": {},
+            "by_severity": {},
+            "by_tenant": {},
+            "recent_24h_high_risk": 0,
+            "recent_24h_events": []
+        }
+    s = get_session()
+    try:
+        q = scoped(s.query(_SecurityEventRow), _SecurityEventRow, tenant_id)
+        rows = q.all()
+        by_type = defaultdict(int)
+        by_severity = defaultdict(int)
+        by_tenant = defaultdict(int)
+        cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        recent_24h_high_risk = 0
+        recent_24h_events = []
+
+        for r in rows:
+            by_type[r.event_type] += 1
+            by_severity[r.severity] += 1
+            by_tenant[r.tenant_id] += 1
+            if r.created_at >= cutoff:
+                if r.severity in ("CRITICAL", "HIGH"):
+                    recent_24h_high_risk += 1
+                    recent_24h_events.append({
+                        "event_id": r.event_id,
+                        "event_type": r.event_type,
+                        "severity": r.severity,
+                        "tenant_id": r.tenant_id,
+                        "created_at": r.created_at,
+                    })
+
+        return {
+            "total_events": len(rows),
+            "by_type": dict(by_type),
+            "by_severity": dict(by_severity),
+            "by_tenant": dict(by_tenant),
+            "recent_24h_high_risk": recent_24h_high_risk,
+            "recent_24h_events": recent_24h_events[:20],
+        }
+    finally:
+        s.close()

@@ -104,14 +104,27 @@ def test_switch_off_is_byte_identical():
 
 
 def test_default_is_disabled_and_does_not_alter_write():
-    """未显式设置时开关缺省 False（注册在 SETTINGS_DEFAULTS），写入不被改动。"""
+    """W-ISO-2 规格：未显式设置时开关缺省为 True（最小化原则），写入默认脱敏；显式关闭时不修改写入。"""
     _db = _fresh_db()
-    assert settings_service.get_bool(rag.MEMORY_PII_MASK_KEY, False) is False
+    # 1. 验证新规格默认值为 True，且默认写入会执行脱敏
+    assert settings_service.get_bool(rag.MEMORY_PII_MASK_KEY) is True
     vendor = "預設商戶"
     rag.ingest_memory(vendor, PII_TEXT, notes=PII_TEXT, tenant_id="default",
                       source_kind="manual")
     row = _row(vendor)
-    assert row["notes"] == PII_TEXT and row["sample"] == PII_TEXT
+    for raw in (PHONE, HKID, BANK):
+        assert raw not in (row["notes"] or ""), f"默认脱敏下 notes 仍含原文 {raw!r}"
+        assert raw not in (row["sample"] or ""), f"默认脱敏下 sample 仍含原文 {raw!r}"
+    assert "****" in row["notes"]
+
+    # 2. 显式设置关闭后，验证原有不修改写入行为
+    _db2 = _fresh_db()
+    _set_mask(False)
+    vendor_off = "顯式關閉商戶"
+    rag.ingest_memory(vendor_off, PII_TEXT, notes=PII_TEXT, tenant_id="default",
+                      source_kind="manual")
+    row_off = _row(vendor_off)
+    assert row_off["notes"] == PII_TEXT and row_off["sample"] == PII_TEXT
 
 
 # -------------------------------------------------------------

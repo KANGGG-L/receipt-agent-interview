@@ -553,3 +553,45 @@ def test_extract_chain_consumers_switched_to_v1_1_0():
         src = f.read()
     assert "from ai_registry.tools.prompt_injection_guard.v1_0_0 import" not in src
     assert src.count("from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import") == 4
+
+
+# W-SEC-1 调用点锁定：记忆写侧的 LLM 调用点此前裸拼不可信 payload（HumanMessage
+# 直拼 json.dumps(diffs/payload)），属 P0 防护真空。接入沙箱 + canary 后，此断言
+# 防止未来回退 —— 新增写侧调用点时必须同样接入并登记进本表。
+MEMORY_WRITE_SIDE_CALL_SITES = {
+    "memory_extract.py": {
+        "path": ("demo", "app", "services", "memory_extract.py"),
+        "sandbox_tag": "memory_extract_diff",
+        # 数组输出通道用数组变体校验器（对象通道的 verify_canary_in_text 对
+        # "严格 JSON 数组"契约恒不通过，见 canary_guard.CANARY_ARRAY_INSTRUCTION_TEMPLATE）
+        "canary_verify": "verify_canary_in_json_array",
+    },
+    "memory_consolidate.py": {
+        "path": ("demo", "app", "services", "memory_consolidate.py"),
+        "sandbox_tag": "memory_consolidate_payload",
+        "canary_verify": "verify_canary_in_text",
+    },
+}
+
+
+@pytest.mark.parametrize("name", sorted(MEMORY_WRITE_SIDE_CALL_SITES))
+def test_memory_write_side_call_sites_locked_to_v1_1_0(name):
+    """调用点锁定（W-SEC-1）：记忆写侧 LLM 调用点必须用 v1.1.0 guard + canary，防回退。
+
+    逐文件断言四件事：
+    1. 不残留 v1_0_0 导入（版本锁定）；
+    2. 真正调用了 wrap_untrusted_input_sandbox 且带各自的沙箱 tag（沙箱不缺位）；
+    3. canary 注入（inject_canary_instructions + generate_canary_token）在位；
+    4. 对应输出通道的 fail-closed 校验器被调用（缺失/错配即拒绝，不许只注入不校验）。
+    """
+    spec = MEMORY_WRITE_SIDE_CALL_SITES[name]
+    src_path = os.path.join(REPO_ROOT, *spec["path"])
+    with open(src_path, "r", encoding="utf-8") as f:
+        src = f.read()
+    assert "from ai_registry.tools.prompt_injection_guard.v1_0_0 import" not in src, name
+    assert ("from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import" in src), name
+    assert "wrap_untrusted_input_sandbox(" in src, name
+    assert spec["sandbox_tag"] in src, f"{name}: 沙箱 tag 缺失"
+    assert "generate_canary_token(" in src, f"{name}: canary 注入缺位"
+    assert "inject_canary_instructions(" in src, f"{name}: canary 注入缺位"
+    assert spec["canary_verify"] in src, f"{name}: fail-closed 校验缺位"

@@ -27,6 +27,7 @@ DB_PATH / RAG_DIR 指向临时目录，避免将来误加 import 时把产物写
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 from typing import List, Tuple
@@ -112,7 +113,47 @@ class _StubModel:
     def invoke(self, messages):
         self.calls += 1
         self.messages = messages
-        return self.output
+        return _with_canary_handshake(self.output, messages)
+
+
+# 生产链路的 canary 握手是 fail-closed 的：真实模型会按锚定指令把 __guard_token 回填进
+# 输出 JSON 根节点，stub 也必须按同一协议回填，否则合规输出会被误判成协议错配。
+_CANARY_TOKEN_RE = re.compile(r'"__guard_token"\s*:\s*"([^"]+)"')
+
+
+def _with_canary_handshake(output, messages):
+    content = output if isinstance(output, str) else getattr(output, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        return output
+    prompt = "\n".join(
+        getattr(m, "content", "") or "" for m in (messages or []))
+    matched = _CANARY_TOKEN_RE.search(prompt)
+    if not matched:
+        return output
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(s)
+    except (TypeError, ValueError):
+        return output
+    token = {"__guard_token": matched.group(1)}
+    if isinstance(data, list):
+        return json.dumps(data + [token], ensure_ascii=False)
+    if isinstance(data, dict):
+        return json.dumps({**data, **token}, ensure_ascii=False)
+    return output
+
+
+def _expected_system_with_canary(prompt_text, model):
+    """注册表/回退 prompt + 调用期注入的 canary 对象通道锚定指令（逐字节精确期望）。"""
+    from app.services.canary_guard import CANARY_INSTRUCTION_TEMPLATE
+    human_text = "\n".join(
+        getattr(m, "content", "") or "" for m in model.messages or []
+        if type(m).__name__ == "HumanMessage")
+    matched = _CANARY_TOKEN_RE.search(human_text)
+    assert matched, "HumanMessage 里应有 canary 锚定指令"
+    return prompt_text + CANARY_INSTRUCTION_TEMPLATE.format(token=matched.group(1))
 
 
 def _system_message_contents(model) -> list:
@@ -176,7 +217,8 @@ def test_consolidation_sends_registry_prompt_to_model():
                            llm=stub)
     assert res.action in mc.ALLOWED_ACTIONS, res.reason
     assert stub.calls == 1, stub.calls
-    assert _system_message_contents(stub) == [_REGISTRY_PROMPT]
+    assert _system_message_contents(stub) == [
+        _expected_system_with_canary(_REGISTRY_PROMPT, stub)]
 
 
 # -------------------------------------------------------------

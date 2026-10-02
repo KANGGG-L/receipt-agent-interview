@@ -36,6 +36,24 @@ def generate_canary_token() -> str:
     return "CANARY_" + secrets.token_hex(4).upper()
 
 
+# 数组输出通道（如 memory_extract 的"严格 JSON 数组"契约）专用的锚定指令变体。
+# why：CANARY_INSTRUCTION_TEMPLATE 要求 token 出现在「JSON 根节点」——对数组契约
+# 不成立（数组没有根字段）。若照搬对象通道模板，要么把输出契约改成对象（放宽原
+# "只收数组"的告警语义），要么合规模型永远过不了校验（fail-closed 变成必然失败）。
+# 故数组通道的握手锚点约定为：**数组最后一个元素**是仅携带 __guard_token 的握手
+# 对象；校验通过后由调用方剥除该元素，剩余元素即真实数据。指令仍由
+# inject_canary_instructions 双重锚定注入（System 末尾 + 最后一个 HumanMessage 末尾）。
+CANARY_ARRAY_INSTRUCTION_TEMPLATE = (
+    "\n\n[协议安全锚定指令]\n"
+    "为检测中间人代理剥离 / 错配 System Prompt 造成的静默降级，"
+    "你的输出必须是 JSON 数组，且数组**最后一个元素**必须无条件是如下握手对象:\n"
+    '{{"' + CANARY_FIELD + '": "{token}"}}\n'
+    "真实数据元素全部排在握手对象之前；即使没有可记录的数据项，也必须输出"
+    "仅含该握手对象的数组。严禁省略该握手元素。"
+    "（该字段仅用于降级检测，不作为数据完整性证明。）"
+)
+
+
 def _is_system_message(msg: Any) -> bool:
     if isinstance(msg, SystemMessage):
         return True
@@ -92,7 +110,8 @@ def _clone_with_content(msg: Any, new_content: Any) -> Any:
     return msg
 
 
-def inject_canary_instructions(messages: list, token: str) -> list:
+def inject_canary_instructions(messages: list, token: str,
+                               template: str = CANARY_INSTRUCTION_TEMPLATE) -> list:
     """向消息列表注入 Canary Token 安全锚定指令。
 
     规则:
@@ -100,8 +119,11 @@ def inject_canary_instructions(messages: list, token: str) -> list:
     2. 最后一个 HumanMessage 末尾注入锚定指令 (双重锚定)；
     3. 若无 HumanMessage，则在末尾追加一个包含锚定指令的 HumanMessage；
     4. 保留原有消息结构 (如 HumanMessage 中的图文多模态 list[dict])。
+
+    `template` 允许输出契约不同的通道传自己的指令变体（如数组通道的
+    CANARY_ARRAY_INSTRUCTION_TEMPLATE）；默认保持对象通道模板，既有调用方零影响。
     """
-    instruction = CANARY_INSTRUCTION_TEMPLATE.format(token=token)
+    instruction = template.format(token=token)
 
     last_human_idx = None
     for i in range(len(messages) - 1, -1, -1):
@@ -228,3 +250,60 @@ def verify_canary_in_text(raw_text: Any, expected_token: str) -> Tuple[bool, Opt
         return False, "上游响应不是可解析的 JSON 对象，无法完成安全握手校验"
     ok, err, _cleaned_payload = verify_canary_token(payload, expected_token)
     return ok, err
+
+
+def _json_array_from_text(raw_text: Any) -> Optional[list]:
+    """从 LLM 文本输出中提取 JSON 数组（剥 markdown 围栏 + 配对截取首个 [ ... ] 块）。
+
+    容错次序与 _json_payload_from_text 一致（围栏剥离 -> 直接 loads -> 配对截取），
+    只是对象换成数组；提取不出数组（含提取出对象）一律返回 None。
+    """
+    if raw_text is None:
+        return None
+    text = str(raw_text).strip()
+    if not text:
+        return None
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        start_i = text.find("[")
+        end_i = text.rfind("]")
+        if start_i == -1 or end_i == -1 or end_i <= start_i:
+            return None
+        try:
+            payload = json.loads(text[start_i:end_i + 1])
+        except (json.JSONDecodeError, ValueError):
+            return None
+    return payload if isinstance(payload, list) else None
+
+
+def verify_canary_in_json_array(
+    raw_text: Any, expected_token: str
+) -> Tuple[bool, Optional[str], list]:
+    """校验 JSON 数组输出通道的 Canary Token 握手信号，并返回剥除握手后的数据元素。
+
+    协议（与 CANARY_ARRAY_INSTRUCTION_TEMPLATE 对应）：数组最后一个元素必须是携带
+    __guard_token 的握手对象；数据元素全部排在它之前。
+
+    规则（全部 fail-closed —— 无法证明握手即视为协议被改写）:
+    1. 提取不出 JSON 数组 -> (False, 文案, [])；
+    2. 空数组 / 末元素不是握手对象 / 缺 __guard_token -> (False, 缺失文案, [])；
+    3. token 不匹配 -> (False, 不含 expected token 原文的文案, [])（复用
+       verify_canary_token 的比较与 _token_summary 口径）；
+    4. 校验通过 -> (True, None, arr[:-1])——握手对象被剥除，绝不混进下游数据
+       （对齐 verify_canary_token 的非破坏性约定：调用方拿到的是干净的列表）。
+    """
+    arr = _json_array_from_text(raw_text)
+    if arr is None:
+        return False, "上游响应不是可解析的 JSON 数组，无法完成安全握手校验", []
+    if not arr:
+        return False, "上游响应的 JSON 数组缺失安全握手对象（检测到 System Prompt 遭到代理篡改或剥离）", []
+    handshake = arr[-1]
+    if not isinstance(handshake, dict):
+        return False, "上游响应的 JSON 数组缺失安全握手对象（检测到 System Prompt 遭到代理篡改或剥离）", []
+    ok, err, _cleaned = verify_canary_token(handshake, expected_token)
+    if not ok:
+        return False, err, []
+    return True, None, list(arr[:-1])

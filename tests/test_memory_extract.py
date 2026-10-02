@@ -23,6 +23,7 @@ import ast
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -65,7 +66,40 @@ class _StubModel:
         self.messages = messages
         if self.exc is not None:
             raise self.exc
-        return self.output
+        return _with_canary_handshake(self.output, messages)
+
+
+# 生产链路的 canary 握手是 fail-closed 的：真实模型会按锚定指令回填 __guard_token，
+# stub 也必须按同一协议回填（数组 → 末尾握手对象；对象 → 根字段），否则合规输出会被
+# 误判成协议错配。fail-closed 的反向用例（缺失/错配 → 拒绝）见
+# tests/test_memory_write_side_guard.py。
+_CANARY_TOKEN_RE = re.compile(r'"__guard_token"\s*:\s*"([^"]+)"')
+
+
+def _with_canary_handshake(output, messages):
+    # stub 的 output 可能是 _Msg 包装（正文在 .content）也可能是裸 str；echo 后统一
+    # 返回 str（两个模块的 _message_text 都接受 str 结果）。
+    content = output if isinstance(output, str) else getattr(output, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        return output
+    prompt = "\n".join(
+        getattr(m, "content", "") or "" for m in (messages or []))
+    matched = _CANARY_TOKEN_RE.search(prompt)
+    if not matched:
+        return output
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(s)
+    except (TypeError, ValueError):
+        return output
+    token = {"__guard_token": matched.group(1)}
+    if isinstance(data, list):
+        return json.dumps(data + [token], ensure_ascii=False)
+    if isinstance(data, dict):
+        return json.dumps({**data, **token}, ensure_ascii=False)
+    return output
 
 
 def _messages_text(model):
@@ -194,7 +228,10 @@ def test_only_diffs_are_sent_to_model():
     mx.extract_candidate_facts(_ai_items(), _user_items(),
                                SUPPLIER, TENANT, model=stub)
     text = _messages_text(stub)
-    assert '"field": "name"' in text
+    # W-SEC-1：payload 经 XML 数据沙箱包裹后进 HumanMessage，JSON 的双引号被守卫
+    # 实体转义（&quot;）—— 这正是"数据进了沙箱、不再是裸拼"的可观测证据。
+    assert "&quot;field&quot;: &quot;name&quot;" in text, text
+    assert "memory_extract_diff" in text, "payload 必须在沙箱标签内"
     assert "黑牛牌黑胡椒牛油" in text
     assert "菜心" not in text, "未改动的行不应发给模型"
     assert SUPPLIER in text

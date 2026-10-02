@@ -70,12 +70,17 @@ DEFAULTS = {
     "image_guard_edge_gap_frac": 0.03,      # 与主体内容的最小分离间距 = 比例 × 短边
     "image_guard_edge_min_score": 0.45,     # 命中阈：边缘带强墨迹面积 / 强墨迹总面积
     "image_guard_edge_min_components": 3.0, # 命中阈：边缘带独立连通域数下限
+    # 二维码与覆盖层 (W-SEC-4)
+    "image_guard_qr_check_enabled": 1.0,    # 是否开启二维码载荷扫描（1.0=开，0.0=关）
+    "image_guard_overlay_min_score": 0.65,  # 边缘强覆盖层/假界面判定阈值
 }
 
 # 面向店员的人话文案（纯文本，无 Emoji，不暗示欺诈）
 _REASON_FAINT = "此单据检出淡色隐藏文字层，请对照原图逐行核对金额"
 _REASON_TINY = "此单据检出异常极小字文本层，请对照原图逐行核对金额"
 _REASON_EDGE = "此单据在页边空白处检出额外文字，请对照原图确认是否为误加内容"
+_REASON_OVERLAY = "此单据边缘检出异常覆盖层或假界面印刷带，请核对原图"
+_REASON_QR = "此单据检出包含网址或可疑指令的二维码/条形码，请人工核验是否包含诱导跳转或注入信息"
 _REASON_DEGRADED = "图片无法读取，已跳过隐藏文字检查，请照常对照原图核对"
 
 
@@ -122,7 +127,10 @@ class ImageInjectionGuardTool:
                 "reasons": [_REASON_DEGRADED],
                 "metrics": {"degraded": True, "error": e.__class__.__name__,
                             "faint_ink_score": 0.0, "tiny_text_score": 0.0,
-                            "edge_band_score": 0.0},
+                            "edge_band_score": 0.0, "edge_band_components": 0,
+                            "edge_overlay_detected": False, "qr_detected": False,
+                            "qr_suspicious": False, "qr_payload": "",
+                            "signal_count": 0, "high_confidence_injection": False},
             }
 
     # 别名，便于调用方以 detect 语义使用
@@ -166,25 +174,86 @@ class ImageInjectionGuardTool:
         tiny_min = _setting("image_guard_tiny_min_score", DEFAULTS["image_guard_tiny_min_score"])
         edge_min = _setting("image_guard_edge_min_score", DEFAULTS["image_guard_edge_min_score"])
         edge_comp_min = _setting("image_guard_edge_min_components", DEFAULTS["image_guard_edge_min_components"])
+        overlay_min = _setting("image_guard_overlay_min_score", DEFAULTS["image_guard_overlay_min_score"])
+        qr_enabled = _setting("image_guard_qr_check_enabled", DEFAULTS["image_guard_qr_check_enabled"]) > 0.5
 
         reasons = []
+        signal_count = 0
         if faint_score >= faint_min:
             reasons.append(_REASON_FAINT)
+            signal_count += 1
         if tiny_score >= tiny_min:
             reasons.append(_REASON_TINY)
+            signal_count += 1
         if edge_score >= edge_min and edge_comps >= edge_comp_min:
             reasons.append(_REASON_EDGE)
+            signal_count += 1
+
+        # 边缘覆盖层/假界面启发式 (Carrier 3)
+        edge_overlay_detected = False
+        if edge_score >= overlay_min and edge_comps >= 3:
+            edge_overlay_detected = True
+            if _REASON_OVERLAY not in reasons:
+                reasons.append(_REASON_OVERLAY)
+                signal_count += 1
+
+        # 二维码/条形码载荷检测 (Carrier 5)
+        qr_detected = False
+        qr_suspicious = False
+        qr_payload = ""
+        if qr_enabled:
+            qr_detected, qr_suspicious, qr_payload = self._scan_qr_payload(native)
+            if not qr_detected and work is not native:
+                qr_detected, qr_suspicious, qr_payload = self._scan_qr_payload(work)
+            if qr_suspicious:
+                reasons.append(_REASON_QR)
+                signal_count += 1
+
+        # 高置信拦截判定 (W-SEC-4): 信号数 >= 2 或 强边缘覆盖 或 强二维码注入
+        high_confidence = (signal_count >= 2) or qr_suspicious or (edge_score >= 0.70 and edge_comps >= 3)
 
         metrics = {
             "faint_ink_score": round(float(faint_score), 2),
             "tiny_text_score": round(float(tiny_score), 2),
             "edge_band_score": round(float(edge_score), 4),
             "edge_band_components": int(edge_comps),
+            "edge_overlay_detected": edge_overlay_detected,
+            "qr_detected": qr_detected,
+            "qr_suspicious": qr_suspicious,
+            "qr_payload": qr_payload[:120] if qr_payload else "",
+            "signal_count": signal_count,
+            "high_confidence_injection": high_confidence,
             "strong_ink_fraction": round(float(strong_frac), 5),
             "width": int(w), "height": int(h),
             "degraded": False,
         }
         return self._result(bool(reasons), reasons, metrics)
+
+    @staticmethod
+    def _scan_qr_payload(gray):
+        try:
+            import cv2
+            detector = cv2.QRCodeDetector()
+            val, pts, _ = detector.detectAndDecode(gray)
+            if not val or not isinstance(val, str):
+                return False, False, ""
+            text = val.strip()
+            if not text:
+                return False, False, ""
+            lower = text.lower()
+            suspicious = False
+            if any(s in lower for s in ("http://", "https://", "ftp://", "javascript:", "file:", "data:", "ws://", "wss://")):
+                suspicious = True
+            elif any(k in lower for k in (
+                "ignore previous", "system prompt", "system:", "system directive",
+                "curl ", "wget ", "override", "leak", "canary", "total: 0", "total=0",
+                "免审", "bypass", "instruction", "eval(", "prompt injection",
+                "api_key", "password", "token", "secret"
+            )):
+                suspicious = True
+            return True, suspicious, text
+        except Exception:
+            return False, False, ""
 
     @staticmethod
     def _result(flagged, reasons, metrics):

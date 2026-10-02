@@ -225,8 +225,8 @@ def _warn_weak_token_secret():
     既有语义：仅告警不拒绝启动。DEV_MODE（非 production）下连告警都保持既有行为（直接返回）。
     """
     from app import auth
-    # 生产强制项：AUTH_ENABLED=1 且仍是内置默认密钥 → 抛错拒绝启动（演示态不触发）。
-    auth.enforce_production_secret()
+    # 生产强制项：AUTH_ENABLED=1 且仍是内置默认密钥或弱口令 → 抛错拒绝启动（演示态不触发）。
+    auth.enforce_production_checklist()
     if DEV_MODE:
         return
     try:
@@ -418,6 +418,9 @@ def health():
         "engine": engines,
         "backup": {"dir_writable": backup_ok, "error": backup_err},
         "time": datetime.now(timezone.utc).isoformat(),
+        # W-ISO-1：鉴权与演示模式水印状态
+        "auth_enabled": _auth.auth_enabled(),
+        "demo_mode": not _auth.auth_enabled(),
         # D21：签名密钥强度标志（true = 仍是仓库内置默认密钥）。为 true 时预览/凭证
         # 的 HMAC 签名只防误撞、不防构造，不构成访问控制；请设置 DEMO_TOKEN_SECRET。
         "signature_secret_weak": signature_secret_weak,

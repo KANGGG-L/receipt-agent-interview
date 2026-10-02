@@ -26,6 +26,7 @@ L0：供应商锚点回退链 —— 解析期（save_parsed_data）追加 vendo
 import importlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -634,12 +635,20 @@ def test_a5_save_edited_and_extraction_do_not_write_alias(monkeypatch):
         def __init__(self, content):
             self.content = content
 
+    # 生产链路的 canary 握手是 fail-closed 的：stub 必须按锚定指令把 __guard_token
+    # 回填为「数组末尾握手对象」，否则合规输出会被误判成协议错配（fail-closed 拒绝）。
+    canary_re = re.compile(r'"__guard_token"\s*:\s*"([^"]+)"')
+
     class _StubModel:
         def invoke(self, messages):
-            return _Msg(json.dumps(
-                [{"kind": "alias", "fact_key": "黑牛",
-                  "value": "黑牛牌黑胡椒牛油", "confidence": 0.7}],
-                ensure_ascii=False))
+            prompt = "\n".join(
+                getattr(m, "content", "") or "" for m in (messages or []))
+            matched = canary_re.search(prompt)
+            data = [{"kind": "alias", "fact_key": "黑牛",
+                     "value": "黑牛牌黑胡椒牛油", "confidence": 0.7}]
+            if matched:
+                data.append({"__guard_token": matched.group(1)})
+            return _Msg(json.dumps(data, ensure_ascii=False))
 
     monkeypatch.setattr(mx, "_build_default_model",
                         lambda cfg=None, **_kw: _StubModel())

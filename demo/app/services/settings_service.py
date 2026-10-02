@@ -97,17 +97,16 @@ SETTINGS_DEFAULTS = {
     # 端点耗时。要靠「用户修正 → 规则级先验」把记忆反馈闭环接上时，由管理台显式开启
     # （PUT /api/admin/settings）；关闭时两处触发都直接返回，不建模型、不发调用。
     "memory_extract_enabled": False,
-    # 记忆语料 PII 脱敏开关（W-9 消费：rag._mask_memory_text）。
-    # 缺省 False = 与接线前行为**逐字节一致**（零行为变化）：既有写入内容不被改动。
+    # 记忆语料 PII 脱敏开关（W-9 / W-ISO-2 消费：rag._mask_memory_text）。
+    # 缺省 True（遵循个人信息保护最小化原则，落库与写向量前脱敏 notes/sample）。
     # why 需要这一档：记忆语料的 notes/sample 直接落 OCR 明细文本，可能含员工姓名/
     # 电话/证件号等个人数据，且被长期保存、反复注入 prompt —— 香港 PDPO / GDPR 要求
     # 最小化，行业两家官方亦明确「不能只依赖模型过滤」。开启后，写入路径（ingest_memory
     # 与 approve_pending_to_memory 的自由文本分支）在**落库前 + 写向量前**对 notes/sample
     # 做确定性脱敏（复用 ai_registry.tools.pii_masker.v1_0_0，不另写正则实现），并按命中
     # 的 PII 类型计数 + logger.info 留痕（不打印原文）。
-    # 缺省关闭属**运营/合规决策**（与 memory_extract_enabled 同款）：本波只提供能力并证明
-    # 其生效，不默认打开。脱敏只作用于记忆语料，不改动单据本身（receipts/receipt_items）。
-    "memory_pii_mask_enabled": False,
+    # 脱敏只作用于记忆语料，不改动单据本身（receipts/receipt_items）。
+    "memory_pii_mask_enabled": True,
     # FR-9 连续点踩蒸馏阈值（原 models.FEEDBACK_DISTILL_THRESHOLD=3）
     "feedback_distill_threshold": 3,
     # Gate-2 解析超时阈值（秒）：receipt_utils.parsing_timeout_seconds 消费，
@@ -160,6 +159,9 @@ SETTINGS_DEFAULTS = {
     "image_guard_edge_gap_frac": 0.03,
     "image_guard_edge_min_score": 0.45,
     "image_guard_edge_min_components": 3.0,
+    # 二维码与覆盖层 (W-SEC-4)
+    "image_guard_qr_check_enabled": 1.0,
+    "image_guard_overlay_min_score": 0.65,
 }
 
 _TRUE_WORDS = ("1", "true", "yes", "on", "y", "t")

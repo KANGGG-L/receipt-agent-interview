@@ -235,39 +235,50 @@ class ImageDecodeError(Exception):
     """
 
 
-def _pil_jpeg_data_url(image_path: str, relax_pixel_limit: bool = False) -> str:
+class ImagePixelLimitError(Exception):
+    """图片声明/实际像素超过进程级上限（W-SEC-3 受控拒绝，不再放宽重试）。"""
+
+
+def _pil_jpeg_data_url(image_path: str) -> str:
     """PIL 解码 → 最长边限到 _MAX_IMAGE_SIDE → JPEG → data URL。
 
     解码/编码失败一律向上抛出，由 _image_data_url 按格式分流处理。
-    relax_pixel_limit=True：临时关闭 Pillow 的像素总数上限（DecompressionBombError），
-    让"合法但超大"的原图仍能走限边重编码；无论成败都在 finally 还原全局值，
-    避免污染同进程其它 PIL 使用方（前置处理、HEIC 预览转码）。
+    W-SEC-3：像素上限改为「进程级固定上限 + 打开后自查尺寸」（对齐 image_web 的
+    做法），不再临时把 `PIL.Image.MAX_IMAGE_PIXELS` 置 None——那是进程级全局量，
+    旧写法在「放宽窗口期」内让同进程其它 PIL 使用方（预处理 _imread、HEIC 预览
+    转码）完全失去像素保护，属于并发竞态。超限抛 ImagePixelLimitError 受控拒绝
+    （识别腿拒发超大图，不再「放宽重试」）。
     """
     from PIL import Image, ImageOps
     import io
-    prev_pixel_limit = Image.MAX_IMAGE_PIXELS
-    if relax_pixel_limit:
-        Image.MAX_IMAGE_PIXELS = None
+    from app.services import image_web
     try:
-        with Image.open(image_path) as img:
-            try:
-                img = ImageOps.exif_transpose(img)
-            except Exception:
-                pass
-            longest = max(img.size) if img.size[0] and img.size[1] else 0
-            if longest > _MAX_IMAGE_SIDE:
-                scale = float(_MAX_IMAGE_SIDE) / longest
-                img = img.resize(
-                    (max(1, int(img.size[0] * scale)), max(1, int(img.size[1] * scale))),
-                    Image.BILINEAR,
-                )
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=85, optimize=True)
-        return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
-    finally:
-        Image.MAX_IMAGE_PIXELS = prev_pixel_limit
+        opened = Image.open(image_path)
+    except Image.DecompressionBombError as e:
+        raise ImagePixelLimitError(
+            f"图片声明像素超过 Pillow 硬上限，拒绝发送识别模型: {e}") from e
+    with opened as img:
+        # 打开后自查尺寸（只读 header 解出的 size，不分配像素）
+        pixels = int(img.size[0]) * int(img.size[1])
+        if pixels > image_web.MAX_IMAGE_PIXELS:
+            raise ImagePixelLimitError(
+                f"图片像素 {pixels} 超过上限 {image_web.MAX_IMAGE_PIXELS}，拒绝发送识别模型")
+        try:
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        longest = max(img.size) if img.size[0] and img.size[1] else 0
+        if longest > _MAX_IMAGE_SIDE:
+            scale = float(_MAX_IMAGE_SIDE) / longest
+            img = img.resize(
+                (max(1, int(img.size[0] * scale)), max(1, int(img.size[1] * scale))),
+                Image.BILINEAR,
+            )
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
 def _image_data_url(image_path: str) -> str:
@@ -278,12 +289,19 @@ def _image_data_url(image_path: str) -> str:
     没有 pillow-heif / TIFF 解码器，于是把原始二进制冒充 image/jpeg 发给 VLM，
     触发上游 400/500，且这类失败会伪装成"模型能力不行"。现在：
       1) 非 Web 格式解码失败 → 抛 ImageDecodeError（附可读原因），不再发送损坏数据；
-      2) Web 格式（mime 可信）保留原文件回退，但先尝试放宽像素上限做一次限边重编码，
-         仍失败才原样回退，并受体积上限约束，避免超大原图全量 base64。
+      2) 超像素上限（含解压炸弹声明维度）→ 抛 ImageDecodeError 受控拒绝，不再
+         「放宽像素上限重试」（W-SEC-3：放宽是进程级全局竞态，且超大图不应送识别）；
+      3) Web 格式解码失败（mime 可信）保留原文件回退，受体积上限约束，
+         避免超大原图全量 base64。
     """
     ext = os.path.splitext(image_path)[1].lstrip(".").lower() or "jpg"
     try:
         return _pil_jpeg_data_url(image_path)
+    except ImagePixelLimitError as limit_err:
+        raise ImageDecodeError(
+            f"图片像素超过进程级上限，已阻止向识别模型发送超大图：{os.path.basename(image_path)}。"
+            f"原因：{limit_err}"
+        ) from limit_err
     except Exception as first_err:
         reason = f"{type(first_err).__name__}: {first_err}"
         if ext in _NON_WEB_IMAGE_EXTS:
@@ -291,12 +309,7 @@ def _image_data_url(image_path: str) -> str:
                 f"图片解码失败，已阻止向识别模型发送损坏数据：{os.path.basename(image_path)}"
                 f"（.{ext} 属非 Web 格式，需安装 pillow-heif / TIFF 解码器）。原因：{reason}"
             ) from first_err
-        # Web 格式：mime 由扩展名即可确定，原文件回退是安全的；先补一次限边重试，
-        # 让"合法但超大/超像素上限"的原图仍以小 JPEG 发送，而不是全量 base64。
-        try:
-            return _pil_jpeg_data_url(image_path, relax_pixel_limit=True)
-        except Exception:
-            pass
+        # Web 格式：mime 由扩展名即可确定，原文件回退是安全的（受体积上限约束）。
         try:
             size = os.path.getsize(image_path)
         except OSError as stat_err:

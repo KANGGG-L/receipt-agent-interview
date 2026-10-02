@@ -141,7 +141,7 @@ def _log_gate_rejects(result):
 # -------------------------------------------------------------
 def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                           tenant_id=None, image_guard=None,
-                          vendor_hint_origin="", raw_image_path=None):
+                          vendor_hint_origin="", raw_image_path=None, quality_warnings=None):
     """启动后台识别 Job。返回 job_id。
 
     线程执行识别管线；完成后写回收据行并更新 JOBS。
@@ -157,6 +157,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     result 字段为空串）。
     raw_image_path（真理源保护）：单据入库持久化的原始上传图片路径。若传入，
     receipts.image_path 恒指向 raw_image_path，识别管线使用 image_path（可为预处理图）。
+    quality_warnings（W-SEC-4）：前置画质/安全扫描告警（如 image_guard_degraded）。
     """
     job_id = db.new_id()
     # R1：捕获任务创建时的库路径，随后台线程一起带走。每次写库前校验生效的
@@ -173,8 +174,16 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             logging.getLogger("receipt_utils").warning(
                 "[WARN] image_guard 序列化失败，跳过落库: %s", e)
     db_image_path = raw_image_path if raw_image_path else image_path
-    db.update_receipt(receipt_id, status="parsing", image_path=db_image_path,
-                      image_guard_json=_guard_json)
+    _qw_list = list(quality_warnings or [])
+    if isinstance(image_guard, dict) and image_guard.get("metrics", {}).get("degraded"):
+        if "image_guard_degraded" not in _qw_list:
+            _qw_list.append("image_guard_degraded")
+    _qw_json = json.dumps(_qw_list, ensure_ascii=False) if _qw_list else None
+    update_kw = {"status": "parsing", "image_path": db_image_path,
+                 "image_guard_json": _guard_json}
+    if _qw_json is not None:
+        update_kw["quality_warnings_json"] = _qw_json
+    db.update_receipt(receipt_id, **update_kw)
 
     with JOBS_LOCK:
         JOBS[job_id] = {"job_id": job_id, "job_status": "queued",

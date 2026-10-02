@@ -166,11 +166,18 @@ def test_production_staff_upload_lands_in_identity_tenant(client, accounts, monk
     _enable_production(monkeypatch)
     _stub_pipeline(monkeypatch)
 
+    # W-SEC-3：/api/upload 按**内容**校验上传件，必须用真 JPEG（伪字节会被 400 拒）
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (48, 32), (30, 120, 200)).save(buf, format="JPEG", quality=90)
+
     headers = dict(_bearer(_token(STAFF_A_EMAIL, "staff", TENANT_A)),
                    **{"X-Tenant-Id": TENANT_B})
     resp = client.post(
         "/api/upload", headers=headers,
-        files={"receipt": ("tenant_binding.jpg", b"fake-jpeg-bytes" * 8, "image/jpeg")},
+        files={"receipt": ("tenant_binding.jpg", buf.getvalue(), "image/jpeg")},
         data={"async_": "true", "force": "true"})
     assert resp.status_code == 200, resp.text
     assert resp.json()["status"] == "queued", resp.json()

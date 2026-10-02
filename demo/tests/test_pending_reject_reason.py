@@ -36,6 +36,7 @@ live 库）。模型一律注入 stub（monkeypatch `memory_extract` 的构建�
 import importlib
 import json
 import os
+import re
 import sys
 import tempfile
 import uuid
@@ -96,10 +97,41 @@ class _StubModel:
     def __init__(self, output):
         self.output = output
         self.calls = 0
+        self.messages = None
 
     def invoke(self, messages):
         self.calls += 1
-        return self.output
+        self.messages = messages
+        return _with_canary_handshake(self.output, messages)
+
+
+# 生产链路的 canary 握手是 fail-closed 的：真实模型会按锚定指令回填 __guard_token，
+# stub 也必须按同一协议回填（数组 → 末尾握手对象），否则合规输出会被误判成协议错配。
+_CANARY_TOKEN_RE = re.compile(r'"__guard_token"\s*:\s*"([^"]+)"')
+
+
+def _with_canary_handshake(output, messages):
+    content = output if isinstance(output, str) else getattr(output, "content", None)
+    if not isinstance(content, str) or not content.strip():
+        return output
+    prompt = "\n".join(
+        getattr(m, "content", "") or "" for m in (messages or []))
+    matched = _CANARY_TOKEN_RE.search(prompt)
+    if not matched:
+        return output
+    s = content.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    try:
+        data = json.loads(s)
+    except (TypeError, ValueError):
+        return output
+    token = {"__guard_token": matched.group(1)}
+    if isinstance(data, list):
+        return json.dumps(data + [token], ensure_ascii=False)
+    if isinstance(data, dict):
+        return json.dumps({**data, **token}, ensure_ascii=False)
+    return output
 
 
 def _patch_model(monkeypatch, payload):

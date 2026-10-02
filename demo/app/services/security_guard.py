@@ -214,3 +214,110 @@ def mask_secret_key(key: Optional[str]) -> str:
     if len(k) >= 12:
         return f"{k[:6]}****{k[-4:]}"
     return f"{k[:3]}****{k[-4:]}"
+
+
+# ---------------------------------------------------------------------------
+# W-ISO-2 Provider 合规准入白名单 (Provider Admission Whitelist)
+# ---------------------------------------------------------------------------
+ADMITTED_PROVIDER_DOMAINS = [
+    "aliyun.com",
+    "volces.com",
+    "baidubce.com",
+    "tencentcloudapi.com",
+    "dashscope.aliyuncs.com",
+    "localhost",
+    "127.0.0.1",
+]
+
+
+def is_provider_admitted(url: str) -> Tuple[bool, Optional[str]]:
+    """检查 Provider API Base URL 域名是否属于合规准入白名单。
+
+    非白名单域外推原图存在跨境或未经备案的第三方供应链泄露风险 (PIPL Compliance)。
+    """
+    if not url or not str(url).strip():
+        return False, "Provider URL 不能为空"
+    try:
+        parsed = urlparse(str(url).strip())
+        host = (parsed.hostname or "").lower().strip()
+        if not host:
+            return False, "无法从 Provider URL 解析出有效的主机名"
+        for admitted in ADMITTED_PROVIDER_DOMAINS:
+            if host == admitted or host.endswith("." + admitted):
+                return True, None
+        return False, f"Provider 域名 {host} 未在系统合规准入清单中"
+    except Exception as e:
+        return False, f"Provider URL 解析异常: {e}"
+
+
+def check_outbound_image_provider(url: str, outbound_acknowledged: bool = False) -> Tuple[bool, Optional[str]]:
+    """对包含原图的数据出站进行 Provider 准入与二次确认核验。
+
+    若域名在准入清单内，放行；
+    若非准入清单域名且未显式勾选 outbound_acknowledged，阻断外推并记录安全事件；
+    若显式确认，放行并记录审计留痕。
+    """
+    is_adm, reason = is_provider_admitted(url)
+    if is_adm:
+        return True, None
+    if not outbound_acknowledged:
+        log_security_event(
+            event_type="SSRF_ATTEMPT_BLOCKED",
+            severity="HIGH",
+            source_module="provider_admission",
+            details={"url": url, "reason": reason, "action": "blocked"}
+        )
+        return False, f"[BLOCKED] 目标 Provider 域名未准入且未确认出站风险: {reason}"
+    log_security_event(
+        event_type="OUTBOUND_PII_MASKED",
+        severity="MEDIUM",
+        source_module="provider_admission",
+        details={"url": url, "reason": reason, "action": "acknowledged_by_user"}
+    )
+    return True, f"[WARN] 生产单据数据将出站发送至实验节点: {url}"
+
+
+# ---------------------------------------------------------------------------
+# W-SEC-6 统一安全事件埋点接口 (Unified Security Event Logger)
+# ---------------------------------------------------------------------------
+def log_security_event(
+    event_type: str,
+    severity: str,
+    source_module: str,
+    details: dict = None,
+    tenant_id: str = "default",
+    ip_address: str = "",
+    user_email: str = ""
+):
+    """统一安全事件埋点唯一实现。
+
+    六大核心安全事件类型：
+    - PROMPT_INJECTION_DETECTED
+    - IMAGE_GUARD_FLAGGED
+    - CANARY_VERIFICATION_FAILED
+    - SSRF_ATTEMPT_BLOCKED
+    - OUTBOUND_PII_MASKED
+    - TENANT_VIOLATION_BLOCKED
+    """
+    try:
+        clean_details = dict(details or {})
+        for k in list(clean_details.keys()):
+            if any(s in k.lower() for s in ("key", "secret", "token", "password")):
+                clean_details[k] = mask_secret_key(str(clean_details[k]))
+        logger.info(
+            "[SECURITY_EVENT] [%s] [%s] module=%s tenant=%s details=%s",
+            severity.upper(), event_type, source_module, tenant_id, clean_details
+        )
+        from app import db as _db
+        return _db.record_security_event(
+            event_type=event_type,
+            severity=severity,
+            source_module=source_module,
+            details=clean_details,
+            tenant_id=tenant_id,
+            ip_address=ip_address,
+            user_email=user_email,
+        )
+    except Exception as e:
+        logger.warning(f"[SECURITY_EVENT] log_security_event failed: {e}")
+        return None
