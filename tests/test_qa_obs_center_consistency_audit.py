@@ -281,16 +281,44 @@ def test_ac_2_4_event_distribution_sorted_count_desc(client):
 # 三、 AC 3: 空值与占位符统一性自动化测试 (Null Placeholder AC)
 # =============================================================================
 
+def _extract_tab_section(html: str, tab_id: str) -> str:
+    """
+    按顶层区块锚点动态截取某个 Tab 的 HTML 片段，避免依赖硬编码行号
+    （行号会随引擎配置等模块重构而漂移，导致区间尾部误扫到相邻 Tab）。
+
+    以 <section>/</section> 配对深度计数定位区块闭合边界，兼容内部嵌套子区块
+    （如 tab-analytics 内的 sec-telemetry/sec-canary/sec-experiment/sec-eval）。
+    """
+    open_anchor = '<section id="{}"'.format(tab_id)
+    start = html.find(open_anchor)
+    assert start != -1, "未找到顶层区块锚点: {}".format(open_anchor)
+
+    depth = 0
+    pos = start
+    while True:
+        next_open = html.find("<section", pos)
+        next_close = html.find("</section>", pos)
+        assert next_close != -1, "区块 {} 缺少 </section> 闭合标签".format(tab_id)
+        if next_open != -1 and next_open < next_close:
+            depth += 1
+            pos = next_open + len("<section")
+        else:
+            depth -= 1
+            pos = next_close + len("</section>")
+            if depth == 0:
+                return html[start:pos]
+
+
 def test_ac_3_1_zero_em_dash_in_obs_center():
     """
     AC 3.1: 观测中心全域 4 大子功能区及详情弹窗中，绝对不存在任何未清洗的全角破折号 '—'。
     """
     with open("demo/templates/index.html", "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        html = f.read()
 
-    # 截取观测中心 4 大区块及解析日志详情弹窗 (第 2170 行至第 2968 行)
-    obs_lines = lines[2169:2968]
-    obs_html = "".join(obs_lines)
+    # 动态截取观测中心区块 (<section id="tab-analytics"> ... </section>)，不再依赖硬编码行号：
+    # 引擎配置四模块重构使 #tab-engine 扩展后，旧区间 [2169:2968] 尾部会误落进 tab-engine。
+    obs_html = _extract_tab_section(html, "tab-analytics")
 
     assert "—" not in obs_html, "观测中心 HTML 模板区域残留全角破折号 '—'"
 

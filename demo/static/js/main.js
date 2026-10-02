@@ -1263,6 +1263,8 @@ function initTabs() {
             if (targetId === 'tab-engine') {
                 loadAdminEngineConfig();
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
+                loadMemoryMetrics();   // P2-T5：记忆度量看板（admin 只读，四项指标 + 总开关状态）
+                loadVendorMemoryGovernance();   // P8/AC2：已生效记忆治理区（只读 + 调已有删除端点）
             }
             if (targetId === 'tab-analytics') {
                 loadAnalyticsBoard();    // 观测中心（按当前活跃子面板条件调度）
@@ -11635,12 +11637,195 @@ function bindAdminEngineEventsOnce() {
     });
 }
 
+// ---------------------------------- 高级模型推理参数折叠与徽章 ----------------------------------
+function getAdvInputPrefix(legId) {
+    const map = {
+        'rec': 'adminRec',
+        'aud': 'adminAud',
+        'parse': 'adminParse',
+        'grey_rec': 'adminGreyRec',
+        'grey_aud': 'adminGreyAud',
+        'grey_parse': 'adminGreyParse'
+    };
+    return map[legId] || ('admin' + legId);
+}
+
+function toggleAdvParams(legId) {
+    const drawer = document.getElementById('adminAdvParams_' + legId);
+    const body = document.getElementById('adminAdvBody_' + legId);
+    const toggleText = document.getElementById('adminAdvToggleText_' + legId);
+    if (!drawer || !body) return;
+    const isCollapsed = drawer.classList.contains('collapsed');
+    if (isCollapsed) {
+        drawer.classList.remove('collapsed');
+        body.style.display = 'block';
+        if (toggleText) toggleText.textContent = '[收起]';
+    } else {
+        drawer.classList.add('collapsed');
+        body.style.display = 'none';
+        if (toggleText) toggleText.textContent = '[展开]';
+    }
+}
+window.toggleAdvParams = toggleAdvParams;
+
+function updateAdvBadge(legId) {
+    const pfx = getAdvInputPrefix(legId);
+    const badge = document.getElementById('adminAdvBadge_' + legId);
+    if (!badge) return;
+
+    const tokensEl = document.getElementById(pfx + 'MaxTokens');
+    const tokens = (tokensEl && tokensEl.value.trim()) ? tokensEl.value.trim() : '4096';
+
+    const tempEl = document.getElementById(pfx + 'Temperature');
+    let temp = (tempEl && tempEl.value.trim() !== '') ? parseFloat(tempEl.value) : 0.0;
+    if (isNaN(temp)) temp = 0.0;
+    const tempStr = temp.toFixed(temp % 1 === 0 ? 1 : 2);
+
+    if (legId === 'rec' || legId === 'grey_rec') {
+        const detailEl = document.getElementById(pfx + 'ImageDetail');
+        const detail = (detailEl && detailEl.value) ? detailEl.value : 'high';
+        badge.textContent = `[${tokens} tokens | ${detail} detail | T=${tempStr}]`;
+    } else {
+        badge.textContent = `[${tokens} tokens | T=${tempStr}]`;
+    }
+}
+window.updateAdvBadge = updateAdvBadge;
+
+function checkTempWarn(legId) {
+    const pfx = getAdvInputPrefix(legId);
+    const tempEl = document.getElementById(pfx + 'Temperature');
+    const warnEl = document.getElementById(pfx + 'TempWarn');
+    if (!tempEl || !warnEl) return;
+    const val = parseFloat(tempEl.value);
+    if (!isNaN(val) && val > 0.2) {
+        warnEl.classList.remove('hide');
+    } else {
+        warnEl.classList.add('hide');
+    }
+}
+window.checkTempWarn = checkTempWarn;
+
+function bindAdvParamListeners() {
+    const legs = ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'];
+    legs.forEach(legId => {
+        const pfx = getAdvInputPrefix(legId);
+        const inputs = [
+            document.getElementById(pfx + 'MaxTokens'),
+            document.getElementById(pfx + 'ImageDetail'),
+            document.getElementById(pfx + 'Temperature')
+        ];
+        inputs.forEach(el => {
+            if (!el || el.dataset.advBound) return;
+            el.dataset.advBound = '1';
+            const handler = () => {
+                updateAdvBadge(legId);
+                checkTempWarn(legId);
+            };
+            el.addEventListener('input', handler);
+            el.addEventListener('change', handler);
+        });
+    });
+}
+
+// ============================================================
+// 生效态概览条（顶部常驻）：version + 三腿生效模型 + 来源 + 最近变更
+// ============================================================
+// 引擎配置版本（来自 routing DTO），保存时随 body 回传用于乐观锁
+let _engineConfigVersion = null;
+let _engineOverviewState = { routing: null, latest: null, message: null };
+
+function _formatEngineTime(v) {
+    if (!v) return '-';
+    try {
+        const d = new Date(v);
+        if (isNaN(d.getTime())) return String(v);
+        const p = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    } catch (e) {
+        return String(v);
+    }
+}
+
+const ENGINE_HISTORY_ACTION_LABELS = { save: '保存', promote: '推全', rollback: '回滚', reset: '恢复默认' };
+
+// 概览条渲染：状态消息 + 生效态 + 最近变更（写入 #adminEngineStatus）
+function renderEngineOverview() {
+    const el = document.getElementById('adminEngineStatus');
+    if (!el) return;
+    const parts = [];
+    const msg = _engineOverviewState.message;
+    if (msg) {
+        parts.push(`<div class="engine-status-msg ${msg.kind || 'info'}">${escapeHtml(msg.text)}</div>`);
+    }
+    const r = _engineOverviewState.routing;
+    if (r) {
+        const legs = (r.module_a && r.module_a.legs) || {};
+        const legHtml = ['rec', 'aud', 'parse'].map(leg => {
+            const info = legs[leg] || {};
+            const label = { rec: '识别', aud: '审核', parse: '解析' }[leg] || leg;
+            const model = info.model || info.base_url || '未配置';
+            return `<span class="engine-overview-leg"><b>${label}</b> ${escapeHtml(String(model))}</span>`;
+        }).join('');
+        const srcLabel = String(r.config_source) === 'manual' ? '管理台手工配置' : '.env 默认装配';
+        parts.push(`<div class="engine-overview-grid">
+            <span class="engine-overview-version">版本 v${escapeHtml(String(r.version))}</span>
+            <span class="engine-overview-source">来源：${escapeHtml(srcLabel)}</span>
+            ${legHtml}
+        </div>`);
+    } else {
+        parts.push('<div class="engine-overview-grid"><span>正在加载生效态...</span></div>');
+    }
+    const lt = _engineOverviewState.latest;
+    if (lt) {
+        const actionLabel = ENGINE_HISTORY_ACTION_LABELS[lt.action] || lt.action;
+        parts.push(`<div class="engine-overview-history">最近变更：${escapeHtml(String(actionLabel))} · ${escapeHtml(String(lt.actor || '-'))} · ${_formatEngineTime(lt.created_at)}（v${escapeHtml(String(lt.version))}）</div>`);
+    }
+    el.innerHTML = parts.join('');
+}
+
+// routing DTO：version + 三腿生效模型 + config_source
+function loadEngineConfigRouting() {
+    return apiFetch('/api/admin/engine-config/routing')
+        .then(res => res.json())
+        .then(body => {
+            if (!body || body.status !== 'success' || !body.data) return;
+            _engineConfigVersion = body.data.version;
+            _engineOverviewState.routing = body.data;
+            renderEngineOverview();
+        })
+        .catch(() => {});
+}
+
+// history 最新一条：动作 / 时间 / 操作人
+function loadEngineConfigHistory() {
+    return apiFetch('/api/admin/engine-config/history?page=1&page_size=1')
+        .then(res => res.json())
+        .then(body => {
+            if (!body || body.status !== 'success' || !body.data) return;
+            const items = body.data.items || [];
+            _engineOverviewState.latest = items[0] || null;
+            renderEngineOverview();
+        })
+        .catch(() => {});
+}
+
+// 保存 / 测试结果写入概览条
+function setEngineStatusMessage(text, kind) {
+    _engineOverviewState.message = text ? { text: text, kind: kind || 'info' } : null;
+    renderEngineOverview();
+}
+
+// 按模块渲染：A 引擎与凭据 / B 成本与计费 / C 发布与流量管理
 function loadAdminEngineConfig() {
     // 仅 admin 可查看
     const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
     if (role !== 'admin') return;
     bindAdminEngineEventsOnce();
     loadAdminExperimentsList();
+
+    _engineOverviewState.message = null;
+    loadEngineConfigRouting();
+    loadEngineConfigHistory();
 
     apiFetch('/api/admin/engine-config')
         .then(res => res.json())
@@ -11651,225 +11836,16 @@ function loadAdminEngineConfig() {
             }
             const cfg = body.data;
             renderAdminEngineConfigSource(cfg.config_source);
+            renderEngineModuleA(cfg);
+            renderEngineModuleB(cfg);
+            renderEngineModuleC(cfg);
+            syncAdminEnginePresetOptions(cfg);
 
-            // 常规识别 OpenAI 参数
-            const recBase = document.getElementById('adminOpenaiRecBaseUrl');
-            const recKey = document.getElementById('adminOpenaiRecApiKey');
-            const recMod = document.getElementById('adminOpenaiRecModel');
-            if (recBase) recBase.value = cfg.openai_rec_base_url || '';
-            if (recKey) recKey.value = cfg.openai_rec_api_key || '';
-            if (recMod) recMod.value = cfg.openai_rec_model || cfg.recognition_model || '';
-            const recFmt = document.getElementById('adminOpenaiRecApiFormat') || document.getElementById('cfg-engine-api-format');
-            if (recFmt) recFmt.value = cfg.openai_rec_api_format || cfg.api_format || 'chat_completion';
-            const recTimeout = document.getElementById('adminRecTimeoutSeconds');
-            if (recTimeout) recTimeout.value = (cfg.rec_timeout_seconds != null ? cfg.rec_timeout_seconds : '');
-            const recReasoning = document.getElementById('adminOpenaiRecReasoningEffort');
-            if (recReasoning) recReasoning.value = cfg.openai_rec_reasoning_effort || '';
-
-            // 常规审核
-            const audEnabled = document.getElementById('adminAuditEnabled');
-            if (audEnabled) audEnabled.value = cfg.audit_enabled ? 'true' : 'false';
-            const audBase = document.getElementById('adminOpenaiAudBaseUrl');
-            const audKey = document.getElementById('adminOpenaiAudApiKey');
-            const audMod = document.getElementById('adminOpenaiAudModel');
-            if (audBase) audBase.value = cfg.openai_aud_base_url || '';
-            if (audKey) audKey.value = cfg.openai_aud_api_key || '';
-            if (audMod) audMod.value = cfg.openai_aud_model || cfg.audit_model || '';
-            const audFmt = document.getElementById('adminOpenaiAudApiFormat');
-            if (audFmt) audFmt.value = cfg.openai_aud_api_format || 'chat_completion';
-            const audTimeout = document.getElementById('adminAudTimeoutSeconds');
-            if (audTimeout) audTimeout.value = (cfg.aud_timeout_seconds != null ? cfg.aud_timeout_seconds : '');
-            const audReasoning = document.getElementById('adminOpenaiAudReasoningEffort');
-            if (audReasoning) audReasoning.value = cfg.openai_aud_reasoning_effort || '';
-
-            // 常规解析 LLM
-            const parseEnabled = document.getElementById('adminParseEnabled');
-            if (parseEnabled) parseEnabled.value = cfg.parse_llm_enabled ? 'true' : 'false';
-            const parseBase = document.getElementById('adminParseOpenaiBaseUrl');
-            const parseKey = document.getElementById('adminParseOpenaiApiKey');
-            const parseMod = document.getElementById('adminParseOpenaiModel');
-            if (parseBase) parseBase.value = cfg.openai_parse_base_url || '';
-            if (parseKey) parseKey.value = cfg.openai_parse_api_key || '';
-            if (parseMod) parseMod.value = cfg.openai_parse_model || cfg.parse_llm_model || '';
-            const parseFmt = document.getElementById('adminParseOpenaiApiFormat');
-            if (parseFmt) parseFmt.value = cfg.openai_parse_api_format || 'chat_completion';
-            const parseTimeout = document.getElementById('adminParseTimeoutSeconds');
-            if (parseTimeout) parseTimeout.value = (cfg.parse_timeout_seconds != null ? cfg.parse_timeout_seconds : '');
-            const parseReasoning = document.getElementById('adminParseOpenaiReasoningEffort');
-            if (parseReasoning) parseReasoning.value = cfg.openai_parse_reasoning_effort || '';
-
-            // 分组测试（灰测）
-            const greyEnabled = document.getElementById('adminGreyEnabled');
-            if (greyEnabled) greyEnabled.value = cfg.grey_enabled ? 'true' : 'false';
-            const greyPercent = document.getElementById('adminGreyPercent');
-            if (greyPercent) greyPercent.value = cfg.grey_percent || 0;
-            const greyAssign = document.getElementById('adminGreyAssignMode');
-            if (greyAssign) greyAssign.value = cfg.grey_assign_mode || 'receipt';
-
-            // 灰测识别
-            const gRecBase = document.getElementById('adminGreyOpenaiRecBaseUrl');
-            const gRecKey = document.getElementById('adminGreyOpenaiRecApiKey');
-            const gRecMod = document.getElementById('adminGreyOpenaiRecModel');
-            if (gRecBase) gRecBase.value = cfg.grey_openai_rec_base_url || '';
-            if (gRecKey) gRecKey.value = cfg.grey_openai_rec_api_key || '';
-            if (gRecMod) gRecMod.value = cfg.grey_openai_rec_model || cfg.grey_recognition_model || '';
-            const greyRecFmt = document.getElementById('adminGreyOpenaiRecApiFormat') || document.getElementById('cfg-grey-engine-api-format');
-            if (greyRecFmt) greyRecFmt.value = cfg.grey_openai_rec_api_format || cfg.grey_api_format || 'chat_completion';
-            const gRecTimeout = document.getElementById('adminGreyRecTimeoutSeconds');
-            if (gRecTimeout) gRecTimeout.value = (cfg.grey_rec_timeout_seconds != null ? cfg.grey_rec_timeout_seconds : '');
-            const gRecReasoning = document.getElementById('adminGreyOpenaiRecReasoningEffort');
-            if (gRecReasoning) gRecReasoning.value = cfg.grey_openai_rec_reasoning_effort || '';
-
-            // 灰测审核
-            const gAudEnabled = document.getElementById('adminGreyAuditEnabled');
-            if (gAudEnabled) gAudEnabled.value = cfg.grey_audit_enabled ? 'true' : 'false';
-            const gAudBase = document.getElementById('adminGreyOpenaiAudBaseUrl');
-            const gAudKey = document.getElementById('adminGreyOpenaiAudApiKey');
-            const gAudMod = document.getElementById('adminGreyOpenaiAudModel');
-            if (gAudBase) gAudBase.value = cfg.grey_openai_aud_base_url || '';
-            if (gAudKey) gAudKey.value = cfg.grey_openai_aud_api_key || '';
-            if (gAudMod) gAudMod.value = cfg.grey_openai_aud_model || cfg.grey_audit_model || '';
-            const gAudFmt = document.getElementById('adminGreyOpenaiAudApiFormat');
-            if (gAudFmt) gAudFmt.value = cfg.grey_openai_aud_api_format || 'chat_completion';
-            const gAudTimeout = document.getElementById('adminGreyAudTimeoutSeconds');
-            if (gAudTimeout) gAudTimeout.value = (cfg.grey_aud_timeout_seconds != null ? cfg.grey_aud_timeout_seconds : '');
-            const gAudReasoning = document.getElementById('adminGreyOpenaiAudReasoningEffort');
-            if (gAudReasoning) gAudReasoning.value = cfg.grey_openai_aud_reasoning_effort || '';
-
-            // 灰测解析 LLM
-            const gParseEnabled = document.getElementById('adminGreyParseEnabled');
-            if (gParseEnabled) gParseEnabled.value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
-            const gParseBase = document.getElementById('adminGreyParseOpenaiBaseUrl');
-            const gParseKey = document.getElementById('adminGreyParseOpenaiApiKey');
-            const gParseMod = document.getElementById('adminGreyParseOpenaiModel');
-            if (gParseBase) gParseBase.value = cfg.grey_openai_parse_base_url || '';
-            if (gParseKey) gParseKey.value = cfg.grey_openai_parse_api_key || '';
-            if (gParseMod) gParseMod.value = cfg.grey_openai_parse_model || cfg.grey_parse_llm_model || '';
-            const gParseFmt = document.getElementById('adminGreyParseOpenaiApiFormat');
-            if (gParseFmt) gParseFmt.value = cfg.grey_openai_parse_api_format || 'chat_completion';
-            const gParseTimeout = document.getElementById('adminGreyParseTimeoutSeconds');
-            if (gParseTimeout) gParseTimeout.value = (cfg.grey_parse_timeout_seconds != null ? cfg.grey_parse_timeout_seconds : '');
-            const gParseReasoning = document.getElementById('adminGreyParseOpenaiReasoningEffort');
-            if (gParseReasoning) gParseReasoning.value = cfg.grey_openai_parse_reasoning_effort || '';
-
-            // Token 价格回显 (元/1M Token)
-            const setPrice = (id, val) => {
-                const el = document.getElementById(id);
-                if (el) el.value = (val !== null && val !== undefined && !isNaN(val)) ? val : '';
-            };
-            setPrice('adminPriceInputRec', cfg.price_input_rec);
-            setPrice('adminPriceCachedInputRec', cfg.price_cached_input_rec);
-            setPrice('adminPriceOutputRec', cfg.price_output_rec);
-
-            setPrice('adminPriceInputAud', cfg.price_input_aud);
-            setPrice('adminPriceCachedInputAud', cfg.price_cached_input_aud);
-            setPrice('adminPriceOutputAud', cfg.price_output_aud);
-
-            setPrice('adminPriceInputParse', cfg.price_input_parse);
-            setPrice('adminPriceCachedInputParse', cfg.price_cached_input_parse);
-            setPrice('adminPriceOutputParse', cfg.price_output_parse);
-
-            setPrice('adminGreyPriceInputRec', cfg.price_input_grey_rec);
-            setPrice('adminGreyPriceCachedInputRec', cfg.price_cached_input_grey_rec);
-            setPrice('adminGreyPriceOutputRec', cfg.price_output_grey_rec);
-
-            setPrice('adminGreyPriceInputAud', cfg.price_input_grey_aud);
-            setPrice('adminGreyPriceCachedInputAud', cfg.price_cached_input_grey_aud);
-            setPrice('adminGreyPriceOutputAud', cfg.price_output_grey_aud);
-
-            setPrice('adminGreyPriceInputParse', cfg.price_input_grey_parse);
-            setPrice('adminGreyPriceCachedInputParse', cfg.price_cached_input_grey_parse);
-            setPrice('adminGreyPriceOutputParse', cfg.price_output_grey_parse);
-
-            // 自动检测并设置匹配的预设网关下拉选项
-            function detectPresetKey(baseUrl) {
-                if (!baseUrl) return '';
-                const u = baseUrl.toLowerCase();
-                if (u.includes('siliconflow')) return 'siliconflow';
-                if (u.includes('dashscope') || u.includes('aliyuncs')) return 'bailian';
-                if (u.includes('agnes')) return 'agnes';
-                return '';
-            }
-            const setPresetVal = (presetId, baseUrl) => {
-                const el = document.getElementById(presetId);
-                if (el) el.value = detectPresetKey(baseUrl);
-            };
-            setPresetVal('adminOpenaiRecPreset', cfg.openai_rec_base_url);
-            setPresetVal('adminOpenaiAudPreset', cfg.openai_aud_base_url);
-            setPresetVal('adminParseOpenaiPreset', cfg.openai_parse_base_url);
-            setPresetVal('adminGreyOpenaiRecPreset', cfg.grey_openai_rec_base_url);
-            setPresetVal('adminGreyOpenaiAudPreset', cfg.grey_openai_aud_base_url);
-            setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
-
-            // 自动展开抽屉（若对应功能启用）
-            const auditDrawer = document.getElementById('adminAuditCard');
-            if (auditDrawer) {
-                const auditExpanded = !!cfg.audit_enabled;
-                auditDrawer.classList.toggle('collapsed', !auditExpanded);
-                const h = auditDrawer.querySelector('.engine-drawer-header');
-                if (h) h.setAttribute('aria-expanded', auditExpanded ? 'true' : 'false');
-            }
-            const parseDrawer = document.getElementById('adminParseDrawer');
-            if (parseDrawer) {
-                const parseExpanded = !!cfg.parse_llm_enabled;
-                parseDrawer.classList.toggle('collapsed', !parseExpanded);
-                const h = parseDrawer.querySelector('.engine-drawer-header');
-                if (h) h.setAttribute('aria-expanded', parseExpanded ? 'true' : 'false');
-            }
-            const greyDrawer = document.getElementById('adminGreyDrawer');
-            if (greyDrawer) {
-                const greyExpanded = !!cfg.grey_enabled;
-                greyDrawer.classList.toggle('collapsed', !greyExpanded);
-                const h = greyDrawer.querySelector('.engine-drawer-header');
-                if (h) h.setAttribute('aria-expanded', greyExpanded ? 'true' : 'false');
-            }
-
-            // 动态从后端同步预设配置（自动融入 .env 中的密钥 + 自定义预设）
-            apiFetch('/api/admin/engine-presets')
-                .then(r => r.json())
-                .then(pRet => {
-                    if (pRet && pRet.status === 'success' && pRet.data) {
-                        Object.assign(OPENAI_PRESETS, pRet.data);
-                        // 动态追加自定义预设 option 到所有预设下拉
-                        const PRESET_SELECT_IDS = [
-                            'adminOpenaiRecPreset', 'adminOpenaiAudPreset', 'adminParseOpenaiPreset',
-                            'adminGreyOpenaiRecPreset', 'adminGreyOpenaiAudPreset', 'adminGreyParseOpenaiPreset',
-                        ];
-                        const BUILTIN_KEYS = new Set(['agnes', 'bailian', 'siliconflow']);
-                        PRESET_SELECT_IDS.forEach(selId => {
-                            const sel = document.getElementById(selId);
-                            if (!sel) return;
-                            // 移除旧自定义 option（保留内置）
-                            Array.from(sel.options).forEach(opt => {
-                                if (opt.value && !BUILTIN_KEYS.has(opt.value)) sel.removeChild(opt);
-                            });
-                            // 追加新自定义预设
-                            Object.entries(pRet.data).forEach(([key, preset]) => {
-                                if (!BUILTIN_KEYS.has(key) && preset.label) {
-                                    const opt = document.createElement('option');
-                                    opt.value = key;
-                                    opt.textContent = preset.label + ' [自定义]';
-                                    sel.appendChild(opt);
-                                }
-                            });
-                        });
-                    }
-                    // 回显供应商名称（从当前配置字段）
-                    const vendorMap = [
-                        ['adminVendorNameRec',       cfg.vendor_name_rec],
-                        ['adminVendorNameAud',       cfg.vendor_name_aud],
-                        ['adminVendorNameParse',     cfg.vendor_name_parse],
-                        ['adminVendorNameGreyRec',   cfg.vendor_name_grey_rec],
-                        ['adminVendorNameGreyAud',   cfg.vendor_name_grey_aud],
-                        ['adminVendorNameGreyParse', cfg.vendor_name_grey_parse],
-                    ];
-                    vendorMap.forEach(([id, val]) => {
-                        const el = document.getElementById(id);
-                        if (el && val) el.value = val;
-                    });
-                })
-                .catch(() => {});
-
+            bindAdvParamListeners();
+            ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(legId => {
+                updateAdvBadge(legId);
+                checkTempWarn(legId);
+            });
 
             updateAuditDisabledState();
             updateGreyDisabledState();
@@ -11880,22 +11856,259 @@ function loadAdminEngineConfig() {
         .catch(() => showToast('读取引擎配置失败', 'error'));
 }
 
-function saveAdminEngineConfig() {
-    const saveBtn = document.getElementById('adminSaveEngineBtn') || document.getElementById('btnSaveAdminEngine');
-    const origText = saveBtn ? saveBtn.textContent : '保存配置';
+// 模块 A — 引擎与凭据：全局默认调用参数 + 识别 / 审核 / 解析三腿
+function renderEngineModuleA(cfg) {
+    const callTimeout = document.getElementById('adminCallTimeoutSeconds');
+    if (callTimeout) callTimeout.value = (cfg.call_timeout_seconds != null ? cfg.call_timeout_seconds : '');
+    const maxRetry = document.getElementById('adminMaxRetryRounds');
+    if (maxRetry) maxRetry.value = (cfg.max_retry_rounds != null ? cfg.max_retry_rounds : '');
 
+    // 常规识别
+    const recBase = document.getElementById('adminOpenaiRecBaseUrl');
+    const recKey = document.getElementById('adminOpenaiRecApiKey');
+    const recMod = document.getElementById('adminOpenaiRecModel');
+    if (recBase) recBase.value = cfg.openai_rec_base_url || '';
+    if (recKey) recKey.value = cfg.openai_rec_api_key || '';
+    if (recMod) recMod.value = cfg.openai_rec_model || cfg.recognition_model || '';
+    const recTimeout = document.getElementById('adminRecTimeoutSeconds');
+    if (recTimeout) recTimeout.value = (cfg.rec_timeout_seconds != null ? cfg.rec_timeout_seconds : '');
+    const recReasoning = document.getElementById('adminOpenaiRecReasoningEffort');
+    if (recReasoning) recReasoning.value = cfg.openai_rec_reasoning_effort || '';
+
+    // 常规审核
+    const audEnabled = document.getElementById('adminAuditEnabled');
+    if (audEnabled) audEnabled.value = cfg.audit_enabled ? 'true' : 'false';
+    const audMode = document.getElementById('adminAuditMode');
+    if (audMode) audMode.value = cfg.audit_mode || 'text';
+    const audBase = document.getElementById('adminOpenaiAudBaseUrl');
+    const audKey = document.getElementById('adminOpenaiAudApiKey');
+    const audMod = document.getElementById('adminOpenaiAudModel');
+    if (audBase) audBase.value = cfg.openai_aud_base_url || '';
+    if (audKey) audKey.value = cfg.openai_aud_api_key || '';
+    if (audMod) audMod.value = cfg.openai_aud_model || cfg.audit_model || '';
+    const audTimeout = document.getElementById('adminAudTimeoutSeconds');
+    if (audTimeout) audTimeout.value = (cfg.aud_timeout_seconds != null ? cfg.aud_timeout_seconds : '');
+    const audReasoning = document.getElementById('adminOpenaiAudReasoningEffort');
+    if (audReasoning) audReasoning.value = cfg.openai_aud_reasoning_effort || '';
+
+    // 常规解析 LLM
+    const parseEnabled = document.getElementById('adminParseEnabled');
+    if (parseEnabled) parseEnabled.value = cfg.parse_llm_enabled ? 'true' : 'false';
+    const parseBase = document.getElementById('adminParseOpenaiBaseUrl');
+    const parseKey = document.getElementById('adminParseOpenaiApiKey');
+    const parseMod = document.getElementById('adminParseOpenaiModel');
+    if (parseBase) parseBase.value = cfg.openai_parse_base_url || '';
+    if (parseKey) parseKey.value = cfg.openai_parse_api_key || '';
+    if (parseMod) parseMod.value = cfg.openai_parse_model || cfg.parse_llm_model || '';
+    const parseTimeout = document.getElementById('adminParseTimeoutSeconds');
+    if (parseTimeout) parseTimeout.value = (cfg.parse_timeout_seconds != null ? cfg.parse_timeout_seconds : '');
+    const parseReasoning = document.getElementById('adminParseOpenaiReasoningEffort');
+    if (parseReasoning) parseReasoning.value = cfg.openai_parse_reasoning_effort || '';
+
+    // 高级工程参数回显（max_tokens / image_detail / temperature）
+    const setElVal = (id, val, fallback) => {
+        const el = document.getElementById(id);
+        if (el) el.value = (val !== null && val !== undefined && val !== '') ? val : fallback;
+    };
+    setElVal('adminRecMaxTokens', cfg.openai_rec_max_tokens, 4096);
+    setElVal('adminRecImageDetail', cfg.openai_rec_image_detail, 'high');
+    setElVal('adminRecTemperature', cfg.openai_rec_temperature !== undefined && cfg.openai_rec_temperature !== null ? cfg.openai_rec_temperature : 0.0, 0.0);
+    setElVal('adminAudMaxTokens', cfg.openai_aud_max_tokens, 4096);
+    setElVal('adminAudTemperature', cfg.openai_aud_temperature !== undefined && cfg.openai_aud_temperature !== null ? cfg.openai_aud_temperature : 0.0, 0.0);
+    setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 4096);
+    setElVal('adminParseTemperature', cfg.openai_parse_temperature !== undefined && cfg.openai_parse_temperature !== null ? cfg.openai_parse_temperature : 0.0, 0.0);
+
+    // 自动展开抽屉（对应功能启用时）
+    const auditDrawer = document.getElementById('adminAuditCard');
+    if (auditDrawer) {
+        const auditExpanded = !!cfg.audit_enabled;
+        auditDrawer.classList.toggle('collapsed', !auditExpanded);
+        const h = auditDrawer.querySelector('.engine-drawer-header');
+        if (h) h.setAttribute('aria-expanded', auditExpanded ? 'true' : 'false');
+    }
+    const parseDrawer = document.getElementById('adminParseDrawer');
+    if (parseDrawer) {
+        const parseExpanded = !!cfg.parse_llm_enabled;
+        parseDrawer.classList.toggle('collapsed', !parseExpanded);
+        const h = parseDrawer.querySelector('.engine-drawer-header');
+        if (h) h.setAttribute('aria-expanded', parseExpanded ? 'true' : 'false');
+    }
+}
+
+// 模块 B — 成本与计费：18 个单价（元/1M Token）
+function renderEngineModuleB(cfg) {
+    const setPrice = (id, val) => {
+        const el = document.getElementById(id);
+        if (el) el.value = (val !== null && val !== undefined && !isNaN(val)) ? val : '';
+    };
+    setPrice('adminPriceInputRec', cfg.price_input_rec);
+    setPrice('adminPriceCachedInputRec', cfg.price_cached_input_rec);
+    setPrice('adminPriceOutputRec', cfg.price_output_rec);
+    setPrice('adminPriceInputAud', cfg.price_input_aud);
+    setPrice('adminPriceCachedInputAud', cfg.price_cached_input_aud);
+    setPrice('adminPriceOutputAud', cfg.price_output_aud);
+    setPrice('adminPriceInputParse', cfg.price_input_parse);
+    setPrice('adminPriceCachedInputParse', cfg.price_cached_input_parse);
+    setPrice('adminPriceOutputParse', cfg.price_output_parse);
+    setPrice('adminGreyPriceInputRec', cfg.price_input_grey_rec);
+    setPrice('adminGreyPriceCachedInputRec', cfg.price_cached_input_grey_rec);
+    setPrice('adminGreyPriceOutputRec', cfg.price_output_grey_rec);
+    setPrice('adminGreyPriceInputAud', cfg.price_input_grey_aud);
+    setPrice('adminGreyPriceCachedInputAud', cfg.price_cached_input_grey_aud);
+    setPrice('adminGreyPriceOutputAud', cfg.price_output_grey_aud);
+    setPrice('adminGreyPriceInputParse', cfg.price_input_grey_parse);
+    setPrice('adminGreyPriceCachedInputParse', cfg.price_cached_input_grey_parse);
+    setPrice('adminGreyPriceOutputParse', cfg.price_output_grey_parse);
+}
+
+// 模块 C — 发布与流量管理：金丝雀灰测三腿（A/B 实验由既有实验端点渲染）
+function renderEngineModuleC(cfg) {
+    const greyEnabled = document.getElementById('adminGreyEnabled');
+    if (greyEnabled) greyEnabled.value = cfg.grey_enabled ? 'true' : 'false';
+    const greyPercent = document.getElementById('adminGreyPercent');
+    if (greyPercent) greyPercent.value = cfg.grey_percent || 0;
+    const greyAssign = document.getElementById('adminGreyAssignMode');
+    if (greyAssign) greyAssign.value = cfg.grey_assign_mode || 'receipt';
+
+    // 灰测识别
+    const gRecBase = document.getElementById('adminGreyOpenaiRecBaseUrl');
+    const gRecKey = document.getElementById('adminGreyOpenaiRecApiKey');
+    const gRecMod = document.getElementById('adminGreyOpenaiRecModel');
+    if (gRecBase) gRecBase.value = cfg.grey_openai_rec_base_url || '';
+    if (gRecKey) gRecKey.value = cfg.grey_openai_rec_api_key || '';
+    if (gRecMod) gRecMod.value = cfg.grey_openai_rec_model || cfg.grey_recognition_model || '';
+    const gRecTimeout = document.getElementById('adminGreyRecTimeoutSeconds');
+    if (gRecTimeout) gRecTimeout.value = (cfg.grey_rec_timeout_seconds != null ? cfg.grey_rec_timeout_seconds : '');
+    const gRecReasoning = document.getElementById('adminGreyOpenaiRecReasoningEffort');
+    if (gRecReasoning) gRecReasoning.value = cfg.grey_openai_rec_reasoning_effort || '';
+
+    // 灰测审核
+    const gAudEnabled = document.getElementById('adminGreyAuditEnabled');
+    if (gAudEnabled) gAudEnabled.value = cfg.grey_audit_enabled ? 'true' : 'false';
+    const gAudBase = document.getElementById('adminGreyOpenaiAudBaseUrl');
+    const gAudKey = document.getElementById('adminGreyOpenaiAudApiKey');
+    const gAudMod = document.getElementById('adminGreyOpenaiAudModel');
+    if (gAudBase) gAudBase.value = cfg.grey_openai_aud_base_url || '';
+    if (gAudKey) gAudKey.value = cfg.grey_openai_aud_api_key || '';
+    if (gAudMod) gAudMod.value = cfg.grey_openai_aud_model || cfg.grey_audit_model || '';
+    const gAudTimeout = document.getElementById('adminGreyAudTimeoutSeconds');
+    if (gAudTimeout) gAudTimeout.value = (cfg.grey_aud_timeout_seconds != null ? cfg.grey_aud_timeout_seconds : '');
+    const gAudReasoning = document.getElementById('adminGreyOpenaiAudReasoningEffort');
+    if (gAudReasoning) gAudReasoning.value = cfg.grey_openai_aud_reasoning_effort || '';
+
+    // 灰测解析 LLM
+    const gParseEnabled = document.getElementById('adminGreyParseEnabled');
+    if (gParseEnabled) gParseEnabled.value = cfg.grey_parse_llm_enabled ? 'true' : 'false';
+    const gParseBase = document.getElementById('adminGreyParseOpenaiBaseUrl');
+    const gParseKey = document.getElementById('adminGreyParseOpenaiApiKey');
+    const gParseMod = document.getElementById('adminGreyParseOpenaiModel');
+    if (gParseBase) gParseBase.value = cfg.grey_openai_parse_base_url || '';
+    if (gParseKey) gParseKey.value = cfg.grey_openai_parse_api_key || '';
+    if (gParseMod) gParseMod.value = cfg.grey_openai_parse_model || cfg.grey_parse_llm_model || '';
+    const gParseTimeout = document.getElementById('adminGreyParseTimeoutSeconds');
+    if (gParseTimeout) gParseTimeout.value = (cfg.grey_parse_timeout_seconds != null ? cfg.grey_parse_timeout_seconds : '');
+    const gParseReasoning = document.getElementById('adminGreyParseOpenaiReasoningEffort');
+    if (gParseReasoning) gParseReasoning.value = cfg.grey_openai_parse_reasoning_effort || '';
+
+    // 灰测高级工程参数
+    const setElVal = (id, val, fallback) => {
+        const el = document.getElementById(id);
+        if (el) el.value = (val !== null && val !== undefined && val !== '') ? val : fallback;
+    };
+    setElVal('adminGreyRecMaxTokens', cfg.grey_openai_rec_max_tokens, 4096);
+    setElVal('adminGreyRecImageDetail', cfg.grey_openai_rec_image_detail, 'high');
+    setElVal('adminGreyRecTemperature', cfg.grey_openai_rec_temperature !== undefined && cfg.grey_openai_rec_temperature !== null ? cfg.grey_openai_rec_temperature : 0.0, 0.0);
+    setElVal('adminGreyAudMaxTokens', cfg.grey_openai_aud_max_tokens, 4096);
+    setElVal('adminGreyAudTemperature', cfg.grey_openai_aud_temperature !== undefined && cfg.grey_openai_aud_temperature !== null ? cfg.grey_openai_aud_temperature : 0.0, 0.0);
+    setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 4096);
+    setElVal('adminGreyParseTemperature', cfg.grey_openai_parse_temperature !== undefined && cfg.grey_openai_parse_temperature !== null ? cfg.grey_openai_parse_temperature : 0.0, 0.0);
+
+    // 金丝雀抽屉自动展开
+    const greyDrawer = document.getElementById('adminGreyDrawer');
+    if (greyDrawer) {
+        const greyExpanded = !!cfg.grey_enabled;
+        greyDrawer.classList.toggle('collapsed', !greyExpanded);
+        const h = greyDrawer.querySelector('.engine-drawer-header');
+        if (h) h.setAttribute('aria-expanded', greyExpanded ? 'true' : 'false');
+    }
+}
+
+// 预设网关下拉：注入自定义预设并回显当前 Base URL 对应的预设（供应商名不再由自由文本输入）
+function syncAdminEnginePresetOptions(cfg) {
+    const detectPresetKey = (baseUrl) => {
+        if (!baseUrl) return '';
+        const u = baseUrl.toLowerCase();
+        if (u.includes('siliconflow')) return 'siliconflow';
+        if (u.includes('dashscope') || u.includes('aliyuncs')) return 'bailian';
+        if (u.includes('agnes')) return 'agnes';
+        return '';
+    };
+    const setPresetVal = (presetId, baseUrl) => {
+        const el = document.getElementById(presetId);
+        if (el) el.value = detectPresetKey(baseUrl);
+    };
+    setPresetVal('adminOpenaiRecPreset', cfg.openai_rec_base_url);
+    setPresetVal('adminOpenaiAudPreset', cfg.openai_aud_base_url);
+    setPresetVal('adminParseOpenaiPreset', cfg.openai_parse_base_url);
+    setPresetVal('adminGreyOpenaiRecPreset', cfg.grey_openai_rec_base_url);
+    setPresetVal('adminGreyOpenaiAudPreset', cfg.grey_openai_aud_base_url);
+    setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
+
+    // 动态从后端同步预设配置（自动融入 .env 中的密钥 + 自定义预设）
+    apiFetch('/api/admin/engine-presets')
+        .then(r => r.json())
+        .then(pRet => {
+            if (pRet && pRet.status === 'success' && pRet.data) {
+                Object.assign(OPENAI_PRESETS, pRet.data);
+                const PRESET_SELECT_IDS = [
+                    'adminOpenaiRecPreset', 'adminOpenaiAudPreset', 'adminParseOpenaiPreset',
+                    'adminGreyOpenaiRecPreset', 'adminGreyOpenaiAudPreset', 'adminGreyParseOpenaiPreset',
+                ];
+                const BUILTIN_KEYS = new Set(['agnes', 'bailian', 'siliconflow']);
+                PRESET_SELECT_IDS.forEach(selId => {
+                    const sel = document.getElementById(selId);
+                    if (!sel) return;
+                    Array.from(sel.options).forEach(opt => {
+                        if (opt.value && !BUILTIN_KEYS.has(opt.value)) sel.removeChild(opt);
+                    });
+                    Object.entries(pRet.data).forEach(([key, preset]) => {
+                        if (!BUILTIN_KEYS.has(key) && preset.label) {
+                            const opt = document.createElement('option');
+                            opt.value = key;
+                            opt.textContent = preset.label + ' [自定义]';
+                            sel.appendChild(opt);
+                        }
+                    });
+                });
+            }
+        })
+        .catch(() => {});
+}
+
+// 采集表单字段并构建保存 / 测试 body（不包含供应商自由文本；携带乐观锁 version）
+function collectEngineConfigBody() {
     const getVal = (id) => {
         const el = document.getElementById(id);
         return el ? el.value.trim() : '';
     };
-
     const getTimeout = (id) => {
         const el = document.getElementById(id);
         if (!el || !el.value.trim()) return null;
         const v = parseInt(el.value.trim(), 10);
         return isNaN(v) ? null : v;
     };
-
+    const getInt = (id, fallback) => {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return fallback;
+        const v = parseInt(el.value.trim(), 10);
+        return isNaN(v) ? fallback : v;
+    };
+    const getFloat = (id, fallback) => {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return fallback;
+        const v = parseFloat(el.value.trim());
+        return isNaN(v) ? fallback : v;
+    };
     const getPrice = (id, label) => {
         const el = document.getElementById(id);
         if (!el || !el.value.trim()) return null;
@@ -11915,30 +12128,25 @@ function saveAdminEngineConfig() {
             price_input_rec: getPrice('adminPriceInputRec', '常规识别 Input 价格'),
             price_cached_input_rec: getPrice('adminPriceCachedInputRec', '常规识别 Cached Input 价格'),
             price_output_rec: getPrice('adminPriceOutputRec', '常规识别 Output 价格'),
-
             price_input_aud: getPrice('adminPriceInputAud', '常规审核 Input 价格'),
             price_cached_input_aud: getPrice('adminPriceCachedInputAud', '常规审核 Cached Input 价格'),
             price_output_aud: getPrice('adminPriceOutputAud', '常规审核 Output 价格'),
-
             price_input_parse: getPrice('adminPriceInputParse', '常规解析 Input 价格'),
             price_cached_input_parse: getPrice('adminPriceCachedInputParse', '常规解析 Cached Input 价格'),
             price_output_parse: getPrice('adminPriceOutputParse', '常规解析 Output 价格'),
-
             price_input_grey_rec: getPrice('adminGreyPriceInputRec', '灰测识别 Input 价格'),
             price_cached_input_grey_rec: getPrice('adminGreyPriceCachedInputRec', '灰测识别 Cached Input 价格'),
             price_output_grey_rec: getPrice('adminGreyPriceOutputRec', '灰测识别 Output 价格'),
-
             price_input_grey_aud: getPrice('adminGreyPriceInputAud', '灰测审核 Input 价格'),
             price_cached_input_grey_aud: getPrice('adminGreyPriceCachedInputAud', '灰测审核 Cached Input 价格'),
             price_output_grey_aud: getPrice('adminGreyPriceOutputAud', '灰测审核 Output 价格'),
-
             price_input_grey_parse: getPrice('adminGreyPriceInputParse', '灰测解析 Input 价格'),
             price_cached_input_grey_parse: getPrice('adminGreyPriceCachedInputParse', '灰测解析 Cached Input 价格'),
             price_output_grey_parse: getPrice('adminGreyPriceOutputParse', '灰测解析 Output 价格'),
         };
     } catch (err) {
         showToast(err.message || 'Token 单价不能为负数', 'error');
-        return;
+        return null;
     }
 
     const recModel = getVal('adminOpenaiRecModel');
@@ -11948,61 +12156,53 @@ function saveAdminEngineConfig() {
     const greyAudModel = getVal('adminGreyOpenaiAudModel');
     const greyParseModel = getVal('adminGreyParseOpenaiModel');
 
-    // 采集 pure OpenAI DOM 字段并构建带双向对齐的配置体
     // 保留 **** 敏感掩码传回后端，后端自动比对并维持未改动的原密钥
-    const body = {
+    return {
         ...priceFields,
-        recognition_engine: 'openai',
+        // 乐观锁：来自 routing DTO；缺失时 undefined（JSON 序列化省略，后端按旧行为处理）
+        version: (_engineConfigVersion != null ? _engineConfigVersion : undefined),
+        // 全局默认调用超时 / 整图重跑上限 / 审核模式
+        call_timeout_seconds: getTimeout('adminCallTimeoutSeconds'),
+        max_retry_rounds: getInt('adminMaxRetryRounds', 3),
+        audit_mode: getVal('adminAuditMode') || 'text',
+
         recognition_model: recModel,
         openai_rec_base_url: getVal('adminOpenaiRecBaseUrl'),
         openai_rec_api_key: getVal('adminOpenaiRecApiKey'),
         openai_rec_model: recModel,
-        openai_rec_api_format: getVal('adminOpenaiRecApiFormat') || 'chat_completion',
-        api_format: getVal('adminOpenaiRecApiFormat') || 'chat_completion',
 
         audit_enabled: document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false,
-        audit_engine: 'openai',
         audit_model: audModel,
         openai_aud_base_url: getVal('adminOpenaiAudBaseUrl'),
         openai_aud_api_key: getVal('adminOpenaiAudApiKey'),
         openai_aud_model: audModel,
-        openai_aud_api_format: getVal('adminOpenaiAudApiFormat') || 'chat_completion',
 
         parse_llm_enabled: document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false,
-        parse_llm_engine: 'openai',
         parse_llm_model: parseModel,
         openai_parse_base_url: getVal('adminParseOpenaiBaseUrl'),
         openai_parse_api_key: getVal('adminParseOpenaiApiKey'),
         openai_parse_model: parseModel,
-        openai_parse_api_format: getVal('adminParseOpenaiApiFormat') || 'chat_completion',
 
         grey_enabled: document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false,
         grey_percent: parseInt(document.getElementById('adminGreyPercent') ? document.getElementById('adminGreyPercent').value : 0, 10) || 0,
         grey_assign_mode: getVal('adminGreyAssignMode') || 'receipt',
 
-        grey_recognition_engine: 'openai',
         grey_recognition_model: greyRecModel,
         grey_openai_rec_base_url: getVal('adminGreyOpenaiRecBaseUrl'),
         grey_openai_rec_api_key: getVal('adminGreyOpenaiRecApiKey'),
         grey_openai_rec_model: greyRecModel,
-        grey_openai_rec_api_format: getVal('adminGreyOpenaiRecApiFormat') || 'chat_completion',
-        grey_api_format: getVal('adminGreyOpenaiRecApiFormat') || 'chat_completion',
 
         grey_audit_enabled: document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false,
-        grey_audit_engine: 'openai',
         grey_audit_model: greyAudModel,
         grey_openai_aud_base_url: getVal('adminGreyOpenaiAudBaseUrl'),
         grey_openai_aud_api_key: getVal('adminGreyOpenaiAudApiKey'),
         grey_openai_aud_model: greyAudModel,
-        grey_openai_aud_api_format: getVal('adminGreyOpenaiAudApiFormat') || 'chat_completion',
 
         grey_parse_llm_enabled: document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false,
-        grey_parse_llm_engine: 'openai',
         grey_parse_llm_model: greyParseModel,
         grey_openai_parse_base_url: getVal('adminGreyParseOpenaiBaseUrl'),
         grey_openai_parse_api_key: getVal('adminGreyParseOpenaiApiKey'),
         grey_openai_parse_model: greyParseModel,
-        grey_openai_parse_api_format: getVal('adminGreyParseOpenaiApiFormat') || 'chat_completion',
 
         // 分引擎腿超时与思考强度
         rec_timeout_seconds: getTimeout('adminRecTimeoutSeconds'),
@@ -12011,7 +12211,6 @@ function saveAdminEngineConfig() {
         openai_aud_reasoning_effort: getVal('adminOpenaiAudReasoningEffort'),
         parse_timeout_seconds: getTimeout('adminParseTimeoutSeconds'),
         openai_parse_reasoning_effort: getVal('adminParseOpenaiReasoningEffort'),
-
         grey_rec_timeout_seconds: getTimeout('adminGreyRecTimeoutSeconds'),
         grey_openai_rec_reasoning_effort: getVal('adminGreyOpenaiRecReasoningEffort'),
         grey_aud_timeout_seconds: getTimeout('adminGreyAudTimeoutSeconds'),
@@ -12019,149 +12218,155 @@ function saveAdminEngineConfig() {
         grey_parse_timeout_seconds: getTimeout('adminGreyParseTimeoutSeconds'),
         grey_openai_parse_reasoning_effort: getVal('adminGreyParseOpenaiReasoningEffort'),
 
-        // 各引擎腿供应商名称（填写后保存时自动写入预设网关）
-        vendor_name_rec: getVal('adminVendorNameRec'),
-        vendor_name_aud: getVal('adminVendorNameAud'),
-        vendor_name_parse: getVal('adminVendorNameParse'),
-        vendor_name_grey_rec: getVal('adminVendorNameGreyRec'),
-        vendor_name_grey_aud: getVal('adminVendorNameGreyAud'),
-        vendor_name_grey_parse: getVal('adminVendorNameGreyParse'),
+        // 高级工程参数 (Rec)
+        openai_rec_max_tokens: getInt('adminRecMaxTokens', 4096),
+        openai_rec_image_detail: getVal('adminRecImageDetail') || 'high',
+        openai_rec_temperature: getFloat('adminRecTemperature', 0.0),
+        // 高级工程参数 (Aud)
+        openai_aud_max_tokens: getInt('adminAudMaxTokens', 4096),
+        openai_aud_temperature: getFloat('adminAudTemperature', 0.0),
+        // 高级工程参数 (Parse)
+        openai_parse_max_tokens: getInt('adminParseMaxTokens', 4096),
+        openai_parse_temperature: getFloat('adminParseTemperature', 0.0),
+        // 高级工程参数 (Grey Rec)
+        grey_openai_rec_max_tokens: getInt('adminGreyRecMaxTokens', 4096),
+        grey_openai_rec_image_detail: getVal('adminGreyRecImageDetail') || 'high',
+        grey_openai_rec_temperature: getFloat('adminGreyRecTemperature', 0.0),
+        // 高级工程参数 (Grey Aud)
+        grey_openai_aud_max_tokens: getInt('adminGreyAudMaxTokens', 4096),
+        grey_openai_aud_temperature: getFloat('adminGreyAudTemperature', 0.0),
+        // 高级工程参数 (Grey Parse)
+        grey_openai_parse_max_tokens: getInt('adminGreyParseMaxTokens', 4096),
+        grey_openai_parse_temperature: getFloat('adminGreyParseTemperature', 0.0),
     };
+}
 
-    const skipTest = document.getElementById('adminSkipModelTest') && document.getElementById('adminSkipModelTest').checked;
+// 保存配置：携带乐观锁 version；409 提示「配置已被他人修改」+ 字段级 diff + 重新加载
+function saveAdminEngineConfig() {
+    const saveBtn = document.getElementById('adminSaveEngineBtn') || document.getElementById('btnSaveAdminEngine');
+    const origText = saveBtn ? saveBtn.textContent : '保存配置';
 
-    function doSave() {
-        if (saveBtn) {
-            saveBtn.disabled = true;
-            saveBtn.textContent = '正在保存配置...';
-        }
-        return apiFetch('/api/admin/engine-config', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        })
-            .then(r => r.json())
-            .then(ret => {
-                if (ret && ret.status === 'success') {
-                    showToast('配置已成功保存', 'success');
-                    // T1：管理台保存后来源置 manual（后端强制），重启不再被 .env 覆盖
-                    renderAdminEngineConfigSource('manual');
-                    if (ret.data) {
-                        const d = ret.data;
-                        if (d.openai_rec_api_key) {
-                            const el = document.getElementById('adminOpenaiRecApiKey');
-                            if (el) el.value = d.openai_rec_api_key;
-                        }
-                        if (d.openai_aud_api_key) {
-                            const el = document.getElementById('adminOpenaiAudApiKey');
-                            if (el) el.value = d.openai_aud_api_key;
-                        }
-                        if (d.openai_parse_api_key) {
-                            const el = document.getElementById('adminParseOpenaiApiKey');
-                            if (el) el.value = d.openai_parse_api_key;
-                        }
-                        if (d.grey_openai_rec_api_key) {
-                            const el = document.getElementById('adminGreyOpenaiRecApiKey');
-                            if (el) el.value = d.grey_openai_rec_api_key;
-                        }
-                        if (d.grey_openai_aud_api_key) {
-                            const el = document.getElementById('adminGreyOpenaiAudApiKey');
-                            if (el) el.value = d.grey_openai_aud_api_key;
-                        }
-                        if (d.grey_openai_parse_api_key) {
-                            const el = document.getElementById('adminGreyParseOpenaiApiKey');
-                            if (el) el.value = d.grey_openai_parse_api_key;
-                        }
-                    }
-                } else {
-                    const errMsg = (ret && (ret.msg || ret.detail)) || '保存失败';
-                    showToast(humanizeForbidden(errMsg) || errMsg, 'error');
-                }
-            })
-            .catch(err => {
-                showToast('保存异常: ' + (err.message || err), 'error');
-            })
-            .finally(() => {
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = origText;
-                }
-            });
-    }
-
-    if (skipTest) {
-        return doSave();
-    }
-
-    let countdown = 45;
-    let timer = null;
+    const body = collectEngineConfigBody();
+    if (!body) return;
 
     if (saveBtn) {
         saveBtn.disabled = true;
-        saveBtn.textContent = '正在测试引擎连接 (' + countdown + 's)...';
-        timer = setInterval(() => {
-            countdown -= 1;
-            if (countdown > 0) {
-                saveBtn.textContent = '正在测试引擎连接 (' + countdown + 's)...';
-            } else {
-                saveBtn.textContent = '测试即将完成，请稍候...';
-            }
-        }, 1000);
+        saveBtn.textContent = '正在保存配置...';
     }
-    showToast('正在测试连通性，最长需 45s...', 'info');
+    return apiFetch('/api/admin/engine-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    })
+        .then(res => res.json().then(data => ({ status: res.status, data: data })))
+        .then(({ status, data: ret }) => {
+            if (ret && ret.status === 'success') {
+                showToast('配置已成功保存', 'success');
+                // T1：管理台保存后来源置 manual（后端强制），重启不再被 .env 覆盖
+                renderAdminEngineConfigSource('manual');
+                if (ret.version != null) _engineConfigVersion = ret.version;
+                if (ret.data) {
+                    const d = ret.data;
+                    const keyEchoes = [
+                        ['adminOpenaiRecApiKey', d.openai_rec_api_key],
+                        ['adminOpenaiAudApiKey', d.openai_aud_api_key],
+                        ['adminParseOpenaiApiKey', d.openai_parse_api_key],
+                        ['adminGreyOpenaiRecApiKey', d.grey_openai_rec_api_key],
+                        ['adminGreyOpenaiAudApiKey', d.grey_openai_aud_api_key],
+                        ['adminGreyParseOpenaiApiKey', d.grey_openai_parse_api_key],
+                    ];
+                    keyEchoes.forEach(([id, val]) => {
+                        if (!val) return;
+                        const el = document.getElementById(id);
+                        if (el) el.value = val;
+                    });
+                }
+                setEngineStatusMessage('配置已保存，生效版本 v' + (_engineConfigVersion != null ? _engineConfigVersion : '-'), 'success');
+                loadEngineConfigRouting();
+                loadEngineConfigHistory();
+            } else if (status === 409 || (ret && ret.code === 'VERSION_CONFLICT')) {
+                showEngineVersionConflictModal(ret);
+            } else {
+                const errMsg = (ret && (ret.msg || ret.detail)) || '保存失败';
+                showToast(humanizeForbidden(errMsg) || errMsg, 'error');
+            }
+        })
+        .catch(err => {
+            showToast('保存异常: ' + (err.message || err), 'error');
+        })
+        .finally(() => {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = origText;
+            }
+        });
+}
 
+// 409 并发冲突：字段级 diff + 「重新加载」
+function showEngineVersionConflictModal(ret) {
+    const data = ret || {};
+    const diff = Array.isArray(data.diff) ? data.diff : [];
+    const curV = (data.current_version != null ? data.current_version : (data.version != null ? data.version : '-'));
+    let msg = '配置已被他人修改（服务器当前版本 v' + curV + '）。您的改动未保存。';
+    if (diff.length) {
+        msg += '\n\n字段差异（本机提交 → 服务器现值）：';
+        diff.slice(0, 12).forEach(d => {
+            const key = d && d.key ? d.key : '';
+            const oldV = d && d.old !== undefined && d.old !== null ? d.old : '(空)';
+            const newV = d && d.new !== undefined && d.new !== null ? d.new : '(空)';
+            msg += '\n· ' + key + '：' + String(newV) + ' → ' + String(oldV);
+        });
+    }
+    showToast('配置已被他人修改', 'error');
+    setEngineStatusMessage('配置已被他人修改，请重新加载后再试', 'error');
+    showCustomConfirmModal({
+        title: '配置已被他人修改',
+        message: msg,
+        confirmText: '重新加载',
+        cancelText: '知道了',
+        onConfirm: () => { loadAdminEngineConfig(); },
+        onCancel: () => {}
+    });
+}
+
+// 独立「测试连通性」按钮：不再与保存隐式串行等待
+function testAdminEngineConnectivity() {
+    const btn = document.getElementById('adminTestEngineConnBtn');
+    const origText = btn ? btn.textContent : '测试连通性';
+    const body = collectEngineConfigBody();
+    if (!body) return;
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '正在测试连通性...';
+    }
+    setEngineStatusMessage('正在测试连通性，最长需 45s...', 'info');
     apiFetch('/api/admin/test-engine-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     })
         .then(res => res.json().then(data => ({ status: res.status, data: data })))
-        .then(resObj => {
-            if (timer) clearInterval(timer);
-            if (resObj.status !== 200 || resObj.data.status !== 'success') {
-                let errMsg = (resObj.data && (resObj.data.msg || resObj.data.detail)) || '连接测试未通过';
-                errMsg = humanizeForbidden(errMsg, resObj.status) || errMsg;
-                if (saveBtn) {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = origText;
-                }
-                showCustomConfirmModal({
-                    title: '引擎配置测试未通过',
-                    message: errMsg + '\n\n是否仍然强制保存当前配置？',
-                    confirmText: '强制保存',
-                    cancelText: '取消',
-                    onConfirm: () => {
-                        doSave();
-                    },
-                    onCancel: () => {
-                        showToast('已取消保存配置，恢复已生效设置', 'info');
-                        loadAdminEngineConfig();
-                    }
-                });
-                return;
+        .then(({ status, data: ret }) => {
+            if (status === 200 && ret && ret.status === 'success') {
+                showToast('连通性测试通过', 'success');
+                setEngineStatusMessage('连通性测试通过', 'success');
+            } else {
+                let errMsg = (ret && (ret.msg || ret.detail)) || '连接测试未通过';
+                errMsg = humanizeForbidden(errMsg, status) || errMsg;
+                showToast(errMsg, 'error');
+                setEngineStatusMessage('连通性测试未通过：' + errMsg, 'error');
             }
-
-            return doSave();
         })
         .catch(err => {
-            if (timer) clearInterval(timer);
-            console.error('测试异常', err);
-            if (saveBtn) {
-                saveBtn.disabled = false;
-                saveBtn.textContent = origText;
+            showToast('测试请求异常: ' + (err.message || err), 'error');
+            setEngineStatusMessage('连通性测试请求异常', 'error');
+        })
+        .finally(() => {
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = origText;
             }
-            showCustomConfirmModal({
-                title: '测试请求异常',
-                message: (err.message || err) + '\n\n是否仍然强制保存当前配置？',
-                confirmText: '强制保存',
-                cancelText: '取消',
-                onConfirm: () => {
-                    doSave();
-                },
-                onCancel: () => {
-                    showToast('已取消保存配置', 'info');
-                }
-            });
         });
 }
 
@@ -12792,7 +12997,11 @@ const ADMIN_SETTINGS_FIELDS = [
     ['setMemoryBudgetMaxItems', 'memory_budget_max_items', 'int'],
     ['setMemoryDecayHitBonus', 'memory_decay_hit_bonus', 'float'],
     ['setMemoryDecayOverridePenalty', 'memory_decay_override_penalty', 'float'],
-    ['setMemoryArchiveThreshold', 'memory_archive_threshold', 'float']
+    ['setMemoryArchiveThreshold', 'memory_archive_threshold', 'float'],
+    // P28-AU2：解析超时清扫阈值（settings 键 parsing_timeout_seconds，缺省 300）。
+    // 走本表既有机制（int 类型）—— load 回显 / collect 下发 / reset 恢复缺省三处由同一张表驱动，
+    // 不再各写一份；控件在 index.html#setParsingTimeoutSeconds（模块 D）。
+    ['setParsingTimeoutSeconds', 'parsing_timeout_seconds', 'int']
 ];
 let _adminSettingsDefaults = null;
 
@@ -12811,6 +13020,14 @@ function loadAdminSettings() {
             });
             const pre = document.getElementById('setPreprocessEnabled');
             if (pre) pre.checked = !!data.preprocess_enabled;
+            // Y3-P2b：首轮供应商预判开关（settings 键 vendor_precheck_enabled，缺省 false）。
+            // 布尔项不进 ADMIN_SETTINGS_FIELDS（那张表按 Number() 解析数值），在 load / collect /
+            // reset 三处各自显式处理，缺任一处即「显示了但不生效」或「保存了又被重置」。
+            const vp = document.getElementById('setVendorPrecheckEnabled');
+            if (vp) vp.checked = !!data.vendor_precheck_enabled;
+            // P23-AQ1：LLM 抽取开关（settings 键 memory_extract_enabled，缺省 false），同款机制。
+            const me = document.getElementById('setMemoryExtractEnabled');
+            if (me) me.checked = !!data.memory_extract_enabled;
         })
         .catch(() => { /* 读取失败静默，表单保持空态 */ });
 }
@@ -12831,6 +13048,13 @@ function _collectAdminSettingsPayload() {
     }
     const pre = document.getElementById('setPreprocessEnabled');
     if (pre) payload.preprocess_enabled = !!pre.checked;
+    // Y3-P2b：元素不存在时**不下发**该键（不把一个读不到的开关默认写成 false —— 那会在页面与
+    // 后端版本不一致时静默关掉预判；与 preprocess_enabled 同款的 if 保护）。
+    const vp = document.getElementById('setVendorPrecheckEnabled');
+    if (vp) payload.vendor_precheck_enabled = !!vp.checked;
+    // P23-AQ1：同样地，元素不存在时不下发该键（否则页面与后端版本不一致时会静默关掉抽取）。
+    const me = document.getElementById('setMemoryExtractEnabled');
+    if (me) payload.memory_extract_enabled = !!me.checked;
     return payload;
 }
 
@@ -12862,6 +13086,11 @@ function resetAdminSettingsToDefaults() {
         if (_adminSettingsDefaults[key] !== undefined) payload[key] = _adminSettingsDefaults[key];
     });
     payload.preprocess_enabled = !!_adminSettingsDefaults.preprocess_enabled;
+    // Y3-P2b：恢复缺省值同样要把预判开关带回缺省（false），否则「恢复缺省值」会留下一个被显式
+    // 打开着的开关，与按钮文案不符。
+    payload.vendor_precheck_enabled = !!_adminSettingsDefaults.vendor_precheck_enabled;
+    // P23-AQ1：同理，抽取开关也要带回缺省（false）。
+    payload.memory_extract_enabled = !!_adminSettingsDefaults.memory_extract_enabled;
     apiFetch('/api/admin/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -12877,6 +13106,338 @@ function resetAdminSettingsToDefaults() {
             loadAdminSettings();
         })
         .catch(() => { showToast('恢复缺省值失败（网络错误）', 'error'); });
+}
+
+/* =============================================================
+   记忆度量看板（收敛计划 P2-T5 / 概念 C11）
+   GET /api/admin/memory-metrics（admin 只读端点）→ 四项指标 + 记忆总开关状态。
+   口径由后端统一给出（与 demo/scripts/memory_metrics.py 同源），前端**不自算任何比率**
+   —— 否则就会出现本仓高发的「同一口径多份实现」。分母为 0 时显示「无数据」，
+   不用 0% 冒充（0% 表示「有数据且结果全是坏」）。
+   ============================================================= */
+// 看板样式落点：**内联 style 写在生成函数里**，与同一功能区的兄弟实现「供应商×SKU 历史价格
+// 区间提示」(vendorPriceHintHtml) 保持同一套机制 —— 本项目纪律要求同一功能区一套机制，且避免
+// 在 style.css 里留下一批无兄弟的孤立规则。项目曾发生「class 生成了但全仓无样式定义」的缺陷
+// （前端版的「只写列·零消费方」），故样式与 class 名在此同处声明，配套的
+// demo/tests/test_memory_metrics_panel.js 会断言「渲染产物里每个 mm-* class 都必须带 style」。
+const MM_STYLE_NO_DATA = 'font-size:0.85rem; color:var(--text-muted,#9ca3af); font-style:italic;';
+const MM_STYLE_RATE = 'font-size:0.95rem; font-weight:600; color:var(--text-main,#1f2937);';
+const MM_STYLE_ROW = 'display:flex; align-items:center; flex-wrap:wrap; gap:10px; padding:6px 0;'
+    + ' border-bottom:1px solid var(--border-color,#eef2f7);';
+const MM_STYLE_LABEL = 'min-width:170px; font-size:0.85rem; color:var(--text-main,#1f2937);';
+const MM_STYLE_DENOM = 'font-size:0.78rem; color:var(--text-muted,#6b7280);';
+const MM_STYLE_NOTE = 'flex-basis:100%; font-size:0.75rem; line-height:1.35;'
+    + ' color:var(--text-muted,#6b7280);';
+const MM_STYLE_DELTA = 'margin-top:8px; padding:6px 8px; border-radius:4px; font-size:0.78rem;'
+    + ' line-height:1.4; background:#f1f5f9; color:#475569;';
+const MM_STYLE_ERROR = 'margin-top:8px; padding:6px 8px; border-radius:4px; font-size:0.8rem;'
+    + ' background:#fee2e2; color:#b91c1c;';
+// 开关三态的配色；三态必须肉眼可区分（开=绿 / 关=灰 / 未知=琥珀），否则「读取失败」会被读成「已关闭」
+const MM_SWITCH_STYLE_BASE = 'display:inline-block; margin-bottom:12px; padding:3px 10px;'
+    + ' border-radius:4px; font-size:0.8rem;';
+const MM_SWITCH_STATE_STYLES = {
+    on: 'background:#dcfce7; color:#166534;',
+    off: 'background:#e5e7eb; color:#374151;',
+    unknown: 'background:#fef3c7; color:#92400e;',
+};
+
+// 单个比率：ratePct 与分母必须成对给出；分母为 0 / 缺失 → 无数据。
+// noDataText 允许调用方给出「为什么无数据」的显式文案（例如「当前库中没有可用记忆」）；
+// 缺省仍是「无数据」。异常态必须可见且可区分：既不许渲染成空白，也不许用 0% 冒充。
+function memoryMetricRateHtml(ratePct, denominator, noDataText) {
+    const d = Number(denominator);
+    if (!isFinite(d) || d <= 0) {
+        return '<span class="mm-no-data" style="' + MM_STYLE_NO_DATA + '">'
+            + escapeHtml(noDataText || '无数据') + '</span>';
+    }
+    const r = Number(ratePct);
+    return '<span class="mm-rate" style="' + MM_STYLE_RATE + '">'
+        + (isFinite(r) ? r.toFixed(2) : '0.00') + '%</span>';
+}
+
+// 一行指标：分子/分母一并展示，便于人眼复核（分母为 0 时上面已显示无数据）
+function memoryMetricRowHtml(key, label, ratePct, numerator, denominator, denomLabel, noDataText) {
+    const n = isFinite(Number(numerator)) ? Number(numerator) : 0;
+    const d = isFinite(Number(denominator)) ? Number(denominator) : 0;
+    return '<div class="mm-row" style="' + MM_STYLE_ROW + '" data-metric="' + key + '">'
+        + '<span class="mm-label" style="' + MM_STYLE_LABEL + '">' + escapeHtml(label) + '</span>'
+        + memoryMetricRateHtml(ratePct, d, noDataText)
+        + '<span class="mm-denom" style="' + MM_STYLE_DENOM + '">' + n + ' / ' + d
+        + (denomLabel ? '，' + escapeHtml(denomLabel) : '') + '</span>'
+        + '</div>';
+}
+
+// 四组指标（含两组修改率）→ HTML。纯函数：入参就是后端 payload.metrics，便于离线断言。
+function memoryMetricsRowsHtml(metrics) {
+    const m = metrics || {};
+    const hit = m.memory_hit || {};
+    // 有效命中率（P2-T6 验收口径，字段 memory_hit_effective）：分母＝「供应商可确定」且
+    // 「该供应商有可用记忆」的单据数。它与旧口径回答的是**不同问题**，故两个比率并列展示。
+    const eff = m.memory_hit_effective || {};
+    const hasEff = !!m.memory_hit_effective;
+    const sku = m.sku_match || {};
+    const dec = m.decision_log || {};
+    const ab = m.edit_rate_ab || {};
+    const hm = ab.has_memory || {};
+    const nm = ab.no_memory || {};
+    let html = memoryMetricRowHtml('memory_hit', '记忆命中率（旧口径·分母=全部单据）', hit.rate_pct,
+        hit.with_memory_context, hit.total_receipts, 'rag_context_json 非空 / 全部单据');
+    // 分母为 0 时显式说明原因（「当前库中没有可用记忆」），而不是 0%。
+    // 只有字段真的存在、且后端判 no_data（或分母为 0）时才敢断言「库里没有可用记忆」——
+    // 字段整体缺失是「取不到该口径」，与「库里确实没有记忆」语义相反，那种情况只说「无数据」。
+    // 记忆总开关关闭是**第三种**状态（Q3-M3）：后端已把整个口径判为「未测量」
+    // （disabled_by_switch=true / 分母归 0 / rate=null），此时说「库里没有可用记忆」是错的理由
+    // —— 库里未必没有记忆，只是没测。必须把关闭态讲出来。
+    const effDisabled = hasEff && eff.disabled_by_switch === true;
+    const effNoDataText = effDisabled
+        ? '记忆已关闭（未测量）'
+        : ((hasEff && (eff.no_data === true || !(Number(eff.eligible_denominator) > 0)))
+            ? '无数据（当前库中没有可用记忆）' : '');
+    html += memoryMetricRowHtml('memory_hit_effective', '记忆有效命中率（分母=有条件命中的单据）',
+        eff.effective_rate_pct, eff.injected, eff.eligible_denominator,
+        'rag_context_json 非空 / 供应商可确定且有可用记忆的单据', effNoDataText);
+    html += memoryMetricRowHtml('sku_match', 'SKU 匹配率', sku.rate_pct,
+        sku.matched, sku.items, 'matched=1 / 明细行');
+    html += memoryMetricRowHtml('edit_rate_has_memory', '修改率（有记忆组）', hm.edited_rate_pct,
+        hm.edited, hm.receipts, 'status=edited / 该组单据，分组键=供应商是否有记忆行');
+    html += memoryMetricRowHtml('edit_rate_no_memory', '修改率（无记忆组）', nm.edited_rate_pct,
+        nm.edited, nm.receipts, 'status=edited / 该组单据，分组键=供应商是否有记忆行');
+    html += memoryMetricRowHtml('not_adopted', '字段级未采纳率', dec.not_adopted_rate_pct,
+        dec.not_adopted, dec.decisions, 'adopted=0 / 决策总数');
+    // 两个命中率并列，必须写明「不可混读」：分母定义不同，差异来自口径而非行为变化。
+    // 文案优先取后端（唯一口径实现 memory_metrics.py）自述的 incomparable_reason，
+    // 缺省回落到前端固定句 —— 保证 payload 缺该字段时也不会把两个数字读成可比。
+    if (hasEff) {
+        const effReason = eff.incomparable_reason
+            || '与「记忆命中率（旧口径）」的分母不同，两者数值不可混读、不可相互比较。';
+        const funnel = effDisabled
+            ? '（记忆总开关 memory_enabled 已关闭：本口径未测量，不输出 0%）'
+            : '（全部单据 ' + (Number(eff.receipts_total) || 0)
+              + ' / 供应商可确定 ' + (Number(eff.vendor_determinable) || 0)
+              + ' / 有条件命中 ' + (Number(eff.eligible_denominator) || 0)
+              + ' / 因无可用记忆被排除 ' + (Number(eff.excluded_no_usable_memory) || 0) + '）';
+        html += '<div class="mm-note" style="' + MM_STYLE_NOTE + '" data-metric="memory_hit_effective_note">'
+            + escapeHtml(effReason + funnel) + '</div>';
+    }
+    // 分组键是代理口径（供应商是否有记忆行），不等于「本次真的注入了」——按本仓纪律必须
+    // 在数字旁写明，否则会被读成因果结论（真注入口径见 CLI 脚本 memory_ab_baseline.py）。
+    if (hit.note) {
+        html += '<div class="mm-note" style="' + MM_STYLE_NOTE + '" data-metric="memory_hit_note">'
+            + escapeHtml(hit.note) + '</div>';
+    }
+    // 两组之差：任一组无样本时后端不给 delta_pp → 显示无数据（不猜）
+    if (ab.delta_pp === undefined || ab.delta_pp === null) {
+        html += '<div class="mm-delta" style="' + MM_STYLE_DELTA + '" data-metric="edit_rate_delta">'
+            + '两组修改率之差：无数据（任一组无样本）</div>';
+    } else {
+        const d = Number(ab.delta_pp);
+        html += '<div class="mm-delta" style="' + MM_STYLE_DELTA + '" data-metric="edit_rate_delta">两组修改率之差：'
+            + (d > 0 ? '+' : '') + (isFinite(d) ? d.toFixed(2) : '0.00') + 'pp'
+            + '（负值=有记忆组修改率更低，即目标方向；观察性对比非因果，真注入口径见 demo/scripts/memory_ab_baseline.py）</div>';
+    }
+    return html;
+}
+
+// 记忆总开关状态：true/false/null 三态各自显式，不用「未开启」把读取失败混进来。
+// 三态各带一条不同的背景/文字配色（见 MM_SWITCH_STATE_STYLES）：仅靠文案差一个字不足以
+// 让人一眼分辨，且本项目已要求「所有胶囊/徽标一套机制 + 状态必须有色差」。
+function memoryMetricsSwitchHtml(memoryEnabled) {
+    let text, cls, stateStyle;
+    if (memoryEnabled === true) {
+        text = '已开启'; cls = 'on'; stateStyle = MM_SWITCH_STATE_STYLES.on;
+    } else if (memoryEnabled === false) {
+        text = '已关闭（检索入口直接返回空串，不查记忆表与向量）';
+        cls = 'off'; stateStyle = MM_SWITCH_STATE_STYLES.off;
+    } else {
+        text = '状态未知（读取失败）'; cls = 'unknown'; stateStyle = MM_SWITCH_STATE_STYLES.unknown;
+    }
+    return '<div class="mm-switch" style="' + MM_SWITCH_STYLE_BASE + stateStyle
+        + '" data-switch="' + cls + '">记忆注入总开关 memory_enabled：'
+        + text + '</div>';
+}
+
+function renderMemoryMetrics(payload) {
+    const box = document.getElementById('memoryMetricsPanel');
+    if (!box) return;
+    const body = payload || {};
+    let html = memoryMetricsSwitchHtml(body.memory_enabled);
+    if (body.status !== 'success' || !body.metrics) {
+        // 失败时一个比率都不显示：显示 0% 会冒充「有数据且全是坏结果」，与「取不到数」语义相反
+        html += '<div class="mm-error" style="' + MM_STYLE_ERROR + '" data-metric="error">度量读取失败：'
+            + escapeHtml(body.msg || '未知错误') + '</div>';
+        box.innerHTML = html;
+        return;
+    }
+    box.innerHTML = html + memoryMetricsRowsHtml(body.metrics);
+}
+
+function loadMemoryMetrics() {
+    const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
+    if (role !== 'admin') return;
+    apiFetch('/api/admin/memory-metrics')
+        .then(res => res.json())
+        .then(body => renderMemoryMetrics(body))
+        .catch(() => renderMemoryMetrics({ status: 'error', msg: '网络错误', memory_enabled: null }));
+}
+
+/* =============================================================
+   已生效记忆治理区（收敛计划 P8 / AC2 —— 闭环残债 R1 的「界面半边」）
+   GET  /api/admin/vendor-memory?status=active  （只读治理视图）
+   DELETE /api/memory/{memory_id}               （唯一删除路径）
+
+   为什么要有这一块：`db.list_vendor_memory` 此前只有测试与内部脚本调用，界面上没有任何
+   地方能看到「系统记住了哪些供应商、这条是谁写的、被命中过几次、衰减到什么程度」。缺了
+   这层可见面，记忆治理只存在于代码里。两条纪律：
+   ① 信任度 / 衰减分 / 命中次数等数值**一律原样来自后端**，前端不做任何重算与折算
+      （0 与「取不到值」必须区分：null/缺字段显示「未知」，不冒充 0）；列表口径也显式传
+      status=active（端点缺省是全状态，治理区只讲「已生效」）。
+   ② 删除只调已有的 `DELETE /api/memory/{memory_id}`，**不新增第二条删除路径**；
+      删除前二次确认，删除后重载列表。端点失败静默降级为可见错误态 + console.warn 留痕，
+      不产生未捕获异常。
+   ============================================================= */
+// 样式落点与记忆度量看板同机制：内联 style 写在生成函数旁（同一功能区一套机制，避免
+// 在 style.css 留下一批无兄弟的孤立规则）。配套 harness 会断言渲染产物里每个 vm-* class
+// 都带非空 style（防「class 生成了但全仓无样式」这一前端版的「只写列·零消费方」）。
+const VM_STYLE_HEAD = 'display:flex; align-items:center; gap:10px; padding:6px 0;'
+    + ' border-bottom:1px solid var(--border-color,#e5e7eb); font-size:0.78rem;'
+    + ' color:var(--text-muted,#6b7280);';
+const VM_STYLE_ROW = 'display:flex; align-items:center; gap:10px; padding:7px 0;'
+    + ' border-bottom:1px solid var(--border-color,#eef2f7); font-size:0.82rem; flex-wrap:wrap;';
+const VM_STYLE_CELL = 'flex:1 1 90px; min-width:70px; word-break:break-word;'
+    + ' color:var(--text-main,#1f2937);';
+const VM_STYLE_HCELL = 'flex:1 1 90px; min-width:70px; font-weight:600;';
+const VM_STYLE_ACTION = 'flex:0 0 64px; text-align:right;';
+const VM_STYLE_DEL = 'padding:2px 10px; font-size:0.78rem; border-radius:4px; cursor:pointer;'
+    + ' border:1px solid #fca5a5; background:#fef2f2; color:#b91c1c;';
+const VM_STYLE_EMPTY = 'padding:14px 0; font-size:0.85rem; color:var(--text-muted,#9ca3af);'
+    + ' font-style:italic;';
+const VM_STYLE_ERROR = 'margin-top:8px; padding:6px 8px; border-radius:4px; font-size:0.8rem;'
+    + ' background:#fee2e2; color:#b91c1c;';
+const VM_STYLE_COUNT = 'margin-top:8px; font-size:0.78rem; color:var(--text-muted,#6b7280);';
+
+// 状态中文标签：原始 status 值同时保留在 data-status 上（供人机复核，不让中文标签掩盖原值）
+const VM_STATUS_LABELS = { active: '生效中', archived: '已归档', superseded: '已被取代' };
+function vendorMemoryStatusLabel(status) {
+    const s = (status === null || status === undefined) ? '' : String(status);
+    return VM_STATUS_LABELS[s] || (s || '未知');
+}
+
+// 数值原样展示：null / 缺失 / 空串 → 「未知」而不是 0（取不到值不能冒充 0，与本仓
+// payment_marked「读不出来就别折成合法值」同一条纪律）。非数值原样回显，不抛异常。
+function vendorMemoryNumText(v) {
+    if (v === null || v === undefined || v === '') return '未知';
+    const n = Number(v);
+    return isFinite(n) ? String(n) : String(v);
+}
+
+// written_by 为空 → 「未知」（谁写的这条记忆必须有一个可见的落点，空白无信息）
+function vendorMemoryWhoText(v) {
+    const s = (v === null || v === undefined) ? '' : String(v).trim();
+    return s || '未知';
+}
+
+function vendorMemoryCellHtml(field, value) {
+    return '<span class="vm-cell" style="' + VM_STYLE_CELL + '" data-field="' + field + '">'
+        + escapeHtml(value === null || value === undefined ? '' : String(value)) + '</span>';
+}
+
+// 一行记忆：字段顺序与只读治理端点的治理元数据对应；删除按钮带 memory_id，供 deleteVendorMemory 调用
+function vendorMemoryRowHtml(row) {
+    const r = row || {};
+    const mid = (r.memory_id === null || r.memory_id === undefined) ? '' : String(r.memory_id);
+    const vendorName = (r.vendor === null || r.vendor === undefined) ? '' : String(r.vendor);
+    return '<div class="vm-row" style="' + VM_STYLE_ROW + '" data-memory-id="' + escapeHtml(mid) + '">'
+        + vendorMemoryCellHtml('vendor', vendorName)
+        + vendorMemoryCellHtml('fact_kind', r.fact_kind)
+        + vendorMemoryCellHtml('fact_value', r.fact_value)
+        + vendorMemoryCellHtml('trust_level', vendorMemoryNumText(r.trust_level))
+        + vendorMemoryCellHtml('decay_score', vendorMemoryNumText(r.decay_score))
+        + vendorMemoryCellHtml('hit_count', vendorMemoryNumText(r.hit_count))
+        + vendorMemoryCellHtml('written_by', vendorMemoryWhoText(r.written_by))
+        + '<span class="vm-cell" style="' + VM_STYLE_CELL + '" data-field="status" data-status="'
+        + escapeHtml(r.status === null || r.status === undefined ? '' : String(r.status)) + '">'
+        + escapeHtml(vendorMemoryStatusLabel(r.status)) + '</span>'
+        + '<span class="vm-action" style="' + VM_STYLE_ACTION + '">'
+        + '<button type="button" class="vm-del" style="' + VM_STYLE_DEL + '"'
+        + ' data-memory-id="' + escapeHtml(mid) + '"'
+        + ' data-vendor="' + escapeHtml(vendorName) + '"'
+        + " onclick=\"deleteVendorMemory(this.getAttribute('data-memory-id'), this.getAttribute('data-vendor'))\""
+        + '>删除</button></span>'
+        + '</div>';
+}
+
+function vendorMemoryGovernanceHeadHtml() {
+    const cols = ['供应商', '类型', '值', '信任度', '衰减分', '命中次数', '谁写的', '状态'];
+    let html = '<div class="vm-head" style="' + VM_STYLE_HEAD + '">';
+    cols.forEach(label => {
+        html += '<span class="vm-hcell" style="' + VM_STYLE_HCELL + '">' + escapeHtml(label) + '</span>';
+    });
+    html += '<span class="vm-hcell" style="' + VM_STYLE_HCELL + VM_STYLE_ACTION + '">操作</span></div>';
+    return html;
+}
+
+// payload 为只读治理端点的响应体。失败态只显式给错误文案（不渲染半截列表），空列表显空态。
+function renderVendorMemoryGovernance(payload) {
+    const box = document.getElementById('vendorMemoryGovernancePanel');
+    if (!box) return;
+    const body = payload || {};
+    if (body.status !== 'success') {
+        box.innerHTML = '<div class="vm-error" style="' + VM_STYLE_ERROR + '" data-field="error">'
+            + '已生效记忆读取失败：' + escapeHtml(body.msg || '未知错误') + '</div>';
+        return;
+    }
+    const rows = Array.isArray(body.data) ? body.data : [];
+    if (!rows.length) {
+        box.innerHTML = vendorMemoryGovernanceHeadHtml()
+            + '<div class="vm-empty" style="' + VM_STYLE_EMPTY + '" data-field="empty">暂无已生效记忆</div>';
+        return;
+    }
+    const total = isFinite(Number(body.total)) ? Number(body.total) : rows.length;
+    box.innerHTML = vendorMemoryGovernanceHeadHtml()
+        + rows.map(vendorMemoryRowHtml).join('')
+        + '<div class="vm-count" style="' + VM_STYLE_COUNT + '" data-field="count">共 '
+        + total + ' 条已生效记忆</div>';
+}
+
+function loadVendorMemoryGovernance() {
+    const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
+    if (role !== 'admin') return Promise.resolve();
+    return apiFetch('/api/admin/vendor-memory?status=active')
+        .then(res => res.json())
+        .then(body => { renderVendorMemoryGovernance(body); return body; })
+        .catch(err => {
+            // 辅助治理面：失败降级为可见错误态，但必须留痕，不静默吞掉异常
+            console.warn('[vendor-memory-governance] 读取已生效记忆失败：', err);
+            renderVendorMemoryGovernance({ status: 'error', msg: '网络错误' });
+        });
+}
+
+// 删除单条已生效记忆：只调唯一删除端点 DELETE /api/memory/{memory_id}。
+// 删除前二次确认；成功后重载列表（该条随之消失）。取消 / 失败都不改列表。
+function deleteVendorMemory(memoryId, vendor) {
+    const mid = (memoryId === null || memoryId === undefined) ? '' : String(memoryId).trim();
+    if (!mid) return Promise.resolve(false);
+    const name = (vendor === null || vendor === undefined || String(vendor).trim() === '')
+        ? '该条' : ('「' + String(vendor).trim() + '」的该条');
+    if (!confirm('确定删除' + name + '已生效记忆？\n\n删除会同时移除该条记忆的向量索引，'
+            + '删除后不可恢复（需重新学习）。')) {
+        return Promise.resolve(false);
+    }
+    return apiFetch('/api/memory/' + encodeURIComponent(mid), { method: 'DELETE' })
+        .then(res => res.json())
+        .then(body => {
+            if (body && body.status === 'success') {
+                showToast('已删除该条记忆', 'success');
+                return loadVendorMemoryGovernance();
+            }
+            showToast('删除失败：' + ((body && body.msg) || '未知错误'), 'error');
+            return false;
+        })
+        .catch(err => {
+            console.warn('[vendor-memory-governance] 删除记忆失败：', err);
+            showToast('删除失败（网络错误）', 'error');
+            return false;
+        });
 }
 
 // 辅助：转义 HTML

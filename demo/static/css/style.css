@@ -633,6 +633,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    min-width: 0;
 }
 
 .form-group label {
@@ -642,6 +643,8 @@ body {
 }
 
 .form-control {
+    width: 100%;
+    min-width: 0;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     color: var(--text-main);
@@ -664,6 +667,23 @@ textarea.form-control {
     border-color: var(--primary);
     background: #ffffff;
     box-shadow: 0 0 0 3px rgba(3, 36, 37, 0.08);
+}
+
+/* 系统配置：记忆读取预算与衰减网格响应式布局 */
+.memory-budget-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+@media (max-width: 640px) {
+    .memory-budget-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+@media (max-width: 420px) {
+    .memory-budget-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* 餐品建档弹窗基本信息网格（D-2）：>=900px 3 列 / 768-899px 2 列 / <768px 1 列，
@@ -4214,6 +4234,175 @@ table.data-table.export-preview-table td .badge,
 }
 
 /* =====================================================================
+   系统与引擎配置：生效态概览条 + 四模块分区（Phase 2 重构）
+   ===================================================================== */
+.engine-overview-bar {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #f8fafc, #ffffff);
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.engine-overview-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+.engine-overview-title {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: #1e293b;
+}
+
+.engine-overview-body {
+    font-size: 0.82rem;
+    color: #334155;
+}
+
+.engine-overview-grid {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 16px;
+}
+
+.engine-overview-version {
+    font-weight: 700;
+    color: #1d4ed8;
+}
+
+.engine-overview-source {
+    color: #475569;
+}
+
+.engine-overview-leg {
+    color: #334155;
+}
+
+.engine-overview-leg b {
+    color: #1565c0;
+    margin-right: 2px;
+}
+
+.engine-overview-history {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px dashed #e2e8f0;
+    color: #64748b;
+}
+
+.engine-status-msg {
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: #f1f5f9;
+    color: #334155;
+}
+
+.engine-status-msg.success {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.engine-status-msg.error {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.engine-status-msg.info {
+    background: #e0f2fe;
+    color: #075985;
+}
+
+.engine-module {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    margin-top: 18px;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+.engine-module-header {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 14px;
+    background: #f1f5f9;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.engine-module-badge {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #1e40af;
+    background: #dbeafe;
+    border-radius: 4px;
+    padding: 2px 8px;
+}
+
+.engine-module-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.engine-module-sub {
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.engine-module-body {
+    padding: 14px;
+}
+
+.engine-module-standalone .engine-module-header {
+    border-radius: 10px;
+}
+
+.engine-subsection {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 12px;
+}
+
+.engine-subsection:first-child {
+    margin-top: 0;
+}
+
+.engine-subsection-header {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #334155;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.price-leg-block {
+    margin-bottom: 12px;
+}
+
+.price-leg-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 6px;
+}
+
+.price-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+/* =====================================================================
    观测中心：解析日志与链路审计表格完整无截断展示规范
    ===================================================================== */
 #parsingLogsTable {
@@ -4252,4 +4441,85 @@ table.data-table.export-preview-table td .badge,
     display: inline-block;
     max-width: 100%;
 }
+
+/* =====================================================================
+   系统与引擎配置：高级模型推理参数渐进折叠面板规范
+   ===================================================================== */
+.engine-advanced-params-drawer {
+    margin-top: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.engine-adv-header {
+    padding: 8px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    user-select: none;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.engine-adv-header:hover {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.engine-advanced-params-drawer:not(.collapsed) .engine-adv-header {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.engine-adv-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.engine-adv-badge {
+    background: #e2e8f0;
+    color: #334155;
+    font-size: 0.72rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    border: 1px solid #cbd5e1;
+}
+
+.engine-adv-toggle-text {
+    font-size: 0.75rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.engine-adv-body {
+    padding: 12px 14px 6px 14px;
+    border: 1px solid #e2e8f0;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    background: #ffffff;
+}
+
+.temp-warn-box {
+    color: #b45309;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+
+.temp-warn-box.hide {
+    display: none !important;
+}
+
 

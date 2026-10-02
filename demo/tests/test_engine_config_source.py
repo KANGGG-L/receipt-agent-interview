@@ -68,14 +68,14 @@ def _admin_headers():
 
 
 def _manual_body():
+    # engine 枚举已从 admin 契约移除（阶段4）：PUT body 不再携带 recognition_engine /
+    # audit_engine，后端归一逻辑内部恒置 openai（见 test_openai_only_engine_config.py）。
     return {
-        "recognition_engine": "openai",
         "recognition_model": "my-rec-model",
         "openai_rec_base_url": "https://manual-rec.example.com/v1",
         "openai_rec_api_key": "sk-manual-rec-1234567890",
         "openai_rec_model": "my-rec-model",
         "audit_enabled": True,
-        "audit_engine": "openai",
         "audit_model": "my-aud-model",
         "openai_aud_base_url": "https://manual-aud.example.com/v1",
         "openai_aud_api_key": "sk-manual-aud-1234567890",

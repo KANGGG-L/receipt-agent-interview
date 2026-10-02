@@ -53,7 +53,6 @@ def test_scenario_1_ssrf_admin_engine_config_put():
 
     for malicious_url, field_name in ssrf_targets:
         payload = {
-            "recognition_engine": "openai",
             "openai_rec_api_key": "sk-testvalidkey123456",
             field_name: malicious_url,
         }
@@ -74,25 +73,21 @@ def test_scenario_1_ssrf_admin_test_engine_config_post():
 
     malicious_configs = [
         {
-            "recognition_engine": "openai",
             "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
             "openai_rec_base_url": "http://169.254.169.254/latest/meta-data",
             "openai_rec_api_key": "sk-testvalidkey123456",
         },
         {
-            "recognition_engine": "openai",
             "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
             "openai_rec_base_url": "http://127.0.0.1:8080",
             "openai_rec_api_key": "sk-testvalidkey123456",
         },
         {
-            "recognition_engine": "openai",
             "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
             "openai_rec_base_url": "http://192.168.1.100/v1",
             "openai_rec_api_key": "sk-testvalidkey123456",
         },
         {
-            "recognition_engine": "openai",
             "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
             "openai_rec_base_url": "http://10.255.0.1/v1",
             "openai_rec_api_key": "sk-testvalidkey123456",

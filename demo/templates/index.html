@@ -1575,7 +1575,53 @@
 
                 <section id="tab-engine" class="tab-content">
                     <div class="card" style="max-width:960px; margin:0 auto;">
-                        <div class="card-title" style="justify-content:center;"><span>引擎配置</span></div>
+                        <div class="card-title" style="justify-content:center;"><span>系统与引擎配置</span></div>
+
+                        <!-- 生效态概览条（顶部常驻）：version + 三腿生效模型 + 配置来源 + 最近变更 -->
+                        <div class="engine-overview-bar" id="engineEffectiveBar">
+                            <div class="engine-overview-head">
+                                <span class="engine-overview-title">生效态概览</span>
+                                <button type="button" class="btn btn-outline" id="adminReloadOverviewBtn" onclick="loadAdminEngineConfig()">刷新</button>
+                            </div>
+                            <div id="adminEngineStatus" class="engine-status-container engine-overview-body">正在加载生效态...</div>
+                        </div>
+
+                        <!-- 模块 A：引擎与凭据 -->
+                        <div class="engine-module" id="engineModuleA">
+                            <div class="engine-module-header">
+                                <span class="engine-module-badge">模块 A</span>
+                                <span class="engine-module-title">引擎与凭据</span>
+                                <span class="engine-module-sub">识别 / 审核 / 解析三腿的 Base URL、模型与 API Key；工程参数收进高级折叠</span>
+                            </div>
+                            <div class="engine-module-body">
+
+                        <!-- 全局调用参数（模块 A 顶部）：全局默认超时可见；整图重跑上限收进高级折叠 -->
+                        <div style="margin-bottom:16px;">
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="adminCallTimeoutSeconds">全局默认调用超时 (秒)</label>
+                                    <input type="number" id="adminCallTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
+                                </div>
+                            </div>
+                            <div id="adminAdvParams_global" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                <div class="engine-adv-header" onclick="toggleAdvParams('global')">
+                                    <div style="display:flex; align-items:center; gap:8px;">
+                                        <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数 · 全局</span>
+                                        <span id="adminAdvBadge_global" class="engine-adv-badge">[retry=3]</span>
+                                    </div>
+                                    <span id="adminAdvToggleText_global" class="engine-adv-toggle-text">[展开]</span>
+                                </div>
+                                <div id="adminAdvBody_global" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                    <div class="form-grid">
+                                        <div class="form-group">
+                                            <label for="adminMaxRetryRounds">整图重跑上限 (max_retry_rounds)</label>
+                                            <input type="number" id="adminMaxRetryRounds" class="form-control" min="0" max="10" placeholder="3">
+                                            <div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">引擎瞬时故障时整图重跑的次数上限，运行时另受硬护栏约束。</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
 
                         <!-- 多引擎规则协同与优先级仲裁架构说明栏 (无 Emoji，纯文字标签) -->
                         <div id="enginePriorityGuideCard" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 14px; margin-bottom:16px;">
@@ -1630,8 +1676,6 @@
                                 <div class="engine-card-header">
                                     <div class="engine-card-title" style="color:#1565c0;">识别引擎</div>
                                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                        <input type="text" id="adminVendorNameRec" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1647,14 +1691,6 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
-                                        <div class="form-group" style="grid-column: span 2;">
-                                            <label for="adminOpenaiRecApiFormat">接口协议格式</label>
-                                            <select id="adminOpenaiRecApiFormat" name="cfg-engine-api-format" class="form-control">
-                                                <option value="chat_completion">Chat Completion</option>
-                                                <option value="response">Response</option>
-                                                <option value="anthropic">Anthropic</option>
-                                            </select>
-                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminOpenaiRecApiKey" class="form-control" placeholder="sk-...">
@@ -1667,28 +1703,47 @@
                                             <label for="adminRecTimeoutSeconds">调用超时</label>
                                             <input type="number" id="adminRecTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                         </div>
-                                        <div class="form-group">
-                                            <label for="adminOpenaiRecReasoningEffort">思考强度</label>
-                                            <select id="adminOpenaiRecReasoningEffort" class="form-control">
-                                                <option value="">默认</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                                <option value="xhigh">X-High</option>
-                                                <option value="max">Max</option>
-                                            </select>
+                                    </div>
+                                    <!-- 高级工程参数折叠面板 (Rec)：默认折叠 -->
+                                    <div id="adminAdvParams_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('rec')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                <span id="adminAdvBadge_rec" class="engine-adv-badge">[4096 tokens | high detail | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_rec" class="engine-adv-toggle-text">[展开]</span>
                                         </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceInputRec">Input 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceOutputRec">Output 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        <div id="adminAdvBody_rec" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
+                                                <div class="form-group">
+                                                    <label for="adminOpenaiRecReasoningEffort">思考强度</label>
+                                                    <select id="adminOpenaiRecReasoningEffort" class="form-control">
+                                                        <option value="">默认</option>
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                        <option value="xhigh">X-High</option>
+                                                        <option value="max">Max</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminRecMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminRecMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminRecImageDetail">视觉切片粒度 (Image Detail)</label>
+                                                    <select id="adminRecImageDetail" class="form-control">
+                                                        <option value="high">High (全切片·高精度)</option>
+                                                        <option value="auto">Auto (自适应)</option>
+                                                        <option value="low">Low (低开销·粗粒度)</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminRecTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminRecTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                    <div id="adminRecTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1716,8 +1771,6 @@
                                         </select>
                                     </div>
                                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                        <input type="text" id="adminVendorNameAud" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1733,14 +1786,6 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
-                                        <div class="form-group" style="grid-column: span 2;">
-                                            <label for="adminOpenaiAudApiFormat">接口协议格式</label>
-                                            <select id="adminOpenaiAudApiFormat" class="form-control">
-                                                <option value="chat_completion">Chat Completion</option>
-                                                <option value="response">Response</option>
-                                                <option value="anthropic">Anthropic Messages</option>
-                                            </select>
-                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminOpenaiAudApiKey" class="form-control" placeholder="sk-...">
@@ -1754,27 +1799,46 @@
                                             <input type="number" id="adminAudTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                         </div>
                                         <div class="form-group">
-                                            <label for="adminOpenaiAudReasoningEffort">思考强度</label>
-                                            <select id="adminOpenaiAudReasoningEffort" class="form-control">
-                                                <option value="">默认</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                                <option value="xhigh">X-High</option>
-                                                <option value="max">Max</option>
+                                            <label for="adminAuditMode">审核模式</label>
+                                            <select id="adminAuditMode" class="form-control">
+                                                <option value="text">纯文本审核 (text)</option>
+                                                <option value="vlm">视觉复核 (vlm)</option>
+                                                <option value="ondemand">按需审核 (ondemand)</option>
                                             </select>
                                         </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceInputAud">Input 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                    </div>
+                                    <!-- 高级工程参数折叠面板 (Aud)：默认折叠 -->
+                                    <div id="adminAdvParams_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('aud')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                <span id="adminAdvBadge_aud" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_aud" class="engine-adv-toggle-text">[展开]</span>
                                         </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                        </div>
-                                        <div class="form-group">
-                                            <label for="adminPriceOutputAud">Output 价格 (元/1M)</label>
-                                            <input type="number" id="adminPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        <div id="adminAdvBody_aud" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
+                                                <div class="form-group">
+                                                    <label for="adminOpenaiAudReasoningEffort">思考强度</label>
+                                                    <select id="adminOpenaiAudReasoningEffort" class="form-control">
+                                                        <option value="">默认</option>
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                        <option value="xhigh">X-High</option>
+                                                        <option value="max">Max</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminAudMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminAudTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminAudTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0" title="审核引擎强制温度为 0.0（运行时确定性硬锁定）">
+                                                    <div id="adminAudTempWarn" class="temp-warn-box hide">[WARN] 审核引擎强制温度为 0.0，高于 0.2 可能增加格式破坏风险</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1801,8 +1865,6 @@
                                         </select>
                                     </div>
                                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                        <input type="text" id="adminVendorNameParse" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                         <select id="adminParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                             <option value="">— 手动填写 —</option>
@@ -1818,14 +1880,6 @@
                                             <label>Base URL</label>
                                             <input type="text" id="adminParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                         </div>
-                                        <div class="form-group" style="grid-column: span 2;">
-                                            <label for="adminParseOpenaiApiFormat">接口协议格式</label>
-                                            <select id="adminParseOpenaiApiFormat" class="form-control">
-                                                <option value="chat_completion">Chat Completion</option>
-                                                <option value="response">Response</option>
-                                                <option value="anthropic">Anthropic Messages</option>
-                                            </select>
-                                        </div>
                                         <div class="form-group">
                                             <label>API Key</label>
                                             <input type="password" id="adminParseOpenaiApiKey" class="form-control" placeholder="sk-...">
@@ -1838,17 +1892,93 @@
                                             <label for="adminParseTimeoutSeconds">调用超时</label>
                                             <input type="number" id="adminParseTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                         </div>
-                                        <div class="form-group">
-                                            <label for="adminParseOpenaiReasoningEffort">思考强度</label>
-                                            <select id="adminParseOpenaiReasoningEffort" class="form-control">
-                                                <option value="">默认</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                                <option value="xhigh">X-High</option>
-                                                <option value="max">Max</option>
-                                            </select>
+                                    </div>
+                                    <!-- 高级工程参数折叠面板 (Parse)：默认折叠 -->
+                                    <div id="adminAdvParams_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                        <div class="engine-adv-header" onclick="toggleAdvParams('parse')">
+                                            <div style="display:flex; align-items:center; gap:8px;">
+                                                <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                <span id="adminAdvBadge_parse" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                            </div>
+                                            <span id="adminAdvToggleText_parse" class="engine-adv-toggle-text">[展开]</span>
                                         </div>
+                                        <div id="adminAdvBody_parse" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                            <div class="form-grid">
+                                                <div class="form-group">
+                                                    <label for="adminParseOpenaiReasoningEffort">思考强度</label>
+                                                    <select id="adminParseOpenaiReasoningEffort" class="form-control">
+                                                        <option value="">默认</option>
+                                                        <option value="low">Low</option>
+                                                        <option value="medium">Medium</option>
+                                                        <option value="high">High</option>
+                                                        <option value="xhigh">X-High</option>
+                                                        <option value="max">Max</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminParseMaxTokens">Max Tokens [512-16384]</label>
+                                                    <input type="number" id="adminParseMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="adminParseTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                    <input type="number" id="adminParseTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                    <div id="adminParseTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                            </div> <!-- /engine-module-body A -->
+                        </div> <!-- /engineModuleA -->
+
+                        <!-- 模块 B：成本与计费 -->
+                        <div class="engine-module" id="engineModuleB">
+                            <div class="engine-module-header">
+                                <span class="engine-module-badge">模块 B</span>
+                                <span class="engine-module-title">成本与计费</span>
+                                <span class="engine-module-sub">18 个 Token 单价（元/1M Token）；留空即回落模型刊例价</span>
+                            </div>
+                            <div class="engine-module-body">
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">常规 · 识别</div>
+                                    <div class="price-grid">
+                                        <div class="form-group">
+                                            <label for="adminPriceInputRec">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceOutputRec">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">常规 · 审核</div>
+                                    <div class="price-grid">
+                                        <div class="form-group">
+                                            <label for="adminPriceInputAud">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminPriceOutputAud">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">常规 · 解析</div>
+                                    <div class="price-grid">
                                         <div class="form-group">
                                             <label for="adminPriceInputParse">Input 价格 (元/1M)</label>
                                             <input type="number" id="adminPriceInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
@@ -1863,8 +1993,71 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">灰测 · 识别</div>
+                                    <div class="price-grid">
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceInputRec">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceOutputRec">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">灰测 · 审核</div>
+                                    <div class="price-grid">
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceInputAud">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceOutputAud">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="price-leg-block">
+                                    <div class="price-leg-title">灰测 · 解析</div>
+                                    <div class="price-grid">
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceInputParse">Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceCachedInputParse">Cached Input 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceCachedInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                        <div class="form-group">
+                                            <label for="adminGreyPriceOutputParse">Output 价格 (元/1M)</label>
+                                            <input type="number" id="adminGreyPriceOutputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        <!-- 模块 C：发布与流量管理 -->
+                        <div class="engine-module" id="engineModuleC">
+                            <div class="engine-module-header">
+                                <span class="engine-module-badge">模块 C</span>
+                                <span class="engine-module-title">发布与流量管理</span>
+                                <span class="engine-module-sub">金丝雀灰度发布与 A/B 科学实验相互独立、逻辑解耦</span>
+                            </div>
+                            <div class="engine-module-body">
+                                <!-- C1：金丝雀灰度发布（与 A/B 物理分区） -->
+                                <div class="engine-subsection" id="engineCanarySection">
+                                    <div class="engine-subsection-header">C1 · 金丝雀灰度发布</div>
 
                         <!-- 金丝雀灰度发布 高级抽屉 -->
                         <div id="adminGreyDrawer" class="engine-drawer collapsed">
@@ -1905,8 +2098,6 @@
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                                             <div style="font-size:0.82rem; font-weight:600; color:#1565c0;">灰测识别参数</div>
                                             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                                <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                                <input type="text" id="adminVendorNameGreyRec" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                 <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                 <select id="adminGreyOpenaiRecPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                     <option value="">— 手动填写 —</option>
@@ -1921,14 +2112,6 @@
                                                 <label>Base URL</label>
                                                 <input type="text" id="adminGreyOpenaiRecBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                             </div>
-                                            <div class="form-group" style="grid-column: span 2;">
-                                                <label for="adminGreyOpenaiRecApiFormat">灰度接口协议格式</label>
-                                                <select id="adminGreyOpenaiRecApiFormat" name="cfg-grey-engine-api-format" class="form-control">
-                                                    <option value="chat_completion">Chat Completion</option>
-                                                    <option value="response">Response</option>
-                                                    <option value="anthropic">Anthropic</option>
-                                                </select>
-                                            </div>
                                             <div class="form-group">
                                                 <label>API Key</label>
                                                 <input type="password" id="adminGreyOpenaiRecApiKey" class="form-control" placeholder="sk-...">
@@ -1941,28 +2124,47 @@
                                                 <label for="adminGreyRecTimeoutSeconds">灰度调用超时</label>
                                                 <input type="number" id="adminGreyRecTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                             </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyOpenaiRecReasoningEffort">思考强度</label>
-                                                <select id="adminGreyOpenaiRecReasoningEffort" class="form-control">
-                                                    <option value="">默认</option>
-                                                    <option value="low">Low</option>
-                                                    <option value="medium">Medium</option>
-                                                    <option value="high">High</option>
-                                                    <option value="xhigh">X-High</option>
-                                                    <option value="max">Max</option>
-                                                </select>
+                                        </div>
+                                        <!-- 高级工程参数折叠面板 (Grey Rec)：默认折叠 -->
+                                        <div id="adminAdvParams_grey_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                            <div class="engine-adv-header" onclick="toggleAdvParams('grey_rec')">
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                    <span id="adminAdvBadge_grey_rec" class="engine-adv-badge">[4096 tokens | high detail | T=0.0]</span>
+                                                </div>
+                                                <span id="adminAdvToggleText_grey_rec" class="engine-adv-toggle-text">[展开]</span>
                                             </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceInputRec">Input 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                            </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceCachedInputRec">Cached Input 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceCachedInputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                            </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceOutputRec">Output 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceOutputRec" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            <div id="adminAdvBody_grey_rec" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                <div class="form-grid">
+                                                    <div class="form-group">
+                                                        <label for="adminGreyOpenaiRecReasoningEffort">思考强度</label>
+                                                        <select id="adminGreyOpenaiRecReasoningEffort" class="form-control">
+                                                            <option value="">默认</option>
+                                                            <option value="low">Low</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="high">High</option>
+                                                            <option value="xhigh">X-High</option>
+                                                            <option value="max">Max</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecMaxTokens">Max Tokens [512-16384]</label>
+                                                        <input type="number" id="adminGreyRecMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecImageDetail">视觉切片粒度 (Image Detail)</label>
+                                                        <select id="adminGreyRecImageDetail" class="form-control">
+                                                            <option value="high">High (全切片·高精度)</option>
+                                                            <option value="auto">Auto (自适应)</option>
+                                                            <option value="low">Low (低开销·粗粒度)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyRecTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                        <input type="number" id="adminGreyRecTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                        <div id="adminGreyRecTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -1980,8 +2182,6 @@
                                                 </div>
                                             </div>
                                             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                                <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                                <input type="text" id="adminVendorNameGreyAud" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                 <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                 <select id="adminGreyOpenaiAudPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                     <option value="">— 手动填写 —</option>
@@ -1996,14 +2196,6 @@
                                                 <label>Base URL</label>
                                                 <input type="text" id="adminGreyOpenaiAudBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                             </div>
-                                            <div class="form-group" style="grid-column: span 2;">
-                                                <label for="adminGreyOpenaiAudApiFormat">灰度接口协议格式</label>
-                                                <select id="adminGreyOpenaiAudApiFormat" class="form-control">
-                                                    <option value="chat_completion">Chat Completion</option>
-                                                    <option value="response">Response</option>
-                                                    <option value="anthropic">Anthropic Messages</option>
-                                                </select>
-                                            </div>
                                             <div class="form-group">
                                                 <label>API Key</label>
                                                 <input type="password" id="adminGreyOpenaiAudApiKey" class="form-control" placeholder="sk-...">
@@ -2016,28 +2208,39 @@
                                                 <label for="adminGreyAudTimeoutSeconds">灰度调用超时</label>
                                                 <input type="number" id="adminGreyAudTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                             </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyOpenaiAudReasoningEffort">思考强度</label>
-                                                <select id="adminGreyOpenaiAudReasoningEffort" class="form-control">
-                                                    <option value="">默认</option>
-                                                    <option value="low">Low</option>
-                                                    <option value="medium">Medium</option>
-                                                    <option value="high">High</option>
-                                                    <option value="xhigh">X-High</option>
-                                                    <option value="max">Max</option>
-                                                </select>
+                                        </div>
+                                        <!-- 高级工程参数折叠面板 (Grey Aud)：默认折叠 -->
+                                        <div id="adminAdvParams_grey_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                            <div class="engine-adv-header" onclick="toggleAdvParams('grey_aud')">
+                                                <div style="display:flex; align-items:center; gap:8px;">
+                                                    <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                    <span id="adminAdvBadge_grey_aud" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                                </div>
+                                                <span id="adminAdvToggleText_grey_aud" class="engine-adv-toggle-text">[展开]</span>
                                             </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceInputAud">Input 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                            </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceCachedInputAud">Cached Input 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceCachedInputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                            </div>
-                                            <div class="form-group">
-                                                <label for="adminGreyPriceOutputAud">Output 价格 (元/1M)</label>
-                                                <input type="number" id="adminGreyPriceOutputAud" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                            <div id="adminAdvBody_grey_aud" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                <div class="form-grid">
+                                                    <div class="form-group">
+                                                        <label for="adminGreyOpenaiAudReasoningEffort">思考强度</label>
+                                                        <select id="adminGreyOpenaiAudReasoningEffort" class="form-control">
+                                                            <option value="">默认</option>
+                                                            <option value="low">Low</option>
+                                                            <option value="medium">Medium</option>
+                                                            <option value="high">High</option>
+                                                            <option value="xhigh">X-High</option>
+                                                            <option value="max">Max</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyAudMaxTokens">Max Tokens [512-16384]</label>
+                                                        <input type="number" id="adminGreyAudMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                    </div>
+                                                    <div class="form-group">
+                                                        <label for="adminGreyAudTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                        <input type="number" id="adminGreyAudTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0" title="审核引擎强制温度为 0.0（运行时确定性硬锁定）">
+                                                        <div id="adminGreyAudTempWarn" class="temp-warn-box hide">[WARN] 审核引擎强制温度为 0.0，高于 0.2 可能增加格式破坏风险</div>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
@@ -2056,8 +2259,6 @@
                                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
                                                     <div style="font-size:0.78rem; font-weight:600; color:#6a1b9a;">灰测解析参数</div>
                                                     <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                                                        <span style="font-size:0.75rem; color:var(--text-muted);">供应商:</span>
-                                                        <input type="text" id="adminVendorNameGreyParse" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px; width:160px;">
                                                         <span style="font-size:0.75rem; color:var(--text-muted);">预设网关:</span>
                                                         <select id="adminGreyParseOpenaiPreset" class="form-control" style="font-size:0.75rem; padding:2px 8px; height:28px;">
                                                             <option value="">— 手动填写 —</option>
@@ -2072,14 +2273,6 @@
                                                         <label>Base URL</label>
                                                         <input type="text" id="adminGreyParseOpenaiBaseUrl" class="form-control" placeholder="https://your-gateway.com/v1">
                                                     </div>
-                                                    <div class="form-group" style="grid-column: span 2;">
-                                                        <label for="adminGreyParseOpenaiApiFormat">灰度接口协议格式</label>
-                                                        <select id="adminGreyParseOpenaiApiFormat" class="form-control">
-                                                            <option value="chat_completion">Chat Completion</option>
-                                                            <option value="response">Response</option>
-                                                            <option value="anthropic">Anthropic Messages</option>
-                                                        </select>
-                                                    </div>
                                                     <div class="form-group">
                                                         <label>API Key</label>
                                                         <input type="password" id="adminGreyParseOpenaiApiKey" class="form-control" placeholder="sk-...">
@@ -2092,28 +2285,39 @@
                                                         <label for="adminGreyParseTimeoutSeconds">灰度调用超时</label>
                                                         <input type="number" id="adminGreyParseTimeoutSeconds" class="form-control" min="1" max="60" placeholder="60">
                                                     </div>
-                                                    <div class="form-group">
-                                                        <label for="adminGreyParseOpenaiReasoningEffort">思考强度</label>
-                                                        <select id="adminGreyParseOpenaiReasoningEffort" class="form-control">
-                                                            <option value="">默认</option>
-                                                            <option value="low">Low</option>
-                                                            <option value="medium">Medium</option>
-                                                            <option value="high">High</option>
-                                                            <option value="xhigh">X-High</option>
-                                                            <option value="max">Max</option>
-                                                        </select>
+                                                </div>
+                                                <!-- 高级工程参数折叠面板 (Grey Parse)：默认折叠 -->
+                                                <div id="adminAdvParams_grey_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
+                                                    <div class="engine-adv-header" onclick="toggleAdvParams('grey_parse')">
+                                                        <div style="display:flex; align-items:center; gap:8px;">
+                                                            <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级工程参数</span>
+                                                            <span id="adminAdvBadge_grey_parse" class="engine-adv-badge">[4096 tokens | T=0.0]</span>
+                                                        </div>
+                                                        <span id="adminAdvToggleText_grey_parse" class="engine-adv-toggle-text">[展开]</span>
                                                     </div>
-                                                    <div class="form-group">
-                                                        <label for="adminGreyPriceInputParse">Input 价格 (元/1M)</label>
-                                                        <input type="number" id="adminGreyPriceInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="adminGreyPriceCachedInputParse">Cached Input 价格 (元/1M)</label>
-                                                        <input type="number" id="adminGreyPriceCachedInputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
-                                                    </div>
-                                                    <div class="form-group">
-                                                        <label for="adminGreyPriceOutputParse">Output 价格 (元/1M)</label>
-                                                        <input type="number" id="adminGreyPriceOutputParse" class="form-control" min="0" step="0.0001" placeholder="留空使用官方档位">
+                                                    <div id="adminAdvBody_grey_parse" class="engine-adv-body" style="display:none; padding-top:10px;">
+                                                        <div class="form-grid">
+                                                            <div class="form-group">
+                                                                <label for="adminGreyParseOpenaiReasoningEffort">思考强度</label>
+                                                                <select id="adminGreyParseOpenaiReasoningEffort" class="form-control">
+                                                                    <option value="">默认</option>
+                                                                    <option value="low">Low</option>
+                                                                    <option value="medium">Medium</option>
+                                                                    <option value="high">High</option>
+                                                                    <option value="xhigh">X-High</option>
+                                                                    <option value="max">Max</option>
+                                                                </select>
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="adminGreyParseMaxTokens">Max Tokens [512-16384]</label>
+                                                                <input type="number" id="adminGreyParseMaxTokens" class="form-control" min="512" max="16384" step="128" placeholder="4096">
+                                                            </div>
+                                                            <div class="form-group">
+                                                                <label for="adminGreyParseTemperature">采样温度 (Temperature) [0.0-0.5]</label>
+                                                                <input type="number" id="adminGreyParseTemperature" class="form-control" min="0.0" max="0.5" step="0.01" placeholder="0.0">
+                                                                <div id="adminGreyParseTempWarn" class="temp-warn-box hide">[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0</div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -2142,6 +2346,12 @@
                                 </div>
                             </div>
                         </div>
+
+                                </div> <!-- /engine-subsection C1 (金丝雀) -->
+
+                                <!-- C2：A/B 科学实验（独立子分区，与金丝雀物理分区、逻辑解耦） -->
+                                <div class="engine-subsection" id="engineExperimentSection">
+                                    <div class="engine-subsection-header">C2 · A/B 科学实验编排</div>
 
                         <!-- A/B 科学实验编排 高级抽屉 -->
                         <div id="adminExperimentDrawer" class="engine-drawer collapsed" style="margin-top:14px;">
@@ -2232,24 +2442,90 @@
                             </div>
                         </div>
 
-                        <!-- 引擎操作状态提示容器 -->
-                        <div id="adminEngineStatus" class="engine-status-container" style="display:none; margin-top:14px;"></div>
+                                </div> <!-- /engine-subsection C2 (A/B 实验) -->
+                            </div> <!-- /engine-module-body C -->
+                        </div> <!-- /engineModuleC -->
 
-                        <div style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap;">
+                        <!-- 底部操作栏：保存 / 测试连通性 / 配置来源 -->
+                        <div class="engine-actions-bar" style="display:flex; justify-content:space-between; align-items:center; gap:16px; margin-top:18px; flex-wrap:wrap;">
                             <!-- 配置来源（T1）：manual=管理台保存，重启保留；auto=.env 启动装配，重启会重装 -->
                             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                                 <span style="font-size:0.85rem; color:var(--text-secondary, #666);">配置来源:</span>
                                 <span id="adminEngineConfigSource" class="badge badge-secondary">-</span>
                                 <span id="adminEngineConfigSourceHint" style="font-size:0.75rem; color:var(--text-muted, #888);"></span>
-                                <button type="button" class="btn btn-outline" id="adminResetEngineConfigBtn" style="font-size:0.8rem; padding:4px 10px;" onclick="resetAdminEngineConfig()">复位为 .env 默认</button>
+                                <button type="button" class="btn btn-outline" id="adminResetEngineConfigBtn" style="font-size:0.8rem; padding:4px 10px;" onclick="resetAdminEngineConfig()">恢复默认配置</button>
                             </div>
                             <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
-                                <label style="display:flex; align-items:center; gap:6px; font-size:0.85rem; color:var(--text-secondary, #666); cursor:pointer; user-select:none;">
-                                    <input type="checkbox" id="adminSkipModelTest" style="cursor:pointer;">
-                                    <span>跳过连通性测试直接保存</span>
-                                </label>
+                                <button type="button" class="btn btn-outline" id="adminTestEngineConnBtn" onclick="testAdminEngineConnectivity()">测试连通性</button>
                                 <button class="btn btn-primary" id="adminSaveEngineBtn" onclick="saveAdminEngineConfig()">保存配置</button>
                                 <button id="btnSaveAdminEngine" style="display:none;" onclick="saveAdminEngineConfig()"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 模块 D：系统与治理（阈值 / 记忆读取预算 / 预处理纠偏，与引擎配置解耦） -->
+                    <div class="engine-module engine-module-standalone" id="engineModuleD" style="max-width:960px; margin:24px auto 0;">
+                        <div class="engine-module-header">
+                            <span class="engine-module-badge">模块 D</span>
+                            <span class="engine-module-title">系统与治理</span>
+                            <span class="engine-module-sub">阈值规则、记忆读取预算与预处理纠偏</span>
+                        </div>
+
+                        <!-- P28-AU2：解析超时清扫阈值（settings 键 parsing_timeout_seconds，缺省 300）。
+                             为什么必须能在管理台调：它决定「卡在识别中的单据多久算超期」，是治理
+                             「状态永久假在途」的运维旋钮。此前该键只在 settings_service 登记、消费方
+                             （启动自检与只读巡检 GET /api/admin/parsing-stale）都在跑，管理台却看不见它。
+                             该控件走 ADMIN_SETTINGS_FIELDS 既有机制（int），load / collect / reset 三处
+                             由同一张表驱动，无需另写特判。 -->
+                        <div class="card-title" style="margin-top:6px;"><span>解析超时清扫（单据状态治理）</span></div>
+                        <div class="form-group">
+                            <label>解析超时阈值（秒，缺省 300）</label>
+                            <input type="number" step="1" min="1" id="setParsingTimeoutSeconds" class="form-control" style="min-height:38px; max-width:320px;">
+                            <span style="display:block; font-size:0.78rem; color:var(--text-muted, #666); margin-top:6px;">
+                                卡在「识别中」超过该秒数的单据，会在服务下次启动时（启动自检，每次启动执行一次）被清扫器标为失败
+                                （error / parsing_timeout），不再永久停留在假「在途」状态。留空不覆盖；0 或负值会被消费方钳回缺省 300。
+                            </span>
+                        </div>
+
+                        <!-- Y3-P2b：首轮供应商预判开关（settings 键 vendor_precheck_enabled，缺省 false）。
+                             缺省关闭是刻意的（打开会真发一次模型调用、增成本），但「缺省关闭」只有配上
+                             「管理台能发现它、能一键开」才是可运营的；布尔项不进 ADMIN_SETTINGS_FIELDS
+                             （该表按 Number() 解析），在 load / collect / reset 三处各自显式处理。 -->
+                        <div class="card-title" style="margin-top:18px;"><span>首轮供应商预判（未手选供应商时）</span></div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; min-height:38px;">
+                                <input type="checkbox" id="setVendorPrecheckEnabled" style="width:20px; height:20px; cursor:pointer;">
+                                <span>启用首轮供应商预判（上传时未手选供应商 → 裁抬头小模型预判供应商名，作为识别先验注入该供应商的历史记忆）。默认关闭：打开后每张未手选供应商的单据会多发一次模型调用（增加成本与耗时）；失败一律回落空串，不阻断识别。</span>
+                            </label>
+                        </div>
+
+                        <!-- P23-AQ1：LLM 抽取开关（settings 键 memory_extract_enabled，缺省 false）。
+                             此前该键在 static/templates 里零命中，整条抽取链在生产上从未执行过；
+                             本开关把运营决策交回管理员，同样在 load / collect / reset 三处各自显式处理。 -->
+                        <div class="card-title" style="margin-top:18px;"><span>LLM 抽取（把人工修正沉淀成候选事实）</span></div>
+                        <div class="form-group">
+                            <label style="display:flex; align-items:center; gap:10px; cursor:pointer; min-height:38px;">
+                                <input type="checkbox" id="setMemoryExtractEnabled" style="width:20px; height:20px; cursor:pointer;">
+                                <span>启用 LLM 抽取：打开后，用户在复核时修正过的字段会被抽成候选事实，进入「待确认队列」（不会直接生效，需人工确认后才写入记忆）。默认关闭：打开后每张有修正的单据在保存/入账时会多发一次模型调用（增加成本与耗时）；抽取失败一律不阻断保存。</span>
+                            </label>
+                        </div>
+
+                        <!-- 记忆度量看板（收敛计划 P2-T5）：四项只读指标 + 记忆总开关状态，口径与后端同源，前端不自算比率 -->
+                        <div class="card" style="margin-top:18px;">
+                            <div class="card-title"><span>供应商记忆度量看板（只读）</span></div>
+                            <div id="memoryMetricsPanel">
+                                <div style="font-size:0.85rem; color:var(--text-muted,#666);">度量加载中...</div>
+                            </div>
+                        </div>
+
+                        <!-- 已生效记忆治理区（收敛计划 P8 / AC2）：可见治理元数据 + 调已有唯一删除端点 -->
+                        <div class="card" style="margin-top:18px;">
+                            <div class="card-title" style="justify-content:space-between; align-items:center;">
+                                <span>已生效记忆（只读 + 可删除）</span>
+                                <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.8rem;" onclick="loadVendorMemoryGovernance()">刷新</button>
+                            </div>
+                            <div id="vendorMemoryGovernancePanel">
+                                <div style="font-size:0.85rem; color:var(--text-muted,#666);">加载中...</div>
                             </div>
                         </div>
                     </div>
@@ -2261,7 +2537,7 @@
                             以下阈值改动保存后即时生效，无需重启。留空或非法值会自动回退缺省值。
                         </p>
 
-                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+                        <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:12px;">
                             <div class="form-group">
                                 <label>极模糊拦截阈值</label>
                                 <input type="number" step="0.1" min="0" id="setBlurLaplacianThreshold" class="form-control" placeholder="30" style="min-height:38px;">
@@ -2289,7 +2565,7 @@
                         </div>
 
                         <div class="card-title" style="margin-top:18px;"><span>记忆读取预算与衰减</span></div>
-                        <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:12px;">
+                        <div class="memory-budget-grid">
                             <div class="form-group">
                                 <label>注入总预算</label>
                                 <input type="number" step="1" min="1" id="setMemoryBudgetFactsTokens" class="form-control" placeholder="800" style="min-height:38px;">

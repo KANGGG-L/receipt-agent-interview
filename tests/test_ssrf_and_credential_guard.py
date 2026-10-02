@@ -185,9 +185,8 @@ def test_mask_secret_key():
 
 def test_api_admin_set_engine_config_rejects_ssrf():
     client = TestClient(app, headers={"X-Role": "admin"})
-    # 1. 识别引擎 base_url SSRF
+    # 1. 识别引擎 base_url SSRF（engine 枚举已从 admin 契约移除，阶段4）
     resp = client.put("/api/admin/engine-config", json={
-        "recognition_engine": "openai",
         "openai_rec_base_url": "http://169.254.169.254/latest/meta-data",
         "openai_rec_api_key": "sk-realtestkey123456"
     })
@@ -214,7 +213,6 @@ def test_api_admin_set_engine_config_rejects_ssrf():
 def test_api_admin_quick_test_engine_rejects_ssrf():
     client = TestClient(app, headers={"X-Role": "admin"})
     resp = client.post("/api/admin/test-engine-config", json={
-        "recognition_engine": "openai",
         "openai_rec_model": "Qwen/Qwen3-VL-32B-Instruct",
         "openai_rec_base_url": "http://169.254.169.254/latest/meta-data",
         "openai_rec_api_key": "sk-realtestkey123456"

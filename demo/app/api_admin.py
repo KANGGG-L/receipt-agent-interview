@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import re
 from app import db
 from app.auth import require_admin, require_role
+from app.services.engine_config_diff import engine_config_field_diff
 from app.services.security_guard import mask_secret_key
 
 _SK_KEY_PATTERN = re.compile(r"sk-[a-zA-Z0-9_\-]{8,}")
@@ -70,6 +71,50 @@ def sanitize_audit_log(logs: list) -> list:
 router = APIRouter()
 
 
+# -------------------------------------------------------------
+# 配置版本与字段级 diff（本轮新增：乐观锁 + 版本历史共用同一实现）
+# -------------------------------------------------------------
+def _parse_expected_version(raw) -> Optional[int]:
+    """解析 If-Match 取值：接受 3 / "3" / W/"3"；`*` 或无法解析一律返回 None（不校验）。
+
+    无法解析时选择「不校验」而非 409：该头可能来自中间代理/浏览器缓存，把它当冲突
+    会把一次正常保存变成永远存不上的 409（体验倒退比漏一次并发检测更糟）。
+    """
+    if raw is None:
+        return None
+    token = str(raw).strip()
+    if token.startswith("W/"):
+        token = token[2:].strip()
+    token = token.strip().strip('"').strip()
+    if not token or token == "*":
+        return None
+    try:
+        return int(token)
+    except (TypeError, ValueError):
+        return None
+
+
+def _request_expected_version(request: Request, body) -> Optional[int]:
+    """请求声明的期望版本：If-Match 头优先，其次 body.version；都没有则 None。
+
+    None 表示「调用方未参与乐观锁」——旧前端/脚本的 PUT 不带版本，必须继续可保存
+    （既有测试与回退通道依赖这一点），故缺失即跳过校验而不是当作 0。
+    """
+    expected = _parse_expected_version(request.headers.get("If-Match"))
+    if expected is None and body is not None:
+        body_version = getattr(body, "version", None)
+        if body_version is not None:
+            try:
+                expected = int(body_version)
+            except (TypeError, ValueError):
+                expected = None
+    return expected
+
+
+def record_engine_config_history(version, actor, action, snapshot, changed_keys):
+    """写一条版本历史（写操作成功后调用，落库前由 db 层对 api_key 脱敏）。"""
+    db.append_engine_config_history(version, actor, action, snapshot, changed_keys)
+
 
 def _tenant_id(request: Request) -> str:
     """Gap E2 租户键：与 X-Role 同风格取请求头，缺省 default。"""
@@ -88,23 +133,25 @@ def resolve_tenant_filter(request: Request, query_value=None):
 
 
 class EngineConfigBody(BaseModel):
+    """admin 可写契约（阶段 4 已下线「确认死字段」）。
+
+    移除项（见 00-approved-plan §3.4/§7 阶段4）：
+    - 8 个 api_format 字段（api_format / grey_api_format / openai_{rec,aud,parse}_api_format /
+      grey_openai_{rec,aud,parse}_api_format）：唯一通道固定 chat_completion，管理台不再采集；
+    - 6 个 engine 枚举字段（recognition_engine / audit_engine / parse_llm_engine /
+      grey_* 三同）：归一逻辑内部恒置 openai，不再由入参驱动。
+    这两个字段组仍存在于 models.EngineConfig（供 DB / 回滚快照兼容），但不经 admin 契约传入。
+    """
     model_config = ConfigDict(extra="forbid")
-    api_format: str = "chat_completion"
-    grey_api_format: str = "chat_completion"
-    openai_rec_api_format: str = "chat_completion"
-    grey_openai_rec_api_format: str = "chat_completion"
-    openai_aud_api_format: str = "chat_completion"
-    openai_parse_api_format: str = "chat_completion"
-    grey_openai_aud_api_format: str = "chat_completion"
-    grey_openai_parse_api_format: str = "chat_completion"
 
     # 配置来源（T1）：body 必须声明，否则 extra=forbid 会让带该字段的请求 422。
     # PUT 保存一律由后端强制置 manual（见 set_engine_config），请求体传入值仅作占位。
     config_source: str = None
-    # 常规
-    recognition_engine: str = None
+    # 配置版本（本轮新增乐观锁）：与 If-Match 头同义，头优先。必须声明，否则
+    # extra=forbid 会让带 version 的请求 422。后端不接受它作为落库值，一律自增。
+    version: int = None
+    # 常规（engine 枚举不再暴露：唯一通道 openai，见类 docstring）
     recognition_model: str = None
-    audit_engine: str = None
     audit_model: str = None
     audit_enabled: bool = None
     openai_rec_base_url: str = None
@@ -138,7 +185,6 @@ class EngineConfigBody(BaseModel):
     # models.EngineConfig 会在校验前统一摘掉这些遗留键，旧前端 payload 不会 422。
     # 常规解析 LLM
     parse_llm_enabled: bool = None
-    parse_llm_engine: str = None
     parse_llm_model: str = None
     openai_parse_base_url: str = None
     openai_parse_api_key: str = None
@@ -148,10 +194,8 @@ class EngineConfigBody(BaseModel):
     grey_percent: int = None
     grey_assign_mode: str = None
     grey_supplier_ids: list[int] = None
-    grey_recognition_engine: str = None
     grey_recognition_model: str = None
     grey_audit_enabled: bool = None
-    grey_audit_engine: str = None
     grey_audit_model: str = None
     grey_openai_rec_base_url: str = None
     grey_openai_rec_api_key: str = None
@@ -161,7 +205,6 @@ class EngineConfigBody(BaseModel):
     grey_openai_aud_model: str = None
     # 灰测组解析 LLM
     grey_parse_llm_enabled: bool = None
-    grey_parse_llm_engine: str = None
     grey_parse_llm_model: str = None
     grey_openai_parse_base_url: str = None
     grey_openai_parse_api_key: str = None
@@ -198,6 +241,29 @@ class EngineConfigBody(BaseModel):
     price_input_grey_parse: Optional[float] = Field(default=None, ge=0)
     price_cached_input_grey_parse: Optional[float] = Field(default=None, ge=0)
     price_output_grey_parse: Optional[float] = Field(default=None, ge=0)
+
+    # 各引擎腿高级推理控制参数
+    openai_rec_max_tokens: Optional[int] = None
+    openai_rec_image_detail: Optional[str] = None
+    openai_rec_temperature: Optional[float] = None
+
+    openai_aud_max_tokens: Optional[int] = None
+    openai_aud_temperature: Optional[float] = None
+
+    openai_parse_max_tokens: Optional[int] = None
+    openai_parse_temperature: Optional[float] = None
+
+    grey_openai_rec_max_tokens: Optional[int] = None
+    grey_openai_rec_image_detail: Optional[str] = None
+    grey_openai_rec_temperature: Optional[float] = None
+
+    grey_openai_aud_max_tokens: Optional[int] = None
+    grey_openai_aud_temperature: Optional[float] = None
+
+    grey_openai_parse_max_tokens: Optional[int] = None
+    grey_openai_parse_temperature: Optional[float] = None
+
+    rollback_snapshot: Optional[dict] = None
 
 
 EngineConfigPayload = EngineConfigBody
@@ -311,8 +377,12 @@ def _quick_test_engine(engine_type: str, model_name: str, base_url: str, api_key
 
 
 def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
-    """归一化引擎枚举与双向字段对齐（单一事实源），并统一解析带掩码的 API Key。"""
-    from app.models import GreyAssignMode, EngineKind, is_legacy_cli_engine
+    """归一化引擎枚举（恒置 openai）与模型字段双向对齐，并统一解析带掩码的 API Key。
+
+    api_format 双向同步已随管理台暴露下线（阶段4）：该字段不再经 admin 契约传入，
+    其 DB 层兼容同步仍保留在 models.EngineConfig 的校验前归一里。
+    """
+    from app.models import GreyAssignMode, EngineKind
 
     if cfg is not None:
         key_fields = (
@@ -331,28 +401,15 @@ def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
 
     if "grey_assign_mode" in updates:
         updates["grey_assign_mode"] = GreyAssignMode(updates["grey_assign_mode"])
+    # engine 枚举不再由 admin 契约暴露（阶段4）：内部恒置 openai，不依赖入参。
+    # 现行唯一通道即 OpenAI 兼容（EngineKind 已删 CLI 成员），故「入参驱动」与
+    # 「恒置 openai」运行时等价；下方 model/base_url 分支的强制 openai 保持不变。
     for key in ("recognition_engine", "audit_engine",
                 "grey_recognition_engine", "grey_audit_engine",
                 "parse_llm_engine", "grey_parse_llm_engine"):
-        if key in updates:
-            # 已弃用 CLI 引擎的取值归一为 openai（判定走 models.is_legacy_cli_engine 单一实现）
-            if is_legacy_cli_engine(updates[key]):
-                updates[key] = EngineKind.OPENAI
-            else:
-                updates[key] = EngineKind(updates[key])
+        updates[key] = EngineKind.OPENAI
     if "grey_percent" in updates:
         updates["grey_percent"] = max(0, min(100, int(updates["grey_percent"])))
-
-    # 接口协议格式双向自动同步
-    if updates.get("openai_rec_api_format"):
-        updates["api_format"] = updates["openai_rec_api_format"]
-    elif updates.get("api_format"):
-        updates["openai_rec_api_format"] = updates["api_format"]
-
-    if updates.get("grey_openai_rec_api_format"):
-        updates["grey_api_format"] = updates["grey_openai_rec_api_format"]
-    elif updates.get("grey_api_format"):
-        updates["grey_openai_rec_api_format"] = updates["grey_api_format"]
 
     # 纯 OpenAI 参数双向自动同步映射 (单一事实源)
     if updates.get("openai_rec_model"):
@@ -411,6 +468,23 @@ def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
     if "grey_openai_parse_base_url" in updates:
         updates["grey_parse_llm_engine"] = EngineKind.OPENAI
 
+    from app.models import clamp_max_tokens, clamp_temperature, clamp_image_detail
+    for fld in (
+        "openai_rec_max_tokens", "openai_aud_max_tokens", "openai_parse_max_tokens",
+        "grey_openai_rec_max_tokens", "grey_openai_aud_max_tokens", "grey_openai_parse_max_tokens"
+    ):
+        if fld in updates and updates[fld] is not None:
+            updates[fld] = clamp_max_tokens(updates[fld])
+    for fld in (
+        "openai_rec_temperature", "openai_aud_temperature", "openai_parse_temperature",
+        "grey_openai_rec_temperature", "grey_openai_aud_temperature", "grey_openai_parse_temperature"
+    ):
+        if fld in updates and updates[fld] is not None:
+            updates[fld] = clamp_temperature(updates[fld])
+    for fld in ("openai_rec_image_detail", "grey_openai_rec_image_detail"):
+        if fld in updates and updates[fld] is not None:
+            updates[fld] = clamp_image_detail(updates[fld])
+
     return updates
 
 
@@ -427,8 +501,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     # 1. 常规识别引擎测试
     rec_eng = test_cfg.recognition_engine.value if hasattr(test_cfg.recognition_engine, "value") else str(test_cfg.recognition_engine)
     err = _quick_test_engine(rec_eng, test_cfg.openai_rec_model or test_cfg.recognition_model,
-                             test_cfg.openai_rec_base_url, test_cfg.openai_rec_api_key, "识别引擎",
-                             api_format=getattr(test_cfg, "openai_rec_api_format", getattr(test_cfg, "api_format", "chat_completion")))
+                             test_cfg.openai_rec_base_url, test_cfg.openai_rec_api_key, "识别引擎")
     if err:
         return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -436,7 +509,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.parse_llm_enabled:
         parse_eng = test_cfg.parse_llm_engine.value if hasattr(test_cfg.parse_llm_engine, "value") else str(test_cfg.parse_llm_engine)
         err = _quick_test_engine(parse_eng, test_cfg.openai_parse_model or test_cfg.parse_llm_model,
-                                 test_cfg.openai_parse_base_url, test_cfg.openai_parse_api_key, "解析 LLM", api_format=getattr(test_cfg, "openai_parse_api_format", "chat_completion"))
+                                 test_cfg.openai_parse_base_url, test_cfg.openai_parse_api_key, "解析 LLM")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -444,7 +517,7 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.audit_enabled:
         aud_eng = test_cfg.audit_engine.value if hasattr(test_cfg.audit_engine, "value") else str(test_cfg.audit_engine)
         err = _quick_test_engine(aud_eng, test_cfg.openai_aud_model or test_cfg.audit_model,
-                                 test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎", api_format=getattr(test_cfg, "openai_aud_api_format", "chat_completion"))
+                                 test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -452,22 +525,21 @@ def test_engine_config(body: EngineConfigBody, request: Request):
     if test_cfg.grey_enabled and test_cfg.grey_percent > 0:
         g_rec_eng = test_cfg.grey_recognition_engine.value if hasattr(test_cfg.grey_recognition_engine, "value") else str(test_cfg.grey_recognition_engine)
         err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model or test_cfg.grey_recognition_model,
-                                 test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别",
-                                 api_format=getattr(test_cfg, "grey_openai_rec_api_format", getattr(test_cfg, "grey_api_format", "chat_completion")))
+                                 test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别")
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_parse_llm_enabled:
             gp_eng = test_cfg.grey_parse_llm_engine.value if hasattr(test_cfg.grey_parse_llm_engine, "value") else str(test_cfg.grey_parse_llm_engine)
             err = _quick_test_engine(gp_eng, test_cfg.grey_openai_parse_model or test_cfg.grey_parse_llm_model,
-                                     test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析", api_format=getattr(test_cfg, "grey_openai_parse_api_format", "chat_completion"))
+                                     test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析")
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
         if test_cfg.grey_audit_enabled:
             ga_eng = test_cfg.grey_audit_engine.value if hasattr(test_cfg.grey_audit_engine, "value") else str(test_cfg.grey_audit_engine)
             err = _quick_test_engine(ga_eng, test_cfg.grey_openai_aud_model or test_cfg.grey_audit_model,
-                                     test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核", api_format=getattr(test_cfg, "grey_openai_aud_api_format", "chat_completion"))
+                                     test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核")
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
@@ -531,6 +603,14 @@ def promote_grey_config(request: Request):
             "price_input_parse": prev.get("price_input_parse"),
             "price_cached_input_parse": prev.get("price_cached_input_parse"),
             "price_output_parse": prev.get("price_output_parse"),
+            # 高级推理参数快照
+            "openai_rec_max_tokens": prev.get("openai_rec_max_tokens", 4096),
+            "openai_rec_image_detail": prev.get("openai_rec_image_detail", "high"),
+            "openai_rec_temperature": prev.get("openai_rec_temperature", 0.0),
+            "openai_aud_max_tokens": prev.get("openai_aud_max_tokens", 4096),
+            "openai_aud_temperature": prev.get("openai_aud_temperature", 0.0),
+            "openai_parse_max_tokens": prev.get("openai_parse_max_tokens", 4096),
+            "openai_parse_temperature": prev.get("openai_parse_temperature", 0.0),
         },
         "meta": {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -576,6 +656,14 @@ def promote_grey_config(request: Request):
         "price_input_parse": grey.price_input_grey_parse,
         "price_cached_input_parse": grey.price_cached_input_grey_parse,
         "price_output_parse": grey.price_output_grey_parse,
+        # 晋升灰测高级推理参数至常规组
+        "openai_rec_max_tokens": getattr(grey, "grey_openai_rec_max_tokens", 4096),
+        "openai_rec_image_detail": getattr(grey, "grey_openai_rec_image_detail", "high"),
+        "openai_rec_temperature": getattr(grey, "grey_openai_rec_temperature", 0.0),
+        "openai_aud_max_tokens": getattr(grey, "grey_openai_aud_max_tokens", 4096),
+        "openai_aud_temperature": getattr(grey, "grey_openai_aud_temperature", 0.0),
+        "openai_parse_max_tokens": getattr(grey, "grey_openai_parse_max_tokens", 4096),
+        "openai_parse_temperature": getattr(grey, "grey_openai_parse_temperature", 0.0),
         "rollback_snapshot": snap,
     }
 
@@ -623,8 +711,17 @@ def promote_grey_config(request: Request):
         "price_input_grey_parse": None,
         "price_cached_input_grey_parse": None,
         "price_output_grey_parse": None,
+        # 灰测高级推理参数复位为默认
+        "grey_openai_rec_max_tokens": 4096,
+        "grey_openai_rec_image_detail": "high",
+        "grey_openai_rec_temperature": 0.0,
+        "grey_openai_aud_max_tokens": 4096,
+        "grey_openai_aud_temperature": 0.0,
+        "grey_openai_parse_max_tokens": 4096,
+        "grey_openai_parse_temperature": 0.0,
     }
-    final_cfg = EngineConfig(**{**new_cfg.model_dump(), **grey_defaults})
+    final_cfg = EngineConfig(**{**new_cfg.model_dump(), **grey_defaults,
+                                "version": int(getattr(cfg, "version", 1) or 1) + 1})
     db.set_engine_config(final_cfg, source="manual")
 
     old_model = cfg.recognition_model or cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
@@ -632,8 +729,15 @@ def promote_grey_config(request: Request):
     db.append_system_audit_log(who, "promote_grey_config",
                                "recognition_model",
                                str(old_model), str(new_model))
+    # 推全也是一次配置写入：与 PUT 同口径落版本历史（action=promote），否则
+    # 「谁在什么时候把灰测推成常规」在版本历史里查不到。
+    record_engine_config_history(
+        final_cfg.version, who, "promote", final_cfg.model_dump(),
+        [d["key"] for d in engine_config_field_diff(cfg.model_dump(), final_cfg.model_dump(),
+                                                    ignore=("version",))])
 
-    return {"status": "success", "data": mask_engine_config_dict(final_cfg.model_dump())}
+    return {"status": "success", "data": mask_engine_config_dict(final_cfg.model_dump()),
+            "version": final_cfg.version}
 
 
 @router.put("/api/admin/engine-config/rollback")
@@ -646,6 +750,8 @@ def rollback_engine_config(request: Request):
     account = require_admin(request)
     who = account.get("email", "unknown")
     from app.services.guardian import perform_engine_rollback
+    # 版本自增与 action=rollback 的版本历史由 perform_engine_rollback 落库
+    # （管理台与实验守护自动回滚同一事实源，见该函数 docstring）。
     ok, new_cfg = perform_engine_rollback(who=who)
     if not ok:
         return JSONResponse(status_code=400, content={
@@ -656,6 +762,7 @@ def rollback_engine_config(request: Request):
         "status": "success",
         "data": mask_engine_config_dict(new_cfg.model_dump()),
         "msg": "已回滚至上次推全前的配置",
+        "version": int(getattr(new_cfg, "version", 1) or 1),
     }
 
 
@@ -698,6 +805,14 @@ def diff_regular_vs_grey(request: Request):
         ("price_input_parse", "price_input_grey_parse", "解析 · Input 价格 (元/1M)"),
         ("price_cached_input_parse", "price_cached_input_grey_parse", "解析 · Cached Input 价格 (元/1M)"),
         ("price_output_parse", "price_output_grey_parse", "解析 · Output 价格 (元/1M)"),
+        # 高级推理参数对比项
+        ("openai_rec_max_tokens", "grey_openai_rec_max_tokens", "识别 · Max Tokens"),
+        ("openai_aud_max_tokens", "grey_openai_aud_max_tokens", "审核 · Max Tokens"),
+        ("openai_parse_max_tokens", "grey_openai_parse_max_tokens", "解析 · Max Tokens"),
+        ("openai_rec_image_detail", "grey_openai_rec_image_detail", "识别 · 视觉切片粒度"),
+        ("openai_rec_temperature", "grey_openai_rec_temperature", "识别 · 采样温度"),
+        ("openai_aud_temperature", "grey_openai_aud_temperature", "审核 · 采样温度"),
+        ("openai_parse_temperature", "grey_openai_parse_temperature", "解析 · 采样温度"),
     ]
     # OpenAI 参数区：敏感字段（api_key / base_url）不直接展示值，仅提示一致/不一致
     sensitive_pairs = [
@@ -825,7 +940,18 @@ def get_engine_presets(request: Request):
             presets.update(custom)
     except Exception:
         pass
-    return {"status": "success", "data": presets}
+    # P0：预设回传前一律对 api_key 脱敏 —— 该端点此前明文返回 .env 真实密钥。
+    # 逐条 copy 后再改，避免污染 presets（自定义预设来自 app_settings 的内存副本）。
+    # 无密钥的预设保持空串（mask_secret_key("") == ""），不引入占位噪声。
+    masked = {}
+    for preset_key, preset in presets.items():
+        if isinstance(preset, dict):
+            entry = dict(preset)
+            entry["api_key"] = mask_secret_key(entry.get("api_key"))
+        else:
+            entry = preset
+        masked[preset_key] = entry
+    return {"status": "success", "data": masked}
 
 
 class _SavePresetBody(BaseModel):
@@ -932,6 +1058,114 @@ def get_engine_config(request: Request):
     return resp
 
 
+# -------------------------------------------------------------
+# 分组瘦身 DTO（本轮新增）：admin 视图按模块 A/B/C/D 取数
+# -------------------------------------------------------------
+# 六腿映射：leg -> (字段前缀, 超时字段, api_key 字段, 单价后缀)
+_ROUTING_LEGS = (
+    ("rec", "openai_rec_", "rec_timeout_seconds", "openai_rec_api_key", "_rec"),
+    ("aud", "openai_aud_", "aud_timeout_seconds", "openai_aud_api_key", "_aud"),
+    ("parse", "openai_parse_", "parse_timeout_seconds", "openai_parse_api_key", "_parse"),
+    ("grey_rec", "grey_openai_rec_", "grey_rec_timeout_seconds", "grey_openai_rec_api_key", "_grey_rec"),
+    ("grey_aud", "grey_openai_aud_", "grey_aud_timeout_seconds", "grey_openai_aud_api_key", "_grey_aud"),
+    ("grey_parse", "grey_openai_parse_", "grey_parse_timeout_seconds", "grey_openai_parse_api_key", "_grey_parse"),
+)
+
+
+def _routing_leg_dto(cfg, prefix: str, timeout_field: str, key_field: str) -> dict:
+    """单腿瘦身视图：凭据只暴露 has_key 布尔位，绝不回传 api_key 明文。"""
+    advanced = {
+        "api_format": str(getattr(cfg, prefix + "api_format", "chat_completion") or "chat_completion"),
+        "reasoning_effort": str(getattr(cfg, prefix + "reasoning_effort", "") or ""),
+        "max_tokens": getattr(cfg, prefix + "max_tokens", None),
+        "temperature": getattr(cfg, prefix + "temperature", None),
+    }
+    # image_detail 仅识别腿（常规 + 灰测）存在，其余腿不凭空补键
+    image_detail = getattr(cfg, prefix + "image_detail", None)
+    if image_detail is not None:
+        advanced["image_detail"] = image_detail
+    return {
+        "base_url": str(getattr(cfg, prefix + "base_url", "") or ""),
+        "model": str(getattr(cfg, prefix + "model", "") or ""),
+        "has_key": bool(str(getattr(cfg, key_field, "") or "").strip()),
+        "timeout_seconds": getattr(cfg, timeout_field, None),
+        "advanced": advanced,
+    }
+
+
+@router.get("/api/admin/engine-config/routing")
+def get_engine_config_routing(request: Request):
+    """分组瘦身视图（模块 A/B/C/D）+ version + has_key 位。
+
+    为什么单开一条而不是改造旧 GET：旧 GET 是 1:1 `model_dump()` 全量抛出（含 engine
+    枚举、vendor_name_*、rollback_snapshot 等内部态），既有测试直接读
+    `data["perf"]["effective_timeouts"]`／`data["rollback_snapshot"]["prev"]`，
+    改形态会破坏既有契约。本端点只服务 admin 视图，**禁含** api_key 明文、
+    rollback_snapshot、vendor_name_*、engine 枚举（见 00-approved-plan §3.3）。
+    """
+    require_admin(request)
+    cfg = db.get_engine_config()
+
+    legs = {}
+    for leg, prefix, timeout_field, key_field, _price_suffix in _ROUTING_LEGS:
+        legs[leg] = _routing_leg_dto(cfg, prefix, timeout_field, key_field)
+
+    prices = {}
+    for leg, _prefix, _timeout_field, _key_field, price_suffix in _ROUTING_LEGS:
+        prices[leg] = {
+            "input": getattr(cfg, "price_input" + price_suffix, None),
+            "cached_input": getattr(cfg, "price_cached_input" + price_suffix, None),
+            "output": getattr(cfg, "price_output" + price_suffix, None),
+        }
+
+    regular_legs = {k: legs[k] for k in ("rec", "aud", "parse")}
+    grey_legs = {k: legs[k] for k in ("grey_rec", "grey_aud", "grey_parse")}
+
+    data = {
+        "version": int(getattr(cfg, "version", 1) or 1),
+        "config_source": str(getattr(cfg, "config_source", "auto") or "auto"),
+        "has_key": {leg: legs[leg]["has_key"] for leg in legs},
+        # 模块 A：引擎与凭据（按腿分组 + 全局默认超时 + 启用开关；高级工程参数内嵌折叠）
+        "module_a": {
+            "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", None),
+            "audit_enabled": bool(getattr(cfg, "audit_enabled", False)),
+            "audit_mode": str(getattr(cfg, "audit_mode", "") or ""),
+            "parse_llm_enabled": bool(getattr(cfg, "parse_llm_enabled", False)),
+            "legs": regular_legs,
+        },
+        # 模块 B：成本与计费（18 个单价按 6 腿分组，留空 = 回落模型刊例价）
+        "module_b": {"unit": "元/1M Token", "prices": prices},
+        # 模块 C：发布与流量管理（金丝雀区；A/B 实验区由既有实验端点提供）
+        "module_c": {
+            "grey_enabled": bool(getattr(cfg, "grey_enabled", False)),
+            "grey_percent": int(getattr(cfg, "grey_percent", 0) or 0),
+            "grey_assign_mode": str(getattr(cfg, "grey_assign_mode", "") or ""),
+            "grey_supplier_ids": list(getattr(cfg, "grey_supplier_ids", None) or []),
+            "grey_audit_enabled": bool(getattr(cfg, "grey_audit_enabled", False)),
+            "grey_parse_llm_enabled": bool(getattr(cfg, "grey_parse_llm_enabled", False)),
+            "legs": grey_legs,
+        },
+        # 模块 D：系统与治理（阈值/记忆预算/预处理开关由 /api/admin/settings 提供）
+        "module_d": {
+            "config_source": str(getattr(cfg, "config_source", "auto") or "auto"),
+            "rollback_available": bool(getattr(cfg, "rollback_snapshot", None)),
+            "system_settings_endpoint": "/api/admin/settings",
+        },
+    }
+    return {"status": "success", "data": data}
+
+
+@router.get("/api/admin/engine-config/history")
+def get_engine_config_history(request: Request, page: int = 1, page_size: int = 20):
+    """版本历史（分页）：每项 {version, actor, action, created_at, changed_keys} + total。
+
+    page_size 上限 100（规格 §4.4）；snapshot 只在库里，不经任何端点回传。
+    """
+    require_admin(request)
+    return {"status": "success",
+            "data": db.list_engine_config_history(page=page, page_size=page_size)}
+
+
 def _is_placeholder_api_key(key) -> bool:
     """空密钥或字面占位符（YOUR_xxx）→ True，保存前拦截。"""
     k = str(key or "").strip()
@@ -1010,7 +1244,28 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     from app.models import EngineConfig
     from app.llm import _is_valid_dashscope_url, _is_valid_sk, _is_valid_dashscope_config, get_timeout_advice
     cfg = db.get_engine_config()
+    # 乐观锁（本轮新增）：If-Match 头或 body.version 与库内版本不符即 409，附当前版本与
+    # 字段级 diff（changed_keys + old/new）。两个 admin 会话并发保存时，后到的写入被拒绝，
+    # 而不是静默覆盖前者的改动。
+    stored_version = int(getattr(cfg, "version", 1) or 1)
+    expected_version = _request_expected_version(request, body)
+    if expected_version is not None and expected_version != stored_version:
+        submitted = {k: v for k, v in body.model_dump(exclude_none=True).items()
+                     if k != "version"}
+        pending = engine_config_field_diff(cfg.model_dump(), submitted, ignore=("version",))
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "code": "VERSION_CONFLICT",
+            "msg": f"配置已被他人修改（当前 v{stored_version}，你提交的是 v{expected_version}）。"
+                   "请重新加载后再保存。",
+            "current_version": stored_version,
+            "version": stored_version,
+            "changed_keys": [d["key"] for d in pending],
+            "diff": pending,
+        })
     updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
+    # 版本不接受请求体声明：落库值一律由后端自增（与 config_source 同一口径）。
+    updates.pop("version", None)
     # 对分腿独立超时，若请求显式传递了字段（如传递 null 恢复继承全局），予以放行
     for tf in (
         "rec_timeout_seconds",
@@ -1147,7 +1402,9 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     old_engine = cfg.recognition_engine
     # T1：管理台保存即声明「人工配置」（config_source=manual），
     # 重启时 hydrate_engine_config_from_env 不再按 .env 覆盖，人工切换得以持久生效。
-    new_cfg = EngineConfig(**{**new_dict, "config_source": "manual"})
+    # 版本自增：落库值 = 读到的库内版本 + 1（不接受请求体声明）。
+    next_version = stored_version + 1
+    new_cfg = EngineConfig(**{**new_dict, "config_source": "manual", "version": next_version})
     db.set_engine_config(new_cfg, source="manual")
 
     # ---- 自动将填写了供应商名的引擎腿写入自定义预设网关 ----
@@ -1163,13 +1420,20 @@ def set_engine_config(body: EngineConfigBody, request: Request):
                                "engine_config",
                                " ".join(changed_keys),
                                str(effective_model))
+    # 版本历史（不可变快照）：changed_keys 取「实际发生变化」的键（值级 diff），
+    # 与上一条审计日志的「提交键」口径不同 —— 前者回答「改了什么」，后者回答「提交了什么」。
+    field_diff = engine_config_field_diff(cfg.model_dump(), new_cfg.model_dump(),
+                                          ignore=("version",))
+    record_engine_config_history(next_version, who, "save", new_cfg.model_dump(),
+                                 [d["key"] for d in field_diff])
     # 附带超时显式降级告警与性能预期（任务 3a）
     advice = get_timeout_advice(new_cfg)
     warning = ""
     # 性能基线提示
     perf_note = "预期：qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本） / 纯 API 驱动"
     resp_data = mask_engine_config_dict(new_cfg.model_dump())
-    resp = {"status": "success", "data": resp_data, "perf_note": perf_note}
+    resp = {"status": "success", "data": resp_data, "perf_note": perf_note,
+            "version": next_version, "changed_keys": [d["key"] for d in field_diff]}
 
     if clamped_fields:
         # 显式回显（T9 收尾）：本次保存填的超限值已被归一，前端可用该字段提示管理员
@@ -1200,19 +1464,29 @@ def reset_engine_config(request: Request):
     account = require_admin(request)
     who = account.get("email", "unknown")
     cfg = db.get_engine_config()
+    before_dump = cfg.model_dump()
     old_source = str(getattr(cfg, "config_source", "auto") or "auto")
     cfg.config_source = "auto"
     db.set_engine_config(cfg, source="auto")
     # 立即重新装配（内部按 auto 走 .env 覆盖逻辑）
     db.hydrate_engine_config_from_env()
     new_cfg = db.get_engine_config()
+    # 版本自增放在 hydrate 之后：装配过程自身可能写回（补全/归一），
+    # 在其后再前进一位，保证「一次复位 = 版本恰好 +1」且不出现中途的重复版本。
+    new_cfg.version = int(before_dump.get("version", 1) or 1) + 1
+    db.set_engine_config(new_cfg, source=str(getattr(new_cfg, "config_source", "auto") or "auto"))
     db.append_system_audit_log(who, "reset_engine_config",
                                "config_source", old_source,
                                str(getattr(new_cfg, "config_source", "auto") or "auto"))
+    record_engine_config_history(
+        new_cfg.version, who, "reset", new_cfg.model_dump(),
+        [d["key"] for d in engine_config_field_diff(before_dump, new_cfg.model_dump(),
+                                                    ignore=("version",))])
     return {
         "status": "success",
         "data": mask_engine_config_dict(new_cfg.model_dump()),
         "msg": "已复位为 .env 默认装配",
+        "version": new_cfg.version,
     }
 
 

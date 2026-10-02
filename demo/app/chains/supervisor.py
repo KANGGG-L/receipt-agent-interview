@@ -508,6 +508,8 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
                 "cost_estimated_reason": _audit_reason,
                 "elapsed_ms": _audit_elapsed,
                 "success": bool(audit.get("overall_consistent")) if audit.get("skipped") is False else False,
+                "max_tokens": getattr(config, "grey_openai_aud_max_tokens" if use_grey else "openai_aud_max_tokens", 4096) if config else 4096,
+                "temperature": 0.0,
             },
         )
     except Exception as e:
@@ -686,6 +688,9 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
         "image_path": str(image_path or "")[:500],
         "supplier": str(supplier or "")[:120],
         "doc_form": str(doc_form or "")[:60],
+        "max_tokens": getattr(config, "grey_openai_rec_max_tokens" if use_grey else "openai_rec_max_tokens", 4096) if config else 4096,
+        "temperature": getattr(config, "grey_openai_rec_temperature" if use_grey else "openai_rec_temperature", 0.0) if config else 0.0,
+        "image_detail": getattr(config, "grey_openai_rec_image_detail" if use_grey else "openai_rec_image_detail", "high") if config else "high",
     }
     # P2-1 图内隐藏文字检测：flags 落 extra，使大盘可按 image_guard_flagged 统计命中率。
     # 沿用既有 extra 风格（嵌套 dict，如 elapsed_ms）；非 dict 一律不写，避免噪声。

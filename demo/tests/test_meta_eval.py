@@ -161,7 +161,7 @@ def test_degraded_judge_unparseable_verdict_is_untrustworthy():
 # 评估器确定性约定：审核腿 temperature 必须 0（Gap A4）
 # -------------------------------------------------------------
 def test_audit_leg_temperature_is_zero():
-    """build_audit_model 产出的审核模型 temperature 强制 0；识别腿不受污染。
+    """审核腿 temperature 恒为 0（铁律）；识别腿按配置取值，不被审核腿污染。
 
     前置说明（2026-09 修订）：CLI 引擎（opencode/codebuddy）删除后，openai 通道的
     构建不再有 CLI 兜底分支，`llm._build` 对 cfg=None 显式抛
@@ -170,11 +170,17 @@ def test_audit_leg_temperature_is_zero():
     识别腿不受污染 / 二者非同一缓存对象」的真实覆盖，这里显式构造一份**最小假配置**：
     base_url 用公网 IP 字面量（security_guard 直接按 IP 判定，不做 DNS 解析，保证离线
     确定性），api_key 用明显假值。构造过程不发起任何网络调用，仅驱动 temperature 逻辑。
+
+    契约修订（按腿温度特性落地后）：各引擎腿默认温度统一为 0.0（见
+    test_advanced_engine_params.py::test_ac01_engine_config_declarations_and_defaults），
+    因此旧断言「识别腿 != 0.0」已与新契约冲突。隔离证明改为**等价且更强**的显式差值：
+    在 cfg 中把识别腿温度设为 0.3，断言识别模型取到 0.3、审核模型仍为 0.0，且二者非
+    同一缓存对象——既证明审核腿的 0 没有污染识别腿，也证明识别腿确实按配置生效。
     """
     from app.llm import build_audit_model, build_recognition_model
     from app.models import EngineConfig
 
-    cfg = EngineConfig(
+    _legs = dict(
         recognition_engine="openai",
         audit_engine="openai",
         openai_rec_base_url="https://93.184.216.34/v1",
@@ -183,12 +189,26 @@ def test_audit_leg_temperature_is_zero():
         openai_aud_api_key="fake-aud-api-key",
     )
 
+    # 1. 默认契约：全部腿默认 0.0，识别腿与审核腿均为 0.0（与新契约一致）
+    default_cfg = EngineConfig(**_legs)
+    assert default_cfg.openai_rec_temperature == 0.0
+    default_rec = build_recognition_model(cfg=default_cfg)
+    default_aud = build_audit_model(cfg=default_cfg)
+    assert getattr(default_rec, "temperature", None) == 0.0, (
+        "默认识别腿 temperature 应为 0.0（全部腿默认 0.0 契约）"
+    )
+    assert getattr(default_aud, "temperature", None) == 0.0, "默认审核腿 temperature 必须 0"
+
+    # 2. 显式差值隔离：识别腿 0.3 生效、审核腿硬锁 0.0，且二者非同一缓存对象
+    cfg = EngineConfig(openai_rec_temperature=0.3, **_legs)
     aud = build_audit_model(cfg=cfg)
     rec = build_recognition_model(cfg=cfg)
+    assert getattr(rec, "temperature", None) == 0.3, (
+        "识别腿必须使用配置的采样温度 0.3，未被审核腿的 0 污染"
+    )
     assert getattr(aud, "temperature", None) == 0.0, "审核腿（评估器）temperature 必须 0"
-    # 缓存按 side 隔离：识别腿保持类默认采样参数，不被审核腿的 0 覆盖
+    # 缓存按 side 隔离：识别腿与审核腿不是同一对象
     assert rec is not aud
-    assert getattr(rec, "temperature", None) != 0.0
 
 
 # -------------------------------------------------------------

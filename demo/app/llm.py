@@ -130,6 +130,57 @@ def _resolve_reasoning_effort(cfg=None, side="rec", use_grey=False) -> str:
     return val if val in {"low", "medium", "high", "xhigh", "max"} else ""
 
 
+def _resolve_max_tokens(cfg=None, side="rec", use_grey=False) -> int:
+    """解析特定引擎腿在当前运行时上下文下的 max_tokens。范围 [512, 16384]，默认 4096。"""
+    if cfg is None:
+        return 4096
+    from app.models import clamp_max_tokens
+    mapping = {
+        ("rec", False): getattr(cfg, "openai_rec_max_tokens", 4096),
+        ("aud", False): getattr(cfg, "openai_aud_max_tokens", 4096),
+        ("parse", False): getattr(cfg, "openai_parse_max_tokens", 4096),
+        ("rec", True): getattr(cfg, "grey_openai_rec_max_tokens", 4096),
+        ("aud", True): getattr(cfg, "grey_openai_aud_max_tokens", 4096),
+        ("parse", True): getattr(cfg, "grey_openai_parse_max_tokens", 4096),
+    }
+    val = mapping.get((side, bool(use_grey)), 4096)
+    return clamp_max_tokens(val, default=4096)
+
+
+def _resolve_temperature(cfg=None, side="rec", use_grey=False) -> float:
+    """解析特定引擎腿在当前运行时上下文下的采样温度。
+
+    注意：Gap A3/A4 约定：审核腿 (side == "aud") 底线强制为 0.0，保持评估器绝对确定性。
+    其余腿范围 [0.0, 0.5]，步长 0.01，默认 0.0。
+    """
+    if side == "aud":
+        return 0.0
+    if cfg is None:
+        return 0.0
+    from app.models import clamp_temperature
+    mapping = {
+        ("rec", False): getattr(cfg, "openai_rec_temperature", 0.0),
+        ("parse", False): getattr(cfg, "openai_parse_temperature", 0.0),
+        ("rec", True): getattr(cfg, "grey_openai_rec_temperature", 0.0),
+        ("parse", True): getattr(cfg, "grey_openai_parse_temperature", 0.0),
+    }
+    val = mapping.get((side, bool(use_grey)), 0.0)
+    return clamp_temperature(val, default=0.0)
+
+
+def _resolve_image_detail(cfg=None, side="rec", use_grey=False) -> str:
+    """解析特定引擎腿在当前运行时上下文下的多模态图像切片粒度 ('high'/'auto'/'low')。"""
+    if cfg is None:
+        return "high"
+    from app.models import clamp_image_detail
+    mapping = {
+        ("rec", False): getattr(cfg, "openai_rec_image_detail", "high"),
+        ("rec", True): getattr(cfg, "grey_openai_rec_image_detail", "high"),
+    }
+    val = mapping.get((side, bool(use_grey)), "high")
+    return clamp_image_detail(val, default="high")
+
+
 def get_timeout_advice(cfg=None) -> str:
     """高压禁止长期空转显式提示：超过60s即不达标，需转手工或热切qwen3-vl-flash 9s。"""
     if cfg is None:
@@ -271,7 +322,9 @@ class OpenAIChatModel(BaseChatModel):
     base_url: str = ""
     api_key: str = ""
     model: str = ""
-    temperature: float = 0.01
+    temperature: float = 0.0
+    max_tokens: int = 4096
+    image_detail: str = "high"
     call_timeout: int = CALL_TIMEOUT_SECONDS  # 单引擎调用超时（秒），由 _build / build_parse_model 注入
     reasoning_effort: str = ""  # 思考强度，仅在有效档位时向请求体注入
     price_input: Optional[float] = None
@@ -343,7 +396,7 @@ class OpenAIChatModel(BaseChatModel):
         is_safe, reason = validate_safe_external_url(self.base_url)
         if not is_safe:
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
-        payload_messages = [_lc_to_openai(m) for m in messages]
+        payload_messages = [_lc_to_openai(m, detail=self.image_detail) for m in messages]
         url = self.base_url.rstrip("/") + "/chat/completions"
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -352,7 +405,7 @@ class OpenAIChatModel(BaseChatModel):
             "model": self.model,
             "messages": payload_messages,
             "temperature": self.temperature,
-            "max_tokens": 4000,
+            "max_tokens": self.max_tokens,
         }
         if self.reasoning_effort and self.reasoning_effort in {"low", "medium", "high", "xhigh", "max"}:
             payload["reasoning_effort"] = self.reasoning_effort
@@ -561,8 +614,8 @@ def _calc_cost_hkd(
     return round(float(cost), 6)
 
 
-def _lc_to_openai(msg):
-    """LangChain message → OpenAI messages 格式（含多模态 image_url）。"""
+def _lc_to_openai(msg, detail="high"):
+    """LangChain message → OpenAI messages 格式（含多模态 image_url 及视觉切片粒度 detail）。"""
     if isinstance(msg, SystemMessage):
         return {"role": "system", "content": str(msg.content)}
     if isinstance(msg, AIMessage):
@@ -582,7 +635,9 @@ def _lc_to_openai(msg):
                 # 本地路径 → data URL（OpenAI 协议需要 base64）
                 if url and not url.startswith("data:"):
                     url = _path_to_data_url(url)
-                blocks.append({"type": "image_url", "image_url": {"url": url}})
+                img_block = {"url": url}
+                img_block["detail"] = detail if detail in {"high", "auto", "low"} else "high"
+                blocks.append({"type": "image_url", "image_url": img_block})
         return {"role": "user", "content": blocks}
     return {"role": "user", "content": str(msg.content)}
 
@@ -614,7 +669,9 @@ class QwenChatModel(BaseChatModel):
     """
 
     model: str = "qwen-vl-plus"
-    temperature: float = 0.01
+    temperature: float = 0.0
+    max_tokens: int = 4096
+    image_detail: str = "high"
     price_input: Optional[float] = None
     price_cached_input: Optional[float] = None
     price_output: Optional[float] = None
@@ -647,13 +704,16 @@ class QwenChatModel(BaseChatModel):
         try:
             client = self._ensure_client()
             converted = [_lc_to_dashscope(m) for m in messages]
-            resp = client.call(
-                api_key=self._dashscope_key,
-                model=self.model,
-                messages=converted,
-                temperature=self.temperature,
-                result_format="message",
-            )
+            call_kwargs = {
+                "api_key": self._dashscope_key,
+                "model": self.model,
+                "messages": converted,
+                "temperature": self.temperature,
+                "result_format": "message",
+            }
+            if self.max_tokens:
+                call_kwargs["max_tokens"] = self.max_tokens
+            resp = client.call(**call_kwargs)
             _call_ms = round((_t.time() - _call_start) * 1000, 1)
             if resp.status_code != 200:
                 err_text = f"DashScope 调用失败: code={resp.code} msg={resp.message}"
@@ -754,8 +814,8 @@ def _lc_to_dashscope(msg):
 _MODEL_CACHE: dict = {}
 
 
-def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=None, reasoning_effort="", price_input=None, price_cached=None, price_output=None):
-    return (kind, model_name, base_url, api_key, call_timeout, reasoning_effort, price_input, price_cached, price_output)
+def _model_cache_key(kind, model_name, base_url="", api_key="", call_timeout=None, reasoning_effort="", price_input=None, price_cached=None, price_output=None, max_tokens=None, temperature=None, image_detail=""):
+    return (kind, model_name, base_url, api_key, call_timeout, reasoning_effort, price_input, price_cached, price_output, max_tokens, temperature, image_detail)
 
 
 # P6：模型名以 qwen 开头 + 引擎类型非 openai 时，会静默落到 QwenChatModel 原生 SDK
@@ -929,6 +989,8 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
     kind, resolved = _resolve_engine(name, engine_kind, cfg, side="rec", use_grey=False)
     call_timeout = _resolve_timeout(cfg, side="parse", use_grey=use_grey)
     reasoning_effort = _resolve_reasoning_effort(cfg, side="parse", use_grey=use_grey)
+    max_tokens = _resolve_max_tokens(cfg, side="parse", use_grey=use_grey)
+    temperature = _resolve_temperature(cfg, side="parse", use_grey=use_grey)
     if use_grey:
         price_input = getattr(cfg, "price_input_grey_parse", None) if cfg else None
         price_cached = getattr(cfg, "price_cached_input_grey_parse", None) if cfg else None
@@ -949,12 +1011,16 @@ def build_parse_model(model_name=None, cfg=None, use_grey=False):
                             reasoning_effort=reasoning_effort,
                             price_input=price_input,
                             price_cached_input=price_cached,
-                            price_output=price_output)
+                            price_output=price_output,
+                            max_tokens=max_tokens,
+                            temperature=temperature)
     elif kind == "qwen":
         m = QwenChatModel(model=resolved,
                           price_input=price_input,
                           price_cached_input=price_cached,
-                          price_output=price_output)
+                          price_output=price_output,
+                          max_tokens=max_tokens,
+                          temperature=temperature)
     else:
         raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     object.__setattr__(m, "kind", kind)
@@ -977,6 +1043,9 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
     """
     call_timeout = _resolve_timeout(cfg, side=side, use_grey=use_grey)
     reasoning_effort = _resolve_reasoning_effort(cfg, side=side, use_grey=use_grey)
+    max_tokens = _resolve_max_tokens(cfg, side=side, use_grey=use_grey)
+    temperature = _resolve_temperature(cfg, side=side, use_grey=use_grey)
+    image_detail = _resolve_image_detail(cfg, side=side, use_grey=use_grey)
     base_url, api_key = "", ""
     price_input = None
     price_cached = None
@@ -1021,7 +1090,9 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
         if not is_safe:
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
 
-    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout, reasoning_effort, price_input, price_cached, price_output) + (side,)
+    key = _model_cache_key(kind, model_name, base_url, api_key, call_timeout, reasoning_effort,
+                           price_input, price_cached, price_output,
+                           max_tokens, 0.0 if side == "aud" else temperature, image_detail) + (side,)
     m = _MODEL_CACHE.get(key)
     if m is not None:
         object.__setattr__(m, "kind", kind)
@@ -1030,16 +1101,21 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
         object.__setattr__(m, "price_input", price_input)
         object.__setattr__(m, "price_cached_input", price_cached)
         object.__setattr__(m, "price_output", price_output)
-        if side == "aud":
-            object.__setattr__(m, "temperature", 0.0)
+        object.__setattr__(m, "max_tokens", max_tokens)
+        object.__setattr__(m, "temperature", 0.0 if side == "aud" else temperature)
+        object.__setattr__(m, "image_detail", image_detail)
         return m
 
     if kind == "qwen":
-        m = QwenChatModel(model=model_name, price_input=price_input, price_cached_input=price_cached, price_output=price_output)
+        m = QwenChatModel(model=model_name, price_input=price_input, price_cached_input=price_cached, price_output=price_output,
+                          max_tokens=max_tokens, temperature=0.0 if side == "aud" else temperature,
+                          image_detail=image_detail)
     elif kind == "openai":
         m = OpenAIChatModel(base_url=base_url, api_key=api_key, model=model_name,
                             call_timeout=call_timeout, reasoning_effort=reasoning_effort,
-                            price_input=price_input, price_cached_input=price_cached, price_output=price_output)
+                            price_input=price_input, price_cached_input=price_cached, price_output=price_output,
+                            max_tokens=max_tokens, temperature=0.0 if side == "aud" else temperature,
+                            image_detail=image_detail)
     else:
         raise ValueError(f"未知引擎通道 kind={kind!r}（已删除的 CLI 引擎不应再出现，请检查配置中的模型名）")
     _MODEL_CACHE[key] = m

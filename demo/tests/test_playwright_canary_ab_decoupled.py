@@ -64,8 +64,8 @@ def test_playwright_canary_ab_decoupled():
         drawer_title_el = drawer.locator(".engine-drawer-title")
         drawer_title_text = drawer_title_el.inner_text().strip()
 
-        # 断言抽屉标题包含金丝雀发布且不含 A/B
-        assert "高级配置 · 金丝雀灰度发布 (Canary Rollout)" in drawer_title_text, (
+        # 断言抽屉标题包含金丝雀发布且不含 A/B（标题为实际 UI 文案「高级配置 · 金丝雀灰度发布」）
+        assert "高级配置 · 金丝雀灰度发布" in drawer_title_text, (
             f"Expected canary title in drawer, got '{drawer_title_text}'"
         )
         assert "A/B" not in drawer_title_text, (

@@ -27,7 +27,7 @@ def test_admin_experiment_drawer_exists_and_structured(soup):
 
     drawer_title = drawer.find(class_="engine-drawer-title")
     assert drawer_title is not None, ".engine-drawer-title should exist in drawer"
-    assert "高级配置 · A/B 科学实验编排 (A/B Experimentation)" in drawer_title.text
+    assert "高级配置 · A/B 科学实验编排" in drawer_title.text
 
     exp_select = drawer.find(id="adminExpSelect")
     assert exp_select is not None, "#adminExpSelect should exist inside drawer"
@@ -53,7 +53,7 @@ def test_admin_grey_drawer_intact(soup):
     assert grey_drawer is not None, "#adminGreyDrawer should exist"
     grey_title = grey_drawer.find(class_="engine-drawer-title")
     assert grey_title is not None
-    assert "高级配置 · 金丝雀灰度发布 (Canary Rollout)" in grey_title.text
+    assert "高级配置 · 金丝雀灰度发布" in grey_title.text
 
 
 def test_admin_experiments_js_bindings():

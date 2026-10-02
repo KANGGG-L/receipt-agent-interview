@@ -290,13 +290,44 @@ def _rec_provider_env() -> tuple:
     return DASHSCOPE_DEFAULT_BASE_URL, ""
 
 
+def clamp_max_tokens(val, default: int = 4096) -> int:
+    """钳制 max_tokens 在 [512, 16384] 范围，非法值回退默认值。"""
+    if val is None or val == "":
+        return default
+    try:
+        iv = int(float(val))
+    except (ValueError, TypeError):
+        return default
+    return max(512, min(16384, iv))
+
+
+def clamp_temperature(val, default: float = 0.0) -> float:
+    """钳制采样温度在 [0.0, 0.5] 范围，格式化为两位浮点小数，非法值回退默认值。"""
+    if val is None or val == "":
+        return default
+    try:
+        fv = float(val)
+    except (ValueError, TypeError):
+        return default
+    clamped = max(0.0, min(0.5, fv))
+    return round(clamped, 2)
+
+
+def clamp_image_detail(val, default: str = "high") -> str:
+    """校验视觉切片粒度枚举值 ('high'/'auto'/'low')，非法值回退默认值。"""
+    s = str(val or "").strip().lower()
+    return s if s in {"high", "auto", "low"} else default
+
+
 class EngineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # CLI 引擎弃用（2026-09-02）后删除的字段与枚举值。
+    # CLI 引擎弃用（2026-09-02）及 response_format 移除后删除的字段与枚举值。
     _REMOVED_CLI_FIELDS: ClassVar[tuple] = (
         "recognition_transport", "audit_transport", "parse_transport",
         "grey_recognition_transport", "grey_audit_transport", "grey_parse_transport",
+        "openai_rec_response_format", "openai_aud_response_format", "openai_parse_response_format",
+        "grey_openai_rec_response_format", "grey_openai_aud_response_format", "grey_openai_parse_response_format",
     )
     # 已弃用 CLI 引擎的枚举字符串 -> 现行唯一通道 openai（判定走 is_legacy_cli_engine 单一实现）。
     _LEGACY_CLI_ENGINE_VALUES: ClassVar[tuple] = LEGACY_CLI_ENGINE_VALUES
@@ -357,6 +388,25 @@ class EngineConfig(BaseModel):
                 v = str(out[rf]).strip().lower()
                 out[rf] = v if v in VALID_REASONING_EFFORTS else ""
 
+        # 高级推理参数合法值归一与钳制
+        for mf in (
+            "openai_rec_max_tokens", "openai_aud_max_tokens", "openai_parse_max_tokens",
+            "grey_openai_rec_max_tokens", "grey_openai_aud_max_tokens", "grey_openai_parse_max_tokens"
+        ):
+            if mf in out and out[mf] is not None:
+                out[mf] = clamp_max_tokens(out[mf])
+
+        for tf in (
+            "openai_rec_temperature", "openai_aud_temperature", "openai_parse_temperature",
+            "grey_openai_rec_temperature", "grey_openai_aud_temperature", "grey_openai_parse_temperature"
+        ):
+            if tf in out and out[tf] is not None:
+                out[tf] = clamp_temperature(out[tf])
+
+        for df in ("openai_rec_image_detail", "grey_openai_rec_image_detail"):
+            if df in out and out[df] is not None:
+                out[df] = clamp_image_detail(out[df])
+
         return out
 
     # 配置来源（T1）：auto=.env 启动装配，重启后按 .env 重新装配；manual=管理台手工保存，
@@ -364,6 +414,13 @@ class EngineConfig(BaseModel):
     config_source: str = Field(
         default="auto",
         description="配置来源：auto=.env 启动装配（重启按 .env 重装）；manual=管理台手工保存（重启保留，仅密钥缺失到无法调用时才交由 .env 兜底补全）。",
+    )
+    # 配置版本（本轮新增）：管理台 save/promote/rollback/reset 成功即 +1，
+    # 作为乐观锁（PUT 的 If-Match 头或 body.version）与版本历史（engine_config_history）的锚点。
+    # 加法式字段：存量库无该键时回落 1，不改变既有读写语义。
+    version: int = Field(
+        default=1,
+        description="配置版本号：每次写操作（save/promote/rollback/reset）成功后自增 1，供乐观锁与版本历史使用。",
     )
 
     # ---- 常规引擎配置 ----
@@ -545,6 +602,34 @@ class EngineConfig(BaseModel):
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""
     grey_openai_parse_api_format: str = Field(default="chat_completion")
+
+    # ---- 各引擎腿高级推理控制参数 (Max Tokens / Detail / Temperature) ----
+    # 1. 常规识别引擎 (Rec)
+    openai_rec_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="常规识别引擎 max_tokens")
+    openai_rec_image_detail: str = Field(default="high", description="常规识别引擎多模态图像切片粒度 ('high'/'auto'/'low')")
+    openai_rec_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="常规识别引擎采样温度")
+
+    # 2. 常规审核引擎 (Aud)
+    openai_aud_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="常规审核引擎 max_tokens")
+    openai_aud_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="常规审核引擎采样温度")
+
+    # 3. 常规解析 LLM (Parse)
+    openai_parse_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="常规解析 LLM max_tokens")
+    openai_parse_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="常规解析 LLM 采样温度")
+
+    # 4. 灰测识别引擎 (Grey Rec)
+    grey_openai_rec_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="灰测识别引擎 max_tokens")
+    grey_openai_rec_image_detail: str = Field(default="high", description="灰测识别引擎多模态图像切片粒度 ('high'/'auto'/'low')")
+    grey_openai_rec_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="灰测识别引擎采样温度")
+
+    # 5. 灰测审核引擎 (Grey Aud)
+    grey_openai_aud_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="灰测审核引擎 max_tokens")
+    grey_openai_aud_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="灰测审核引擎采样温度")
+
+    # 6. 灰测解析 LLM (Grey Parse)
+    grey_openai_parse_max_tokens: Optional[int] = Field(default=4096, ge=512, le=16384, description="灰测解析 LLM max_tokens")
+    grey_openai_parse_temperature: Optional[float] = Field(default=0.0, ge=0.0, le=0.5, description="灰测解析 LLM 采样温度")
+
     # ---- 各引擎腿供应商名称（用于预设网关标识，不影响实际调用） ----
     vendor_name_rec: str = ""     # 识别引擎供应商名
     vendor_name_aud: str = ""     # 审核引擎供应商名

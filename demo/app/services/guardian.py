@@ -133,6 +133,10 @@ def perform_engine_rollback(who="guardian"):
     """用最近一次推全快照（rollback_snapshot.prev）覆盖回常规组并清空快照。
 
     返回 (ok, new_cfg_or_None)。无可回滚快照时返回 (False, None)。
+
+    版本自增与版本历史（action=rollback）落在这里而非端点里：本函数有两个调用方
+    （管理台端点与 check_once 的自动回滚），放在端点里会让自动回滚**不留版本痕迹**，
+    正是本仓反复出现过的「同根因的入口只堵一个」。
     """
     from app import db
     from app.models import EngineConfig
@@ -150,6 +154,9 @@ def perform_engine_rollback(who="guardian"):
         return False, None
     # N4：回滚是把「人工推全」还原，属人工改配的延续 —— 必须显式置 manual，
     # 否则该配置仍是 auto，下次重启会被 hydrate 按 .env 打回（推全/回滚白做）。
+    # 版本自增：回滚同样是一次配置写入，版本必须前进（回滚不回退版本号，
+    # 否则「v3 回滚后又是 v3」会让乐观锁与历史列表出现重复版本）。
+    new_cfg.version = int(getattr(cfg, "version", 1) or 1) + 1
     db.set_engine_config(new_cfg, source="manual")
     old_model = cfg.recognition_model or cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
     new_model = new_cfg.recognition_model or new_cfg.openai_rec_model or "deepseek/deepseek-v4.1-flash"
@@ -159,6 +166,13 @@ def perform_engine_rollback(who="guardian"):
             str(old_model), str(new_model))
     except Exception as e:
         logger.warning("[guardian] 审计写入失败(action=rollback_engine_config who=%s): %s", who, e)
+    try:
+        from app.services.engine_config_diff import engine_config_field_diff
+        db.append_engine_config_history(
+            new_cfg.version, who, "rollback", new_cfg.model_dump(),
+            [d["key"] for d in engine_config_field_diff(cfg.model_dump(), new_cfg.model_dump())])
+    except Exception as e:
+        logger.warning("[guardian] 版本历史写入失败(action=rollback who=%s): %s", who, e)
     return True, new_cfg
 
 

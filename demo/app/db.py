@@ -71,6 +71,7 @@ _GuardrailEventRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 _DishRecipeVersionRow = None
 _LlmCallLogRow = LLMCallLogRow = None
+_EngineConfigHistoryRow = None
 
 
 def _make_engine():
@@ -87,6 +88,7 @@ def _make_engine():
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
     global _DishRecipeVersionRow
     global _LlmCallLogRow, LLMCallLogRow
+    global _EngineConfigHistoryRow
 
     from sqlalchemy import create_engine, Column, String, Float, Integer, Text, DateTime, UniqueConstraint, Index
     from sqlalchemy.orm import sessionmaker, declarative_base
@@ -590,6 +592,27 @@ def _make_engine():
         created_at = Column(String, default="")
 
     # -------------------------------------------------------------
+    # 引擎配置版本历史（本轮新增）：save / promote / rollback / reset 各落一条
+    # -------------------------------------------------------------
+    class EngineConfigHistoryRow(Base):
+        """引擎配置版本历史：每次写操作落一条不可变快照（本轮新增）。
+
+        列名按已批准规格 01-spec.md §4.5 逐字给定（snapshot / changed_keys），
+        故此处不套用本仓 JSON 列的 `_json` 后缀习惯。
+        action: save|promote|rollback|reset。snapshot 存写入后的配置快照，
+        **落库前做 api_key 脱敏**：本表是新增持久面，没有任何理由因为「审计」把真实
+        密钥多写一份到磁盘。changed_keys 只存键名列表，不含值。
+        """
+        __tablename__ = "engine_config_history"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        version = Column(Integer, index=True, default=1)
+        actor = Column(String, default="")
+        action = Column(String(16), default="")     # save|promote|rollback|reset
+        created_at = Column(String, default="")
+        snapshot = Column(Text, default="{}")
+        changed_keys = Column(Text, default="[]")
+
+    # -------------------------------------------------------------
     # 餐品管理与 FIFO 批次库存
     # -------------------------------------------------------------
     class DishRow(Base):
@@ -735,6 +758,7 @@ def _make_engine():
         created_at = Column(String(64), default="", index=True)
 
     _LlmCallLogRow = LLMCallLogRow = LlmCallLogRow
+    _EngineConfigHistoryRow = EngineConfigHistoryRow
 
     Base.metadata.create_all(_engine)
 
@@ -5014,6 +5038,25 @@ def set_engine_config(cfg, source=None):
         ):
             if hasattr(cfg, tf) and getattr(cfg, tf, None) is not None:
                 setattr(cfg, tf, clamp_call_timeout(getattr(cfg, tf)))
+
+        from app.models import clamp_max_tokens, clamp_temperature, clamp_image_detail
+        for mf in (
+            "openai_rec_max_tokens", "openai_aud_max_tokens", "openai_parse_max_tokens",
+            "grey_openai_rec_max_tokens", "grey_openai_aud_max_tokens", "grey_openai_parse_max_tokens"
+        ):
+            if hasattr(cfg, mf) and getattr(cfg, mf, None) is not None:
+                setattr(cfg, mf, clamp_max_tokens(getattr(cfg, mf)))
+
+        for tf in (
+            "openai_rec_temperature", "openai_aud_temperature", "openai_parse_temperature",
+            "grey_openai_rec_temperature", "grey_openai_aud_temperature", "grey_openai_parse_temperature"
+        ):
+            if hasattr(cfg, tf) and getattr(cfg, tf, None) is not None:
+                setattr(cfg, tf, clamp_temperature(getattr(cfg, tf)))
+
+        for df in ("openai_rec_image_detail", "grey_openai_rec_image_detail"):
+            if hasattr(cfg, df) and getattr(cfg, df, None) is not None:
+                setattr(cfg, df, clamp_image_detail(getattr(cfg, df)))
         # 写入前确保不残留 opencode / codebuddy 引擎及模型
         for eng_field, mod_field, def_model in (
             ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
@@ -5036,6 +5079,95 @@ def set_engine_config(cfg, source=None):
             s.add(row)
         row.value = json.dumps(cfg.model_dump(), ensure_ascii=False)
         s.commit()
+    finally:
+        s.close()
+
+
+# -------------------------------------------------------------
+# 引擎配置版本历史（本轮新增）
+# -------------------------------------------------------------
+_HISTORY_ACTIONS = ("save", "promote", "rollback", "reset")
+_HISTORY_SECRET_KEYS = (
+    "openai_rec_api_key", "openai_aud_api_key", "openai_parse_api_key",
+    "grey_openai_rec_api_key", "grey_openai_aud_api_key", "grey_openai_parse_api_key",
+)
+
+
+def _mask_engine_snapshot(snapshot):
+    """快照落库前的 api_key 脱敏：本表是新增持久面，不把真实密钥多写一份到磁盘。"""
+    if not isinstance(snapshot, dict):
+        return {}
+    from app.services.security_guard import mask_secret_key
+    out = dict(snapshot)
+    for key in _HISTORY_SECRET_KEYS:
+        if key in out and isinstance(out[key], str):
+            out[key] = mask_secret_key(out[key])
+    return out
+
+
+def append_engine_config_history(version, actor, action, snapshot, changed_keys):
+    """追加一条引擎配置版本历史（每次写操作一条，不可变、不修改历史行）。
+
+    action 取值收敛到 `_HISTORY_ACTIONS`：未知值原样落库会污染历史口径（前端按动作
+    渲染），故这里对白名单外的值记 warning 并仍落库（不静默改写真实发生过的动作）。
+    """
+    if str(action) not in _HISTORY_ACTIONS:
+        logger.warning("engine_config_history 收到未知 action=%r（白名单 %s）",
+                       action, _HISTORY_ACTIONS)
+    s = get_session()
+    try:
+        row = _EngineConfigHistoryRow(
+            version=int(version or 1),
+            actor=str(actor or "unknown"),
+            action=str(action or ""),
+            created_at=now_iso(),
+            snapshot=json.dumps(_mask_engine_snapshot(snapshot), ensure_ascii=False),
+            changed_keys=json.dumps(list(changed_keys or []), ensure_ascii=False),
+        )
+        s.add(row)
+        s.commit()
+        return row.id
+    finally:
+        s.close()
+
+
+def list_engine_config_history(page=1, page_size=20):
+    """分页读取版本历史摘要（version 倒序）：{items, total, page, page_size}。
+
+    page_size 上限 100（规格 §4.4）；只回传 {version, actor, action, created_at,
+    changed_keys} 摘要，**绝不回传 snapshot**（snapshot 仅落库，无 HTTP 出口）。
+    """
+    try:
+        page = max(1, int(page or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(page_size or 20)
+    except (TypeError, ValueError):
+        page_size = 20
+    page_size = max(1, min(100, page_size))
+
+    s = get_session()
+    try:
+        q = s.query(_EngineConfigHistoryRow)
+        total = int(q.count())
+        rows = (q.order_by(_EngineConfigHistoryRow.version.desc(),
+                           _EngineConfigHistoryRow.id.desc())
+                .offset((page - 1) * page_size).limit(page_size).all())
+        items = []
+        for r in rows:
+            try:
+                keys = json.loads(r.changed_keys or "[]")
+            except Exception:
+                keys = []
+            items.append({
+                "version": int(r.version or 1),
+                "actor": r.actor or "",
+                "action": r.action or "",
+                "created_at": r.created_at or "",
+                "changed_keys": keys if isinstance(keys, list) else [],
+            })
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
     finally:
         s.close()
 

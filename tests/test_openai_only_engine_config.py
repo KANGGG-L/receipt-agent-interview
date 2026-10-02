@@ -177,6 +177,26 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
     # 该断言同步于 2026-09-19，此前写死 3 已过期（HEAD 版本实际即为 4）。
     assert html.count('class="engine-drawer-header" role="button" tabindex="0" aria-expanded="false"') == 4
 
+    # 四模块重构（Phase 2）：生效态概览条 + 模块 A/B/C/D + 金丝雀/A-B 子分区
+    for module_id in (
+        'engineEffectiveBar',
+        'engineModuleA',
+        'engineModuleB',
+        'engineModuleC',
+        'engineModuleD',
+        'engineCanarySection',
+        'engineExperimentSection',
+    ):
+        assert f'id="{module_id}"' in html, f"缺少四模块分区元素 {module_id}"
+    # 概览条承载既有 #adminEngineStatus（由死容器改为常驻写入生效态）
+    assert 'id="adminEngineStatus"' in html
+    # 开发者后门已移除
+    assert 'adminSkipModelTest' not in html
+    # 供应商自由文本输入已移除（改由服务端依据预设/base_url 派生）
+    for vendor_id in ('adminVendorNameRec', 'adminVendorNameAud', 'adminVendorNameParse',
+                      'adminVendorNameGreyRec', 'adminVendorNameGreyAud', 'adminVendorNameGreyParse'):
+        assert f'id="{vendor_id}"' not in html, f"应移除供应商自由文本输入 {vendor_id}"
+
     # 断言保留必须的 OpenAI 输入项与预设选择
     assert 'id="adminOpenaiRecBaseUrl"' in html
     assert 'id="adminOpenaiRecApiKey"' in html
@@ -234,6 +254,17 @@ def test_main_js_no_longer_queries_removed_engine_controls():
 
     # 新抽屉交互函数存在
     assert "function toggleEngineDrawer" in content
+
+    # 四模块重构（Phase 2）：开发者后门移除，模块渲染与乐观锁接线到位
+    assert "adminSkipModelTest" not in content
+    assert "adminVendorNameRec" not in content
+    assert "function renderEngineModuleA" in content
+    assert "function renderEngineModuleB" in content
+    assert "function renderEngineModuleC" in content
+    assert "function loadEngineConfigRouting" in content
+    assert "function loadEngineConfigHistory" in content
+    assert "function testAdminEngineConnectivity" in content
+    assert "showEngineVersionConflictModal" in content
 
 
 def test_main_js_engine_drawer_and_pure_openai_interactions():

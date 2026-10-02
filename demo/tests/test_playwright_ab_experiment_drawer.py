@@ -3,8 +3,8 @@
 真实浏览器 Playwright E2E 回归测试：系统与引擎配置中的 A/B 科学实验编排高级抽屉及闭环深链
 Verifies:
 1. 系统与引擎配置 (#tab-engine) 包含并列的双抽屉结构：
-   - Drawer 1 (#adminGreyDrawer): 标题包含 "高级配置 · 金丝雀灰度发布 (Canary Rollout)"
-   - Drawer 2 (#adminExperimentDrawer): 标题包含 "高级配置 · A/B 科学实验编排 (A/B Experimentation)"
+   - Drawer 1 (#adminGreyDrawer): 标题包含 "高级配置 · 金丝雀灰度发布"（不含 A/B）
+   - Drawer 2 (#adminExperimentDrawer): 标题包含 "高级配置 · A/B 科学实验编排"
 2. 点击展开 #adminExperimentDrawer，抽屉移除 .collapsed
 3. 下拉列表 #adminExpSelect 成功加载实验，实验详情卡片 #adminExpDetailCard 可见
 4. 核心实验要素字段非空：
@@ -195,12 +195,15 @@ def test_playwright_ab_experiment_drawer():
             assert exp_drawer.is_visible(), "#adminExperimentDrawer should exist and be visible"
 
             grey_title_text = grey_drawer.locator(".engine-drawer-title").inner_text().strip()
-            assert "高级配置 · 金丝雀灰度发布 (Canary Rollout)" in grey_title_text, (
+            assert "高级配置 · 金丝雀灰度发布" in grey_title_text, (
                 f"Expected canary title in #adminGreyDrawer, got '{grey_title_text}'"
+            )
+            assert "A/B" not in grey_title_text, (
+                f"金丝雀抽屉标题不得含 A/B（已与 A/B 实验解耦），got '{grey_title_text}'"
             )
 
             exp_title_text = exp_drawer.locator(".engine-drawer-title").inner_text().strip()
-            assert "高级配置 · A/B 科学实验编排 (A/B Experimentation)" in exp_title_text, (
+            assert "高级配置 · A/B 科学实验编排" in exp_title_text, (
                 f"Expected A/B title in #adminExperimentDrawer, got '{exp_title_text}'"
             )
 
