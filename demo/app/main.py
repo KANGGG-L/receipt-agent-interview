@@ -22,6 +22,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app import db
+from app import auth
 from app.auth import EarlyAuthMiddleware
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
@@ -250,8 +251,8 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 
 # 开发期静态资源缓存控制：默认开发期（ENV/APP_ENV 非 production）给静态文件与首页
 # 加 no-store，避免前端改动后浏览器仍跑旧 JS/HTML（“改了没效果”）。生产环境不设该头。
-_DEV_ENV = os.environ.get("ENV", os.environ.get("APP_ENV", "development")).strip().lower()
-DEV_MODE = _DEV_ENV not in ("production", "prod")
+# 环境判定集中实现于 app.auth.env_name / is_production_env，两处同源，避免口径漂移。
+DEV_MODE = not auth.is_production_env()
 
 
 class NoStoreStaticFiles(StaticFiles):

@@ -296,3 +296,74 @@ def test_early_auth_whitelist_predicate_matches_spec():
     assert not auth.is_early_auth_whitelisted("/api/admin/engine-config")
     # 穿越/编码形态须放行到端点自身的收敛逻辑（而非被中间件拦成 401）
     assert auth.is_early_auth_whitelisted("/api/payment/voucher/../outside.jpg")
+
+
+# -------------------------------------------------------------
+# 8. 生产启动核验的「环境门控」（UAT BLOCKER-1 回归）
+# -------------------------------------------------------------
+# 契约：弱预置口令只在「显式生产环境」拒绝启动；开发/演示/面试展示路径（缺省 development）
+# 放行。弱 DEMO_TOKEN_SECRET 的强制项不随环境放宽（任何环境开启鉴权都拒绝）。
+def _strong_secret(monkeypatch):
+    monkeypatch.setenv("DEMO_TOKEN_SECRET", "a" * 64)
+
+
+def test_checklist_rejects_weak_preset_passwords_in_production(monkeypatch):
+    """ENV=production + 弱预置口令 → 仍 fail-closed（不得被环境门控误放行）。"""
+    _enable_production(monkeypatch)
+    _strong_secret(monkeypatch)
+    monkeypatch.setenv("ENV", "production")
+    assert auth.is_production_env() is True
+    with pytest.raises(RuntimeError) as exc_info:
+        auth.enforce_production_checklist()
+    assert "弱口令" in str(exc_info.value)
+
+
+def test_checklist_recognizes_prod_alias(monkeypatch):
+    """ENV=prod 视同生产（与 main.py 的 DEV_MODE 判定同一口径）。"""
+    _enable_production(monkeypatch)
+    _strong_secret(monkeypatch)
+    monkeypatch.setenv("ENV", "prod")
+    assert auth.is_production_env() is True
+    with pytest.raises(RuntimeError):
+        auth.enforce_production_checklist()
+
+
+def test_checklist_allows_weak_preset_passwords_in_development(monkeypatch):
+    """ENV=development + 弱预置口令 → 放行（面试展示/boot 路径依赖预置账号登录）。"""
+    _enable_production(monkeypatch)
+    _strong_secret(monkeypatch)
+    monkeypatch.setenv("ENV", "development")
+    assert auth.is_production_env() is False
+    auth.enforce_production_checklist()  # 不抛
+
+
+def test_checklist_default_env_is_development(monkeypatch):
+    """ENV/APP_ENV 均未设置时缺省为 development → 放行（interview-show.sh 的实际形态）。"""
+    _enable_production(monkeypatch)
+    _strong_secret(monkeypatch)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.delenv("APP_ENV", raising=False)
+    assert auth.env_name() == "development"
+    assert auth.is_production_env() is False
+    auth.enforce_production_checklist()  # 不抛
+
+
+def test_checklist_app_env_fallback(monkeypatch):
+    """ENV 未设置时回落到 APP_ENV（与 main.py 的读取顺序一致）。"""
+    _enable_production(monkeypatch)
+    _strong_secret(monkeypatch)
+    monkeypatch.delenv("ENV", raising=False)
+    monkeypatch.setenv("APP_ENV", "production")
+    assert auth.is_production_env() is True
+    with pytest.raises(RuntimeError):
+        auth.enforce_production_checklist()
+
+
+def test_checklist_still_requires_strong_secret_in_development(monkeypatch):
+    """强密钥要求不随环境放宽：开发环境开启鉴权 + 弱密钥 → 仍拒绝启动。"""
+    _enable_production(monkeypatch)
+    monkeypatch.setenv("ENV", "development")
+    monkeypatch.delenv("DEMO_TOKEN_SECRET", raising=False)
+    with pytest.raises(RuntimeError) as exc_info:
+        auth.enforce_production_checklist()
+    assert "DEMO_TOKEN_SECRET" in str(exc_info.value)

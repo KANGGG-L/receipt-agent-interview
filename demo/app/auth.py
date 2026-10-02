@@ -82,13 +82,37 @@ def auth_enabled():
     return os.environ.get("AUTH_ENABLED", "0").strip().lower() in ("1", "true", "yes")
 
 
+def env_name() -> str:
+    """当前运行环境名（小写）：ENV → APP_ENV → 缺省 development。
+
+    why 与 app/main.py 的 `_DEV_ENV` 保持同一读取顺序与缺省值：环境判定有两处使用
+    （本模块的生产启动核验、main 的静态缓存控制），口径一旦漂移就会出现「核验按生产、
+    缓存按开发」之类的错位。此处集中实现，main.py 复用同一函数。
+
+    注意缺省是 development（而非 production）：未显式声明即视为开发/演示环境，与既有
+    `ENV`/`APP_ENV` 语义一致——面试展示脚本（interview-show.sh）正是跑在该缺省下。
+    """
+    return os.environ.get("ENV", os.environ.get("APP_ENV", "development")).strip().lower()
+
+
+def is_production_env() -> bool:
+    """是否显式声明为生产环境（production/prod）；未设置或其它值一律视为开发/演示。"""
+    return env_name() in ("production", "prod")
+
+
 def enforce_production_checklist():
-    """生产环境强启动安全核验（Production Startup Gate，W-ISO-1）。
+    """生产启动强核验（Production Startup Gate，W-ISO-1）。
 
     当 AUTH_ENABLED=1 时强制核验：
-    1. DEMO_TOKEN_SECRET 不得为空且不得等于仓库内置默认值；
-    2. 生产环境预置密码核验：预置账号不得使用内置默认弱口令（admin123, boss123, staff123）。
-    任一项违规直接抛出 RuntimeError 拒绝服务拉起并打印修复指引。
+    1. DEMO_TOKEN_SECRET 不得为空且不得等于仓库内置默认值（**任何环境**都拒绝，防弱签名上线）；
+    2. 预置账号弱口令：**仅在生产环境**（ENV/APP_ENV == production/prod）拒绝启动。
+
+    why 第 2 项要按环境门控：本仓库是面试/演示资产，interview-show.sh 以 AUTH_ENABLED=1
+    公网拉起并依赖预置账号（admin@demo.hk/admin123 等）登录；预置口令是公开且刻意的，
+    一律拒绝会让「公网面试演示」这条旗舰路径无法启动（UAT BLOCKER-1）。而生产部署必须
+    显式声明 ENV=production，届时弱口令仍 fail-closed —— 这不是「放行生产」，而是把
+    「预置口令不可用于生产」这条规则绑定到真正的生产环境判定上。第 1 项（强密钥）不随
+    环境放宽，保持原样。
     """
     if not auth_enabled():
         return
@@ -99,11 +123,14 @@ def enforce_production_checklist():
             "伪造管理员令牌。请在部署环境显式设置一个随机长字符串（例如 openssl rand -hex 32）"
             "后重启服务。"
         )
+    if not is_production_env():
+        # 开发/演示/面试展示：预置账号是刻意的公开口令，允许启动（见函数 docstring）。
+        return
     weak_passwords = {"admin123", "boss123", "staff123"}
     for email, creds in ACCOUNTS.items():
         if creds[0] in weak_passwords:
             raise RuntimeError(
-                f"生产环境鉴权已开启（AUTH_ENABLED=1），但预置账号 {email} 仍在使用内置默认弱口令 ({creds[0]})。"
+                f"生产环境鉴权已开启（AUTH_ENABLED=1，ENV={env_name()}），但预置账号 {email} 仍在使用内置默认弱口令 ({creds[0]})。"
                 "生产环境严禁使用默认弱口令，请重设密码或在生产配置中禁用预置账号后重启服务。"
             )
 
