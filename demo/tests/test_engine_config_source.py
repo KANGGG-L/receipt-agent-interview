@@ -9,7 +9,8 @@ startup）。修复后由 EngineConfig.config_source 决定：manual 跳过覆�
 1. PUT /api/admin/engine-config 保存后 config_source=manual，且再跑 hydrate 不被打回
 2. POST /api/admin/engine-config/reset 复位为 auto 并立即重新装配（回到 .env 值）
 3. 反证：auto 来源下 hydrate 仍会按 .env 覆盖（证明第 1 条不是恒真断言）
-4. 止损兜底：manual 且识别腿密钥缺失到无法调用时，用 .env 补全且来源保持 manual
+4. manual 模式下即使识别腿缺到无法调用，hydrate 也不得从 .env 自动补全（防打回），
+   配置保持原样且来源仍为 manual；缺口由管理台人工补齐
 5. EngineConfigBody 声明 config_source，避免 extra=forbid 导致带上该字段的请求 422
 """
 
@@ -149,8 +150,13 @@ def test_reset_returns_to_env_assembly():
     assert cfg2.openai_rec_model == DS_MODEL
 
 
-def test_manual_missing_key_is_filled_from_env_but_stays_manual():
-    """止损兜底：manual 且识别腿密钥空到无法调用时用 .env 补全，来源仍为 manual。"""
+def test_manual_missing_key_is_not_filled_from_env_and_stays_manual():
+    """守真不变量：manual 模式下 hydrate 整体跳过 .env 覆盖（db.py manual 早退分支）。
+
+    历史：曾有「manual 且密钥缺失时用 .env 补全」的止损兜底，后被刻意移除——
+    自动补全会把管理台手工配置静默替换成 .env 值，违背 manual 语义。缺口必须由
+    人工在管理台补齐，本用例守护该契约不被回退。
+    """
     cfg = db.get_engine_config()
     cfg.config_source = "manual"
     cfg.openai_rec_base_url = ""
@@ -161,10 +167,10 @@ def test_manual_missing_key_is_filled_from_env_but_stays_manual():
 
     db.hydrate_engine_config_from_env()
     cfg2 = db.get_engine_config()
-    assert cfg2.config_source == "manual", "兜底补全不得把来源改回 auto"
-    assert cfg2.openai_rec_base_url == DS_BASE
-    assert cfg2.openai_rec_api_key == DS_KEY
-    assert cfg2.openai_rec_model == DS_MODEL
+    assert cfg2.config_source == "manual"
+    assert cfg2.openai_rec_base_url == "", "manual 缺口不得被 .env 自动补全"
+    assert cfg2.openai_rec_api_key == "", "manual 缺口不得被 .env 自动补全"
+    assert cfg2.openai_rec_model == "", "manual 缺口不得被 .env 自动补全"
 
 
 def test_reset_rbac_and_body_accepts_config_source():

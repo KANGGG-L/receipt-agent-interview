@@ -11,7 +11,7 @@
 
 覆盖：
 1. main.js / index.html / api_admin.py 不再把已下架模型作为可用预设或默认值
-2. 前端 siliconflow 预设与 db 常量逐字段一致
+2. 前端 siliconflow 预设与 db 常量逐字段一致；api_admin 不再含任何硬编码厂商预设
 3. A2 主行为：grey_enabled=True + SF 历史默认 → 对齐常规识别腿 provider
 4. A2 守护：grey_enabled=False → hydrate 后灰测字段逐字段不变
 5. A2 守护：灰测腿已改成其它供应商 → 保持不动（只告警），不堵死自定义路径
@@ -121,15 +121,20 @@ def test_no_delisted_model_in_js_or_html():
     assert offenders == [], f"以下前端资产仍引用已下架模型: {offenders}"
 
 
-def test_api_admin_preset_matches_db_constants():
-    """api_admin.get_engine_presets 的 siliconflow 预设同样与 db 常量一致。"""
+def test_api_admin_no_hardcoded_vendor_presets():
+    """守真不变量：api_admin.get_engine_presets 已彻底移除硬编码厂商预设，
+    仅返回用户自定义预设（custom_engine_presets）。
+
+    历史：api_admin.py 曾内置 siliconflow 硬编码预设块并要求与 db 常量一致；
+    后被刻意移除——硬编码预设绕过管理台把厂商默认值带回前端。本用例守护该移除
+    不被回退：任何硬编码厂商预设块或已下架模型引用重现即失败。
+    """
     src = _read(DEMO_DIR, "app", "api_admin.py")
-    m = re.search(r'"siliconflow":\s*\{(.*?)\}', src, re.S)
-    assert m, "未找到 api_admin 的 siliconflow 预设块"
-    block = m.group(1)
-    assert db._SF_DEFAULT_REC_MODEL in block
-    assert db._SF_DEFAULT_AUD_MODEL in block
-    assert DELISTED_MODEL not in block
+    assert re.search(r'"siliconflow":\s*\{', src) is None, \
+        "api_admin 不得重新引入硬编码 siliconflow 预设块"
+    assert re.search(r'"dashscope":\s*\{', src) is None, \
+        "api_admin 不得重新引入硬编码 dashscope 预设块"
+    assert DELISTED_MODEL not in src, "api_admin 不得引用已下架模型"
 
 
 def test_db_sf_constants_are_not_delisted():
