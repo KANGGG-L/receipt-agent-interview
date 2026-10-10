@@ -336,8 +336,12 @@ def test_ac05_audit_engine_temperature_deterministic_hard_lock_runtime():
 # ==============================================================================
 
 def test_ac06_rec_and_parse_temperature_dynamic_warning_ui(html_soup, main_js_content):
-    """AC-06: 识别与解析引擎采样温度输入框支持合法输入，配备 [WARN] 防呆预警框。"""
-    expected_warn_text = "[WARN] 温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0"
+    """AC-06: 识别与解析引擎采样温度输入框支持合法输入，配备防呆预警框。
+
+    2026-10-10 契约对齐：预警框文案随纯文案化移除 [WARN] 前缀（bc260e7），
+    本用例守护现行纯文本预警句。
+    """
+    expected_warn_text = "温度大于 0.2 可能引发发票金额与明细的数字幻觉，非探索场景建议保持 0.0"
 
     for leg in (VISION_LEGS + PARSE_LEGS):
         drawer = html_soup.find(id=f"adminAdvParams_{leg}")
@@ -427,7 +431,7 @@ def test_ac08_tier4_scene_calculator_full_coverage_and_currency_symbol(html_soup
         # 4. 验证公式拆解容器
         bk_el = calc_box.find(id=f"calcBreakdown_{leg}")
         assert bk_el is not None, f"卡片 {leg} 缺少 calcBreakdown_{leg} 容器"
-        assert "[公式:" in bk_el.text
+        assert "公式:" in bk_el.text
 
 
 # ==============================================================================
@@ -484,7 +488,7 @@ def test_ac10_progressive_disclosure_and_badge_flow(main_js_content):
     assert "function updateAdvBadge(legId)" in main_js_content
 
     # 验证统一四段式微缩 Badge（思考强度、最大Token、视觉切片、采样温度）
-    assert "badge.textContent = `[思考强度:${effortLabel} | 最大Token:${tokens} | 视觉切片:${detailLabel} | 采样温度:${tempStr}]`" in main_js_content
+    assert "badge.textContent = `思考强度:${effortLabel} · 最大Token:${tokens} · 视觉切片:${detailLabel} · 采样温度:${tempStr}`" in main_js_content
 
 
 # ==============================================================================

@@ -494,7 +494,7 @@ def test_ac12_dynamic_badge_text_formatting():
     assert "function updateAdvBadge(legId)" in content
     assert "window.updateAdvBadge = updateAdvBadge" in content
     # 统一四段式微缩 Badge（思考强度、最大Token、视觉切片、采样温度）
-    assert "badge.textContent = `[思考强度:${effortLabel} | 最大Token:${tokens} | 视觉切片:${detailLabel} | 采样温度:${tempStr}]`" in content
+    assert "badge.textContent = `思考强度:${effortLabel} · 最大Token:${tokens} · 视觉切片:${detailLabel} · 采样温度:${tempStr}`" in content
 
 
 def test_ac13_hallucination_warning_logic():

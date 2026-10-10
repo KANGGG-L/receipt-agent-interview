@@ -405,10 +405,10 @@ def test_ac14_frontend_model_trait_hints_and_containers():
     assert "isOReasoning" in js_content
 
     # 3. 验证提示文本符合规范且 0 Emoji
-    assert "[INFO] DeepSeek 官方 API 最大支持 8192 Tokens" in js_content
-    assert "[INFO] DeepSeek 官方 API 无需传思考强度参数" in js_content
-    assert "[INFO] OpenAI o1/o3 推理模型由服务商统一管理采样温度" in js_content
-    assert "[INFO] 系统将自动为您桥接 max_completion_tokens 规范" in js_content
+    assert "DeepSeek 官方 API 最大支持 8192 Tokens" in js_content
+    assert "DeepSeek 官方 API 无需传思考强度参数" in js_content
+    assert "OpenAI o1/o3 推理模型由服务商统一管理采样温度" in js_content
+    assert "系统将自动为您桥接 max_completion_tokens 规范" in js_content
 
 
 def test_ac15_frontend_badge_dynamic_formatting_with_effort():
@@ -418,7 +418,7 @@ def test_ac15_frontend_badge_dynamic_formatting_with_effort():
 
     assert "function updateAdvBadge(legId)" in content
     # 统一四段式微缩 Badge 模板
-    assert "[思考强度:${effortLabel} | 最大Token:${tokens} | 视觉切片:${detailLabel} | 采样温度:${tempStr}]" in content
+    assert "思考强度:${effortLabel} · 最大Token:${tokens} · 视觉切片:${detailLabel} · 采样温度:${tempStr}" in content
     assert "effort" in content
 
 
@@ -664,7 +664,7 @@ def test_qa_frontend_dom_elements_and_badge_format_comprehensive():
     # 2. 验证 main.js 中 updateAdvBadge 对各种参数组合的逻辑完整性
     assert "function updateAdvBadge(legId)" in js_content
     # 统一四段式微缩 Badge 模板格式
-    assert "[思考强度:${effortLabel} | 最大Token:${tokens} | 视觉切片:${detailLabel} | 采样温度:${tempStr}]" in js_content
+    assert "思考强度:${effortLabel} · 最大Token:${tokens} · 视觉切片:${detailLabel} · 采样温度:${tempStr}" in js_content
     assert "effortLabel" in js_content
     assert "detailLabel" in js_content
 

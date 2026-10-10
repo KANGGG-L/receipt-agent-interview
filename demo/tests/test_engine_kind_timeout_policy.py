@@ -59,13 +59,17 @@ def test_opencode_engine_kind_also_warns(caplog):
 
 
 def test_qwen_model_with_openai_kind_no_warning(caplog):
-    """引擎类型为 openai 时走 OpenAI 兼容通道，不应产生任何告警。"""
+    """引擎类型为 openai 时走 OpenAI 兼容通道，不应产生任何告警。
+
+    2026-10-10 契约对齐：显式 openai kind 下解析取「配置的 side 模型，缺省回退
+    请求传入的模型名」（llm._resolve_engine 的 or name 回退，docstring 同口径）。
+    """
     cfg = EngineConfig()
     with caplog.at_level(logging.WARNING, logger="llm"):
         kind, resolved = llm._resolve_engine("qwen3.5-omni-flash", "openai", cfg=cfg)
 
     assert kind == "openai"
-    assert resolved == cfg.openai_rec_model
+    assert resolved == (cfg.openai_rec_model or "qwen3.5-omni-flash")
     assert not _llm_warnings(caplog)
 
 
