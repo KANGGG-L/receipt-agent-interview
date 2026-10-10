@@ -86,11 +86,17 @@ def isolated_env(monkeypatch, tmp_path):
     _DB["path"] = test_db_path
 
     monkeypatch.setenv("DASHSCOPE_BASE_URL", DS_BASE)
+    monkeypatch.setenv("OPENAI_REC_BASE_URL", DS_BASE)
     monkeypatch.setenv("DASHSCOPE_API_KEY", DS_KEY)
+    monkeypatch.setenv("OPENAI_REC_API_KEY", DS_KEY)
     monkeypatch.setenv("QWEN_VL_MODEL", DS_MODEL)
+    monkeypatch.setenv("OPENAI_REC_MODEL", DS_MODEL)
     monkeypatch.setenv("SILICONFLOW_BASE_URL", SF_BASE)
+    monkeypatch.setenv("OPENAI_AUD_BASE_URL", SF_BASE)
     monkeypatch.setenv("SILICONFLOW_API_KEY", SF_KEY)
+    monkeypatch.setenv("OPENAI_AUD_API_KEY", SF_KEY)
     monkeypatch.setenv("SILICONFLOW_AUDIT_MODEL", SF_AUD_MODEL)
+    monkeypatch.setenv("OPENAI_AUD_MODEL", SF_AUD_MODEL)
     monkeypatch.delenv("ENGINE_CALL_TIMEOUT", raising=False)
     # 审核腿装配会做 /models 健康探针，离线测试统一视为健康，避免真实网络调用
     monkeypatch.setattr(db, "_openai_gateway_healthy", lambda *a, **k: True)
