@@ -320,5 +320,8 @@ def test_decode_failure_result_shape_matches_engine_failure(tmp_path, monkeypatc
     # 唯一差异键就是确定性标记；其余键集完全一致
     assert decode_ret.get("deterministic_error") is True
     assert "deterministic_error" not in engine_ret
-    assert set(decode_ret.keys()) == set(engine_ret.keys()) | {"deterministic_error"}
-    assert set(engine_ret.keys()) - set(decode_ret.keys()) == set()
+    # 2026-10-10 契约对齐：2e42ea3 起引擎失败结果新增 adapted_params（自适应参数观测）。
+    # 确定性解码失败不发起 LLM 请求，无 adapted_params 属正确语义——两态键差恒为
+    # {deterministic_error}（仅 decode 有）与 {adapted_params}（仅 engine 有）。
+    assert set(decode_ret.keys()) ^ set(engine_ret.keys()) == \
+        {"deterministic_error", "adapted_params"}

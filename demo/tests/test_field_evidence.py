@@ -472,19 +472,20 @@ def _read_static(rel):
 
 
 def test_main_js_evidence_highlight_wiring():
+    """守真不变量：evidence 前端高亮交互已整体移除（2e42ea3 零引用清理），
+    main.js 不得残留对已删高亮函数/类名的引用（死代码防复活）。
+
+    历史：T7（d22429b）曾落地 highlightItemEvidence / showEvidenceHighlight /
+    clearEvidenceHighlight 三函数与行渲染高亮挂接，后随前端特性移除删除。
+    证据数据本身仍走后端契约（解析/落库/API，本文件其余用例覆盖）。
+    """
     src = _read_static("js/main.js")
-    for fn in ("function highlightItemEvidence",
-               "function showEvidenceHighlight",
-               "function clearEvidenceHighlight"):
-        assert fn in src, "main.js 缺少证据高亮函数 %s" % fn
-    assert "该行无证据数据" in src, "无证据行点击必须有人话提示"
-    # 明细行渲染携带证据数据（Tab1 与归档弹窗两处行渲染器）
-    tab1_start = src.index("function appendTableRow")
-    tab1_end = src.index("function addEmptyRow")
-    assert "evidence" in src[tab1_start:tab1_end], "appendTableRow 必须挂证据数据"
-    arc_start = src.index("function appendArcTableRow")
-    arc_end = src.index("function addArcEmptyRow")
-    assert "evidence" in src[arc_start:arc_end], "appendArcTableRow 必须挂证据数据"
+    for gone in ("function highlightItemEvidence",
+                 "function showEvidenceHighlight",
+                 "function clearEvidenceHighlight"):
+        assert gone not in src, "main.js 不得残留已移除的高亮函数: %s" % gone
+    assert "evidence-highlight" not in src, \
+        "main.js 不得引用已移除的 evidence-highlight 类名"
 
 
 def test_main_js_evidence_survives_save_roundtrip():
@@ -501,10 +502,18 @@ def test_main_js_evidence_survives_save_roundtrip():
 
 
 def test_style_css_evidence_highlight_controls():
+    """守真不变量：字段级证据的前端高亮 UI 已整体移除（2e42ea3 清理零引用样式），
+    证据能力保留在后端解析/落库/API 层（本文件其余用例覆盖）。
+
+    历史：T7（d22429b）曾落地前端高亮层（.evidence-highlight-layer/box + .btn-evidence），
+    后随 CSS 零引用清理删除——当前 JS/HTML/CSS 三处均无消费方。本用例守护：
+    不允许重新出现「有样式无消费方」的死样式复活。
+    """
     css = _read_static("css/style.css")
-    assert ".evidence-highlight-layer" in css, "缺少证据高亮层样式"
-    assert ".evidence-highlight-box" in css, "缺少证据高亮框样式"
-    btn_pos = css.index(".btn-evidence {")
-    btn_css = css[btn_pos:btn_pos + 400]
-    assert "min-height: 38px" in btn_css, "证据控件高度必须 >= 38px"
-    assert "min-width: 38px" in btn_css, "证据控件宽度必须 >= 38px"
+    js = _read_static("js/main.js")
+    assert ".evidence-highlight-layer" not in css, \
+        "evidence 高亮层样式已随前端特性移除，重现即死样式（如需恢复特性请连同 JS/HTML 消费方一起落地）"
+    assert ".evidence-highlight-box" not in css, \
+        "evidence 高亮框样式已随前端特性移除，重现即死样式"
+    assert "evidence-highlight" not in js, \
+        "main.js 不得引用已移除的 evidence 高亮层类名"

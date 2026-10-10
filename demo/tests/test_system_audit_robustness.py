@@ -239,6 +239,11 @@ def test_all_wrapped_audit_call_sites_log_failures():
         "app/api_admin.py::promote_grey_config",
         "app/api_admin.py::set_engine_config",
         "app/api_admin.py::reset_engine_config",
+        # 2026-10-10 复核纳入：save/delete_engine_preset 随自定义预设特性
+        # （bc260e7）新增，沿用与上述三点一致的「响亮 500」语义 —— 审计写入
+        # 失败不得静默丢弃管理台操作留痕，故与引擎配置三点同列豁免。
+        "app/api_admin.py::save_engine_preset",
+        "app/api_admin.py::delete_engine_preset",
     }, "未被 try 包裹的审计写入点发生了变化，请复核其失败语义（响亮 500 还是静默丢弃）：%s" % unwrapped
 
 

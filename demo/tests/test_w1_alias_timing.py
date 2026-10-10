@@ -96,6 +96,9 @@ def _mk_receipt(supplier_name=VENDOR, tenant_id=TENANT, status="parsed"):
     rid = db.create_receipt(supplier_name=supplier_name, status=status,
                             tenant_id=tenant_id)
     db.set_receipt_items(rid, [_item(NEW_ITEM)])
+    # AC-05-04 收紧后的 approve 契约：缺开单日期/金额会被 422 APPROVAL_BLOCKED
+    # 硬拦（金额须与明细算术一致）。本文件测的是别名登记时序，须先过该门。
+    db.update_receipt(rid, receipt_date="2026-08-24", total_amount=10.0)
     return rid
 
 
@@ -163,20 +166,26 @@ def test_w2_second_approve_blocked_alias_unchanged(client):
     resp = _approve(client, rid)
 
     assert resp.status_code != 200, "二次 approve 必须被状态机拦截"
-    assert resp.json().get("code") == "INVALID_STATUS"
+    # 2026-10-10 契约对齐：对已入账单据的二次 approve，状态机返回更精确的
+    # ALREADY_APPROVED（原口径 INVALID_STATUS）。
+    assert resp.json().get("code") == "ALREADY_APPROVED"
     assert len(_alias_rows()) == before, "状态机拦截后别名表不得新增"
 
 
 # -------------------------------------------------------------
-# W3：真无锚语义保持 —— supplier_name 为空 → 不建档、无别名行
+# W3：真无锚语义保持 —— supplier_name 为空 → approve 契约门 422 硬拦，不建档
 # -------------------------------------------------------------
 def test_w3_no_vendor_name_no_archive_no_alias(client):
+    """2026-10-10 契约对齐：AC-05-04 收紧后，缺供应商名称在 approve 门就被
+    422 APPROVAL_BLOCKED 硬拦（原口径为走完链路、靠 apply 层 NO_SUPPLIER 不建档）。
+    「无 vendor 名不建档」的语义不变，只是拦截点前移到契约门。"""
     rid = _mk_receipt(supplier_name="")
     before = _supplier_count()
 
     resp = _approve(client, rid)
 
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 422, resp.text
+    assert resp.json().get("code") == "APPROVAL_BLOCKED"
     assert _supplier_count() == before, "无 vendor 名不得凭空建档"
     assert _alias_rows() == [], "无 vendor 名不得登记别名"
 

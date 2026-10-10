@@ -230,11 +230,15 @@ def test_dynamic_fee_rows_ui_mode():
                       "inpTaxAmount", "inpDeposit", "inpRounding"):
         assert 'id="%s"' % legacy_id not in html, \
             "固定六宫格输入 #%s 应由动态费用行取代" % legacy_id
-    # 仍保留的手写注记（已改动态行模式）/ 付款证据只读展示区
+    # 仍保留的手写注记（已改动态行模式）；付款证据已按 G3/U2 重设计改为
+    # 内存自动带出（无手输入口、无 DOM 展示区——DOM 展示已移除）
     for mark in ('id="notesRowsEmpty"', 'id="notesRowsContainer"', 'id="btnAddNoteRow"'):
         assert mark in html, "复核区缺少手写注记动态行要素 %s" % mark
     assert "手写注记" in html
-    assert "付款证据" in html
+    assert 'id="inpPaymentEvidence"' not in html, \
+        "付款证据手输入口必须移除（自动带出，禁止手输）"
+    assert 'id="inpPaymentEvidenceAuto"' not in html, \
+        "只读证据展示区已随复核区重设计移除，重现即死 DOM（数据走内存透传）"
     # 旧单个 textarea 注记入口必须移除（不保留双入口）
     assert 'id="inpAdjustmentNotes"' not in html, \
         "手写注记 textarea 应由动态注记行取代"
@@ -322,9 +326,9 @@ def test_payment_mark_badge_ui_mode():
     assert "--danger-strong: #b91c1c" in css, "深红令牌必须保持 #b91c1c（WCAG AA 6.5:1）"
     # 检测信息只读提示保留（「未检测到商户付款标记」等信息载体）
     assert 'id="inpPaymentMarkDetectBadge"' in html, "检测信息只读提示必须保留"
-    # 付款证据只读展示区（非输入框）
-    assert 'id="inpPaymentEvidenceAuto"' in html, "缺少只读证据展示区 #inpPaymentEvidenceAuto"
-    assert '付款证据' in html and '无需填写' in html, "证据区必须明示「系统自动识别，无需填写」"
+    # 付款证据只读展示区已随复核区重设计移除（G3/U2：证据内存自动带出，无 DOM 展示）
+    assert 'id="inpPaymentEvidenceAuto"' not in html, \
+        "只读证据展示区已移除，重现即死 DOM（数据走内存透传）"
 
 
 def test_main_js_payment_badge_state_and_collect():
@@ -332,10 +336,11 @@ def test_main_js_payment_badge_state_and_collect():
     renderEditForm 证据自动带出（不再写输入框）；collectReviewFormData 读徽章
     state 与自动证据值（非输入框）。"""
     src = _main_js_src()
+    # 2026-10-10 契约对齐：updatePaymentEvidenceAutoDisplay 已随只读展示区移除而删除
+    # （其目标元素 #inpPaymentEvidenceAuto 不存在、零调用方）
     for fn in ("function getPaymentMarkBadgeState", "function setPaymentMarkBadge",
                "function togglePaymentMarkBadge",
-               "function setAutoPaymentEvidence", "function getAutoPaymentEvidence",
-               "function updatePaymentEvidenceAutoDisplay"):
+               "function setAutoPaymentEvidence", "function getAutoPaymentEvidence"):
         assert fn in src, "main.js 缺少付款徽章函数 %s" % fn
     # 灌入链路：applySettlementToForm 对按钮形元素灌 state（归档弹窗下拉按形态分流）
     settle_start = src.index("function applySettlementToForm")
@@ -349,7 +354,10 @@ def test_main_js_payment_badge_state_and_collect():
     edit_end = src.index("window.renderEditForm")
     edit_src = src[edit_start:edit_end]
     assert "setAutoPaymentEvidence(" in edit_src, "renderEditForm 必须写入自动证据状态"
-    assert "updatePaymentEvidenceAutoDisplay()" in edit_src, "renderEditForm 必须刷新只读证据展示区"
+    assert "function updatePaymentEvidenceAutoDisplay" not in src, \
+        "只读证据展示区已移除，main.js 不得残留其刷新函数定义"
+    assert "window.updatePaymentEvidenceAutoDisplay" not in src, \
+        "只读证据展示区已移除，main.js 不得残留其刷新函数导出"
     # 采集层：payment_marked 走徽章 state；payment_evidence 走自动证据值
     collect_start = src.index("function collectReviewFormData")
     collect_end = src.index("function buildSavePayloadFromData")

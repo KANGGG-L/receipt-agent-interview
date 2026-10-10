@@ -48,10 +48,14 @@ HINT_VENDOR = "德利行"
 
 # 开关关路径的 extra 基线键集合（vendor_hint_origin 接线之前就存在的全部键）——
 # 任何多出的键都意味着空串路径没有做到「纯增量、字节一致」。
+# 2026-10-10 契约对齐：2e42ea3（6腿Token单价 + Prompt Caching 细分计费）为决策
+# extra 新增 4 个引擎自适应参数观测键（max_tokens / image_detail / tokens_cached /
+# temperature），parsing_logs 有真消费方 —— 纳入合法基线。
 _BASELINE_EXTRA_KEYS = {
-    "tokens_prompt", "tokens_completion", "tokens_total", "cost_hkd",
-    "cost_estimated", "cost_estimated_reason", "elapsed_ms", "success",
-    "image_path", "supplier", "doc_form",
+    "tokens_prompt", "tokens_completion", "tokens_total", "tokens_cached",
+    "cost_hkd", "cost_estimated", "cost_estimated_reason", "elapsed_ms",
+    "success", "image_path", "supplier", "doc_form",
+    "max_tokens", "image_detail", "temperature",
 }
 
 
@@ -276,8 +280,12 @@ def _make_upload_client(monkeypatch, tmp_path, predicted_vendor):
     """只挂 api_receipts 路由；识别 Job 派发与预判模型全部打桩，记录入参。"""
     calls = []
 
+    # 桩签名必须跟齐 start_recognition_job 的现行参数：_safe_start_recognition_job
+    # 兼容链会在 TypeError 时逐级降级到老签名，桩若缺 quality_warnings/raw_image_path
+    # 会静默丢掉 vendor_hint_origin（2026-10-10 修复）。
     def _stub_start(image_path, vendor_hint="", receipt_id=None, tenant_id=None,
-                    image_guard=None, vendor_hint_origin=""):
+                    image_guard=None, vendor_hint_origin="", quality_warnings=None,
+                    raw_image_path=None, **kwargs):
         calls.append({"vendor_hint": vendor_hint,
                       "vendor_hint_origin": vendor_hint_origin})
         return ("job-stub-1", 9001)

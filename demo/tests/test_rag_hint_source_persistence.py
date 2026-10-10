@@ -43,10 +43,14 @@ HINT_VENDOR = "德利行"
 
 # 开关关路径的 extra 基线键集合（FP-1 之前就存在的全部键）——
 # 任何多出的键都意味着空串路径没有做到「纯增量、字节一致」。
+# 2026-10-10 契约对齐：2e42ea3（6腿Token单价 + Prompt Caching 细分计费）为决策
+# extra 新增 4 个引擎自适应参数观测键（max_tokens / image_detail / tokens_cached /
+# temperature），parsing_logs 有真消费方 —— 纳入合法基线。
 _BASELINE_EXTRA_KEYS = {
-    "tokens_prompt", "tokens_completion", "tokens_total", "cost_hkd",
-    "cost_estimated", "cost_estimated_reason", "elapsed_ms", "success",
-    "image_path", "supplier", "doc_form",
+    "tokens_prompt", "tokens_completion", "tokens_total", "tokens_cached",
+    "cost_hkd", "cost_estimated", "cost_estimated_reason", "elapsed_ms",
+    "success", "image_path", "supplier", "doc_form",
+    "max_tokens", "image_detail", "temperature",
 }
 
 

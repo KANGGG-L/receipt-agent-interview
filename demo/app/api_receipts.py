@@ -900,34 +900,6 @@ async def upload_receipt(
             logging.getLogger("api_receipts").warning(
                 "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
 
-    # P2-T6 首轮供应商预判（后端）：前端手选优先——仅在 vendor_hint 为空时预判，
-    # 避免预判覆盖用户明确选择。开关走 settings 键 vendor_precheck_enabled，缺省 false
-    # （零行为变化）；predict_vendor 内部已兜底（裁剪/引擎/超时/解析失败一律空串、
-    # 不抛异常），这里只再防一层导入期意外，且必须留痕不静默吞掉。
-    # cfg 必须显式传：build_recognition_model(cfg=None) 会走硬编码默认模型、绕过管理台
-    # 配置的识别引擎（P1 审核 mustFix M1）；get_engine_config 读失败时传 None，
-    # 由 predict_vendor 内部兜底解析。
-    # 可观测性（additive）：区分显式 vendor_hint 的两个来源 —— 用户手填（"user"）与
-    # 预判填充（"precheck"，仅原 hint 为空且 predict_vendor 给出非空值时）。两者皆无
-    # （预判失败/关闭）保持空串：下游 extra 不写键、Job result 字段为空串。只做来源
-    # 标记，不改变 hint 取值与识别链路任何行为。
-    _hint_origin = "user" if str(vendor_hint or "").strip() else ""
-    if not vendor_hint:
-        try:
-            from app.services import vendor_precheck
-            try:
-                _vp_cfg = db.get_engine_config()
-            except Exception as _cfg_err:
-                logging.getLogger("api_receipts").warning(
-                    "[WARN] 预判读取引擎配置失败，回落默认模型: %s", _cfg_err)
-                _vp_cfg = None
-            vendor_hint = vendor_precheck.predict_vendor(image_path, cfg=_vp_cfg)
-            if str(vendor_hint or "").strip():
-                _hint_origin = "precheck"
-        except Exception as _vp_err:
-            logging.getLogger("api_receipts").warning(
-                "[WARN] 供应商预判降级（不影响上传与识别）: %s", _vp_err)
-
     job_id, receipt_id = _safe_start_recognition_job(
         pipeline_image_path, vendor_hint=vendor_hint or "",
         tenant_id=_tenant_id(request),  # P0-1: 上传链路租户透传

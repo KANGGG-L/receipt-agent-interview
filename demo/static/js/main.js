@@ -5305,18 +5305,16 @@ window.getPaymentMarkBadgeState = getPaymentMarkBadgeState;
 window.togglePaymentMarkBadge = togglePaymentMarkBadge;
 
 // G3/U2 付款证据自动带出：识别/检测信息里的证据描述由系统写入（无手输入口），
-// 只读展示于 #inpPaymentEvidenceAuto；切换徽章不改动证据（图面事实描述，与判定独立）
+// 内存态透传后端提交（getAutoPaymentEvidence 于采集侧消费）。
+// 历史注记：曾有只读展示区 #inpPaymentEvidenceAuto + updatePaymentEvidenceAutoDisplay
+// 刷新函数，后随复核区重设计移除 DOM 展示——展示函数已删（目标元素不存在、零调用方），
+// 数据通道（set/get 内存态）保留。
 let autoPaymentEvidence = '';
 function setAutoPaymentEvidence(value) {
     autoPaymentEvidence = String(value == null ? '' : value).trim();
 }
 function getAutoPaymentEvidence() {
     return autoPaymentEvidence;
-}
-function updatePaymentEvidenceAutoDisplay() {
-    const el = document.getElementById('inpPaymentEvidenceAuto');
-    if (!el) return;
-    el.textContent = autoPaymentEvidence || '未识别到付款证据描述';
 }
 window.setAutoPaymentEvidence = setAutoPaymentEvidence;
 window.getAutoPaymentEvidence = getAutoPaymentEvidence;
