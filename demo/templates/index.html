@@ -618,7 +618,7 @@
                                     <div class="form-group">
                                         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                             <label style="margin-bottom:0;" title="仅表示纸质单据上是否有盖章/签名标记，不代表系统财务已付款">单据付款标记（非系统付款状态）</label>
-                                            <span id="inpPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.72rem; color:#64748b;">未检测到原单印记（原单无盖章，不代表系统已付）</span>
+                                            <span id="inpPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.75rem; color:#64748b;">未检测到原单印记（原单无盖章，不代表系统已付）</span>
                                         </div>
                                         <button type="button" id="inpPaymentMark" class="payment-mark-toggle payment-mark-unpaid" data-marked="false" aria-pressed="false" title="点击在「原单有付款印记 / 原单未见付款印章」之间切换" onclick="togglePaymentMarkBadge()">单据未见付款印章</button>
                                     </div>
@@ -820,7 +820,7 @@
                         </div>
                         <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="setInventoryPriceFilter('anomaly')" title="点击筛选涨价预警食材">
                             <div style="color:var(--text-muted); font-size:0.9rem;">涨价预警数</div>
-                            <div id="valPriceAnomaly" class="metric-value" style="color:#f59e0b;">0</div>
+                            <div id="valPriceAnomaly" class="metric-value" style="color:#b45309;">0</div>
                         </div>
                     </div>
 
@@ -4123,7 +4123,7 @@
                             <div class="form-group">
                                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                                     <label style="margin-bottom:0;">单据付款印记</label>
-                                    <span id="arcPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.72rem; color:#64748b;">未检测到原单印记（原单无盖章，不代表系统已付）</span>
+                                    <span id="arcPaymentMarkDetectBadge" class="payment-mark-detect-badge" style="font-size:0.75rem; color:#64748b;">未检测到原单印记（原单无盖章，不代表系统已付）</span>
                                 </div>
                                 <select id="arcPaymentMark" class="form-control" title="系统自动检测商户单据付款标记，用户仅需确认单面是否有付款印记">
                                     <option value="未付款">单据未见付款印章</option>

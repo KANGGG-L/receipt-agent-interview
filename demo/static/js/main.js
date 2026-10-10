@@ -5272,7 +5272,7 @@ function getPaymentMarkDisplayInfo(data) {
         isPaid: false,
         label: '单据未见付款印章',
         badgeText: '不确定/待人工核验付款标记',
-        badgeColor: '#d97706',
+        badgeColor: '#b45309',
         badgeBg: 'rgba(217, 119, 6, 0.1)'
     };
 }
@@ -7415,7 +7415,7 @@ function renderWorkbenchQueueTable() {
 
         const thumb = row.image_url 
             ? `<img src="${row.image_url}" alt="原图" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1;">`
-            : `<div style="width:36px; height:36px; background:#f1f5f9; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#94a3b8;">无图</div>`;
+            : `<div style="width:36px; height:36px; background:#f1f5f9; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#4b5563;">无图</div>`;
 
         const dateStr = (row.receipt_date || (row.created_at ? row.created_at.slice(0, 10) : '未知日期')) + ' (HKT)';
         const supplierName = row.supplier_name || 'Vendor_A';

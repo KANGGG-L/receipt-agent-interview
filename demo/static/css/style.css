@@ -23,7 +23,7 @@
 
     /* text */
     --text-main: #1e2223;
-    --text-muted: #767676;
+    --text-muted: #646464;
     --text-subtle: #515151;
 
     /* semantic */
@@ -1371,7 +1371,7 @@ table.data-table td input {
 /* 中性态：已停用 / 分类 / 弱标签（与 text-muted 同源，非语义告警） */
 .badge-secondary {
     background: var(--bg-hover, #f3f2f1);
-    color: var(--text-muted-2);
+    color: #4b5563;
     border: 1px solid var(--border-color, #d8dce0);
 }
 
@@ -1938,7 +1938,7 @@ table.data-table.receipt-item-table td {
     border-radius: 6px;
     border: 1px solid rgba(216, 13, 13, 0.25);
     background: #fde8e8;
-    color: var(--danger);
+    color: #b0000b; /* QA 对比度：var(--danger) #d80d0d 在浅红底 4.49:1 差 0.01，压深达标 */
     cursor: pointer;
     display: inline-flex;
     align-items: center;
