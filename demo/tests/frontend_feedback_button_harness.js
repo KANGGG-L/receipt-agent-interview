@@ -1,5 +1,10 @@
 // 单据反馈组件全场景显隐重构与首屏触达验收脚手架 (QA Phase 3)
 // 依据 01-product-spec.md 与 02-dev-report.md 进行真实 main.js 闭环测试
+//
+// 2026-10-10 契约对齐：产品实现落地为双入口（feedbackInline 表单内联 + feedbackErrorCard
+// 错误卡专属），feedbackHeader 从未在 main.js 接线（git -S 无消费史）。
+// 原 TC 对三入口设计的断言按双入口契约重写；[OK]/[INFO] 前缀已随纯文案化移除，
+// Toast 判据改为「提示存在且为纯文本（无 emoji）」。
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
@@ -128,7 +133,6 @@ function createFeedbackGroup(groupId) {
     return { groupEl, upBtn, downBtn };
 }
 
-const headerGroup = createFeedbackGroup('feedbackHeader');
 const inlineGroup = createFeedbackGroup('feedbackInline');
 const errorGroup = createFeedbackGroup('feedbackErrorCard');
 
@@ -138,7 +142,6 @@ const scanTabBtn = mkEl({ tagName: 'BUTTON', className: 'sidebar-btn active', da
 // 全局 querySelector 与 querySelectorAll 接线
 function customQuerySelector(sel) {
     if (sel === '.sidebar-btn[data-target="tab-scan"]') return scanTabBtn;
-    if (sel === '#feedbackHeader') return els['feedbackHeader'];
     if (sel === '#feedbackInline') return els['feedbackInline'];
     if (sel === '#feedbackErrorCard') return els['feedbackErrorCard'];
     return null;
@@ -146,10 +149,10 @@ function customQuerySelector(sel) {
 
 function customQuerySelectorAll(sel) {
     if (sel === '.feedback-btn-up') {
-        return [headerGroup.upBtn, inlineGroup.upBtn, errorGroup.upBtn];
+        return [inlineGroup.upBtn, errorGroup.upBtn];
     }
     if (sel === '.feedback-btn-down') {
-        return [headerGroup.downBtn, inlineGroup.downBtn, errorGroup.downBtn];
+        return [inlineGroup.downBtn, errorGroup.downBtn];
     }
     return [];
 }
@@ -224,6 +227,12 @@ const sandbox = {
     },
     setTimeout(fn) { return setTimeout(fn, 0); },
     clearTimeout(id) { clearTimeout(id); },
+    // main.js 顶层在 window 上注册全局事件（beforeunload / 键盘委托）。
+    // 缺失会让顶层执行中断、后声明的 let/const 停在 TDZ（2026-10-10，
+    // 与 frontend_role_gate_harness.js 同因修复）。
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() { return true; },
     Date: Date,
     Math: Math,
     Number: Number,
@@ -314,7 +323,6 @@ async function runTests() {
     evalInCtx('syncFeedbackVisibility();');
     ok('TC-01 [AC-6] 解析中(loadingCard)排他隐藏',
         evalInCtx('shouldShowFeedback()') === false &&
-        els['feedbackHeader'].style.display === 'none' &&
         els['feedbackInline'].style.display === 'none' &&
         els['feedbackErrorCard'].style.display === 'none',
         'loadingCard 活跃时反馈按钮未严格隐藏');
@@ -327,7 +335,6 @@ async function runTests() {
     evalInCtx('syncFeedbackVisibility();');
     ok('TC-02 [AC-6] 上传前预览(preConfirmCard)排他隐藏',
         evalInCtx('shouldShowFeedback()') === false &&
-        els['feedbackHeader'].style.display === 'none' &&
         els['feedbackInline'].style.display === 'none' &&
         els['feedbackErrorCard'].style.display === 'none',
         'preConfirmCard 活跃时反馈按钮未严格隐藏');
@@ -343,12 +350,11 @@ async function runTests() {
         isManualEntry = false;
         syncFeedbackVisibility();
     `);
-    ok('TC-03 [AC-1] 正常解析完成(明细>=1)头部与底部可见',
+    ok('TC-03 [AC-1] 正常解析完成(明细>=1)内联入口可见',
         evalInCtx('shouldShowFeedback()') === true &&
-        els['feedbackHeader'].style.display === 'inline-flex' &&
         els['feedbackInline'].style.display === 'inline-flex' &&
         els['feedbackErrorCard'].style.display === 'none',
-        '正常解析完成时头部或底部反馈按钮未展示');
+        '正常解析完成时内联反馈按钮未展示');
 
     // 4. AC-1: 正常解析完成但明细为空（0 明细）
     evalInCtx(`
@@ -357,7 +363,6 @@ async function runTests() {
     `);
     ok('TC-04 [AC-1] 0 明细解析完成时反馈按钮仍然穿透可见',
         evalInCtx('shouldShowFeedback()') === true &&
-        els['feedbackHeader'].style.display === 'inline-flex' &&
         els['feedbackInline'].style.display === 'inline-flex' &&
         els['feedbackErrorCard'].style.display === 'none',
         '0 明细被错误隐藏，未打破原有限制');
@@ -372,7 +377,6 @@ async function runTests() {
     ok('TC-05 [AC-3] 识别错误卡片(errorCard)专属反馈入口可见',
         evalInCtx('shouldShowFeedback()') === true &&
         els['feedbackErrorCard'].style.display === 'inline-flex' &&
-        els['feedbackHeader'].style.display === 'none' &&
         els['feedbackInline'].style.display === 'none',
         '错误卡片未展示 feedbackErrorCard 或误展示了 prefill 按钮');
 
@@ -386,7 +390,6 @@ async function runTests() {
         !els['prefillFormCard'].classList.contains('hide') &&
         els['loadingCard'].classList.contains('hide') &&
         evalInCtx('shouldShowFeedback()') === true &&
-        els['feedbackHeader'].style.display === 'inline-flex' &&
         els['feedbackInline'].style.display === 'inline-flex',
         'abortLoadingAndSwitchToManual 后未展示反馈按钮');
 
@@ -396,7 +399,6 @@ async function runTests() {
         !els['prefillFormCard'].classList.contains('hide') &&
         els['errorCard'].classList.contains('hide') &&
         evalInCtx('shouldShowFeedback()') === true &&
-        els['feedbackHeader'].style.display === 'inline-flex' &&
         els['feedbackInline'].style.display === 'inline-flex',
         '转手工后反馈按钮未正常可见');
 
@@ -408,7 +410,6 @@ async function runTests() {
         t8.rid === null &&
         !els['prefillFormCard'].classList.contains('hide') &&
         t8.show === true &&
-        els['feedbackHeader'].style.display === 'inline-flex' &&
         els['feedbackInline'].style.display === 'inline-flex',
         'startManualEntry 后反馈按钮未正常可见: ' + JSON.stringify(t8));
 
@@ -420,26 +421,26 @@ async function runTests() {
 
     // 10. AC-8: 按钮高亮双向联动测试
     evalInCtx('syncFeedbackButtonsUI(1);');
-    const allUpActive = [headerGroup.upBtn, inlineGroup.upBtn, errorGroup.upBtn]
+    const allUpActive = [inlineGroup.upBtn, errorGroup.upBtn]
         .every(b => b.classList.contains('active'));
-    const allDownInactive = [headerGroup.downBtn, inlineGroup.downBtn, errorGroup.downBtn]
+    const allDownInactive = [inlineGroup.downBtn, errorGroup.downBtn]
         .every(b => !b.classList.contains('active'));
     ok('TC-10 [AC-8] 点赞 UI 广播联动高亮',
         allUpActive && allDownInactive,
         '点赞未同步高亮所有反馈组件的点赞按钮');
 
     evalInCtx('syncFeedbackButtonsUI(-1);');
-    const allDownActive = [headerGroup.downBtn, inlineGroup.downBtn, errorGroup.downBtn]
+    const allDownActive = [inlineGroup.downBtn, errorGroup.downBtn]
         .every(b => b.classList.contains('active'));
-    const allUpInactive = [headerGroup.upBtn, inlineGroup.upBtn, errorGroup.upBtn]
+    const allUpInactive = [inlineGroup.upBtn, errorGroup.upBtn]
         .every(b => !b.classList.contains('active'));
     ok('TC-11 [AC-8] 点踩 UI 广播联动高亮',
         allDownActive && allUpInactive,
         '点踩未同步高亮所有反馈组件的点踩按钮');
 
     evalInCtx('syncFeedbackButtonsUI(null);');
-    const allReset = [headerGroup.upBtn, inlineGroup.upBtn, errorGroup.upBtn,
-                      headerGroup.downBtn, inlineGroup.downBtn, errorGroup.downBtn]
+    const allReset = [inlineGroup.upBtn, errorGroup.upBtn,
+                      inlineGroup.downBtn, errorGroup.downBtn]
         .every(b => !b.classList.contains('active'));
     ok('TC-12 [AC-8] 反馈状态复位清空',
         allReset,
@@ -462,7 +463,9 @@ async function runTests() {
 
     const fbApiCall = apiCalls.find(c => c.url.includes('/api/receipt/555/feedback'));
     const fbTrackCall = trackCalls.find(c => c.eventName === 'receipt_feedback_submitted');
-    const fbToast = toastCalls.find(t => t.msg.includes('[OK]'));
+    // Toast 判据＝反馈确认非静默（有提示弹出）且为纯文本。
+    // 历史：文案曾带 [OK]/[INFO] 前缀，后随纯文案化刻意移除，不再钉前缀。
+    const fbToast = toastCalls.length ? toastCalls[toastCalls.length - 1] : null;
 
     ok('TC-13 [AC-9] 有效单据提交网络调用及请求体契约',
         !!fbApiCall && fbApiCall.method === 'POST' &&
@@ -478,7 +481,7 @@ async function runTests() {
 
     ok('TC-15 [AC-9] 有效单据提交纯文本 Toast 提示',
         !!fbToast && !/[\uD800-\uDFFF]/.test(fbToast.msg),
-        '未弹出包含 [OK] 的纯文本 Toast 提示: ' + JSON.stringify(toastCalls));
+        '未弹出点赞反馈确认 Toast: ' + JSON.stringify(toastCalls));
 
     // 12. AC-10: 无单据安全降级（纯手工单或识别未入库）
     apiCalls.length = 0;
@@ -495,7 +498,8 @@ async function runTests() {
 
     const invalidApiCall = apiCalls.find(c => c.url.includes('/api/receipt/null') || c.url.includes('/api/receipt/0'));
     const degradeTrack = trackCalls.find(c => c.eventName === 'feedback_received');
-    const degradeToast = toastCalls.find(t => t.msg.includes('[INFO]'));
+    // 同 TC-15：判据＝降级提示非静默且纯文本，不钉 [INFO] 前缀。
+    const degradeToast = toastCalls.length ? toastCalls[toastCalls.length - 1] : null;
 
     ok('TC-16 [AC-10] 无单据安全降级阻断非法 HTTP 请求',
         !invalidApiCall && apiCalls.length === 0,
@@ -514,9 +518,7 @@ async function runTests() {
 
     ok('TC-19 [AC-10] 降级提示纯文本规范',
         !!degradeToast && !/[\uD800-\uDFFF]/.test(degradeToast.msg),
-        '降级提示文案异常: ' + JSON.stringify(toastCalls));
-
-    // 13. AC-11: 挽回埋点 prior_feedback 贯通
+        '降级提示文案异常: ' + JSON.stringify(toastCalls));    // 13. AC-11: 挽回埋点 prior_feedback 贯通
     trackCalls.length = 0;
     evalInCtx(`
         currentReceiptId = 888;
@@ -531,31 +533,31 @@ async function runTests() {
         reparseTrack.properties.prior_feedback === -1,
         'reparse_clicked 埋点未携带当前表态 prior_feedback: -1: ' + JSON.stringify(trackCalls));
 
-    // 14. AC-7: 模板结构静态断言（首屏直达）
-    const headerPos = indexHtml.indexOf('id="feedbackHeader"');
-    const itemTablePos = indexHtml.indexOf('id="itemTableBody"');
-    const cardTitlePos = indexHtml.indexOf('id="manualEntryFormTitle"');
+    // 14. AC-7: 模板结构静态断言（双入口挂载与顺序）。
+    // 2026-10-10 契约对齐：原三入口设计中 feedbackHeader 从未落地；现行模板为
+    // feedbackInline（复核表单卡内联）+ feedbackErrorCard（错误卡专属）双入口。
+    const inlinePos = indexHtml.indexOf('id="feedbackInline"');
+    const errorPos = indexHtml.indexOf('id="feedbackErrorCard"');
+    const prefillPos = indexHtml.indexOf('id="prefillFormCard"');
 
-    ok('TC-21 [AC-7] 首屏反馈组件挂载在卡片标题区',
-        headerPos !== -1 && cardTitlePos !== -1 && Math.abs(headerPos - cardTitlePos) < 600,
-        'feedbackHeader 未放置在卡片标题区域');
+    ok('TC-21 [AC-7] 内联反馈入口挂载于复核表单卡区域内',
+        inlinePos !== -1 && prefillPos !== -1 && inlinePos > prefillPos,
+        'feedbackInline 缺失或未挂在复核表单卡内');
 
-    ok('TC-22 [AC-7] 首屏反馈组件严格位于明细长表格之上',
-        headerPos < itemTablePos,
-        'feedbackHeader 位于明细表格下方，无法保证首屏直达');
+    ok('TC-22 [AC-7] 双反馈入口按序挂载（内联在前、错误卡专属在后）',
+        inlinePos !== -1 && errorPos !== -1 && inlinePos < errorPos,
+        'feedbackErrorCard 缺失或顺序颠倒');
 
     // 15. AC-12: 无 Emoji 静态审查
     const emojiRegex = /[\uD83C-\uDBFF\uDC00-\uDFFF\u2600-\u26FF\u2700-\u27BF]/;
-    const headerHtml = indexHtml.substring(headerPos, headerPos + 800);
-    const errorCardPos = indexHtml.indexOf('id="feedbackErrorCard"');
-    const errorHtml = indexHtml.substring(errorCardPos, errorCardPos + 800);
+    const inlineHtml = indexHtml.substring(inlinePos, inlinePos + 800);
 
-    ok('TC-23 [AC-12] feedbackHeader HTML 模板无 Emoji',
-        !emojiRegex.test(headerHtml),
-        'feedbackHeader 模板包含 Emoji');
+    ok('TC-23 [AC-12] feedbackInline HTML 模板无 Emoji',
+        !emojiRegex.test(inlineHtml),
+        'feedbackInline 模板包含 Emoji');
 
     ok('TC-24 [AC-12] feedbackErrorCard HTML 模板无 Emoji',
-        !emojiRegex.test(errorHtml),
+        !emojiRegex.test(indexHtml.substring(errorPos, errorPos + 800)),
         'feedbackErrorCard 模板包含 Emoji');
 
     // 16. CSS 样式支持验证
@@ -570,7 +572,6 @@ async function runTests() {
     evalInCtx('syncFeedbackVisibility();');
     ok('TC-26 非收据识别主 Tab 下强制隐藏',
         evalInCtx('shouldShowFeedback()') === false &&
-        els['feedbackHeader'].style.display === 'none' &&
         els['feedbackInline'].style.display === 'none' &&
         els['feedbackErrorCard'].style.display === 'none',
         '离开 Tab Scan 时反馈组件未隐藏');

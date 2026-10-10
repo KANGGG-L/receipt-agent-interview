@@ -235,15 +235,19 @@ def test_static_templates_and_styles():
     with open(_STYLE_CSS, "r", encoding="utf-8") as f:
         css = f.read()
 
-    # 验证三个反馈组件入口存在
-    assert 'id="feedbackHeader"' in html
+    # 验证反馈组件双入口存在（2026-10-10 契约对齐：原三入口设计中的
+    # feedbackHeader 从未在 main.js 接线，现行产品为 feedbackInline + feedbackErrorCard）
     assert 'id="feedbackInline"' in html
     assert 'id="feedbackErrorCard"' in html
+    assert 'id="feedbackHeader"' not in html, \
+        "feedbackHeader 已废弃，不得重新引入未接线的第三入口"
 
-    # 验证首屏直达结构：feedbackHeader 位于 card-title 内且在 itemTableBody 之前
-    header_pos = html.index('id="feedbackHeader"')
-    table_pos = html.index('id="itemTableBody"')
-    assert header_pos < table_pos, "feedbackHeader 必须排在明细长表格之前以保障首屏可见"
+    # 验证首屏可达结构：内联反馈入口位于复核表单卡区域内
+    inline_pos = html.index('id="feedbackInline"')
+    prefill_pos = html.index('id="prefillFormCard"')
+    error_pos = html.index('id="feedbackErrorCard"')
+    assert inline_pos > prefill_pos, "feedbackInline 必须挂在复核表单卡区域内"
+    assert inline_pos < error_pos, "双反馈入口必须按序挂载（内联在前、错误卡在后）"
 
     # 验证 CSS 高亮激活态类名存在
     assert ".feedback-btn-up.active" in css

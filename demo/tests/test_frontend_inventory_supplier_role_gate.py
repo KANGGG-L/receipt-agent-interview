@@ -57,18 +57,27 @@ def test_inventory_and_supplier_role_gate_staff_hidden_owner_visible():
 
 
 def test_inventory_toolbar_and_rag_debug_static_wiring():
-    """静态接线：owner-only 只加在 owner 级工具条上，未误伤店员可用的「+ 新增食材」；F1 用 admin-only。"""
+    """静态接线：owner 级入口收在 owner-only 容器内，未误伤店员可用的「+ 新增食材」；F1 用 admin-only。
+
+    Phase 2 起「合并食材 / 一键清理重复食材」收进「管理库存 ▼」下拉，owner-only
+    声明在其父容器 dropdown-wrap owner-only 上（staff 下整组隐藏，门禁语义保留）。
+    判据：按钮必须位于最近的 owner-only 容器内部（容器开标签到按钮之间无 </div> 闭合）。
+    """
     with open(_INDEX_HTML, "r", encoding="utf-8") as f:
         html = f.read()
 
-    def _btn_snippet(needle, back=200, ahead=20):
+    def _inside_owner_only_wrap(needle):
         i = html.index(needle)
-        return html[max(0, i - back):i + ahead]
+        w = html.rindex("dropdown-wrap owner-only", 0, i)
+        return "</div>" not in html[w:i]
 
-    assert "owner-only" in _btn_snippet("openSkuMergeModalFromInv"), "「合并食材」必须声明 owner-only"
-    assert "owner-only" in _btn_snippet("deduplicateSkus()"), "「一键清理重复食材」必须声明 owner-only"
-    assert "owner-only" in _btn_snippet("openSupplierModal()"), "「+ 新增供应商」必须声明 owner-only"
-    assert "owner-only" not in _btn_snippet("openAddSkuModal()"), \
+    assert _inside_owner_only_wrap("openSkuMergeModalFromInv"), \
+        "「合并食材」必须位于 owner-only 容器（管理库存下拉）内"
+    assert _inside_owner_only_wrap("deduplicateSkus()"), \
+        "「一键清理重复食材」必须位于 owner-only 容器（管理库存下拉）内"
+    assert "owner-only" in html[max(0, html.index("openSupplierModal()") - 200):html.index("openSupplierModal()")], \
+        "「+ 新增供应商」必须声明 owner-only"
+    assert "owner-only" not in html[max(0, html.index("openAddSkuModal()") - 220):html.index("openAddSkuModal()")], \
         "「+ 新增食材」后端为 require_role('staff')，店员可用，不得被误门禁"
     assert "admin-only" in html[max(0, html.index("arcDataOnlyToggle") - 400):html.index("arcDataOnlyToggle")], \
         "RAG data_only 调试开关容器必须声明 admin-only"
@@ -121,12 +130,13 @@ def test_counterexample_class_convergence_mutant_is_red(tmp_path):
 
 
 def test_counterexample_index_html_class_mutant_is_red(tmp_path):
-    """反证：把「一键清理重复食材」的 owner-only 去掉后，静态接线断言必红。"""
+    """反证：把「管理库存 ▼」下拉的 owner-only 去掉后（合并食材/清理重复食材随之失去门禁），
+    静态接线断言必红。"""
     html = _read(_INDEX_HTML)
-    mutant = html.replace('class="btn btn-warning owner-only"', 'class="btn btn-warning"')
+    mutant = html.replace('dropdown-wrap owner-only', 'dropdown-wrap')
     assert mutant != html, "突变体未生效（目标字面不存在？）"
     mut_html = tmp_path / "index_mutant.html"
     mut_html.write_text(mutant, encoding="utf-8")
     result, code = _run_harness(_HARNESS, _MAIN_JS, str(mut_html))
-    assert code != 0, "index.html class 声明被去掉后脚手架却报绿（判据恒真）"
+    assert code != 0, "owner-only 容器声明被去掉后脚手架却报绿（判据恒真）"
     assert result["fail"] >= 1, result

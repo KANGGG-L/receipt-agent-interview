@@ -83,6 +83,12 @@ const sandbox = {
         error(...a) { sandboxWarns.push('[error] ' + a.map(String).join(' ')); },
     },
     setTimeout, clearTimeout,
+    // main.js 顶层在 window 上注册全局事件（beforeunload / 键盘委托），
+    // 缺这几个方法会让顶层执行中断、后声明的 let/const 停在 TDZ，
+    // 导致后续 applyRoleVisibility 抛 ReferenceError（2026-10-10）。
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() { return true; },
     localStorage: {
         _s: {},
         getItem(k) { return (k in this._s) ? this._s[k] : null; },
@@ -248,17 +254,21 @@ setTimeout(() => {
         // ---------------------------------------------------------------
         // ④ 静态接线：index.html class 口径（新增食材不得被误门禁）
         // ---------------------------------------------------------------
-        ok('接线-1 index.html 工具条「合并食材」声明 owner-only',
-            (function () {
-                const i = indexHtml.indexOf('openSkuMergeModalFromInv');
-                return i !== -1 && indexHtml.slice(i - 200, i + 20).indexOf('owner-only') !== -1;
-            })(),
-            '合并食材缺少 owner-only');
-        {
-            const btnIdx = indexHtml.indexOf('deduplicateSkus()');
-            const snippet = indexHtml.slice(btnIdx - 200, btnIdx + 20);
-            ok('接线-2 「一键清理重复食材」按钮带 owner-only class', snippet.indexOf('owner-only') !== -1, snippet);
+        // Phase 2 起「合并食材 / 一键清理重复食材」收进「管理库存 ▼」下拉，
+        // owner-only 声明在其父容器 dropdown-wrap owner-only 上（staff 下整组隐藏）。
+        // 判据改为：按钮必须位于最近的 owner-only 容器内部（容器开标签到按钮之间无 </div> 闭合）。
+        function insideOwnerOnlyWrap(needle) {
+            const i = indexHtml.indexOf(needle);
+            if (i === -1) return false;
+            const w = indexHtml.lastIndexOf('dropdown-wrap owner-only', i);
+            return w !== -1 && indexHtml.slice(w, i).indexOf('</div>') === -1;
         }
+        ok('接线-1 index.html 工具条「合并食材」位于 owner-only 容器内',
+            insideOwnerOnlyWrap('openSkuMergeModalFromInv'),
+            '合并食材不在 dropdown-wrap owner-only 容器内');
+        ok('接线-2 「一键清理重复食材」按钮位于 owner-only 容器内',
+            insideOwnerOnlyWrap('deduplicateSkus()'),
+            '一键清理重复食材不在 dropdown-wrap owner-only 容器内');
         {
             const btnIdx = indexHtml.indexOf('openAddSkuModal()');
             const snippet = indexHtml.slice(btnIdx - 220, btnIdx + 20);

@@ -7017,8 +7017,8 @@ function submitSaveEdited(openNext = false) {
     try {
         data = collectReviewFormData();
     } catch (err) {
-        console.warn('[WARN] 复核表单内容读取异常:', err);
-        showToast('保存未完成：请检查表格各输入框是否规范填写', 'error');
+        console.warn('[WARN] 复核表单内容读取异常，已中止本次保存:', err);
+        showToast('保存未完成：请检查明细表格各输入框是否填写完整', 'error');
         return;
     }
 
