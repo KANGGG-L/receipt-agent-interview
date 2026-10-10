@@ -121,6 +121,17 @@ def test_analytics_center_every_component_audit():
         print("=== 走查功能区 01: 埋点分布与挽回 ===")
         page.locator("#btnSubViewTelemetry").click()
         page.wait_for_timeout(500)
+        # 1.1 检查统一租户选择器（在 Tab A「单据解析与链路审计」= 遥测默认子页上）。
+        # UI 演化：遥测区拆成双子 tab 后，统一租户控件（由 select 演化为 input+datalist，
+        # 留空 = 全部租户）落在默认 Tab A 的筛选工具栏；切到 Tab B 后它随 Tab A 隐藏。
+        # 旧断言先切 events 再断言其可见 + select_option —— 钉的是旧布局旧控件形态。
+        tenant_sel = page.locator("#analyticsTenantSelect")
+        assert tenant_sel.is_visible(), "#analyticsTenantSelect (unified tenant input, Tab A) must be visible"
+        tenant_sel.fill("")
+        tenant_sel.dispatch_event("change")  # 留空 = 全部租户（onUnifiedTenantChange）
+        page.wait_for_timeout(300)
+
+        # 切到 Tab B：全量埋点分布与事件流
         if page.locator("#btnTelemetrySubTabEvents").count() > 0:
             page.locator("#btnTelemetrySubTabEvents").click()
             page.wait_for_timeout(300)
@@ -133,20 +144,6 @@ def test_analytics_center_every_component_audit():
                 return dist && rec && !dist.innerText.includes('加载中') && !rec.innerText.includes('加载中');
             }""",
             timeout=15000
-        )
-
-        # 1.1 检查租户选择器
-        tenant_sel = page.locator("#analyticsTenantSelect")
-        assert tenant_sel.is_visible(), "#analyticsTenantSelect must be visible"
-        assert tenant_sel.locator("option").count() >= 1, "Tenant select must have at least 'all' option"
-        # 切换租户并触发刷新
-        tenant_sel.select_option("all")
-        page.wait_for_function(
-            """() => {
-                const dist = document.getElementById('analyticsEventDistBody');
-                return dist && !dist.innerText.includes('加载中') && dist.querySelector('table');
-            }""",
-            timeout=10000
         )
 
         # 1.2 检查全量埋点事件分布表格
@@ -188,10 +185,16 @@ def test_analytics_center_every_component_audit():
         print(f"Canary total samples reported: {m_total}")
         assert m_total > 0, "Canary total samples must be > 0"
 
-        # 2.2 检查样本抽样提示
+        # 2.2 检查样本抽样提示（数据感知，与 canary_table_truncation 同一口径）：
+        # 展示上限 100 是固定口径 —— total > 100 时提示可见；total <= 100 时提示必须隐藏。
+        # 旧断言无数据前提地要求可见，在样本 <100 的数据源（隔离合成种子）上假失败。
         notice = page.locator("#adminGreySampleLimitNotice")
-        assert notice.is_visible(), "Sample limit notice should be visible when samples > 100"
-        print(f"Notice text: {notice.inner_text()}")
+        if m_total > 100:
+            assert notice.is_visible(), "Sample limit notice should be visible when samples > 100"
+            print(f"Notice text: {notice.inner_text()}")
+        else:
+            assert not notice.is_visible(), (
+                f"Sample limit notice must stay hidden when total ({m_total}) <= 100")
 
         # 2.3 检查脱敏单据流表格无截断
         sample_rows = page.locator("#adminGreySamplesBody tr")

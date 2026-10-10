@@ -72,23 +72,31 @@ def test_canary_table_no_truncation_and_no_duplicate_requests():
         page.wait_for_selector("#adminGreySamplesBody tr td.cell-vendor", timeout=45000)
         page.wait_for_timeout(500)
 
-        # Step 4: Verify limit notice
-        notice = page.locator("#adminGreySampleLimitNotice")
-        assert notice.is_visible(), "adminGreySampleLimitNotice should be visible"
-        notice_text = notice.inner_text()
-        # notice 形如「* 仅展示最新 100 条脱敏单据抽样观测记录，全量样本共 N 份」。
-        # 展示上限 100 是固定口径；N 随库中单据数变化（页面按 deleted_at IS NULL 口径统计），
-        # 因此断言语义（上限 + 全量数存在）而非写死数值：
-        #   2026-09-20 清库前写死 1484 → 清库后假失败；改为直接 COUNT(*) 后又因软删口径
-        #   与页面差 3 条再次假失败。此处改为格式断言，与数据量解耦。
+        # Step 4+5: 限额提示与行数必须与**页面自身的数据量口径**一致（数据感知断言）。
+        # 展示上限 100 是固定口径：total_count > 100 时提示可见且行数恰 100；
+        # total_count <= 100 时提示必须隐藏且行数恰等于 total_count。
+        # 旧断言无数据前提地要求提示可见 + 100 行 —— 在样本数 <100 的数据源
+        # （如隔离合成种子）上必然假失败。#mGreyTotal 与提示同源
+        # （res.total_count，api_admin.grey_test_samples 同一列表取 len），
+        # 此处构成「指标卡 ↔ 提示 ↔ 行数」三方交叉核对，判别力强于旧断言。
         import re
-        assert "100" in notice_text and re.search(r"全量样本共\s*\d+\s*份", notice_text), (
-            f"Unexpected notice text: {notice_text}"
-        )
-
-        # Step 5: Verify rendered rows count capped at 100
+        total_text = page.locator("#mGreyTotal").inner_text().strip()
+        assert total_text.isdigit(), f"#mGreyTotal should be a number, got: {total_text!r}"
+        total = int(total_text)
         rows = page.locator("#adminGreySamplesBody tr")
-        assert rows.count() == 100, f"Expected 100 rows, got {rows.count()}"
+        notice = page.locator("#adminGreySampleLimitNotice")
+        if total > 100:
+            assert notice.is_visible(), "adminGreySampleLimitNotice should be visible when total > 100"
+            notice_text = notice.inner_text()
+            assert "100" in notice_text and re.search(r"全量样本共\s*\d+\s*份", notice_text), (
+                f"Unexpected notice text: {notice_text}"
+            )
+            assert rows.count() == 100, f"Expected 100 rows (cap), got {rows.count()}"
+        else:
+            assert not notice.is_visible(), (
+                f"adminGreySampleLimitNotice must stay hidden when total ({total}) <= 100")
+            assert rows.count() == total, (
+                f"Expected {total} rows (no cap below 100), got {rows.count()}")
 
         # Step 6: Verify table layout and cell truncation (zero truncated cells!)
         truncation_check = page.evaluate("""() => {

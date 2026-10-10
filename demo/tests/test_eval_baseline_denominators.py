@@ -91,7 +91,7 @@ def _run(tmp_path, ev, baseline_path, strict=False):
 # ------------------------------------------------------------------
 def test_d1_tampered_denominators_with_valid_sha_detected(tmp_path, evalset_dir, capsys):
     baseline_path, payload = _freeze_to(tmp_path, evalset_dir)
-    assert payload["denominators"]["items_gt"] == 211  # 夹具前提：P10 冻结钉值
+    assert payload["denominators"]["items_gt"] == 208  # 夹具前提：P10 冻结钉值（2026-10-11 重冻结）
     _rewrite_baseline(baseline_path,
                       lambda p: p["denominators"].__setitem__("items_gt", 999))
     ev = _copy_evalset_gt(tmp_path, evalset_dir)
@@ -103,7 +103,7 @@ def test_d1_tampered_denominators_with_valid_sha_detected(tmp_path, evalset_dir,
     assert "items_gt" in mismatch_keys
     mm = next(m for m in report["baseline_denominator_mismatches"]
               if m["key"] == "items_gt")
-    assert mm["baseline"] == 999 and mm["actual"] == 211
+    assert mm["baseline"] == 999 and mm["actual"] == 208
     out = capsys.readouterr().out
     assert "分母不一致" in out, "分母显式比对失败必须 stdout 警告"
 

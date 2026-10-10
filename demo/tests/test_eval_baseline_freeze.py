@@ -3,8 +3,8 @@
 
 对应 SPEC_PHASE0 §4.5 断言 1–5：
   1. 两次连续冻结 sha256 相等（确定性）
-  2. sample_ids 数 == 33 且 confirmed=5 / draft=28（P10；items_gt=211 / unit_present_gt=164
-     为本次冻结实测钉值，语料变更须按冻结纪律重冻结）
+  2. sample_ids 数 == 33 且 confirmed=5 / draft=28（P10；items_gt=208 / unit_present_gt=141
+     为 2026-10-11 重冻结实测钉值，语料变更须按冻结纪律重冻结）
   3. run_eval --baseline <冻结文件> --engine stub（GT 拷贝到 tmp evalset）→
      baseline_match is True 且 baseline_sha256 == 文件内 sha256
   4. 篡改一个 sample_id → sha256 自校验失败 → baseline_match=false（stdout 警告）
@@ -35,7 +35,9 @@ import freeze_eval_baseline  # noqa: E402
 import run_eval  # noqa: E402
 
 # P10 钉值：manifest 33 张 test（34 行含表头）、confirmed 5 / draft 28；
-# items_gt / unit_present_gt 为 2026-09-27 冻结实测（spec §4.4 示例值一致）
+# items_gt=208 / unit_present_gt=141 为 2026-10-11 重冻结实测钉值（2026-09-27 原钉
+# 211/164；语料在 09-27 后被一次批量重写重置确权并降解 S090/S136 部分内容，确权已按
+# live 黄金标记恢复、丢失明细不可复原，按冻结纪律换 frozen_at 重冻结并注明原因）
 _FROZEN_FILE = os.path.join(_DEMO_DIR, "..", "ai_registry", "benchmarks",
                             "eval_baselines", "test_weekly_baseline.json")
 
@@ -106,8 +108,8 @@ def test_frozen_denominators_pin_p10(evalset_dir):
     assert d["samples"] == 33
     assert d["confirmed"] == 5
     assert d["draft"] == 28
-    assert d["items_gt"] == 211
-    assert d["unit_present_gt"] == 164
+    assert d["items_gt"] == 208
+    assert d["unit_present_gt"] == 141
     # sample_ids 与 manifest test split 顺序一致
     with open(os.path.join(evalset_dir, "manifest.csv"), encoding="utf-8", newline="") as f:
         ids = [r["sample_id"] for r in csv.DictReader(f) if r.get("split") == "test"]

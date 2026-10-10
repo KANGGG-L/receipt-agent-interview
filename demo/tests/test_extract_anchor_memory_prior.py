@@ -22,6 +22,7 @@ DB/RAG，逐用例独立库）。
 
 import importlib
 import json
+import re
 import logging
 import os
 import sys
@@ -60,15 +61,32 @@ USER_ITEMS = [{"name": "本地牛腩", "quantity": 2.0, "unit": "斤",
 _PAYLOAD = [{"kind": "alias", "fact_key": "写法甲", "value": "本地牛腩",
              "confidence": 0.7}]
 
-
 class _Msg:
     def __init__(self, content):
         self.content = content
 
 
+# Canary 数组通道握手锚点（与 canary_guard.CANARY_ARRAY_INSTRUCTION_TEMPLATE 同约定）：
+# 注入指令要求「数组最后一个元素是 {"__guard_token": token} 握手对象」。
+_CANARY_RE = re.compile(r'"__guard_token"\s*:\s*"(CANARY_[0-9A-Fa-f]+)"')
+
+
 class _StubModel:
     def invoke(self, messages):
-        return _Msg(json.dumps(_PAYLOAD, ensure_ascii=False))
+        # 真实模型契约 = 从注入的锚定指令里回带握手元素；缺失即被 fail-closed 门
+        # 拒绝（verify_canary_in_json_array → []）。stub 必须遵守同一契约：从消息里
+        # 提取本轮动态 token 并作为数组末元素回带。若产品侧根本没注入指令（token=None），
+        # stub 不伪造握手 → 校验失败 → 用例失败，判别力保留。
+        token = None
+        for msg in reversed(list(messages)):
+            m = _CANARY_RE.search(getattr(msg, "content", "") or "")
+            if m:
+                token = m.group(1)
+                break
+        payload = list(_PAYLOAD)
+        if token is not None:
+            payload.append({"__guard_token": token})
+        return _Msg(json.dumps(payload, ensure_ascii=False))
 
 
 @pytest.fixture(autouse=True)

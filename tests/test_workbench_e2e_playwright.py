@@ -176,7 +176,20 @@ def test_workbench_playwright_e2e_audit():
         # 此时阻断问题应归零
         blocker_badge = page.locator("#issueBlockerCountBadge").inner_text()
         print(f"  Blocker badge after balance: {blocker_badge}")
-        assert "0" in blocker_badge
+        # 三态文案契约（AC-02-03）：0 个阻断问题 → 徽标为「无必改问题」；
+        # >0 → 「必须修改: N 处」。旧断言 `"0" in badge` 钉的是文案演化前的数字字面，
+        # Round 6 引入三态文案后过期（r7 实测 badge 文本恰为「无必改问题」）。
+        assert blocker_badge.strip() == "无必改问题", \
+            f"Expected zero-blocker three-state copy 无必改问题, got: {blocker_badge!r}"
+
+        # AC-01-03 未保存修改安全阻断：审批入口要求先保存（手工单保存后才有单据 id，
+        # 且 isReviewFormDirty() 为真时 onWorkbenchApproveClick 直接 toast 拒绝）。
+        # 旧流程「不保存直接点审批」在守卫加入后必然弹不出确认框 —— 先保存再审批。
+        page.locator("#btnSaveReview").click()
+        page.wait_for_function(
+            "() => (document.getElementById('reviewSaveStatusBadge')||{}).textContent?.includes('已保存')",
+            timeout=10000)
+        page.wait_for_timeout(300)
 
         # -------------------------------------------------------------
         # 8. 验证所有者审批确认弹窗 (AC-02-01, AC-02-02)

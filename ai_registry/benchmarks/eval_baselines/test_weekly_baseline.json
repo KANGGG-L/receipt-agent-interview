@@ -1,6 +1,6 @@
 {
   "name": "evalset-test-weekly",
-  "frozen_at": "2026-09-27",
+  "frozen_at": "2026-10-11",
   "split": "test",
   "sample_ids": [
     "S003",
@@ -41,9 +41,9 @@
     "samples": 33,
     "confirmed": 5,
     "draft": 28,
-    "items_gt": 211,
-    "unit_present_gt": 164
+    "items_gt": 208,
+    "unit_present_gt": 141
   },
-  "note": "周基线分母冻结：周环比对比一律以此 sample_ids 为固定分母；33 张上 ±1 张 ≈ ±0.5pp 无统计意义（EXPLORATION_REPORT §4.3）",
-  "sha256": "d6848945d49b17b8810e659671ce05ce7408eb8ff6b14e552e28552e9f0e43cb"
+  "note": "周基线分母冻结：周环比对比一律以此 sample_ids 为固定分母；33 张上 ±1 张 ≈ ±0.5pp 无统计意义（EXPLORATION_REPORT §4.3）。2026-10-11 重冻结：语料确权状态曾被 10-01 前后的一次批量重写重置（confirmed 5→0），已按 live 库黄金标记（receipts 1455-1459 is_golden_sample=1）恢复确权；S090 丢失 3 行明细、S136 丢失 unit 字段（items_gt 211→208、unit_present_gt 164→141），原始内容无备份不可复原，如实按当前语料钉值（详见 qa-round6/r7b-report.md）",
+  "sha256": "2f8dc54579a7c02372d04a684b103161c327a828ddc2e0f643869751b32cbae9"
 }

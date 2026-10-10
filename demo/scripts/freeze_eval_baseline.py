@@ -30,7 +30,12 @@ DEFAULT_OUT = os.path.join(REPO_ROOT, "ai_registry", "benchmarks", "eval_baselin
                            "test_weekly_baseline.json")
 
 _NOTE = ("周基线分母冻结：周环比对比一律以此 sample_ids 为固定分母；"
-         "33 张上 ±1 张 ≈ ±0.5pp 无统计意义（EXPLORATION_REPORT §4.3）")
+         "33 张上 ±1 张 ≈ ±0.5pp 无统计意义（EXPLORATION_REPORT §4.3）。"
+         "2026-10-11 重冻结：语料确权状态曾被 10-01 前后的一次批量重写重置"
+         "（confirmed 5→0），已按 live 库黄金标记（receipts 1455-1459 "
+         "is_golden_sample=1）恢复确权；S090 丢失 3 行明细、S136 丢失 unit 字段"
+         "（items_gt 211→208、unit_present_gt 164→141），原始内容无备份不可复原，"
+         "如实按当前语料钉值（详见 qa-round6/r7b-report.md）")
 
 
 def baseline_sha256(payload):
