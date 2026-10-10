@@ -336,8 +336,10 @@ def test_ac_3_1_zero_em_dash_in_obs_center():
     for l_idx, line in enumerate(lines_js, 1):
         if "—" in line:
             stripped = line.strip()
-            # 允许出现在转换防御中或注释中
-            if "=== '—'" in stripped or "=== \"—\"" in stripped or stripped.startswith("//") or stripped.startswith("/*"):
+            # 允许出现在转换防御中或注释中（含 /* */ 块注释的续行 "* "）
+            if ("=== '—'" in stripped or "=== \"—\"" in stripped
+                    or stripped.startswith("//") or stripped.startswith("/*")
+                    or stripped.startswith("*")):
                 continue
             render_violations.append((l_idx, stripped))
 

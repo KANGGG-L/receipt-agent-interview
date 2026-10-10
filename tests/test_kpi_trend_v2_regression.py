@@ -190,7 +190,9 @@ def test_ac_05_06_07_titles_and_action_button(kpi_modal_soup, main_js_content):
     assert "时序趋势与多维下钻" not in title_el.get_text()
 
     # JS 中动态渲染标题
-    assert "titleEl.textContent = data.metric_name + '趋势';" in main_js_content
+    # 2026-10-10 契约对齐：标题简化为 metric_name 本身（后端 metric_name 已含
+    # 「趋势」语义，main.js:20147 注释明言「简化为 ${metric_name}趋势」）
+    assert "titleEl.textContent = data.metric_name;" in main_js_content
 
     # 卡片副标题为 '切片明细'
     body_text = kpi_modal_soup.find("div", class_="modal-body").get_text()

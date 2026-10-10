@@ -83,7 +83,8 @@ def test_engine_effective_bar_and_status_container_retained():
     assert 'id="engineEffectiveBar"' in html
     assert 'id="adminEngineStatus"' in html
     assert 'id="btnToggleEngineTopology"' in html
-    assert "[展开全景拓扑]" in html
+    # 2026-10-10 契约对齐：按钮文案简化为「展开全景」（括号微标风格随纯文案化移除）
+    assert "展开全景" in html
     assert "toggleEngineTopologyInspector()" in html
 
 
@@ -202,7 +203,8 @@ def test_boundary_1_dom_integrity_and_cleanup():
     # 断言全景展开切换按钮存在且参数正确
     assert 'id="btnToggleEngineTopology"' in html
     assert 'onclick="toggleEngineTopologyInspector()"' in html
-    assert '[展开全景拓扑]' in html
+    # 2026-10-10 契约对齐：按钮文案简化为「展开全景」
+    assert "展开全景" in html
 
 
 # ==============================================================================

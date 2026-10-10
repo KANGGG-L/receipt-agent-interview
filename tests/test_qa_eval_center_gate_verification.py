@@ -358,8 +358,11 @@ def test_qa_ui_02_filter_controls_uniformity():
     assert "height: 34px !important;" in html
 
     # 控件统一引用检验
+    # 2026-10-10 契约对齐：租户过滤重构为可见 datalist 输入 #analyticsTenantSelect
+    # （挂统一类）；#parsingLogTenantSelect 降为 display:none 的兼容回退读点，
+    # 不再承担可见过滤控件职责，从统一类断言清单移除。
     expected_controls = [
-        'id="parsingLogTenantSelect"',
+        'id="analyticsTenantSelect"',
         'id="parsingLogStatusSelect"',
         'id="parsingLogGateSelect"',
         'id="parsingLogFeedbackSelect"',

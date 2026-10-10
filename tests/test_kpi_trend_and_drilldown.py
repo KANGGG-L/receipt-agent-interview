@@ -101,8 +101,11 @@ def test_ac_01_02_card_affordance_and_modal_dom():
 
     # 8 张卡片均包含类名 kpi-trend-card
     assert html.count("kpi-trend-card") >= 8
-    # 纯文本微标 [查看趋势]
-    assert "[查看趋势]" in html
+    # 2026-10-10 契约对齐：趋势入口由纯文本微标 [查看趋势] 演化为整卡可点
+    # （_analyticsStatHtml 生成 role="button" + aria-haspopup + 键盘激活，a11y 轮产物）
+    assert 'openKpiTrendModal' in html
+    assert 'aria-haspopup="dialog"' in html
+    assert 'kpi-trend-card' in html
 
     # 模态框与关键容器 ID
     for el_id in (

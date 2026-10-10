@@ -159,16 +159,24 @@ def test_experiments_endpoints_mask_snapshot_api_keys():
     exp_id = created["id"]
 
     snap = created["experiment"]["grey_snapshot"]
-    assert snap["treatment_api_key"] == "sk-tre****3456"
-    assert snap["control_api_key"] == "sk-con****3456"
+    # 2026-10-10 契约对齐：mask_secret_key(equal_length=True) 掩码总长随密钥长度
+    # 演化，判据改为「前缀/后缀保留 + 无明文」（不钉星号数量）
+    assert snap["treatment_api_key"].startswith("sk-tre")
+    assert snap["treatment_api_key"].endswith("3456")
+    assert "*" in snap["treatment_api_key"]
+    assert snap["control_api_key"].startswith("sk-con")
+    assert snap["control_api_key"].endswith("3456")
+    assert "*" in snap["control_api_key"]
     assert "sk-treatment-secret" not in json.dumps(created, ensure_ascii=False)
 
     # 列表与详情同样脱敏
     rows = client.get("/api/admin/experiments").json()["data"]
     row = next(e for e in rows if e["id"] == exp_id)
-    assert row["grey_snapshot"]["treatment_api_key"] == "sk-tre****3456"
+    assert row["grey_snapshot"]["treatment_api_key"].startswith("sk-tre")
+    assert row["grey_snapshot"]["treatment_api_key"].endswith("3456")
     detail = client.get(f"/api/admin/experiments/{exp_id}").json()["experiment"]
-    assert detail["grey_snapshot"]["control_api_key"] == "sk-con****3456"
+    _m = detail["grey_snapshot"]["control_api_key"]
+    assert _m.startswith("sk-con") and _m.endswith("3456") and "*" in _m, _m
 
     # 库内仍是明文，后端调用不受影响
     internal = db.get_experiment(exp_id)

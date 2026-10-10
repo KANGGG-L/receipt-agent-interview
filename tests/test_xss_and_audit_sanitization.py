@@ -66,33 +66,50 @@ def test_engine_config_masks_api_keys():
         assert "sk-prevparsesecret11223344" not in raw_text
 
         data = resp.json()["data"]
-        assert data["openai_rec_api_key"] == "sk-rec****5678"
-        assert data["openai_aud_api_key"] == "sk-aud****4321"
-        assert data["openai_parse_api_key"] == "sk-par****3344"
-        assert data["grey_openai_rec_api_key"] == "sk-gre****7766"
-        assert data["grey_openai_aud_api_key"] == "sk-gre****3322"
-        assert data["grey_openai_parse_api_key"] == "sk-gre****8899"
+        # 2026-10-10 契约对齐：mask_secret_key(equal_length=True) 掩码总长随密钥长度
+        # 演化，判据改为「前缀/后缀保留 + 掩码存在 + 无明文」（不钉星号数量）
+        for field, prefix, suffix in (
+            ("openai_rec_api_key", "sk-rec", "5678"),
+            ("openai_aud_api_key", "sk-aud", "4321"),
+            ("openai_parse_api_key", "sk-par", "3344"),
+            ("grey_openai_rec_api_key", "sk-gre", "7766"),
+            ("grey_openai_aud_api_key", "sk-gre", "3322"),
+            ("grey_openai_parse_api_key", "sk-gre", "8899"),
+        ):
+            masked = data[field]
+            assert masked.startswith(prefix), (field, masked)
+            assert masked.endswith(suffix), (field, masked)
+            assert "*" in masked, (field, masked)
 
         # Check rollback_snapshot inside response data
         snap_prev = data["rollback_snapshot"]["prev"]
-        assert snap_prev["openai_rec_api_key"] == "sk-pre****5678"
-        assert snap_prev["openai_aud_api_key"] == "sk-pre****4321"
+        _m = snap_prev["openai_rec_api_key"]
+        assert _m.startswith("sk-pre") and _m.endswith("5678") and "*" in _m, _m
+        _m = snap_prev["openai_aud_api_key"]
+        assert _m.startswith("sk-pre") and _m.endswith("4321") and "*" in _m, _m
         # Verify GET /api/admin/grey-test also masks all keys in data.current
         resp_grey = client.get("/api/admin/grey-test")
         assert resp_grey.status_code == 200
         assert "sk-recsecretkey12345678" not in resp_grey.text
-        assert resp_grey.json()["data"]["current"]["openai_rec_api_key"] == "sk-rec****5678"
+        _m = resp_grey.json()["data"]["current"]["openai_rec_api_key"]
+        assert _m.startswith("sk-rec") and _m.endswith("5678") and "*" in _m, _m
 
         # Verify PUT /api/admin/engine-config masks keys in response
+        # （现行校验：带 api_key 的更新必须同时提供 base_url，api_admin.py
+        #   rec_base_required 判定 —— 故 PUT 体补 base_url）
         put_resp = client.put("/api/admin/engine-config", json={
             "openai_rec_api_key": "sk-newputkey12345678",
+            "openai_rec_base_url": "https://api.example.com/v1",
             "openai_aud_api_key": "sk-newputaudkey87654321",
+            "openai_aud_base_url": "https://api.example.com/v1",
         })
         assert put_resp.status_code == 200
         assert "sk-newputkey12345678" not in put_resp.text
         assert "sk-newputaudkey87654321" not in put_resp.text
-        assert put_resp.json()["data"]["openai_rec_api_key"] == "sk-new****5678"
-        assert put_resp.json()["data"]["openai_aud_api_key"] == "sk-new****4321"
+        _m = put_resp.json()["data"]["openai_rec_api_key"]
+        assert _m.startswith("sk-new") and _m.endswith("5678") and "*" in _m, _m
+        _m = put_resp.json()["data"]["openai_aud_api_key"]
+        assert _m.startswith("sk-new") and _m.endswith("4321") and "*" in _m, _m
     finally:
         db.set_engine_config(orig_cfg)
 
@@ -123,11 +140,15 @@ def test_promote_and_rollback_mask_api_keys():
 
         promote_data = resp_promote.json()["data"]
         # Promoted keys should now be in regular slots, masked
-        assert promote_data["openai_rec_api_key"] == "sk-gre****4321"
-        assert promote_data["openai_aud_api_key"] == "sk-gre****1234"
-        assert promote_data["openai_parse_api_key"] == "sk-gre****ey56"
+        _m = promote_data["openai_rec_api_key"]
+        assert _m.startswith("sk-gre") and _m.endswith("4321") and "*" in _m, _m
+        _m = promote_data["openai_aud_api_key"]
+        assert _m.startswith("sk-gre") and _m.endswith("1234") and "*" in _m, _m
+        _m = promote_data["openai_parse_api_key"]
+        assert _m.startswith("sk-gre") and _m.endswith("ey56") and "*" in _m, _m
         # Rollback snapshot prev keys should also be masked
-        assert promote_data["rollback_snapshot"]["prev"]["openai_rec_api_key"] == "sk-cur****5678"
+        _m = promote_data["rollback_snapshot"]["prev"]["openai_rec_api_key"]
+        assert _m.startswith("sk-cur") and _m.endswith("5678") and "*" in _m, _m
 
         # 2. Rollback engine config
         resp_rollback = client.put("/api/admin/engine-config/rollback")
@@ -137,8 +158,10 @@ def test_promote_and_rollback_mask_api_keys():
         assert "sk-currentaudkey87654321" not in rollback_text
 
         rollback_data = resp_rollback.json()["data"]
-        assert rollback_data["openai_rec_api_key"] == "sk-cur****5678"
-        assert rollback_data["openai_aud_api_key"] == "sk-cur****4321"
+        _m = rollback_data["openai_rec_api_key"]
+        assert _m.startswith("sk-cur") and _m.endswith("5678") and "*" in _m, _m
+        _m = rollback_data["openai_aud_api_key"]
+        assert _m.startswith("sk-cur") and _m.endswith("4321") and "*" in _m, _m
     finally:
         db.set_engine_config(orig_cfg)
 
@@ -177,8 +200,10 @@ def test_system_audit_masks_secrets():
     # Find matching log entries
     key_entry = next((l for l in logs if l.get("field") == "openai_rec_api_key"), None)
     assert key_entry is not None
-    assert key_entry["old"] == "sk-aud****5678"
-    assert key_entry["new"] == "sk-aud****4321"
+    _m = key_entry["old"]
+    assert _m.startswith("sk-aud") and _m.endswith("5678") and "*" in _m, _m
+    _m = key_entry["new"]
+    assert _m.startswith("sk-aud") and _m.endswith("4321") and "*" in _m, _m
 
     embedded_entry = next((l for l in logs if l.get("field") == "custom_note"), None)
     assert embedded_entry is not None

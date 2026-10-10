@@ -84,9 +84,13 @@ class TestKpiTrendApiCustomDates:
         # 仅传 start_date
         r1 = client.get(f"/api/analytics/kpi-trends?metric_key=total_parses&start_date={today}", headers=self.headers)
         assert r1.status_code == 400
-        # 仅传 end_date
+        # 仅传 end_date：2026-10-10 契约对齐 —— api_phase2.py 改为 start_date
+        # 默认解析为最早一条收据记录的日期（docstring 明言），返回 200
         r2 = client.get(f"/api/analytics/kpi-trends?metric_key=total_parses&end_date={today}", headers=self.headers)
-        assert r2.status_code == 400
+        assert r2.status_code == 200
+        # 仅传 start_date 仍 400（缺 end 无默认语义）
+        r3 = client.get(f"/api/analytics/kpi-trends?metric_key=total_parses&start_date={today}", headers=self.headers)
+        assert r3.status_code == 400
 
     def test_invalid_date_format_returns_400(self, client: TestClient):
         for bad_date in ["2026-99-99", "invalid-date", "2026/09/01"]:
