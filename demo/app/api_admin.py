@@ -16,9 +16,14 @@
 
 import logging
 import os
+import time
+import json
+import asyncio
+from datetime import datetime
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from typing import Optional
+from typing import Optional, Dict, Any
+import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 import re
@@ -30,18 +35,18 @@ from app.services.security_guard import mask_secret_key
 _SK_KEY_PATTERN = re.compile(r"sk-[a-zA-Z0-9_\-]{8,}")
 
 
-def mask_engine_config_dict(data: dict) -> dict:
+def mask_engine_config_dict(data: dict, equal_length: bool = True) -> dict:
     """递归脱敏引擎配置字典中的所有 API Key 字段。"""
     if not isinstance(data, dict):
         return data
     masked = {}
     for k, v in data.items():
         if isinstance(v, dict):
-            masked[k] = mask_engine_config_dict(v)
+            masked[k] = mask_engine_config_dict(v, equal_length=equal_length)
         elif isinstance(v, list):
-            masked[k] = [mask_engine_config_dict(item) if isinstance(item, dict) else item for item in v]
+            masked[k] = [mask_engine_config_dict(item, equal_length=equal_length) if isinstance(item, dict) else item for item in v]
         elif (k == "api_key" or k.endswith("_api_key") or "api_key" in k.lower()) and isinstance(v, str):
-            masked[k] = mask_secret_key(v)
+            masked[k] = mask_secret_key(v, equal_length=equal_length)
         else:
             masked[k] = v
     return masked
@@ -161,14 +166,13 @@ class EngineConfigBody(BaseModel):
     recognition_model: str = None
     audit_model: str = None
     audit_enabled: bool = None
+    audit_mode: Optional[str] = None
     openai_rec_base_url: str = None
     openai_rec_api_key: str = None
     openai_rec_model: str = None
     openai_aud_base_url: str = None
     openai_aud_api_key: str = None
     openai_aud_model: str = None
-    # 新增开关（与 models.EngineConfig 对齐）：超时 / 审核模式
-    call_timeout_seconds: int = None
     # 独立超时
     rec_timeout_seconds: Optional[int] = None
     aud_timeout_seconds: Optional[int] = None
@@ -183,10 +187,24 @@ class EngineConfigBody(BaseModel):
     grey_openai_rec_reasoning_effort: Optional[str] = None
     grey_openai_aud_reasoning_effort: Optional[str] = None
     grey_openai_parse_reasoning_effort: Optional[str] = None
-    # T11：整图识别重试上限。必须声明，否则 GET 回读后再 PUT（前端回显整份配置）会因
-    # models 侧 extra="forbid" 触发 422（与 T1 config_source 同一坑）。
-    max_retry_rounds: int = None
-    audit_mode: str = None
+    # 分腿重试上限（支持 openai_ 前缀与简写双轨契约）
+    openai_rec_max_retry_rounds: Optional[int] = None
+    openai_aud_max_retry_rounds: Optional[int] = None
+    openai_parse_max_retry_rounds: Optional[int] = None
+    grey_openai_rec_max_retry_rounds: Optional[int] = None
+    grey_openai_aud_max_retry_rounds: Optional[int] = None
+    grey_openai_parse_max_retry_rounds: Optional[int] = None
+
+    rec_max_retry_rounds: Optional[int] = None
+    aud_max_retry_rounds: Optional[int] = None
+    parse_max_retry_rounds: Optional[int] = None
+    grey_rec_max_retry_rounds: Optional[int] = None
+    grey_aud_max_retry_rounds: Optional[int] = None
+    grey_parse_max_retry_rounds: Optional[int] = None
+
+    # T11：整图识别重试上限（历史兼容字段）。
+    max_retry_rounds: Optional[int] = None
+
     # 历史注记：此处原有 recognition_transport / audit_transport / parse_transport
     # 及灰测组 3 个同名开关，随 CLI 引擎（2026-09-02 弃用）一并删除。
     # models.EngineConfig 会在校验前统一摘掉这些遗留键，旧前端 payload 不会 422。
@@ -400,11 +418,45 @@ def _normalize_and_sync_engine_updates(updates: dict, cfg=None) -> dict:
             "grey_openai_aud_api_key",
             "grey_openai_parse_api_key",
         )
+        custom_presets = None
         for key_field in key_fields:
-            if key_field in updates and updates[key_field]:
-                val_str = str(updates[key_field])
-                if "****" in val_str or val_str == "******":
-                    updates[key_field] = getattr(cfg, key_field, "") if not isinstance(cfg, dict) else cfg.get(key_field, "")
+            if key_field in updates:
+                val = updates[key_field]
+                if val is not None:
+                    val_str = str(val).strip()
+                    if "*" in val_str or "•" in val_str:
+                        # 掩码未修改回传 -> 保留 DB 内既有真实密钥，杜绝写污染
+                        existing_key = getattr(cfg, key_field, "") if not isinstance(cfg, dict) else cfg.get(key_field, "")
+                        existing_key_str = str(existing_key or "")
+                        # 1. 首先比对当前 DB 中主配置的对应 Key，若掩码一致则继承主配置原有真实密钥
+                        if existing_key_str and (mask_secret_key(existing_key_str) == val_str or mask_secret_key(existing_key_str, equal_length=True) == val_str):
+                            updates[key_field] = existing_key_str
+                        else:
+                            # 2. 若与当前主配置不一致，则遍历 custom_engine_presets 中所有已存模版
+                            if custom_presets is None:
+                                try:
+                                    import json as _json
+                                    custom_raw = db.get_app_setting("custom_engine_presets", "{}")
+                                    custom_presets = _json.loads(custom_raw or "{}")
+                                    if not isinstance(custom_presets, dict):
+                                        custom_presets = {}
+                                except Exception:
+                                    custom_presets = {}
+                            matched_preset_key = None
+                            for p in custom_presets.values():
+                                if isinstance(p, dict) and p.get("api_key"):
+                                    p_key = str(p.get("api_key") or "")
+                                    if mask_secret_key(p_key) == val_str or mask_secret_key(p_key, equal_length=True) == val_str:
+                                        matched_preset_key = p_key
+                                        break
+                            if matched_preset_key:
+                                updates[key_field] = matched_preset_key
+                            else:
+                                # 3. 回退策略：若原有 existing_key 存在则保留，绝不将掩码写回 DB
+                                updates[key_field] = existing_key_str
+                    else:
+                        # 显式清空 ("") 或 新密钥输入
+                        updates[key_field] = val_str
 
     if "grey_assign_mode" in updates:
         updates["grey_assign_mode"] = GreyAssignMode(updates["grey_assign_mode"])
@@ -520,8 +572,8 @@ def test_engine_config(body: EngineConfigBody, request: Request):
         if err:
             return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
-    # 3. 常规审核引擎测试（开启时）
-    if test_cfg.audit_enabled:
+    # 3. 常规审核引擎测试（开启且已配置凭据时）
+    if test_cfg.audit_enabled and (test_cfg.openai_aud_base_url or test_cfg.openai_aud_api_key):
         aud_eng = test_cfg.audit_engine.value if hasattr(test_cfg.audit_engine, "value") else str(test_cfg.audit_engine)
         err = _quick_test_engine(aud_eng, test_cfg.openai_aud_model or test_cfg.audit_model,
                                  test_cfg.openai_aud_base_url, test_cfg.openai_aud_api_key, "审核引擎")
@@ -530,20 +582,21 @@ def test_engine_config(body: EngineConfigBody, request: Request):
 
     # 4. 灰测测试（开启时）
     if test_cfg.grey_enabled and test_cfg.grey_percent > 0:
-        g_rec_eng = test_cfg.grey_recognition_engine.value if hasattr(test_cfg.grey_recognition_engine, "value") else str(test_cfg.grey_recognition_engine)
-        err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model or test_cfg.grey_recognition_model,
-                                 test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别")
-        if err:
-            return JSONResponse(status_code=400, content={"status": "error", "msg": err})
+        if test_cfg.grey_openai_rec_base_url or test_cfg.grey_openai_rec_api_key:
+            g_rec_eng = test_cfg.grey_recognition_engine.value if hasattr(test_cfg.grey_recognition_engine, "value") else str(test_cfg.grey_recognition_engine)
+            err = _quick_test_engine(g_rec_eng, test_cfg.grey_openai_rec_model or test_cfg.grey_recognition_model,
+                                     test_cfg.grey_openai_rec_base_url, test_cfg.grey_openai_rec_api_key, "灰测识别")
+            if err:
+                return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
-        if test_cfg.grey_parse_llm_enabled:
+        if test_cfg.grey_parse_llm_enabled and (test_cfg.grey_openai_parse_base_url or test_cfg.grey_openai_parse_api_key):
             gp_eng = test_cfg.grey_parse_llm_engine.value if hasattr(test_cfg.grey_parse_llm_engine, "value") else str(test_cfg.grey_parse_llm_engine)
             err = _quick_test_engine(gp_eng, test_cfg.grey_openai_parse_model or test_cfg.grey_parse_llm_model,
                                      test_cfg.grey_openai_parse_base_url, test_cfg.grey_openai_parse_api_key, "灰测解析")
             if err:
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
-        if test_cfg.grey_audit_enabled:
+        if test_cfg.grey_audit_enabled and (test_cfg.grey_openai_aud_base_url or test_cfg.grey_openai_aud_api_key):
             ga_eng = test_cfg.grey_audit_engine.value if hasattr(test_cfg.grey_audit_engine, "value") else str(test_cfg.grey_audit_engine)
             err = _quick_test_engine(ga_eng, test_cfg.grey_openai_aud_model or test_cfg.grey_audit_model,
                                      test_cfg.grey_openai_aud_base_url, test_cfg.grey_openai_aud_api_key, "灰测审核")
@@ -551,6 +604,104 @@ def test_engine_config(body: EngineConfigBody, request: Request):
                 return JSONResponse(status_code=400, content={"status": "error", "msg": err})
 
     return {"status": "success", "msg": "全部生效引擎测试通过"}
+
+
+class SingleLegProbePayload(BaseModel):
+    leg_type: Optional[str] = None
+    leg: Optional[str] = None
+    base_url: str = Field(..., description="网关 Endpoint URL")
+    api_key: Optional[str] = Field("", description="API 密钥（可为明文或掩码，掩码时服务端自动解析）")
+    model_name: Optional[str] = None
+    model: Optional[str] = None
+    timeout_seconds: Optional[float] = 8.0
+
+    @property
+    def effective_leg_type(self) -> str:
+        return (self.leg_type or self.leg or "rec").strip()
+
+    @property
+    def effective_model_name(self) -> str:
+        return (self.model_name or self.model or "").strip()
+
+
+_PROBE_SEMAPHORE = asyncio.Semaphore(4)
+
+
+def _resolve_masked_key_for_probe(api_key: str, leg_type: str) -> str:
+    key_str = (api_key or "").strip()
+    if key_str and "*" not in key_str and "•" not in key_str:
+        return key_str
+    cfg = db.get_engine_config()
+    leg_map = {
+        "rec": getattr(cfg, "openai_rec_api_key", ""),
+        "aud": getattr(cfg, "openai_aud_api_key", ""),
+        "parse": getattr(cfg, "openai_parse_api_key", ""),
+        "grey_rec": getattr(cfg, "grey_openai_rec_api_key", ""),
+        "grey_aud": getattr(cfg, "grey_openai_aud_api_key", ""),
+        "grey_parse": getattr(cfg, "grey_openai_parse_api_key", ""),
+    }
+    return str(leg_map.get(leg_type) or "").strip()
+
+
+@router.post("/api/admin/probe-single-engine")
+async def probe_single_engine(body: SingleLegProbePayload, request: Request):
+    """后端受控异步单腿探活路由：非阻塞 HTTPX 客户端，防止冻结单进程 ASGI 事件循环。"""
+    require_admin(request)
+    from app.services.security_guard import validate_safe_external_url
+
+    leg_type = body.effective_leg_type
+    model_name = body.effective_model_name
+    if not model_name:
+        return JSONResponse(status_code=400, content={"status": "error", "latency_ms": 0, "msg": "缺少待测模型标识符"})
+
+    # 1. 还原前端可能传入的掩码密钥 (若以 **** 结尾或以 • 包含则从当前已存配置还原)
+    resolved_key = _resolve_masked_key_for_probe(body.api_key or "", leg_type)
+    if not resolved_key or _is_placeholder_api_key(resolved_key):
+        return JSONResponse(status_code=400, content={"status": "error", "latency_ms": 0, "msg": "API Key 无效或为占位符"})
+
+    # 2. SSRF 物理拦截
+    is_safe, reason = validate_safe_external_url(body.base_url)
+    if not is_safe:
+        return JSONResponse(status_code=400, content={"status": "error", "latency_ms": 0, "msg": f"SSRF 安全拦截: {reason}"})
+
+    base = body.base_url.strip().rstrip("/")
+    if base.endswith("/chat/completions"):
+        base = base[:-len("/chat/completions")].rstrip("/")
+    probe_url = f"{base}/chat/completions"
+
+    payload = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": "ping"}],
+        "max_tokens": 1,
+    }
+    headers = {
+        "Authorization": f"Bearer {resolved_key.strip()}",
+        "Content-Type": "application/json"
+    }
+
+    timeout_val = min(max(float(body.timeout_seconds or 8.0), 1.0), 15.0)
+
+    start_t = time.time()
+    async with _PROBE_SEMAPHORE:
+        try:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(8.0, connect=3.0), verify=True) as client:
+                resp = await client.post(probe_url, json=payload, headers=headers)
+                duration_ms = int((time.time() - start_t) * 1000)
+
+                # 401 明确鉴权失败
+                if resp.status_code == 401:
+                    return JSONResponse(status_code=400, content={"status": "error", "latency_ms": duration_ms, "msg": "认证失败: API Key 无效"})
+                # 200 或 400（只要说明通达且返回模型网关报错）
+                if resp.status_code in (200, 400):
+                    return {"status": "success", "latency_ms": duration_ms, "msg": f"探测正常 ({duration_ms}ms)"}
+
+                return JSONResponse(status_code=400, content={"status": "error", "latency_ms": duration_ms, "msg": f"网关返回 HTTP {resp.status_code}"})
+        except httpx.TimeoutException:
+            duration_ms = int((time.time() - start_t) * 1000)
+            return JSONResponse(status_code=400, content={"status": "error", "latency_ms": duration_ms, "msg": f"连接超时 ({duration_ms}ms): 8.0s 内未响应"})
+        except Exception as e:
+            duration_ms = int((time.time() - start_t) * 1000)
+            return JSONResponse(status_code=400, content={"status": "error", "latency_ms": duration_ms, "msg": f"网络异常: {str(e)}"})
 
 
 @router.put("/api/admin/engine-config/promote")
@@ -598,6 +749,12 @@ def promote_grey_config(request: Request):
             "rec_timeout_seconds": prev.get("rec_timeout_seconds"),
             "aud_timeout_seconds": prev.get("aud_timeout_seconds"),
             "parse_timeout_seconds": prev.get("parse_timeout_seconds"),
+            "openai_rec_max_retry_rounds": prev.get("openai_rec_max_retry_rounds", prev.get("rec_max_retry_rounds", 3)),
+            "openai_aud_max_retry_rounds": prev.get("openai_aud_max_retry_rounds", prev.get("aud_max_retry_rounds", 1)),
+            "openai_parse_max_retry_rounds": prev.get("openai_parse_max_retry_rounds", prev.get("parse_max_retry_rounds", 1)),
+            "rec_max_retry_rounds": prev.get("rec_max_retry_rounds", prev.get("openai_rec_max_retry_rounds", 3)),
+            "aud_max_retry_rounds": prev.get("aud_max_retry_rounds", prev.get("openai_aud_max_retry_rounds", 1)),
+            "parse_max_retry_rounds": prev.get("parse_max_retry_rounds", prev.get("openai_parse_max_retry_rounds", 1)),
             "openai_rec_reasoning_effort": prev.get("openai_rec_reasoning_effort", ""),
             "openai_aud_reasoning_effort": prev.get("openai_aud_reasoning_effort", ""),
             "openai_parse_reasoning_effort": prev.get("openai_parse_reasoning_effort", ""),
@@ -651,6 +808,49 @@ def promote_grey_config(request: Request):
         "rec_timeout_seconds": grey.grey_rec_timeout_seconds,
         "aud_timeout_seconds": grey.grey_aud_timeout_seconds,
         "parse_timeout_seconds": grey.grey_parse_timeout_seconds,
+        # 晋升灰测重试上限至常规组（若灰测未设置则保持常规组原值）
+        "openai_rec_max_retry_rounds": (
+            getattr(grey, "grey_openai_rec_max_retry_rounds", None)
+            if getattr(grey, "grey_openai_rec_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_rec_max_retry_rounds", None)
+                  if getattr(grey, "grey_rec_max_retry_rounds", None) is not None
+                  else getattr(cfg, "openai_rec_max_retry_rounds", getattr(cfg, "rec_max_retry_rounds", 3)))
+        ),
+        "openai_aud_max_retry_rounds": (
+            getattr(grey, "grey_openai_aud_max_retry_rounds", None)
+            if getattr(grey, "grey_openai_aud_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_aud_max_retry_rounds", None)
+                  if getattr(grey, "grey_aud_max_retry_rounds", None) is not None
+                  else getattr(cfg, "openai_aud_max_retry_rounds", getattr(cfg, "aud_max_retry_rounds", 1)))
+        ),
+        "openai_parse_max_retry_rounds": (
+            getattr(grey, "grey_openai_parse_max_retry_rounds", None)
+            if getattr(grey, "grey_openai_parse_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_parse_max_retry_rounds", None)
+                  if getattr(grey, "grey_parse_max_retry_rounds", None) is not None
+                  else getattr(cfg, "openai_parse_max_retry_rounds", getattr(cfg, "parse_max_retry_rounds", 1)))
+        ),
+        "rec_max_retry_rounds": (
+            getattr(grey, "grey_rec_max_retry_rounds", None)
+            if getattr(grey, "grey_rec_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_openai_rec_max_retry_rounds", None)
+                  if getattr(grey, "grey_openai_rec_max_retry_rounds", None) is not None
+                  else getattr(cfg, "rec_max_retry_rounds", getattr(cfg, "openai_rec_max_retry_rounds", 3)))
+        ),
+        "aud_max_retry_rounds": (
+            getattr(grey, "grey_aud_max_retry_rounds", None)
+            if getattr(grey, "grey_aud_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_openai_aud_max_retry_rounds", None)
+                  if getattr(grey, "grey_openai_aud_max_retry_rounds", None) is not None
+                  else getattr(cfg, "aud_max_retry_rounds", getattr(cfg, "openai_aud_max_retry_rounds", 1)))
+        ),
+        "parse_max_retry_rounds": (
+            getattr(grey, "grey_parse_max_retry_rounds", None)
+            if getattr(grey, "grey_parse_max_retry_rounds", None) is not None
+            else (getattr(grey, "grey_openai_parse_max_retry_rounds", None)
+                  if getattr(grey, "grey_openai_parse_max_retry_rounds", None) is not None
+                  else getattr(cfg, "parse_max_retry_rounds", getattr(cfg, "openai_parse_max_retry_rounds", 1)))
+        ),
         "openai_rec_reasoning_effort": grey.grey_openai_rec_reasoning_effort,
         "openai_aud_reasoning_effort": grey.grey_openai_aud_reasoning_effort,
         "openai_parse_reasoning_effort": grey.grey_openai_parse_reasoning_effort,
@@ -706,6 +906,12 @@ def promote_grey_config(request: Request):
         "grey_rec_timeout_seconds": None,
         "grey_aud_timeout_seconds": None,
         "grey_parse_timeout_seconds": None,
+        "grey_openai_rec_max_retry_rounds": None,
+        "grey_openai_aud_max_retry_rounds": None,
+        "grey_openai_parse_max_retry_rounds": None,
+        "grey_rec_max_retry_rounds": None,
+        "grey_aud_max_retry_rounds": None,
+        "grey_parse_max_retry_rounds": None,
         "grey_openai_rec_reasoning_effort": "",
         "grey_openai_aud_reasoning_effort": "",
         "grey_openai_parse_reasoning_effort": "",
@@ -800,6 +1006,9 @@ def diff_regular_vs_grey(request: Request):
         ("rec_timeout_seconds", "grey_rec_timeout_seconds", "识别 · 调用超时 (秒)"),
         ("aud_timeout_seconds", "grey_aud_timeout_seconds", "审核 · 调用超时 (秒)"),
         ("parse_timeout_seconds", "grey_parse_timeout_seconds", "解析 · 调用超时 (秒)"),
+        ("openai_rec_max_retry_rounds", "grey_openai_rec_max_retry_rounds", "识别 · 重跑上限 (轮)"),
+        ("openai_aud_max_retry_rounds", "grey_openai_aud_max_retry_rounds", "审核 · 重跑上限 (轮)"),
+        ("openai_parse_max_retry_rounds", "grey_openai_parse_max_retry_rounds", "解析 · 重跑上限 (轮)"),
         ("openai_rec_reasoning_effort", "grey_openai_rec_reasoning_effort", "识别 · 思考强度"),
         ("openai_aud_reasoning_effort", "grey_openai_aud_reasoning_effort", "审核 · 思考强度"),
         ("openai_parse_reasoning_effort", "grey_openai_parse_reasoning_effort", "解析 · 思考强度"),
@@ -885,67 +1094,9 @@ def diff_regular_vs_grey(request: Request):
 
 @router.get("/api/admin/engine-presets")
 def get_engine_presets(request: Request):
-    """返回常用预设网关配置，密钥经脱敏后回显（不回传明文）。
-
-    why: 本端点此前把 .env 中的真实 API Key 明文返回给浏览器，与同文件 /api/admin/engine-config
-    的脱敏口径不一致，属明文密钥外泄。现统一经 mask_secret_key 脱敏。
-    保存链路兼容掩码值：PUT /api/admin/engine-config 经 _normalize_and_sync_engine_updates
-    检测到含 "****" 的密钥时会替换为库中既有真实密钥（不会把掩码写回库）。
-    """
+    """返回常用预设网关配置。已彻底移除硬编码厂商预设（仅返回用户自定义预设或空字典）。"""
     require_admin(request)
-    dashscope_key = (
-        os.environ.get("DASHSCOPE_API_KEY", "")
-        or os.environ.get("OPENAI_API_KEY", "")
-    )
-    siliconflow_key = (
-        os.environ.get("SILICONFLOW_API_KEY", "")
-        or (os.environ.get("OPENAI_API_KEY", "") if "siliconflow" in os.environ.get("OPENAI_BASE_URL", "").lower() else "")
-        or os.environ.get("OPENAI_REC_API_KEY", "")
-    )
-    dashscope_key = mask_secret_key(dashscope_key)
-    siliconflow_key = mask_secret_key(siliconflow_key)
-    
-    presets = {
-        "agnes": {
-            "label": "Agnes AI",
-            "base_url": "https://api.agnes.ai/v1",
-            "api_key": "",
-            "rec_model": "agnes-2.0-flash",
-            "aud_model": "agnes-2.0-flash",
-            "rec_price_input": 0.5,
-            "rec_price_cached": 0.1,
-            "rec_price_output": 2.0,
-            "aud_price_input": 0.5,
-            "aud_price_cached": 0.1,
-            "aud_price_output": 2.0,
-        },
-        "bailian": {
-            "label": "阿里云百炼 · DashScope",
-            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key": dashscope_key,
-            "rec_model": "qwen3.5-omni-flash",
-            "aud_model": "qwen3-vl-plus",
-            "rec_price_input": 2.2,
-            "rec_price_cached": 0.55,
-            "rec_price_output": 13.3,
-            "aud_price_input": 1.5,
-            "aud_price_cached": 0.375,
-            "aud_price_output": 4.5,
-        },
-        "siliconflow": {
-            "label": "SiliconFlow · 硅基流动",
-            "base_url": "https://api.siliconflow.cn/v1",
-            "api_key": siliconflow_key,
-            "rec_model": "Qwen/Qwen3-VL-32B-Instruct",
-            "aud_model": "zai-org/GLM-4.5V",
-            "rec_price_input": 2.0,
-            "rec_price_cached": 0.5,
-            "rec_price_output": 6.0,
-            "aud_price_input": 1.0,
-            "aud_price_cached": 0.25,
-            "aud_price_output": 6.0,
-        },
-    }
+    presets = {}
     # 合并用户通过管理台保存的自定义预设
     try:
         import json as _json
@@ -955,9 +1106,6 @@ def get_engine_presets(request: Request):
             presets.update(custom)
     except Exception:
         pass
-    # P0：预设回传前一律对 api_key 脱敏 —— 该端点此前明文返回 .env 真实密钥。
-    # 逐条 copy 后再改，避免污染 presets（自定义预设来自 app_settings 的内存副本）。
-    # 无密钥的预设保持空串（mask_secret_key("") == ""），不引入占位噪声。
     masked = {}
     for preset_key, preset in presets.items():
         if isinstance(preset, dict):
@@ -970,13 +1118,20 @@ def get_engine_presets(request: Request):
 
 
 class _SavePresetBody(BaseModel):
-    key: str
+    key: Optional[str] = None
     label: str
     base_url: str
     api_key: str = ""
+    model: str = ""
     rec_model: str = ""
     aud_model: str = ""
     parse_model: str = ""
+    timeout_seconds: Optional[int] = None
+    max_retry_rounds: Optional[int] = None
+    price_input: Optional[float] = None
+    price_cached: Optional[float] = None
+    price_output: Optional[float] = None
+    reasoning_effort: Optional[str] = ""
     rec_price_input: Optional[float] = None
     rec_price_cached: Optional[float] = None
     rec_price_output: Optional[float] = None
@@ -991,31 +1146,147 @@ def save_engine_preset(body: _SavePresetBody, request: Request):
     require_admin(request)
     import json as _json
     import re
-    # key 只允许字母/数字/下划线/连字符，最长 64 字符
-    safe_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", (body.key or "").strip())[:64]
+    import datetime
+    import time
+    from fastapi.responses import JSONResponse
+    from app.services.security_guard import validate_safe_external_url
+
+    raw_key = (body.key or "").strip()
+    if not raw_key:
+        raw_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", (body.label or "").strip())
+        if not raw_key:
+            raw_key = f"preset_{int(time.time())}"
+    safe_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", raw_key)[:64]
     if not safe_key:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=400, content={"status": "error", "msg": "preset key 不能为空"})
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "模版 key 不能为空"})
+
     label = (body.label or "").strip()[:100]
     if not label:
-        from fastapi.responses import JSONResponse
-        return JSONResponse(status_code=400, content={"status": "error", "msg": "供应商名称不能为空"})
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "模版名称不能为空"})
+
+    base_url = (body.base_url or "").strip()
+    if not base_url:
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "Base URL 不能为空"})
+
+    is_safe, reason = validate_safe_external_url(base_url)
+    if not is_safe:
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "msg": f"Base URL 安全校验未通过: {reason}"
+        })
+
+    if body.timeout_seconds is not None:
+        if body.timeout_seconds < 1 or body.timeout_seconds > 60:
+            return JSONResponse(status_code=400, content={
+                "status": "error",
+                "msg": "timeout_seconds 超时时间范围必须在 [1, 60] 秒之间"
+            })
+
+    if body.max_retry_rounds is not None:
+        if body.max_retry_rounds < 0 or body.max_retry_rounds > 10:
+            return JSONResponse(status_code=400, content={
+                "status": "error",
+                "msg": "max_retry_rounds 重跑上限范围必须在 [0, 10] 之间"
+            })
+
+    price_input = body.price_input if body.price_input is not None else body.rec_price_input
+    price_cached = body.price_cached if body.price_cached is not None else body.rec_price_cached
+    price_output = body.price_output if body.price_output is not None else body.rec_price_output
+
+    for p_val, p_name in [
+        (price_input, "输入单价"),
+        (price_cached, "缓存单价"),
+        (price_output, "输出单价")
+    ]:
+        if p_val is not None and p_val < 0:
+            return JSONResponse(status_code=400, content={
+                "status": "error",
+                "msg": f"{p_name} 必须大于等于 0"
+            })
+
     custom_raw = db.get_app_setting("custom_engine_presets", "{}")
     try:
         custom = _json.loads(custom_raw or "{}")
+        if not isinstance(custom, dict):
+            custom = {}
     except Exception:
         custom = {}
+
+    in_key = (body.api_key or "").strip()
+    if "*" in in_key or "•" in in_key:
+        if safe_key in custom and isinstance(custom[safe_key], dict) and custom[safe_key].get("api_key"):
+            final_api_key = custom[safe_key]["api_key"]
+        else:
+            final_api_key = ""
+            for p in custom.values():
+                if isinstance(p, dict) and p.get("api_key"):
+                    p_k = str(p.get("api_key") or "")
+                    if mask_secret_key(p_k) == in_key or mask_secret_key(p_k, equal_length=True) == in_key:
+                        final_api_key = p_k
+                        break
+    else:
+        final_api_key = in_key
+
+    model = (body.model or body.rec_model or body.aud_model or body.parse_model or "").strip()[:100]
+
     custom[safe_key] = {
+        "key": safe_key,
         "label": label,
-        "base_url": body.base_url.strip(),
-        "api_key": body.api_key.strip(),
-        "rec_model": body.rec_model.strip(),
-        "aud_model": body.aud_model.strip(),
-        "parse_model": body.parse_model.strip(),
+        "base_url": base_url,
+        "api_key": final_api_key,
+        "model": model,
+        "rec_model": model,
+        "aud_model": model,
+        "parse_model": model,
+        "timeout_seconds": body.timeout_seconds,
+        "max_retry_rounds": body.max_retry_rounds,
+        "price_input": price_input,
+        "price_cached": price_cached,
+        "price_output": price_output,
+        "reasoning_effort": (body.reasoning_effort or "").strip(),
         "is_custom": True,
+        "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     db.set_app_setting("custom_engine_presets", _json.dumps(custom, ensure_ascii=False))
-    return {"status": "success", "key": safe_key, "data": custom}
+
+    who = getattr(request.state, "account", {}).get("email", "admin") or "admin"
+    db.append_system_audit_log(who, "save_engine_preset", "custom_engine_presets", safe_key, label)
+
+    return {
+        "status": "success",
+        "key": safe_key,
+        "msg": "模版已成功保存至数据库",
+        "data": custom
+    }
+
+
+@router.delete("/api/admin/engine-presets/{key}")
+def delete_engine_preset(key: str, request: Request):
+    """从 app_settings 中彻底移除指定模版配置。"""
+    require_admin(request)
+    import json as _json
+    from fastapi.responses import JSONResponse
+
+    safe_key = (key or "").strip()
+    custom_raw = db.get_app_setting("custom_engine_presets", "{}")
+    try:
+        custom = _json.loads(custom_raw or "{}")
+        if not isinstance(custom, dict):
+            custom = {}
+    except Exception:
+        custom = {}
+
+    if safe_key not in custom:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "模版不存在"})
+
+    popped = custom.pop(safe_key)
+    db.set_app_setting("custom_engine_presets", _json.dumps(custom, ensure_ascii=False))
+
+    who = getattr(request.state, "account", {}).get("email", "admin") or "admin"
+    label = popped.get("label", safe_key) if isinstance(popped, dict) else safe_key
+    db.append_system_audit_log(who, "delete_engine_preset", "custom_engine_presets", safe_key, label)
+
+    return {"status": "success", "msg": "模版已删除"}
 
 
 
@@ -1044,9 +1315,6 @@ def get_engine_config(request: Request):
         "baseline": "qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本；旧基线 qwen3-vl-flash P50 9.0s 已废止）",
         "local_expected": "纯 API 驱动 (SiliconFlow / DashScope)，CLI 引擎已彻底废弃",
         "current_p95_compliant": (engine_str == "openai" and has_valid_qwen),
-        "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", 60),
-        # T9 收尾：显式回显「实际生效超时」，避免管理台只看配置值而误判
-        "effective_call_timeout_seconds": _resolve_timeout(cfg),
         "effective_timeouts": {
             "rec": _resolve_timeout(cfg, side="rec", use_grey=False),
             "aud": _resolve_timeout(cfg, side="aud", use_grey=False),
@@ -1055,6 +1323,7 @@ def get_engine_config(request: Request):
             "grey_aud": _resolve_timeout(cfg, side="aud", use_grey=True),
             "grey_parse": _resolve_timeout(cfg, side="parse", use_grey=True),
         },
+        "call_timeout_seconds": int(getattr(cfg, "call_timeout_seconds", 60) or 60),
         "timeout_policy": (f"实际生效超时硬上限 {MAX_CALL_TIMEOUT_SECONDS}s"
                            "（llm._resolve_timeout 钳制 min(v, 硬上限)）；"
                            "omni 实测 2.6-7.1s 结余充足，禁止长期空转"),
@@ -1140,11 +1409,10 @@ def get_engine_config_routing(request: Request):
         "version": int(getattr(cfg, "version", 1) or 1),
         "config_source": str(getattr(cfg, "config_source", "auto") or "auto"),
         "has_key": {leg: legs[leg]["has_key"] for leg in legs},
-        # 模块 A：引擎与凭据（按腿分组 + 全局默认超时 + 启用开关；高级工程参数内嵌折叠）
+        # 模块 A：引擎与凭据（按腿分组 + 启用开关；高级参数内嵌折叠）
         "module_a": {
-            "call_timeout_seconds": getattr(cfg, "call_timeout_seconds", None),
             "audit_enabled": bool(getattr(cfg, "audit_enabled", False)),
-            "audit_mode": str(getattr(cfg, "audit_mode", "") or ""),
+            "audit_mode": str(getattr(cfg, "audit_mode", "text") or "text"),
             "parse_llm_enabled": bool(getattr(cfg, "parse_llm_enabled", False)),
             "legs": regular_legs,
         },
@@ -1182,72 +1450,34 @@ def get_engine_config_history(request: Request, page: int = 1, page_size: int = 
 
 
 def _is_placeholder_api_key(key) -> bool:
-    """空密钥或字面占位符（YOUR_xxx）→ True，保存前拦截。"""
+    """字面占位符（如 YOUR_xxx、sk-...、sk-placeholder）→ True，保存前拦截。空串代表显式清空，非占位符。"""
     k = str(key or "").strip()
     if not k:
+        return False
+    if "YOUR_" in k.upper():
         return True
-    return "YOUR_" in k.upper()
+    if k in ("sk-...", "sk-xxx", "sk-placeholder", "..."):
+        return True
+    return False
+
+
+_VENDOR_PRESET_LEGS = [
+    ("vendor_name_rec",        "openai_rec_base_url",       "openai_rec_api_key",       "openai_rec_model",       None,                 None,                    False, False),
+    ("vendor_name_aud",        "openai_aud_base_url",       "openai_aud_api_key",        None,                    "openai_aud_model",   None,                    True,  False),
+    ("vendor_name_parse",      "openai_parse_base_url",     "openai_parse_api_key",      None,                    None,                 "openai_parse_model",    False, True),
+    ("vendor_name_grey_rec",   "grey_openai_rec_base_url",  "grey_openai_rec_api_key",   "grey_openai_rec_model", None,                 None,                    False, False),
+    ("vendor_name_grey_aud",   "grey_openai_aud_base_url",  "grey_openai_aud_api_key",   None,                    "grey_openai_aud_model", None,                 True,  False),
+    ("vendor_name_grey_parse", "grey_openai_parse_base_url","grey_openai_parse_api_key", None,                    None,                 "grey_openai_parse_model", False, True),
+]
+
+
+def _safe_vendor_key(name: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_\-]", "_", name.strip())[:64].strip("_")
 
 
 def _auto_save_vendor_presets(new_cfg, new_dict: dict):
-    """保存引擎配置时，对供应商名非空的引擎腿，自动写入/更新自定义预设网关。
-
-    每条预设的 key = vendor_name 去除特殊字符后的安全标识符（同名覆盖）。
-    各引擎腿共享同一个 key（供应商相同时合并为一条预设，model 取各腿之和）。
-    """
-    import json as _json
-    import re
-
-    # 每腿：(vendor_name_field, base_url_field, api_key_field, rec_model_field, aud_model_field, parse_model_field, is_aud, is_parse)
-    LEGS = [
-        ("vendor_name_rec",        "openai_rec_base_url",       "openai_rec_api_key",       "openai_rec_model",       None,                 None,                    False, False),
-        ("vendor_name_aud",        "openai_aud_base_url",       "openai_aud_api_key",        None,                    "openai_aud_model",   None,                    True,  False),
-        ("vendor_name_parse",      "openai_parse_base_url",     "openai_parse_api_key",      None,                    None,                 "openai_parse_model",    False, True),
-        ("vendor_name_grey_rec",   "grey_openai_rec_base_url",  "grey_openai_rec_api_key",   "grey_openai_rec_model", None,                 None,                    False, False),
-        ("vendor_name_grey_aud",   "grey_openai_aud_base_url",  "grey_openai_aud_api_key",   None,                    "grey_openai_aud_model", None,                 True,  False),
-        ("vendor_name_grey_parse", "grey_openai_parse_base_url","grey_openai_parse_api_key", None,                    None,                 "grey_openai_parse_model", False, True),
-    ]
-
-    def _safe_key(name: str) -> str:
-        return re.sub(r"[^a-zA-Z0-9_\-]", "_", name.strip())[:64].strip("_")
-
-    cfg_dict = new_cfg.model_dump()
-    custom_raw = db.get_app_setting("custom_engine_presets", "{}")
-    try:
-        custom = _json.loads(custom_raw or "{}")
-    except Exception:
-        custom = {}
-
-    for vendor_field, url_field, key_field, rec_f, aud_f, parse_f, _is_aud, _is_parse in LEGS:
-        vendor_name = (cfg_dict.get(vendor_field) or "").strip()
-        if not vendor_name:
-            continue
-        safe_key = _safe_key(vendor_name)
-        if not safe_key:
-            continue
-        base_url = (cfg_dict.get(url_field) or "").strip()
-        api_key_raw = (cfg_dict.get(key_field) or "").strip()
-        rec_model = (cfg_dict.get(rec_f) or "").strip() if rec_f else ""
-        aud_model = (cfg_dict.get(aud_f) or "").strip() if aud_f else ""
-        parse_model = (cfg_dict.get(parse_f) or "").strip() if parse_f else ""
-        # 合并同 key 已有条目（保留现有 rec/aud/parse_model 不被单腿覆盖为空）
-        existing = custom.get(safe_key, {})
-        merged_rec = rec_model or existing.get("rec_model", "")
-        merged_aud = aud_model or existing.get("aud_model", "")
-        merged_parse = parse_model or existing.get("parse_model", "")
-        # api_key 若含掩码（****）则保留旧值
-        merged_key = api_key_raw if api_key_raw and "****" not in api_key_raw else existing.get("api_key", "")
-        custom[safe_key] = {
-            "label": vendor_name,
-            "base_url": base_url or existing.get("base_url", ""),
-            "api_key": merged_key,
-            "rec_model": merged_rec,
-            "aud_model": merged_aud,
-            "parse_model": merged_parse,
-            "is_custom": True,
-        }
-
-    db.set_app_setting("custom_engine_presets", _json.dumps(custom, ensure_ascii=False))
+    """已禁用自动持久化预设网关（Phase 1 Spec §2）。"""
+    return
 
 
 @router.put("/api/admin/engine-config")
@@ -1292,6 +1522,24 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     ):
         if tf in body.model_fields_set:
             updates[tf] = getattr(body, tf)
+
+    retry_fields = (
+        "openai_rec_max_retry_rounds",
+        "openai_aud_max_retry_rounds",
+        "openai_parse_max_retry_rounds",
+        "grey_openai_rec_max_retry_rounds",
+        "grey_openai_aud_max_retry_rounds",
+        "grey_openai_parse_max_retry_rounds",
+        "rec_max_retry_rounds",
+        "aud_max_retry_rounds",
+        "parse_max_retry_rounds",
+        "grey_rec_max_retry_rounds",
+        "grey_aud_max_retry_rounds",
+        "grey_parse_max_retry_rounds",
+    )
+    for rf in retry_fields:
+        if rf in body.model_fields_set:
+            updates[rf] = getattr(body, rf)
 
     # 对各引擎腿自定义 Token 单价，若请求显式传递了字段（含传递 null 恢复使用默认刊例价），予以放行
     price_fields = (
@@ -1344,15 +1592,16 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     rec_key = new_dict.get("openai_rec_api_key") or ""
     rec_model = new_dict.get("openai_rec_model") or new_dict.get("recognition_model") or ""
     if rec_engine == "openai":
-        if not rec_base or not str(rec_base).strip():
+        rec_base_required = ("openai_rec_base_url" in updates) or bool(rec_key)
+        if rec_base_required and (not rec_base or not str(rec_base).strip()):
             return JSONResponse(status_code=400, content={
                 "status": "error", "code": "ENGINE_CONFIG_INVALID",
                 "msg": "识别引擎选择 OpenAI 兼容接口时，需提供 Base URL"
             })
-        if _is_placeholder_api_key(rec_key):
+        if rec_key and _is_placeholder_api_key(rec_key):
             return JSONResponse(status_code=400, content={
                 "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                "msg": "识别引擎的 API 密钥为空或仍是占位符（如 YOUR_xxx），保存后每次识别都会鉴权失败。请填入该服务商的真实密钥后再保存。"
+                "msg": "识别引擎的 API 密钥仍是占位符（如 YOUR_xxx），保存后每次识别都会鉴权失败。请填入该服务商的真实密钥或留空后再保存。"
             })
     # 解析 LLM 校验（若启用）
     parse_enabled = bool(new_dict.get("parse_llm_enabled"))
@@ -1368,10 +1617,11 @@ def set_engine_config(body: EngineConfigBody, request: Request):
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
                     "msg": "解析 LLM 引擎选择 OpenAI 兼容接口时，需提供 Base URL"
                 })
-            if _is_placeholder_api_key(new_dict.get("openai_parse_api_key") or ""):
+            parse_key = new_dict.get("openai_parse_api_key") or ""
+            if parse_key and _is_placeholder_api_key(parse_key):
                 return JSONResponse(status_code=400, content={
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": "解析 LLM 的 API 密钥为空或仍是占位符，请填入真实密钥后再保存。"
+                    "msg": "解析 LLM 的 API 密钥仍是占位符，请填入真实密钥或留空后再保存。"
                 })
     # 灰测组识别校验
     if new_dict.get("grey_enabled") and int(new_dict.get("grey_percent") or 0) > 0:
@@ -1386,10 +1636,11 @@ def set_engine_config(body: EngineConfigBody, request: Request):
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
                     "msg": "灰测识别引擎选择 OpenAI 兼容接口时，需提供 Base URL"
                 })
-            if _is_placeholder_api_key(new_dict.get("grey_openai_rec_api_key") or ""):
+            g_rec_key = new_dict.get("grey_openai_rec_api_key") or ""
+            if g_rec_key and _is_placeholder_api_key(g_rec_key):
                 return JSONResponse(status_code=400, content={
                     "status": "error", "code": "ENGINE_CONFIG_INVALID",
-                    "msg": "灰测识别引擎的 API 密钥为空或仍是占位符，请填入真实密钥后再保存。"
+                    "msg": "灰测识别引擎的 API 密钥仍是占位符，请填入真实密钥或留空后再保存。"
                 })
     # call_timeout 语义（T9 收尾）：硬上限 60 是硬约束，不是管理台可绕过的偏好。
     # 保存时即归一到 ≤60，使「落库值 / 回显值 / 实际生效值」三者恒等，消除「填 90 实际 60」的误导。
@@ -1397,7 +1648,6 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     # 管理员显式填 90 会被原样落库 → 现收敛为无条件归一（选项 b 的 API 侧回显）。
     from app.models import clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
     timeout_fields = [
-        "call_timeout_seconds",
         "rec_timeout_seconds",
         "aud_timeout_seconds",
         "parse_timeout_seconds",
@@ -1413,6 +1663,11 @@ def set_engine_config(body: EngineConfigBody, request: Request):
             new_dict[tf] = clamped_v
             if clamped_v != raw_v:
                 clamped_fields.append((tf, raw_v, clamped_v))
+
+    from app.models import clamp_retry_rounds
+    for rf in retry_fields:
+        if rf in new_dict and new_dict[rf] is not None:
+            new_dict[rf] = clamp_retry_rounds(new_dict[rf])
 
     old_engine = cfg.recognition_engine
     # T1：管理台保存即声明「人工配置」（config_source=manual），
@@ -1466,6 +1721,221 @@ def set_engine_config(body: EngineConfigBody, request: Request):
     if rec_engine == "openai":
         resp["msg"] = "已保存引擎配置，预期单张 2.6-7.1s（3 张 confirmed 样本实测）"
     return resp
+
+
+class UnifiedAdminConfigPayload(BaseModel):
+    version: Optional[int] = None
+    engine_config: EngineConfigBody
+    settings: Dict[str, Any]
+    custom_engine_presets: Optional[Dict[str, Any]] = None
+
+
+@router.put("/api/admin/unified-config")
+def save_unified_admin_config(payload: UnifiedAdminConfigPayload, request: Request):
+    """原子化保存引擎配置与系统设置：单次 SQLite 事务闭环，杜绝半写脑裂。"""
+    require_admin(request)
+    account = getattr(request.state, "account", {})
+    who = account.get("email", "unknown") if isinstance(account, dict) else "unknown"
+
+    from app.models import EngineConfig, clamp_call_timeout, MAX_CALL_TIMEOUT_SECONDS
+    from app.services.security_guard import validate_safe_external_url
+    from app.services import settings_service
+
+    # 1. 内存预检阶段：乐观锁校验 (若冲突直接 409 拦截，零 DB 写入)
+    cfg = db.get_engine_config()
+    stored_version = int(getattr(cfg, "version", 1) or 1)
+    expected_version = payload.version if payload.version is not None else _request_expected_version(request, payload.engine_config)
+    if expected_version is not None and expected_version != stored_version:
+        submitted = {k: v for k, v in payload.engine_config.model_dump(exclude_none=True).items() if k != "version"}
+        pending = engine_config_field_diff(cfg.model_dump(), submitted, ignore=("version",))
+        return JSONResponse(status_code=409, content={
+            "status": "error",
+            "code": "VERSION_CONFLICT",
+            "msg": f"配置已被他人修改（当前 v{stored_version}，你提交的是 v{expected_version}）。请重新加载后再保存。",
+            "current_version": stored_version,
+            "version": stored_version,
+            "changed_keys": [d["key"] for d in pending],
+            "diff": pending,
+        })
+
+    # 2. 内存预检阶段：设置项合法性预检
+    unknown_settings = [k for k in payload.settings if k not in settings_service.SETTINGS_DEFAULTS]
+    if unknown_settings:
+        return JSONResponse(status_code=400, content={"status": "error", "msg": f"未知配置项: {unknown_settings}"})
+
+    # 3. 内存预检阶段：引擎配置字段规整、SSRF、超时归一
+    body = payload.engine_config
+    updates = _normalize_and_sync_engine_updates(body.model_dump(exclude_none=True), cfg=cfg)
+    updates.pop("version", None)
+    updates.pop("config_source", None)
+
+    for tf in (
+        "rec_timeout_seconds", "aud_timeout_seconds", "parse_timeout_seconds",
+        "grey_rec_timeout_seconds", "grey_aud_timeout_seconds", "grey_parse_timeout_seconds",
+    ):
+        if tf in body.model_fields_set:
+            updates[tf] = getattr(body, tf)
+
+    retry_fields = (
+        "openai_rec_max_retry_rounds",
+        "openai_aud_max_retry_rounds",
+        "openai_parse_max_retry_rounds",
+        "grey_openai_rec_max_retry_rounds",
+        "grey_openai_aud_max_retry_rounds",
+        "grey_openai_parse_max_retry_rounds",
+        "rec_max_retry_rounds",
+        "aud_max_retry_rounds",
+        "parse_max_retry_rounds",
+        "grey_rec_max_retry_rounds",
+        "grey_aud_max_retry_rounds",
+        "grey_parse_max_retry_rounds",
+    )
+    for rf in retry_fields:
+        if rf in body.model_fields_set:
+            updates[rf] = getattr(body, rf)
+
+    price_fields = (
+        "price_input_rec", "price_cached_input_rec", "price_output_rec",
+        "price_input_aud", "price_cached_input_aud", "price_output_aud",
+        "price_input_parse", "price_cached_input_parse", "price_output_parse",
+        "price_input_grey_rec", "price_cached_input_grey_rec", "price_output_grey_rec",
+        "price_input_grey_aud", "price_cached_input_grey_aud", "price_output_grey_aud",
+        "price_input_grey_parse", "price_cached_input_grey_parse", "price_output_grey_parse",
+    )
+    for pf in price_fields:
+        if pf in body.model_fields_set:
+            updates[pf] = getattr(body, pf)
+
+    new_dict = {**cfg.model_dump(), **updates}
+
+    # SSRF 检查
+    url_checks = [
+        ("openai_rec_base_url", "识别引擎 Base URL"),
+        ("openai_aud_base_url", "审核引擎 Base URL"),
+        ("openai_parse_base_url", "解析 LLM Base URL"),
+        ("grey_openai_rec_base_url", "灰测识别引擎 Base URL"),
+        ("grey_openai_aud_base_url", "灰测审核引擎 Base URL"),
+        ("grey_openai_parse_base_url", "灰测解析 LLM Base URL"),
+    ]
+    for field_name, field_label in url_checks:
+        val = new_dict.get(field_name)
+        if val and str(val).strip():
+            is_safe, reason = validate_safe_external_url(str(val).strip())
+            if not is_safe:
+                return JSONResponse(status_code=400, content={
+                    "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                    "msg": f"{field_label} 安全校验未通过: {reason}"
+                })
+    key_checks = [
+        ("openai_rec_api_key", "识别引擎 API Key"),
+        ("openai_aud_api_key", "审核引擎 API Key"),
+        ("openai_parse_api_key", "解析 LLM API Key"),
+        ("grey_openai_rec_api_key", "灰测识别引擎 API Key"),
+        ("grey_openai_aud_api_key", "灰测审核引擎 API Key"),
+        ("grey_openai_parse_api_key", "灰测解析 LLM API Key"),
+    ]
+    for key_field, key_label in key_checks:
+        val = new_dict.get(key_field)
+        if val and _is_placeholder_api_key(val):
+            return JSONResponse(status_code=400, content={
+                "status": "error", "code": "ENGINE_CONFIG_INVALID",
+                "msg": f"{key_label} 为字面占位符（如 YOUR_xxx），请填入真实密钥或留空后再保存。"
+            })
+
+    # 超时字段归一 clamp
+    timeout_fields = [
+        "rec_timeout_seconds", "aud_timeout_seconds",
+        "parse_timeout_seconds", "grey_rec_timeout_seconds", "grey_aud_timeout_seconds",
+        "grey_parse_timeout_seconds",
+    ]
+    clamped_fields = []
+    for tf in timeout_fields:
+        if tf in new_dict and new_dict[tf] is not None:
+            raw_v = new_dict[tf]
+            clamped_v = clamp_call_timeout(raw_v)
+            new_dict[tf] = clamped_v
+            if clamped_v != raw_v:
+                clamped_fields.append((tf, raw_v, clamped_v))
+
+    from app.models import clamp_retry_rounds
+    for rf in retry_fields:
+        if rf in new_dict and new_dict[rf] is not None:
+            new_dict[rf] = clamp_retry_rounds(new_dict[rf])
+
+    next_version = stored_version + 1
+    new_cfg = EngineConfig(**{**new_dict, "config_source": "manual", "version": next_version})
+
+    # 单次 DB 会话原子提交阶段 (纯内存写，无外部 I/O)
+    s = db.get_session()
+    try:
+        # 写入 engine_config 单行
+        row_eng = s.get(db._AppSettingRow, "engine_config")
+        if row_eng is None:
+            row_eng = db._AppSettingRow(key="engine_config")
+            s.add(row_eng)
+        row_eng.value = json.dumps(new_cfg.model_dump(), ensure_ascii=False)
+
+        # 批量写入系统设置各行
+        for k, v in payload.settings.items():
+            raw_v = "true" if isinstance(v, bool) and v is True else ("false" if isinstance(v, bool) and v is False else str(v))
+            row_set = s.get(db._AppSettingRow, str(k))
+            if row_set is None:
+                row_set = db._AppSettingRow(key=str(k))
+                s.add(row_set)
+            row_set.value = raw_v
+
+        # 5.4 写入不可变版本历史快照
+        field_diff = engine_config_field_diff(cfg.model_dump(), new_cfg.model_dump(), ignore=("version",))
+        hist_row = db._EngineConfigHistoryRow(
+            version=next_version,
+            actor=who,
+            action="unified_save",
+            created_at=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            snapshot=json.dumps(db._mask_engine_snapshot(new_cfg.model_dump()), ensure_ascii=False),
+            changed_keys=json.dumps([d["key"] for d in field_diff], ensure_ascii=False),
+        )
+        s.add(hist_row)
+
+        # 5.5 写入系统审计日志
+        row_audit = s.get(db._AppSettingRow, "system_audit_json")
+        if row_audit is None:
+            row_audit = db._AppSettingRow(key="system_audit_json", value="[]")
+            s.add(row_audit)
+        try:
+            curr_audit = json.loads(row_audit.value or "[]")
+            if not isinstance(curr_audit, list):
+                curr_audit = []
+        except Exception:
+            curr_audit = []
+        curr_audit.append({
+            "who": who,
+            "action": "unified_config_save",
+            "field": "unified",
+            "old": f"v{stored_version}",
+            "new": f"v{next_version}",
+            "created_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        })
+        row_audit.value = json.dumps(curr_audit, ensure_ascii=False)
+
+        # 单次提交，彻底告别半写状态！
+        s.commit()
+    except Exception as e:
+        s.rollback()
+        logging.getLogger("api_admin").error("原子化保存配置失败: %s", e)
+        return JSONResponse(status_code=500, content={"status": "error", "msg": f"数据库原子保存失败: {str(e)}"})
+    finally:
+        s.close()
+
+    resp_data = mask_engine_config_dict(new_cfg.model_dump())
+    return {
+        "status": "success",
+        "version": next_version,
+        "msg": "全部配置已原子化保存成功",
+        "data": {
+            "engine": resp_data,
+            "version": next_version
+        }
+    }
 
 
 @router.post("/api/admin/engine-config/reset")

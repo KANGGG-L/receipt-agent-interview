@@ -109,10 +109,13 @@ def test_engine_config_model_pricing_fields():
 
 
 def test_html_dom_and_labels_pure_text_no_emoji():
-    """AC-1: 校验 demo/templates/index.html 中 18 个价格输入框的存在性、属性及纯文本标签（禁止 Emoji）。"""
+    """AC-1: 校验 demo/templates/index.html 中 18 个价格输入框的存在性、属性及纯文本标签（禁止 Emoji 与冗余括号）。"""
     html_file = DEMO_ROOT / "templates" / "index.html"
     assert html_file.exists(), f"未找到模板文件: {html_file}"
     content = html_file.read_text(encoding="utf-8")
+
+    # 验证统一单位声明由头部承载 (元/1M Tokens)
+    assert content.count("元/1M Tokens") == 6, "6处价格卡片头部必须统一声明单位 '元/1M Tokens'"
 
     for dom_id in DOM_INPUT_IDS:
         # 验证 input 标签定义
@@ -124,12 +127,13 @@ def test_html_dom_and_labels_pure_text_no_emoji():
         assert 'min="0"' in input_tag, f"{dom_id} 必须声明 min=0"
         assert 'step="0.0001"' in input_tag, f"{dom_id} 必须声明 step=0.0001"
 
-        # 验证关联 label 标签与单位声明 (元/1M)
+        # 验证关联 label 标签为简明中文，不含冗余英文与括号后缀
         label_pattern = rf'<label[^>]*for="{dom_id}"[^>]*>(.*?)</label>'
         label_match = re.search(label_pattern, content, flags=re.DOTALL)
         assert label_match is not None, f"HTML 缺少控件关联标签 label for={dom_id}"
-        label_text = label_match.group(1)
-        assert "(元/1M)" in label_text, f"{dom_id} 标签必须包含单位 '(元/1M)'，实际为: {label_text}"
+        label_text = label_match.group(1).strip()
+        assert label_text in ["输入单价", "缓存输入", "输出单价"], f"{dom_id} 标签应为简洁纯中文，实际为: {label_text}"
+        assert "(" not in label_text and ")" not in label_text, f"{dom_id} 标签严禁残留括号: {label_text}"
 
 
 # ==============================================================================
@@ -137,52 +141,24 @@ def test_html_dom_and_labels_pure_text_no_emoji():
 # ==============================================================================
 
 def test_api_admin_presets_contain_recommended_prices():
-    """AC-2: get_engine_presets 接口必须返回包含价格的百炼、硅基流动、Agnes 预设。"""
+    """AC-2: get_engine_presets 接口不再返回硬编码预设；彻底解耦。"""
     resp = client.get("/api/admin/engine-presets", headers=_admin_headers())
     assert resp.status_code == 200
     data = resp.json()["data"]
 
-    # 阿里云百炼
-    assert "bailian" in data
-    bl = data["bailian"]
-    assert bl["rec_price_input"] == 2.2
-    assert bl["rec_price_cached"] == 0.55
-    assert bl["rec_price_output"] == 13.3
-    assert bl["aud_price_input"] == 1.5
-    assert bl["aud_price_cached"] == 0.375
-    assert bl["aud_price_output"] == 4.5
-
-    # 硅基流动
-    assert "siliconflow" in data
-    sf = data["siliconflow"]
-    assert sf["rec_price_input"] == 2.0
-    assert sf["rec_price_cached"] == 0.5
-    assert sf["rec_price_output"] == 6.0
-    assert sf["aud_price_input"] == 1.0
-    assert sf["aud_price_cached"] == 0.25
-    assert sf["aud_price_output"] == 6.0
-
-    # Agnes AI
-    assert "agnes" in data
-    ag = data["agnes"]
-    assert ag["rec_price_input"] == 0.5
-    assert ag["rec_price_cached"] == 0.1
-    assert ag["rec_price_output"] == 2.0
+    assert "bailian" not in data
+    assert "siliconflow" not in data
+    assert "agnes" not in data
 
 
 def test_frontend_presets_mapping_integrity():
-    """AC-2: main.js 中 OPENAI_PRESETS 必须声明对应的建议价格字段。"""
+    """AC-2: main.js 中已彻底移除 OPENAI_PRESETS 预设网关绑定。"""
     js_file = DEMO_ROOT / "static" / "js" / "main.js"
     assert js_file.exists()
     content = js_file.read_text(encoding="utf-8")
 
-    assert "const OPENAI_PRESETS = {" in content
-    assert "rec_price_input: 2.2" in content
-    assert "rec_price_cached: 0.55" in content
-    assert "rec_price_output: 13.3" in content
-    assert "aud_price_input: 1.5" in content
-    assert "aud_price_cached: 0.375" in content
-    assert "aud_price_output: 4.5" in content
+    assert "OPENAI_PRESETS" not in content
+    assert "applyBoxPreset" not in content
 
 
 # ==============================================================================

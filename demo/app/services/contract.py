@@ -73,6 +73,44 @@ def payment_mark_from_image(image_path: str, llm_marked: bool = False) -> str:
     return ""
 
 
+def payment_mark_tristate(image_path: str, llm_marked: bool = False) -> str:
+    """AC-01-05：付款标记三态的**持久化取值**（识别落库用）。
+
+    - 命中 LLM 判定或红章 → "已付款" / "stamp"（检测到）
+    - 图片存在且可解码但未见印记 → "未付款"（明确未检测到）
+    - 无原图 / 读图失败（无从判断）→ ""（不确定；绝不折算成「未付款」）
+    """
+    if llm_marked:
+        return "已付款"
+    if not image_path:
+        return ""
+    try:
+        import os
+        if not os.path.exists(image_path):
+            return ""
+    except Exception:
+        return ""
+    if detect_red_stamp(image_path):
+        return "stamp"
+    # 图片确实存在且解码未命中 → 明确「未见付款印章」
+    return "未付款"
+
+
+def payment_mark_state(payment_mark: str, image_available: bool = True) -> str:
+    """把已落库的 payment_mark 映射为向外的三态标签（AC-01-05）。
+
+    返回 "detected" / "not_detected" / "uncertain"。仅表示「原单印记的检测结果」，
+    与系统付款状态（PaymentRow / paid_at）无关，绝不宣称系统已付。
+    """
+    mark = (payment_mark or "").strip()
+    if not mark:
+        return "uncertain"
+    low = mark.lower()
+    if low in ("未付款", "unpaid", "0", "false", "none", "无"):
+        return "not_detected"
+    return "detected"
+
+
 def validate_contract(payload: dict) -> Tuple[Optional[ReceiptData], Optional[str]]:
     """契约门禁入口。
 

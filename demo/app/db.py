@@ -35,6 +35,11 @@ import logging
 import math as _math
 import os
 import threading
+
+# QA-Lock-Split §13：单据行写路径的统一写锁实例。api_receipts（11 个端点）与
+# services/receipt_utils.save_parsed_data（Job 回写）共用同一对象——单一锁、
+# 无嵌套获取，无死锁面。定义在 db 层以避免 api↔services 循环导入。
+receipt_write_lock = threading.Lock()
 import uuid
 from collections import defaultdict
 import contextvars
@@ -694,7 +699,7 @@ def _make_engine():
         __tablename__ = "dishes"
         id = Column(Integer, primary_key=True, autoincrement=True)
         name = Column(String, index=True, default="")
-        category = Column(String, default="")
+        category = Column(String, default="默认", index=True)
         price = Column(Float, default=0.0)
         description = Column(String, default="")
         status = Column(String, default="active")          # active/inactive
@@ -829,6 +834,7 @@ def _make_engine():
         status = Column(String(32), default="success")
         error_msg = Column(Text, default="")
         error_category = Column(String(32), default="")
+        adapted_params = Column(String(256), default="")
         created_at = Column(String(64), default="", index=True)
 
     _LlmCallLogRow = LLMCallLogRow = LlmCallLogRow
@@ -887,12 +893,14 @@ def _make_engine():
             status VARCHAR(32) DEFAULT 'success',
             error_msg TEXT DEFAULT '',
             error_category VARCHAR(32) DEFAULT '',
+            adapted_params VARCHAR(256) DEFAULT '',
             created_at VARCHAR(64) DEFAULT ''
         )"""
     )
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_receipt_id ON llm_call_log (receipt_id)")
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_tenant_id ON llm_call_log (tenant_id)")
     _apply_migration_ddl(_engine, "CREATE INDEX IF NOT EXISTS ix_llm_call_log_created_at ON llm_call_log (created_at)")
+    _apply_migration_ddl(_engine, "ALTER TABLE llm_call_log ADD COLUMN adapted_params VARCHAR(256) DEFAULT ''")
     class SecurityEventRow(Base):
         """W-SEC-6 安全事件审计流表：记录拦截、告警、Canary、SSRF、脱敏与越权事件。"""
         __tablename__ = "security_events"
@@ -1276,6 +1284,8 @@ def _make_engine():
         "ALTER TABLE dish_ingredients ADD COLUMN yield_rate REAL DEFAULT 1.0",
         # WS4：daily_dish_consumptions 补 tenant_id 列（归属不再仅靠 join 推断）
         "ALTER TABLE daily_dish_consumptions ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+        # 餐品分类字段（兼容历史裸库升级）
+        "ALTER TABLE dishes ADD COLUMN category VARCHAR DEFAULT ''",
     ):
         _apply_migration_ddl(_engine, _ddl)
     for _ddl in (
@@ -1283,6 +1293,10 @@ def _make_engine():
         " ON daily_dish_consumptions (tenant_id)",
         "CREATE INDEX IF NOT EXISTS idx_dish_ingredients_component"
         " ON dish_ingredients (component_type, component_id)",
+        "CREATE INDEX IF NOT EXISTS idx_dishes_category"
+        " ON dishes (category)",
+        "CREATE INDEX IF NOT EXISTS idx_dishes_tenant_category"
+        " ON dishes (tenant_id, category)",
     ):
         _apply_migration_ddl(_engine, _ddl)
 
@@ -1352,6 +1366,19 @@ def _make_engine():
             _c.commit()
     except Exception as _e:
         logger.warning("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
+
+    # 餐品分类基线重构：存量空值及「其他」分类一次性平滑迁移至「默认」
+    try:
+        from sqlalchemy import text as _sa_text_dc
+        with _engine.connect() as _c:
+            _c.execute(_sa_text_dc(
+                "UPDATE dishes "
+                "SET category = '默认' "
+                "WHERE category IS NULL OR category = '' OR category = '其他'"
+            ))
+            _c.commit()
+    except Exception as _e:
+        logger.warning("[migrate] dishes category backfill skipped: %s", _e)
 
     # -----------------------------------------------------------------
     # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / suppliers /
@@ -3277,11 +3304,15 @@ def snapshot_dish_recipe(session, dish, changed_by="", summary=""):
             "notes": ing.notes or "",
         })
 
+    dish_cat = (dish.category or "").strip()
+    if not dish_cat or dish_cat == "其他":
+        dish_cat = "默认"
+
     snapshot = {
         "dish": {
             "id": dish.id,
             "name": dish.name,
-            "category": dish.category or "",
+            "category": dish_cat,
             "price": dish.price,
             "description": dish.description or "",
             "status": dish.status or "active",
@@ -5439,6 +5470,8 @@ def get_engine_config():
         # 旧 grey_mode → grey_percent（cross_audit 旧语义 = 开启审核，保留审核开关）
         if "grey_mode" in stored:
             stored.pop("grey_mode", None)
+        # 清理已废弃的全局超时字段（UI 已移除，extra=forbid 会拒绝该字段）
+        stored.pop("call_timeout_seconds", None)
         # 清理历史已保存的 opencode / codebuddy CLI 引擎与模型配置
         for eng_field, mod_field, def_model in (
             ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
@@ -5484,6 +5517,17 @@ def set_engine_config(cfg, source=None):
         ):
             if hasattr(cfg, tf) and getattr(cfg, tf, None) is not None:
                 setattr(cfg, tf, clamp_call_timeout(getattr(cfg, tf)))
+
+        from app.models import clamp_retry_rounds
+        for rf in (
+            "openai_rec_max_retry_rounds", "openai_aud_max_retry_rounds", "openai_parse_max_retry_rounds",
+            "grey_openai_rec_max_retry_rounds", "grey_openai_aud_max_retry_rounds", "grey_openai_parse_max_retry_rounds",
+            "rec_max_retry_rounds", "aud_max_retry_rounds", "parse_max_retry_rounds",
+            "grey_rec_max_retry_rounds", "grey_aud_max_retry_rounds", "grey_parse_max_retry_rounds",
+            "max_retry_rounds",
+        ):
+            if hasattr(cfg, rf) and getattr(cfg, rf, None) is not None:
+                setattr(cfg, rf, clamp_retry_rounds(getattr(cfg, rf)))
 
         from app.models import clamp_max_tokens, clamp_temperature, clamp_image_detail
         for mf in (
@@ -5636,49 +5680,9 @@ def _engine_leg_uncallable(base, key, engine) -> bool:
     return (not str(base or "").strip()) or _is_placeholder_key(key)
 
 
-def _fill_manual_engine_config_gaps(cfg, log, ds_base, ds_key, sf_base, sf_key, ds_ok, sf_ok) -> bool:
-    """manual 模式的止损兜底：某腿密钥缺失到无法调用时，用 .env 兜底补全该腿。
-
-    为什么需要：管理台一旦把 key 清空/填成占位符并保存为 manual，若 hydrate 完全
-    跳过装配，该腿将永久调不动模型。故这里只补「空到无法调用」的那条腿
-    （base/key/model），其余人工配置一律保留；补全后 config_source 仍为 manual，
-    下次启动不会重新重装。返回是否发生了补全。
-    """
-    filled = False
-    # 识别腿
-    if _engine_leg_uncallable(cfg.openai_rec_base_url, cfg.openai_rec_api_key, cfg.recognition_engine):
-        if ds_ok:
-            cfg.openai_rec_base_url, cfg.openai_rec_api_key = ds_base, ds_key
-        elif sf_ok:
-            cfg.openai_rec_base_url, cfg.openai_rec_api_key = sf_base, sf_key
-        if not str(cfg.openai_rec_model or "").strip():
-            if ds_ok:
-                cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
-                                        or cfg.recognition_model or _REC_DEFAULT_MODEL)
-            else:
-                cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
-                                        or os.environ.get("OPENAI_MODEL")
-                                        or cfg.recognition_model or _SF_DEFAULT_REC_MODEL)
-        cfg.recognition_model = cfg.openai_rec_model or cfg.recognition_model
-        filled = True
-        log.warning("[engine-env] 管理台识别腿密钥缺失到无法调用，已用 .env 兜底补全（config_source 保持 manual）")
-    # 审核腿（审核开关关闭时不校验，避免无谓覆盖人工配置）
-    if cfg.audit_enabled and _engine_leg_uncallable(cfg.openai_aud_base_url, cfg.openai_aud_api_key, cfg.audit_engine):
-        if sf_ok:
-            cfg.openai_aud_base_url, cfg.openai_aud_api_key = sf_base, sf_key
-        elif ds_ok:
-            cfg.openai_aud_base_url, cfg.openai_aud_api_key = ds_base, ds_key
-        if not str(cfg.openai_aud_model or "").strip():
-            if sf_ok:
-                cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                        or cfg.audit_model or _SF_DEFAULT_AUD_MODEL)
-            else:
-                cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
-                                        or cfg.audit_model or "qwen3-vl-plus")
-        cfg.audit_model = cfg.openai_aud_model or cfg.audit_model
-        filled = True
-        log.warning("[engine-env] 管理台审核腿密钥缺失到无法调用，已用 .env 兜底补全（config_source 保持 manual）")
-    return filled
+def _fill_manual_engine_config_gaps(cfg, log, *args, **kwargs) -> bool:
+    """manual 模式下不再自动注入特定供应商密钥，保持 manual 配置。"""
+    return False
 
 
 def _normalize_call_timeout(cfg, log) -> bool:
@@ -5703,134 +5707,115 @@ def _normalize_call_timeout(cfg, log) -> bool:
             log.warning("[engine-env] 存量超时值 %s=%s 已归一为 %s（硬上限）",
                         tf, v, MAX_CALL_TIMEOUT_SECONDS)
             changed = True
+    from app.models import clamp_retry_rounds
+    for rf in (
+        "openai_rec_max_retry_rounds", "openai_aud_max_retry_rounds", "openai_parse_max_retry_rounds",
+        "grey_openai_rec_max_retry_rounds", "grey_openai_aud_max_retry_rounds", "grey_openai_parse_max_retry_rounds",
+        "rec_max_retry_rounds", "aud_max_retry_rounds", "parse_max_retry_rounds",
+        "grey_rec_max_retry_rounds", "grey_aud_max_retry_rounds", "grey_parse_max_retry_rounds",
+        "max_retry_rounds",
+    ):
+        v = getattr(cfg, rf, None)
+        if v is not None:
+            fv = clamp_retry_rounds(v)
+            if fv != v:
+                setattr(cfg, rf, fv)
+                changed = True
     return changed
 
 
 def hydrate_engine_config_from_env():
-    """启动装配：识别腿默认 DashScope，审核腿默认 SiliconFlow（用户决策 2026-09-15）。
+    """启动装配：从通用环境变量（OPENAI_REC_*、OPENAI_AUD_*、OPENAI_PARSE_*）装配。
 
-    装配范围按 DB 的 config_source 决定（T1）：
-      - auto（默认）：每次重启按 .env 重新装配双腿，管理台未保存过的手工临时切换不保留；
-      - manual：管理台 PUT 保存后置位，重启时**跳过 .env 覆盖**，人工配置持久生效；
-        仅当某腿密钥缺失到无法调用（base/key 为空或占位符）时才用 .env 兜底补全并记 warning，
-        避免管理员填错 key 后彻底调不动模型。复位走 POST /api/admin/engine-config/reset。
-    识别腿：DashScope OpenAI 兼容通道 qwen3.5-omni-flash（QWEN_VL_MODEL 可覆盖），
-            base 取 DASHSCOPE_BASE_URL，缺省官方 compatible-mode/v1；不依赖 SF 健康检查。
-    审核腿：SiliconFlow zai-org/GLM-4.5V（SILICONFLOW_AUDIT_MODEL，视觉模型支持
-            text/vlm/ondemand 审核，与识别腿跨厂商异构，Gap A3）。
-    某侧密钥缺失或健康检查失败时，该侧降级到另一家（降级期间双腿同家族、异构性弱化，日志提示）；
-    两者皆不可用则保持现有配置不动。用户决策（2026-09-02）：opencode 已过期——
-    灰测/解析腿若仍为 opencode（历史遗留默认值）一并归一，业务开关保持原值。
-    T12：灰测开启且灰测识别腿仍是 SiliconFlow 历史默认时，其 provider（base/key/model）
-    对齐常规识别腿，使 A/B 只比模型/参数、不混供应商；灰测关闭时为纯 no-op。
-    T9 收尾：存量 call_timeout_seconds > 60 的配置归一到硬上限 60（对 manual 同样生效），
-    消除「管理台显示 90、实际生效 60」的误导；见 _normalize_call_timeout。
-    幂等，可每次启动安全执行。
+    彻底去除 vendor-specific 交叉降级与替补逻辑。
     """
     import logging
     log = logging.getLogger("startup")
     try:
         from dotenv import load_dotenv
-        from app.models import EngineKind, DASHSCOPE_DEFAULT_BASE_URL, DASHSCOPE_DEFAULT_REC_MODEL
+        from app.models import EngineKind
         load_dotenv()
         cfg = get_engine_config()
-        # T9 收尾：存量超时归一必须先于分支返回 —— 否则 manual 路径会带着未归一的 90 直接 return。
         timeout_fixed = _normalize_call_timeout(cfg, log)
 
-        def _clean_base(raw: str, fallback: str) -> str:
-            """容错：有人会把 /chat/completions 一并填进 base_url，协议层会自动追加，需去重。"""
+        def _clean_base(raw: str, fallback: str = "") -> str:
             b = (raw or fallback).strip()
             if b.endswith("/chat/completions"):
                 b = b[:-len("/chat/completions")]
             return b
 
-        ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
-        sf_key = (os.environ.get("SILICONFLOW_API_KEY")
-                  or os.environ.get("OPENAI_REC_API_KEY")
-                  or os.environ.get("OPENAI_API_KEY") or "").strip()
-        ds_ok = bool(ds_key) and not _is_placeholder_key(ds_key)
-        sf_ok = bool(sf_key) and not _is_placeholder_key(sf_key)
+        rec_key = (os.environ.get("OPENAI_REC_API_KEY")
+                   or os.environ.get("OPENAI_API_KEY") or "").strip()
+        rec_base = _clean_base(os.environ.get("OPENAI_REC_BASE_URL")
+                               or os.environ.get("OPENAI_BASE_URL", ""))
+        rec_model = (os.environ.get("OPENAI_REC_MODEL")
+                     or os.environ.get("OPENAI_MODEL", "")).strip()
 
-        ds_base = _clean_base(os.environ.get("DASHSCOPE_BASE_URL"), DASHSCOPE_DEFAULT_BASE_URL)
-        sf_base = _clean_base(os.environ.get("SILICONFLOW_BASE_URL")
-                              or os.environ.get("OPENAI_BASE_URL"),
-                              "https://api.siliconflow.cn/v1")
+        aud_key = (os.environ.get("OPENAI_AUD_API_KEY")
+                   or os.environ.get("OPENAI_API_KEY") or "").strip()
+        aud_base = _clean_base(os.environ.get("OPENAI_AUD_BASE_URL")
+                               or os.environ.get("OPENAI_BASE_URL", ""))
+        aud_model = (os.environ.get("OPENAI_AUD_MODEL")
+                     or os.environ.get("OPENAI_MODEL", "")).strip()
 
-        # T1：管理台手工配置优先。config_source=manual 时不再被 .env 无条件重装，
-        # 否则人工切换活不过一次 uvicorn --reload（每次改代码触发 startup 都被打回 .env 默认）。
+        parse_key = (os.environ.get("OPENAI_PARSE_API_KEY")
+                     or os.environ.get("OPENAI_API_KEY") or "").strip()
+        parse_base = _clean_base(os.environ.get("OPENAI_PARSE_BASE_URL")
+                                 or os.environ.get("OPENAI_BASE_URL", ""))
+        parse_model = (os.environ.get("OPENAI_PARSE_MODEL")
+                       or os.environ.get("OPENAI_MODEL", "")).strip()
+
+        # manual 模式时优先保持手工配置，仅当超时归一时写回
         if str(getattr(cfg, "config_source", "auto") or "auto") == "manual":
-            # 仅兜底补全或存量超时归一时写回；两者都未发生则不落盘，避免无意义刷新 live 库
-            if _fill_manual_engine_config_gaps(cfg, log, ds_base, ds_key, sf_base, sf_key, ds_ok, sf_ok) or timeout_fixed:
+            if timeout_fixed:
                 set_engine_config(cfg)
             log.info("[engine-env] 检测到管理台手工配置（config_source=manual），跳过 .env 覆盖")
             return
 
-        if not ds_ok and not sf_ok:
-            log.info("[engine-env] .env 无可用真实密钥（SILICONFLOW_API_KEY/DASHSCOPE_API_KEY 均为空），仅归一遗留 opencode 配置")
-            _normalize_legacy_cli_engines(cfg, log)
+        changed = False
+        if rec_key or rec_base or rec_model:
+            cfg.recognition_engine = EngineKind.OPENAI
+            if rec_base:
+                cfg.openai_rec_base_url = rec_base
+            if rec_key:
+                cfg.openai_rec_api_key = rec_key
+            if rec_model:
+                cfg.openai_rec_model = rec_model
+                cfg.recognition_model = rec_model
+            changed = True
+
+        if aud_key or aud_base or aud_model:
+            cfg.audit_engine = EngineKind.OPENAI
+            if aud_base:
+                cfg.openai_aud_base_url = aud_base
+            if aud_key:
+                cfg.openai_aud_api_key = aud_key
+            if aud_model:
+                cfg.openai_aud_model = aud_model
+                cfg.audit_model = aud_model
+            changed = True
+
+        if parse_key or parse_base or parse_model:
+            cfg.parse_llm_engine = EngineKind.OPENAI
+            if parse_base:
+                cfg.openai_parse_base_url = parse_base
+            if parse_key:
+                cfg.openai_parse_api_key = parse_key
+            if parse_model:
+                cfg.openai_parse_model = parse_model
+                cfg.parse_llm_model = parse_model
+            changed = True
+
+        _normalize_legacy_cli_engines(cfg, log, rec_base=cfg.openai_rec_base_url,
+                                      rec_key=cfg.openai_rec_api_key,
+                                      rec_model=cfg.openai_rec_model,
+                                      aud_base=cfg.openai_aud_base_url,
+                                      aud_key=cfg.openai_aud_api_key)
+        _align_grey_recognition_leg(cfg, cfg.openai_rec_base_url, cfg.openai_rec_api_key,
+                                    cfg.openai_rec_model, log)
+        if changed or timeout_fixed:
             set_engine_config(cfg)
-            return
-
-        # ---- 识别腿：DashScope 优先；DS 密钥缺失时降级 SF Qwen3-VL ----
-        cfg.recognition_engine = EngineKind.OPENAI
-        if ds_ok:
-            cfg.openai_rec_base_url = ds_base
-            cfg.openai_rec_api_key = ds_key
-            # 强制语义：模型解析不读 DB 旧值（env → 内置默认），管理台临时切换不跨重启
-            cfg.openai_rec_model = (os.environ.get("QWEN_VL_MODEL")
-                                    or DASHSCOPE_DEFAULT_REC_MODEL)
-            rec_src = f"DashScope {ds_base} / {cfg.openai_rec_model}"
-        else:
-            cfg.openai_rec_base_url = sf_base
-            cfg.openai_rec_api_key = sf_key
-            cfg.openai_rec_model = (os.environ.get("SILICONFLOW_MODEL")
-                                    or os.environ.get("OPENAI_MODEL")
-                                    or _SF_DEFAULT_REC_MODEL)
-            rec_src = f"SiliconFlow（DashScope 密钥缺失，识别腿降级）{sf_base} / {cfg.openai_rec_model}"
-            log.warning("[engine-env] 无可用 DashScope 密钥，识别腿降级 SiliconFlow")
-        cfg.recognition_model = cfg.openai_rec_model
-
-        # ---- 审核腿：SF GLM-4.5V 优先；SF 不可用时降级 DashScope（异构性弱化） ----
-        cfg.audit_engine = EngineKind.OPENAI
-        if sf_ok and _openai_gateway_healthy(sf_key, sf_base):
-            cfg.openai_aud_base_url = sf_base
-            cfg.openai_aud_api_key = sf_key
-            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                    or _SF_DEFAULT_AUD_MODEL)
-            aud_src = f"SiliconFlow {sf_base} / {cfg.openai_aud_model}"
-        elif ds_ok:
-            cfg.openai_aud_base_url = ds_base
-            cfg.openai_aud_api_key = ds_key
-            cfg.openai_aud_model = (os.environ.get("DASHSCOPE_AUDIT_MODEL")
-                                    or "qwen3-vl-plus")
-            aud_src = f"DashScope（SiliconFlow 不可用，审核腿降级）{ds_base} / {cfg.openai_aud_model}"
-            log.warning("[engine-env] SiliconFlow 健康检查未通过，审核腿降级 DashScope；"
-                        "降级期间双腿同家族、异构性弱化（Gap A3）")
-        else:
-            # SF 密钥存在但 /models 探针未通过，且无 DashScope 可用：仍按 .env 保底装配 SF
-            cfg.openai_aud_base_url = sf_base
-            cfg.openai_aud_api_key = sf_key
-            cfg.openai_aud_model = (os.environ.get("SILICONFLOW_AUDIT_MODEL")
-                                    or _SF_DEFAULT_AUD_MODEL)
-            aud_src = f"SiliconFlow（健康探针未通过，保底装配）{sf_base} / {cfg.openai_aud_model}"
-            log.warning("[engine-env] 审核腿 SiliconFlow 健康探针未通过且无 DashScope 可用，按 .env 保底装配")
-        cfg.audit_model = cfg.openai_aud_model
-
-        # 灰测识别腿跟随识别腿 provider；灰测审核腿与解析腿跟随审核腿 provider
-        _normalize_legacy_cli_engines(
-            cfg, log,
-            rec_base=cfg.openai_rec_base_url, rec_key=cfg.openai_rec_api_key,
-            rec_model=cfg.openai_rec_model,
-            aud_base=cfg.openai_aud_base_url, aud_key=cfg.openai_aud_api_key,
-        )
-        # T12：归一之后再对齐灰测识别腿 provider（仅 grey_enabled=True 时生效，
-        # 且只针对仍是 SF 历史默认的灰测腿；详见 _align_grey_recognition_leg）。
-        _align_grey_recognition_leg(
-            cfg, cfg.openai_rec_base_url, cfg.openai_rec_api_key,
-            cfg.openai_rec_model, log,
-        )
-        set_engine_config(cfg)
-        log.info(f"[engine-env] 已从 .env 装配：识别 {rec_src}；审核 {aud_src}")
+        log.info(f"[engine-env] 环境变量水合完成：识别 {cfg.openai_rec_base_url} / {cfg.openai_rec_model}；审核 {cfg.openai_aud_base_url} / {cfg.openai_aud_model}")
     except Exception as e:
         log.warning(f"[engine-env] 启动密钥水合失败（不影响服务）: {e}")
 
@@ -6042,6 +6027,7 @@ def insert_llm_call_log(
     error_msg="",
     error_category="",
     created_at="",
+    adapted_params="",
 ):
     """写一条 LLM/VLM 调用日志（全链路观测）。异常软失败不阻断业务。"""
     s = get_session()
@@ -6072,6 +6058,7 @@ def insert_llm_call_log(
             status=str(status or "success"),
             error_msg=str(error_msg or ""),
             error_category=str(error_category or ""),
+            adapted_params=str(adapted_params or ""),
             created_at=str(created_at or now_iso()),
         )
         s.add(row)
@@ -6123,6 +6110,7 @@ def list_llm_call_logs_by_receipt(receipt_id, tenant_id=None, s=None):
                 "status": r.status,
                 "error_msg": r.error_msg,
                 "error_category": r.error_category,
+                "adapted_params": _parse_json_safe(getattr(r, "adapted_params", None)) or [],
                 "created_at": r.created_at,
             })
         return results
@@ -6163,6 +6151,7 @@ def get_llm_call_log_by_id(log_id, s=None):
             "status": r.status,
             "error_msg": r.error_msg,
             "error_category": r.error_category,
+            "adapted_params": _parse_json_safe(getattr(r, "adapted_params", None)) or [],
             "created_at": r.created_at,
         }
     finally:

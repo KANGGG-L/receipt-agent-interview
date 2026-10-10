@@ -4,7 +4,7 @@
 本文件锁住三类同型缺陷（都用 `x or N` 把合法 0 换成 N）：
   1. guardian 方向性漂移阈值 `guard_directional_drift_pct=0`（任何漂移都告警）
      原写法 `float(th or 20)` 会静默按 20% 处理；
-  2. 供应商账期 `payment_terms_days=0`（现结）在应付账款表里
+  2. 供应商账期 `payment_terms_days=0`（现结）在供应商档案展示序列化里
      原写法 `s.payment_terms_days or 30` 会显示成 30 天；
   3. 灰测/AI 指标聚合 `min_sample=0`（不做样本量门槛）
      原写法 `int(min_sample or 30)` 会按 30 判 low_confidence。
@@ -22,7 +22,6 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app import db
-from app.api_export import ExportDataProcessor
 from app.services import guardian
 from app.services import settings_service
 
@@ -99,34 +98,41 @@ def test_drift_threshold_default_still_gates_tiny_drift():
 
 
 # ---------------------------------------------------------------
-# 2. 供应商账期：0 天（现结）必须原样导出，None 才回落 30
+# 2. 供应商账期：0 天（现结）必须原样透出，None 不得被吞改写
+#    （原守卫对象为数据中心应付账款表；该报表已按 14→8 重构移出，
+#     守卫迁移到仍存活的供应商档案展示路径 _supplier_dict）
 # ---------------------------------------------------------------
-def _payables_row_for(supplier_name):
-    data = ExportDataProcessor._handle_supplier_payables_aging({}, None, False)
-    for row in data["rows"]:
-        if row[0] == supplier_name:
-            return row
-    raise AssertionError(f"未在应付账款表中找到供应商 {supplier_name}: {data['rows']}")
+def _supplier_view_for(supplier_name):
+    from app.api_suppliers import _supplier_dict
+
+    for s in db.list_suppliers(include_inactive=True):
+        if s.name == supplier_name:
+            return _supplier_dict(s)
+    raise AssertionError(f"未在供应商列表中找到 {supplier_name}")
 
 
 def test_payables_keeps_zero_payment_terms():
     db.create_supplier("零账期供应商", payment_terms_days=0)
-    row = _payables_row_for("零账期供应商")
-    assert row[3] == 0, f"账期 0 天被改写成了 {row[3]}（修复前为 30）"
+    view = _supplier_view_for("零账期供应商")
+    assert view["payment_terms_days"] == 0, (
+        f"账期 0 天被改写成了 {view['payment_terms_days']}（修复前为 30）"
+    )
 
 
 def test_payables_none_payment_terms_falls_back_to_30():
-    """反例守卫：未设置账期（None）仍回落 30。"""
+    """反例守卫：未设置账期（None）不得被序列化层静默改写（由前端按"未设置"呈现）。"""
     db.create_supplier("未设账期供应商", payment_terms_days=None)
-    row = _payables_row_for("未设账期供应商")
-    assert row[3] == 30, f"未设置账期应回落 30，实际 {row[3]}"
+    view = _supplier_view_for("未设账期供应商")
+    assert view["payment_terms_days"] is None, (
+        f"未设置账期被改写成了 {view['payment_terms_days']}（序列化层不得吞 None）"
+    )
 
 
 def test_payables_keeps_normal_payment_terms():
     """反例守卫：常规账期原样导出。"""
     db.create_supplier("月结供应商", payment_terms_days=45)
-    row = _payables_row_for("月结供应商")
-    assert row[3] == 45
+    view = _supplier_view_for("月结供应商")
+    assert view["payment_terms_days"] == 45
 
 
 # ---------------------------------------------------------------

@@ -16,6 +16,7 @@ import time
 from urllib.parse import quote
 
 from app import db
+_APPROVE_LOCK = db.receipt_write_lock  # QA-Lock-Split §13.4：与 API 端点共用单据写锁
 from app.models import EngineConfig
 from app.services import image_web
 from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool as _S
@@ -683,160 +684,173 @@ def _refresh_receipt_supplier_anchor(receipt_id, vendor_name, tenant_id):
 
 def save_parsed_data(receipt_id, data, result):
     """把 AI 结构化结果写入收据行 + 明细 + SKU 匹配。返回 detail。"""
-    from app.services.contract import sanitize_nan, normalize_evidence
+    # QA-Lock-Split §13.4：守卫读→行写整体入统一锁（job-race 探针实锤：迟到
+    # Job 写会把窗口内提交的 approved 降级回 parsed——详见 qa-report §13.4）。
+    # Job 线程取锁无嵌套调用，无死锁面。
+    with _APPROVE_LOCK:
+        from app.services.contract import sanitize_nan, normalize_evidence
 
-    # P2-2：租户上下文从单据行派生（Job 线程内无 request 可读），
-    # SKU 匹配限定本租户，避免跨租户 SKU 误匹配；行缺失时不过滤（向后兼容）
-    _ctx_row = db.get_receipt_row(receipt_id)
-    _tenant_ctx = None
-    if _ctx_row is not None:
+        # P2-2：租户上下文从单据行派生（Job 线程内无 request 可读），
+        # SKU 匹配限定本租户，避免跨租户 SKU 误匹配；行缺失时不过滤（向后兼容）
+        _ctx_row = db.get_receipt_row(receipt_id)
+        if _ctx_row is None:
+            return None
+        # 状态保护与迟到 Job 隔离 (AC-02-05 / INV-04):
+        # 若单据已被软删除、已被手工保存 (edited)、已转手工 (manual_entry) 或已审批 (approved)，
+        # 迟到的识别结果绝不覆盖人工数据。
+        if _ctx_row.deleted_at is not None:
+            return build_detail(_ctx_row)
+        if _ctx_row.status in ("edited", "approved") or (_ctx_row.doc_form or "") == "manual_entry":
+            return build_detail(_ctx_row)
+
         _tenant_ctx = (getattr(_ctx_row, "tenant_id", "") or "").strip() or None
-    # P2-T2：供应商上下文同样从单据行派生（别名表按供应商建键）。行上已锚定时直接
-    # 用锚点；未锚定（新上传的单据在解析阶段通常还没写入 supplier_id）则按本次识别
-    # 出的 vendor 名解析一次 —— 复用 db.resolve_supplier_id 这一唯一解析实现，
-    # 解析不出留 None（宁可回落全局匹配，也不新建成一条假供应商档案）。
-    _supplier_ctx = getattr(_ctx_row, "supplier_id", None) if _ctx_row is not None else None
-    if not _supplier_ctx:
-        _vendor_name = getattr(data, "vendor", "") or ""
-        if _vendor_name:
-            _supplier_ctx = db.resolve_supplier_id(_vendor_name, tenant_id=_tenant_ctx)
-    # L0 锚点回退链（只追加、既有两档顺序与实现不动；每档成功即止）：
-    # ③ vendor_hint 档 —— result["vendor_hint"] 同时承载用户手填 hint 与首轮预判供应商
-    #   （supervisor 首轮注入分支在无显式 hint 时覆写为预判结果），是对锚点的两个上游
-    #   信号在 parse 期的唯一可得形态；同名不重复解析（hint == vendor 时 ② 已试过）。
-    # ④ 记忆先验档 —— db.resolve_supplier_id_from_memory（唯一实现）：同名字历史记忆行
-    #   携带的锚点，唯一候选才用（不猜）。全落空 → 保持 None（现状语义，回落全局匹配）。
-    # 注意：这里只影响解析期 _match_sku 的供应商收窄，**不改** receipts.supplier_id
-    # 落库值 —— D17 锚点持久化仍只认识别 vendor 名（_refresh_receipt_supplier_anchor）。
-    if not _supplier_ctx:
-        _hint = str(result.get("vendor_hint") or "").strip()
-        if _hint and _hint != (getattr(data, "vendor", "") or ""):
-            _supplier_ctx = db.resolve_supplier_id(_hint, tenant_id=_tenant_ctx)
+        # P2-T2：供应商上下文同样从单据行派生（别名表按供应商建键）。行上已锚定时直接
+        # 用锚点；未锚定（新上传的单据在解析阶段通常还没写入 supplier_id）则按本次识别
+        # 出的 vendor 名解析一次 —— 复用 db.resolve_supplier_id 这一唯一解析实现，
+        # 解析不出留 None（宁可回落全局匹配，也不新建成一条假供应商档案）。
+        _supplier_ctx = getattr(_ctx_row, "supplier_id", None) if _ctx_row is not None else None
+        if not _supplier_ctx:
+            _vendor_name = getattr(data, "vendor", "") or ""
+            if _vendor_name:
+                _supplier_ctx = db.resolve_supplier_id(_vendor_name, tenant_id=_tenant_ctx)
+        # L0 锚点回退链（只追加、既有两档顺序与实现不动；每档成功即止）：
+        # ③ vendor_hint 档 —— result["vendor_hint"] 同时承载用户手填 hint 与首轮预判供应商
+        #   （supervisor 首轮注入分支在无显式 hint 时覆写为预判结果），是对锚点的两个上游
+        #   信号在 parse 期的唯一可得形态；同名不重复解析（hint == vendor 时 ② 已试过）。
+        # ④ 记忆先验档 —— db.resolve_supplier_id_from_memory（唯一实现）：同名字历史记忆行
+        #   携带的锚点，唯一候选才用（不猜）。全落空 → 保持 None（现状语义，回落全局匹配）。
+        # 注意：这里只影响解析期 _match_sku 的供应商收窄，**不改** receipts.supplier_id
+        # 落库值 —— D17 锚点持久化仍只认识别 vendor 名（_refresh_receipt_supplier_anchor）。
+        if not _supplier_ctx:
+            _hint = str(result.get("vendor_hint") or "").strip()
+            if _hint and _hint != (getattr(data, "vendor", "") or ""):
+                _supplier_ctx = db.resolve_supplier_id(_hint, tenant_id=_tenant_ctx)
+                if _supplier_ctx:
+                    logging.getLogger("receipt_utils").info(
+                        "[supplier_anchor] parse 期回退锚定 receipt=%s 档=vendor_hint "
+                        "supplier_id=%s", receipt_id, _supplier_ctx)
+        if not _supplier_ctx:
+            _supplier_ctx = db.resolve_supplier_id_from_memory(
+                getattr(data, "vendor", ""), tenant_id=_tenant_ctx)
             if _supplier_ctx:
                 logging.getLogger("receipt_utils").info(
-                    "[supplier_anchor] parse 期回退锚定 receipt=%s 档=vendor_hint "
+                    "[supplier_anchor] parse 期回退锚定 receipt=%s 档=memory_prior "
                     "supplier_id=%s", receipt_id, _supplier_ctx)
-    if not _supplier_ctx:
-        _supplier_ctx = db.resolve_supplier_id_from_memory(
-            getattr(data, "vendor", ""), tenant_id=_tenant_ctx)
-        if _supplier_ctx:
-            logging.getLogger("receipt_utils").info(
-                "[supplier_anchor] parse 期回退锚定 receipt=%s 档=memory_prior "
-                "supplier_id=%s", receipt_id, _supplier_ctx)
 
-    # 使用模块顶层单例，避免每次实例化
-    _sanitizer = _sanitizer_singleton
+        # 使用模块顶层单例，避免每次实例化
+        _sanitizer = _sanitizer_singleton
 
-    items_raw = []
-    for it in data.items:
-        raw = it.name or ""
-        if _sanitizer is not None:
-            try:
-                clean_name = _sanitizer.sanitize_name(raw)
-            except Exception:
+        items_raw = []
+        for it in data.items:
+            raw = it.name or ""
+            if _sanitizer is not None:
+                try:
+                    clean_name = _sanitizer.sanitize_name(raw)
+                except Exception:
+                    clean_name = strip_serial_suffix(raw)
+            else:
                 clean_name = strip_serial_suffix(raw)
+            # Gap E1 / T7：字段级证据（可选）——归一后随行落库，缺失/非法为 None 不阻断
+            _ev = getattr(it, "evidence", None)
+            if _ev is not None and hasattr(_ev, "model_dump"):
+                _ev = _ev.model_dump()
+            items_raw.append({
+                "name": clean_name, "raw_name": it.name,
+                "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
+                "unit_price": sanitize_nan(it.unit_price), "amount": sanitize_nan(it.amount),
+                "sku_id": None, "cost_center_id": None,
+                # P11：item 级置信度落库（低置信行可按行定位）。契约新增该字段后
+                # 从 LLM 输出一路带到这里；LLM 未给出则**保留 None**（不再兜底 0.5）——
+                # 「未给出」与「给了 0.5」是两回事，兜底会把无数据伪装成中等置信度，
+                # 而 0.5 又高于前端低置信阈值 0.40，等于让「无从判断」的行永远不被提示复核。
+                "confidence": sanitize_nan(getattr(it, "confidence", None), default=None),
+                "matched": 0, "price_anomaly": 0, "price_anomaly_direction": "",
+                # Gap 7：花码/单位不可折算提示必须落库并传前端（原实现硬编码空串，
+                # 导致 huama_evaluator 写入的警示在详情接口消失）。
+                "price_diff_percent": 0.0,
+                "unit_conversion_warning": str(getattr(it, "unit_conversion_warning", None) or ""),
+                "fuzzy_candidates": [], "entity_candidates": [],
+                "is_void": int(bool(getattr(it, "is_void", False))),
+                "actual_qty": getattr(it, "actual_qty", None),
+                "evidence": normalize_evidence(_ev),
+            })
+            _match_sku(items_raw[-1], tenant_id=_tenant_ctx, supplier_id=_supplier_ctx)
+
+        anomaly_items = [it for it in items_raw if it.get("price_anomaly")]
+        if anomaly_items:
+            _track_internal("price_anomaly_flagged", receipt_id, {
+                "anomaly_count": len(anomaly_items),
+                "max_surge_pct": max(abs(float(it.get("price_diff_percent") or 0))
+                                     for it in anomaly_items),
+            })
+
+        use_grey = int(bool(result.get("use_grey"))) if result.get("use_grey") is not None else 0
+        # Gate-3：交叉审核分歧 → review_priority_score（Top10%标重点复核）
+        audit_res = result.get("audit_result") or {}
+        discrepancies = audit_res.get("discrepancies") if isinstance(audit_res, dict) else None
+        if isinstance(discrepancies, list) and discrepancies:
+            review_priority_score = min(1.0, 0.5 + 0.15 * len(discrepancies))
+        elif audit_res.get("reason") == "AI 识别与原图一致":
+            review_priority_score = 0.0
         else:
-            clean_name = strip_serial_suffix(raw)
-        # Gap E1 / T7：字段级证据（可选）——归一后随行落库，缺失/非法为 None 不阻断
-        _ev = getattr(it, "evidence", None)
-        if _ev is not None and hasattr(_ev, "model_dump"):
-            _ev = _ev.model_dump()
-        items_raw.append({
-            "name": clean_name, "raw_name": it.name,
-            "quantity": sanitize_nan(it.qty), "unit": it.unit or "", "raw_unit": it.unit or "",
-            "unit_price": sanitize_nan(it.unit_price), "amount": sanitize_nan(it.amount),
-            "sku_id": None, "cost_center_id": None,
-            # P11：item 级置信度落库（低置信行可按行定位）。契约新增该字段后
-            # 从 LLM 输出一路带到这里；LLM 未给出则**保留 None**（不再兜底 0.5）——
-            # 「未给出」与「给了 0.5」是两回事，兜底会把无数据伪装成中等置信度，
-            # 而 0.5 又高于前端低置信阈值 0.40，等于让「无从判断」的行永远不被提示复核。
-            "confidence": sanitize_nan(getattr(it, "confidence", None), default=None),
-            "matched": 0, "price_anomaly": 0, "price_anomaly_direction": "",
-            # Gap 7：花码/单位不可折算提示必须落库并传前端（原实现硬编码空串，
-            # 导致 huama_evaluator 写入的警示在详情接口消失）。
-            "price_diff_percent": 0.0,
-            "unit_conversion_warning": str(getattr(it, "unit_conversion_warning", None) or ""),
-            "fuzzy_candidates": [], "entity_candidates": [],
-            "is_void": int(bool(getattr(it, "is_void", False))),
-            "actual_qty": getattr(it, "actual_qty", None),
-            "evidence": normalize_evidence(_ev),
-        })
-        _match_sku(items_raw[-1], tenant_id=_tenant_ctx, supplier_id=_supplier_ctx)
+            review_priority_score = 0.1 if discrepancies == [] else 0.0
 
-    anomaly_items = [it for it in items_raw if it.get("price_anomaly")]
-    if anomaly_items:
-        _track_internal("price_anomaly_flagged", receipt_id, {
-            "anomaly_count": len(anomaly_items),
-            "max_surge_pct": max(abs(float(it.get("price_diff_percent") or 0))
-                                 for it in anomaly_items),
-        })
+        # 红章补充 + AC-01-05 三态：LLM 未标记但图片含红章 → stamp；图片可解码但无印记 →
+        # 「未付款」（明确未检测到）；无原图/读图失败 → ""（不确定，绝不折算成未付款）。
+        try:
+            from app.services.contract import payment_mark_tristate
+            row_tmp = db.get_receipt_row(receipt_id)
+            img_path = row_tmp.image_path if row_tmp else ""
+            payment_mark_val = payment_mark_tristate(img_path, llm_marked=data.payment_marked)
+        except Exception:
+            payment_mark_val = "已付款" if data.payment_marked else ""
 
-    use_grey = int(bool(result.get("use_grey"))) if result.get("use_grey") is not None else 0
-    # Gate-3：交叉审核分歧 → review_priority_score（Top10%标重点复核）
-    audit_res = result.get("audit_result") or {}
-    discrepancies = audit_res.get("discrepancies") if isinstance(audit_res, dict) else None
-    if isinstance(discrepancies, list) and discrepancies:
-        review_priority_score = min(1.0, 0.5 + 0.15 * len(discrepancies))
-    elif audit_res.get("reason") == "AI 识别与原图一致":
-        review_priority_score = 0.0
-    else:
-        review_priority_score = 0.1 if discrepancies == [] else 0.0
-
-    # 红章补充：LLM 未标记但图片含红章 → 补充为 stamp（单一来源：contract.payment_mark_from_image）
-    try:
-        from app.services.contract import payment_mark_from_image
-        row_tmp = db.get_receipt_row(receipt_id)
-        img_path = row_tmp.image_path if row_tmp else ""
-        payment_mark_val = payment_mark_from_image(img_path, llm_marked=data.payment_marked)
-    except Exception:
-        payment_mark_val = "已付款" if data.payment_marked else ""
-
-    # RAG 上下文持久化（供 data_only 调试开关按需展示，默认不暴露）
-    rag_ctx = result.get("vendor_context") or result.get("rag_context") or ""
-    # 归一为结构化文本：保留供应商先验与检索片段
-    if isinstance(rag_ctx, dict):
-        rag_ctx_str = json.dumps(rag_ctx, ensure_ascii=False)
-    else:
-        rag_ctx_str = str(rag_ctx or "")
-    # P15：按管线返回的最终状态落库，不再无条件写 parsed——门禁带警告的单据
-    # （state["status"]="parsed_with_warnings"）必须如实落库，否则"解析成功"的假象仍在。
-    _final_status = str(result.get("status") or "").strip() or "parsed"
-    if _final_status not in ("parsed", "parsed_with_warnings"):
-        _final_status = "parsed"
-    db.update_receipt(
-        receipt_id,
-        status=_final_status,
-        supplier_name=data.vendor,
-        receipt_date=data.date,
-        sheet_name=(data.date or "")[:7],
-        total_amount=sanitize_nan(data.total),
-        doc_form=data.doc_form.value if hasattr(data.doc_form, "value") else str(data.doc_form),
-        payment_mark=payment_mark_val,
-        confidence=sanitize_nan(data.confidence),
-        raw_llm=result.get("raw", ""),
-        audit_json=json.dumps(audit_res, ensure_ascii=False),
-        ai_prefill_json=json.dumps(data.model_dump(), ensure_ascii=False),
-        math_warnings_json=json.dumps(
-            _merge_math_warnings(result.get("math_problems", []),
-                                 getattr(data, "math_warnings", [])),
-            ensure_ascii=False),
-        use_grey=use_grey,
-        review_priority_score=review_priority_score,
-        rag_context_json=rag_ctx_str,
-        currency=getattr(data, "currency", None) or "HKD",
-        # Gap 9 / Gap 6：识别直出费用与注记落列（店员可在 save_edited 修正覆写）
-        service_fee=sanitize_nan(getattr(data, "service_fee", 0.0)),
-        tax_amount=sanitize_nan(getattr(data, "tax_amount", 0.0)),
-        adjustment_notes_json=json.dumps(
-            [str(n) for n in (getattr(data, "adjustment_notes", None) or [])],
-            ensure_ascii=False),
-        payment_evidence=str(getattr(data, "payment_evidence", "") or ""),
-    )
-    # D17 锚点陈旧修复：supplier_name 已按识别结果回写，supplier_id 必须同步刷新，
-    # 否则重新识别改写供应商名后锚点仍指向旧档案（名/id 互相矛盾）。
-    _refresh_receipt_supplier_anchor(receipt_id, data.vendor, _tenant_ctx)
-    db.set_receipt_items(receipt_id, items_raw)
-    return build_detail(db.get_receipt_row(receipt_id))
+        # RAG 上下文持久化（供 data_only 调试开关按需展示，默认不暴露）
+        rag_ctx = result.get("vendor_context") or result.get("rag_context") or ""
+        # 归一为结构化文本：保留供应商先验与检索片段
+        if isinstance(rag_ctx, dict):
+            rag_ctx_str = json.dumps(rag_ctx, ensure_ascii=False)
+        else:
+            rag_ctx_str = str(rag_ctx or "")
+        # P15：按管线返回的最终状态落库，不再无条件写 parsed——门禁带警告的单据
+        # （state["status"]="parsed_with_warnings"）必须如实落库，否则"解析成功"的假象仍在。
+        _final_status = str(result.get("status") or "").strip() or "parsed"
+        if _final_status not in ("parsed", "parsed_with_warnings"):
+            _final_status = "parsed"
+        db.update_receipt(
+            receipt_id,
+            status=_final_status,
+            supplier_name=data.vendor,
+            receipt_date=data.date,
+            sheet_name=(data.date or "")[:7],
+            total_amount=sanitize_nan(data.total),
+            doc_form=data.doc_form.value if hasattr(data.doc_form, "value") else str(data.doc_form),
+            payment_mark=payment_mark_val,
+            confidence=sanitize_nan(data.confidence),
+            raw_llm=result.get("raw", ""),
+            audit_json=json.dumps(audit_res, ensure_ascii=False),
+            ai_prefill_json=json.dumps(data.model_dump(), ensure_ascii=False),
+            math_warnings_json=json.dumps(
+                _merge_math_warnings(result.get("math_problems", []),
+                                     getattr(data, "math_warnings", [])),
+                ensure_ascii=False),
+            use_grey=use_grey,
+            review_priority_score=review_priority_score,
+            rag_context_json=rag_ctx_str,
+            currency=getattr(data, "currency", None) or "HKD",
+            # Gap 9 / Gap 6：识别直出费用与注记落列（店员可在 save_edited 修正覆写）
+            service_fee=sanitize_nan(getattr(data, "service_fee", 0.0)),
+            tax_amount=sanitize_nan(getattr(data, "tax_amount", 0.0)),
+            adjustment_notes_json=json.dumps(
+                [str(n) for n in (getattr(data, "adjustment_notes", None) or [])],
+                ensure_ascii=False),
+            payment_evidence=str(getattr(data, "payment_evidence", "") or ""),
+        )
+        # D17 锚点陈旧修复：supplier_name 已按识别结果回写，supplier_id 必须同步刷新，
+        # 否则重新识别改写供应商名后锚点仍指向旧档案（名/id 互相矛盾）。
+        _refresh_receipt_supplier_anchor(receipt_id, data.vendor, _tenant_ctx)
+        db.set_receipt_items(receipt_id, items_raw)
+        return build_detail(db.get_receipt_row(receipt_id))
 
 
 def _normalize_sku_name(name):
@@ -908,7 +922,7 @@ def _match_sku(item, tenant_id=None, supplier_id=None):
             diff_pct = round((item["unit_price"] - sku.last_unit_price) / sku.last_unit_price * 100, 1)
             item["price_diff_percent"] = diff_pct
             # WS3：行级阈值改由 settings 实时读取（本链路租户维度），消除硬编码 10。
-            # ⚠️ 基准说明（前端标注依赖）：此处是**行级**判定 —— 本笔进价 vs 该 SKU 的
+            # [WARN] 基准说明（前端标注依赖）：此处是**行级**判定 —— 本笔进价 vs 该 SKU 的
             # **上一笔进价**；与 price_anomaly.compute_vs_avg_and_anomaly 的 **SKU 级**
             # 判定（最新进价 vs 近 30 日均价）是两套不同基准。二者共用同一阈值数值，但
             # 语义不同，前端须各自标注基准：库存角标=「较 30 日均价」、收据行角标=
@@ -963,6 +977,7 @@ def build_detail(row):
             pass
 
     return {
+        "id": row.id,
         "receipt_id": row.id,
         "supplier_name": row.supplier_name or "",
         "date": row.receipt_date or "",
@@ -971,6 +986,9 @@ def build_detail(row):
         "status": row.status,
         "settlement_type": row.settlement_type or "credit",
         "payment_mark": payment_mark_val,
+        # AC-01-05：付款标记三态的**向量化标签**（detected / not_detected / uncertain），
+        # 供 HTTP/前端区分「明确未检测到」与「不确定」，不改变既有 payment_mark 契约。
+        "payment_mark_state": _payment_mark_state_label(payment_mark_val, bool(row.image_path)),
         "department_id": row.department_id,
         "department_name": dept_name,
         "doc_form": row.doc_form or "",
@@ -998,6 +1016,20 @@ def build_detail(row):
         # U-2: AI 决策履历（extract 各轮 + audit），单表索引查询，detail 频次可接受
         "ai_decisions": db.list_ai_decisions(row.id),
     }
+
+
+def _payment_mark_state_label(payment_mark: str, image_available: bool = True) -> str:
+    """AC-01-05：把落库的 payment_mark 映射为向外的三态标签。"""
+    try:
+        from app.services.contract import payment_mark_state
+        return payment_mark_state(payment_mark, image_available=image_available)
+    except Exception:
+        mark = (payment_mark or "").strip()
+        if not mark:
+            return "uncertain"
+        if mark.lower() in ("未付款", "unpaid", "0", "false", "none", "无"):
+            return "not_detected"
+        return "detected"
 
 
 def _patch_audit_reason(audit_result):

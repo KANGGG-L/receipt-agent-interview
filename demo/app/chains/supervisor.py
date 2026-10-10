@@ -48,8 +48,8 @@ from app import db
 # 结论：MAX_RETRY 保持 3。经上述三点收敛后，只剩"上游间歇故障"会消耗第 2/3 轮，
 # 而这一类正是需要重试的；把它下调到 1 会让上游抖动的单据直接失败。
 MAX_RETRY = 3
-# 上限护栏：即便管理台把 max_retry_rounds 填得很大，也不允许无限重跑（防长期空转 / 成本失控）。
-MAX_RETRY_LIMIT = 5
+# 上限护栏：即便管理台把重试上限填得很大，也不允许无限重跑（防长期空转 / 成本失控）。
+MAX_RETRY_LIMIT = 10
 # 引擎异常归类中"重跑同一配置不可能成功"的确定性类别（归类见 llm._engine_error_category）：
 #   auth  鉴权失败（HTTP 401/403）——同一 key 重试仍是 401/403；
 #   param 参数错误（HTTP 400）——模型名 / base_url 不被接受，重试同一配置仍是 400。
@@ -62,21 +62,14 @@ _NON_RETRYABLE_ENGINE_CATEGORIES = frozenset({"auth", "param"})
 _DEFAULT_COST_IN_PRICE = 2.2
 
 
-def resolve_max_retry(config=None) -> int:
-    """解析本次管线的整图重跑上限：EngineConfig.max_retry_rounds 优先，缺省 MAX_RETRY。
-
-    why 钳制到 [1, MAX_RETRY_LIMIT] 而非直接采用：该值来自 DB / 管理台，可能是
-    0、负数或非整数——0 会让 while 只跑 0 轮（data 恒为 None、单据直接失败），
-    离谱大值则会无限重跑烧钱。类型非法一律回落 MAX_RETRY。
+def resolve_max_retry(config=None, leg: str = "rec", use_grey: bool = False) -> int:
+    """解析本次管线的整图重跑上限：按 leg 与 use_grey 解析对应分腿重跑上限。
+    leg: 'rec' | 'aud' | 'parse'
+    默认值：识别 3，审核 1，解析 1。
+    运行期硬钳制在 [1, MAX_RETRY_LIMIT] 区间（0 和 1 均表示尝试 1 次，不重跑）。
     """
-    v = getattr(config, "max_retry_rounds", None)
-    try:
-        iv = int(v)
-    except (TypeError, ValueError):
-        return MAX_RETRY
-    if iv < 1:
-        return 1
-    return min(iv, MAX_RETRY_LIMIT)
+    from app.models import resolve_max_retry as _resolve_max_retry
+    return _resolve_max_retry(config, leg=leg, use_grey=use_grey)
 
 
 def _is_fast_feedback_gate(gate_err: str) -> bool:
@@ -510,6 +503,7 @@ def _log_audit_decision(receipt_id, experiment_id, config, use_grey, audit):
                 "success": bool(audit.get("overall_consistent")) if audit.get("skipped") is False else False,
                 "max_tokens": getattr(config, "grey_openai_aud_max_tokens" if use_grey else "openai_aud_max_tokens", 4096) if config else 4096,
                 "temperature": 0.0,
+                **({"adapted_params": list(audit["adapted_params"])} if audit.get("adapted_params") else {}),
             },
         )
     except Exception as e:
@@ -522,7 +516,7 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
                           success=None, image_path="", supplier="", doc_form="",
                           cost_estimated_in=None, cost_estimated_reason_in="",
                           image_guard=None, rag_hint_source="",
-                          vendor_hint_origin=""):
+                          vendor_hint_origin="", adapted_params=None):
     """U-2：每轮 extract 决策落库（AI 决策履历断链修复）。
 
     - receipt_id=None（run_pipeline 直接调用/冒烟场景）→ 跳过写库不抛错
@@ -709,6 +703,8 @@ def _log_extract_decision(receipt_id, experiment_id, config, use_grey,
     # 同款纯增量手法：空串不写键，无 hint 路径的 extra 字节与改动前逐字节一致。
     if str(vendor_hint_origin or "").strip():
         extra["vendor_hint_origin"] = str(vendor_hint_origin)
+    if adapted_params:
+        extra["adapted_params"] = list(adapted_params)
     try:
         _model = _rec_model
         from app import db as _db
@@ -840,6 +836,8 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
         # 可观测性：显式 hint 的来源（"user"/"precheck"）随每轮决策落 extra，同款
         # run 级透传手法；空串路径 extra 不含该键（字节一致）。
         kwargs.setdefault("vendor_hint_origin", state.get("vendor_hint_origin") or "")
+        if "adapted_params" not in kwargs and "result" in locals() and isinstance(result, dict):
+            kwargs["adapted_params"] = result.get("adapted_params")
         return _log_extract_decision(*args, **kwargs)
 
     # ---- W-1 / Gap H4：首轮记忆注入（缺省关 = 与现状逐字节一致）----
@@ -859,7 +857,7 @@ def run_pipeline(image_path: str, vendor_hint: str = "",
                       f"首轮注入记忆先验（供应商预判={_fr_vendor}）", 0)
 
     # ---- 重试阶梯：识别 + 门禁，最多 max_rounds 轮（默认 MAX_RETRY，见文件头策略注释）----
-    max_rounds = resolve_max_retry(config)
+    max_rounds = resolve_max_retry(config, leg="rec", use_grey=use_grey)
     while state["attempt"] < max_rounds:
         state["attempt"] += 1
         attempt = state["attempt"]

@@ -190,14 +190,7 @@ class _UpstreamFailingModel:
 
 
 def test_extract_reports_upstream_category_and_reason(tmp_path, monkeypatch):
-    """上游故障 → error_category=upstream，降级原因指明是服务商侧故障。"""
-    # 备用引擎也失败，走「首选 + 降级均失败」的返回分支
-    # 备用引擎也失败：把兜底构建器打桩成抛错。
-    # 历史注记：原先是打桩 app.llm._build，但 extract_chain 已不再使用它
-    # （CLI 兜底已换成 DashScope 官方通道兜底，见 _build_dashscope_fallback），
-    # 打桩旧目标会静默失效、让真实 DashScope 调用接管。
-    monkeypatch.setattr(extract_chain, "_build_dashscope_fallback",
-                        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("fallback boom")))
+    """上游故障 → error_category=upstream，直抛真实异常不触发静默降级。"""
     ret = extract_chain.extract_receipt(
         _png(tmp_path), model=_UpstreamFailingModel(), enable_canary=False
     )
@@ -208,13 +201,12 @@ def test_extract_reports_upstream_category_and_reason(tmp_path, monkeypatch):
     assert "50507" in ret["error"]
     # 不得被写成鉴权失败或模型能力问题
     assert "鉴权失败" not in ret["error"]
-    assert ret["fallback_triggered"] is True
-    assert "上游服务故障" in ret["fallback_reason"], ret["fallback_reason"]
-    assert "非模型能力问题" in ret["fallback_reason"], ret["fallback_reason"]
+    assert ret["fallback_triggered"] is False
+    assert ret["fallback_reason"] == ""
 
 
 def test_extract_auth_category_is_distinguishable(tmp_path, monkeypatch):
-    """同一路径下鉴权失败归为 auth，且降级原因与上游故障文案不同。"""
+    """同一路径下鉴权失败归为 auth，且直抛真实异常不触发静默降级。"""
 
     class _AuthFailingModel:
         kind = "openai"
@@ -225,29 +217,19 @@ def test_extract_auth_category_is_distinguishable(tmp_path, monkeypatch):
                 status_code=401,
             )
 
-    # 备用引擎也失败：把兜底构建器打桩成抛错。
-    # 历史注记：原先是打桩 app.llm._build，但 extract_chain 已不再使用它
-    # （CLI 兜底已换成 DashScope 官方通道兜底，见 _build_dashscope_fallback），
-    # 打桩旧目标会静默失效、让真实 DashScope 调用接管。
-    monkeypatch.setattr(extract_chain, "_build_dashscope_fallback",
-                        lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("fallback boom")))
     ret = extract_chain.extract_receipt(
         _png(tmp_path), model=_AuthFailingModel(), enable_canary=False
     )
     assert ret["error_category"] == "auth"
-    assert "鉴权失败" in ret["fallback_reason"]
-    assert "上游服务故障" not in ret["fallback_reason"]
+    assert "鉴权失败" in ret["error"]
+    assert "上游服务故障" not in ret["error"]
+    assert ret["fallback_triggered"] is False
 
 
 def test_extract_unclassified_error_keeps_empty_category(tmp_path, monkeypatch):
     """未归类异常 category 为空串，既有文案与语义不变。"""
-    # 关闭识别引擎的自动兜底：本用例要看的是「首选引擎未归类失败」返回本身，
-    # 兜底可用会真的发起 DashScope 调用并返回正常结果，测不到该分支。
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
-
     class _BoomModel:
-        kind = "openai"  # 兜底已关闭 → 直接走"调用失败"返回
+        kind = "openai"
 
         def invoke(self, prompt):
             raise RuntimeError("engine boom")

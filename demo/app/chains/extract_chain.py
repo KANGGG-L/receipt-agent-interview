@@ -462,51 +462,14 @@ def _describe_engine_failure(engine_name, exc, category: str) -> str:
             f"已自动降级回退至 DashScope 官方通道重试")
 
 
-def _primary_rec_base_url(config, use_grey: bool) -> str:
-    """当前识别腿在用的 base_url（兜底是否需要触发，靠它判断是否同通道）。"""
-    if config is None:
-        return ""
-    if use_grey:
-        return (getattr(config, "grey_openai_rec_base_url", "") or "").strip()
-    return (getattr(config, "openai_rec_base_url", "") or "").strip()
+# 历史静默回退已彻底移除；保留兼容存根仅供既有测试打桩（运行时绝不调用）
+def _dashscope_fallback_available(config=None, use_grey: bool = False) -> bool:
+    return False
 
 
-def _dashscope_fallback_available(config, use_grey: bool) -> bool:
-    """识别腿是否有可用的「DashScope 官方通道」兜底。
+def _build_dashscope_fallback(config=None, use_grey: bool = False):
+    raise RuntimeError("DashScope fallback is permanently disabled")
 
-    两种情况判定兜底无意义，直接不做：
-      1) 环境里没有 DASHSCOPE_API_KEY —— 没有可用的兜底凭据；
-      2) 首选本就是 DashScope 官方通道 —— 同通道重试的判定结果必然相同，只会白烧
-         一次调用与延迟（原先兜底是本机 CLI，天然是另一个通道，故不需要这个判据）。
-
-    历史注记：本兜底原先是「回退到本机 CodeBuddy CLI 引擎」（_build("codebuddy", …)）。
-    两个 CLI 引擎已于 2026-09-02 弃用并从代码中删除，兜底目标改为 DashScope 官方通道。
-    """
-    from app.llm import DASHSCOPE_COMPATIBLE_URL
-    key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
-    if not key:
-        return False
-    return (_primary_rec_base_url(config, use_grey).rstrip("/")
-            != DASHSCOPE_COMPATIBLE_URL.rstrip("/"))
-
-
-def _build_dashscope_fallback(config, use_grey: bool):
-    """构建 DashScope 官方通道兜底模型（内置默认识别模型）。
-
-    调用前须先过 _dashscope_fallback_available；此处不再重复判断。
-    走 OpenAIChatModel 而非 QwenChatModel：模型名 qwen3.5-omni-flash 属全模态，
-    需要走 OpenAI 兼容通道（与 hydrate 里识别腿的装配口径一致）。
-    """
-    import os as _os
-
-    from app.llm import DASHSCOPE_COMPATIBLE_URL, OpenAIChatModel, _resolve_timeout
-    from app.models import DASHSCOPE_DEFAULT_REC_MODEL
-    return OpenAIChatModel(
-        base_url=DASHSCOPE_COMPATIBLE_URL,
-        api_key=(_os.environ.get("DASHSCOPE_API_KEY") or "").strip(),
-        model=DASHSCOPE_DEFAULT_REC_MODEL,
-        call_timeout=_resolve_timeout(config),
-    )
 
 
 def extract_receipt(image_path: str, vendor_hint: str = "",
@@ -662,6 +625,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         result = model.invoke(prompt)
         raw = _extract_text(result)
         vlm_elapsed = round((time.time() - start) * 1000, 1)
+        adapted_params = getattr(result, "response_metadata", {}).get("adapted_params", []) if hasattr(result, "response_metadata") else []
         # 提取 VLM token 消耗（DashScope qwen3-vl-flash 从 response_metadata['token_usage']；本地记 0）
         vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         vlm_cost, _c_est, _c_why = _cost_from_tokens_ex(
@@ -683,119 +647,44 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
                 f"[IMAGE_DECODE] 图片不可解码（invoke 阶段兜底），直接失败不降级：{e}")
             return _image_decode_error_result(e, priors, rag_ms, model, config, use_grey)
         # P9：读取引擎异常归类（upstream / auth / param，未归类为空串）。
-        # 上游 5xx / DashScope 50507 是服务商侧临时故障，不是模型能力问题；
-        # 后续降级原因与错误文案据此归因，而不是一律写「调用异常」。
+        # 上游 5xx / 50507 是服务商侧临时故障，不是模型能力问题；错误文案与分类据此归因。
         err_category = _engine_error_category(e)
-        # 自动降级回退机制：首选识别引擎（OpenAI 兼容接口 / 远程 API）调用异常时，
-        # 自动回退到 DashScope 官方通道重试一次。
-        # 历史注记：原先回退目标是本机 CodeBuddy CLI 引擎（已于 2026-09-02 弃用并删除）。
-        if _dashscope_fallback_available(config, use_grey):
-            fallback_triggered = True
-            fallback_from = engine
-            fallback_engine = "dashscope"
-            fallback_reason = _describe_engine_failure(fallback_from, e, err_category)
-            logging.getLogger("extract_chain").warning(
-                f"[FALLBACK] {fallback_reason}..."
-            )
-            print(f"[FALLBACK] {fallback_reason}...", flush=True)
-            # 回退触发即时事件：首选引擎失败的当下即通知上层（不等备用引擎结果）
-            if on_event is not None:
-                try:
-                    on_event({
-                        "type": "engine_fallback",
-                        "reason": fallback_reason,
-                        "from": fallback_from,
-                        "to": fallback_engine,
-                        "stage": "primary_failed",
-                    })
-                except Exception:
-                    pass
-            try:
-                fallback_model = _build_dashscope_fallback(config, use_grey)
-                fb_start = time.time()
-                result = fallback_model.invoke(prompt)
-                raw = _extract_text(result)
-                vlm_elapsed = round((time.time() - fb_start) * 1000, 1)
-                vlm_token = _extract_token_usage(result) if not isinstance(result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-                vlm_cost, _c_est, _c_why = _cost_from_tokens_ex(
-                    vlm_token,
-                    _model_cost_tier_name(fallback_model),
-                    custom_in_price=_rec_in,
-                    custom_cached_price=_rec_cached,
-                    custom_out_price=_rec_out,
-                )
-                if _c_est:
-                    _cost_flags.append(_c_why)
-                engine = fallback_engine
-                model = fallback_model
-            except Exception as fb_err:
-                logging.getLogger("extract_chain").error(
-                    f"[FALLBACK_FAIL] 回退至 DashScope 官方通道仍然失败: {fb_err}")
-                vlm_elapsed = round((time.time() - start) * 1000, 1)
-                vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-                vlm_cost = 0.0
-                raw = ""
-                err_msg = f"VLM 调用失败 (首选引擎 [{engine}]: {e}; 降级 DashScope: {fb_err})"
-                total_token = dict(vlm_token)
-                total_cost = float(vlm_cost or 0)
-                return {
-                    "data": None,
-                    "raw": raw,
-                    "error": err_msg,
-                    "error_category": err_category,
-                    "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
-                    "extract_ms": round(vlm_elapsed + rag_ms, 1),
-                    "rag_ms": round(rag_ms, 1),
-                    "engine": f"{fallback_engine} (fallback failed)",
-                    "vendor_context": _merge_priors(priors),
-                    "fallback_triggered": True,
-                    "fallback_reason": fallback_reason,
-                    "fallback_from": fallback_from,
-                    "fallback_engine": fallback_engine,
-                    "parse_llm": {
-                        "enabled": _parse_enabled(config, use_grey),
-                        "model": "",
-                        "elapsed_ms": 0,
-                    },
-                    "token_usage": total_token,
-                    "vlm_token_usage": vlm_token,
-                    "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                    "cost_hkd": round(total_cost, 6),
-        **_cost_meta(),
-                }
-        else:
-            vlm_elapsed = round((time.time() - start) * 1000, 1)
-            vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-            vlm_cost = 0.0
-            raw = ""
-            err_msg = f"VLM 调用失败: {e}"
-            total_token = dict(vlm_token)
-            total_cost = float(vlm_cost or 0)
-            return {
-                "data": None,
-                "raw": raw,
-                "error": err_msg,
-                "error_category": err_category,
-                "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
-                "extract_ms": round(vlm_elapsed + rag_ms, 1),
-                "rag_ms": round(rag_ms, 1),
-                "engine": engine,
-                "vendor_context": _merge_priors(priors),
-                "fallback_triggered": False,
-                "fallback_reason": "",
-                "fallback_from": "",
-                "fallback_engine": "",
-                "parse_llm": {
-                    "enabled": _parse_enabled(config, use_grey),
-                    "model": "",
-                    "elapsed_ms": 0,
-                },
-                "token_usage": total_token,
-                "vlm_token_usage": vlm_token,
-                "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                "cost_hkd": round(total_cost, 6),
-        **_cost_meta(),
-            }
+        logging.getLogger("extract_chain").error(
+            f"[PRIMARY_FAIL] 识别引擎 [{engine}] 调用异常: {e} (category={err_category})"
+        )
+        vlm_elapsed = round((time.time() - start) * 1000, 1)
+        vlm_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        vlm_cost = 0.0
+        raw = ""
+        err_msg = f"VLM 调用失败: {e}"
+        total_token = dict(vlm_token)
+        total_cost = float(vlm_cost or 0)
+        return {
+            "data": None,
+            "raw": raw,
+            "error": err_msg,
+            "error_category": err_category,
+            "elapsed_ms": round(vlm_elapsed + rag_ms, 1),
+            "extract_ms": round(vlm_elapsed + rag_ms, 1),
+            "rag_ms": round(rag_ms, 1),
+            "engine": engine,
+            "vendor_context": _merge_priors(priors),
+            "fallback_triggered": False,
+            "fallback_reason": "",
+            "fallback_from": "",
+            "fallback_engine": "",
+            "parse_llm": {
+                "enabled": _parse_enabled(config, use_grey),
+                "model": "",
+                "elapsed_ms": 0,
+            },
+            "token_usage": total_token,
+            "vlm_token_usage": vlm_token,
+            "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "cost_hkd": round(total_cost, 6),
+            "adapted_params": [],
+            **_cost_meta(),
+        }
 
     # 阶段 4：解析 LLM 规范化解析（可选，默认关闭；开启时纯文本任务）
     parse_elapsed = 0
@@ -812,8 +701,18 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             if enable_canary and canary:
                 parse_msgs = inject_canary_instructions(parse_msgs, canary)
             from app.services.llm_logger import llm_context
-            with llm_context(leg="parse"):
-                p_result = parse_model.invoke(parse_msgs)
+            from app.models import resolve_max_retry
+            max_parse_rounds = resolve_max_retry(config, leg="parse", use_grey=use_grey)
+            p_result = None
+            for p_attempt in range(1, max_parse_rounds + 1):
+                try:
+                    with llm_context(leg="parse"):
+                        p_result = parse_model.invoke(parse_msgs)
+                    break
+                except Exception as p_exc:
+                    if p_attempt >= max_parse_rounds:
+                        raise
+                    time.sleep(0.1)
             raw = _extract_text(p_result)
             parse_elapsed = round((time.time() - p_start) * 1000, 1)
             parse_token = _extract_token_usage(p_result) if not isinstance(p_result, str) else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -864,6 +763,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         "vlm_token_usage": vlm_token,
         "parse_token_usage": parse_token,
         "cost_hkd": total_cost,
+        "adapted_params": adapted_params,
         **_cost_meta(),
     }
 

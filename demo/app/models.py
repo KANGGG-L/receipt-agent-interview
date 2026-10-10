@@ -262,32 +262,23 @@ def clamp_call_timeout(value):
 
 
 def _rec_provider_env() -> tuple:
-    """识别腿 (base_url, api_key) 的 .env 成对解析。
+    """识别腿 (base_url, api_key) 的 .env 解析。
 
-    成对返回是为了避免 base 与 key 跨 provider 错配（取到 A 家地址 + B 家密钥必然 401）。
     优先级：
-      1. DASHSCOPE_BASE_URL + DASHSCOPE_API_KEY（显式 DashScope）
-      2. OPENAI_REC_BASE_URL + OPENAI_REC_API_KEY / OPENAI_API_KEY（显式识别腿覆盖）
-      3. 仅有 DASHSCOPE_API_KEY → DashScope 官方 base（默认 provider）
-      4. OPENAI_BASE_URL + OPENAI_API_KEY（历史兼容）
-      5. 无任何密钥 → DashScope 官方 base 占位
+      1. OPENAI_REC_BASE_URL + OPENAI_REC_API_KEY / OPENAI_API_KEY（显式识别腿配置）
+      2. OPENAI_BASE_URL + OPENAI_API_KEY（通用兼容）
+      3. 无配置时返回 ("", "")，绝不默认注入第三方网关与密钥
     """
-    ds_base = (os.environ.get("DASHSCOPE_BASE_URL") or "").strip()
-    ds_key = (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
     rec_base = (os.environ.get("OPENAI_REC_BASE_URL") or "").strip()
     rec_key = (os.environ.get("OPENAI_REC_API_KEY") or "").strip()
     oa_base = (os.environ.get("OPENAI_BASE_URL") or "").strip()
     oa_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
 
-    if ds_base:
-        return ds_base, ds_key
     if rec_base:
         return rec_base, (rec_key or oa_key)
-    if ds_key:
-        return DASHSCOPE_DEFAULT_BASE_URL, ds_key
     if oa_base:
         return oa_base, oa_key
-    return DASHSCOPE_DEFAULT_BASE_URL, ""
+    return "", ""
 
 
 def clamp_max_tokens(val, default: int = 4096) -> int:
@@ -317,6 +308,88 @@ def clamp_image_detail(val, default: str = "high") -> str:
     """校验视觉切片粒度枚举值 ('high'/'auto'/'low')，非法值回退默认值。"""
     s = str(val or "").strip().lower()
     return s if s in {"high", "auto", "low"} else default
+
+
+MAX_RETRY_LIMIT = 10
+DEFAULT_REC_MAX_RETRY_ROUNDS = 3
+DEFAULT_AUD_MAX_RETRY_ROUNDS = 1
+DEFAULT_PARSE_MAX_RETRY_ROUNDS = 1
+
+
+def clamp_retry_rounds(value, default=None):
+    """把重试上限值归一到 [0, MAX_RETRY_LIMIT] 区间。
+    None 保持 None（表示未设置/继承常规）。
+    布尔值或无法转为 int 的值若提供 default 则返回 default，否则返回 value。
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return default if default is not None else 0
+    try:
+        iv = int(value)
+    except (TypeError, ValueError):
+        return default if default is not None else value
+    if iv < 0:
+        return 0
+    if iv > MAX_RETRY_LIMIT:
+        return MAX_RETRY_LIMIT
+    return iv
+
+
+def resolve_max_retry(config=None, leg: str = "rec", use_grey: bool = False) -> int:
+    """解析本次管线的重跑上限：按 leg 与 use_grey 解析对应分腿重跑上限。
+    leg: 'rec' | 'aud' | 'parse'
+    默认值：识别 3，审核 1，解析 1。
+    运行期硬钳制在 [1, MAX_RETRY_LIMIT] 区间（0 和 1 均表示尝试 1 次，不重跑）。
+    """
+    leg = str(leg).lower() if leg else "rec"
+    default_rounds = DEFAULT_REC_MAX_RETRY_ROUNDS if leg == "rec" else (
+        DEFAULT_AUD_MAX_RETRY_ROUNDS if leg == "aud" else DEFAULT_PARSE_MAX_RETRY_ROUNDS
+    )
+
+    if config is None:
+        return default_rounds
+
+    val = None
+    if use_grey:
+        for attr in (
+            f"grey_openai_{leg}_max_retry_rounds",
+            f"grey_{leg}_max_retry_rounds",
+        ):
+            if hasattr(config, attr):
+                v = getattr(config, attr)
+                if v is not None:
+                    val = v
+                    break
+
+    if val is None:
+        for attr in (
+            f"openai_{leg}_max_retry_rounds",
+            f"{leg}_max_retry_rounds",
+        ):
+            if hasattr(config, attr):
+                v = getattr(config, attr)
+                if v is not None:
+                    val = v
+                    break
+
+    if val is None and leg == "rec":
+        val = getattr(config, "max_retry_rounds", None)
+
+    if val is None:
+        return default_rounds
+
+    if isinstance(val, bool):
+        return default_rounds
+
+    try:
+        iv = int(val)
+    except (TypeError, ValueError):
+        return default_rounds
+
+    if iv < 1:
+        return 1
+    return min(iv, MAX_RETRY_LIMIT)
 
 
 class EngineConfig(BaseModel):
@@ -407,6 +480,72 @@ class EngineConfig(BaseModel):
             if df in out and out[df] is not None:
                 out[df] = clamp_image_detail(out[df])
 
+        # 重跑上限双向同步、历史兼容与钳制
+        # 1. 历史 max_retry_rounds 兼容
+        if "max_retry_rounds" in out and "openai_rec_max_retry_rounds" not in out and "rec_max_retry_rounds" not in out:
+            out["openai_rec_max_retry_rounds"] = out["max_retry_rounds"]
+            out["rec_max_retry_rounds"] = out["max_retry_rounds"]
+
+        # 2. 识别腿同步
+        if "openai_rec_max_retry_rounds" in out and "rec_max_retry_rounds" in out:
+            val = out["openai_rec_max_retry_rounds"] if out["openai_rec_max_retry_rounds"] is not None else out["rec_max_retry_rounds"]
+            out["openai_rec_max_retry_rounds"] = val
+            out["rec_max_retry_rounds"] = val
+            if val is not None:
+                out["max_retry_rounds"] = val
+        elif "openai_rec_max_retry_rounds" in out:
+            out["rec_max_retry_rounds"] = out["openai_rec_max_retry_rounds"]
+            if out["openai_rec_max_retry_rounds"] is not None:
+                out["max_retry_rounds"] = out["openai_rec_max_retry_rounds"]
+        elif "rec_max_retry_rounds" in out:
+            out["openai_rec_max_retry_rounds"] = out["rec_max_retry_rounds"]
+            if out["rec_max_retry_rounds"] is not None:
+                out["max_retry_rounds"] = out["rec_max_retry_rounds"]
+
+        # 3. 审核腿同步
+        if "openai_aud_max_retry_rounds" in out and "aud_max_retry_rounds" in out:
+            val = out["openai_aud_max_retry_rounds"] if out["openai_aud_max_retry_rounds"] is not None else out["aud_max_retry_rounds"]
+            out["openai_aud_max_retry_rounds"] = val
+            out["aud_max_retry_rounds"] = val
+        elif "openai_aud_max_retry_rounds" in out:
+            out["aud_max_retry_rounds"] = out["openai_aud_max_retry_rounds"]
+        elif "aud_max_retry_rounds" in out:
+            out["openai_aud_max_retry_rounds"] = out["aud_max_retry_rounds"]
+
+        # 4. 解析腿同步
+        if "openai_parse_max_retry_rounds" in out and "parse_max_retry_rounds" in out:
+            val = out["openai_parse_max_retry_rounds"] if out["openai_parse_max_retry_rounds"] is not None else out["parse_max_retry_rounds"]
+            out["openai_parse_max_retry_rounds"] = val
+            out["parse_max_retry_rounds"] = val
+        elif "openai_parse_max_retry_rounds" in out:
+            out["parse_max_retry_rounds"] = out["openai_parse_max_retry_rounds"]
+        elif "parse_max_retry_rounds" in out:
+            out["openai_parse_max_retry_rounds"] = out["parse_max_retry_rounds"]
+
+        # 5. 灰测三腿同步
+        for leg in ("rec", "aud", "parse"):
+            k1 = f"grey_openai_{leg}_max_retry_rounds"
+            k2 = f"grey_{leg}_max_retry_rounds"
+            if k1 in out and k2 in out:
+                val = out[k1] if out[k1] is not None else out[k2]
+                out[k1] = val
+                out[k2] = val
+            elif k1 in out:
+                out[k2] = out[k1]
+            elif k2 in out:
+                out[k1] = out[k2]
+
+        # 6. 统一数值钳制
+        for rf in (
+            "openai_rec_max_retry_rounds", "openai_aud_max_retry_rounds", "openai_parse_max_retry_rounds",
+            "grey_openai_rec_max_retry_rounds", "grey_openai_aud_max_retry_rounds", "grey_openai_parse_max_retry_rounds",
+            "rec_max_retry_rounds", "aud_max_retry_rounds", "parse_max_retry_rounds",
+            "grey_rec_max_retry_rounds", "grey_aud_max_retry_rounds", "grey_parse_max_retry_rounds",
+            "max_retry_rounds",
+        ):
+            if rf in out and out[rf] is not None:
+                out[rf] = clamp_retry_rounds(out[rf])
+
         return out
 
     # 配置来源（T1）：auto=.env 启动装配，重启后按 .env 重新装配；manual=管理台手工保存，
@@ -435,26 +574,20 @@ class EngineConfig(BaseModel):
     )
     recognition_model: str = Field(
         default_factory=lambda: env_model_or_default(
-            os.environ.get("RECOGNITION_MODEL"), DASHSCOPE_DEFAULT_REC_MODEL),
-        description="识别腿模型（生成器）。默认 DashScope qwen3.5-omni-flash（全模态，支持图片输入）。"
-                    "注意模型名以 qwen 开头，若 recognition_engine 非 openai 会被判去 QwenChatModel 原生 SDK 通道。",
+            os.environ.get("RECOGNITION_MODEL") or os.environ.get("OPENAI_REC_MODEL"), ""),
+        description="识别腿模型（生成器）。由环境变量读取或管理控制台手动配置。",
     )
     # 审核引擎
-    # 生成器-评估器强制异构（Gap A3）：审核腿必须与识别腿跨厂商异构，禁止同源。
-    # 用户决策（2026-08-30）：SiliconFlow 为默认 provider，审核腿默认 SF DeepSeek 系
-    # （与识别腿 Qwen 系跨厂商异构，Gap A3）；用户决策（2026-09-02）本机 CLI 引擎
-    # （opencode / codebuddy）已弃用并从代码与枚举中删除，审计腿一律走 OpenAI 兼容通道。
     audit_engine: EngineKind = Field(
         default_factory=lambda: EngineKind(os.environ.get("AUDIT_ENGINE", "openai").lower())
         if os.environ.get("AUDIT_ENGINE", "openai").lower() in [e.value for e in EngineKind]
         else EngineKind.OPENAI,
-        description="审核引擎（评估器）。强制与识别腿跨厂商异构（Gap A3），禁止与识别腿同引擎同家族。",
+        description="审核引擎（评估器）。由环境变量读取或管理控制台手动配置。",
     )
     audit_model: str = Field(
         default_factory=lambda: env_model_or_default(
-            os.environ.get("SILICONFLOW_AUDIT_MODEL") or os.environ.get("AUDIT_MODEL"),
-            "zai-org/GLM-4.5V"),
-        description="审核腿模型（评估器）。默认 SF GLM-4.5V（视觉模型，支持 text/vlm/ondemand 三种审核模式），与识别腿 Qwen 系跨厂商异构；识别=GLM 系时审核必须换 Qwen/DeepSeek 系。审核调用 temperature 必须 0（llm._build 对 aud 侧强制）。灰测组 grey_audit_model 同此约束。",
+            os.environ.get("OPENAI_AUD_MODEL") or os.environ.get("AUDIT_MODEL"), ""),
+        description="审核腿模型（评估器）。由环境变量读取或管理控制台手动配置。",
     )
     audit_enabled: bool = True
     # 审核模式：text=纯文本确定性校验（不重读原图，毫秒级，默认）
@@ -462,60 +595,59 @@ class EngineConfig(BaseModel):
     #           ondemand=置信度低于阈值才走 vlm，否则 text
     audit_mode: str = "text"
     # 常规自定义 OpenAI 兼容引擎（识别/审核各自独立参数，优先从 .env 读取）
-    # 识别腿默认 DashScope（见 _rec_provider_env 成对解析）；审核腿默认仍为 SiliconFlow。
     openai_rec_base_url: str = Field(default_factory=lambda: _rec_provider_env()[0])
     openai_rec_api_key: str = Field(default_factory=lambda: _rec_provider_env()[1])
     openai_rec_model: str = Field(
         default_factory=lambda: env_model_or_default(
-            os.environ.get("OPENAI_REC_MODEL"), DASHSCOPE_DEFAULT_REC_MODEL)
+            os.environ.get("OPENAI_REC_MODEL") or os.environ.get("RECOGNITION_MODEL"), "")
     )
     openai_rec_api_format: str = Field(default="chat_completion", description="主识别引擎 API 格式协议")
     api_format: str = Field(default="chat_completion", description="主识别引擎 API 格式兼容字段")
     openai_aud_base_url: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_AUD_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
+        default_factory=lambda: (os.environ.get("OPENAI_AUD_BASE_URL") or os.environ.get("OPENAI_BASE_URL") or "").strip()
     )
     openai_aud_api_key: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_AUD_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
+        default_factory=lambda: (os.environ.get("OPENAI_AUD_API_KEY") or os.environ.get("OPENAI_API_KEY") or "").strip()
     )
     openai_aud_model: str = Field(
         default_factory=lambda: env_model_or_default(
-            os.environ.get("OPENAI_AUD_MODEL") or os.environ.get("SILICONFLOW_AUDIT_MODEL"),
-            "zai-org/GLM-4.5V")
+            os.environ.get("OPENAI_AUD_MODEL") or os.environ.get("AUDIT_MODEL"), "")
     )
     openai_aud_api_format: str = Field(default="chat_completion")
-    # 单引擎调用超时（秒）：超过即快速失败，取代 llm.py 写死的 240s。
-    # T9（P8）：默认值 60 与 llm._resolve_timeout 的硬钳 min(v,60) 对齐——旧默认 90
-    # 实际只生效 60，属误导；60 对 omni（实测单张 2.6-7.1s）结余充足且禁止长期空转。
-    # 硬钳保留：无论管理台填多大，实际超时都不超过 MAX_CALL_TIMEOUT_SECONDS（60）。
-    # 三处钳制（运行期 / hydrate 存量归一 / 保存归一）统一走 clamp_call_timeout。
-    call_timeout_seconds: int = MAX_CALL_TIMEOUT_SECONDS
+    # 各引擎腿独立超时（秒）：未设置/None 时回退至环境变量 ENGINE_CALL_TIMEOUT，
+    # 再回退至 DEFAULT_CALL_TIMEOUT (30s)；硬上限始终为 MAX_CALL_TIMEOUT_SECONDS (60s)。
+    # 注：全局 call_timeout_seconds 保留作为历史兼容与回退层。
+    call_timeout_seconds: Optional[int] = Field(
+        default=60,
+        description="历史全局调用超时（秒），兼容字段。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+    )
 
-    # 常规三腿独立超时（秒）：未设置/None 时优雅回退至 call_timeout_seconds
+    # 常规三腿独立超时（秒）
     rec_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="常规识别引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="常规识别引擎独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
     aud_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="常规审核引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="常规审核引擎独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
     parse_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="常规解析 LLM 独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="常规解析 LLM 独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
 
-    # 灰测三腿独立超时（秒）：未设置/None 时优雅回退至 call_timeout_seconds
+    # 灰测三腿独立超时（秒）
     grey_rec_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="灰测识别引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="灰测识别引擎独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
     grey_aud_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="灰测审核引擎独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="灰测审核引擎独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
     grey_parse_timeout_seconds: Optional[int] = Field(
         default=None,
-        description="灰测解析 LLM 独立调用超时（秒）。未设置时继承 call_timeout_seconds。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
+        description="灰测解析 LLM 独立调用超时（秒）。未设置时回退至 DEFAULT_CALL_TIMEOUT。受 MAX_CALL_TIMEOUT_SECONDS 硬上限钳制。"
     )
 
     # 常规三腿思考强度（Reasoning Effort）：空字符串表示不指定/关闭
@@ -545,26 +677,75 @@ class EngineConfig(BaseModel):
         default="",
         description="灰测解析 LLM 思考强度。可选值同上。"
     )
-    # 整图识别重试上限（T11/P10）：识别失败或门禁不过时最多跑几轮（含首轮）。
-    # 默认 3；与 call_timeout_seconds 同样不在契约层做范围钳制（管理台/DB 可直接改），
-    # 由 supervisor.resolve_max_retry 在运行时钳制到 [1, MAX_RETRY_LIMIT]，
-    # 避免 0（循环一轮不跑）或离谱大值（长期空转烧钱）。
-    # 真正会消耗该额度的只有「引擎瞬时故障」（上游 5xx / 超时）这一类：
-    # 门禁快速反馈、输出质量失败、确定性失败都已在 supervisor 内短路，不占额度。
+    # 常规三腿独立重跑上限 (0-10)
+    openai_rec_max_retry_rounds: Optional[int] = Field(
+        default=3,
+        description="常规识别引擎独立重跑上限（轮）。默认 3。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+    openai_aud_max_retry_rounds: Optional[int] = Field(
+        default=1,
+        description="常规审核引擎独立重跑上限（轮）。默认 1。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+    openai_parse_max_retry_rounds: Optional[int] = Field(
+        default=1,
+        description="常规解析 LLM 独立重跑上限（轮）。默认 1。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+
+    rec_max_retry_rounds: Optional[int] = Field(
+        default=3,
+        description="常规识别引擎独立重跑上限简写别名。"
+    )
+    aud_max_retry_rounds: Optional[int] = Field(
+        default=1,
+        description="常规审核引擎独立重跑上限简写别名。"
+    )
+    parse_max_retry_rounds: Optional[int] = Field(
+        default=1,
+        description="常规解析 LLM 独立重跑上限简写别名。"
+    )
+
+    # 灰测三腿独立重跑上限 (0-10，None 表示继承常规)
+    grey_openai_rec_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测识别引擎独立重跑上限（轮）。None 继承常规。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+    grey_openai_aud_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测审核引擎独立重跑上限（轮）。None 继承常规。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+    grey_openai_parse_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测解析 LLM 独立重跑上限（轮）。None 继承常规。受 MAX_RETRY_LIMIT (10) 钳制。"
+    )
+
+    grey_rec_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测识别引擎独立重跑上限简写别名。"
+    )
+    grey_aud_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测审核引擎独立重跑上限简写别名。"
+    )
+    grey_parse_max_retry_rounds: Optional[int] = Field(
+        default=None,
+        description="灰测解析 LLM 独立重跑上限简写别名。"
+    )
+
+    # 整图识别重试上限（历史存量兼容字段）：识别失败或门禁不过时最多跑几轮（含首轮）。
+    # 与 rec 腿保持同步，运行时受 MAX_RETRY_LIMIT (10) 钳制。
     max_retry_rounds: int = Field(
         default=3,
-        description="整图识别最大轮数（含首轮），默认 3，运行时钳制到 [1, 5]。"
-                    "仅引擎瞬时故障会用到第 2/3 轮；快速反馈门禁、输出质量失败、确定性失败均短路不重跑。",
+        description="整图识别最大轮数（含首轮），历史兼容字段，与识别腿重试上限同步。",
     )
     # 常规解析 LLM（VLM 识别后 → LLM 规范化解析，可选）
     parse_llm_enabled: bool = False
     parse_llm_engine: EngineKind = EngineKind.OPENAI
-    parse_llm_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    parse_llm_model: str = ""
     openai_parse_base_url: str = Field(
         default_factory=lambda: os.environ.get("OPENAI_PARSE_BASE_URL", os.environ.get("OPENAI_BASE_URL", ""))
     )
     openai_parse_api_key: str = Field(
-        default_factory=lambda: os.environ.get("OPENAI_PARSE_API_KEY", os.environ.get("OPENAI_API_KEY", os.environ.get("SILICONFLOW_API_KEY", "")))
+        default_factory=lambda: os.environ.get("OPENAI_PARSE_API_KEY", os.environ.get("OPENAI_API_KEY", ""))
     )
     openai_parse_model: str = Field(
         default_factory=lambda: env_model_or_default(
@@ -577,13 +758,13 @@ class EngineConfig(BaseModel):
     grey_percent: int = 0                            # 随机分配概率 0-100
     grey_assign_mode: GreyAssignMode = GreyAssignMode.RECEIPT
     grey_supplier_ids: list[int] = []                # 灰测指定的供应商名单（ID allowlist）
-    # 灰测组识别引擎/模型（默认 SF 非思考型，与常规腿同源不同参）
+    # 灰测组识别引擎/模型
     grey_recognition_engine: EngineKind = EngineKind.OPENAI
-    grey_recognition_model: str = "Qwen/Qwen3-VL-32B-Instruct"
-    # 灰测组审核引擎/模型（与灰测识别腿跨厂商异构：GLM 系）
+    grey_recognition_model: str = ""
+    # 灰测组审核引擎/模型
     grey_audit_enabled: bool = True
     grey_audit_engine: EngineKind = EngineKind.OPENAI
-    grey_audit_model: str = "zai-org/GLM-4.5V"
+    grey_audit_model: str = ""
     # 灰测组自定义 OpenAI 兼容参数（识别/审核各自独立）
     grey_openai_rec_base_url: str = ""
     grey_openai_rec_api_key: str = ""
@@ -597,7 +778,7 @@ class EngineConfig(BaseModel):
     # 灰测组解析 LLM
     grey_parse_llm_enabled: bool = False
     grey_parse_llm_engine: EngineKind = EngineKind.OPENAI
-    grey_parse_llm_model: str = "Qwen/Qwen3-VL-32B-Instruct"
+    grey_parse_llm_model: str = ""
     grey_openai_parse_base_url: str = ""
     grey_openai_parse_api_key: str = ""
     grey_openai_parse_model: str = ""
@@ -671,6 +852,33 @@ class EngineConfig(BaseModel):
 
     # 推全回滚快照（一次：prev 为推全前常规组配置，meta 为操作信息）
     rollback_snapshot: Optional[dict] = None
+
+    def __setattr__(self, name, value):
+        super().__setattr__(name, value)
+        if name == "max_retry_rounds":
+            super().__setattr__("openai_rec_max_retry_rounds", value)
+            super().__setattr__("rec_max_retry_rounds", value)
+        elif name in ("openai_rec_max_retry_rounds", "rec_max_retry_rounds"):
+            super().__setattr__("openai_rec_max_retry_rounds", value)
+            super().__setattr__("rec_max_retry_rounds", value)
+            if isinstance(value, int):
+                super().__setattr__("max_retry_rounds", value)
+        elif name in ("openai_aud_max_retry_rounds", "aud_max_retry_rounds"):
+            super().__setattr__("openai_aud_max_retry_rounds", value)
+            super().__setattr__("aud_max_retry_rounds", value)
+        elif name in ("openai_parse_max_retry_rounds", "parse_max_retry_rounds"):
+            super().__setattr__("openai_parse_max_retry_rounds", value)
+            super().__setattr__("parse_max_retry_rounds", value)
+        elif name in ("grey_openai_rec_max_retry_rounds", "grey_rec_max_retry_rounds"):
+            super().__setattr__("grey_openai_rec_max_retry_rounds", value)
+            super().__setattr__("grey_rec_max_retry_rounds", value)
+        elif name in ("grey_openai_aud_max_retry_rounds", "grey_aud_max_retry_rounds"):
+            super().__setattr__("grey_openai_aud_max_retry_rounds", value)
+            super().__setattr__("grey_aud_max_retry_rounds", value)
+        elif name in ("grey_openai_parse_max_retry_rounds", "grey_parse_max_retry_rounds"):
+            super().__setattr__("grey_openai_parse_max_retry_rounds", value)
+            super().__setattr__("grey_parse_max_retry_rounds", value)
+
 
 
 def should_use_grey(cfg: "EngineConfig", supplier_name: str = "", supplier_id: Optional[int] = None) -> bool:

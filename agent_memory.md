@@ -1,5 +1,17 @@
 # Agent Memory & Behavioral Directives
 
+用户进一步明确：开发必须通过 Orca `worker-start --agent antigravity` 在 current workspace 新建全新独立 agy process，不得通过 `--terminal` 复用旧 agy。协调器已报告旧会话只读写权检查为零 writer、可交接，常驻 15010 服务正常；本产品任务未独立运行核验该服务，开发前仍需重新记录基线与所有权。
+
+## 本项目平台事实与授权（2026-10-08，项目限定）
+
+- `receipt-agent-interview` 没有 macOS 原生应用；现有 Web 收据工作台是本项目的前端，允许修改 `demo/templates/`、`demo/static/` 及必要的配套后端。
+- 用户最新明确确认：允许修复现有 Web 工作台，并使用 Orca 内嵌浏览器开展 UAT。HarnessHub 的原生端限定属于另一项目，不适用于本仓库；不迁移原生端，不修改其他项目或全局记忆。
+- 本轮修复的唯一开发与代码修复所有者为 Orca `agy` / Antigravity；Codex 可承担 Product/Spec，禁止代替 agy 开发。
+- 严格按 Product/Spec → agy 开发 → 独立 QA → 独立 UAT 门禁推进；主协调器仅调度和判定门禁。开发前协调器需确认旧任务的文件写入权已串行移交。
+- Web 可访问性按真实浏览器键盘操作、DOM/可访问性树与焦点行为验收；读屏需真实运行证据，工具不支持时明确待验证，不能以静态 ARIA 或原生应用假设宣称通过。
+- 本项目 subagent 完成后必须关闭进程，既存开发服务保留；其他任务流程条款不改。
+- 保留既有 dirty workspace；未明确要求不得执行 Git 写操作。以下无关历史记忆保持原样。
+
 ## 核心指令与格式规范
 
 1. **绝对禁止使用 Emoji**：

@@ -28,20 +28,34 @@ _SILICONFLOW_KEY = "sk-siliconflow-secret-abcdef1234"
 
 
 def test_engine_presets_masks_api_keys(monkeypatch):
-    monkeypatch.setenv("DASHSCOPE_API_KEY", _DASHSCOPE_KEY)
-    monkeypatch.setenv("SILICONFLOW_API_KEY", _SILICONFLOW_KEY)
+    import json
+    orig_custom = db.get_app_setting("custom_engine_presets", "{}")
+    try:
+        custom_data = {
+            "my_custom": {
+                "label": "My Custom Provider",
+                "base_url": "https://api.example.com/v1",
+                "api_key": _DASHSCOPE_KEY,
+                "rec_model": "custom-vlm",
+            }
+        }
+        db.set_app_setting("custom_engine_presets", json.dumps(custom_data))
 
-    resp = client.get("/api/admin/engine-presets")
-    assert resp.status_code == 200
-    data = resp.json()["data"]
+        resp = client.get("/api/admin/engine-presets")
+        assert resp.status_code == 200
+        data = resp.json()["data"]
 
-    assert data["bailian"]["api_key"] == mask_secret_key(_DASHSCOPE_KEY)
-    assert data["siliconflow"]["api_key"] == mask_secret_key(_SILICONFLOW_KEY)
-    # 明文不得出现在响应中
-    assert "secret" not in data["bailian"]["api_key"]
-    assert "secret" not in data["siliconflow"]["api_key"]
-    # 无密钥的预设仍为空串，不引入占位噪声
-    assert data["agnes"]["api_key"] == ""
+        # 验证彻底移除硬编码厂商预设
+        assert "bailian" not in data
+        assert "siliconflow" not in data
+        assert "agnes" not in data
+
+        # 自定义预设经 mask_secret_key 脱敏
+        assert data["my_custom"]["api_key"] == mask_secret_key(_DASHSCOPE_KEY)
+        # 明文不得出现在响应中
+        assert "secret" not in data["my_custom"]["api_key"]
+    finally:
+        db.set_app_setting("custom_engine_presets", orig_custom)
 
 
 def test_masked_api_key_is_not_written_back_to_db():

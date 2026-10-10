@@ -287,6 +287,7 @@ def record_llm_call(
     error_msg: str = "",
     error_category: str = "",
     created_at: str = "",
+    adapted_params: Optional[Union[List[str], str]] = None,
 ) -> Optional[int]:
     """统一写一条 LLM/VLM 调用日志，软失败保证主流程安全。"""
     try:
@@ -310,6 +311,12 @@ def record_llm_call(
         cached_tokens = int(tu.get("cached_tokens", 0) or 0)
         total_tokens = int(tu.get("total_tokens", 0) or (p_tokens + c_tokens))
 
+        clean_adapted = ""
+        if isinstance(adapted_params, list):
+            clean_adapted = json.dumps(adapted_params, ensure_ascii=False)
+        elif adapted_params:
+            clean_adapted = str(adapted_params)
+
         return db.insert_llm_call_log(
             receipt_id=r_id,
             tenant_id=t_id,
@@ -332,6 +339,7 @@ def record_llm_call(
             error_msg=sanitize_text(error_msg),
             error_category=error_category,
             created_at=created_at or db.now_iso(),
+            adapted_params=clean_adapted,
         )
     except Exception as e:
         logger.warning(f"全链路 LLM 日志记录发生异常 (软失败不阻断): {e}")

@@ -41,7 +41,7 @@ from app.services import settings_service
 client = TestClient(app)
 
 BASE_URL = os.environ.get("PW_TEST_BASE_URL", "http://127.0.0.1:15010")
-SCREENSHOT_DIR = DEMO_ROOT / "gui-test-screenshots"
+SCREENSHOT_DIR = Path(os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or (DEMO_ROOT / "gui-test-screenshots"))
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
 MEMORY_BUDGET_FIELD_IDS = [
@@ -183,6 +183,10 @@ def test_playwright_memory_budget_pixel_geometry_and_overflow():
         page.wait_for_selector("#tab-engine", timeout=10000)
         assert page.locator("#tab-engine").is_visible(), "[FAIL] #tab-engine 未成功展示"
 
+        # 切换至「03 AI 飞轮与治理规则」子分页
+        page.locator("#engineSubNav_03").click()
+        page.wait_for_timeout(200)
+
         # 确保系统配置卡片与 .memory-budget-grid 加载
         page.wait_for_selector(".memory-budget-grid", timeout=10000)
         grid_locator = page.locator(".memory-budget-grid")
@@ -303,6 +307,7 @@ def test_playwright_memory_budget_pixel_geometry_and_overflow():
             card_locator.screenshot(path=str(screenshot_path))
             assert screenshot_path.exists(), f"[FAIL] 截图保存失败: {screenshot_path}"
 
+        context.close()
         browser.close()
 
 
@@ -329,8 +334,11 @@ def test_playwright_ui_interaction_save_and_reload():
             page.wait_for_selector("#demoRoleSelect", timeout=10000)
             page.wait_for_timeout(300)
 
-        # 导航至系统配置
+        # 导航至系统配置并切换至「03 AI 飞轮与治理规则」子分页
         page.locator("#adminEngineBtn").click()
+        page.wait_for_selector("#tab-engine", timeout=10000)
+        page.locator("#engineSubNav_03").click()
+        page.wait_for_timeout(200)
         page.wait_for_selector(".memory-budget-grid", timeout=10000)
 
         # 记录初始值
@@ -342,14 +350,22 @@ def test_playwright_ui_interaction_save_and_reload():
         page.fill("#setMemoryBudgetMaxItems", "9")
 
         # 点击保存按钮并等待保存请求完成
-        page.locator("#btnSaveAdminSettings").click()
-        page.wait_for_timeout(800)
+        save_btn = page.locator("#btnSaveUnifiedConfig")
+        with page.expect_response(lambda r: ("/api/admin/unified-config" in r.url or "/api/admin/settings" in r.url) and r.status == 200, timeout=10000):
+            if save_btn.is_visible():
+                save_btn.click()
+            else:
+                page.locator("#btnSaveAdminSettings").click(force=True)
+        page.wait_for_timeout(500)
 
         # 刷新页面验证持久化回填
-        page.reload(wait_until="domcontentloaded")
+        page.goto(BASE_URL, wait_until="domcontentloaded")
         page.wait_for_selector("#demoRoleSelect", timeout=10000)
         page.evaluate('() => localStorage.setItem("demo_role", "admin")')
         page.locator("#adminEngineBtn").click()
+        page.wait_for_selector("#tab-engine", timeout=10000)
+        page.locator("#engineSubNav_03").click()
+        page.wait_for_timeout(200)
         page.wait_for_selector(".memory-budget-grid", timeout=10000)
 
         # 等待数据异步加载完成并回显到输入框
@@ -364,9 +380,14 @@ def test_playwright_ui_interaction_save_and_reload():
         # 还原默认值
         page.locator("#btnResetAdminSettings").click()
         page.wait_for_timeout(300)
-        page.locator("#btnSaveAdminSettings").click()
-        page.wait_for_timeout(800)
+        with page.expect_response(lambda r: ("/api/admin/unified-config" in r.url or "/api/admin/settings" in r.url) and r.status == 200, timeout=10000):
+            if save_btn.is_visible():
+                save_btn.click()
+            else:
+                page.locator("#btnSaveAdminSettings").click(force=True)
+        page.wait_for_timeout(500)
 
+        context.close()
         browser.close()
 
 

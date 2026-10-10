@@ -18,8 +18,8 @@ import os
 import pytest
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "http://127.0.0.1:15010"
-SCREENSHOT_DIR = os.path.abspath(
+BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010"))
+SCREENSHOT_DIR = os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../gui-test-screenshots"))
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 

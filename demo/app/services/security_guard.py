@@ -197,18 +197,35 @@ def validate_safe_external_url(
         return False, f"URL 解析异常: {str(e)}"
 
 
-def mask_secret_key(key: Optional[str]) -> str:
+def mask_secret_key(key: Optional[str], equal_length: bool = False) -> str:
     """脱敏 API 密钥。
 
     规则:
     - 为空或 None: 返回 ""
-    - 长度 <= 8: 返回 "******"
-    - 长度 >= 12: 保留前 6 位与后 4 位，中间 "****" (例如: sk-abc****1234)
-    - 否则 (9..11 位): 保留前 3 位与后 4 位，中间 "****"
+    - equal_length=False (默认/历史兼容):
+      - 长度 <= 8: 返回 "******"
+      - 长度 >= 12: 保留前 6 位与后 4 位，中间 "****" (例如: sk-abc****1234)
+      - 否则 (9..11 位): 保留前 3 位与后 4 位，中间 "****"
+    - equal_length=True (前端密码框呈现):
+      - 掩码总长度与原密钥长度严格一致，满足密码框黑圆点呈现真实密钥长度的诉求。
+      - 长度 <= 8: 返回原长度的 "*" (至少 6 位)
+      - 长度 >= 14: 保留前 6 位与后 4 位，中间 '*' 填充，总长 = len(key)
+      - 长度 9..13: 保留前 3 位与后 4 位，中间 '*' 填充，总长 = len(key)
     """
     k = str(key or "").strip()
     if not k:
         return ""
+    if equal_length:
+        n = len(k)
+        if n <= 8:
+            return "*" * max(6, n)
+        if n >= 14:
+            p_len, s_len = 6, 4
+        else:
+            p_len, s_len = 3, 4
+        mask_len = max(4, n - p_len - s_len)
+        return f"{k[:p_len]}{'*' * mask_len}{k[-s_len:]}"
+
     if len(k) <= 8:
         return "******"
     if len(k) >= 12:

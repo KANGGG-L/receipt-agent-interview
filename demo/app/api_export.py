@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""数据导出中心后端端点：提供覆盖库存、餐品、供应商、部门四大业务模块的统一报表数据生成、在线预览与 CSV 下载。"""
+"""数据导出中心后端端点：按 3 个使用者组（盘点补货/经营毛利/台账合规）提供 8 张标准报表的数据生成、在线预览与 CSV 下载。"""
 
 import csv
 import io
@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from app import db
 from app.api_receipts import _mask_sensitive
-from app.auth import require_role, resolve_account, resolve_tenant
+from app.auth import ROLE_RANK, _ROLE_LABEL, require_role, resolve_account, resolve_tenant
 from app.services.costing_service import CostingService
 from app.services.recipe_cost import compute_recipe_theory
 
@@ -87,12 +87,19 @@ def _normalize_date_range(params: Dict[str, Any]) -> None:
 # --------------------------------------------------------------------------
 # 报表元数据定义字典
 # --------------------------------------------------------------------------
+# B3 信息架构：类目从 4 业务域改为 3 个使用者组（用户按"我是谁、我要干什么"找表）：
+#   stocktake 盘点与补货（库管）、business 经营与毛利（owner）、ledger 台账与合规（出纳/审计）。
+# 分组、描述、筛选器、权限标记（min_role）全部只在本清单声明，前端不抄写第二份。
+# 报表体系 14 → 8：3 张供应商应付类报表因数据模型不支撑整体移出（将来以应付管理
+# 模块回归）；dish_bom_recipes 移出数据中心（BOM 配方归餐品管理维护档案）；
+# dish_daily_sales_cost + dish_margin_variance 合并为 dish_cost_margin；
+# department_cost_summary + department_items_breakdown 合并为 spend_summary。
 REPORTS_META = [
-    # 模块一：库存与价格
+    # 使用者组一：盘点与补货（库管阿叔）
     {
         "id": "inventory_stocktake",
-        "category": "inventory",
-        "category_name": "实时库存与价格",
+        "category": "stocktake",
+        "category_name": "盘点与补货",
         "title": "实时库存盘点底单",
         "description": "专为仓库/冷库现场实地盘点设计，包含账面数量及留白手填实盘列、盘盈盘亏列与签字栏。",
         "filters": ["category", "stock_filter"],
@@ -100,135 +107,75 @@ REPORTS_META = [
         "supports_drafts": False,
     },
     {
+        "id": "dish_ingredient_consumption",
+        "category": "stocktake",
+        "category_name": "盘点与补货",
+        "title": "采购补货建议清单",
+        "description": "汇总核算周期内各原材料的总消耗量（含折算kg口径）与当前库存剩余，自动测算建议补货量。",
+        "filters": ["date_range", "category", "only_suggested"],
+        "supports_desensitization": False,
+        "supports_drafts": False,
+    },
+    # 使用者组二：经营与毛利（owner）
+    {
         "id": "inventory_valuation",
-        "category": "inventory",
-        "category_name": "实时库存与价格",
-        "title": "食材库存结存与货值统计表",
+        "category": "business",
+        "category_name": "经营与毛利",
+        "title": "库存货值结存表",
         "description": "核算全量食材的当前库存、折算标准kg、最新进价及资产货值估算，监控低库存风险。",
-        "filters": ["category", "stock_filter"],
+        "filters": ["category", "stock_filter", "value_min"],
         "supports_desensitization": False,
         "supports_drafts": False,
     },
     {
         "id": "inventory_price_anomaly",
-        "category": "inventory",
-        "category_name": "实时库存与价格",
-        "title": "采购进价波动与比价分析表",
+        "category": "business",
+        "category_name": "经营与毛利",
+        "title": "采购进价波动与比价表",
         "description": "比对最新进价与30日均价涨跌幅、历史极值，标红涨幅超{threshold}异动食材，辅助议价与选品。",
-        "filters": ["category"],
+        "filters": ["category", "direction", "threshold_override", "window_days"],
         "supports_desensitization": False,
         "supports_drafts": False,
     },
+    {
+        "id": "dish_cost_margin",
+        "category": "business",
+        "category_name": "经营与毛利",
+        "title": "菜品成本与毛利表",
+        "description": "理论成本 vs FIFO实际成本同表对照，附偏差归因建议；按日逐单或按期间汇总两种粒度切换。",
+        "filters": ["date_range", "cost_granularity", "margin_threshold", "dish_status", "dish_category"],
+        "supports_desensitization": False,
+        "supports_drafts": False,
+    },
+    {
+        "id": "spend_summary",
+        "category": "business",
+        "category_name": "经营与毛利",
+        "title": "期间花销汇总表",
+        "description": "月度汇报报表：按部门或供应商透视本期采购与上期对照，展示环比增减与趋势状态。",
+        "filters": ["date_range", "spend_pivot", "pivot_focus", "amount_range"],
+        "supports_desensitization": True,
+        "supports_drafts": True,
+        "min_role": "owner",
+    },
+    # 使用者组三：台账与合规（出纳/审计）
     {
         "id": "inventory_stock_logs",
-        "category": "inventory",
-        "category_name": "实时库存与价格",
-        "title": "出入库全量流水综合台账",
+        "category": "ledger",
+        "category_name": "台账与合规",
+        "title": "出入库全量流水台账",
         "description": "整合采购入库、餐品消耗、后厨报损、盘点调整的完整物理库存变动日记账。",
-        "filters": ["date_range", "log_kind", "sku_id"],
+        "filters": ["date_range", "log_kind", "sku_id", "receipt_ref", "vendor_keyword"],
         "supports_desensitization": True,
         "supports_drafts": False,
     },
-    # 模块二：餐品与消耗
-    {
-        "id": "dish_bom_recipes",
-        "category": "dishes",
-        "category_name": "餐品与消耗",
-        "title": "餐品 BOM 标准配方明细表",
-        "description": "厨房出品标准化档案，列出各餐品原料配比、单位用量、理论食材基准成本及毛利率。",
-        "filters": ["dish_status", "dish_category"],
-        "supports_desensitization": False,
-        "supports_drafts": False,
-    },
-    {
-        "id": "dish_daily_sales_cost",
-        "category": "dishes",
-        "category_name": "餐品与消耗",
-        "title": "每日销售与食材实际成本汇总表",
-        "description": "按日统计餐品售出份数、营收、FIFO先进先出扣减的真实食材成本及实际综合毛利率。",
-        "filters": ["date_range"],
-        "supports_desensitization": False,
-        "supports_drafts": False,
-    },
-    {
-        "id": "dish_margin_variance",
-        "category": "dishes",
-        "category_name": "餐品与消耗",
-        "title": "餐品理论毛利 vs 真实毛利偏差诊断表",
-        "description": "对比理论成本与实际采购加权成本，量化食材涨价对餐品利润的穿透侵蚀度与诊断建议。",
-        "filters": ["date_range"],
-        "supports_desensitization": False,
-        "supports_drafts": False,
-    },
-    {
-        "id": "dish_ingredient_consumption",
-        "category": "dishes",
-        "category_name": "餐品与消耗",
-        "title": "后厨食材累计消耗总量与采购建议",
-        "description": "汇总核算周期内各原材料的总消耗量、当前库存剩余，自动测算建议补货量。",
-        "filters": ["date_range", "category"],
-        "supports_desensitization": False,
-        "supports_drafts": False,
-    },
-    # 模块三：供应商与归档
     {
         "id": "receipts_itemized_ledger",
-        "category": "suppliers",
-        "category_name": "供应商与归档",
-        "title": "采购收据入账全量明细台账 (含行项目)",
+        "category": "ledger",
+        "category_name": "台账与合规",
+        "title": "采购入账明细台账",
         "description": "财务标准做账台账：单据抬头与行项目全景展开，包含供应商、日期、商品品名、数量、单价与部门。",
-        "filters": ["date_range", "receipt_status", "supplier_id", "department_id"],
-        "supports_desensitization": True,
-        "supports_drafts": True,
-    },
-    {
-        "id": "supplier_payables_aging",
-        "category": "suppliers",
-        "category_name": "供应商与归档",
-        "title": "供应商应付账款与账期逾期表",
-        "description": "出纳排款与账期控制专用表：汇总各供应商未付赊单、逾期金额、7天内到期金额及账期天数。",
-        "filters": ["supplier_id"],
-        "supports_desensitization": True,
-        "supports_drafts": False,
-    },
-    {
-        "id": "supplier_payments_journal",
-        "category": "suppliers",
-        "category_name": "供应商与归档",
-        "title": "供应商往来付款与核销台账",
-        "description": "记录所有向供应商支付的结算流水、支付方式、关联收据单号及凭证留痕。",
-        "filters": ["date_range", "supplier_id"],
-        "supports_desensitization": True,
-        "supports_drafts": False,
-    },
-    {
-        "id": "supplier_recon_discrepancies",
-        "category": "suppliers",
-        "category_name": "供应商与归档",
-        "title": "供应商月结对账差异明细表",
-        "description": "月结核账报表：展现系统收据与供应商外部对账单的匹配情况，标记漏单、金额不符等差异行。",
-        "filters": ["supplier_id"],
-        "supports_desensitization": True,
-        "supports_drafts": False,
-    },
-    # 模块四：部门花销报表
-    {
-        "id": "department_cost_summary",
-        "category": "department",
-        "category_name": "部门花销报表",
-        "title": "部门采购花销期间环比对照表",
-        "description": "管理层汇报报表：横向对比各部门本期进货与上期进货金额，展示环比增减额、增减率及趋势。",
-        "filters": ["date_range"],
-        "supports_desensitization": False,
-        "supports_drafts": True,
-    },
-    {
-        "id": "department_items_breakdown",
-        "category": "department",
-        "category_name": "部门花销报表",
-        "title": "部门采购货品穿透明细流水",
-        "description": "穿透至各部门采购的具体货品名称、采购量、金额与供应商，便于部门主管复核成本明细。",
-        "filters": ["date_range", "department_id"],
+        "filters": ["date_range", "receipt_status", "supplier_id", "department_id", "keyword", "paid_status", "amount_range", "currency"],
         "supports_desensitization": True,
         "supports_drafts": True,
     },
@@ -264,6 +211,27 @@ def _reports_meta_for_tenant(tenant_id=None):
         if isinstance(r.get("description"), str) and "{threshold}" in r["description"]:
             r["description"] = r["description"].replace("{threshold}", pct_text)
     return meta
+
+
+def _enforce_report_role_gate(report_id: str, request: Request) -> None:
+    """AC-12 / A2: 敏感报表角色门禁（preview 与 download 共用同一实现）。
+
+    门禁标记只声明在 REPORTS_META 的 `min_role` 字段（单一事实源），不再按
+    report_id 在端点里硬编码；meta 缺省（无 min_role）即对 staff 开放。
+    """
+    meta = next((r for r in REPORTS_META if r["id"] == report_id), None)
+    min_role = (meta or {}).get("min_role")
+    if not min_role:
+        return
+    account = resolve_account(request)
+    role = account.get("role") or "staff"
+    if ROLE_RANK.get(role, 0) >= ROLE_RANK.get(min_role, 99):
+        return
+    # 人话文案：对 staff 语境固定说「老板或管理人员」（AC-12 既有口径，勿改成角色枚举罗列）
+    raise HTTPException(
+        status_code=403,
+        detail=f"当前角色为{_ROLE_LABEL.get(role, role)}，此报表需老板或管理人员权限查看",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -362,6 +330,11 @@ class ExportDataProcessor:
         skus = db.list_skus(include_inactive=False, tenant_id=tenant_id)
         cat = params.get("category", "")
         stock_flt = params.get("stock_filter", "all")
+        # FILTERS-§7: 货值下限（行级过滤；summary 保持全量口径）
+        try:
+            value_min = float(params.get("value_min"))
+        except (TypeError, ValueError):
+            value_min = None
 
         headers = [
             "食材代码",
@@ -393,6 +366,10 @@ class ExportDataProcessor:
             val = round(s.current_stock * unit_p, 2)
             total_val += val
 
+            # FILTERS-§7: 行级过滤在合计累加之后，summary 保持全量口径
+            if value_min is not None and val < value_min:
+                continue
+
             rows.append(
                 [
                     s.sku_code or f"SKU-{s.id}",
@@ -408,8 +385,8 @@ class ExportDataProcessor:
                 ]
             )
         return {
-            "title": "食材库存结存与货值统计表",
-            "filename": f"食材库存结存与货值表_{datetime.now().strftime('%Y%m%d')}",
+            "title": "库存货值结存表",
+            "filename": f"库存货值结存表_{datetime.now().strftime('%Y%m%d')}",
             "headers": headers,
             "rows": rows,
             "summary": {
@@ -422,10 +399,33 @@ class ExportDataProcessor:
     # 3. 采购进价波动与比价分析表
     @staticmethod
     def _handle_inventory_price_anomaly(params, tenant_id, is_desens):
-        from app.api_inventory import _compute_vs_avg_and_anomaly
+        from app.api_inventory import _compute_vs_avg_and_anomaly, _threshold_pct
 
         skus = db.list_skus(include_inactive=False, tenant_id=tenant_id)
         cat = params.get("category", "")
+        # FILTERS-§4: 涨跌方向 / 阈值临时覆盖 / 均价窗口天数
+        direction = params.get("direction", "all")
+        if direction not in ("all", "up", "down"):
+            direction = "all"
+
+        def _to_float_or_none(v):
+            try:
+                f = float(v)
+                return f if f == f else None
+            except (TypeError, ValueError):
+                return None
+
+        # 阈值覆盖仅作用于本次请求（SSOT 只读，不写回配置）
+        threshold_override = _to_float_or_none(params.get("threshold_pct"))
+        if threshold_override is not None:
+            threshold_override = max(0.0, min(100.0, threshold_override))
+
+        try:
+            window_days = int(params.get("window_days", 30))
+        except (TypeError, ValueError):
+            window_days = 30
+        if window_days not in (7, 30, 60):
+            window_days = 30
 
         headers = [
             "食材品名",
@@ -433,7 +433,7 @@ class ExportDataProcessor:
             "分类",
             "基本单位",
             "最新进价(元)",
-            "近30天均价(元)",
+            f"近{window_days}天均价(元)",
             "波动幅度",
             "价格异动预警",
             "历史最低价(元)",
@@ -444,8 +444,17 @@ class ExportDataProcessor:
         for s in skus:
             if cat and s.category != cat:
                 continue
-            vs_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(
-                s.id, tenant_id=tenant_id)
+            vs_pct, is_anomaly, avg_nd = _compute_vs_avg_and_anomaly(
+                s.id,
+                threshold_pct=threshold_override,
+                tenant_id=tenant_id,
+                days=window_days,
+            )
+            # FILTERS-§4: 涨跌方向
+            if direction == "up" and vs_pct <= 0:
+                continue
+            if direction == "down" and vs_pct >= 0:
+                continue
             if is_anomaly:
                 anomaly_count += 1
 
@@ -462,7 +471,7 @@ class ExportDataProcessor:
                     s.category or "其他",
                     s.base_unit or "个",
                     round(s.last_unit_price or 0.0, 2),
-                    round(avg_30d, 2),
+                    round(avg_nd, 2),
                     vs_text,
                     "[涨价异动]" if is_anomaly else "正常",
                     round(min_p, 2),
@@ -474,7 +483,18 @@ class ExportDataProcessor:
             "filename": f"采购进价波动与比价表_{datetime.now().strftime('%Y%m%d')}",
             "headers": headers,
             "rows": rows,
-            "summary": {"分析SKU总数": len(rows), "涨价预警SKU数": anomaly_count},
+            "summary": {
+                "分析SKU总数": len(rows),
+                "涨价预警SKU数": anomaly_count,
+                # 覆盖生效提示：与租户 SSOT 不同时明示，避免误读
+                "均价窗口(天)": window_days,
+                **(
+                    {"生效阈值(%)": threshold_override}
+                    if threshold_override is not None
+                    and threshold_override != _threshold_pct(tenant_id)
+                    else {}
+                ),
+            },
         }
 
     # 4. 出入库全量流水综合台账
@@ -485,6 +505,9 @@ class ExportDataProcessor:
         kind = params.get("log_kind", "")
         # WS4-4：新增 sku_id 过滤（走 db.scoped 同源租户口径；与台账接口同源）。
         sku_id_flt = params.get("sku_id", "")
+        # FILTERS-§6: 按关联收据号 / 供应商名过滤（审计追责：这笔变动来自哪张单）
+        receipt_ref = str(params.get("receipt_ref", "")).strip()
+        vendor_flt = str(params.get("vendor", "")).strip()
 
         session = db.get_session()
         try:
@@ -499,6 +522,15 @@ class ExportDataProcessor:
                     # 非法 sku_id：不静默全量，落到空结果（避免把"筛选条件写错"
                     # 当成"无条件"从而导出全表）。
                     q = q.filter(db._StockLogRow.sku_id == -1)
+            if receipt_ref:
+                # 兼容 `#1502` / `1502` 两种输入：剥离非数字字符后精确匹配
+                digits = "".join(ch for ch in receipt_ref if ch.isdigit())
+                if digits:
+                    q = q.filter(db._StockLogRow.receipt_id == int(digits))
+                else:
+                    q = q.filter(db._StockLogRow.id == -1)
+            if vendor_flt:
+                q = q.filter(db._StockLogRow.vendor.like(f"%{vendor_flt}%"))
             q = q.order_by(db._StockLogRow.id.desc())
             db_rows = q.all()
 
@@ -551,7 +583,7 @@ class ExportDataProcessor:
                     ]
                 )
             return {
-                "title": "出入库全量流水综合台账",
+                "title": "出入库全量流水台账",
                 "filename": f"出入库全量流水台账_{start or 'all'}_{end or 'now'}",
                 "headers": headers,
                 "rows": rows,
@@ -560,106 +592,32 @@ class ExportDataProcessor:
         finally:
             session.close()
 
-    # 5. 餐品 BOM 标准配方明细表
+    # 5. 菜品成本与毛利表（B1 合并：原 dish_daily_sales_cost + dish_margin_variance）
+    # 同一数据链路的两段展示（日度逐单 / 期间按餐品汇总）合成一张表，
+    # 列取两者并集，粒度经 params.cost_granularity 切换（daily | period）。
     @staticmethod
-    def _handle_dish_bom_recipes(params, tenant_id, is_desens):
-        status_flt = params.get("dish_status", "active")
-        cat_flt = params.get("dish_category", "")
-
-        session = db.get_session()
-        try:
-            q = db.scoped(session.query(db._DishRow), db._DishRow, tenant_id)
-            if status_flt != "all":
-                q = q.filter(db._DishRow.status == status_flt)
-            if cat_flt:
-                q = q.filter(db._DishRow.category == cat_flt)
-            dishes = q.all()
-
-            headers = [
-                "餐品名称",
-                "餐品分类",
-                "在售标价(元)",
-                "配方食材",
-                "组件类型",
-                "单份用量",
-                "用量单位",
-                "食材进价(元)",
-                "单项成本(元)",
-                "理论整单成本(元)",
-                "理论毛利率(%)",
-                "状态",
-            ]
-            rows = []
-
-            for d in dishes:
-                # 成本口径走 recipe_cost 唯一实现（含单位换算、出成率、多级子配方）
-                theoretical_cost, ing_details = compute_recipe_theory(
-                    session, d.id, tenant_id)
-
-                margin_pct = (
-                    round((d.price - theoretical_cost) / d.price * 100, 1)
-                    if d.price > 0
-                    else 0.0
-                )
-
-                if not ing_details:
-                    rows.append(
-                        [
-                            d.name,
-                            d.category or "其他",
-                            round(d.price, 2),
-                            "-",
-                            "-",
-                            "-",
-                            "-",
-                            "-",
-                            "-",
-                            0.0,
-                            f"{margin_pct}%",
-                            "在售" if d.status == "active" else "停用",
-                        ]
-                    )
-                else:
-                    for i, ing in enumerate(ing_details):
-                        is_dish = ing.get("component_type") == "dish"
-                        comp_label = ing.get("component_name") or ing.get("sku_name") or "未知食材"
-                        unit_p = ing.get("sku_last_unit_price") or 0.0
-                        # 子配方组件以整包成本呈现，不出「食材进价」单价
-                        unit_p_disp = "-" if is_dish else round(unit_p, 2)
-                        rows.append(
-                            [
-                                d.name if i == 0 else "",
-                                (d.category or "其他") if i == 0 else "",
-                                round(d.price, 2) if i == 0 else "",
-                                comp_label,
-                                "子配方" if is_dish else "食材",
-                                round(ing.get("consumption_qty") or 0.0, 3),
-                                ing.get("unit") or "",
-                                unit_p_disp,
-                                round(ing.get("ingredient_cost") or 0.0, 2),
-                                round(theoretical_cost, 2) if i == 0 else "",
-                                f"{margin_pct}%" if i == 0 else "",
-                                ("在售" if d.status == "active" else "停用")
-                                if i == 0
-                                else "",
-                            ]
-                        )
-
-            return {
-                "title": "餐品 BOM 标准配方明细表",
-                "filename": f"餐品BOM标准配方表_{datetime.now().strftime('%Y%m%d')}",
-                "headers": headers,
-                "rows": rows,
-                "summary": {"餐品种数": len(dishes)},
-            }
-        finally:
-            session.close()
-
-    # 6. 每日销售与食材实际成本汇总表
-    @staticmethod
-    def _handle_dish_daily_sales_cost(params, tenant_id, is_desens):
+    def _handle_dish_cost_margin(params, tenant_id, is_desens):
         start = params.get("start_date", "")
         end = params.get("end_date", "")
+        granularity = params.get("cost_granularity", "daily")
+        if granularity not in ("daily", "period"):
+            granularity = "daily"
+        # FILTERS-§2: 毛利率阈值 / 菜品状态 / 菜品分类
+        dish_status = params.get("dish_status", "all")
+        if dish_status not in ("all", "active", "inactive"):
+            dish_status = "all"
+        dish_cat = str(params.get("dish_category", "")).strip()
+
+        def _to_float_or_none(v):
+            try:
+                f = float(v)
+                return f if f == f else None
+            except (TypeError, ValueError):
+                return None
+
+        margin_pct_max = _to_float_or_none(params.get("margin_pct_max"))
+        if margin_pct_max is not None:
+            margin_pct_max = max(0.0, min(100.0, margin_pct_max))
 
         session = db.get_session()
         try:
@@ -680,70 +638,197 @@ class ExportDataProcessor:
                 q = q.filter(db._DailyConsumptionRow.date >= start)
             if end:
                 q = q.filter(db._DailyConsumptionRow.date <= end)
-            q = q.order_by(
+            consumes = q.order_by(
                 db._DailyConsumptionRow.date.desc(), db._DailyConsumptionRow.id.desc()
-            )
-            consumes = q.all()
+            ).all()
 
             headers = [
-                "核算日期",
+                "核算周期",
                 "餐品名称",
+                "分类",
                 "售出份数",
-                "单份售价(元)",
+                "在售标价(元)",
                 "营业总额(元)",
                 "FIFO实际食材成本(元)",
                 "实际毛利额(元)",
                 "实际毛利率(%)",
                 "理论基准成本(元)",
+                "理论毛利率(%)",
                 "成本偏差(元)",
+                "毛利侵蚀点(%)",
+                "诊断分析建议",
                 "状态",
             ]
             rows = []
             tot_sales = 0.0
             tot_cost = 0.0
 
-            for c in consumes:
-                dish = session.get(db._DishRow, c.dish_id)
-                dish_name = dish.name if dish else f"餐品#{c.dish_id}"
-                dish_p = dish.price if dish else 0.0
+            def _advice(erosion, has_consumption):
+                # 偏差归因口径沿用原 dish_margin_variance 诊断建议
+                if not has_consumption:
+                    return "统计周期内暂无消耗记录"
+                if erosion > 5.0:
+                    return "[预警] 成本大幅承压，建议排查高价食材或微调售价"
+                if erosion > 2.0:
+                    return "进货价微涨，注意控制损耗"
+                return "毛利健康稳定"
 
-                sales = round(float(c.quantity * dish_p), 2)
-                act_cost = round(float(c.total_cost or 0.0), 2)
-                margin = round(sales - act_cost, 2)
-                margin_pct = round(margin / sales * 100, 1) if sales > 0 else 0.0
+            def _erosion_text(erosion):
+                return f"{erosion:.1f}%" if erosion > 0 else "0.0%"
 
-                # 算单品理论成本（与详情/其它报表共用 recipe_cost 唯一实现）
-                theo_unit_c, _ing_detail = compute_recipe_theory(
-                    session, c.dish_id, tenant_id)
+            if granularity == "daily":
+                # 按日粒度：逐单展示（原 dish_daily_sales_cost 口径）
+                for c in consumes:
+                    dish = session.get(db._DishRow, c.dish_id)
+                    dish_name = dish.name if dish else f"餐品#{c.dish_id}"
+                    dish_cat_row = (dish.category if dish else "") or "默认"
+                    if dish_cat_row == "其他":
+                        dish_cat_row = "默认"
+                    dish_p = dish.price if dish else 0.0
 
-                theo_cost = round(theo_unit_c * c.quantity, 2)
-                diff = round(act_cost - theo_cost, 2)
+                    # FILTERS-§2: 菜品状态 / 分类
+                    if dish_status != "all":
+                        row_status = (dish.status if dish else "") or ""
+                        if row_status != dish_status:
+                            continue
+                    if dish_cat and dish_cat_row != dish_cat:
+                        continue
 
-                tot_sales += sales
-                tot_cost += act_cost
+                    sales = round(float(c.quantity * dish_p), 2)
+                    act_cost = round(float(c.total_cost or 0.0), 2)
+                    margin = round(sales - act_cost, 2)
+                    margin_pct = round(margin / sales * 100, 1) if sales > 0 else 0.0
 
-                rows.append(
-                    [
-                        c.date,
-                        dish_name,
-                        round(c.quantity, 1),
-                        round(dish_p, 2),
-                        round(sales, 2),
-                        round(act_cost, 2),
-                        round(margin, 2),
-                        f"{margin_pct:.1f}%",
-                        round(theo_cost, 2),
-                        diff,
-                        "已核销" if c.is_void == 0 else "已冲销作废",
-                    ]
+                    # 单份理论成本（与详情/其它报表共用 recipe_cost 唯一实现）
+                    theo_unit_c, _ing = compute_recipe_theory(
+                        session, c.dish_id, tenant_id)
+                    theo_cost = round(theo_unit_c * c.quantity, 2)
+                    theo_margin = (
+                        round((dish_p - theo_unit_c) / dish_p * 100, 1)
+                        if dish_p > 0
+                        else 0.0
+                    )
+                    diff = round(act_cost - theo_cost, 2)
+                    erosion = round(theo_margin - margin_pct, 1)
+
+                    tot_sales += sales
+                    tot_cost += act_cost
+
+                    rows.append(
+                        [
+                            c.date,
+                            dish_name,
+                            dish_cat_row,
+                            round(c.quantity, 1),
+                            round(dish_p, 2),
+                            sales,
+                            act_cost,
+                            margin,
+                            f"{margin_pct:.1f}%",
+                            theo_cost,
+                            f"{theo_margin:.1f}%",
+                            diff,
+                            _erosion_text(erosion),
+                            _advice(erosion, True),
+                            "已核销",
+                        ]
+                    )
+            else:
+                # 期间粒度：按餐品聚合周期内消耗（原 dish_margin_variance 口径，
+                # 含周期内无消耗的在售餐品，便于 owner 识别"零销量但压成本"的菜）
+                period_label = f"{start or '全部'} ~ {end or '至今'}"
+                active_dishes_q = db.scoped(
+                    session.query(db._DishRow), db._DishRow, tenant_id
                 )
+                # FILTERS-§2: 菜品状态（原硬编码 active，现按参数；分类在循环内过滤）
+                if dish_status != "all":
+                    active_dishes_q = active_dishes_q.filter(
+                        db._DishRow.status == dish_status
+                    )
+                active_dishes = active_dishes_q.all()
+                for d in active_dishes:
+                    d_cat_row = (d.category or "").strip() or "默认"
+                    if d_cat_row == "其他":
+                        d_cat_row = "默认"
+                    if dish_cat and d_cat_row != dish_cat:
+                        continue
+                    cq = [
+                        c
+                        for c in consumes
+                        if c.dish_id == d.id
+                    ]
+
+                    total_qty = sum(c.quantity for c in cq)
+                    total_sales = round(sum(float(c.quantity) * d.price for c in cq), 2)
+                    total_actual = round(sum(float(c.total_cost or 0.0) for c in cq), 2)
+
+                    # 理论成本口径与详情/其它报表一致（recipe_cost 唯一实现）
+                    theo_unit_c, _ing = compute_recipe_theory(session, d.id, tenant_id)
+                    theo_cost_total = round(theo_unit_c * total_qty, 2)
+
+                    real_unit_cost = (
+                        round(total_actual / total_qty, 2) if total_qty > 0 else theo_unit_c
+                    )
+                    margin = round(total_sales - total_actual, 2)
+                    real_margin = (
+                        round((d.price - real_unit_cost) / d.price * 100, 1)
+                        if d.price > 0
+                        else 0.0
+                    )
+                    theo_margin = (
+                        round((d.price - theo_unit_c) / d.price * 100, 1)
+                        if d.price > 0
+                        else 0.0
+                    )
+
+                    cost_diff = round(real_unit_cost - theo_unit_c, 2)
+                    erosion = round(theo_margin - real_margin, 1)
+
+                    tot_sales += total_sales
+                    tot_cost += total_actual
+
+                    rows.append(
+                        [
+                            period_label,
+                            d.name,
+                            d_cat_row,
+                            round(total_qty, 1),
+                            round(d.price, 2),
+                            total_sales,
+                            total_actual,
+                            margin,
+                            f"{real_margin:.1f}%",
+                            theo_cost_total,
+                            f"{theo_margin:.1f}%",
+                            f"+{cost_diff:.2f}" if cost_diff > 0 else f"{cost_diff:.2f}",
+                            _erosion_text(erosion),
+                            _advice(erosion, total_qty > 0),
+                            "期间汇总",
+                        ]
+                    )
+
+            # FILTERS-§2: 毛利率阈值行级过滤（列 8 = 实际毛利率(%) "12.3%" 格式）；
+            # summary 的 tot_sales/tot_cost 在上方按全量累计，保持全量口径
+            if margin_pct_max is not None:
+                def _row_margin_pct(row):
+                    try:
+                        return float(str(row[8]).replace("%", ""))
+                    except (ValueError, TypeError, IndexError):
+                        return None
+
+                def _margin_kept(row):
+                    m = _row_margin_pct(row)
+                    return m is not None and m <= margin_pct_max
+
+                rows = [r for r in rows if _margin_kept(r)]
 
             return {
-                "title": "每日销售与食材实际成本汇总表",
-                "filename": f"每日餐品销售与食材成本_{start or 'all'}_{end or 'now'}",
+                "title": "菜品成本与毛利表",
+                "filename": f"菜品成本与毛利表_{granularity}_{start or 'all'}_{end or 'now'}",
                 "headers": headers,
                 "rows": rows,
                 "summary": {
+                    "核算粒度": "按日逐单" if granularity == "daily" else "按期间汇总",
                     "总销售额(元)": round(tot_sales, 2),
                     "实际食材总成本(元)": round(tot_cost, 2),
                     "综合毛利率": (
@@ -756,107 +841,15 @@ class ExportDataProcessor:
         finally:
             session.close()
 
-    # 7. 餐品理论毛利 vs 真实毛利偏差诊断表
-    @staticmethod
-    def _handle_dish_margin_variance(params, tenant_id, is_desens):
-        start = params.get("start_date", "")
-        end = params.get("end_date", "")
-
-        session = db.get_session()
-        try:
-            q = db.scoped(session.query(db._DishRow), db._DishRow, tenant_id)
-            dishes = q.filter(db._DishRow.status == "active").all()
-
-            headers = [
-                "餐品名称",
-                "分类",
-                "在售标价(元)",
-                "理论成本(元)",
-                "理论毛利率(%)",
-                "加权实际成本(元)",
-                "实际综合毛利率(%)",
-                "成本溢价额(元)",
-                "毛利侵蚀点(%)",
-                "诊断分析建议",
-            ]
-            rows = []
-
-            for d in dishes:
-                # 理论成本口径与详情/其它报表一致（recipe_cost 唯一实现）
-                theo_cost, _ing_detail = compute_recipe_theory(
-                    session, d.id, tenant_id)
-
-                # 统计周期内实际消耗 (d 已经由 tenant_id 隔离)
-                cq = session.query(db._DailyConsumptionRow).filter(
-                    db._DailyConsumptionRow.dish_id == d.id,
-                    db._DailyConsumptionRow.is_void == 0,
-                )
-                if start:
-                    cq = cq.filter(db._DailyConsumptionRow.date >= start)
-                if end:
-                    cq = cq.filter(db._DailyConsumptionRow.date <= end)
-                consumes = cq.all()
-
-                total_qty = sum(c.quantity for c in consumes)
-                total_actual_cost = sum(c.total_cost for c in consumes)
-                real_unit_cost = (
-                    round(total_actual_cost / total_qty, 2)
-                    if total_qty > 0
-                    else theo_cost
-                )
-
-                theo_margin = (
-                    round((d.price - theo_cost) / d.price * 100, 1)
-                    if d.price > 0
-                    else 0.0
-                )
-                real_margin = (
-                    round((d.price - real_unit_cost) / d.price * 100, 1)
-                    if d.price > 0
-                    else 0.0
-                )
-
-                cost_diff = round(real_unit_cost - theo_cost, 2)
-                erosion = round(theo_margin - real_margin, 1)
-
-                advice = "毛利健康稳定"
-                if erosion > 5.0:
-                    advice = "[预警] 成本大幅承压，建议排查高价食材或微调售价"
-                elif erosion > 2.0:
-                    advice = "进货价微涨，注意控制损耗"
-                elif total_qty == 0:
-                    advice = "统计周期内暂无消耗记录"
-
-                rows.append(
-                    [
-                        d.name,
-                        d.category or "其他",
-                        round(d.price, 2),
-                        round(theo_cost, 2),
-                        f"{theo_margin:.1f}%",
-                        round(real_unit_cost, 2),
-                        f"{real_margin:.1f}%",
-                        f"+{cost_diff:.2f}" if cost_diff > 0 else f"{cost_diff:.2f}",
-                        f"{erosion:.1f}%" if erosion > 0 else "0.0%",
-                        advice,
-                    ]
-                )
-
-            return {
-                "title": "餐品理论毛利 vs 真实毛利偏差诊断表",
-                "filename": f"餐品毛利与成本偏差诊断表_{datetime.now().strftime('%Y%m%d')}",
-                "headers": headers,
-                "rows": rows,
-                "summary": {"分析在售餐品数": len(dishes)},
-            }
-        finally:
-            session.close()
-
-    # 8. 后厨食材累计消耗总量与采购建议
+    # 6. 采购补货建议清单（原"后厨食材累计消耗总量与采购建议"）
     @staticmethod
     def _handle_dish_ingredient_consumption(params, tenant_id, is_desens):
+        from app.services.unit_factors import unit_to_kg_factor
+
         start = params.get("start_date", "")
         end = params.get("end_date", "")
+        # FILTERS-§3: 仅看建议补货 > 0（输出直接可当下单清单）
+        only_suggested = str(params.get("only_suggested", "")).lower() in ("1", "true", "yes")
 
         session = db.get_session()
         try:
@@ -881,9 +874,15 @@ class ExportDataProcessor:
                         "name": l.name,
                         "unit": l.unit,
                         "qty": 0.0,
+                        "kg": 0.0,
                         "cost": 0.0,
                     }
                 sku_stats[sid]["qty"] += float(l.qty or 0.0)
+                # B4: 折算口径与成本层同源（unit_factors SSOT）；仅重量单位折算，
+                # 计件/体积/空单位不假装折算（factor 为 None 时不计 kg 合计）。
+                factor = unit_to_kg_factor(l.unit)
+                if factor is not None:
+                    sku_stats[sid]["kg"] += float(l.qty or 0.0) * factor
                 sku_stats[sid]["cost"] += float(l.amount or 0.0)
 
             headers = [
@@ -891,17 +890,20 @@ class ExportDataProcessor:
                 "分类",
                 "单位",
                 "周期累计消耗量",
+                "折算消耗(kg)",
                 "当前系统库存",
                 "安全库存线",
                 "累计消耗成本(元)",
                 "建议采购补货量",
             ]
             rows = []
+            total_kg = 0.0
             for sid, stat in sku_stats.items():
                 sku = session.get(db._SkuRow, sid)
                 cat = sku.category if sku else "其他"
                 curr = sku.current_stock if sku else 0.0
                 safe = sku.min_stock_alert if sku else 0.0
+                total_kg += stat["kg"]
 
                 # 简易补货建议算法：如果当前库存低于安全线，补至 1.5 倍安全线 + 近期消耗的 50%
                 suggest = (
@@ -909,6 +911,9 @@ class ExportDataProcessor:
                     if curr <= safe
                     else 0.0
                 )
+                # FILTERS-§3: 过滤发生在 total_kg 累加之后，summary 保持全量口径
+                if only_suggested and suggest <= 0:
+                    continue
 
                 rows.append(
                     [
@@ -916,6 +921,7 @@ class ExportDataProcessor:
                         cat,
                         stat["unit"],
                         round(stat["qty"], 2),
+                        round(stat["kg"], 2) if stat["kg"] > 0 else "-",
                         round(curr, 2),
                         round(safe, 2),
                         round(stat["cost"], 2),
@@ -924,16 +930,20 @@ class ExportDataProcessor:
                 )
 
             return {
-                "title": "后厨食材累计消耗总量与采购建议",
-                "filename": f"食材累计消耗与采购建议_{start or 'all'}_{end or 'now'}",
+                "title": "采购补货建议清单",
+                "filename": f"采购补货建议清单_{start or 'all'}_{end or 'now'}",
                 "headers": headers,
                 "rows": rows,
-                "summary": {"消耗食材种数": len(rows)},
+                "summary": {
+                    # 全量口径（only_suggested 过滤行不改汇总统计）
+                    "消耗食材种数": len(sku_stats),
+                    "折算消耗合计(kg)": round(total_kg, 2),
+                },
             }
         finally:
             session.close()
 
-    # 9. 采购收据入账全量明细台账 (含行项目)
+    # 7. 采购入账明细台账 (含行项目)
     @staticmethod
     def _handle_receipts_itemized_ledger(params, tenant_id, is_desens):
         start = params.get("start_date", "")
@@ -941,6 +951,32 @@ class ExportDataProcessor:
         st = params.get("receipt_status", "")
         sup_id = params.get("supplier_id", "")
         dept_id = params.get("department_id", "")
+        # FILTERS-§1: keyword（单号/供应商/品名）、paid_status、金额区间、币种
+        keyword = str(params.get("keyword", "")).strip().lower()
+        paid_status = params.get("paid_status", "all")
+        if paid_status not in ("all", "unpaid", "paid", "overdue"):
+            paid_status = "all"
+        currency_flt = str(params.get("currency", "")).strip().upper()
+
+        def _to_float_or_none(v):
+            try:
+                f = float(v)
+                return f if f == f else None  # 剔除 NaN
+            except (TypeError, ValueError):
+                return None
+
+        amount_min = _to_float_or_none(params.get("amount_min"))
+        amount_max = _to_float_or_none(params.get("amount_max"))
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+
+        def _paid_status_of(r):
+            if r.paid_at:
+                return "paid"
+            exp = str(getattr(r, "expected_pay_date", "") or "")
+            if exp and exp < today_str:
+                return "overdue"
+            return "unpaid"
 
         rows_db = db.list_receipt_rows(tenant_id=tenant_id)
         depts = {d.id: d.name for d in db.list_departments()}
@@ -969,8 +1005,8 @@ class ExportDataProcessor:
                 sup = db.get_supplier(int(sup_id), tenant_id=tenant_id)
                 if not sup:
                     return {
-                        "title": "采购收据入账全量明细台账 (含行项目)",
-                        "filename": f"采购收据全量明细台账_{start or 'all'}_{end or 'now'}",
+                        "title": "采购入账明细台账",
+                        "filename": f"采购入账明细台账_{start or 'all'}_{end or 'now'}",
                         "headers": headers,
                         "rows": [],
                         "summary": {"总行数": 0},
@@ -978,8 +1014,8 @@ class ExportDataProcessor:
                 sup_filter_name = sup.name
             except (ValueError, TypeError):
                 return {
-                    "title": "采购收据入账全量明细台账 (含行项目)",
-                    "filename": f"采购收据全量明细台账_{start or 'all'}_{end or 'now'}",
+                    "title": "采购入账明细台账",
+                    "filename": f"采购入账明细台账_{start or 'all'}_{end or 'now'}",
                     "headers": headers,
                     "rows": [],
                     "summary": {"总行数": 0},
@@ -989,16 +1025,16 @@ class ExportDataProcessor:
             try:
                 if int(dept_id) not in depts:
                     return {
-                        "title": "采购收据入账全量明细台账 (含行项目)",
-                        "filename": f"采购收据全量明细台账_{start or 'all'}_{end or 'now'}",
+                        "title": "采购入账明细台账",
+                        "filename": f"采购入账明细台账_{start or 'all'}_{end or 'now'}",
                         "headers": headers,
                         "rows": [],
                         "summary": {"总行数": 0},
                     }
             except (ValueError, TypeError):
                 return {
-                    "title": "采购收据入账全量明细台账 (含行项目)",
-                    "filename": f"采购收据全量明细台账_{start or 'all'}_{end or 'now'}",
+                    "title": "采购入账明细台账",
+                    "filename": f"采购入账明细台账_{start or 'all'}_{end or 'now'}",
                     "headers": headers,
                     "rows": [],
                     "summary": {"总行数": 0},
@@ -1027,6 +1063,23 @@ class ExportDataProcessor:
                 continue
             if sup_filter_name and r.supplier_name != sup_filter_name:
                 continue
+            # FILTERS-§1: 付清状态 / 金额区间 / 币种（单据级过滤）
+            # FILTERS-1: unpaid means paid_at is empty (spec), so overdue is a
+            # subset of unpaid, not a disjoint enum. paid = paid_at non-empty,
+            # overdue = not paid and past due date.
+            if paid_status == "paid" and not r.paid_at:
+                continue
+            if paid_status == "unpaid" and r.paid_at:
+                continue
+            if paid_status == "overdue" and _paid_status_of(r) != "overdue":
+                continue
+            amt = float(r.total_amount or 0.0)
+            if amount_min is not None and amt < amount_min:
+                continue
+            if amount_max is not None and amt > amount_max:
+                continue
+            if currency_flt and str(getattr(r, "currency", "") or "").upper() != currency_flt:
+                continue
             matching_receipts.append(r)
 
         items_by_receipt = db.get_receipt_items_multi([r.id for r in matching_receipts], tenant_id=tenant_id)
@@ -1036,11 +1089,29 @@ class ExportDataProcessor:
             sup_name = r.supplier_name or "未注明"
             sup_phone = sup_phones.get(sup_name, "")
 
+            # FILTERS-§1: keyword 命中判定——单号 / 供应商名（用原文匹配，脱敏只影响输出）。
+            # 单号兼容 `#1502` / `1502` 两种输入（与 stock_logs.receipt_ref 同口径：
+            # 剥离 # 前缀后再比对数字 id），避免"照抄显示号搜索"落空。
+            if keyword:
+                kw_id = keyword.lstrip("#")
+                receipt_hit = (
+                    keyword in str(r.id)
+                    or (kw_id and kw_id.isdigit() and kw_id in str(r.id))
+                    or keyword in str(r.supplier_name or "").lower()
+                )
+
             if is_desens:
                 sup_name = mask_vendor_name(sup_name)
                 sup_phone = mask_phone(sup_phone)
 
             items = items_by_receipt.get(r.id, [])
+            if keyword and not receipt_hit:
+                items = [
+                    it for it in items
+                    if keyword in str(it.get("name", "")).lower()
+                ]
+                if not items:
+                    continue
             dept_name = depts.get(r.department_id, "未分配")
             pay_str = "已付" if r.paid_at else "未付"
 
@@ -1093,299 +1164,48 @@ class ExportDataProcessor:
                     )
 
         return {
-            "title": "采购收据入账全量明细台账 (含行项目)",
-            "filename": f"采购收据全量明细台账_{start or 'all'}_{end or 'now'}",
+            "title": "采购入账明细台账",
+            "filename": f"采购入账明细台账_{start or 'all'}_{end or 'now'}",
             "headers": headers,
             "rows": out_rows,
             "summary": {"总行数": len(out_rows)},
         }
 
-    # 10. 供应商应付账款与账期逾期表
+    # 8. 期间花销汇总表（B1 合并：原 department_cost_summary + department_items_breakdown）
+    # 部门与供应商从"报表"降级为透视维度（params.spend_pivot），环比口径沿用原
+    # department_cost_summary；本期/上期聚合、趋势状态与合计行同源 _trend_type。
     @staticmethod
-    def _handle_supplier_payables_aging(params, tenant_id, is_desens):
-        sups = db.list_suppliers(include_inactive=False, tenant_id=tenant_id)
-        target_sup = params.get("supplier_id")
-
-        headers = [
-            "供应商名称",
-            "供应商编号",
-            "联系电话",
-            "约定账期(天)",
-            "未付赊单总额(元)",
-            "未付赊单笔数",
-            "逾期金额(元)",
-            "7天内到期金额(元)",
-            "结算偏好",
-            "风险状态",
-        ]
-
-        if target_sup:
-            try:
-                sup_check = db.get_supplier(int(target_sup), tenant_id=tenant_id)
-                if not sup_check:
-                    return {
-                        "title": "供应商应付账款与账期逾期表",
-                        "filename": f"供应商应付账款表_{datetime.now().strftime('%Y%m%d')}",
-                        "headers": headers,
-                        "rows": [],
-                        "summary": {
-                            "供应商总数": 0,
-                            "未付总额合计(元)": 0.0,
-                        },
-                    }
-            except (ValueError, TypeError):
-                return {
-                    "title": "供应商应付账款与账期逾期表",
-                    "filename": f"供应商应付账款表_{datetime.now().strftime('%Y%m%d')}",
-                    "headers": headers,
-                    "rows": [],
-                    "summary": {
-                        "供应商总数": 0,
-                        "未付总额合计(元)": 0.0,
-                    },
-                }
-
-        rows = []
-        tot_unpaid = 0.0
-
-        for s in sups:
-            if target_sup and str(s.id) != str(target_sup):
-                continue
-            stats = db.supplier_stats(s.id, tenant_id=tenant_id)
-            unpaid = float(stats.get("unpaid_credit_total") or 0.0)
-            tot_unpaid += unpaid
-
-            name = s.name
-            phone = s.contact_phone or ""
-            if is_desens:
-                name = mask_vendor_name(name)
-                phone = mask_phone(phone)
-
-            # 简易风险判定
-            risk = "正常"
-            if unpaid > 5000:
-                risk = "[提示] 应付偏大"
-            elif unpaid > 0:
-                risk = "账期内挂账"
-            else:
-                risk = "结清"
-
-            rows.append(
-                [
-                    name,
-                    s.supplier_code or f"SUP-{s.id}",
-                    phone,
-                    # 账期 0 天是合法值（现结），不能用 `or 30` 吞成 30 天；
-                    # 仅未设置（None）才回落 30。前端同口径：非 null 即按原值显示。
-                    s.payment_terms_days if s.payment_terms_days is not None else 30,
-                    round(unpaid, 2),
-                    stats.get("unpaid_credit_count", 0),
-                    0.0,  # 逾期金额
-                    0.0,  # 7天内到期
-                    s.settlement_pref or "月结",
-                    risk,
-                ]
-            )
-
-        return {
-            "title": "供应商应付账款与账期逾期表",
-            "filename": f"供应商应付账款表_{datetime.now().strftime('%Y%m%d')}",
-            "headers": headers,
-            "rows": rows,
-            "summary": {
-                "供应商总数": len(rows),
-                "未付总额合计(元)": round(tot_unpaid, 2),
-            },
-        }
-
-    # 11. 供应商往来付款流水台账
-    @staticmethod
-    def _handle_supplier_payments_journal(params, tenant_id, is_desens):
-        start = params.get("start_date", "")
-        end = params.get("end_date", "")
-        sup_id = params.get("supplier_id")
-
-        tenant_sups = {s.name for s in db.list_suppliers(tenant_id=tenant_id)}
-        payments = [p for p in db.list_payments() if p.get("supplier_name") in tenant_sups]
-        if sup_id:
-            try:
-                sup = db.get_supplier(int(sup_id), tenant_id=tenant_id)
-                if not sup:
-                    return {
-                        "title": "供应商往来付款流水台账",
-                        "filename": f"供应商往来付款台账_{start or 'all'}_{end or 'now'}",
-                        "headers": headers,
-                        "rows": [],
-                        "summary": {"付款笔数": 0, "付款总额合计(元)": 0.0},
-                    }
-                payments = [p for p in payments if p["supplier_name"] == sup.name]
-            except (ValueError, TypeError):
-                return {
-                    "title": "供应商往来付款流水台账",
-                    "filename": f"供应商往来付款台账_{start or 'all'}_{end or 'now'}",
-                    "headers": headers,
-                    "rows": [],
-                    "summary": {"付款笔数": 0, "付款总额合计(元)": 0.0},
-                }
-
-        headers = [
-            "支付流水号",
-            "付款日期",
-            "供应商名称",
-            "支付金额(元)",
-            "付款方式",
-            "核销单据",
-            "电子凭证状态",
-            "经办备注",
-        ]
-        rows = []
-        tot_paid = 0.0
-
-        for p in payments:
-            d = p.get("paid_at", "")
-            if start and d < start:
-                continue
-            if end and d > end:
-                continue
-            amt = float(p.get("amount", 0.0))
-            tot_paid += amt
-
-            s_name = p.get("supplier_name", "")
-            if is_desens:
-                s_name = mask_vendor_name(s_name)
-
-            rc_ids = p.get("receipt_ids", [])
-            rc_str = (
-                ", ".join([f"#{x}" for x in rc_ids])
-                if isinstance(rc_ids, list)
-                else str(rc_ids)
-            )
-
-            rows.append(
-                [
-                    f"PAY-{p.get('id')}",
-                    d,
-                    s_name,
-                    round(amt, 2),
-                    p.get("method", "银行转账"),
-                    rc_str,
-                    "已上传" if p.get("voucher_image_url") else "无凭证",
-                    p.get("notes", ""),
-                ]
-            )
-
-        return {
-            "title": "供应商往来付款流水台账",
-            "filename": f"供应商往来付款台账_{start or 'all'}_{end or 'now'}",
-            "headers": headers,
-            "rows": rows,
-            "summary": {"付款笔数": len(rows), "付款总额合计(元)": round(tot_paid, 2)},
-        }
-
-    # 12. 供应商月结对账差异明细表
-    @staticmethod
-    def _handle_supplier_recon_discrepancies(params, tenant_id, is_desens):
-        from app.api_finance import RECON_TASKS
-
-        headers = [
-            "任务ID",
-            "供应商名称",
-            "对账期间",
-            "行类型",
-            "单据日期",
-            "单据/凭证号",
-            "金额(元)",
-            "核对状态",
-            "处理说明",
-        ]
-        rows = []
-        sup_id = params.get("supplier_id")
-        if sup_id:
-            try:
-                target_sup = db.get_supplier(int(sup_id), tenant_id=tenant_id)
-                if not target_sup:
-                    return {
-                        "title": "供应商月结对账差异明细表",
-                        "filename": f"月结对账差异明细_{datetime.now().strftime('%Y%m%d')}",
-                        "headers": headers,
-                        "rows": [],
-                        "summary": {"对账记录行数": 0},
-                    }
-            except (ValueError, TypeError):
-                return {
-                    "title": "供应商月结对账差异明细表",
-                    "filename": f"月结对账差异明细_{datetime.now().strftime('%Y%m%d')}",
-                    "headers": headers,
-                    "rows": [],
-                    "summary": {"对账记录行数": 0},
-                }
-
-        for tid, t in RECON_TASKS.items():
-            if sup_id and str(t.get("supplier_id")) != str(sup_id):
-                continue
-            sup = db.get_supplier(t["supplier_id"], tenant_id=tenant_id)
-            if not sup:
-                continue
-            s_name = sup.name
-            if is_desens:
-                s_name = mask_vendor_name(s_name)
-
-            lines = t.get("lines", [])
-            for line in lines:
-                rows.append(
-                    [
-                        tid,
-                        s_name,
-                        f"{t.get('period_start', '')}~{t.get('period_end', '')}",
-                        "系统单据"
-                        if line.get("side") == "restaurant"
-                        else "外部对账单",
-                        line.get("line_date", ""),
-                        line.get("docket_no", ""),
-                        round(float(line.get("amount", 0.0)), 2),
-                        line.get("match_status_label", "待核对"),
-                        line.get("resolution_note", ""),
-                    ]
-                )
-
-        return {
-            "title": "供应商月结对账差异明细表",
-            "filename": f"月结对账差异明细_{datetime.now().strftime('%Y%m%d')}",
-            "headers": headers,
-            "rows": rows,
-            "summary": {"对账记录行数": len(rows)},
-        }
-
-    # 13. 部门采购花销期间环比对照表
-    @staticmethod
-    def _handle_department_cost_summary(params, tenant_id, is_desens):
+    def _handle_spend_summary(params, tenant_id, is_desens):
         from app.api_suppliers import _in_period, _prev_period, _trend_type
 
         month = params.get("month", "")
         start = params.get("start_date", "")
         end = params.get("end_date", "")
+        pivot = params.get("spend_pivot", "department")
+        if pivot not in ("department", "supplier"):
+            pivot = "department"
         inc_non = int(params.get("include_non_approved", 0))
 
-        depts = db.list_departments()
         rows_db = db.list_receipt_rows(tenant_id=tenant_id)
         if inc_non == 0:
             rows_db = [r for r in rows_db if r.status == "approved"]
 
         prev_month, prev_start, prev_end = _prev_period(month, start, end)
 
-        dept_totals = {
-            d.id: {
-                "name": d.name,
-                "total": 0.0,
-                "prev_total": 0.0,
-                "active": d.active,
+        # 维度桶：部门（含未分配）或供应商（未注明单列一桶）
+        if pivot == "department":
+            buckets = {
+                d.id: {"label": d.name, "total": 0.0, "prev_total": 0.0, "count": 0}
+                for d in db.list_departments()
             }
-            for d in depts
-        }
-        unalloc = {"name": "未分配", "total": 0.0, "prev_total": 0.0}
-
-        month_total = 0.0
-        prev_total_all = 0.0
+            unalloc_label = "未分配"
+        else:
+            buckets = {
+                s.name: {"label": s.name, "total": 0.0, "prev_total": 0.0, "count": 0}
+                for s in db.list_suppliers(tenant_id=tenant_id)
+            }
+            unalloc_label = "未注明供应商"
+        unalloc = {"label": unalloc_label, "total": 0.0, "prev_total": 0.0, "count": 0}
 
         matching_receipts = []
         for r in rows_db:
@@ -1398,47 +1218,44 @@ class ExportDataProcessor:
             if is_cur or is_prv:
                 matching_receipts.append((r, is_cur, is_prv))
 
-        items_by_receipt = db.get_receipt_items_multi([r.id for r, _, _ in matching_receipts], tenant_id=tenant_id)
+        items_by_receipt = db.get_receipt_items_multi(
+            [r.id for r, _, _ in matching_receipts], tenant_id=tenant_id)
+
+        def _bucket_for(r, cost_center_id=None):
+            if pivot == "department":
+                key = cost_center_id or r.department_id
+                return buckets.get(key, unalloc)
+            return buckets.get(r.supplier_name or "", unalloc)
 
         for r, is_cur, is_prv in matching_receipts:
             items = items_by_receipt.get(r.id, [])
             if items:
                 for it in items:
-                    dept_id = it.get("cost_center_id") or r.department_id
+                    b = _bucket_for(r, it.get("cost_center_id"))
                     amt = float(it.get("amount") or 0.0)
                     if is_cur:
-                        month_total += amt
-                        if dept_id in dept_totals:
-                            dept_totals[dept_id]["total"] += amt
-                        else:
-                            unalloc["total"] += amt
+                        b["total"] += amt
+                        b["count"] += 1
                     if is_prv:
-                        prev_total_all += amt
-                        if dept_id in dept_totals:
-                            dept_totals[dept_id]["prev_total"] += amt
-                        else:
-                            unalloc["prev_total"] += amt
+                        b["prev_total"] += amt
             else:
+                b = _bucket_for(r)
                 amt = r.total_amount or 0.0
                 if is_cur:
-                    month_total += amt
-                    if r.department_id in dept_totals:
-                        dept_totals[r.department_id]["total"] += amt
-                    else:
-                        unalloc["total"] += amt
+                    b["total"] += amt
+                    b["count"] += 1
                 if is_prv:
-                    prev_total_all += amt
-                    if r.department_id in dept_totals:
-                        dept_totals[r.department_id]["prev_total"] += amt
-                    else:
-                        unalloc["prev_total"] += amt
+                    b["prev_total"] += amt
 
+        dim_label = "部门" if pivot == "department" else "供应商"
         headers = [
-            "核算部门",
+            "花销维度",
+            "核算对象",
             "本期采购额(元)",
             "上期对照额(元)",
             "环比增减额(元)",
             "环比变化率(%)",
+            "本期笔数",
             "趋势状态",
         ]
         out_rows = []
@@ -1450,24 +1267,80 @@ class ExportDataProcessor:
             "new": "[新增]",
         }
 
-        all_dept_entries = list(dept_totals.values()) + [unalloc]
-        month_total = round(sum(round(d["total"], 2) for d in all_dept_entries), 2)
-        prev_total_all = round(sum(round(d["prev_total"], 2) for d in all_dept_entries), 2)
+        def _fmt_delta(delta):
+            return f"+{delta:.2f}" if delta > 0 else f"{delta:.2f}"
 
-        for d in all_dept_entries:
-            cur = round(d["total"], 2)
-            prv = round(d["prev_total"], 2)
+        # FILTERS-§5: 维度聚焦 + 金额下限。聚焦时只保留该维度桶（合计同步重算，
+        # 不是全量合计砍掉）；聚焦目标不属于本租户时安全返回空。
+        focus_label = None
+        focus_invalid = False
+        if pivot == "department":
+            dept_focus = str(params.get("department_id", "") or "")
+            if dept_focus and dept_focus != "0":
+                try:
+                    focus_label = next(
+                        (d.name for d in db.list_departments()
+                         if str(d.id) == dept_focus), None)
+                except (TypeError, ValueError):
+                    focus_label = None
+                # FILTERS-5: invalid department focus (not in tenant) must
+                # return an empty bucket, not degrade into an unfiltered table.
+                if focus_label is None:
+                    focus_invalid = True
+        else:
+            sup_focus = str(params.get("supplier_id", "") or "")
+            if sup_focus:
+                sup = None
+                try:
+                    sup = db.get_supplier(int(sup_focus), tenant_id=tenant_id)
+                except (TypeError, ValueError):
+                    sup = None
+                # Same empty-bucket contract as invalid department focus;
+                # never fall back to matching an empty supplier name.
+                if sup is None:
+                    focus_invalid = True
+                else:
+                    focus_label = sup.name
+
+        def _to_float_or_none(v):
+            try:
+                f = float(v)
+                return f if f == f else None
+            except (TypeError, ValueError):
+                return None
+
+        amount_min = _to_float_or_none(params.get("amount_min"))
+
+        all_entries = list(buckets.values()) + [unalloc]
+        if focus_label is not None:
+            all_entries = [e for e in all_entries if e["label"] == focus_label]
+        elif focus_invalid:
+            all_entries = []
+        if amount_min is not None:
+            all_entries = [e for e in all_entries if e["total"] >= amount_min]
+        month_total = round(sum(round(e["total"], 2) for e in all_entries), 2)
+        prev_total_all = round(sum(round(e["prev_total"], 2) for e in all_entries), 2)
+        total_count = sum(e["count"] for e in all_entries)
+
+        for e in all_entries:
+            cur = round(e["total"], 2)
+            prv = round(e["prev_total"], 2)
             delta = round(cur - prv, 2)
             pct = round((delta / prv * 100), 1) if prv > 0 else (0.0 if cur == 0 else 100.0)
             trend = _trend_type(cur, prv)
+            label = e["label"]
+            if pivot == "supplier" and is_desens and label != unalloc_label:
+                label = mask_vendor_name(label)
 
             out_rows.append(
                 [
-                    d["name"],
+                    dim_label,
+                    label,
                     cur,
                     prv,
-                    f"+{delta:.2f}" if delta > 0 else f"{delta:.2f}",
+                    _fmt_delta(delta),
                     f"{pct:.1f}%",
+                    e["count"],
                     trend_labels.get(trend, trend),
                 ]
             )
@@ -1481,124 +1354,28 @@ class ExportDataProcessor:
         )
         out_rows.append(
             [
+                dim_label,
                 "合计",
                 round(month_total, 2),
                 round(prev_total_all, 2),
-                f"+{delta_tot:.2f}" if delta_tot > 0 else f"{delta_tot:.2f}",
+                _fmt_delta(delta_tot),
                 f"{pct_tot:.1f}%",
+                total_count,
                 "-",
             ]
         )
 
         return {
-            "title": "部门采购花销期间环比对照表",
-            "filename": f"部门采购花销对照表_{month or start or 'all'}",
+            "title": "期间花销汇总表",
+            "filename": f"期间花销汇总表_{pivot}_{month or start or 'all'}",
             "headers": headers,
             "rows": out_rows,
             "summary": {
+                "透视维度": "按部门" if pivot == "department" else "按供应商",
                 "本期采购总计(元)": round(month_total, 2),
                 "上期对照总计(元)": round(prev_total_all, 2),
                 "变化率": f"{pct_tot:.1f}%",
             },
-        }
-
-    # 14. 部门采购货品穿透明细流水
-    @staticmethod
-    def _handle_department_items_breakdown(params, tenant_id, is_desens):
-        from app.api_suppliers import _in_period
-
-        month = params.get("month", "")
-        start = params.get("start_date", "")
-        end = params.get("end_date", "")
-        target_dept = params.get("department_id")
-        inc_non = int(params.get("include_non_approved", 0))
-
-        depts = {d.id: d.name for d in db.list_departments()}
-
-        if target_dept is not None and str(target_dept) not in ("", "0"):
-            try:
-                if int(target_dept) not in depts:
-                    return {
-                        "title": "部门采购货品穿透明细流水",
-                        "filename": f"部门采购货品穿透明细_{start or month or 'all'}",
-                        "headers": headers,
-                        "rows": [],
-                        "summary": {"明细笔数": 0, "金额总计(元)": 0.0},
-                    }
-            except (ValueError, TypeError):
-                return {
-                    "title": "部门采购货品穿透明细流水",
-                    "filename": f"部门采购货品穿透明细_{start or month or 'all'}",
-                    "headers": headers,
-                    "rows": [],
-                    "summary": {"明细笔数": 0, "金额总计(元)": 0.0},
-                }
-
-        rows_db = db.list_receipt_rows(tenant_id=tenant_id)
-        if inc_non == 0:
-            rows_db = [r for r in rows_db if r.status == "approved"]
-
-        headers = [
-            "部门名称",
-            "开单日期",
-            "收据单号",
-            "供应商名称",
-            "采购品项名称",
-            "采购数量",
-            "单位",
-            "单价(元)",
-            "行金额(元)",
-        ]
-        out_rows = []
-        tot_amt = 0.0
-
-        matching_receipts = [r for r in rows_db if _in_period(r.receipt_date or "", month, start, end)]
-        items_by_receipt = db.get_receipt_items_multi([r.id for r in matching_receipts], tenant_id=tenant_id)
-
-        for r in matching_receipts:
-            sup_name = r.supplier_name or ""
-            if is_desens:
-                sup_name = mask_vendor_name(sup_name)
-
-            for it in items_by_receipt.get(r.id, []):
-                item_dept_id = it.get("cost_center_id")
-                if item_dept_id is None:
-                    item_dept_id = r.department_id
-
-                if target_dept is not None and str(target_dept) != "":
-                    if str(target_dept) == "0":
-                        if item_dept_id is not None:
-                            continue
-                    elif str(item_dept_id) != str(target_dept):
-                        continue
-
-                d_name = depts.get(item_dept_id, "未分配")
-                it_name = it.get("name", "")
-                if is_desens:
-                    it_name = _mask_sensitive(it_name)
-                amt = float(it.get("amount") or 0.0)
-                tot_amt += amt
-
-                out_rows.append(
-                    [
-                        d_name,
-                        r.receipt_date or "",
-                        f"#{r.id}",
-                        sup_name,
-                        it_name,
-                        round(float(it.get("quantity") or 0.0), 2),
-                        it.get("unit", ""),
-                        round(float(it.get("unit_price") or 0.0), 2),
-                        round(amt, 2),
-                    ]
-                )
-
-        return {
-            "title": "部门采购货品穿透明细流水",
-            "filename": f"部门采购货品穿透明细_{start or month or 'all'}",
-            "headers": headers,
-            "rows": out_rows,
-            "summary": {"明细笔数": len(out_rows), "金额总计(元)": round(tot_amt, 2)},
         }
 
 
@@ -1613,32 +1390,26 @@ class ExportReq(BaseModel):
 
 @router.post("/api/export/preview")
 def preview_report(req: ExportReq, request: Request):
-    """在线获取报表预览数据：前15行示例、列头、总行数及关键汇总指标。"""
+    """在线获取报表预览数据：全量行、列头、总行数及关键汇总指标。"""
     require_role("staff")(request)
     tenant_id = _tenant_id(request)
 
-    # AC-12: 敏感报表权限控制
-    account = resolve_account(request)
-    role = account.get("role") or "staff"
-    if req.report_id == "department_cost_summary" and role == "staff":
-        raise HTTPException(
-            status_code=403,
-            detail="当前角色为店员，此报表需老板或管理人员权限查看",
-        )
+    # AC-12: 敏感报表权限控制（门禁标记声明在 REPORTS_META，与 download 同一实现）
+    _enforce_report_role_gate(req.report_id, request)
 
     data = ExportDataProcessor.get_data(
         req.report_id, req.params or {}, tenant_id, is_desens=bool(req.desensitized)
     )
 
     all_rows = data.get("rows", [])
-    preview_rows = all_rows[:15]  # 最多返回15行预览
+    # 预览与导出同口径：preview 返回全量行（行数见 total_rows），不截断。
 
     return {
         "status": "success",
         "data": {
             "title": data.get("title"),
             "headers": data.get("headers", []),
-            "preview_rows": preview_rows,
+            "preview_rows": all_rows,
             "total_rows": len(all_rows),
             "summary": data.get("summary", {}),
         },
@@ -1651,14 +1422,8 @@ def download_report(req: ExportReq, request: Request):
     require_role("staff")(request)
     tenant_id = _tenant_id(request)
 
-    # AC-12: 敏感报表权限控制
-    account = resolve_account(request)
-    role = account.get("role") or "staff"
-    if req.report_id == "department_cost_summary" and role == "staff":
-        raise HTTPException(
-            status_code=403,
-            detail="当前角色为店员，此报表需老板或管理人员权限查看",
-        )
+    # AC-12: 敏感报表权限控制（与 preview 共用门禁，避免两处硬编码漂移）
+    _enforce_report_role_gate(req.report_id, request)
 
     data = ExportDataProcessor.get_data(
         req.report_id, req.params or {}, tenant_id, is_desens=bool(req.desensitized)

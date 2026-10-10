@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 import json
 import math
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app import db
 from app.api_admin import resolve_tenant_filter
@@ -248,6 +248,25 @@ def recovery_summary(
             rows = all_rows
         # 排除非业务探测/测试探针事件（如 qa_fe_probe, verify_session_probe 等）
         rows = [r for r in rows if not _is_telemetry_probe_event(r.event_type)]
+
+        # 严格时间窗口过滤 (Truthfulness 保障：事件分布对齐时间跨度)
+        now_dt = datetime.now()
+        start_ts = ""
+        if date_range == "24h":
+            start_ts = (now_dt - timedelta(days=1)).isoformat()
+        elif date_range == "7d":
+            start_ts = (now_dt - timedelta(days=7)).isoformat()
+        elif date_range == "14d":
+            start_ts = (now_dt - timedelta(days=14)).isoformat()
+        elif date_range == "30d":
+            start_ts = (now_dt - timedelta(days=30)).isoformat()
+
+        if start_ts:
+            rows = [r for r in rows if (r.ts or "") >= start_ts]
+        if start_date:
+            rows = [r for r in rows if (r.ts or "") >= start_date]
+        if end_date:
+            rows = [r for r in rows if (r.ts or "") <= end_date]
 
         # 统一指标计算器 (SSOT 唯一事实源)
         metrics = calculate_recovery_and_feedback_metrics(

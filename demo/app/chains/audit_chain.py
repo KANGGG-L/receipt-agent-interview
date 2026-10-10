@@ -152,11 +152,24 @@ def run_audit(image_path: str, data: ReceiptData,
         canary = generate_canary_token() if enable_canary else ""
         if canary:
             prompt = inject_canary_instructions(prompt, canary)
-        result = model.invoke(prompt)
+
+        from app.models import resolve_max_retry
+        max_aud_rounds = resolve_max_retry(config, leg="aud", use_grey=use_grey)
+        result = None
+        for attempt in range(1, max_aud_rounds + 1):
+            try:
+                result = model.invoke(prompt)
+                break
+            except Exception as invoke_exc:
+                if attempt >= max_aud_rounds:
+                    raise
+                time.sleep(0.1)
+
         raw = result.content if not isinstance(result, str) else result
         # 提取 audit VLM token（DashScope 同理，本地 0）
         try:
             rm = getattr(result, "response_metadata", {}) or {}
+            audit_adapted = rm.get("adapted_params", [])
             tu = rm.get("token_usage") or rm.get("usage") or {}
             from app.llm import _normalize_token_usage as _ntu
             audit_tu = _ntu(tu) if isinstance(tu, dict) and tu else {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -166,6 +179,7 @@ def run_audit(image_path: str, data: ReceiptData,
                 if isinstance(um, dict):
                     audit_tu = _ntu({"prompt_tokens": um.get("input_tokens", 0), "completion_tokens": um.get("output_tokens", 0), "total_tokens": um.get("total_tokens", 0)})
         except Exception as e:
+            audit_adapted = []
             audit_tu = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             logging.getLogger("audit_chain").warning(
                 "审核 token 用量解析失败，回落全 0（成本不可用，审核腿成本口径失真）: %s", e)
@@ -182,11 +196,13 @@ def run_audit(image_path: str, data: ReceiptData,
                 return {"skipped": True, "reason": f"audit_canary_blocked: {canary_err}",
                         "mode": AUDIT_MODE_VLM,
                         "audit_ms": round((time.time() - start) * 1000, 1),
-                        "token_usage": audit_tu}
+                        "token_usage": audit_tu,
+                        "adapted_params": audit_adapted}
         parsed["engine"] = engine
         parsed["mode"] = AUDIT_MODE_VLM
         parsed["audit_ms"] = round((time.time() - start) * 1000, 1)
         parsed["token_usage"] = audit_tu
+        parsed["adapted_params"] = audit_adapted
         return parsed
     except extract_chain.ImageDecodeError as e:
         # 原图无法解码（如缺 pillow-heif 的 .heic）：审核腿不阻断主链路，也不把

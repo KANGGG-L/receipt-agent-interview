@@ -6,7 +6,7 @@ Playwright 真实浏览器端到端自动化测试与阿叔/阿姨高压人机�
 测试覆盖范围:
 1. 侧边栏导航切换至「数据导出中心」，校验 Tab 激活状态与默认报表加载 (inventory_stocktake)
 2. 顶部 3 个快捷场景卡片 (月末财务包、实地盘点单、毛利大盘) 点击与自动灌入
-3. 业务域分类 Tab (全部、实时库存与价格、餐品与消耗、供应商与归档、部门花销报表) 切换与过滤
+3. 使用者组分类 Tab (盘点与补货、经营与毛利、台账与合规) 切换与过滤 (8 张报表 / 3 组)
 4. 阿叔/阿姨高压痛点场景:
    - 日期倒置防呆 (开始晚于结束时自动调转并弹出人话 Toast)
    - 按钮与输入框尺寸 (高度严格 >= 38px) 与 WCAG AA 对比度合规
@@ -25,7 +25,7 @@ import sys
 import time
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "http://127.0.0.1:15010"
+BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010"))
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 SCREENSHOT_DIR_1 = os.path.join(ROOT_DIR, "demo", "gui-test-screenshots")
 SCREENSHOT_DIR_2 = os.path.join(ROOT_DIR, "work", "screenshots")
@@ -199,50 +199,43 @@ def run_all_tests():
         wait_for_preview_ready(page)
         p3_title = page.eval_on_selector("#exportActiveReportTitle", "el => el.innerText.trim()")
         toasts = get_toast_messages(page)
-        p3_toast = any("餐品理论 vs 真实毛利诊断" in t for t in toasts)
+        p3_toast = any("菜品成本与毛利诊断" in t for t in toasts)
         record_test("PRESET-03", "Presets", "餐品毛利与成本偏差大盘预置逻辑", "标题含毛利偏差诊断且Toast提示载入",
                     f"title={p3_title}, toast={p3_toast}", "毛利" in p3_title)
         save_screenshot(page, "04_preset_dish_margin")
 
-        print("\n=== Phase 3: 业务域分类 Tab 切换与过滤 ===")
-        # 1. 验证已移除「全部报表」Tab，仅保留四大核心业务域分类
+        print("\n=== Phase 3: 使用者组分类 Tab 切换与过滤 (8 张报表 / 3 组) ===")
+        # 1. 验证已移除「全部报表」Tab，仅保留 3 个使用者组分类
         has_all_tab = page.locator(".export-tab-btn:has-text('全部报表')").count() > 0
         tab_count = page.locator(".export-tab-btn").count()
-        record_test("CAT-01", "Categories", "移除全部报表Tab并保持四大业务域分类", "无全部报表且4个业务分类",
-                    f"has_all={has_all_tab}, tab_count={tab_count}", not has_all_tab and tab_count == 4)
-        save_screenshot(page, "05_category_tabs_four_domains")
+        record_test("CAT-01", "Categories", "移除全部报表Tab并保持三使用者组分类", "无全部报表且3个分类",
+                    f"has_all={has_all_tab}, tab_count={tab_count}", not has_all_tab and tab_count == 3)
+        save_screenshot(page, "05_category_tabs_three_groups")
 
-        # 2. 实时库存与价格 (4套)
-        page.click(".export-tab-btn:has-text('实时库存与价格')")
+        # 2. 盘点与补货 (2套)
+        page.click(".export-tab-btn:has-text('盘点与补货')")
         time.sleep(0.3)
-        inv_cards_count = page.locator(".export-report-card").count()
-        record_test("CAT-02", "Categories", "实时库存与价格分类", "4", str(inv_cards_count), inv_cards_count == 4)
-        save_screenshot(page, "06_category_inventory")
+        stocktake_cards_count = page.locator(".export-report-card").count()
+        record_test("CAT-02", "Categories", "盘点与补货分类", "2", str(stocktake_cards_count), stocktake_cards_count == 2)
+        save_screenshot(page, "06_category_stocktake")
 
-        # 3. 餐品与消耗 (4套)
-        page.click(".export-tab-btn:has-text('餐品与消耗')")
+        # 3. 经营与毛利 (4套)
+        page.click(".export-tab-btn:has-text('经营与毛利')")
         time.sleep(0.3)
-        dish_cards_count = page.locator(".export-report-card").count()
-        record_test("CAT-03", "Categories", "餐品与消耗分类", "4", str(dish_cards_count), dish_cards_count == 4)
-        save_screenshot(page, "07_category_dishes")
+        biz_cards_count = page.locator(".export-report-card").count()
+        record_test("CAT-03", "Categories", "经营与毛利分类", "4", str(biz_cards_count), biz_cards_count == 4)
+        save_screenshot(page, "07_category_business")
 
-        # 4. 供应商与归档 (4套)
-        page.click(".export-tab-btn:has-text('供应商与归档')")
+        # 4. 台账与合规 (2套)
+        page.click(".export-tab-btn:has-text('台账与合规')")
         time.sleep(0.3)
-        sup_cards_count = page.locator(".export-report-card").count()
-        record_test("CAT-04", "Categories", "供应商与归档分类", "4", str(sup_cards_count), sup_cards_count == 4)
-        save_screenshot(page, "08_category_suppliers")
-
-        # 5. 部门花销报表 (2套)
-        page.click(".export-tab-btn:has-text('部门花销报表')")
-        time.sleep(0.3)
-        dept_cards_count = page.locator(".export-report-card").count()
-        record_test("CAT-05", "Categories", "部门花销报表分类", "2", str(dept_cards_count), dept_cards_count == 2)
-        save_screenshot(page, "09_category_department")
+        ledger_cards_count = page.locator(".export-report-card").count()
+        record_test("CAT-04", "Categories", "台账与合规分类", "2", str(ledger_cards_count), ledger_cards_count == 2)
+        save_screenshot(page, "08_category_ledger")
 
         print("\n=== Phase 4: 阿叔/阿姨高压触控尺寸与 WCAG 对比度测量 ===")
-        page.click(".export-tab-btn:has-text('供应商与归档')")
-        page.click(".export-report-card:has-text('采购收据入账全量明细台账')")
+        page.click(".export-tab-btn:has-text('台账与合规')")
+        page.click(".export-report-card:has-text('采购入账明细台账')")
         wait_for_preview_ready(page)
 
         dim_eval = page.evaluate("""() => {
@@ -419,7 +412,7 @@ def run_all_tests():
 
         print("\n=== Phase 9: 打印报表弹窗与 A4 盘点底单现场标准 ===")
         # 切换至实时库存盘点底单
-        page.click(".export-tab-btn:has-text('实时库存与价格')")
+        page.click(".export-tab-btn:has-text('盘点与补货')")
         time.sleep(0.3)
         page.click(".export-report-card:has-text('实时库存盘点底单')")
         wait_for_preview_ready(page)
@@ -450,10 +443,10 @@ def run_all_tests():
         save_screenshot(page, "16_print_template_inspected")
 
         print("\n=== Phase 10: RBAC 角色越权阻断人话指引 ===")
-        # 当前为 staff 角色，尝试访问老板专有敏感报表: department_cost_summary
-        page.click(".export-tab-btn:has-text('部门花销报表')")
+        # 当前为 staff 角色，尝试访问老板专有敏感报表: spend_summary（期间花销汇总表）
+        page.click(".export-tab-btn:has-text('经营与毛利')")
         time.sleep(0.3)
-        page.click(".export-report-card:has-text('部门采购花销期间环比对照表')")
+        page.click(".export-report-card:has-text('期间花销汇总表')")
         wait_for_preview_ready(page)
 
         # 检查 summary 提示栏与 toast
@@ -471,9 +464,9 @@ def run_all_tests():
         switch_demo_role(page, "owner")
 
         # 老板访问该报表
-        page.click(".export-tab-btn:has-text('部门花销报表')")
+        page.click(".export-tab-btn:has-text('经营与毛利')")
         time.sleep(0.3)
-        page.click(".export-report-card:has-text('部门采购花销期间环比对照表')")
+        page.click(".export-report-card:has-text('期间花销汇总表')")
         wait_for_preview_ready(page)
 
         owner_summary = page.eval_on_selector("#exportPreviewSummary", "el => el.innerText.trim()")

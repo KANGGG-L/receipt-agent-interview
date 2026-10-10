@@ -1,11 +1,25 @@
 # 统一报表与数据导出中心产品规格说明与验收准则规范 (PRD & AC Spec)
 
-- 文档版本：v1.0.0
+- 文档版本：v2.0.0
 - 负责角色：产品规格子代理 (Product / Spec Subagent)
 - 生效系统：香港餐饮数字化收据与进销存管理系统 (Receipt Agent & F&B Operations)
 - 关联模块：实时库存与价格 (Inventory)、餐品与消耗 (Dishes)、供应商与归档 (Suppliers & Receipts)、部门花销报表 (Department)
 - 适用对象：全栈开发工程师、前端开发工程师、QA 测试工程师、运维架构师
 - 实施状态：[APPROVED-FOR-IMPLEMENTATION]
+
+> **⚠️ 报表清单已被取代（v2.0.0，2026-10-06）**
+>
+> 本文档第 3 节「四大业务域 14 套标准报表」与 AC-1 的 14 报表/4 业务域契约，
+> 已被 `EXPORT_CENTER_TABLE_REFACTOR_NEEDS_ANALYSIS.md` **第 7 节（生产场景报表体系重设计：8 张）**
+> 取代并落地实现。现行报表体系为 **3 个使用者组 × 8 张报表**：
+>
+> - 盘点与补货（库管）：实时库存盘点底单、采购补货建议清单
+> - 经营与毛利（owner）：库存货值结存表、采购进价波动与比价表、菜品成本与毛利表（合并 dish_daily_sales_cost + dish_margin_variance）、期间花销汇总表（合并 department_cost_summary + department_items_breakdown，继承 owner 门禁）
+> - 台账与合规（出纳/审计）：出入库全量流水台账、采购入账明细台账
+>
+> 移出上线清单：`supplier_payables_aging`、`supplier_payments_journal`、`supplier_recon_discrepancies`（数据模型不支撑，将来以应付管理模块回归，见需求分析 7.4）；`dish_bom_recipes` 移入餐品管理模块（BOM 配方库查看/打印入口）。
+>
+> **仍然有效的内容**：单表列结构/脱敏/打印规格（第 2、4 节与 AC-2 至 AC-12 的单表口径），交互防呆与安全规格不随裁剪变化。第 3 节保留作历史规格存档，不再作为验收依据。
 
 ---
 

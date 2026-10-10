@@ -6,6 +6,7 @@ AI 效果观测与评测中心 - 解析日志与链路审计模块 (Backend Serv
 import json
 import logging
 import math
+import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -253,6 +254,9 @@ def query_parsing_logs(
         q = q.filter(db._ReceiptRow.created_at >= start_ts)
     elif date_range == "7d":
         start_ts = (now_dt - timedelta(days=7)).isoformat()
+        q = q.filter(db._ReceiptRow.created_at >= start_ts)
+    elif date_range == "14d":
+        start_ts = (now_dt - timedelta(days=14)).isoformat()
         q = q.filter(db._ReceiptRow.created_at >= start_ts)
     elif date_range == "30d":
         start_ts = (now_dt - timedelta(days=30)).isoformat()
@@ -764,7 +768,39 @@ def query_parsing_logs(
         })
 
     # KPI 汇总计算 (在当前筛选条件下或当前租户与时间范围内计算)
-    summary_data = _compute_summary(s, tenant_id, date_range, start_date, end_date)
+    if total_items == 0:
+        summary_data = {
+            "total_parses": 0,
+            "success_count": 0,
+            "warning_count": 0,
+            "error_count": 0,
+            "success_rate": 0.0,
+            "avg_elapsed_ms": 0.0,
+            "avg_tokens": 0,
+            "likes_count": 0,
+            "dislikes_count": 0,
+            "positive_rate": 0.0,
+            "modified_count": 0,
+            "edit_rate": 0.0,
+            "gate_triggered_count": 0,
+            "gate_trigger_rate": 0.0,
+            "gate_breakdown": {
+                "math": 0,
+                "contract": 0,
+                "quality": 0,
+                "security": 0,
+            },
+            "disliked_receipts_count": 0,
+            "feedback_receipts_count": 0,
+            "dislike_rate": 0.0,
+            "dislike_frequency": 1.0,
+            "recovery_attempts": 0,
+            "recovery_entry_rate": 0.0,
+            "recovery_success_count": 0,
+            "recovery_success_rate": 0.0,
+        }
+    else:
+        summary_data = _compute_summary(s, tenant_id, date_range, start_date, end_date)
 
     return {
         "summary": summary_data,
@@ -827,7 +863,14 @@ def calculate_recovery_and_feedback_metrics(
     """统一计算挽回漏斗与体验反馈指标 (SSOT 唯一事实源).
     严格对齐产品规格说明书 SPEC-OBS-TELEMETRY-20260930 标准口径。
     """
-    rq = s.query(db._ReceiptRow).filter(db._ReceiptRow.deleted_at.is_(None))
+    rq = s.query(
+        db._ReceiptRow.id,
+        db._ReceiptRow.status,
+        db._ReceiptRow.math_warnings_json,
+        db._ReceiptRow.quality_warnings_json,
+        db._ReceiptRow.image_guard_json,
+        db._ReceiptRow.audit_logs_json,
+    ).filter(db._ReceiptRow.deleted_at.is_(None))
     if tenant_id and tenant_id != "all":
         if tenant_id == "default":
             rq = rq.filter((db._ReceiptRow.tenant_id == "default") | (db._ReceiptRow.tenant_id.is_(None)) | (db._ReceiptRow.tenant_id == ""))
@@ -842,6 +885,9 @@ def calculate_recovery_and_feedback_metrics(
     elif date_range == "7d":
         start_ts = (now_dt - timedelta(days=7)).isoformat()
         rq = rq.filter(db._ReceiptRow.created_at >= start_ts)
+    elif date_range == "14d":
+        start_ts = (now_dt - timedelta(days=14)).isoformat()
+        rq = rq.filter(db._ReceiptRow.created_at >= start_ts)
     elif date_range == "30d":
         start_ts = (now_dt - timedelta(days=30)).isoformat()
         rq = rq.filter(db._ReceiptRow.created_at >= start_ts)
@@ -851,33 +897,94 @@ def calculate_recovery_and_feedback_metrics(
     if end_date:
         rq = rq.filter(db._ReceiptRow.created_at <= end_date)
 
-    total_parses = rq.count()
-    error_count = rq.filter(db._ReceiptRow.status == "error").count()
-    warning_count = rq.filter(db._ReceiptRow.status == "parsed_with_warnings").count()
+    receipt_rows = rq.all()
+    total_parses = len(receipt_rows)
+    all_rids = [r[0] for r in receipt_rows]
+
+    if total_parses == 0:
+        return {
+            "total_parses": 0,
+            "success_count": 0,
+            "warning_count": 0,
+            "error_count": 0,
+            "success_rate": 0.0,
+            "gate_triggered_count": 0,
+            "gate_trigger_rate": 0.0,
+            "gate_breakdown": {
+                "math": 0,
+                "contract": 0,
+                "quality": 0,
+                "security": 0,
+            },
+            "abnormal_count": 0,
+            "modified_count": 0,
+            "edit_rate": 0.0,
+            "likes_count": 0,
+            "dislikes_count": 0,
+            "liked_receipts_count": 0,
+            "disliked_receipts_count": 0,
+            "feedback_receipts_count": 0,
+            "positive_rate": 0.0,
+            "dislike_rate": 0.0,
+            "dislike_frequency": 1.0,
+            "retake_clicked": 0,
+            "reparse_clicked": 0,
+            "recovery_attempts": 0,
+            "recovery_entry_rate": 0.0,
+            "entry_rate_desc": "挽回点击 0 / 异常单据 0",
+            "input_attribution_share": None,
+            "model_attribution_share": None,
+            "recovery_success_count": 0,
+            "recovery_total_receipts": 0,
+            "recovery_success_rate": 0.0,
+            "_rids": [],
+        }
+
+    error_count = sum(1 for r in receipt_rows if r[1] == "error")
+    warning_count = sum(1 for r in receipt_rows if r[1] == "parsed_with_warnings")
     success_count = max(0, total_parses - error_count - warning_count)
     success_rate = round(success_count / total_parses, 3) if total_parses > 0 else 0.0
 
-    target_rids_select = rq.with_entities(db._ReceiptRow.id)
-    reject_rids_q = s.query(db._DecisionLogRow.receipt_id).filter(
-        db._DecisionLogRow.receipt_id.in_(target_rids_select),
-        db._DecisionLogRow.receipt_id.isnot(None),
-        (db._DecisionLogRow.ai_value.like("%gate_reject%"))
-        | (db._DecisionLogRow.ai_value.like("%gate_err%"))
-        | (db._DecisionLogRow.extra.like("%gate_reject%"))
-    )
-    warn_condition = (
-        (db._ReceiptRow.status == "parsed_with_warnings")
-        | ((db._ReceiptRow.math_warnings_json.isnot(None)) & (db._ReceiptRow.math_warnings_json != "") & (db._ReceiptRow.math_warnings_json != "[]"))
-        | ((db._ReceiptRow.quality_warnings_json.isnot(None)) & (db._ReceiptRow.quality_warnings_json != "") & (db._ReceiptRow.quality_warnings_json != "[]"))
-        | (db._ReceiptRow.image_guard_json.like("%\"flagged\": true%") | db._ReceiptRow.image_guard_json.like("%\"flagged\":true%"))
-    )
-    triggered_q = rq.filter((db._ReceiptRow.id.in_(reject_rids_q)) | (warn_condition))
-    gate_triggered_count = triggered_q.count()
+    reject_rids = set()
+    if all_rids:
+        for i in range(0, len(all_rids), 900):
+            chunk = all_rids[i:i + 900]
+            d_rows = s.query(db._DecisionLogRow.receipt_id).filter(
+                db._DecisionLogRow.receipt_id.in_(chunk),
+                db._DecisionLogRow.receipt_id.isnot(None),
+                (db._DecisionLogRow.ai_value.like("%gate_reject%"))
+                | (db._DecisionLogRow.ai_value.like("%gate_err%"))
+                | (db._DecisionLogRow.extra.like("%gate_reject%"))
+            ).all()
+            for (d_rid,) in d_rows:
+                if d_rid is not None:
+                    reject_rids.add(d_rid)
+
+    def _has_math_warn(m_json):
+        return bool(m_json and m_json != "[]")
+
+    def _has_quality_warn(q_json):
+        return bool(q_json and q_json != "[]")
+
+    def _has_sec_warn(s_json):
+        if not s_json:
+            return False
+        return ('"flagged": true' in s_json) or ('"flagged":true' in s_json)
+
+    def _is_warn_cond(r):
+        return (
+            r[1] == "parsed_with_warnings"
+            or _has_math_warn(r[2])
+            or _has_quality_warn(r[3])
+            or _has_sec_warn(r[4])
+        )
+
+    gate_triggered_count = sum(1 for r in receipt_rows if (r[0] in reject_rids) or _is_warn_cond(r))
     gate_trigger_rate = round(gate_triggered_count / total_parses, 3) if total_parses > 0 else 0.0
 
-    math_cnt = rq.filter((db._ReceiptRow.math_warnings_json.isnot(None)) & (db._ReceiptRow.math_warnings_json != "") & (db._ReceiptRow.math_warnings_json != "[]")).count()
-    quality_cnt = rq.filter((db._ReceiptRow.quality_warnings_json.isnot(None)) & (db._ReceiptRow.quality_warnings_json != "") & (db._ReceiptRow.quality_warnings_json != "[]")).count()
-    security_cnt = rq.filter(db._ReceiptRow.image_guard_json.like("%\"flagged\": true%") | db._ReceiptRow.image_guard_json.like("%\"flagged\":true%")).count()
+    math_cnt = sum(1 for r in receipt_rows if _has_math_warn(r[2]))
+    quality_cnt = sum(1 for r in receipt_rows if _has_quality_warn(r[3]))
+    security_cnt = sum(1 for r in receipt_rows if _has_sec_warn(r[4]))
     contract_cnt = max(0, gate_triggered_count - math_cnt - quality_cnt - security_cnt)
     gate_breakdown = {
         "math": math_cnt,
@@ -886,31 +993,26 @@ def calculate_recovery_and_feedback_metrics(
         "security": security_cnt,
     }
 
-    # 处于异常状态的去重单据数 (status == 'error' 或 触发门禁告警/拦截)
-    abnormal_count = rq.filter(
-        (db._ReceiptRow.status == "error") | (db._ReceiptRow.id.in_(reject_rids_q)) | (warn_condition)
-    ).count()
-
-    mod_q = rq.filter(
-        (db._ReceiptRow.status == "edited")
-        | (db._ReceiptRow.audit_logs_json.like("%save_edited%"))
-    )
-    modified_count = mod_q.count()
+    abnormal_count = sum(1 for r in receipt_rows if r[1] == "error" or (r[0] in reject_rids) or _is_warn_cond(r))
+    modified_count = sum(1 for r in receipt_rows if r[1] == "edited" or (r[5] and "save_edited" in r[5]))
     edit_rate = round(modified_count / total_parses, 3) if total_parses > 0 else 0.0
 
-    # 反馈点赞与去偏置点踩
-    fb_q = s.query(db._ReceiptFeedbackRow).filter(
-        db._ReceiptFeedbackRow.receipt_id.in_(target_rids_select),
-        db._ReceiptFeedbackRow.item_index.is_(None),
-    )
-    fb_all_rows = fb_q.all()
-    likes_count = sum(1 for f in fb_all_rows if f.like == 1)
-    dislikes_count = sum(1 for f in fb_all_rows if f.like == -1)
+    fb_all_rows = []
+    if all_rids:
+        for i in range(0, len(all_rids), 900):
+            chunk = all_rids[i:i + 900]
+            fb_all_rows.extend(s.query(db._ReceiptFeedbackRow.receipt_id, db._ReceiptFeedbackRow.like).filter(
+                db._ReceiptFeedbackRow.receipt_id.in_(chunk),
+                db._ReceiptFeedbackRow.item_index.is_(None),
+            ).all())
 
-    fb_receipts = {f.receipt_id for f in fb_all_rows if f.receipt_id is not None and f.like in (1, -1)}
+    likes_count = sum(1 for f in fb_all_rows if f[1] == 1)
+    dislikes_count = sum(1 for f in fb_all_rows if f[1] == -1)
+
+    fb_receipts = {f[0] for f in fb_all_rows if f[0] is not None and f[1] in (1, -1)}
     fb_receipts_count = len(fb_receipts)
-    liked_receipts = {f.receipt_id for f in fb_all_rows if f.like == 1 and f.receipt_id is not None}
-    disliked_receipts = {f.receipt_id for f in fb_all_rows if f.like == -1 and f.receipt_id is not None}
+    liked_receipts = {f[0] for f in fb_all_rows if f[1] == 1 and f[0] is not None}
+    disliked_receipts = {f[0] for f in fb_all_rows if f[1] == -1 and f[0] is not None}
     liked_receipts_count = len(liked_receipts)
     disliked_receipts_count = len(disliked_receipts)
 
@@ -998,7 +1100,17 @@ def calculate_recovery_and_feedback_metrics(
         "recovery_success_count": recovery_success_count,
         "recovery_total_receipts": recovery_total_receipts,
         "recovery_success_rate": recovery_success_rate,
+        "_rids": all_rids,
     }
+
+
+_SUMMARY_CACHE: Dict[Tuple[Any, ...], Tuple[float, Dict[str, Any]]] = {}
+_SUMMARY_CACHE_TTL = 3.0
+
+
+def clear_summary_cache():
+    """清理指标汇总内存缓存。"""
+    _SUMMARY_CACHE.clear()
 
 
 def _compute_summary(
@@ -1009,6 +1121,13 @@ def _compute_summary(
     end_date: str = "",
 ) -> Dict[str, Any]:
     """计算大盘聚合 KPI 指标。"""
+    cache_key = (tenant_id or "all", date_range or "all", start_date or "", end_date or "")
+    now = time.time()
+    if cache_key in _SUMMARY_CACHE:
+        cached_time, cached_val = _SUMMARY_CACHE[cache_key]
+        if now - cached_time < _SUMMARY_CACHE_TTL:
+            return dict(cached_val)
+
     metrics = calculate_recovery_and_feedback_metrics(
         s=s,
         tenant_id=tenant_id,
@@ -1018,7 +1137,7 @@ def _compute_summary(
     )
 
     if metrics["total_parses"] == 0:
-        return {
+        res = {
             "total_parses": 0,
             "success_count": 0,
             "warning_count": 0,
@@ -1048,58 +1167,41 @@ def _compute_summary(
             "recovery_success_count": 0,
             "recovery_success_rate": 0.0,
         }
+        _SUMMARY_CACHE[cache_key] = (now, res)
+        return dict(res)
 
-    rq = s.query(db._ReceiptRow).filter(db._ReceiptRow.deleted_at.is_(None))
-    if tenant_id and tenant_id != "all":
-        if tenant_id == "default":
-            rq = rq.filter((db._ReceiptRow.tenant_id == "default") | (db._ReceiptRow.tenant_id.is_(None)) | (db._ReceiptRow.tenant_id == ""))
-        else:
-            rq = rq.filter(db._ReceiptRow.tenant_id == tenant_id)
-
-    now_dt = datetime.now()
-    if date_range == "24h":
-        rq = rq.filter(db._ReceiptRow.created_at >= (now_dt - timedelta(days=1)).isoformat())
-    elif date_range == "7d":
-        rq = rq.filter(db._ReceiptRow.created_at >= (now_dt - timedelta(days=7)).isoformat())
-    elif date_range == "30d":
-        rq = rq.filter(db._ReceiptRow.created_at >= (now_dt - timedelta(days=30)).isoformat())
-    if start_date:
-        rq = rq.filter(db._ReceiptRow.created_at >= start_date)
-    if end_date:
-        rq = rq.filter(db._ReceiptRow.created_at <= end_date)
-
-    target_rids_select = rq.with_entities(db._ReceiptRow.id)
-
-    # 平均耗时与平均 Token 统计 (从 ai_decision_log 抽样或关联统计)
-    d_rows = s.query(db._DecisionLogRow.extra).filter(
-        db._DecisionLogRow.receipt_id.in_(target_rids_select),
-        db._DecisionLogRow.extra != "",
-        db._DecisionLogRow.extra.isnot(None),
-    ).limit(500).all()
-
+    target_rids = metrics.get("_rids") or []
     elapsed_list = []
     tokens_list = []
-    for (extra_str,) in d_rows:
-        extra_json = _safe_json_loads(extra_str, default={})
-        if not isinstance(extra_json, dict):
-            continue
-        # tokens
-        t_total = extra_json.get("tokens_total")
-        if isinstance(t_total, (int, float)) and t_total > 0:
-            tokens_list.append(t_total)
-        # elapsed
-        el = extra_json.get("elapsed_ms")
-        if isinstance(el, dict):
-            t_ms = el.get("total") or el.get("extract")
-            if isinstance(t_ms, (int, float)) and t_ms > 0:
-                elapsed_list.append(t_ms)
-        elif isinstance(el, (int, float)) and el > 0:
-            elapsed_list.append(el)
+    if target_rids:
+        rids_sample = target_rids[:500]
+        d_rows = s.query(db._DecisionLogRow.extra).filter(
+            db._DecisionLogRow.receipt_id.in_(rids_sample),
+            db._DecisionLogRow.extra != "",
+            db._DecisionLogRow.extra.isnot(None),
+        ).limit(500).all()
+
+        for (extra_str,) in d_rows:
+            extra_json = _safe_json_loads(extra_str, default={})
+            if not isinstance(extra_json, dict):
+                continue
+            # tokens
+            t_total = extra_json.get("tokens_total")
+            if isinstance(t_total, (int, float)) and t_total > 0:
+                tokens_list.append(t_total)
+            # elapsed
+            el = extra_json.get("elapsed_ms")
+            if isinstance(el, dict):
+                t_ms = el.get("total") or el.get("extract")
+                if isinstance(t_ms, (int, float)) and t_ms > 0:
+                    elapsed_list.append(t_ms)
+            elif isinstance(el, (int, float)) and el > 0:
+                elapsed_list.append(el)
 
     avg_elapsed_ms = round(sum(elapsed_list) / len(elapsed_list), 1) if elapsed_list else 0.0
     avg_tokens = round(sum(tokens_list) / len(tokens_list)) if tokens_list else 0
 
-    return {
+    res = {
         "total_parses": metrics["total_parses"],
         "success_count": metrics["success_count"],
         "warning_count": metrics["warning_count"],
@@ -1124,6 +1226,8 @@ def _compute_summary(
         "recovery_success_count": metrics["recovery_success_count"],
         "recovery_success_rate": metrics["recovery_success_rate"],
     }
+    _SUMMARY_CACHE[cache_key] = (now, res)
+    return dict(res)
 
 
 def get_parsing_log_detail(

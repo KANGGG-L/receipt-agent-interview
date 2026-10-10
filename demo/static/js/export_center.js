@@ -1,17 +1,18 @@
 // -*- coding: utf-8 -*-
 /**
  * 统一报表与数据导出中心前端控制器 (Export & Reporting Center)
- * 支持库存、餐品、供应商、部门四大模块 14 套标准表格的在线预览、参数定制与 CSV 流式下载
+ * 按 3 个使用者组（盘点补货/经营毛利/台账合规）提供 8 张标准表格的在线预览、参数定制与 CSV 流式下载
  */
 
 const exportCenterState = {
     reports: [],
-    currentCategory: 'inventory',
+    currentCategory: 'stocktake',
     currentReportId: 'inventory_stocktake',
     previewData: null,
     isLoading: false,
     suppliers: [],
     departments: [],
+    dishCategories: [],
     categories: ['肉类', '海鲜', '蔬菜', '主食粮油', '调味品', '烘焙', '饮品', '清洁', '其他']
 };
 window.exportCenterState = exportCenterState;
@@ -73,6 +74,17 @@ function loadExportAuxiliaryData() {
                 updateExportFilterDropdowns();
             }
         }).catch(() => {});
+
+    // 餐品分类（FILTERS-§2：dish_category 下拉数据源，单一事实源 /api/dishes/categories）
+    apiFetch('/api/dishes/categories')
+        .then(res => res.json())
+        .then(ret => {
+            const list = Array.isArray(ret) ? ret : (ret.data || []);
+            exportCenterState.dishCategories = list
+                .map(c => (typeof c === 'string' ? c : (c.name || c.category || '')))
+                .filter(Boolean);
+            updateExportFilterDropdowns();
+        }).catch(() => {});
 }
 
 // 渲染分类 Tab
@@ -80,12 +92,16 @@ function renderExportCategoryTabs() {
     const container = document.getElementById('exportCategoryTabs');
     if (!container) return;
 
-    const cats = [
-        { id: 'inventory', name: '实时库存与价格', icon: '' },
-        { id: 'dishes', name: '餐品与消耗', icon: '' },
-        { id: 'suppliers', name: '供应商与归档', icon: '' },
-        { id: 'department', name: '部门花销报表', icon: '' },
-    ];
+    // B3: 组清单从后端下发的报表元数据派生（按 REPORTS_META 顺序去重保序），
+    // 组名单一事实源是后端 category_name，前端不抄写第二份清单。
+    const cats = [];
+    const seenCats = {};
+    exportCenterState.reports.forEach(r => {
+        if (r.category && !seenCats[r.category]) {
+            seenCats[r.category] = true;
+            cats.push({ id: r.category, name: r.category_name || r.category });
+        }
+    });
 
     let html = '';
     cats.forEach(c => {
@@ -134,19 +150,9 @@ function renderExportReportList() {
     let html = '';
     filtered.forEach(rep => {
         const isSelected = rep.id === exportCenterState.currentReportId;
-        const catBadgeClass = {
-            'inventory': 'badge-primary',
-            'dishes': 'badge-success',
-            'suppliers': 'badge-warning',
-            'department': 'badge-neutral'
-        }[rep.category] || 'badge-secondary';
 
         html += `
             <div class="export-report-card ${isSelected ? 'selected' : ''}" onclick="selectExportReport('${rep.id}')">
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                    <span class="badge ${catBadgeClass}" style="font-size:0.72rem; padding:3px 10px;">${esc(rep.category_name)}</span>
-                    ${isSelected ? '<span class="badge badge-primary" style="font-size:0.72rem; padding:3px 10px;">正在预览</span>' : ''}
-                </div>
                 <div class="export-report-title">${esc(rep.title)}</div>
                 <div class="export-report-desc">${esc(rep.description)}</div>
             </div>
@@ -166,16 +172,16 @@ function selectExportReport(reportId) {
 // 快捷场景预置包跳转
 function applyExportPreset(presetType) {
     if (presetType === 'monthly_close') {
-        selectExportCategory('suppliers', 'receipts_itemized_ledger');
+        selectExportCategory('ledger', 'receipts_itemized_ledger');
         setExportQuickRange('month');
-        showToast('已载入【月末财务审计归档包】推荐配置', 'info');
+        showToast('已载入月末财务审计归档包推荐配置', 'info');
     } else if (presetType === 'stocktake') {
-        selectExportCategory('inventory', 'inventory_stocktake');
-        showToast('已载入【冷库/干货实地盘点清册】标准底单', 'info');
+        selectExportCategory('stocktake', 'inventory_stocktake');
+        showToast('已载入冷库/干货实地盘点清册标准底单', 'info');
     } else if (presetType === 'dish_margin') {
-        selectExportCategory('dishes', 'dish_margin_variance');
+        selectExportCategory('business', 'dish_cost_margin');
         setExportQuickRange('month');
-        showToast('已载入【餐品理论 vs 真实毛利诊断】报表', 'info');
+        showToast('已载入菜品成本与毛利诊断报表', 'info');
     }
 }
 
@@ -316,21 +322,207 @@ function renderExportFilters() {
         `;
     }
 
-    // 8. 餐品状态
+    // 8. 餐品状态（cost_margin 用；默认全部，保持按日逐单视图既有口径）
     if (filters.includes('dish_status')) {
         html += `
             <div class="export-filter-item">
                 <label>餐品状态</label>
                 <select id="expDishStatus" class="form-control export-control-input" style="width:120px;" onchange="refreshExportPreview()">
-                    <option value="active" selected>仅在售餐品</option>
-                    <option value="all">全部餐品状态</option>
+                    <option value="all" selected>全部餐品状态</option>
+                    <option value="active">仅在售餐品</option>
                     <option value="inactive">仅已下架</option>
                 </select>
             </div>
         `;
     }
 
+    // 9. 成本毛利核算粒度（菜品成本与毛利表：按日逐单 / 按期间汇总）
+    if (filters.includes('cost_granularity')) {
+        html += `
+            <div class="export-filter-item">
+                <label>核算粒度</label>
+                <select id="expCostGranularity" class="form-control export-control-input" style="width:130px;" onchange="refreshExportPreview()">
+                    <option value="daily" selected>按日逐单</option>
+                    <option value="period">按期间汇总</option>
+                </select>
+            </div>
+        `;
+    }
+
+    // 10. 花销透视维度（期间花销汇总表：部门 / 供应商）
+    if (filters.includes('spend_pivot')) {
+        html += `
+            <div class="export-filter-item">
+                <label>花销透视维度</label>
+                <select id="expSpendPivot" class="form-control export-control-input" style="width:130px;" onchange="handleSpendPivotChange()">
+                    <option value="department" selected>按部门</option>
+                    <option value="supplier">按供应商</option>
+                </select>
+            </div>
+        `;
+    }
+
+    // 11. FILTERS-§5: 花销维度聚焦（随透视维度联动渲染部门/供应商下拉）
+    if (filters.includes('pivot_focus')) {
+        html += `
+            <div class="export-filter-item">
+                <label>聚焦核算对象</label>
+                <div id="expPivotFocusWrap"></div>
+            </div>
+        `;
+    }
+
+    // 12. FILTERS-§5/§7/§1: 金额下限 / 区间
+    if (filters.includes('amount_range')) {
+        const isSpend = report.id === 'spend_summary';
+        html += `
+            <div class="export-filter-item">
+                <label>${isSpend ? '本期采购额下限(元)' : '单据金额区间(元)'}</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <input type="number" step="0.01" min="0" id="expAmountMin" class="form-control export-control-input" style="width:110px;" placeholder="最低" onchange="refreshExportPreview()">
+                    ${isSpend ? '' : `<span style="color:var(--text-muted); font-size:0.85rem;">至</span>
+                    <input type="number" step="0.01" min="0" id="expAmountMax" class="form-control export-control-input" style="width:110px;" placeholder="最高" onchange="refreshExportPreview()">`}
+                </div>
+            </div>
+        `;
+    }
+
+    // 13. FILTERS-§8 共用：关键词搜索（防抖 300ms）
+    if (filters.includes('keyword')) {
+        html += `
+            <div class="export-filter-item">
+                <label>关键词搜索</label>
+                <input type="text" id="expKeyword" class="form-control export-control-input" style="width:190px;" placeholder="单号 / 供应商 / 品名" oninput="handleExportSearchInput('expKeyword')">
+            </div>
+        `;
+    }
+
+    // 14. FILTERS-§1: 付清状态
+    if (filters.includes('paid_status')) {
+        html += `
+            <div class="export-filter-item">
+                <label>付清状态</label>
+                <select id="expPaidStatus" class="form-control export-control-input" style="width:150px;" onchange="refreshExportPreview()">
+                    <option value="all" selected>全部付清状态</option>
+                    <option value="unpaid">仅未付</option>
+                    <option value="paid">仅已付</option>
+                    <option value="overdue">仅逾期未付</option>
+                </select>
+            </div>
+        `;
+    }
+
+    // 15. FILTERS-§1: 币种（精确匹配，如 HKD / USD）
+    if (filters.includes('currency')) {
+        html += `
+            <div class="export-filter-item">
+                <label>币种</label>
+                <input type="text" id="expCurrency" class="form-control export-control-input" style="width:90px;" placeholder="HKD" onchange="refreshExportPreview()">
+            </div>
+        `;
+    }
+
+    // 16. FILTERS-§2: 毛利率上限
+    if (filters.includes('margin_threshold')) {
+        html += `
+            <div class="export-filter-item">
+                <label>毛利率上限(%)</label>
+                <input type="number" step="0.1" min="0" max="100" id="expMarginPctMax" class="form-control export-control-input" style="width:110px;" placeholder="如 50" onchange="refreshExportPreview()">
+            </div>
+        `;
+    }
+
+    // 17. FILTERS-§2: 餐品分类
+    if (filters.includes('dish_category')) {
+        html += `
+            <div class="export-filter-item">
+                <label>餐品分类</label>
+                <select id="expDishCategory" class="form-control export-control-input" style="width:130px;" onchange="refreshExportPreview()">
+                    <option value="">全部分类</option>
+                    ${exportCenterState.dishCategories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+                </select>
+            </div>
+        `;
+    }
+
+    // 18. FILTERS-§3: 仅看建议补货
+    if (filters.includes('only_suggested')) {
+        html += `
+            <div class="export-filter-item">
+                <label>补货建议</label>
+                <label style="display:flex; align-items:center; gap:6px; font-size:0.82rem; cursor:pointer; color:var(--text-muted); user-select:none; padding-top:6px;">
+                    <input type="checkbox" id="expOnlySuggested" onchange="refreshExportPreview()">
+                    <span>仅看建议补货 &gt; 0</span>
+                </label>
+            </div>
+        `;
+    }
+
+    // 19. FILTERS-§4: 涨跌方向 / 阈值覆盖 / 均价窗口
+    if (filters.includes('direction')) {
+        html += `
+            <div class="export-filter-item">
+                <label>波动方向</label>
+                <select id="expDirection" class="form-control export-control-input" style="width:120px;" onchange="refreshExportPreview()">
+                    <option value="all" selected>涨跌都看</option>
+                    <option value="up">仅涨价</option>
+                    <option value="down">仅降价</option>
+                </select>
+            </div>
+        `;
+    }
+    if (filters.includes('threshold_override')) {
+        html += `
+            <div class="export-filter-item">
+                <label>异动阈值临时覆盖(%)</label>
+                <input type="number" step="0.1" min="0" max="100" id="expThresholdPct" class="form-control export-control-input" style="width:110px;" placeholder="留空=租户阈值" onchange="refreshExportPreview()">
+            </div>
+        `;
+    }
+    if (filters.includes('window_days')) {
+        html += `
+            <div class="export-filter-item">
+                <label>均价窗口</label>
+                <select id="expWindowDays" class="form-control export-control-input" style="width:120px;" onchange="refreshExportPreview()">
+                    <option value="7">近 7 天均价</option>
+                    <option value="30" selected>近 30 天均价</option>
+                    <option value="60">近 60 天均价</option>
+                </select>
+            </div>
+        `;
+    }
+
+    // 20. FILTERS-§6: 关联单号 / 供应商关键词（防抖）
+    if (filters.includes('receipt_ref')) {
+        html += `
+            <div class="export-filter-item">
+                <label>关联收据号</label>
+                <input type="text" id="expReceiptRef" class="form-control export-control-input" style="width:130px;" placeholder="如 #1502" oninput="handleExportSearchInput('expReceiptRef')">
+            </div>
+        `;
+    }
+    if (filters.includes('vendor_keyword')) {
+        html += `
+            <div class="export-filter-item">
+                <label>供应商关键词</label>
+                <input type="text" id="expVendorKeyword" class="form-control export-control-input" style="width:150px;" placeholder="模糊匹配" oninput="handleExportSearchInput('expVendorKeyword')">
+            </div>
+        `;
+    }
+
+    // 21. FILTERS-§7: 货值下限
+    if (filters.includes('value_min')) {
+        html += `
+            <div class="export-filter-item">
+                <label>货值下限(元)</label>
+                <input type="number" step="0.01" min="0" id="expValueMin" class="form-control export-control-input" style="width:110px;" placeholder="如 1000" onchange="refreshExportPreview()">
+            </div>
+        `;
+    }
+
     container.innerHTML = html;
+    // FILTERS-§5: 聚焦下拉按当前透视维度渲染
+    if (filters.includes('pivot_focus')) renderPivotFocusOptions();
 
     // 9. 动态渲染当前报表真正支持的附加能力（草稿/脱敏），无适用选项时整行自动隐藏
     const extraContainer = document.getElementById('exportExtraOptions');
@@ -386,6 +578,51 @@ function updateExportFilterDropdowns() {
             '<option value="0">未分配部门</option>';
         deptSel.value = val;
     }
+    // FILTERS-§2: 餐品分类下拉异步补齐
+    const dishCatSel = document.getElementById('expDishCategory');
+    if (dishCatSel) {
+        const val = dishCatSel.value;
+        dishCatSel.innerHTML = '<option value="">全部分类</option>' +
+            exportCenterState.dishCategories.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+        dishCatSel.value = val;
+    }
+    // FILTERS-§5: 聚焦下拉复用同一数据源
+    renderPivotFocusOptions();
+}
+
+// FILTERS-§5: 透视维度切换 → 重置聚焦选择并重渲下拉
+function handleSpendPivotChange() {
+    renderPivotFocusOptions();
+    refreshExportPreview();
+}
+
+function renderPivotFocusOptions() {
+    const wrap = document.getElementById('expPivotFocusWrap');
+    if (!wrap) return;
+    const pivotSel = document.getElementById('expSpendPivot');
+    const pivot = pivotSel ? pivotSel.value : 'department';
+    const prev = wrap.dataset.prevValue || '';
+    if (pivot === 'supplier') {
+        wrap.innerHTML = `<select id="expPivotFocus" class="form-control export-control-input" style="min-width:170px;" onchange="refreshExportPreview()">
+            <option value="">全部供应商</option>
+            ${exportCenterState.suppliers.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}
+        </select>`;
+    } else {
+        wrap.innerHTML = `<select id="expPivotFocus" class="form-control export-control-input" style="width:150px;" onchange="refreshExportPreview()">
+            <option value="">全部部门</option>
+            ${exportCenterState.departments.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('')}
+        </select>`;
+    }
+    const sel = document.getElementById('expPivotFocus');
+    if (sel && prev) sel.value = prev; // 切维度后原值通常不适用，sel.value 静默回退到 ''
+    wrap.dataset.prevValue = sel ? sel.value : '';
+}
+
+// FILTERS: 文本类筛选防抖（300ms），避免每敲一个字符就打一次后端
+let _exportSearchTimer = null;
+function handleExportSearchInput(inputId) {
+    clearTimeout(_exportSearchTimer);
+    _exportSearchTimer = setTimeout(() => refreshExportPreview(), 300);
 }
 
 // 设置快捷时间跨度并联动输入框
@@ -476,6 +713,82 @@ function collectExportParams() {
         if (dishSt && dishSt.value) p.dish_status = dishSt.value;
     }
 
+    if (filters.includes('cost_granularity')) {
+        const gran = document.getElementById('expCostGranularity');
+        if (gran && gran.value) p.cost_granularity = gran.value;
+    }
+
+    if (filters.includes('spend_pivot')) {
+        const pivot = document.getElementById('expSpendPivot');
+        if (pivot && pivot.value) p.spend_pivot = pivot.value;
+    }
+
+    // ---- FILTERS-§8: 新增筛选参数（全部空值不入参，保持"空=不过滤"契约） ----
+    if (filters.includes('keyword')) {
+        const kw = document.getElementById('expKeyword');
+        if (kw && kw.value.trim()) p.keyword = kw.value.trim();
+    }
+    if (filters.includes('paid_status')) {
+        const el = document.getElementById('expPaidStatus');
+        if (el && el.value && el.value !== 'all') p.paid_status = el.value;
+    }
+    if (filters.includes('amount_range')) {
+        const mn = document.getElementById('expAmountMin');
+        const mx = document.getElementById('expAmountMax');
+        if (mn && mn.value !== '') p.amount_min = mn.value;
+        if (mx && mx.value !== '') p.amount_max = mx.value;
+    }
+    if (filters.includes('currency')) {
+        const el = document.getElementById('expCurrency');
+        if (el && el.value.trim()) p.currency = el.value.trim();
+    }
+    if (filters.includes('margin_threshold')) {
+        const el = document.getElementById('expMarginPctMax');
+        if (el && el.value !== '') p.margin_pct_max = el.value;
+    }
+    if (filters.includes('dish_category')) {
+        const el = document.getElementById('expDishCategory');
+        if (el && el.value) p.dish_category = el.value;
+    }
+    if (filters.includes('only_suggested')) {
+        const el = document.getElementById('expOnlySuggested');
+        if (el && el.checked) p.only_suggested = 'true';
+    }
+    if (filters.includes('direction')) {
+        const el = document.getElementById('expDirection');
+        if (el && el.value && el.value !== 'all') p.direction = el.value;
+    }
+    if (filters.includes('threshold_override')) {
+        const el = document.getElementById('expThresholdPct');
+        if (el && el.value !== '') p.threshold_pct = el.value;
+    }
+    if (filters.includes('window_days')) {
+        const el = document.getElementById('expWindowDays');
+        if (el && el.value && el.value !== '30') p.window_days = el.value;
+    }
+    if (filters.includes('pivot_focus')) {
+        const focus = document.getElementById('expPivotFocus');
+        if (focus && focus.value) {
+            // 按当前透视维度落参数名：按部门 → department_id；按供应商 → supplier_id
+            const pivotSel = document.getElementById('expSpendPivot');
+            const isSupplier = pivotSel && pivotSel.value === 'supplier';
+            if (isSupplier) p.supplier_id = focus.value;
+            else p.department_id = focus.value;
+        }
+    }
+    if (filters.includes('receipt_ref')) {
+        const el = document.getElementById('expReceiptRef');
+        if (el && el.value.trim()) p.receipt_ref = el.value.trim();
+    }
+    if (filters.includes('vendor_keyword')) {
+        const el = document.getElementById('expVendorKeyword');
+        if (el && el.value.trim()) p.vendor = el.value.trim();
+    }
+    if (filters.includes('value_min')) {
+        const el = document.getElementById('expValueMin');
+        if (el && el.value !== '') p.value_min = el.value;
+    }
+
     if (report.supports_drafts) {
         const incNon = document.getElementById('expIncludeNonApproved');
         if (incNon) p.include_non_approved = incNon.checked ? 1 : 0;
@@ -556,6 +869,188 @@ function refreshExportPreview() {
 }
 
 // 渲染预览表格及汇总胶囊
+// 列对齐判定：按表头语义词归类右对齐（金额/数量）或居中（日期/状态）。
+// 供预览渲染与虚拟滚动窗口复用。
+function exportColAlignClass(h) {
+    if (!h) return '';
+    const s = String(h);
+    if (s.includes('金额') || s.includes('价') || s.includes('库存') || s.includes('数量') ||
+        s.includes('率') || s.includes('总额') || s.includes('差异') || s.includes('幅度') ||
+        s.includes('比') || s.includes('成本') || s.includes('毛利') || s.includes('份数') ||
+        s.includes('货值') || s.includes('警戒线') || s.includes('实盘') || s.includes('均价')) {
+        return 'col-right';
+    }
+    if (s.includes('日期') || s.includes('类型') || s.includes('单位') || s.includes('状态') ||
+        s.includes('签字') || s.includes('分类') || s.includes('模式') || s.includes('级别') ||
+        h.includes('ID') || h.includes('编号') || s.includes('ID') || s.includes('编号') || s.includes('单号') || s.includes('凭证')) {
+        return 'col-center';
+    }
+    return '';
+}
+
+// 行 HTML 构建（预览渲染 / 虚拟滚动窗口 / 打印全量 三处共用，保证口径一致）
+function buildExportRowsHtml(rows, headers) {
+    let html = '';
+    rows.forEach(r => {
+        html += '<tr>';
+        r.forEach((cell, idx) => {
+            const h = headers[idx] || '';
+            const alignClass = exportColAlignClass(h);
+            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
+            const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
+
+            // 特殊样式高亮（统一为胶囊徽标）
+            // 已知债（A5，本次不修）：徽标判定靠单元格文本子串猜测（'异常'/'正常'…），
+            // 后端文案措辞变化会静默失效。正道是后端在 summary/单元格元数据里显式下发
+            // 语义标记（如 {text, tone}），待下一轮重构处理。
+            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
+            // 写进 innerHTML 的形态用转义后的文本（先转义再包徽标，避免二次解码）
+            const cellText = (cell === null || cell === undefined) ? '-' : String(cell);
+            let cellContent = esc(cellText);
+            if (cellText.includes('异常') || cellText.includes('低库存') || cellText.includes('承压') || cellText.includes('跌价') || cellText.includes('逾期') || cellText.includes('预警') || cellText.includes('异动')) {
+                cellContent = `<span class="badge badge-danger">${cellContent}</span>`;
+            } else if (cellText.includes('已入账') || cellText.includes('正常') || cellText.includes('稳定') || cellText.includes('下降') || cellText.includes('已审批') || cellText.includes('充足') || cellText.includes('健康')) {
+                cellContent = `<span class="badge badge-success">${cellContent}</span>`;
+            }
+
+            html += `<td class="${alignClass} ${wrapClass}">${cellContent}</td>`;
+        });
+        html += '</tr>';
+    });
+    return html;
+}
+
+// ========== 虚拟滚动（全量预览的 DOM 性能保障） ==========
+// 策略：行数 ≤ 阈值照常一次性渲染；超过则只渲染可视窗口 ± 过扫描行，
+// 用上下两条占位 <tr> 撑起真实总滚动高度。行高带实测修正缓存：
+// 默认估算值，行渲染进 DOM 后回读实测高度修正缓存（长品名折行行高更高），避免滚动跳动。
+const EXPORT_VIRTUAL_THRESHOLD = 80;   // 超过该行数才虚拟化，小表直接全渲染
+const EXPORT_VIRTUAL_OVERSCAN = 8;     // 视口外上下各多渲染的缓冲行数
+const EXPORT_VIRTUAL_DEFAULT_ROW_H = 44;
+
+const exportVirtualState = {
+    active: false,
+    rows: [],
+    headers: [],
+    tbody: null,
+    container: null,
+    heights: [],           // 每行高度（0 = 未实测，取默认估算值）
+    totalH: 0,
+    start: -1,
+    end: -1,
+    scrollBound: false,
+};
+// 虚拟滚动状态显式挂 window：与 exportCenterState 同惯例，供控制台调试与 e2e 探针
+window.exportVirtualState = exportVirtualState;
+
+function resetExportVirtual() {
+    exportVirtualState.active = false;
+    exportVirtualState.rows = [];
+    exportVirtualState.headers = [];
+    exportVirtualState.tbody = null;
+    exportVirtualState.heights = [];
+    exportVirtualState.totalH = 0;
+    exportVirtualState.start = -1;
+    exportVirtualState.end = -1;
+}
+
+function _virtualPrefixSums() {
+    // P[i] = 第 i 行顶边的纵向偏移；P[n] = 总滚动高度
+    const n = exportVirtualState.heights.length;
+    const P = new Array(n + 1);
+    P[0] = 0;
+    for (let i = 0; i < n; i++) {
+        P[i + 1] = P[i] + (exportVirtualState.heights[i] || EXPORT_VIRTUAL_DEFAULT_ROW_H);
+    }
+    return P;
+}
+
+function _virtualIndexForOffset(P, offset) {
+    // 在前缀和上二分：返回最后一个 P[idx] <= offset 的行号（即 offset 落在哪一行）
+    let lo = 0, hi = P.length - 2, ans = 0;
+    while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (P[mid] <= offset) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return ans;
+}
+
+function startExportVirtual(tbody, rows, headers) {
+    const s = exportVirtualState;
+    s.active = true;
+    s.rows = rows;
+    s.headers = headers;
+    s.tbody = tbody;
+    s.heights = new Array(rows.length).fill(0);
+    s.start = -1;
+    s.end = -1;
+    s.container = tbody.closest('.table-container') || tbody.parentElement;
+    if (s.container && !s.scrollBound) {
+        s.scrollBound = true;
+        // 时间节流（50ms）而非 rAF：rAF 在页签不可见时会被浏览器暂停，
+        // 程序化滚动（如打印前定位）会拿不到重渲染。窗口渲染只有 ~20 行，开销可忽略。
+        let lastTick = 0;
+        s.container.addEventListener('scroll', () => {
+            const now = Date.now();
+            if (now - lastTick < 50) {
+                // 尾部兜底：最后一次滚动若落在节流窗内，延迟补渲一次，避免停在旧窗口
+                clearTimeout(s._trailTimer);
+                s._trailTimer = setTimeout(() => {
+                    if (exportVirtualState.active) renderExportVirtualWindow();
+                }, 60);
+                return;
+            }
+            lastTick = now;
+            if (exportVirtualState.active) renderExportVirtualWindow();
+        });
+    }
+    if (s.container) s.container.scrollTop = 0;
+    renderExportVirtualWindow();
+}
+
+function renderExportVirtualWindow() {
+    const s = exportVirtualState;
+    if (!s.active || !s.tbody || !s.container) return;
+
+    const n = s.rows.length;
+    const viewportH = s.container.clientHeight || 460;
+    const scrollTop = s.container.scrollTop;
+    const colspan = Math.max(s.headers.length, 1);
+
+    // 实测修正最多回环 2 次：首渲估算 → 量实高 → 位置可能漂移 → 再校正一次
+    for (let pass = 0; pass < 2; pass++) {
+        const P = _virtualPrefixSums();
+        const startRaw = _virtualIndexForOffset(P, scrollTop);
+        const endRaw = _virtualIndexForOffset(P, scrollTop + viewportH) + 1;
+        const start = Math.max(0, startRaw - EXPORT_VIRTUAL_OVERSCAN);
+        const end = Math.min(n, endRaw + EXPORT_VIRTUAL_OVERSCAN);
+
+        if (pass === 0 && start === s.start && end === s.end && s.totalH === P[n]) return;
+        s.start = start; s.end = end; s.totalH = P[n];
+
+        const spacerTop = P[start];
+        const spacerBottom = P[n] - P[end];
+        const windowHtml = buildExportRowsHtml(s.rows.slice(start, end), s.headers);
+        s.tbody.innerHTML =
+            `<tr class="virtual-spacer"><td colspan="${colspan}" style="height:${spacerTop}px; padding:0; border:none;"></td></tr>` +
+            windowHtml +
+            `<tr class="virtual-spacer"><td colspan="${colspan}" style="height:${spacerBottom}px; padding:0; border:none;"></td></tr>`;
+
+        // 回读本窗口实高，修正缓存（折行行比估算高/矮都会导致后续窗口定位漂移）
+        let dirty = false;
+        const trs = s.tbody.querySelectorAll('tr:not(.virtual-spacer)');
+        trs.forEach((tr, i) => {
+            const idx = start + i;
+            const h = Math.round(tr.getBoundingClientRect().height);
+            if (h > 0 && (s.heights[idx] || 0) !== h) {
+                s.heights[idx] = h;
+                dirty = true;
+            }
+        });
+        if (!dirty) break;
+    }
+}
+
 function renderExportPreviewUI(data) {
     const titleEl = document.getElementById('exportActiveReportTitle');
     if (titleEl) titleEl.innerText = data.title || '报表实时数据预览';
@@ -575,28 +1070,10 @@ function renderExportPreviewUI(data) {
     const tbody = document.getElementById('exportPreviewTbody');
     if (!thead || !tbody) return;
 
-    // 统一列对齐判定逻辑
-    const getColAlignClass = (headerText) => {
-        if (!headerText) return '';
-        const h = String(headerText);
-        if (h.includes('金额') || h.includes('价') || h.includes('库存') || h.includes('数量') || 
-            h.includes('率') || h.includes('总额') || h.includes('差异') || h.includes('幅度') || 
-            h.includes('比') || h.includes('成本') || h.includes('毛利') || h.includes('份数') || 
-            h.includes('货值') || h.includes('警戒线') || h.includes('实盘') || h.includes('均价')) {
-            return 'col-right';
-        }
-        if (h.includes('日期') || h.includes('类型') || h.includes('单位') || h.includes('状态') || 
-            h.includes('签字') || h.includes('分类') || h.includes('模式') || h.includes('级别') ||
-            h.includes('ID') || h.includes('编号') || h.includes('单号') || h.includes('凭证')) {
-            return 'col-center';
-        }
-        return '';
-    };
-
     // 表头
     let headHtml = '<tr>';
     (data.headers || []).forEach(h => {
-        const alignClass = getColAlignClass(h);
+        const alignClass = exportColAlignClass(h);
         headHtml += `<th class="${alignClass}" style="white-space:nowrap;">${esc(h)}</th>`;
     });
     headHtml += '</tr>';
@@ -607,35 +1084,17 @@ function renderExportPreviewUI(data) {
     if (rows.length === 0) {
         // AC-6: 100% 人话直白展示空状态，杜绝任何技术黑话
         tbody.innerHTML = `<tr><td colspan="${(data.headers && data.headers.length) || 1}" class="col-center" style="padding:48px 16px; text-align:center; color:var(--text-muted); font-size:0.95rem;">在这个时间段内没有找到任何单据记录，请检查日期或切换分类</td></tr>`;
+        resetExportVirtual();
         return;
     }
 
-    let bodyHtml = '';
-    rows.forEach(r => {
-        bodyHtml += '<tr>';
-        r.forEach((cell, idx) => {
-            const h = data.headers[idx] || '';
-            const alignClass = getColAlignClass(h);
-            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
-            const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
-            
-            // 特殊样式高亮（统一为胶囊徽标）
-            let cellStyle = '';
-            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
-            // 写进 innerHTML 的形态用转义后的文本（先转义再包徽标，避免二次解码）
-            const cellText = (cell === null || cell === undefined) ? '-' : String(cell);
-            let cellContent = esc(cellText);
-            if (cellText.includes('异常') || cellText.includes('低库存') || cellText.includes('承压') || cellText.includes('跌价') || cellText.includes('逾期') || cellText.includes('预警') || cellText.includes('异动')) {
-                cellContent = `<span class="badge badge-danger">${cellContent}</span>`;
-            } else if (cellText.includes('已入账') || cellText.includes('正常') || cellText.includes('稳定') || cellText.includes('下降') || cellText.includes('已审批') || cellText.includes('充足') || cellText.includes('健康')) {
-                cellContent = `<span class="badge badge-success">${cellContent}</span>`;
-            }
-
-            bodyHtml += `<td class="${alignClass} ${wrapClass}" style="${cellStyle}">${cellContent}</td>`;
-        });
-        bodyHtml += '</tr>';
-    });
-    tbody.innerHTML = bodyHtml;
+    // 全量预览的 DOM 性能保障：行数超阈值时启用虚拟滚动，只渲染可视窗口 + 过扫描缓冲
+    if (rows.length > EXPORT_VIRTUAL_THRESHOLD) {
+        startExportVirtual(tbody, rows, data.headers || []);
+    } else {
+        resetExportVirtual();
+        tbody.innerHTML = buildExportRowsHtml(rows, data.headers || []);
+    }
 }
 
 // 执行标准 CSV 下载（带 UTF-8 BOM）
@@ -714,7 +1173,11 @@ function printExportReport() {
     // 表结构必须保持为 HTML 才能渲染，故不二次转义（转义会让整张表退化成源码文本）。
     const title = document.getElementById('exportActiveReportTitle')?.innerText || '报表打印';
     const thead = document.getElementById('exportPreviewThead')?.innerHTML || '';
-    const tbody = document.getElementById('exportPreviewTbody')?.innerHTML || '';
+    // 虚拟滚动激活时 on-screen tbody 只有可视窗口行，打印必须用全量数据重建，
+    // 保证打印件与导出 CSV 同口径（盘点底单少一行都是现场对不上账）。
+    const tbody = exportVirtualState.active
+        ? buildExportRowsHtml(exportVirtualState.rows, exportVirtualState.headers)
+        : document.getElementById('exportPreviewTbody')?.innerHTML || '';
     const summary = document.getElementById('exportPreviewSummary')?.innerText || '';
 
     const printWin = window.open('', '_blank', 'width=960,height=720');

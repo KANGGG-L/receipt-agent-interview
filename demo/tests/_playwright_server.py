@@ -38,13 +38,13 @@ import time
 import urllib.error
 import urllib.request
 
-BASE_PORT = 15010
-BASE_URL = "http://127.0.0.1:%d" % BASE_PORT
+BASE_PORT = int(os.environ.get("PW_TEST_PORT", "15010"))
+BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "http://127.0.0.1:%d" % BASE_PORT))
 
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.abspath(os.path.join(TESTS_DIR, "../.."))
 DEMO_DIR = os.path.join(ROOT_DIR, "demo")
-LIVE_DB = os.path.join(DEMO_DIR, "receipt_demo.db")
+LIVE_DB = os.environ.get("PW_TEST_DB_SOURCE", os.path.join(DEMO_DIR, "receipt_demo.db"))
 # 服务启动器：与被测服务同进程地锁定域名 DNS 解析（见该文件 docstring）。
 LAUNCHER = os.path.join(TESTS_DIR, "_playwright_serve.py")
 
@@ -150,6 +150,8 @@ def _listener_is_pinned(port):
     不可用、或取不到监听进程）时返回 False —— 宁可判定为「不是我们的」而拒绝复用，
     也不盲目复用来源不明的服务。
     """
+    if os.environ.get("PLAYWRIGHT_REUSE_ANY_SERVER") == "1":
+        return True
     launcher_name = os.path.basename(LAUNCHER)
     for pid in _listener_pids(port):
         cmd = _process_command(pid)
@@ -184,11 +186,15 @@ def _copy_live_db():
     """
     tmp_dir = tempfile.mkdtemp(prefix="playwright_ui_db_")
     dst = os.path.join(tmp_dir, "playwright_ui.db")
-    if os.path.isfile(LIVE_DB):
+    custom_source = os.environ.get("PW_TEST_DB_SOURCE", "").strip()
+    no_live = os.environ.get("PW_TEST_NO_LIVE_DB", "").strip() == "1"
+
+    src = custom_source if (custom_source and os.path.isfile(custom_source)) else (LIVE_DB if not no_live else None)
+    if src and os.path.isfile(src):
         try:
-            shutil.copy2(LIVE_DB, dst)
+            shutil.copy2(src, dst)
             for suffix in ("-wal", "-shm"):
-                side = LIVE_DB + suffix
+                side = src + suffix
                 if os.path.isfile(side):
                     shutil.copy2(side, dst + suffix)
         except OSError:
@@ -202,7 +208,7 @@ def _acquire_start_lock():
     平台不支持 fcntl（如 Windows）时静默降级为「无锁」：单进程顺序执行不受影响，
     退化为与既有 ensure_server() 同级的并发表现，不会因此报错。
     """
-    lock_path = os.path.join(tempfile.gettempdir(), "receipt_demo_playwright_15010.lock")
+    lock_path = os.path.join(tempfile.gettempdir(), "receipt_demo_playwright_%d.lock" % BASE_PORT)
     try:
         handle = open(lock_path, "w")
     except OSError:

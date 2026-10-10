@@ -2,13 +2,13 @@
 """
 统一报表与数据导出中心验收准则规范 (AC-1 至 AC-12) 自动化测试套件
 覆盖:
-- AC-1: 报表元数据完备性 (14套报表，4大业务域)
+- AC-1: 报表元数据完备性 (8张报表，3个使用者组——已被 REFACTOR_NEEDS_ANALYSIS 第 7 节重设计取代原 14 报表/4 业务域)
 - AC-2: UTF-8 BOM 字节流与 RFC 5987 文件名编码
 - AC-3: CSV 公式注入攻击防御 (=, +, -, @, \\t, \\r 前置单引号转义) 与特殊字符转义
 - AC-4: 按钮与输入控件触控高度 (>= 38px) 及 WCAG AA 对比度合规
 - AC-5: 日期倒置防呆与服务端自动纠偏
 - AC-6: 空数据状态与 0 记录拦截
-- AC-7: 实时抽样截断 (前 15 行) 与流式响应
+- AC-7: 实时预览全量契约 (2026-10-06 修订：返回全量行，无截断)
 - AC-8: 脱敏模式开关与供应商名/电话掩码一致性
 - AC-9: A4 实地盘点底单打印留白与三级下划线签名栏
 - AC-10: 财务精度与零除容错 (保留两位小数、代数一致性)
@@ -33,15 +33,15 @@ def client():
 
 
 def test_ac1_reports_metadata_contract(client):
-    """[AC-1] 四大业务域 14 套标准报表元数据契约与定义完备性"""
+    """[AC-1] 三个使用者组 8 张标准报表元数据契约与定义完备性 (14→8 重构后)"""
     res = client.get("/api/export/reports", headers={"X-Role": "staff"})
     assert res.status_code == 200
     body = res.json()
     assert body.get("status") == "success"
     data = body.get("data", [])
-    assert len(data) == 14, f"报表数量必须严格等于14，当前为 {len(data)}"
+    assert len(data) == 8, f"报表数量必须严格等于8，当前为 {len(data)}"
 
-    # 分类计数
+    # 分类计数（3 个使用者组：盘点与补货 2 / 经营与毛利 4 / 台账与合规 2）
     cat_counts = {}
     for r in data:
         cat = r.get("category")
@@ -50,10 +50,24 @@ def test_ac1_reports_metadata_contract(client):
         for field in ("id", "category", "category_name", "title", "description", "filters"):
             assert r.get(field), f"报表 {r.get('id')} 缺少字段: {field}"
 
-    assert cat_counts.get("inventory") == 4, "inventory 域必须有 4 个报表"
-    assert cat_counts.get("dishes") == 4, "dishes 域必须有 4 个报表"
-    assert cat_counts.get("suppliers") == 4, "suppliers 域必须有 4 个报表"
-    assert cat_counts.get("department") == 2, "department 域必须有 2 个报表"
+    assert cat_counts.get("stocktake") == 2, "stocktake 组（盘点与补货）必须有 2 个报表"
+    assert cat_counts.get("business") == 4, "business 组（经营与毛利）必须有 4 个报表"
+    assert cat_counts.get("ledger") == 2, "ledger 组（台账与合规）必须有 2 个报表"
+
+    # 被裁报表不得回流（移除项回归守卫）
+    removed_ids = {
+        "supplier_payables_aging",
+        "supplier_payments_journal",
+        "supplier_recon_discrepancies",
+        "dish_bom_recipes",
+        "department_cost_summary",
+        "department_items_breakdown",
+        "dish_daily_sales_cost",
+        "dish_margin_variance",
+    }
+    actual_ids = {r["id"] for r in data}
+    assert not (actual_ids & removed_ids), f"被裁报表回流: {actual_ids & removed_ids}"
+    assert {"dish_cost_margin", "spend_summary"} <= actual_ids, "合并报表缺失"
 
 
 def test_ac2_csv_utf8_bom_and_rfc5987(client):
@@ -149,7 +163,7 @@ def test_ac6_empty_state_contract(client):
 
 
 def test_ac7_preview_sampling_limit(client):
-    """[AC-7] 实时预览抽样性能与大数据量流式响应门禁 (最多返回 15 条抽样行)"""
+    """[AC-7] 实时预览全量契约 (2026-10-06 修订：preview 返回全量行，与导出同口径，无截断)"""
     res = client.post(
         "/api/export/preview",
         json={"report_id": "inventory_stocktake", "params": {}},
@@ -159,7 +173,11 @@ def test_ac7_preview_sampling_limit(client):
     body = res.json()
     data = body.get("data", {})
     preview_rows = data.get("preview_rows", [])
-    assert len(preview_rows) <= 15, f"预览行数不得超过15条，当前为 {len(preview_rows)}"
+    total_rows = data.get("total_rows", 0)
+    assert len(preview_rows) == total_rows, (
+        f"预览必须返回全量行，当前 {len(preview_rows)} vs total {total_rows}"
+    )
+    assert "truncated" not in data, "全量预览契约下不得残留 truncated 字段"
 
 
 def test_ac8_desensitization_masking_consistency(client):
@@ -219,23 +237,26 @@ def test_ac9_print_template_requirements():
 
 
 def test_ac10_financial_precision_and_zero_division(client):
-    """[AC-10] 财务核算与 FIFO 成本/毛利偏差计算精度规范"""
-    # 每日销售成本表精度
+    """[AC-10] 财务核算与 FIFO 成本/毛利偏差计算精度规范 (合并后 dish_cost_margin 按日粒度)"""
+    # 菜品成本与毛利表（按日粒度）精度
     res = client.post(
         "/api/export/preview",
-        json={"report_id": "dish_daily_sales_cost", "params": {}},
+        json={
+            "report_id": "dish_cost_margin",
+            "params": {"cost_granularity": "daily"},
+        },
         headers={"X-Role": "staff"},
     )
     assert res.status_code == 200
     data = res.json()["data"]
     rows = data.get("preview_rows", [])
     for r in rows:
-        # 单份售价、营业总额、FIFO食材成本均保留2位小数
-        dish_p = float(r[3])
-        sales = float(r[4])
-        cost = float(r[5])
-        margin = float(r[6])
-        margin_pct_str = r[7]
+        # 在售标价、营业总额、FIFO食材成本均保留2位小数
+        dish_p = float(r[4])
+        sales = float(r[5])
+        cost = float(r[6])
+        margin = float(r[7])
+        margin_pct_str = r[8]
         assert margin_pct_str.endswith("%")
         assert round(sales - cost, 2) == round(margin, 2)
 
@@ -258,7 +279,7 @@ def test_ac11_multi_tenant_isolation(client):
 
 
 def test_ac12_rbac_staff_vs_owner_restriction(client):
-    """[AC-12] 角色权限控制与店员/老板越权阻断"""
+    """[AC-12] 角色权限控制与店员/老板越权阻断 (合并后敏感报表: spend_summary)"""
     # 店员访问普通报表: 允许
     res_stock = client.post(
         "/api/export/preview",
@@ -267,10 +288,10 @@ def test_ac12_rbac_staff_vs_owner_restriction(client):
     )
     assert res_stock.status_code == 200
 
-    # 店员访问敏感老板专属报表 department_cost_summary: 阻断并返回人话提示
+    # 店员访问敏感老板专属报表 spend_summary: 阻断并返回人话提示
     res_dept = client.post(
         "/api/export/preview",
-        json={"report_id": "department_cost_summary", "params": {}},
+        json={"report_id": "spend_summary", "params": {}},
         headers={"X-Role": "staff"},
     )
     assert res_dept.status_code == 403
@@ -279,7 +300,16 @@ def test_ac12_rbac_staff_vs_owner_restriction(client):
     # 老板访问敏感报表: 允许
     res_owner = client.post(
         "/api/export/preview",
-        json={"report_id": "department_cost_summary", "params": {}},
+        json={"report_id": "spend_summary", "params": {}},
         headers={"X-Role": "owner"},
     )
     assert res_owner.status_code == 200
+
+    # A2: 门禁同样覆盖 download 端点（preview 与 download 共用同一实现，不得只堵一头）
+    res_dept_dl = client.post(
+        "/api/export/download",
+        json={"report_id": "spend_summary", "params": {}},
+        headers={"X-Role": "staff"},
+    )
+    assert res_dept_dl.status_code == 403
+    assert "需老板或管理人员权限查看" in res_dept_dl.json().get("detail", "")

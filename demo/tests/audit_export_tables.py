@@ -141,40 +141,46 @@ def main():
 
         targets = [
             {
-                "category": "inventory",
+                "category": "stocktake",
                 "report_id": "inventory_stocktake",
                 "title": "实时库存盘点底单 (现场核对版)",
                 "screenshot": "export_audit_stocktake_fixed.png"
             },
             {
-                "category": "inventory",
+                "category": "stocktake",
+                "report_id": "dish_ingredient_consumption",
+                "title": "采购补货建议清单",
+                "screenshot": "export_audit_replenish_fixed.png"
+            },
+            {
+                "category": "business",
                 "report_id": "inventory_valuation",
-                "title": "实时库存台账与货值盘点表",
+                "title": "库存货值结存表",
                 "screenshot": "export_audit_valuation_fixed.png"
             },
             {
-                "category": "dishes",
-                "report_id": "dish_bom_recipes",
-                "title": "餐品标准 BOM 结构与理论毛利表",
-                "screenshot": "export_audit_dish_bom_fixed.png"
+                "category": "business",
+                "report_id": "dish_cost_margin",
+                "title": "菜品成本与毛利表",
+                "screenshot": "export_audit_dish_cost_margin_fixed.png"
             },
             {
-                "category": "suppliers",
+                "category": "business",
+                "report_id": "spend_summary",
+                "title": "期间花销汇总表",
+                "screenshot": "export_audit_spend_summary_fixed.png"
+            },
+            {
+                "category": "ledger",
                 "report_id": "receipts_itemized_ledger",
-                "title": "采购收据入账全量明细台账 (财务归档)",
+                "title": "采购入账明细台账 (财务归档)",
                 "screenshot": "export_audit_ledger_fixed.png"
             },
             {
-                "category": "suppliers",
-                "report_id": "supplier_payables_aging",
-                "title": "供应商应付账款与账龄对账表",
-                "screenshot": "export_audit_aging_fixed.png"
-            },
-            {
-                "category": "department",
-                "report_id": "department_cost_summary",
-                "title": "各部门/档口物料采购花销汇总",
-                "screenshot": "export_audit_dept_summary_fixed.png"
+                "category": "ledger",
+                "report_id": "inventory_stock_logs",
+                "title": "出入库全量流水台账",
+                "screenshot": "export_audit_stock_logs_fixed.png"
             }
         ]
 

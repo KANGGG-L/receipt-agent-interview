@@ -69,7 +69,7 @@ class DishIngredientItem(BaseModel):
 
 class DishCreate(BaseModel):
     name: str
-    category: Optional[str] = ""
+    category: Optional[str] = "默认"
     price: float = 0.0
     description: Optional[str] = ""
     status: Optional[str] = "active"
@@ -121,10 +121,14 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None) -> Dict:
     gross_profit = round(price - theoretical_cost, 2)
     gross_margin_rate = round((price - theoretical_cost) / price * 100, 2) if price > 0 else 0.0
 
+    cat_val = (dish_row.category or "").strip()
+    if not cat_val or cat_val == "其他":
+        cat_val = "默认"
+
     return {
         "id": dish_row.id,
         "name": dish_row.name,
-        "category": dish_row.category or "",
+        "category": cat_val,
         "price": price,
         "description": dish_row.description or "",
         "status": dish_row.status or "active",
@@ -251,7 +255,17 @@ def list_dishes(
         if status and status != "all":
             query = query.filter(db._DishRow.status == status)
         if category:
-            query = query.filter(db._DishRow.category == category)
+            if category == "默认":
+                query = query.filter(
+                    or_(
+                        db._DishRow.category == "默认",
+                        db._DishRow.category == "",
+                        db._DishRow.category == "其他",
+                        db._DishRow.category.is_(None),
+                    )
+                )
+            else:
+                query = query.filter(db._DishRow.category == category)
 
         rows = query.order_by(db._DishRow.id.desc()).all()
         out = []
@@ -260,8 +274,12 @@ def list_dishes(
         for r in rows:
             if q_clean:
                 name_clean = (r.name or "").lower()
-                cat_clean = (r.category or "").lower()
-                if q_clean not in name_clean and q_clean not in cat_clean:
+                r_cat = (r.category or "").strip()
+                if not r_cat or r_cat == "其他":
+                    r_cat = "默认"
+                cat_clean = r_cat.lower()
+                desc_clean = (r.description or "").lower()
+                if q_clean not in name_clean and q_clean not in cat_clean and q_clean not in desc_clean:
                     continue
             out.append(_dish_to_dict(session, r, _tenant_id(request)))
 
@@ -317,7 +335,7 @@ def get_cost_analysis(
             dish_stats[d_id] = {
                 "id": d_id,
                 "name": d_obj.name,
-                "category": d_obj.category,
+                "category": dish_dict["category"],
                 "price": d_obj.price,
                 "theoretical_cost": dish_dict["theoretical_cost"],
                 "total_sold_quantity": 0.0,
@@ -386,6 +404,53 @@ def get_cost_analysis(
         total_gp_all = round(total_rev_all - total_cost_all, 2)
         overall_gm = round(total_gp_all / total_rev_all * 100, 2) if total_rev_all > 0 else 0.0
 
+        # 波士顿 / Kasavana-Smith 菜单工程四象限矩阵分类 (AC-18)
+        sold_quantities = [st["total_sold_quantity"] for st in dish_stats.values()]
+        gross_profits = [st["total_gross_profit"] for st in dish_stats.values()]
+
+        def _calc_median(lst):
+            if not lst:
+                return 0.0
+            sorted_lst = sorted(lst)
+            n = len(sorted_lst)
+            mid = n // 2
+            if n % 2 == 1:
+                return float(sorted_lst[mid])
+            return round((sorted_lst[mid - 1] + sorted_lst[mid]) / 2.0, 4)
+
+        median_sales = _calc_median(sold_quantities)
+        median_profit = _calc_median(gross_profits)
+        quadrant_counts = {"stars": 0, "plowhorses": 0, "puzzles": 0, "dogs": 0}
+
+        for st in dish_stats.values():
+            is_high_sales = (st["total_sold_quantity"] >= median_sales) if median_sales > 0 else (st["total_sold_quantity"] > 0)
+            is_high_profit = (st["total_gross_profit"] >= median_profit) if median_profit > 0 else (st["total_gross_profit"] > 0)
+
+            if is_high_sales and is_high_profit:
+                st["menu_engineering_quadrant"] = "stars"
+                st["menu_engineering_name"] = "明星菜"
+                st["strategy_label"] = "[STAR:保持品质/主推]"
+                st["strategy_suggestion"] = "维持标准与高品质，置于菜单视觉中心，坚决不能降质降量"
+                quadrant_counts["stars"] += 1
+            elif is_high_sales and not is_high_profit:
+                st["menu_engineering_quadrant"] = "plowhorses"
+                st["menu_engineering_name"] = "金牛菜"
+                st["strategy_label"] = "[PLOWHORSE:提效/微调配方]"
+                st["strategy_suggestion"] = "提高流转速度；微调配方出成率；或搭配高毛利配菜打包销售"
+                quadrant_counts["plowhorses"] += 1
+            elif not is_high_sales and is_high_profit:
+                st["menu_engineering_quadrant"] = "puzzles"
+                st["menu_engineering_name"] = "问号菜"
+                st["strategy_label"] = "[PUZZLE:营销激活/优化展示]"
+                st["strategy_suggestion"] = "加大前台推销力度；优化菜品命名与图片；限时特惠激活尝试"
+                quadrant_counts["puzzles"] += 1
+            else:
+                st["menu_engineering_quadrant"] = "dogs"
+                st["menu_engineering_name"] = "瘦狗菜"
+                st["strategy_label"] = "[DOG:果断淘汰/重构BOM]"
+                st["strategy_suggestion"] = "果断淘汰下架；或者彻底重构配方 BOM；释放后厨备料工位与冷库空间"
+                quadrant_counts["dogs"] += 1
+
         has_zero_cost_batch = False
         estimated_batches_count = 0
         if consumptions:
@@ -423,6 +488,11 @@ def get_cost_analysis(
             "estimated_batches_count": estimated_batches_count,
             "data_integrity_status": data_integrity_status,
             "data_integrity_msg": data_integrity_msg,
+            "menu_engineering": {
+                "median_sales": median_sales,
+                "median_profit": median_profit,
+                "quadrant_counts": quadrant_counts,
+            },
         }
 
         return {
@@ -519,7 +589,9 @@ def get_daily_consumption(
             dish = session.get(db._DishRow, r.dish_id)
             dish_name = dish.name if dish else f"未知餐品#{r.dish_id}"
             dish_price = dish.price if dish else 0.0
-            dish_category = dish.category if dish else ""
+            dish_category = (dish.category if dish else "") or "默认"
+            if dish_category == "其他":
+                dish_category = "默认"
 
             # 查询关联的扣减明细
             details_rows = (
@@ -620,7 +692,7 @@ def get_daily_consumption(
 
 @router.get("/api/dishes/categories")
 def list_dish_categories(request: Request):
-    """查询当前租户餐品分类（distinct 非空）及每类引用餐品数。"""
+    """查询当前租户餐品分类（distinct 非空）及每类引用餐品数，强制包含「默认」兜底。"""
     require_role("staff")(request)
     session = db.get_session()
     try:
@@ -630,8 +702,11 @@ def list_dish_categories(request: Request):
         counter = defaultdict(int)
         for r in rows:
             cat = (r.category or "").strip()
-            if cat:
-                counter[cat] += 1
+            if not cat or cat == "其他":
+                cat = "默认"
+            counter[cat] += 1
+        if "默认" not in counter:
+            counter["默认"] = 0
         data = [
             {"name": name, "count": count}
             for name, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
@@ -642,17 +717,32 @@ def list_dish_categories(request: Request):
 
 
 @router.delete("/api/dishes/categories/{name}")
-def delete_dish_category(name: str, request: Request, replace_with: str = "其他"):
-    """删除餐品分类：把引用该分类的餐品 category 改写为 replace_with（空字符串表示清空归类），返回受影响条数。"""
+def delete_dish_category(name: str, request: Request, replace_with: Optional[str] = None):
+    """删除餐品分类：把引用该分类的餐品 category 改写为 replace_with（默认收敛至「默认」），返回受影响条数。"""
     require_role("owner")(request)
     session = db.get_session()
     try:
-        cat = name.strip()
+        cat = (name or "").strip()
         if not cat:
             return JSONResponse(status_code=400, content={"status": "error", "msg": "分类名称不能为空"})
-        replace = (replace_with or "").strip()
-        if replace == cat:
-            return JSONResponse(status_code=400, content={"status": "error", "msg": "请选择一个与被删除分类不同的替代分类"})
+
+        # 禁止删除或修改内置「默认」分类
+        if cat == "默认":
+            if replace_with is not None and replace_with.strip():
+                return JSONResponse(status_code=400, content={"status": "error", "msg": "系统默认分组无法修改"})
+            return JSONResponse(status_code=400, content={"status": "error", "msg": "系统默认分组无法删除"})
+
+        # 处理 replace_with 参数：若未提供或为空，默认收敛至「默认」
+        if replace_with is None or not replace_with.strip():
+            replace = "默认"
+        else:
+            replace = replace_with.strip()
+            if replace == cat:
+                return JSONResponse(status_code=400, content={"status": "error", "msg": "请选择一个与被删除分类不同的替代分类"})
+
+        if len(replace) > 20:
+            replace = replace[:20]
+
         rows = db.scoped(
             session.query(db._DishRow).filter(db._DishRow.category == cat),
             db._DishRow, _tenant_id(request)).all()
@@ -664,7 +754,7 @@ def delete_dish_category(name: str, request: Request, replace_with: str = "其�
             r.updated_at = db.now_iso()
             affected += 1
         session.commit()
-        msg = f"分类「{cat}」已删除，{affected} 道餐品的分类已改为「{replace}」" if replace else f"分类「{cat}」已删除，{affected} 道餐品已清空分类"
+        msg = f"分类「{cat}」已删除，{affected} 道餐品的分类已改为「{replace}」"
         return {
             "status": "success",
             "data": {"name": cat, "replace_with": replace, "affected": affected},
@@ -723,9 +813,12 @@ def create_dish(body: DishCreate, request: Request):
             return JSONResponse(status_code=err_status, content=err_body)
 
         now_str = db.now_iso()
+        cat_create = (body.category or "").strip()[:20] or "默认"
+        if cat_create == "其他":
+            cat_create = "默认"
         dish = db._DishRow(
             name=name,
-            category=(body.category or "").strip(),
+            category=cat_create,
             price=round(float(body.price), 2),
             description=(body.description or "").strip(),
             status=body.status or "active",
@@ -804,7 +897,10 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
             dish.name = new_name
 
         if body.category is not None:
-            dish.category = body.category.strip()
+            new_cat = body.category.strip()[:20] or "默认"
+            if new_cat == "其他":
+                new_cat = "默认"
+            dish.category = new_cat
 
         if body.price is not None:
             if body.price < 0:
@@ -964,7 +1060,10 @@ def restore_dish_version(dish_id: int, version: int, request: Request,
                              "msg": f"回滚目标名称「{new_name}」已被其他餐品占用"})
             dish.name = new_name
         if snap_dish.get("category") is not None:
-            dish.category = (snap_dish.get("category") or "").strip()
+            snap_cat = (snap_dish.get("category") or "").strip()[:20] or "默认"
+            if snap_cat == "其他":
+                snap_cat = "默认"
+            dish.category = snap_cat
         if snap_dish.get("price") is not None:
             dish.price = round(float(snap_dish.get("price") or 0.0), 2)
         if snap_dish.get("description") is not None:

@@ -74,11 +74,181 @@ function showCustomConfirmModal({ title, message, confirmText = '确定', cancel
     };
 }
 
+// AC-06-04: 切换单据前如有未保存修改，给「保存 / 保留本地(留在当前) / 放弃并切换」三种
+// 可执行语义，而不是静默丢弃。返回 true 表示已呈现守卫弹窗（调用方应放弃本次切换）。
+function showUnsavedChangesGuard({ onSave, onDiscard, receiptLabel }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop custom-modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:999999; display:flex; align-items:center; justify-content:center;';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'width:460px; max-width:92vw; background:var(--card-bg, #fff); border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25);';
+
+    const titleEl = document.createElement('h4');
+    titleEl.style.cssText = 'margin:0 0 10px 0; font-size:1.1rem; color:var(--text-main, #333); font-weight:600;';
+    titleEl.textContent = '当前单据有未保存的修改';
+    card.appendChild(titleEl);
+
+    const msgEl = document.createElement('div');
+    msgEl.style.cssText = 'font-size:0.9rem; color:var(--text-main, #444); margin-bottom:18px; line-height:1.5;';
+    msgEl.textContent = '切换到' + (receiptLabel || '其他单据') + '会丢失这些修改。请选择：';
+    card.appendChild(msgEl);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap;';
+
+    const keepBtn = document.createElement('button');
+    keepBtn.type = 'button';
+    keepBtn.id = 'unsavedGuardKeep';
+    keepBtn.className = 'btn btn-secondary';
+    keepBtn.style.cssText = 'min-height:40px; padding:8px 14px; cursor:pointer;';
+    keepBtn.textContent = '保留本地修改 (留在当前单据)';
+
+    const discardBtn = document.createElement('button');
+    discardBtn.type = 'button';
+    discardBtn.id = 'unsavedGuardDiscard';
+    discardBtn.className = 'btn btn-danger';
+    discardBtn.style.cssText = 'min-height:40px; padding:8px 14px; cursor:pointer;';
+    discardBtn.textContent = '放弃修改并切换';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.id = 'unsavedGuardSave';
+    saveBtn.className = 'btn btn-primary';
+    saveBtn.style.cssText = 'min-height:40px; padding:8px 14px; cursor:pointer;';
+    saveBtn.textContent = '保存后再切换';
+
+    btnRow.appendChild(keepBtn);
+    btnRow.appendChild(discardBtn);
+    btnRow.appendChild(saveBtn);
+    card.appendChild(btnRow);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const keyHandler = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            keepBtn.click();
+        }
+    };
+    window.addEventListener('keydown', keyHandler);
+
+    function close() {
+        window.removeEventListener('keydown', keyHandler);
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    }
+
+    keepBtn.onclick = (e) => { e.preventDefault(); close(); };
+    discardBtn.onclick = (e) => {
+        e.preventDefault();
+        close();
+        if (typeof onDiscard === 'function') onDiscard();
+    };
+    saveBtn.onclick = (e) => {
+        e.preventDefault();
+        close();
+        if (typeof onSave === 'function') onSave();
+    };
+
+    keepBtn.focus();
+    return true;
+}
+window.showUnsavedChangesGuard = showUnsavedChangesGuard;
+
+function showCustomPromptModal({ title, message, defaultValue = '', placeholder = '', maxLength = 20, confirmText = '确定', cancelText = '取消', onConfirm, onCancel }) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop custom-modal-overlay';
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); z-index:999999; display:flex; align-items:center; justify-content:center;';
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.cssText = 'width:420px; max-width:90vw; background:var(--card-bg, #fff); border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25);';
+
+    const titleEl = document.createElement('h4');
+    titleEl.style.cssText = 'margin:0 0 10px 0; font-size:1.1rem; color:var(--text-main, #333); font-weight:600;';
+    titleEl.textContent = title || '请输入';
+    card.appendChild(titleEl);
+
+    if (message) {
+        const msgEl = document.createElement('div');
+        msgEl.style.cssText = 'font-size:0.88rem; color:var(--text-muted, #666); margin-bottom:12px; white-space:pre-wrap; line-height:1.5; word-break:break-word;';
+        msgEl.textContent = message;
+        card.appendChild(msgEl);
+    }
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'form-control';
+    input.value = defaultValue || '';
+    input.placeholder = placeholder || '';
+    if (maxLength) input.maxLength = maxLength;
+    input.style.cssText = 'width:100%; box-sizing:border-box; margin-bottom:18px; padding:8px 12px; font-size:0.9rem;';
+    card.appendChild(input);
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex; justify-content:flex-end; gap:10px;';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    cancelBtn.textContent = cancelText;
+
+    const confirmBtn = document.createElement('button');
+    confirmBtn.type = 'button';
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.style.cssText = 'padding:6px 14px; font-size:0.85rem; cursor:pointer;';
+    confirmBtn.textContent = confirmText;
+
+    btnRow.appendChild(cancelBtn);
+    btnRow.appendChild(confirmBtn);
+    card.appendChild(btnRow);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    input.focus();
+    input.select();
+
+    const keyHandler = (e) => {
+        if (e.key === 'Escape') {
+            cancelBtn.click();
+        } else if (e.key === 'Enter') {
+            confirmBtn.click();
+        }
+    };
+    window.addEventListener('keydown', keyHandler);
+
+    function close() {
+        window.removeEventListener('keydown', keyHandler);
+        if (overlay && overlay.parentNode) {
+            overlay.parentNode.removeChild(overlay);
+        }
+    }
+
+    cancelBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        if (typeof onCancel === 'function') onCancel();
+    };
+
+    confirmBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const val = input.value;
+        close();
+        if (typeof onConfirm === 'function') onConfirm(val);
+    };
+}
+
 // ==========================================================================
 // 香港餐饮 AI 收据与库存管理系统 - 前端交互逻辑
 // ==========================================================================
 //
-// 【硬规则（R0 修复后设立，P0-1..P0-4 系统性整改）】
+// 硬规则（R0 修复后设立，P0-1..P0-4 系统性整改）
 // 一切进入 innerHTML 的动态插值必须过转义：
 //   - HTML 文本/属性上下文 → w2Escape(...)
 //   - 行内 JS 字符串字面量   → jsStr(...)（或直接改事件委托 + dataset，首选）
@@ -582,12 +752,21 @@ function probeAuthAndEnter(reloadData) {
             }
             AuthState.enabled = !!(body && body.auth_enabled);
             AuthState.account = (body && body.account) || null;
+            if (AuthState.account && AuthState.account.role) {
+                if (typeof window.setRole === 'function') {
+                    window.setRole(AuthState.account.role);
+                }
+            }
             const banner = document.getElementById('demoModeBanner');
             if (banner) {
                 banner.style.display = AuthState.enabled ? 'none' : 'block';
             }
             hideLoginPanel();
             syncManualEntryVisibility();   // D12：按角色显隐「新建手工单」入口
+            // QA-P1-03: 登录/探测成功立即按角色载入工作台队列
+            if (typeof loadWorkbenchQueue === 'function') {
+                loadWorkbenchQueue(true);
+            }
             if (reloadData) {
                 // 登录前首屏拉取均 401 空手，登录后补拉
                 loadInventoryData();
@@ -1236,6 +1415,12 @@ function initDeptAdminDetails() {
     });
     renderCurrencySymbol();
 
+    // Category 03, 04, 08: 工作台队列、分栏拖拽与全局快捷键
+    if (typeof initSplitViewDivider === 'function') initSplitViewDivider();
+    if (typeof initGlobalKeyboardShortcuts === 'function') initGlobalKeyboardShortcuts();
+    if (typeof restoreWorkbenchQueueFilter === 'function') restoreWorkbenchQueueFilter();
+    if (typeof loadWorkbenchQueue === 'function') loadWorkbenchQueue();
+
 });
 
 // -------------------------------------------------------------
@@ -1244,12 +1429,29 @@ function initDeptAdminDetails() {
 function initTabs() {
     const sidebarBtns = document.querySelectorAll('.sidebar-btn, .nav-tab');
     sidebarBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', (e) => {
+            const targetId = btn.getAttribute('data-target');
+
+            // 导航守卫 (Navigation Guard)：离开 tab-engine 且存在未保存草稿时拦截确认
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab && activeTab.id === 'tab-engine' && targetId !== 'tab-engine' && typeof _engineIsDirty !== 'undefined' && _engineIsDirty) {
+                showCustomConfirmModal({
+                    title: '存在未保存的配置修改',
+                    message: '您在系统与引擎配置中有未保存的修改。离开此页面将丢失修改，是否确定离开？',
+                    confirmText: '确定离开',
+                    cancelText: '留在本页',
+                    onConfirm: () => {
+                        _engineIsDirty = false;
+                        btn.click();
+                    }
+                });
+                return;
+            }
+
             sidebarBtns.forEach(b => b.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
             btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
             const navTitle = btn.getAttribute('data-title') || btn.innerText;
 
             document.getElementById(targetId).classList.add('active');
@@ -1279,6 +1481,7 @@ function initTabs() {
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
                 loadMemoryMetrics();   // P2-T5：记忆度量看板（admin 只读，四项指标 + 总开关状态）
                 loadVendorMemoryGovernance();   // P8/AC2：已生效记忆治理区（只读 + 调已有删除端点）
+                initEngineSubViewOnTabEnter();
             }
             if (targetId === 'tab-analytics') {
                 loadAnalyticsBoard();    // 观测中心（按当前活跃子面板条件调度）
@@ -1286,6 +1489,16 @@ function initTabs() {
             syncFeedbackVisibility();
             syncRecoveryVisibility();
         });
+    });
+
+    window.addEventListener('hashchange', () => {
+        const engineTab = document.getElementById('tab-engine');
+        if (engineTab && engineTab.classList.contains('active')) {
+            const targetSub = (typeof getEngineSubViewFromUrl === 'function') ? getEngineSubViewFromUrl() : '01';
+            if (typeof switchEngineSubView === 'function') {
+                switchEngineSubView(targetSub, { scroll: false, updateHash: false });
+            }
+        }
     });
 }
 
@@ -1726,15 +1939,21 @@ let ocrStartTime = 0;
 
 function updateLoadingStage(pct, stageName, stepNum) {
     const bar = document.getElementById('loadingProgressBar');
-    if (bar) bar.style.width = pct + '%';
+    if (bar) {
+        if (typeof pct === 'number') {
+            bar.style.width = Math.min(100, Math.max(0, pct)) + '%';
+        } else if (pct === 'indeterminate') {
+            bar.style.width = '60%';
+        }
+    }
     const stageNameEl = document.getElementById('loadingStageName');
-    if (stageNameEl) stageNameEl.textContent = stageName;
+    if (stageNameEl && stageName) stageNameEl.textContent = stageName;
     for (let i = 1; i <= 4; i++) {
         const stepEl = document.getElementById('loadingStep' + i);
         if (stepEl) {
-            if (i < stepNum) {
+            if (stepNum != null && i < stepNum) {
                 stepEl.className = 'loading-step-item done';
-            } else if (i === stepNum) {
+            } else if (stepNum != null && i === stepNum) {
                 stepEl.className = 'loading-step-item active';
             } else {
                 stepEl.className = 'loading-step-item';
@@ -1748,7 +1967,7 @@ function startOcrTimer() {
     ocrStartTime = Date.now();
     const timerElem = document.getElementById('ocrTimer');
     if (timerElem) timerElem.innerText = '00:00.0';
-    updateLoadingStage(25, '视觉语义读取中 (25%)...', 1);
+    updateLoadingStage('indeterminate', 'AI 正在读取收据内容与版面结构...', 1);
 
     ocrTimerInterval = setInterval(() => {
         const elapsedMs = Date.now() - ocrStartTime;
@@ -1759,20 +1978,6 @@ function startOcrTimer() {
         if (timerElem) {
             timerElem.innerText = `${mins}:${secs}.${tenths}`;
         }
-
-        // 4 阶段清晰感知过渡与长等待预期提示
-        if (elapsedMs < 1200) {
-            updateLoadingStage(25, '视觉语义读取中 (25%)...', 1);
-        } else if (elapsedMs < 2800) {
-            updateLoadingStage(50, '契约提取与字段归一中 (50%)...', 2);
-        } else if (elapsedMs < 4500) {
-            updateLoadingStage(75, '算术守恒与异常自检中 (75%)...', 3);
-        } else if (elapsedMs < 25000) {
-            updateLoadingStage(95, 'SKU智能匹配中 (95%)...', 4);
-        } else {
-            // U-8: 耗时 >= 25s 时的长等待预期提示
-            updateLoadingStage(95, '本单明细较多，AI 正在加紧核对，预计还需 10 秒…', 4);
-        }
     }, 100);
 }
 
@@ -1781,7 +1986,6 @@ function stopOcrTimer() {
         clearInterval(ocrTimerInterval);
         ocrTimerInterval = null;
     }
-    updateLoadingStage(100, '识别完成 (100%)', 4);
 }
 
 // -------------------------------------------------------------
@@ -1824,6 +2028,7 @@ function pollReceiptJob(jobId, onSettled, opts) {
             .then(res => res.json())
             .then(job => {
                 if (job && job.job_status === 'done') {
+                    updateLoadingStage(100, '解析完成，正在打开复核表单...', 4);
                     // done → result 与同步 upload 成功响应同构
                     const result = job.result || { status: 'error', msg: '识别结果为空' };
                     // 顶层 image_url 兜底（部分路径 result 可能缺字段）
@@ -1844,6 +2049,11 @@ function pollReceiptJob(jobId, onSettled, opts) {
                     // HTTP 级错误（如 404 任务不存在）
                     onSettled({ status: 'error', msg: job.msg || '查询识别任务失败' });
                 } else {
+                    if (job && job.job_status) {
+                        const stText = job.job_status === 'queued' ? '正在排队等待处理...' : '正在识别单据并核对明细...';
+                        const stageNameEl = document.getElementById('loadingStageName');
+                        if (stageNameEl) stageNameEl.textContent = stText;
+                    }
                     // queued / running → 首选引擎发生降级回退：立即弹一次提示（不等解析完成）
                     if (job && job.progress_fallback && !fallbackNotified) {
                         fallbackNotified = true;
@@ -2052,6 +2262,14 @@ function showQualityWarnings(warnings) {
         contentHtml = `<div style="font-weight:600; margin-bottom:4px;">画质预检提示：</div>${lines}`;
     }
 
+    // AC-05-05：非阻断提醒的人工确认入口（来源/时间/规则由后端持久留痕；不静默改金额）
+    _lastQualityWarningRules = list.map(w => (w && typeof w === 'object')
+        ? (w.rule || w.code || w.type || JSON.stringify(w)) : String(w)).filter(Boolean);
+    contentHtml += `<div style="margin-top:8px;">`
+        + `<button type="button" id="btnAcknowledgeWarnings" class="btn btn-secondary" `
+        + `style="min-height:40px; padding:6px 14px;" onclick="acknowledgeCurrentWarnings()" `
+        + `title="确认已人工核对上方提醒（会记录操作者、时间与规则，用于审计）">确认已核对提醒</button>`
+        + `</div>`;
 
     banner.innerHTML = contentHtml;
     banner.classList.remove('hide');
@@ -2071,6 +2289,43 @@ function showQualityWarnings(warnings) {
         if (c && c.parentNode) c.parentNode.removeChild(c);
     }
 }
+
+// AC-05-05：当前提醒的规则标识（供人工确认入口留痕用）
+let _lastQualityWarningRules = [];
+function acknowledgeCurrentWarnings() {
+    if (!currentReceiptId) {
+        showToast('请先打开一张单据再确认提醒', 'warning');
+        return;
+    }
+    const rules = _lastQualityWarningRules.length ? _lastQualityWarningRules : ['unspecified'];
+    const ruleText = rules.join('; ');
+    const btn = document.getElementById('btnAcknowledgeWarnings');
+    if (btn) { btn.disabled = true; }
+    apiFetch(`/api/receipt/${currentReceiptId}/acknowledge_warning`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            warning_id: rules[0],
+            rule: ruleText,
+            version: (currentReceiptData && currentReceiptData.version != null) ? currentReceiptData.version : null
+        })
+    })
+    .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+    .then(([status, ret]) => {
+        if (status === 200 && ret && ret.status === 'success') {
+            showToast('已记录提醒确认（操作者 / 时间 / 规则已留痕，不修改任何金额）', 'success');
+        } else {
+            showToast('提醒确认未记录：' + ((ret && ret.msg) || ('HTTP ' + status)), 'error');
+            if (btn) { btn.disabled = false; }
+        }
+    })
+    .catch(err => {
+        console.warn('[warn-ack] 提醒确认请求失败:', err);
+        showToast('提醒确认请求失败，请重试', 'error');
+        if (btn) { btn.disabled = false; }
+    });
+}
+window.acknowledgeCurrentWarnings = acknowledgeCurrentWarnings;
 
 // P2-1：图内隐藏文字检测提示（只告警不拦截）。命中时显示人话横幅；未命中什么都不显示
 // （不出现「未检出」噪声）。reasons 来自后端，一律过 w2Escape 再插 innerHTML（P0 硬规则）。
@@ -2879,7 +3134,7 @@ function setManualEntryFormBadge(on) {
     if (title) {
         title.textContent = on
             ? ' 步骤 2/2：手工录入复核与修改'
-            : ' 步骤 2/2：AI Prefill 字段复核与修改';
+            : ' 步骤 2/2：单据内容复核与修改';
     }
 }
 
@@ -2952,6 +3207,22 @@ function startManualEntry() {
     syncFeedbackButtonsUI(null);
     syncFeedbackVisibility();
     syncRecoveryVisibility();
+
+    // 绑定事件与初始化问题摘要 (AC-05-01)
+    ['inpSupplier', 'inpDate', 'inpTotal'].forEach(id => {
+        const inp = document.getElementById(id);
+        if (inp && !inp.__issueListenerBound) {
+            inp.__issueListenerBound = true;
+            inp.addEventListener('input', () => refreshReceiptIssueSummary());
+        }
+    });
+    const itemTableBody = document.getElementById('itemTableBody');
+    if (itemTableBody && !itemTableBody.__issueListenerBound) {
+        itemTableBody.__issueListenerBound = true;
+        itemTableBody.addEventListener('input', () => refreshReceiptIssueSummary());
+        itemTableBody.addEventListener('change', () => refreshReceiptIssueSummary());
+    }
+    refreshReceiptIssueSummary();
 }
 
 // U-11: 识别过程随时转手工逃生通道（保留原图，中止识别，直接切入复核/手工表单）
@@ -3553,7 +3824,7 @@ function updateRotationRecoveryUI() {
         if (btnReparseRotated) {
             btnReparseRotated.style.display = '';
         }
-        showToast('已旋转至新视角，可点击【按当前视角重新识别】', 'info');
+        showToast('已旋转至新视角，可点击按当前视角重新识别', 'info');
     }
 
     const errorCard = document.getElementById('errorCard');
@@ -3563,7 +3834,7 @@ function updateRotationRecoveryUI() {
         if (btnRetryRotated) {
             btnRetryRotated.classList.remove('hide');
         }
-        showToast('已旋转至新视角，点击【按当前视角重试】', 'info');
+        showToast('已旋转至新视角，点击按当前视角重试', 'info');
     }
 }
 window.updateRotationRecoveryUI = updateRotationRecoveryUI;
@@ -3601,7 +3872,7 @@ function resetImgTransform() {
     const btnErrRot = document.getElementById('btnRetryRotated');
     if (btnErrRot) btnErrRot.classList.add('hide');
 
-    // 核心重置逻辑：在启动分析之前，按【重置】可还原为原始未裁剪照片
+    // 核心重置逻辑：在启动分析之前，按重置可还原为原始未裁剪照片
     // 注意：HEIC 等绝不能写回 objectUrl（浏览器黑屏）；走 setMainPreview 保持常驻提示
     // 烤入后 reset 仍能回到原始 originalFile（保留 originalFile/originalObjectUrl 不被覆盖，photo.originalFile 同理）
     const img = document.getElementById('previewImg');
@@ -4425,7 +4696,7 @@ function renderEditForm(data) {
     // 手写单本身不弹 toast，避免每次打开都打扰店员）。
     if (data.math_warnings && data.math_warnings.length > 0) {
         const warnText = data.math_warnings.map(humanizeGateMsg).join("；");
-        showToast('【单据复核提示】AI 已完成解析，但检测到：' + warnText + '，请核对', 'warning', 7000);
+        showToast('单据复核提示：AI 已完成解析，但检测到：' + warnText + '，请核对', 'warning', 7000);
 
         // 针对具体问题精确定位高亮
         const warnStr = data.math_warnings.join(' ');
@@ -4477,6 +4748,39 @@ function renderEditForm(data) {
     // P2-1：图内隐藏文字命中时显示人话横幅（未命中不显示）
     showImageGuardNotice(data.image_guard);
     renderCurrencySymbol();
+    // AC-05-01: 自动诊断问题并刷新问题诊断摘要栏
+    refreshReceiptIssueSummary(data);
+
+    // 绑定字段变化事件，实现实时动态重算与计数递减（AC-05-03: 3->2->1->0）
+    ['inpSupplier', 'inpDate', 'inpTotal'].forEach(id => {
+        const inp = document.getElementById(id);
+        if (inp && !inp.__issueListenerBound) {
+            inp.__issueListenerBound = true;
+            inp.addEventListener('input', () => {
+                refreshReceiptIssueSummary();
+                if (typeof markReviewDirty === 'function') markReviewDirty();
+            });
+        }
+    });
+
+    // 记录复核表单初始快照并重置脏状态 (QA-P0-01)
+    try {
+        if (typeof collectReviewFormData === 'function') {
+            _reviewFormOriginalSnapshot = JSON.stringify(collectReviewFormData());
+            _reviewIsDirty = false;
+        }
+    } catch (e) {}
+
+    const reviewFormContainer = document.getElementById('editCard') || document.getElementById('itemTableBody');
+    if (reviewFormContainer && !reviewFormContainer.__reviewDirtyBound) {
+        reviewFormContainer.__reviewDirtyBound = true;
+        reviewFormContainer.addEventListener('input', () => {
+            if (typeof markReviewDirty === 'function') markReviewDirty();
+        });
+        reviewFormContainer.addEventListener('change', () => {
+            if (typeof markReviewDirty === 'function') markReviewDirty();
+        });
+    }
 }
 window.renderEditForm = renderEditForm;
 
@@ -4931,26 +5235,49 @@ function hasMerchantPaymentMark(data) {
 }
 
 function getPaymentMarkDisplayInfo(data) {
-    const isPaid = hasMerchantPaymentMark(data);
-    if (!isPaid) {
-        return { isPaid: false, label: '未付款', badgeText: '未检测到商户付款标记', badgeColor: '#64748b', badgeBg: '#f1f5f9' };
+    const rawMark = (data && (data.payment_mark !== undefined && data.payment_mark !== null)) ? String(data.payment_mark).trim() : '';
+    const isPaidFlag = hasMerchantPaymentMark(data);
+
+    if (isPaidFlag) {
+        let desc = '';
+        if (rawMark && rawMark !== '已付款' && rawMark !== 'paid' && rawMark !== 'true' && rawMark !== '单据有付款印记') {
+            desc = ` (含${rawMark})`;
+        }
+        return {
+            isPaid: true,
+            label: '单据有付款印记',
+            badgeText: `已检测到单面付款印记${desc}`,
+            badgeColor: '#2f6b4f',
+            badgeBg: 'rgba(47, 107, 79, 0.1)'
+        };
     }
-    const origMark = String(data.payment_mark || '').trim();
-    let desc = '';
-    if (origMark && origMark !== '已付款' && origMark !== 'paid' && origMark !== 'true') {
-        desc = ` (含${origMark})`;
+
+    // 区分明确未付款与未识别/不确定
+    const norm = rawMark.toLowerCase();
+    const isExplicitUnpaid = norm === '未付款' || norm === 'unpaid' || norm === '0' || norm === 'false';
+
+    if (isExplicitUnpaid) {
+        return {
+            isPaid: false,
+            label: '单据未见付款印章',
+            badgeText: '未检测到原单印记（原单无盖章，不代表系统已付）',
+            badgeColor: '#b91c1c',
+            badgeBg: 'rgba(185, 28, 28, 0.1)'
+        };
     }
+
+    // 空/未填/无法确认
     return {
-        isPaid: true,
-        label: '已付款',
-        badgeText: `已检测到商户付款标记${desc}`,
-        badgeColor: '#2f6b4f',
-        badgeBg: 'rgba(47, 107, 79, 0.1)'
+        isPaid: false,
+        label: '单据未见付款印章',
+        badgeText: '不确定/待人工核验付款标记',
+        badgeColor: '#d97706',
+        badgeBg: 'rgba(217, 119, 6, 0.1)'
     };
 }
 
-// 付款标记点击切换徽章（用户实测反馈：付款标记改为「已付款/未付款」点击切换，
-// 绿=已付款、红=未付款；禁止要求店员手输付款证据）。state 存于按钮 data-marked，
+// 付款标记点击切换徽章（用户实测反馈：付款标记改为「单据有付款印记/单据未见付款印章」点击切换，
+// 绿=有付款印记、红=未见付款印章；禁止要求店员手输付款证据）。state 存于按钮 data-marked，
 // 文案随态变化（色盲友好），颜色仅作辅助。
 function getPaymentMarkBadgeState() {
     const btn = document.getElementById('inpPaymentMark');
@@ -4962,7 +5289,8 @@ function setPaymentMarkBadge(marked) {
     if (!btn) return;
     const isPaid = (marked === true || marked === 'true');
     btn.dataset.marked = isPaid ? 'true' : 'false';
-    btn.textContent = isPaid ? '已付款' : '未付款';
+    btn.textContent = isPaid ? '单据有付款印记' : '单据未见付款印章';
+    btn.title = isPaid ? '单面有付款印章/标记（点击切换）' : '单面未见付款印章（原单无盖章，不代表系统已付，点击切换）';
     btn.classList.toggle('payment-mark-paid', isPaid);
     btn.classList.toggle('payment-mark-unpaid', !isPaid);
     btn.setAttribute('aria-pressed', isPaid ? 'true' : 'false');
@@ -5077,6 +5405,13 @@ function _toastDismiss(key, immediate = false) {
     el.classList.add('app-toast-out');
     setTimeout(() => el.remove(), TOAST_OUT_MS);
 }
+
+function clearAllToasts(immediate = true) {
+    for (const key of Array.from(_toastLive.keys())) {
+        _toastDismiss(key, immediate);
+    }
+}
+window.clearAllToasts = clearAllToasts;
 
 // 超出上限时移除最旧的一条（按进入顺序，Map 保序）
 function _toastEnforceLimit() {
@@ -6139,10 +6474,17 @@ function collectReviewFormData() {
     const inpMarkBadge = document.getElementById('inpPaymentMark');
     if (inpMarkBadge && inpMarkBadge.tagName === 'BUTTON') {
         data.payment_mark = getPaymentMarkBadgeState() ? '已付款' : '未付款';
-    } else if (src.payment_mark != null) data.payment_mark = src.payment_mark;
+    } else if (src.payment_mark != null) {
+        data.payment_mark = src.payment_mark;
+    }
     if (src.layout_type != null) data.layout_type = src.layout_type;
     // D17: 乐观锁版本号（加载/保存成功后记录）
     if (src.version != null) data.version = src.version;
+    const boundId = (src && (src.id || src.receipt_id)) || currentReceiptId;
+    if (boundId) {
+        data.id = Number(boundId);
+        data.receipt_id = Number(boundId);
+    }
     return data;
 }
 
@@ -6348,26 +6690,352 @@ async function discardCurrentReceipt() {
 }
 window.discardCurrentReceipt = discardCurrentReceipt;
 
+// QA-P0-01: 复核表单未保存修改追踪（防脏数据审批入账）
+let _reviewFormOriginalSnapshot = null;
+let _reviewIsDirty = false;
+
+function markReviewDirty() {
+    _reviewIsDirty = true;
+    const saveBadge = document.getElementById('reviewSaveStatusBadge');
+    if (saveBadge && saveBadge.textContent !== '未保存') {
+        saveBadge.textContent = '未保存';
+        saveBadge.className = 'badge badge-secondary';
+    }
+}
+window.markReviewDirty = markReviewDirty;
+
+// AC-06-03: 依据单据权威状态重置保存状态徽标（清退「版本冲突 / 保存中 / 保存失败」
+// 这类瞬时状态）。重载服务端最新版本成功、或重新打开一张干净单据时调用。
+function syncReviewSaveBadgeFromStatus(status) {
+    const saveBadge = document.getElementById('reviewSaveStatusBadge');
+    if (!saveBadge) return;
+    if (status === 'edited') {
+        saveBadge.textContent = '已保存·待审批';
+        saveBadge.className = 'badge badge-info';
+    } else if (status === 'approved') {
+        saveBadge.textContent = '已入账 (锁定)';
+        saveBadge.className = 'badge badge-success';
+    } else {
+        saveBadge.textContent = '未保存';
+        saveBadge.className = 'badge badge-secondary';
+    }
+}
+window.syncReviewSaveBadgeFromStatus = syncReviewSaveBadgeFromStatus;
+
+function isReviewFormDirty() {
+    if (_reviewIsDirty) return true;
+    if (_reviewFormOriginalSnapshot === null) return false;
+    try {
+        const cur = JSON.stringify(collectReviewFormData());
+        return cur !== _reviewFormOriginalSnapshot;
+    } catch (e) {
+        return _reviewIsDirty;
+    }
+}
+window.isReviewFormDirty = isReviewFormDirty;
+
 // Q32: 单张保存互斥旗标——保存中禁止再次触发（防双击重复提交）
 let isSavingReview = false;
+let currentReceiptIssues = [];
+let currentIssueFocusIndex = -1;
+let currentWorkbenchQueueFilter = 'todo';
+let cachedWorkbenchQueueData = [];
 
-function submitSaveEdited() {
-    if (isSavingReview) return;   // Q32: 保存进行中，忽略重复点击
+// AC-05-01: 统一问题模型与诊断算法（阿叔阿姨直白人话，零代码黑话）
+function calculateReceiptIssues(data) {
+    const issues = [];
+    if (!data) return issues;
 
-    // 采集失败绝不允许静默：异常一旦冒泡出去，用户看到的就是「点了保存毫无反应」
-    // （无请求、无提示）。此处兜住并给人话提示，保证保存按钮永远有回音。
+    // 1. 必填基本信息诊断
+    const supplier = String(data.supplier_name || '').trim();
+    if (!supplier || supplier === '通用供应商') {
+        issues.push({
+            id: 'err_supplier',
+            field: 'inpSupplier',
+            type: 'blocker',
+            title: '缺少供应商名称',
+            guide: '请填写供应商名称，以便正确记账并比对历史价格。'
+        });
+    }
+
+    const dateStr = String(data.date || '').trim();
+    if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        issues.push({
+            id: 'err_date',
+            field: 'inpDate',
+            type: 'blocker',
+            title: '缺少开单日期',
+            guide: '请选择或填写单据上的开单日期。'
+        });
+    }
+
+    const totalAmt = Number(data.total_amount || 0);
+    if (isNaN(totalAmt) || totalAmt <= 0) {
+        issues.push({
+            id: 'err_total',
+            field: 'inpTotal',
+            type: 'blocker',
+            title: '总金额必须大于 0',
+            guide: '请填写整单总金额，不能为 0 或负数。'
+        });
+    }
+
+    // 2. 明细检查与行内算术守恒
+    const items = (data.items || []).filter(it => !it.is_void);
+    if (items.length === 0) {
+        issues.push({
+            id: 'err_empty_items',
+            field: 'itemTableBody',
+            type: 'blocker',
+            title: '缺少食材明细行',
+            guide: '请至少保留或添加一行有效的食材消费明细。'
+        });
+    }
+
+    let itemsSum = 0;
+    items.forEach((it, idx) => {
+        const rowNum = idx + 1;
+        const name = String(it.name || it.raw_name || '').trim();
+        if (!name) {
+            issues.push({
+                id: `err_item_name_${idx}`,
+                field: `item_row_${idx}_name`,
+                type: 'blocker',
+                rowIndex: idx,
+                title: `第 ${rowNum} 行缺少食材品名`,
+                guide: `第 ${rowNum} 行尚未填写品名，请填写或点击右侧操作删除该行。`
+            });
+        }
+
+        const qty = Number(it.quantity);
+        const price = Number(it.unit_price);
+        const amount = Number(it.amount);
+
+        if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
+            issues.push({
+                id: `err_item_num_${idx}`,
+                field: `item_row_${idx}_qty`,
+                type: 'blocker',
+                rowIndex: idx,
+                title: `第 ${rowNum} 行单价或数量不是有效数字`,
+                guide: `第 ${rowNum} 行「${name || '明细'}」单价或数量不正确，请重新输入。`
+            });
+        } else {
+            // 行内算术一致性检查
+            const calcAmt = Math.round(qty * price * 100) / 100;
+            const diff = Math.abs(calcAmt - amount);
+            if (diff > 0.05) {
+                issues.push({
+                    id: `err_item_math_${idx}`,
+                    field: `item_row_${idx}_amount`,
+                    type: 'warning',
+                    rowIndex: idx,
+                    title: `第 ${rowNum} 行算术有出入`,
+                    guide: `第 ${rowNum} 行「${name || '明细'}」单价乘数量 ($${price} x ${qty} = $${calcAmt.toFixed(2)}) 与所填金额 ($${amount.toFixed(2)}) 相差 $${diff.toFixed(2)} 元。请核对单价或所填金额。`
+                });
+            }
+        }
+
+        if (it.unit_conversion_warning) {
+            issues.push({
+                id: `warn_item_unit_${idx}`,
+                field: `item_row_${idx}_unit`,
+                type: 'warning',
+                rowIndex: idx,
+                title: `第 ${rowNum} 行单位无标准折算`,
+                guide: `第 ${rowNum} 行单位「${it.unit}」无标准折算关系，将保留原单位记录。`
+            });
+        }
+
+        if (!isNaN(amount)) itemsSum += amount;
+    });
+
+    // 附加费用计入总额比对
+    if (data.delivery_fee) itemsSum += Number(data.delivery_fee) || 0;
+    if (data.service_fee) itemsSum += Number(data.service_fee) || 0;
+    if (data.tax_amount) itemsSum += Number(data.tax_amount) || 0;
+    if (data.deposit_amount) itemsSum += Number(data.deposit_amount) || 0;
+    if (data.discount_amount) itemsSum -= Number(data.discount_amount) || 0;
+    if (data.rounding_adjustment) itemsSum -= Number(data.rounding_adjustment) || 0;
+
+    itemsSum = Math.round(itemsSum * 100) / 100;
+
+    // 3. 整单算术守恒与差额指引 (AC-05-01, AC-05-04)
+    if (totalAmt > 0 && items.length > 0) {
+        const totalDiff = Math.abs(itemsSum - totalAmt);
+        if (totalDiff > 0.05) {
+            issues.push({
+                id: 'err_grand_total_math',
+                field: 'inpTotal',
+                type: 'blocker',
+                title: '整单总金额与明细加总不符',
+                guide: `明细各项金额加总 ($${itemsSum.toFixed(2)}) 与整单总金额 ($${totalAmt.toFixed(2)}) 不符，相差 $${totalDiff.toFixed(2)} 元。请对照原图核对各行金额，或修改总金额。`
+            });
+        }
+    }
+
+    return issues;
+}
+
+// 刷新问题诊断摘要栏状态（AC-05-01 至 AC-05-03）
+function refreshReceiptIssueSummary(data) {
+    if (!data) {
+        try { data = collectReviewFormData(); } catch (e) { data = currentReceiptData || {}; }
+    }
+    currentReceiptIssues = calculateReceiptIssues(data);
+    currentIssueFocusIndex = -1;
+
+    const bar = document.getElementById('issueSummaryBar');
+    const bBadge = document.getElementById('issueBlockerCountBadge');
+    const wBadge = document.getElementById('issueWarningCountBadge');
+    const guideText = document.getElementById('issueSummaryGuideText');
+    const valBadge = document.getElementById('aiValidationStatusBadge');
+
+    const blockers = currentReceiptIssues.filter(i => i.type === 'blocker');
+    const warnings = currentReceiptIssues.filter(i => i.type === 'warning');
+
+    if (bBadge) bBadge.textContent = blockers.length > 0 ? `必须修改: ${blockers.length} 处` : '无必改问题';
+    if (wBadge) wBadge.textContent = `核对提醒: ${warnings.length} 处`;
+
+    if (currentReceiptIssues.length === 0) {
+        if (bar) bar.classList.add('hide');
+        if (valBadge) {
+            valBadge.className = 'badge badge-success';
+            valBadge.textContent = '金额与明细校验通过';
+        }
+    } else {
+        if (bar) bar.classList.remove('hide');
+        if (blockers.length > 0) {
+            if (valBadge) {
+                valBadge.className = 'badge badge-danger';
+                valBadge.textContent = `需修改 ${blockers.length} 处错误才能入账`;
+            }
+            if (guideText) guideText.textContent = blockers[0].guide;
+        } else {
+            if (valBadge) {
+                valBadge.className = 'badge badge-warning';
+                valBadge.textContent = `发现 ${warnings.length} 处需核对`;
+            }
+            if (guideText) guideText.textContent = warnings[0].guide;
+        }
+    }
+}
+window.refreshReceiptIssueSummary = refreshReceiptIssueSummary;
+
+// AC-05-02: 逐项定位跳到下一处问题
+function focusNextReceiptIssue() {
+    if (!currentReceiptIssues || currentReceiptIssues.length === 0) {
+        showToast('当前单据未发现算术或必填问题', 'success');
+        return;
+    }
+    currentIssueFocusIndex = (currentIssueFocusIndex + 1) % currentReceiptIssues.length;
+    const issue = currentReceiptIssues[currentIssueFocusIndex];
+
+    const guideText = document.getElementById('issueSummaryGuideText');
+    if (guideText) guideText.textContent = `[${currentIssueFocusIndex + 1}/${currentReceiptIssues.length}] ${issue.guide}`;
+
+    let targetEl = null;
+    if (issue.rowIndex != null) {
+        const tbody = document.getElementById('itemTableBody');
+        const row = tbody && tbody.querySelectorAll('tr')[issue.rowIndex];
+        if (row) {
+            targetEl = row.querySelector('.inp-amount') || row.querySelector('.inp-name') || row;
+        }
+    } else if (issue.field) {
+        targetEl = document.getElementById(issue.field);
+    }
+
+    if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (typeof targetEl.focus === 'function') targetEl.focus();
+        targetEl.classList.remove('issue-focus-pulse');
+        void targetEl.offsetWidth; // 触发 reflow 重置动画
+        targetEl.classList.add('issue-focus-pulse');
+        setTimeout(() => targetEl.classList.remove('issue-focus-pulse'), 1800);
+    }
+}
+window.focusNextReceiptIssue = focusNextReceiptIssue;
+
+// AC-05-06: 仅看问题行 / 显示全表切换
+let isIssueOnlyFilterActive = false;
+function toggleIssueOnlyRows() {
+    const tbody = document.getElementById('itemTableBody');
+    const btn = document.getElementById('btnToggleIssueFilter');
+    if (!tbody) return;
+
+    isIssueOnlyFilterActive = !isIssueOnlyFilterActive;
+    const rows = tbody.querySelectorAll('tr');
+
+    if (!isIssueOnlyFilterActive) {
+        rows.forEach(r => r.classList.remove('row-hide-issue-filter'));
+        if (btn) btn.textContent = '仅看问题行';
+        showToast('已显示全部明细行', 'info');
+        return;
+    }
+
+    const problemRowIndices = new Set(
+        currentReceiptIssues.filter(i => i.rowIndex != null).map(i => i.rowIndex)
+    );
+
+    if (problemRowIndices.size === 0) {
+        showToast('当前明细行无算术或字段错误', 'info');
+        isIssueOnlyFilterActive = false;
+        if (btn) btn.textContent = '仅看问题行';
+        return;
+    }
+
+    rows.forEach((r, idx) => {
+        if (problemRowIndices.has(idx)) {
+            r.classList.remove('row-hide-issue-filter');
+        } else {
+            r.classList.add('row-hide-issue-filter');
+        }
+    });
+
+    if (btn) btn.textContent = '显示全表';
+    showToast(`仅展示存在问题的 ${problemRowIndices.size} 行明细`, 'info');
+}
+window.toggleIssueOnlyRows = toggleIssueOnlyRows;
+
+// AC-06-01 至 AC-06-05: 保存复核表单（支持保存并下一张，多错内联聚合与乐观锁）
+function submitSaveEdited(openNext = false) {
+    if (isSavingReview) return; // AC-06-05: 严格互斥，防止连击重复提交
+
+    // AC-08-05: 记录本次保存的触发元素，供 409 冲突弹窗关闭后归还焦点。
+    // 保存开始后保存按钮会被 disabled（焦点落到 body），若不在此刻抓取，关闭
+    // 冲突弹窗时 document.activeElement 已丢失，无法把焦点还给触发表达元素。
+    const _saveTriggerEl = (document.activeElement && document.activeElement !== document.body)
+        ? document.activeElement : (document.getElementById('btnSaveReview') || null);
+
+    // 清除前序校验报错与残留提示 (AC-08-01 顶部提示不叠加)
+    clearAllToasts(true);
+    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('.field-error-msg').forEach(el => el.remove());
+
     let data;
     try {
         data = collectReviewFormData();
     } catch (err) {
-        console.warn('[WARN] 复核表单内容读取失败，已中止本次保存并明确提示用户:', err);
-        showToast('保存没有完成：请检查明细表格里的每一行是否填写完整，然后重新保存', 'error');
+        console.warn('[WARN] 复核表单内容读取异常:', err);
+        showToast('保存未完成：请检查表格各输入框是否规范填写', 'error');
         return;
     }
 
+    // AC-06-01: 多错内联聚合校验，一次性列全所有错误并首错聚焦
+    const fieldErrors = [];
+    function recordFieldError(elementId, msg) {
+        const el = document.getElementById(elementId);
+        if (el) {
+            el.classList.add('is-invalid');
+            const errDiv = document.createElement('div');
+            errDiv.className = 'field-error-msg';
+            errDiv.textContent = msg;
+            if (el.parentNode) el.parentNode.appendChild(errDiv);
+            fieldErrors.push({ el, msg });
+        }
+    }
+
     if (isManualEntry) {
-        // D12：手工新建前端校验——与后端 save_edited 手工分支 400 语义一致
-        // （日期必填且 YYYY-MM-DD 真实、供应商必填且非默认占位、明细至少一行）
         const manualErr = validateManualEntry(data);
         if (manualErr) {
             showToast(manualErr, 'error');
@@ -6376,49 +7044,62 @@ function submitSaveEdited() {
     } else {
         const supplier = String((data && data.supplier_name) || '').trim();
         if (!supplier || supplier === '通用供应商') {
-            showToast('请填写供应商名称', 'error');
-            return;
+            recordFieldError('inpSupplier', '请填写供应商名称（不能留空或使用通用占位符）');
         }
+
         const dateStr = String((data && data.date) || '').trim();
         if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-            showToast('请选择开单日期', 'error');
-            return;
+            recordFieldError('inpDate', '请选择开单日期（格式 YYYY-MM-DD）');
+        } else {
+            const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
+            const dt = new Date(y, mo - 1, d);
+            if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
+                recordFieldError('inpDate', '开单日期不正确，请选择真实存在的日历日期');
+            }
         }
-        const m = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        const y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
-        const dt = new Date(y, mo - 1, d);
-        if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) {
-            showToast('开单日期不正确，请选择真实存在的日历日期', 'error');
-            return;
-        }
+
         const totalAmt = Number((data && data.total_amount) || 0);
         if (isNaN(totalAmt) || totalAmt <= 0) {
-            showToast('单据总金额必须大于 0', 'error');
-            return;
+            recordFieldError('inpTotal', '整单总金额必须大于 0');
         }
+
         if (!data.items || data.items.length === 0) {
-            showToast('请至少输入一行消费明细', 'warning');
+            showToast('请至少输入一行消费明细', 'error');
             return;
         }
+
+        const tbody = document.getElementById('itemTableBody');
+        const rows = tbody ? tbody.querySelectorAll('tr') : [];
         for (let i = 0; i < data.items.length; i++) {
             const it = data.items[i];
             const name = String((it && (it.name || it.raw_name)) || '').trim();
-            if (!name) {
-                showToast(`第 ${i + 1} 行的品名不能为空，请填写或删除该行`, 'error');
-                return;
+            const rowEl = rows[i];
+            if (!name && rowEl) {
+                const nameInp = rowEl.querySelector('.inp-name');
+                if (nameInp) {
+                    nameInp.classList.add('is-invalid');
+                    fieldErrors.push({ el: nameInp, msg: `第 ${i + 1} 行缺少品名` });
+                }
             }
             const qty = Number(it && it.quantity);
             const price = Number(it && it.unit_price);
-            if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
-                showToast(`第 ${i + 1} 行的单价或数量不是有效数字，请重新输入`, 'error');
-                return;
+            if ((isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) && rowEl) {
+                const qtyInp = rowEl.querySelector('.inp-qty') || rowEl.querySelector('.inp-price');
+                if (qtyInp) {
+                    qtyInp.classList.add('is-invalid');
+                    fieldErrors.push({ el: qtyInp, msg: `第 ${i + 1} 行数量或单价不正确` });
+                }
             }
         }
     }
 
-    // M3/D4 结算方式必填化：未标记 → 阻断提交，不发请求。
-    // D12 手工新建单（isManualEntry）豁免——与后端 manual_entry 豁免（app.py
-    // save_edited 分支）语义对齐：人工逐字录入，结算可稍后补标。
+    if (fieldErrors.length > 0) {
+        fieldErrors[0].el.focus();
+        showToast(`发现 ${fieldErrors.length} 处必填项未通过，请检查标红字段`, 'error');
+        return; // 零网络请求，本地阻断
+    }
+
     if (!isManualEntry && !requireSettlementMarked(data.settlement_type)) {
         return;
     }
@@ -6428,7 +7109,14 @@ function submitSaveEdited() {
 
     isSavingReview = true;
     const saveBtn = document.getElementById('btnSaveReview');
+    const saveNextBtn = document.getElementById('btnSaveAndNext');
+    const saveStatusBadge = document.getElementById('reviewSaveStatusBadge');
     if (saveBtn) saveBtn.disabled = true;
+    if (saveNextBtn) saveNextBtn.disabled = true;
+    if (saveStatusBadge) {
+        saveStatusBadge.textContent = '保存中...';
+        saveStatusBadge.className = 'badge badge-warning';
+    }
 
     apiFetch('/api/save_edited', {
         method: 'POST',
@@ -6437,99 +7125,161 @@ function submitSaveEdited() {
     })
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
-        // D17: 版本冲突——单据已被他人修改；留副本 + 显式确认后重载（P3/R5）
+        // AC-06-03: 409 版本冲突对比弹窗
         if (httpStatus === 409 && ret && ret.code === 'VERSION_CONFLICT') {
-            handleVersionConflictReload(currentReceiptId, data,
-                () => refreshReviewFormFromServer(currentReceiptId));
+            if (saveStatusBadge) {
+                saveStatusBadge.textContent = '版本冲突';
+                saveStatusBadge.className = 'badge badge-danger';
+            }
+            showConflictDiffModal(currentReceiptId, data, ret.server_data || null, _saveTriggerEl);
             return;
         }
-        // W6 Q1：更新已有单但未携带 version
+
+        // 409 已入账保护
+        if (httpStatus === 409 && ret && ret.code === 'CANNOT_MODIFY_APPROVED') {
+            showToast('该单据已正式审核入账，不能直接修改；如需修正请联系管理员进行冲销', 'warning', 6000);
+            if (saveStatusBadge) {
+                saveStatusBadge.textContent = '已入账 (锁定)';
+                saveStatusBadge.className = 'badge badge-success';
+            }
+            return;
+        }
+
         if (httpStatus === 400 && ret && ret.code === 'VERSION_REQUIRED') {
-            showToast('缺少版本号，已重新加载最新内容', 'warning');
+            showToast('缺少版本号，正在重新拉取最新记录...', 'warning');
             if (currentReceiptId) refreshReviewFormFromServer(currentReceiptId);
             return;
         }
-        // E-P1-4：403 人话统一（同步表单提交路径，与 fetch 包装双保险，去重由 toast key 保证）
+
         if (toastHttpError(httpStatus, ret)) return;
         if (!ret || ret.status !== 'success') {
             showToast('保存失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            if (saveStatusBadge) {
+                saveStatusBadge.textContent = '保存失败';
+                saveStatusBadge.className = 'badge badge-danger';
+            }
             return;
         }
 
-        // U-8: 保存成功，重置连续失败计数
+        // AC-01-01: 保存成功状态变为 edited，不产生库存增加
         resetQualityFailCount();
-
-        // 乐观锁：保存成功后刷新本地版本号，便于连续保存
+        const savedReceiptId = Number(ret.receipt_id || ret.id || currentReceiptId);
+        if (savedReceiptId) {
+            currentReceiptId = savedReceiptId;
+        }
         const newVersion = extractVersionFromResponse(ret);
-        if (newVersion != null) {
-            if (currentReceiptData) currentReceiptData.version = newVersion;
-            else currentReceiptData = { version: newVersion };
-            const ap = getActivePhoto();
-            if (ap && ap.data) ap.data.version = newVersion;
-            // 同步回 data（批量模式后续用 data 构造 payload）
-            data.version = newVersion;
-        }
-
-        // 手工新建（无 receipt_id）成功后：拿到 receipt_id 进入正常复核态——
-        // 保留表单供继续编辑/再次保存（此时已是带 version 的既有单，走常规乐观锁路径）
-        if (isManualEntry) {
-            isManualEntry = false;
-            currentReceiptId = ret.receipt_id;
-            currentReceiptData = data;
-            showToast('已保存手工录入单据 #' + ret.receipt_id, 'success', TOAST_DURATION.guide);
-        } else if (BatchUploader.photos.length > 0) {
-            // 批量：仅标记当前项为已保存，可切换其它照片继续保存
-            const active = getActivePhoto();
-            if (active) {
-                active.status = 'saved';
-                active.data = data;   // 保存以表单当前内容为准，同步回 photo
+        if (currentReceiptData) {
+            if (savedReceiptId) {
+                currentReceiptData.id = savedReceiptId;
+                currentReceiptData.receipt_id = savedReceiptId;
             }
-            renderSider();
-            showToast('已保存当前照片，可在照片抽屉切换其它照片继续保存', 'success', TOAST_DURATION.guide);
-        } else {
-            // 单张：保存后清空界面回到上传卡片
-            showToast('已保存单据，请到「归档对账」完成审核', 'success', TOAST_DURATION.guide);
-
-            // 重置收据界面
-            document.getElementById('receiptFile').value = '';
-            document.getElementById('splitViewArea').classList.add('hide');
-            currentReceiptId = null;
-            currentReceiptData = null;
-            selectedFile = null;
-            originalFile = null;
+            if (newVersion != null) currentReceiptData.version = newVersion;
+        } else if (savedReceiptId) {
+            currentReceiptData = { id: savedReceiptId, receipt_id: savedReceiptId, version: newVersion };
+        }
+        if (data) {
+            if (savedReceiptId) {
+                data.id = savedReceiptId;
+                data.receipt_id = savedReceiptId;
+            }
+            if (newVersion != null) data.version = newVersion;
         }
 
-        // 刷新后台库存数据
+        try {
+            _reviewFormOriginalSnapshot = JSON.stringify(collectReviewFormData());
+            _reviewIsDirty = false;
+        } catch(e) {}
+
+        if (saveStatusBadge) {
+            saveStatusBadge.textContent = '已保存·待审批';
+            saveStatusBadge.className = 'badge badge-info';
+        }
+
+        // 清除本地草稿缓存
+        try { localStorage.removeItem(`receipt_draft_${currentReceiptId}`); } catch(e){}
+
+        // 立即同步内存中的队列条目状态与表单属性
+        if (Array.isArray(cachedWorkbenchQueueData)) {
+            const cachedItem = cachedWorkbenchQueueData.find(r => String(r.id) === String(currentReceiptId));
+            if (cachedItem) {
+                cachedItem.status = 'edited';
+                if (newVersion != null) cachedItem.version = newVersion;
+                if (data.supplier_name) cachedItem.supplier_name = data.supplier_name;
+                if (data.total_amount != null) cachedItem.total_amount = data.total_amount;
+                if (data.date) cachedItem.receipt_date = data.date;
+            }
+        }
+        updateWorkbenchQueueCounters();
+        renderWorkbenchQueueTable();
+
+        // AC-06-04: 若本次保存源自「保存后再切换」守卫，保存成功后完成切换
+        if (_pendingWorkbenchSwitchTarget != null) {
+            const _pendingTarget = _pendingWorkbenchSwitchTarget;
+            _pendingWorkbenchSwitchTarget = null;
+            if (Number(_pendingTarget) !== Number(savedReceiptId)) {
+                openReceiptInWorkbench(_pendingTarget, true, true);
+            }
+        }
+
+        // 刷新队列数据
+        loadWorkbenchQueue(true);
         loadInventoryData();
         loadSuppliersData();
-        loadFinancePanel();     // Wave 1：save_edited 快照钩子可能写预期付款日 → 提醒联动
+
+        const wasManual = isManualEntry;
+        if (isManualEntry) {
+            isManualEntry = false;
+            currentReceiptId = Number(ret.receipt_id || ret.id || savedReceiptId);
+            currentReceiptData = data;
+            currentReceiptData.id = currentReceiptId;
+            currentReceiptData.receipt_id = currentReceiptId;
+        }
+
+        // AC-03-03: 保存并下一张
+        if (openNext) {
+            navigateNextOperableQueueItem(savedReceiptId, wasManual);
+        } else {
+            clearAllToasts(true);
+            if (wasManual) {
+                showToast('已保存手工录入单据 #' + ret.receipt_id + '，已提交审核', 'success');
+            } else {
+                showToast('已保存复核修改并提交审核（未入账）', 'success');
+            }
+        }
     })
     .catch(err => {
-        console.error('保存单据请求失败:', err);
-        showToast('保存请求失败，请检查网络后重试', 'error');
+        console.error('保存单据异常:', err);
+        // AC-06-02: 失败后输入与 dirty 完整保留，不自动刷新丢失
+        showToast('保存请求因网络波动失败，您的修改已在本地保留，请重试保存', 'error', 6000);
+        if (saveStatusBadge) {
+            saveStatusBadge.textContent = '未保存 (网络错误)';
+            saveStatusBadge.className = 'badge badge-danger';
+        }
     })
     .finally(() => {
-        // Q32: 无论成功/失败/冲突，恢复保存按钮可再次触发
         isSavingReview = false;
-        const saveBtn = document.getElementById('btnSaveReview');
         if (saveBtn) saveBtn.disabled = false;
+        if (saveNextBtn) saveNextBtn.disabled = false;
     });
 }
+window.submitSaveEdited = submitSaveEdited;
 
 // 冲突或重载场景：从服务端拉取最新详情并重渲染 Tab1 复核表单
-function refreshReviewFormFromServer(receiptId) {
+function refreshReviewFormFromServer(receiptId, _retryCount) {
     if (!receiptId) return;
     resetManualEntryMode();   // D12：真实单据重载 → 退出新建手工单态
     apiFetch(`/api/receipt/${receiptId}`)
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success') {
-            showToast('重新加载单据详情失败：' + (ret.msg || '请稍后重试'), 'error');
+            showToast('重新加载单据详情失败：' + (ret.msg || '请稍后重试') + '（可再次点「重新加载」重试）', 'error');
             return;
         }
         currentReceiptId = ret.receipt_id || receiptId;
         currentReceiptData = ret.data || {};
         renderEditForm(currentReceiptData);
+        // AC-06-03: 重载成功后清退「版本冲突 / 保存失败」等瞬时徽标，回到权威状态
+        syncReviewSaveBadgeFromStatus(currentReceiptData.status);
 
         const photo = getActivePhoto();
         if (photo && photo.receiptId === receiptId) {
@@ -6541,7 +7291,1042 @@ function refreshReviewFormFromServer(receiptId) {
     })
     .catch(err => {
         console.error('重新加载单据详情请求失败:', err);
-        showToast('重新加载失败，请检查网络后重试', 'error');
+        // AC-06-03: 网络失败给出可见、可重试的恢复入口（而不是仅一闪而过的提示）
+        showToast('重新加载失败，请检查网络后点「重新加载」重试', 'error', 8000);
+    });
+}
+
+// =============================================================
+// Category 03: 当天任务工作台队列（AC-03-01 至 AC-03-06）
+// 角色过滤、两次点击继续、保存下一张、approved 排除
+// =============================================================
+
+function setWorkbenchQueueFilter(filter) {
+    currentWorkbenchQueueFilter = filter || 'todo';
+    // AC-03-03: 持久化当前队列筛选，刷新/重进后保持，不被重置回默认 tab
+    try { localStorage.setItem('workbenchQueueFilter', currentWorkbenchQueueFilter); } catch (e) {}
+    document.querySelectorAll('.queue-tab').forEach(btn => {
+        if (btn.dataset.queueFilter === currentWorkbenchQueueFilter) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+    renderWorkbenchQueueTable();
+}
+window.setWorkbenchQueueFilter = setWorkbenchQueueFilter;
+
+// AC-03-03: 恢复上次使用的队列筛选（刷新后不丢）
+function restoreWorkbenchQueueFilter() {
+    let saved = null;
+    try { saved = localStorage.getItem('workbenchQueueFilter'); } catch (e) {}
+    const valid = ['todo', 'to_review', 'to_approve', 'issues'];
+    if (saved && valid.indexOf(saved) !== -1) {
+        currentWorkbenchQueueFilter = saved;
+        document.querySelectorAll('.queue-tab').forEach(btn => {
+            if (btn.dataset.queueFilter === saved) btn.classList.add('active');
+            else btn.classList.remove('active');
+        });
+        return true;
+    }
+    return false;
+}
+window.restoreWorkbenchQueueFilter = restoreWorkbenchQueueFilter;
+
+function loadWorkbenchQueue(forceRefresh = false) {
+    apiFetch('/api/receipts')
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status !== 'success' || !Array.isArray(ret.data)) return;
+            cachedWorkbenchQueueData = ret.data;
+            updateWorkbenchQueueCounters();
+            renderWorkbenchQueueTable();
+        })
+        .catch(err => {
+            console.error('加载工作台队列异常:', err);
+        });
+}
+window.loadWorkbenchQueue = loadWorkbenchQueue;
+
+function updateWorkbenchQueueCounters() {
+    const list = cachedWorkbenchQueueData.filter(r => !r.deleted_at);
+    
+    // AC-03-01: 角色计数严格按集合，approved 不入未完成队列
+    const todoList = list.filter(r => r.status !== 'approved');
+    const reviewList = list.filter(r => r.status === 'parsed' || r.status === 'parsed_with_warnings' || r.status === 'error' || r.status === 'flagged');
+    const approveList = list.filter(r => r.status === 'edited');
+    const issueList = list.filter(r => (r.status === 'flagged') || (r.math_warnings && r.math_warnings.length > 0) || (r.quality_warnings && r.quality_warnings.length > 0));
+
+    const qCountTodo = document.getElementById('qCountTodo');
+    const qCountReview = document.getElementById('qCountReview');
+    const qCountApprove = document.getElementById('qCountApprove');
+    const qCountIssues = document.getElementById('qCountIssues');
+    const qTotalBadge = document.getElementById('workbenchQueueTotalBadge');
+
+    if (qCountTodo) qCountTodo.textContent = todoList.length;
+    if (qCountReview) qCountReview.textContent = reviewList.length;
+    if (qCountApprove) qCountApprove.textContent = approveList.length;
+    if (qCountIssues) qCountIssues.textContent = issueList.length;
+    if (qTotalBadge) qTotalBadge.textContent = `${todoList.length} 张待办`;
+}
+
+function renderWorkbenchQueueTable() {
+    const tbody = document.getElementById('workbenchQueueBody');
+    if (!tbody) return;
+
+    const list = cachedWorkbenchQueueData.filter(r => !r.deleted_at);
+    let filtered = [];
+
+    if (currentWorkbenchQueueFilter === 'todo') {
+        filtered = list.filter(r => r.status !== 'approved');
+    } else if (currentWorkbenchQueueFilter === 'to_review') {
+        filtered = list.filter(r => r.status === 'parsed' || r.status === 'parsed_with_warnings' || r.status === 'error' || r.status === 'flagged');
+    } else if (currentWorkbenchQueueFilter === 'to_approve') {
+        filtered = list.filter(r => r.status === 'edited');
+    } else if (currentWorkbenchQueueFilter === 'issues') {
+        filtered = list.filter(r => (r.status === 'flagged') || (r.math_warnings && r.math_warnings.length > 0) || (r.quality_warnings && r.quality_warnings.length > 0));
+    } else {
+        filtered = list;
+    }
+
+    if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">当前队列暂无待处理单据</td></tr>`;
+        return;
+    }
+
+    const isOwner = (typeof currentRole !== 'undefined' && currentRole === 'owner');
+
+    let html = '';
+    filtered.forEach(row => {
+        let statusBadge = '<span class="badge badge-secondary">待处理</span>';
+        if (row.status === 'parsed') {
+            statusBadge = '<span class="badge badge-info">待复核</span>';
+        } else if (row.status === 'parsed_with_warnings') {
+            const count = (row.math_warnings ? row.math_warnings.length : 0) + (row.quality_warnings ? row.quality_warnings.length : 0);
+            statusBadge = `<span class="badge badge-warning">发现 ${count} 处提醒</span>`;
+        } else if (row.status === 'edited') {
+            statusBadge = '<span class="badge badge-primary">已提交·待审批</span>';
+        } else if (row.status === 'approved') {
+            statusBadge = '<span class="badge badge-success">已入账</span>';
+        } else if (row.status === 'flagged' || row.status === 'error') {
+            statusBadge = '<span class="badge badge-danger">识别异常</span>';
+        }
+
+        const thumb = row.image_url 
+            ? `<img src="${row.image_url}" alt="原图" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1;">`
+            : `<div style="width:36px; height:36px; background:#f1f5f9; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#94a3b8;">无图</div>`;
+
+        const dateStr = (row.receipt_date || (row.created_at ? row.created_at.slice(0, 10) : '未知日期')) + ' (HKT)';
+        const supplierName = row.supplier_name || 'Vendor_A';
+        const totalFormatted = row.total_amount ? `$${Number(row.total_amount).toFixed(2)}` : '$0.00';
+
+        // AC-03-02: 队列行显式「问题数」列（按 problem.id 语义去重后的提醒+阻断计数）。
+        // 无问题用明确的 0，而不是留空（空会被读成「未知」）。
+        const _mw = Array.isArray(row.math_warnings) ? row.math_warnings.length : 0;
+        const _qw = Array.isArray(row.quality_warnings) ? row.quality_warnings.length : 0;
+        const _issueCount = (row.status === 'flagged' ? 1 : 0) + _mw + _qw;
+        const problemCell = _issueCount > 0
+            ? `<span class="badge badge-warning" title="该单据待处理的问题数（算术/画质/异常）">${_issueCount}</span>`
+            : `<span class="badge badge-secondary" title="未发现问题">0</span>`;
+
+        let actionBtn = '';
+        if (row.status === 'edited' && isOwner) {
+            actionBtn = `<button type="button" class="btn btn-sm btn-primary" style="min-height:40px; padding:6px 12px;" onclick="openApproveConfirmModalFromQueue(${row.id})">审核入账</button>`;
+        } else {
+            actionBtn = `<button type="button" class="btn btn-sm btn-secondary" style="min-height:40px; padding:6px 12px;" onclick="openReceiptInWorkbench(${row.id})">继续复核</button>`;
+        }
+
+        html += `
+            <tr data-receipt-id="${row.id}">
+                <td>${thumb}</td>
+                <td><strong>#${row.id}</strong></td>
+                <td>${escapeHtml(supplierName)}</td>
+                <td>${dateStr}</td>
+                <td style="font-weight:600; color:var(--primary);">${totalFormatted}</td>
+                <td>${statusBadge}</td>
+                <td style="text-align:center;">${problemCell}</td>
+                <td style="text-align:center;">${actionBtn}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html;
+}
+
+let _workbenchOpenSeq = 0;
+let _pendingWorkbenchSwitchTarget = null;  // AC-06-04: 保存后待切换的目标单据
+
+// AC-03-02: 两次点击继续——直接从首页打开任一未完成任务至工作台
+function openReceiptInWorkbench(receiptId, silent = false, _guarded = false) {
+    if (!receiptId) return;
+    const targetId = Number(receiptId);
+    if (!targetId || isNaN(targetId) || targetId <= 0) return;
+
+    // AC-06-04: 切换到另一张单据前，若当前表单有未保存修改，必须先给可执行的选择
+    // （保存后再切换 / 放弃并切换 / 保留本地留在当前），不得静默丢弃本地编辑。
+    if (!_guarded && currentReceiptId && Number(currentReceiptId) !== targetId
+        && typeof isReviewFormDirty === 'function' && isReviewFormDirty()) {
+        showUnsavedChangesGuard({
+            receiptLabel: '单据 #' + targetId,
+            onSave: () => { _pendingWorkbenchSwitchTarget = targetId; submitSaveEdited(false); },
+            onDiscard: () => { _reviewIsDirty = false; openReceiptInWorkbench(targetId, silent, true); }
+        });
+        return;
+    }
+
+    const seq = ++_workbenchOpenSeq;
+    apiFetch(`/api/receipt/${targetId}`)
+        .then(res => res.json())
+        .then(ret => {
+            if (seq !== _workbenchOpenSeq) return;
+            if (ret.status !== 'success' || !ret.data) {
+                showToast('读取单据详情失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+                return;
+            }
+            currentReceiptId = targetId;
+            currentReceiptData = ret.data;
+            currentReceiptData.id = targetId;
+            currentReceiptData.receipt_id = targetId;
+            if (ret.data.version != null) currentReceiptData.version = ret.data.version;
+
+            // 切换原图预览
+            const previewImg = document.getElementById('previewImg');
+            const noImg = document.getElementById('manualEntryNoImage');
+            if (ret.data.image_url) {
+                if (previewImg) {
+                    previewImg.src = ret.data.image_url;
+                    previewImg.style.display = '';
+                }
+                if (noImg) noImg.classList.add('hide');
+            } else {
+                if (previewImg) previewImg.style.display = 'none';
+                if (noImg) noImg.classList.remove('hide');
+            }
+
+            // 展开分栏并渲染编辑表单
+            const splitView = document.getElementById('splitViewArea');
+            if (splitView) splitView.classList.remove('hide');
+            const prefillCard = document.getElementById('prefillFormCard');
+            if (prefillCard) prefillCard.classList.remove('hide');
+            const loadingCard = document.getElementById('loadingCard');
+            if (loadingCard) loadingCard.classList.add('hide');
+            const preConfirmCard = document.getElementById('preConfirmCard');
+            if (preConfirmCard) preConfirmCard.classList.add('hide');
+            const errorCard = document.getElementById('errorCard');
+            if (errorCard) errorCard.classList.add('hide');
+
+            renderEditForm(currentReceiptData);
+
+            // 更新保存状态指示
+            const saveBadge = document.getElementById('reviewSaveStatusBadge');
+            if (saveBadge) {
+                if (ret.data.status === 'edited') {
+                    saveBadge.textContent = '已保存·待审批';
+                    saveBadge.className = 'badge badge-info';
+                } else if (ret.data.status === 'approved') {
+                    saveBadge.textContent = '已入账 (锁定)';
+                    saveBadge.className = 'badge badge-success';
+                } else {
+                    saveBadge.textContent = '未保存';
+                    saveBadge.className = 'badge badge-secondary';
+                }
+            }
+
+            // 检查本地草稿恢复（AC-06-04）
+            checkAndPromptLocalDraft(receiptId);
+
+            if (!silent) {
+                showToast(`已打开单据 #${receiptId}，可对照左侧原图复核`, 'info');
+            }
+            prefillCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        })
+        .catch(err => {
+            console.error('加载单据异常:', err);
+            showToast('加载单据失败，请检查网络设置', 'error');
+        });
+}
+window.openReceiptInWorkbench = openReceiptInWorkbench;
+
+// AC-03-01 & QA2-P1-01: 获取当前筛选与角色上下文下的有效可操作单据列表
+function getOperableWorkbenchQueueList() {
+    if (!Array.isArray(cachedWorkbenchQueueData)) return [];
+    const list = cachedWorkbenchQueueData.filter(r => !r.deleted_at);
+    const isStaff = (typeof currentRole !== 'undefined' && currentRole === 'staff');
+
+    let filtered = [];
+    if (currentWorkbenchQueueFilter === 'to_review') {
+        filtered = list.filter(r => r.status === 'parsed' || r.status === 'parsed_with_warnings' || r.status === 'error' || r.status === 'flagged');
+    } else if (currentWorkbenchQueueFilter === 'to_approve') {
+        filtered = list.filter(r => r.status === 'edited');
+    } else if (currentWorkbenchQueueFilter === 'issues') {
+        filtered = list.filter(r => (r.status === 'flagged') || (r.math_warnings && r.math_warnings.length > 0) || (r.quality_warnings && r.quality_warnings.length > 0));
+    } else {
+        // 'todo', 'all' 等默认待办队列
+        filtered = list.filter(r => r.status !== 'approved');
+    }
+
+    // 角色权限与单据可操作状态收敛：
+    // staff 绝对不可审批入账，已提交老板审批的项（edited）对 staff 而言不可操作，绝不能跳转
+    if (isStaff) {
+        filtered = filtered.filter(r => r.status !== 'edited' && r.status !== 'approved');
+    } else {
+        filtered = filtered.filter(r => r.status !== 'approved');
+    }
+
+    return filtered;
+}
+window.getOperableWorkbenchQueueList = getOperableWorkbenchQueueList;
+
+// AC-03-03 & QA2-P1-01: 保存并下一张，严格遵循当前筛选与角色，并避免三重 toast 遮挡
+function navigateNextOperableQueueItem(currentId, isManual = false) {
+    const operableList = getOperableWorkbenchQueueList();
+    if (!operableList || operableList.length === 0) {
+        showToast('当前筛选下的待办单据已全部处理完毕', 'success');
+        const splitView = document.getElementById('splitViewArea');
+        if (splitView) splitView.classList.add('hide');
+        const qSection = document.getElementById('workbenchQueueSection');
+        if (qSection) qSection.scrollIntoView({ behavior: 'smooth' });
+        return;
+    }
+
+    let nextItem = null;
+    let currentIndex = -1;
+    if (Array.isArray(cachedWorkbenchQueueData)) {
+        for (let i = 0; i < cachedWorkbenchQueueData.length; i++) {
+            if (String(cachedWorkbenchQueueData[i].id) === String(currentId)) {
+                currentIndex = i;
+                break;
+            }
+        }
+    }
+
+    if (currentIndex !== -1) {
+        // 优先在当前单据之后寻找下一个符合筛选与角色的可操作项
+        for (let i = currentIndex + 1; i < cachedWorkbenchQueueData.length; i++) {
+            const item = cachedWorkbenchQueueData[i];
+            if (operableList.some(op => String(op.id) === String(item.id))) {
+                nextItem = item;
+                break;
+            }
+        }
+    }
+
+    // 若后序无匹配，从队列首部循环找首个不是 currentId 的可操作项
+    if (!nextItem) {
+        for (let i = 0; i < cachedWorkbenchQueueData.length; i++) {
+            const item = cachedWorkbenchQueueData[i];
+            if (String(item.id) !== String(currentId) && operableList.some(op => String(op.id) === String(item.id))) {
+                nextItem = item;
+                break;
+            }
+        }
+    }
+
+    // 若依然未找到（例如队列中仅剩 currentId），说明已处理完毕
+    if (!nextItem) {
+        showToast('当前筛选下的待办单据已全部处理完毕', 'success');
+        const splitView = document.getElementById('splitViewArea');
+        if (splitView) splitView.classList.add('hide');
+        const qSection = document.getElementById('workbenchQueueSection');
+        if (qSection) qSection.scrollIntoView({ behavior: 'smooth' });
+        return;
+    }
+
+    // 仅弹出一个清晰明了的成功提示，避免多重 toast 堆叠遮挡
+    const notifyMsg = isManual
+        ? `已保存手工单据 #${currentId}，已切换至下一张待办单据 #${nextItem.id}`
+        : `已保存修改，已切换至下一张待办单据 #${nextItem.id}`;
+    showToast(notifyMsg, 'success');
+    openReceiptInWorkbench(nextItem.id, true);
+}
+
+// =============================================================
+// Category 01: 审核入账确认弹窗与全局无障碍模态管理（AC-01-02, AC-01-03, AC-01-06, AC-08-05）
+// 列示别名、日期、$***、明细数、问题数与库存后果；焦点受控无泄漏
+// =============================================================
+
+let _activeAccessibleModals = [];
+
+function getModalFocusableElements(modal) {
+    if (!modal) return [];
+    const selector = 'button:not([disabled]):not([aria-hidden="true"]), ' +
+                     '[href]:not([aria-hidden="true"]), ' +
+                     'input:not([disabled]):not([type="hidden"]):not([aria-hidden="true"]), ' +
+                     'select:not([disabled]):not([aria-hidden="true"]), ' +
+                     'textarea:not([disabled]):not([aria-hidden="true"]), ' +
+                     '[tabindex]:not([tabindex="-1"]):not([aria-hidden="true"])';
+    const elements = Array.from(modal.querySelectorAll(selector));
+    return elements.filter(el => {
+        return el.offsetWidth > 0 || el.offsetHeight > 0 || el.getClientRects().length > 0;
+    });
+}
+window.getModalFocusableElements = getModalFocusableElements;
+
+function openAccessibleModal(modal, preferredFocusSelector, explicitTrigger) {
+    if (!modal) return;
+    const triggerEl = explicitTrigger || document.activeElement;
+    modal.classList.remove('hide');
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+
+    _activeAccessibleModals.push({
+        modal: modal,
+        trigger: triggerEl
+    });
+
+    const setFocus = () => {
+        let target = null;
+        if (preferredFocusSelector) {
+            target = modal.querySelector(preferredFocusSelector);
+        }
+        if (!target) {
+            const focusables = getModalFocusableElements(modal);
+            target = focusables.find(el => el.id && (el.id.includes('Cancel') || el.id.includes('btnCancel'))) || focusables[0];
+        }
+        if (target && typeof target.focus === 'function') {
+            target.focus();
+        } else {
+            modal.setAttribute('tabindex', '-1');
+            modal.focus();
+        }
+    };
+    setFocus();
+    setTimeout(setFocus, 30);
+}
+window.openAccessibleModal = openAccessibleModal;
+
+function closeAccessibleModal(modal) {
+    if (!modal) return;
+    modal.classList.add('hide');
+    const idx = _activeAccessibleModals.findIndex(item => item.modal === modal);
+    if (idx !== -1) {
+        const item = _activeAccessibleModals.splice(idx, 1)[0];
+        if (item && item.trigger && typeof item.trigger.focus === 'function') {
+            try { item.trigger.focus(); } catch (e) {}
+        }
+    }
+}
+window.closeAccessibleModal = closeAccessibleModal;
+
+let pendingApproveReceiptId = null;
+let pendingApproveVersion = null;
+
+function openApproveConfirmModalFromQueue(receiptId) {
+    const validId = receiptId ? Number(receiptId) : null;
+    if (!validId || isNaN(validId) || validId <= 0) return;
+    apiFetch(`/api/receipt/${validId}`)
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status === 'success' && ret.data) {
+                const data = ret.data;
+                data.id = validId;
+                data.receipt_id = validId;
+                openApproveConfirmModal(validId, data);
+            } else {
+                showToast('读取单据详情失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            }
+        })
+        .catch(err => {
+            showToast('读取单据详情失败，请检查网络设置', 'error');
+        });
+}
+window.openApproveConfirmModalFromQueue = openApproveConfirmModalFromQueue;
+
+function openApproveConfirmModal(receiptId, data, explicitTrigger) {
+    // AC-01-06: 权限校验，店员无审批入口且阻断
+    if (typeof currentRole !== 'undefined' && currentRole === 'staff') {
+        showToast('店员无审批入账权限，请联系老板登录审批', 'warning');
+        return;
+    }
+
+    const validId = receiptId ? Number(receiptId) : null;
+    if (!validId || isNaN(validId) || validId <= 0) {
+        showToast('未选择或打开有效单据，无法审核入账', 'warning');
+        return;
+    }
+
+    pendingApproveReceiptId = validId;
+    pendingApproveVersion = (data && data.version != null) ? data.version : (currentReceiptData ? currentReceiptData.version : null);
+
+    const titleEl = document.getElementById('approveConfirmTitle');
+    if (titleEl) titleEl.textContent = `确认单据 #${validId} 审核入账`;
+
+    const receiptIdEl = document.getElementById('approveConfirmReceiptId');
+    if (receiptIdEl) receiptIdEl.textContent = `#${validId}`;
+
+    const supplierEl = document.getElementById('approveConfirmSupplier');
+    const dateEl = document.getElementById('approveConfirmDate');
+    const totalEl = document.getElementById('approveConfirmTotal');
+    const itemsEl = document.getElementById('approveConfirmItemCount');
+    const itemPreviewEl = document.getElementById('approveConfirmItemPreview');
+    const issueEl = document.getElementById('approveConfirmIssueCount');
+    const blockerWarn = document.getElementById('approveConfirmBlockerWarn');
+    const submitBtn = document.getElementById('btnExecuteApproveConfirm');
+
+    if (supplierEl) supplierEl.textContent = (data && data.supplier_name) || 'Vendor_A';
+    if (dateEl) dateEl.textContent = (data && data.date) || '2026-10-08';
+    if (totalEl) totalEl.textContent = (data && data.total_amount) ? `$${Number(data.total_amount).toFixed(2)}` : '$***';
+    const itemsCount = (data && data.items) ? data.items.filter(it => !it.is_void).length : 0;
+    if (itemsEl) itemsEl.textContent = `${itemsCount} 项`;
+
+    if (itemPreviewEl) {
+        let previewText = '--';
+        if (data && data.items && data.items.length > 0) {
+            const validItems = data.items.filter(it => !it.is_void);
+            if (validItems.length > 0) {
+                const first = validItems[0].name || validItems[0].raw_name || '';
+                previewText = validItems.length > 1 ? `${first} 等 ${validItems.length} 项` : first;
+            }
+        }
+        itemPreviewEl.textContent = previewText || '--';
+    }
+
+    // 计算是否有算术或必填阻断 (AC-05-04)
+    const issues = calculateReceiptIssues(data);
+    const blockers = issues.filter(i => i.type === 'blocker');
+    if (issueEl) {
+        if (issues.length === 0) {
+            issueEl.textContent = '0 处（数据齐全）';
+            issueEl.style.color = 'var(--success, #16a34a)';
+        } else {
+            issueEl.textContent = `${issues.length} 处（需修改 ${blockers.length} 处）`;
+            issueEl.style.color = blockers.length > 0 ? 'var(--danger, #dc2626)' : 'var(--warning, #d97706)';
+        }
+    }
+
+    if (blockers.length > 0) {
+        if (blockerWarn) blockerWarn.classList.remove('hide');
+        if (submitBtn) submitBtn.disabled = true;
+    } else {
+        if (blockerWarn) blockerWarn.classList.add('hide');
+        if (submitBtn) submitBtn.disabled = false;
+    }
+
+    const modal = document.getElementById('modalApproveConfirmDialog');
+    if (modal) {
+        const triggerEl = explicitTrigger || document.getElementById('btnApproveReceipt') || document.activeElement;
+        openAccessibleModal(modal, '#btnCancelApproveConfirm', triggerEl);
+    }
+}
+window.openApproveConfirmModal = openApproveConfirmModal;
+
+function onWorkbenchApproveClick() {
+    const triggerBtn = document.getElementById('btnApproveReceipt') || document.activeElement;
+
+    if (typeof currentRole !== 'undefined' && currentRole === 'staff') {
+        showToast('店员无审批入账权限，请联系老板登录审批', 'warning');
+        return;
+    }
+
+    const rawId = (currentReceiptData && (currentReceiptData.id || currentReceiptData.receipt_id)) || currentReceiptId;
+    const receiptId = rawId ? Number(rawId) : null;
+    if (!receiptId || isNaN(receiptId) || receiptId <= 0) {
+        showToast('未选择或打开有效单据，无法审核入账', 'warning');
+        return;
+    }
+
+    let data;
+    try { data = collectReviewFormData(); } catch (e) { data = currentReceiptData || {}; }
+    data.id = receiptId;
+    data.receipt_id = receiptId;
+
+    // 必填与算术阻断检查 (AC-05-04)
+    const issues = calculateReceiptIssues(data);
+    const blockers = issues.filter(i => i.type === 'blocker');
+    if (blockers.length > 0) {
+        showToast(`当前单据存在 ${blockers.length} 处阻断问题，请先修正后再审核`, 'error');
+        focusFirstIssueField(issues);
+        return;
+    }
+
+    // AC-01-03: 未保存修改时安全阻断并提示先保存，杜绝静默预保存破坏取消零写入语义
+    if (isReviewFormDirty()) {
+        showToast('单据修改尚未保存，请先点击【保存复核修改】保存后再审核入账', 'warning');
+        const saveBtn = document.getElementById('btnSaveReview');
+        if (saveBtn) saveBtn.focus();
+        return;
+    }
+
+    const targetData = Object.assign({}, currentReceiptData || {}, data);
+    targetData.id = receiptId;
+    targetData.receipt_id = receiptId;
+    if (currentReceiptData && currentReceiptData.version != null) {
+        targetData.version = currentReceiptData.version;
+    }
+
+    openApproveConfirmModal(receiptId, targetData, triggerBtn);
+}
+window.onWorkbenchApproveClick = onWorkbenchApproveClick;
+
+function closeApproveConfirmModal() {
+    const modal = document.getElementById('modalApproveConfirmDialog');
+    if (modal) {
+        closeAccessibleModal(modal);
+    }
+    pendingApproveReceiptId = null;
+    pendingApproveVersion = null;
+}
+window.closeApproveConfirmModal = closeApproveConfirmModal;
+
+function executeConfirmedApproval() {
+    if (!pendingApproveReceiptId) {
+        showToast('未选择或打开有效单据，无法审核入账', 'warning');
+        return;
+    }
+
+    const receiptId = Number(pendingApproveReceiptId);
+    if (!receiptId || isNaN(receiptId) || receiptId <= 0) {
+        showToast('未选择或打开有效单据，无法审核入账', 'warning');
+        return;
+    }
+
+    const version = pendingApproveVersion;
+    const submitBtn = document.getElementById('btnExecuteApproveConfirm');
+    if (submitBtn) submitBtn.disabled = true;
+
+    const executingReceiptId = receiptId;
+    const executingVersion = version;
+
+    apiFetch(`/api/receipt/${executingReceiptId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version: executingVersion })
+    })
+    .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+    .then(([httpStatus, ret]) => {
+        if (httpStatus === 409 && ret && ret.code === 'ALREADY_APPROVED') {
+            showToast('该单据之前已完成审核入账，未重复增加入库', 'info');
+            closeApproveConfirmModal();
+            loadWorkbenchQueue(true);
+            loadInventoryData();
+            return;
+        }
+        if (httpStatus === 422 && ret && ret.code === 'APPROVAL_BLOCKED') {
+            showToast('无法审核入账：单据存在算术不符或必填缺失', 'error', 6000);
+            return;
+        }
+        if (toastHttpError(httpStatus, ret)) return;
+        if (!ret || ret.status !== 'success') {
+            showToast('审核失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            return;
+        }
+
+        showToast(`单据 #${executingReceiptId} 审核通过，已正式入账并生成库存流水`, 'success');
+        closeApproveConfirmModal();
+        loadWorkbenchQueue(true);
+        loadInventoryData();
+        loadReceiptsHistory();
+
+        // 若当前正打开该单，同步锁定状态
+        if (String(currentReceiptId) === String(executingReceiptId)) {
+            const saveBadge = document.getElementById('reviewSaveStatusBadge');
+            if (saveBadge) {
+                saveBadge.textContent = '已入账 (锁定)';
+                saveBadge.className = 'badge badge-success';
+            }
+        }
+    })
+    .catch(err => {
+        console.error('审核请求异常:', err);
+        showToast('审核请求失败，请检查网络设置', 'error');
+    })
+    .finally(() => {
+        if (submitBtn) submitBtn.disabled = false;
+    });
+}
+window.executeConfirmedApproval = executeConfirmedApproval;
+
+// =============================================================
+// Category 06: 版本冲突 409 对比弹窗与本地草稿保护（AC-06-03, AC-06-04）
+// =============================================================
+
+let conflictLocalDataCache = null;
+let conflictReceiptIdCache = null;
+
+function renderConflictDataView(d, isServer = false) {
+    if (!d) return isServer ? '服务器已被其他人员更新并递增了版本号。\n请选择是否覆盖或重新加载。' : '未提供本地数据';
+    const lines = [];
+    if (d.id != null || d.receipt_id != null) lines.push(`单据编号: #${d.id || d.receipt_id}`);
+    if (isServer && d.version != null) lines.push(`服务端版本: v${d.version}`);
+    if (!isServer && d.version != null) lines.push(`本地提交版本: v${d.version}`);
+    lines.push(`供应商: ${d.supplier_name || '未填'}`);
+    lines.push(`开单日期: ${d.date || d.receipt_date || '未填'}`);
+    lines.push(`整单金额: $${Number(d.total_amount || 0).toFixed(2)}`);
+    
+    const items = d.items || [];
+    lines.push(`明细条目 (${items.length} 项):`);
+    if (items.length === 0) {
+        lines.push('  (无明细条目)');
+    } else {
+        items.forEach((it, idx) => {
+            const name = it.name || it.raw_name || '未命名食材';
+            const qty = it.quantity != null ? it.quantity : 1;
+            const unit = it.unit || it.raw_unit || '';
+            const price = it.unit_price != null ? `$${Number(it.unit_price).toFixed(2)}` : '';
+            const amt = it.amount != null ? `$${Number(it.amount).toFixed(2)}` : '';
+            lines.push(`  ${idx + 1}. ${name} × ${qty}${unit} ${price ? `(单价: ${price})` : ''} ${amt ? `小计: ${amt}` : ''}`.trim());
+        });
+    }
+    return lines.join('\n');
+}
+
+function showConflictDiffModal(receiptId, localData, serverData, explicitTrigger) {
+    conflictReceiptIdCache = receiptId;
+    conflictLocalDataCache = localData;
+
+    const modal = document.getElementById('modalConflictDiffDialog');
+    const localContent = document.getElementById('conflictLocalDiffContent');
+    const serverContent = document.getElementById('conflictServerDiffContent');
+    const serverError = document.getElementById('conflictServerFetchError');
+
+    const setServerErrorVisible = (visible, message) => {
+        if (!serverError) return;
+        if (visible) {
+            serverError.textContent = message || '拉取服务端最新数据失败，无法展示差异对比。';
+            serverError.classList.remove('hide');
+        } else {
+            serverError.textContent = '';
+            serverError.classList.add('hide');
+        }
+    };
+
+    const updateContents = (srvData) => {
+        if (localContent) {
+            localContent.textContent = renderConflictDataView(localData, false);
+        }
+        if (serverContent) {
+            serverContent.textContent = renderConflictDataView(srvData, true);
+        }
+    };
+
+    // AC-06-03: 拉取服务端最新真实单据；失败时给出可见错误与可点的重试入口，
+    // 而不是静默保持空态（用户会以为服务端没有数据）。
+    const fetchLatestIntoModal = () => {
+        setServerErrorVisible(false);
+        updateContents(null);
+        apiFetch(`/api/receipt/${receiptId}`)
+            .then(res => res.json())
+            .then(ret => {
+                if (ret.status === 'success' && ret.data) {
+                    updateContents(ret.data);
+                } else {
+                    setServerErrorVisible(true, '读取服务端最新数据失败：' + ((ret && ret.msg) || '响应异常') + '。可点「重试」重新拉取。');
+                }
+            })
+            .catch(err => {
+                console.warn('[Conflict] 拉取服务端最新单据详情失败:', err);
+                setServerErrorVisible(true, '网络异常，读取服务端最新数据失败。可点「重试」重新拉取。');
+            });
+    };
+
+    if (serverData) {
+        setServerErrorVisible(false);
+        updateContents(serverData);
+    } else if (receiptId) {
+        fetchLatestIntoModal();
+    } else {
+        updateContents(null);
+    }
+
+    // 重试按钮绑定（幂等覆盖，避免重复监听器累积）
+    const retryBtn = document.getElementById('btnConflictFetchRetry');
+    if (retryBtn) {
+        retryBtn.onclick = () => {
+            if (conflictReceiptIdCache) {
+                receiptId = conflictReceiptIdCache;
+                fetchLatestIntoModal();
+            }
+        };
+    }
+
+    if (modal) openAccessibleModal(modal, '#btnCancelConflictDiff', explicitTrigger);
+}
+
+function closeConflictDiffModal(discard = false) {
+    const modal = document.getElementById('modalConflictDiffDialog');
+    if (modal) closeAccessibleModal(modal);
+}
+window.closeConflictDiffModal = closeConflictDiffModal;
+
+function acceptServerVersionAndReload() {
+    closeConflictDiffModal();
+    if (conflictReceiptIdCache) {
+        refreshReviewFormFromServer(conflictReceiptIdCache);
+    }
+}
+window.acceptServerVersionAndReload = acceptServerVersionAndReload;
+
+function forceOverwriteConflictVersion() {
+    closeConflictDiffModal();
+    if (!conflictReceiptIdCache || !conflictLocalDataCache) return;
+
+    // 拉取最新版本号以解除冲突
+    apiFetch(`/api/receipt/${conflictReceiptIdCache}`)
+        .then(res => res.json())
+        .then(ret => {
+            if (ret.status === 'success' && ret.data && ret.data.version != null) {
+                conflictLocalDataCache.version = ret.data.version;
+                if (currentReceiptData) currentReceiptData.version = ret.data.version;
+                submitSaveEdited(false);
+            }
+        });
+}
+window.forceOverwriteConflictVersion = forceOverwriteConflictVersion;
+
+// 本地草稿保护（AC-06-04）
+function checkAndPromptLocalDraft(receiptId) {
+    try {
+        const saved = localStorage.getItem(`receipt_draft_${receiptId}`);
+        if (!saved) return;
+        const draft = JSON.parse(saved);
+        if (draft && draft.timestamp && (Date.now() - draft.timestamp < 24 * 3600 * 1000)) {
+            if (confirm('检测到本单据有未保存的本地草稿，是否恢复之前的修改？')) {
+                renderEditForm(draft.data);
+                showToast('已成功恢复本地草稿内容', 'info');
+            } else {
+                localStorage.removeItem(`receipt_draft_${receiptId}`);
+            }
+        }
+    } catch (e) {}
+}
+
+window.addEventListener('beforeunload', () => {
+    if (currentReceiptId) {
+        try {
+            const formData = collectReviewFormData();
+            localStorage.setItem(`receipt_draft_${currentReceiptId}`, JSON.stringify({
+                timestamp: Date.now(),
+                data: formData
+            }));
+        } catch (e) {}
+    }
+});
+
+// =============================================================
+// Category 04: 可拖拽分栏与窄屏切换（AC-04-01 至 AC-04-03）
+// =============================================================
+
+function initSplitViewDivider() {
+    const divider = document.getElementById('splitViewDivider');
+    const leftCard = document.getElementById('leftCard');
+    const splitArea = document.getElementById('splitViewArea');
+    if (!divider || !leftCard || !splitArea) return;
+
+    // 恢复持久化分栏比例
+    try {
+        const savedRatio = parseFloat(localStorage.getItem('receiptSplitRatio'));
+        if (!isNaN(savedRatio) && savedRatio >= 0.25 && savedRatio <= 0.75) {
+            leftCard.style.flex = `0 0 ${(savedRatio * 100).toFixed(1)}%`;
+            leftCard.style.width = `${(savedRatio * 100).toFixed(1)}%`;
+        }
+    } catch(e){}
+
+    let isDragging = false;
+
+    divider.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        divider.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const rect = splitArea.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        let ratio = offsetX / rect.width;
+        // 夹紧在 25% ~ 75% 之间，防止面板消失 (AC-04-03)
+        ratio = Math.max(0.25, Math.min(0.75, ratio));
+
+        leftCard.style.flex = `0 0 ${(ratio * 100).toFixed(1)}%`;
+        leftCard.style.width = `${(ratio * 100).toFixed(1)}%`;
+        try { localStorage.setItem('receiptSplitRatio', ratio.toFixed(3)); } catch(e){}
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            divider.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        }
+    });
+}
+
+let mobileScrollCache = { img: 0, form: 0 };
+function switchMobileSplitView(mode) {
+    const left = document.getElementById('leftCard');
+    const right = document.getElementById('rightPanel');
+    const btnImg = document.getElementById('btnShowMobileImg');
+    const btnForm = document.getElementById('btnShowMobileForm');
+    if (!left || !right) return;
+
+    if (mode === 'img') {
+        mobileScrollCache.form = right.scrollTop || window.scrollY;
+        left.style.display = 'block';
+        right.style.display = 'none';
+        if (btnImg) btnImg.classList.add('active');
+        if (btnForm) btnForm.classList.remove('active');
+        setTimeout(() => { if (left.scrollTop !== undefined) left.scrollTop = mobileScrollCache.img; }, 10);
+    } else {
+        mobileScrollCache.img = left.scrollTop || window.scrollY;
+        left.style.display = 'none';
+        right.style.display = 'block';
+        if (btnForm) btnForm.classList.add('active');
+        if (btnImg) btnImg.classList.remove('active');
+        setTimeout(() => { if (right.scrollTop !== undefined) right.scrollTop = mobileScrollCache.form; }, 10);
+    }
+}
+window.switchMobileSplitView = switchMobileSplitView;
+
+// =============================================================
+// Category 07: 库存管理层级与变动闭环（AC-07-02, AC-07-06）
+// =============================================================
+
+function toggleInvManageMenu() {
+    const menu = document.getElementById('invManageMenu');
+    if (menu) menu.classList.toggle('hide');
+}
+window.toggleInvManageMenu = toggleInvManageMenu;
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('invManageMenu');
+    const btn = document.getElementById('btnManageInvMenu');
+    if (menu && !menu.classList.contains('hide')) {
+        if (btn && !btn.contains(e.target) && !menu.contains(e.target)) {
+            menu.classList.add('hide');
+        }
+    }
+});
+
+let currentMovementSku = null;
+function openStockMovementModal(skuId, skuName, currentStock, baseUnit) {
+    currentMovementSku = { id: skuId, name: skuName, stock: currentStock, unit: baseUnit };
+    const modal = document.getElementById('modalStockMovementDialog');
+    const nameEl = document.getElementById('stockMovementSkuName');
+    const stockEl = document.getElementById('stockMovementCurrentStock');
+    const unitEl = document.getElementById('stockMovementUnit');
+    const idEl = document.getElementById('stockMovementSkuId');
+    const qtyEl = document.getElementById('stockMovementQty');
+    const noteEl = document.getElementById('stockMovementNote');
+
+    if (nameEl) nameEl.textContent = skuName;
+    if (stockEl) stockEl.textContent = `(当前库存: ${currentStock} ${baseUnit})`;
+    if (unitEl) unitEl.textContent = baseUnit;
+    if (idEl) idEl.value = skuId;
+    if (qtyEl) qtyEl.value = '';
+    if (noteEl) noteEl.value = '';
+
+    updateStockMovementLabels();
+    if (modal) openAccessibleModal(modal, '#stockMovementQty');
+}
+window.openStockMovementModal = openStockMovementModal;
+
+function closeStockMovementModal() {
+    const modal = document.getElementById('modalStockMovementDialog');
+    if (modal) closeAccessibleModal(modal);
+    currentMovementSku = null;
+}
+window.closeStockMovementModal = closeStockMovementModal;
+
+function updateStockMovementLabels() {
+    const kind = document.getElementById('stockMovementKind').value;
+    const qtyLabel = document.getElementById('stockMovementQtyLabel');
+    if (qtyLabel) {
+        if (kind === 'stocktake') qtyLabel.textContent = '盘点实际库存';
+        else if (kind === 'waste') qtyLabel.textContent = '报损消耗数量';
+        else qtyLabel.textContent = '消耗出库数量';
+    }
+}
+window.updateStockMovementLabels = updateStockMovementLabels;
+
+function submitStockMovement() {
+    if (!currentMovementSku) return;
+    const skuId = currentMovementSku.id;
+    const kind = document.getElementById('stockMovementKind').value;
+    const qty = parseFloat(document.getElementById('stockMovementQty').value);
+    const note = (document.getElementById('stockMovementNote').value || '').trim();
+
+    if (isNaN(qty) || qty < 0) {
+        showToast('请输入有效的数量', 'error');
+        return;
+    }
+
+    let url = `/api/inventory/${skuId}/${kind}`;
+    let body = {};
+    if (kind === 'stocktake') {
+        body = { actual_qty: qty, note: note };
+    } else {
+        body = { quantity: qty, notes: note };
+    }
+
+    apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    })
+    .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+    .then(([httpStatus, ret]) => {
+        if (toastHttpError(httpStatus, ret)) return;
+        if (!ret || ret.status !== 'success') {
+            showToast('记录变动失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            return;
+        }
+
+        showToast(`已成功记录库存变动（${ret.msg || '操作成功'}）`, 'success');
+        closeStockMovementModal();
+        loadInventoryData();
+        if (typeof loadInventoryLedger === 'function') loadInventoryLedger();
+    })
+    .catch(err => {
+        console.error('库存变动提交失败:', err);
+        showToast('提交库存变动失败，请检查网络设置', 'error');
+    });
+}
+window.submitStockMovement = submitStockMovement;
+
+// =============================================================
+// Category 08: 全局快捷键与无障碍键盘链路（AC-08-03 至 AC-08-05）
+// =============================================================
+
+function initGlobalKeyboardShortcuts() {
+    document.addEventListener('keydown', (e) => {
+        // Cmd+S / Ctrl+S 保存拦截
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+            const prefillCard = document.getElementById('prefillFormCard');
+            if (prefillCard && !prefillCard.classList.contains('hide')) {
+                e.preventDefault();
+                submitSaveEdited(false);
+                return;
+            }
+        }
+
+        // Esc 安全关闭弹窗 (AC-08-04, AC-08-05)
+        if (e.key === 'Escape') {
+            const approveModal = document.getElementById('modalApproveConfirmDialog');
+            if (approveModal && !approveModal.classList.contains('hide')) {
+                closeApproveConfirmModal();
+                return;
+            }
+            const conflictModal = document.getElementById('modalConflictDiffDialog');
+            if (conflictModal && !conflictModal.classList.contains('hide')) {
+                closeConflictDiffModal(false);
+                return;
+            }
+            const stockModal = document.getElementById('modalStockMovementDialog');
+            if (stockModal && !stockModal.classList.contains('hide')) {
+                closeStockMovementModal();
+                return;
+            }
+        }
+
+        // 防止在输入框内按 Cmd+Enter 误触发审批 (AC-08-04)
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                e.preventDefault();
+                return;
+            }
+        }
     });
 }
 
@@ -6769,13 +8554,19 @@ function loadInventoryData() {
             // F5-L1：店员隐藏 owner-only 行内操作（价格走势 / 盘点 / 编辑 / 更多）。
             // 四个入口的后端接口均为 require_role("owner")，店员点击必 403，故渲染期直接不输出。
             const skuActionsHtml = isOwnerRoleNow() ? `
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>
                         <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.85rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
                         <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
                             onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
                         <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='openStockMovementModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>变动录入</button>
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
                             onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
                         <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>` : '';
+                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>` : `
+                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                            onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>`;
 
             // 已停用 / 分类 等同属标签胶囊，统一走 .badge.badge-secondary（去掉内联自定义样式与间距，间距交由 .inv-name-cell 的 gap 控制）
             const activeBadge = !isActive
@@ -6793,8 +8584,9 @@ function loadInventoryData() {
                 ? `<button class="btn btn-secondary" style="padding:2px 6px; font-size:0.72rem;"
                         onclick="revokePriceAnomalyAck(${Number(sku.id)})" title="撤销该价格异动处置（回到未处置）">撤销处置</button>`
                 : '';
-            // kg 列：仅重量单位显示折算（系数与后端 unit_factors 同源）；计件单位显示 -
-            let kgCell = '<span style="color:var(--text-muted);">-</span>';
+            // kg 列：仅重量单位显示折算（系数与后端 unit_factors 同源）；无换算依据时
+            // 显式标「未知」（AC-07-03：未知=未知，不折成 0、不留空白破折号）。
+            let kgCell = '<span class="badge badge-secondary" title="该单位无可用的 kg 换算依据，不作猜测">未知</span>';
             if (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg))) {
                 const kgVal = Number(sku.standard_kg);
                 kgCell = `${kgVal.toFixed(3)} kg`;
@@ -6880,6 +8672,57 @@ function clearInventoryStale() {
         });
     }
 }
+
+// AC-07-02：行常驻「详情」入口（只读，不扩权）——展示该 SKU 的库存/单位/阈值/单价事实。
+function viewInventoryDetail(skuId) {
+    const sku = (typeof inventorySkusMap !== 'undefined' && inventorySkusMap)
+        ? inventorySkusMap.get(Number(skuId)) : null;
+    if (!sku) {
+        showToast('未找到该食材详情，请刷新库存后重试', 'warning');
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-backdrop custom-modal-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', '食材详情');
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh;'
+        + ' background:rgba(0,0,0,0.5); z-index:999999; display:flex; align-items:center; justify-content:center;';
+    const stock = Number(sku.current_stock || 0);
+    const unit = sku.base_unit || '未知单位';
+    const kg = (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg)))
+        ? Number(sku.standard_kg).toFixed(3) + ' kg' : '未知（无换算依据）';
+    const lastPrice = sku.last_unit_price ? `$${Number(sku.last_unit_price).toFixed(2)}` : '未知';
+    const rows = [
+        ['品名', sku.name || ''],
+        ['分类', sku.category || '其他'],
+        ['当前库存', `${stock} ${unit}`],
+        ['参考 kg', kg],
+        ['警戒线', `${Number(sku.min_stock_alert || 0)} ${unit}`],
+        ['最新进货单价', lastPrice],
+        ['低库存', sku.is_low_stock ? '是' : '否'],
+        ['价格异动', sku.price_anomaly ? '是' : '否'],
+    ];
+    const rowsHtml = rows.map(([k, v]) =>
+        `<tr><th style="text-align:left; padding:6px 10px; color:var(--text-muted); font-weight:600;">${w2Escape(k)}</th>`
+        + `<td style="padding:6px 10px;">${w2Escape(String(v))}</td></tr>`).join('');
+    overlay.innerHTML = `<div class="card" style="width:440px; max-width:92vw; background:var(--card-bg,#fff);`
+        + ` border-radius:10px; padding:20px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">`
+        + `<h4 style="margin:0 0 12px 0; font-size:1.05rem;">食材详情</h4>`
+        + `<table style="width:100%; border-collapse:collapse; font-size:0.9rem;">${rowsHtml}</table>`
+        + `<div style="display:flex; justify-content:flex-end; margin-top:16px;">`
+        + `<button type="button" class="btn btn-secondary" id="btnCloseInvDetail" style="min-height:40px; padding:8px 16px;">关闭</button>`
+        + `</div></div>`;
+    document.body.appendChild(overlay);
+    const close = () => { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+    overlay.querySelector('#btnCloseInvDetail').onclick = close;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); window.removeEventListener('keydown', onKey); } };
+    window.addEventListener('keydown', onKey);
+    const btn = overlay.querySelector('#btnCloseInvDetail');
+    if (btn) btn.focus();
+}
+window.viewInventoryDetail = viewInventoryDetail;
 
 // -------------------------------------------------------------
 // WS4-5：库存流水台账（只读；数据取自 GET /api/inventory/logs）
@@ -7183,7 +9026,7 @@ function submitSkuModal() {
             if (ret.status === 'success') {
                 closeModalById('skuModal');
                 loadInventoryData();
-                showToast(`食材 SKU【${name}】创建成功`, 'success');
+                showToast(`食材 SKU ${name} 创建成功`, 'success');
 
                 // 若由明细行内联发起，自动绑定回该行
                 if (activeInlineSkuInput) {
@@ -7354,7 +9197,7 @@ function submitSkuMerge() {
 }
 
 function deleteSkuDirect(skuId, skuName) {
-    if (!confirm(`确定要删除/停用食材【${skuName}】吗？\n\n系统会自动判断：若无历史进货单据则彻底删除，若有单据关联则安全停用。`)) {
+    if (!confirm(`确定要删除/停用食材 ${skuName} 吗？\n\n系统会自动判断：若无历史进货单据则彻底删除，若有单据关联则安全停用。`)) {
         return;
     }
 
@@ -7623,7 +9466,7 @@ function toggleSkuActive(skuTarget) {
     const targetActive = isActive ? 0 : 1;
 
     if (isActive) {
-        if (!confirm(`确定要停用食材【${sku.name}】吗？\n\n停用后进货将不再自动匹配到此项，默认列表也不再显示。`)) {
+        if (!confirm(`确定要停用食材 ${sku.name} 吗？\n\n停用后进货将不再自动匹配到此项，默认列表也不再显示。`)) {
             return;
         }
     }
@@ -10813,13 +12656,21 @@ window.applyPayablesFilters = applyPayablesFilters;
 
 function closeModalById(id) {
     const el = document.getElementById(id);
-    if (el) el.classList.add('hide');
+    if (el) {
+        if (typeof closeAccessibleModal === 'function') closeAccessibleModal(el);
+        else el.classList.add('hide');
+    }
 }
+window.closeModalById = closeModalById;
 
 function openModalById(id) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('hide');
+    if (el) {
+        if (typeof openAccessibleModal === 'function') openAccessibleModal(el);
+        else el.classList.remove('hide');
+    }
 }
+window.openModalById = openModalById;
 
 function fmtMoney(v) {
     const n = Number(v || 0);
@@ -12156,7 +14007,8 @@ function initDemoRoleSwitch() {
         const role = sel.value;
         try { localStorage.setItem('demo_role', role); } catch (e) { /* ignore */ }
         applyDemoRoleColor(role);
-        showToast('角色已切换：' + role, 'info');
+        const roleNameMap = { admin: '系统管理员', owner: '餐厅老板 / 店长', staff: '餐厅店员' };
+        showToast('角色已切换为：' + (roleNameMap[role] || role), 'info');
         // 重探 /me 刷新 AuthState.account → isOwnerRole() 生效
         probeAuthAndEnter(true);
         // B1：即将整页重载，在途请求被浏览器中断属预期行为；
@@ -12259,6 +14111,9 @@ function applyDishRoleVisibility(optionalRole) {
             }
         }
     });
+    if (dishLibraryCache && dishLibraryCache.length > 0) {
+        filterDishBomLibrary();
+    }
 }
 
 // U-6: 弹窗内老板级按钮的视觉级隐藏
@@ -12309,85 +14164,739 @@ function toggleEngineDrawer(drawerId) {
 }
 window.toggleEngineDrawer = toggleEngineDrawer;
 
+function toggleEngineCard(target) {
+    const cardMap = {
+        'rec': { cardId: 'adminRecognitionCard', bodyId: 'adminOpenaiRecognitionBox', leg: 'rec' },
+        'aud': { cardId: 'adminAuditCard', bodyId: 'adminOpenaiAuditBox', leg: 'aud' },
+        'parse': { cardId: 'adminParseDrawer', bodyId: 'adminParseOpenaiBox', leg: 'parse' },
+        'adminRecognitionCard': { cardId: 'adminRecognitionCard', bodyId: 'adminOpenaiRecognitionBox', leg: 'rec' },
+        'adminAuditCard': { cardId: 'adminAuditCard', bodyId: 'adminOpenaiAuditBox', leg: 'aud' },
+        'adminParseDrawer': { cardId: 'adminParseDrawer', bodyId: 'adminParseOpenaiBox', leg: 'parse' }
+    };
+    const item = cardMap[target] || { cardId: target, bodyId: null, leg: target };
+    const card = document.getElementById(item.cardId);
+    if (!card) return;
 
-// 预设 OpenAI 网关（选择后自动填入识别/审核参数）
-const OPENAI_PRESETS = {
-    agnes: {
-        label: 'Agnes AI',
-        base_url: 'https://apihub.agnes-ai.com/v1',
-        api_key: '',
-        rec_model: 'agnes-2.0-flash',
-        aud_model: 'agnes-2.0-flash',
-        rec_price_input: 0.5,
-        rec_price_cached: 0.1,
-        rec_price_output: 2.0,
-        aud_price_input: 0.5,
-        aud_price_cached: 0.1,
-        aud_price_output: 2.0,
-    },
-    bailian: {
-        label: '阿里云百炼 · DashScope',
-        base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-        api_key: '',
-        rec_model: 'qwen3.5-omni-flash',
-        aud_model: 'qwen3-vl-plus',
-        rec_price_input: 2.2,
-        rec_price_cached: 0.55,
-        rec_price_output: 13.3,
-        aud_price_input: 1.5,
-        aud_price_cached: 0.375,
-        aud_price_output: 4.5,
-    },
-    siliconflow: {
-        label: 'SiliconFlow · 硅基流动',
-        base_url: 'https://api.siliconflow.cn/v1',
-        api_key: '',
-        rec_model: 'Qwen/Qwen3-VL-32B-Instruct',
-        aud_model: 'zai-org/GLM-4.5V',
-        rec_price_input: 2.0,
-        rec_price_cached: 0.5,
-        rec_price_output: 6.0,
-        aud_price_input: 1.0,
-        aud_price_cached: 0.25,
-        aud_price_output: 6.0,
-    },
-};
+    const body = item.bodyId ? document.getElementById(item.bodyId) : card.querySelector('#adminOpenaiRecognitionBox, #adminOpenaiAuditBox, #adminParseOpenaiBox');
+    const isCurrentlyCollapsed = card.classList.contains('collapsed') || (body && body.style.display === 'none');
+    const nextCollapsed = !isCurrentlyCollapsed;
 
-function applyBoxPreset(presetSelectId, baseUrlId, apiKeyId, modelId, isAud, inId, cachedId, outId) {
-    const sel = document.getElementById(presetSelectId);
-    if (!sel) return;
-    const p = OPENAI_PRESETS[sel.value];
-    if (!p) return;
-    const bEl = document.getElementById(baseUrlId);
-    const kEl = document.getElementById(apiKeyId);
-    const mEl = document.getElementById(modelId);
-    if (bEl) bEl.value = p.base_url;
-    if (kEl) {
-        if (p.api_key && !p.api_key.includes('YOUR_')) {
-            kEl.value = p.api_key;
-        } else {
-            // 预置无真实密钥：清除占位符残留，并提示用户必须填入真实密钥
-            const cur = (kEl.value || '').trim();
-            if (!cur || /YOUR_|PLACEHOLDER|REPLACE|XXXX/i.test(cur)) {
-                kEl.value = '';
+    card.classList.toggle('collapsed', nextCollapsed);
+    if (body) {
+        body.style.display = nextCollapsed ? 'none' : 'block';
+    }
+
+    const leg = item.leg;
+    const btns = card.querySelectorAll(`.engine-card-toggle-btn, #btnToggleCard_${leg}, #engineCardToggleBtn_${leg}`);
+    btns.forEach(b => {
+        b.textContent = nextCollapsed ? '展开' : '收起';
+        b.setAttribute('aria-expanded', nextCollapsed ? 'false' : 'true');
+    });
+
+    const header = card.querySelector('.engine-card-header');
+    if (header) {
+        header.setAttribute('aria-expanded', nextCollapsed ? 'false' : 'true');
+    }
+}
+window.toggleEngineCard = toggleEngineCard;
+
+// ============================================================
+// 引擎配置与治理重构 (Spec v2.0): 分段视图 / 单腿探测 / 刊例载入 / 实时测算 / 脏状态与原子保存
+// ============================================================
+
+function formatCleanPrice(val) {
+    if (val === null || val === undefined || isNaN(val) || val === '') return '';
+    const n = parseFloat(val);
+    if (isNaN(n)) return '';
+    const rounded = parseFloat(n.toFixed(4));
+    return rounded.toString();
+}
+window.formatCleanPrice = formatCleanPrice;
+
+function initEngineSubViewOnTabEnter() {
+    const subFromUrl = (typeof getEngineSubViewFromUrl === 'function') ? getEngineSubViewFromUrl() : '01';
+    if (typeof switchEngineSubView === 'function') {
+        switchEngineSubView(subFromUrl, { scroll: false, updateHash: false });
+    }
+}
+window.initEngineSubViewOnTabEnter = initEngineSubViewOnTabEnter;
+
+function getEngineSubViewFromUrl() {
+    try {
+        const hash = (window.location.hash || '').toLowerCase();
+        const search = (window.location.search || '').toLowerCase();
+        if (hash.includes('view02') || hash.includes('subview_02') || hash.includes('traffic') || hash.includes('experiment') || hash.includes('grey') || search.includes('sub=02') || search.includes('view=view02') || search.includes('view=02')) {
+            return '02';
+        }
+        if (hash.includes('view03') || hash.includes('subview_03') || hash.includes('governance') || hash.includes('flywheel') || hash.includes('rules') || search.includes('sub=03') || search.includes('view=view03') || search.includes('view=03')) {
+            return '03';
+        }
+    } catch (e) {
+        // ignore
+    }
+    return '01';
+}
+window.getEngineSubViewFromUrl = getEngineSubViewFromUrl;
+
+function updateEngineErrorBadges() {
+    ['01', '02', '03'].forEach(num => {
+        const subview = document.getElementById('engineSubView_' + num);
+        const badge = document.getElementById('engineTabErr_' + num);
+        if (subview && badge) {
+            const errs = subview.querySelectorAll('.input-error-highlight');
+            if (errs.length > 0) {
+                badge.textContent = String(errs.length);
+                badge.classList.remove('hide');
+            } else {
+                badge.textContent = '';
+                badge.classList.add('hide');
             }
-            kEl.placeholder = '请输入 ' + p.label.split(' ·')[0] + ' API 密钥（留空将无法保存）';
+        }
+    });
+}
+window.updateEngineErrorBadges = updateEngineErrorBadges;
+
+function switchEngineSubView(viewId, options = {}) {
+    const opts = (typeof options === 'boolean') ? { updateHash: options } : (options || {});
+    const shouldUpdateHash = opts.updateHash !== false;
+    const shouldScroll = opts.scroll !== false;
+
+    let sub = '01';
+    const raw = String(viewId || '').toLowerCase().trim();
+    if (raw === 'view02' || raw === '02' || raw === '2' || raw === 'traffic' || raw === 'experiment' || raw === 'experiments' || raw === 'grey') {
+        sub = '02';
+    } else if (raw === 'view03' || raw === '03' || raw === '3' || raw === 'governance' || raw === 'flywheel' || raw === 'rules') {
+        sub = '03';
+    } else {
+        sub = '01';
+    }
+
+    // 1. 更新分段导航按钮高亮与 WAI-ARIA 状态
+    ['01', '02', '03'].forEach(num => {
+        const btn = document.getElementById('engineSubNav_' + num);
+        if (btn) {
+            const isTarget = (num === sub);
+            btn.classList.toggle('active', isTarget);
+            btn.setAttribute('aria-selected', isTarget ? 'true' : 'false');
+        }
+    });
+
+    // 2. 严格互斥隐藏与展现子视图容器 (彻底废止伪切换)
+    ['01', '02', '03'].forEach(num => {
+        const target = document.getElementById('engineSubView_' + num);
+        if (target) {
+            if (num === sub) {
+                target.classList.remove('d-none');
+                target.style.display = 'block';
+            } else {
+                target.classList.add('d-none');
+                target.style.display = 'none';
+            }
+        }
+    });
+
+    // 3. 视口重置平滑定位至子导航条顶部 (避免长内容滚屏断层)
+    if (shouldScroll) {
+        const navBar = document.getElementById('engineSubNav');
+        if (navBar && typeof navBar.scrollIntoView === 'function') {
+            const rect = navBar.getBoundingClientRect();
+            if (rect.top < 0 || rect.top > 300) {
+                navBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
         }
     }
-    if (mEl) mEl.value = isAud ? p.aud_model : p.rec_model;
-    if (inId && cachedId && outId) {
-        const inEl = document.getElementById(inId);
-        const cachedEl = document.getElementById(cachedId);
-        const outEl = document.getElementById(outId);
-        const inP = isAud ? (p.aud_price_input ?? p.rec_price_input) : p.rec_price_input;
-        const cachedP = isAud ? (p.aud_price_cached ?? p.rec_price_cached) : p.rec_price_cached;
-        const outP = isAud ? (p.aud_price_output ?? p.rec_price_output) : p.rec_price_output;
-        if (inEl && inP !== undefined && inP !== null) inEl.value = inP;
-        if (cachedEl && cachedP !== undefined && cachedP !== null) cachedEl.value = cachedP;
-        if (outEl && outP !== undefined && outP !== null) outEl.value = outP;
+
+    // 4. 更新 URL Hash (免刷新)
+    if (shouldUpdateHash && window.history && typeof window.history.replaceState === 'function') {
+        try {
+            const currentHash = window.location.hash || '';
+            const newHash = '#view' + sub;
+            if (currentHash !== newHash) {
+                window.history.replaceState(null, '', newHash);
+            }
+        } catch (e) {
+            // ignore
+        }
     }
-    showToast('已填入预设：' + p.label, 'info');
 }
+window.switchEngineSubView = switchEngineSubView;
+
+
+function getVendorKeyPlaceholder(baseUrl) {
+    if (!baseUrl) return 'sk-...';
+    const u = String(baseUrl).toLowerCase();
+    if (u.includes('gemini') || u.includes('generativelanguage.googleapis.com')) return 'AIzaSy...';
+    if (u.includes('anthropic') || u.includes('claude')) return 'sk-ant-...';
+    return 'sk-...';
+}
+window.getVendorKeyPlaceholder = getVendorKeyPlaceholder;
+
+const LEG_INPUT_MAP = {
+    'rec': {
+        base_url: 'adminOpenaiRecBaseUrl',
+        api_key: 'adminOpenaiRecApiKey',
+        model: 'adminOpenaiRecModel',
+        timeout: 'adminRecTimeoutSeconds',
+        label: '常规识别引擎'
+    },
+    'aud': {
+        base_url: 'adminOpenaiAudBaseUrl',
+        api_key: 'adminOpenaiAudApiKey',
+        model: 'adminOpenaiAudModel',
+        timeout: 'adminAudTimeoutSeconds',
+        label: '常规审核引擎'
+    },
+    'parse': {
+        base_url: 'adminParseOpenaiBaseUrl',
+        api_key: 'adminParseOpenaiApiKey',
+        model: 'adminParseOpenaiModel',
+        timeout: 'adminParseTimeoutSeconds',
+        label: '常规解析引擎'
+    },
+    'grey_rec': {
+        base_url: 'adminGreyOpenaiRecBaseUrl',
+        api_key: 'adminGreyOpenaiRecApiKey',
+        model: 'adminGreyOpenaiRecModel',
+        timeout: 'adminGreyRecTimeoutSeconds',
+        label: '灰测识别引擎'
+    },
+    'grey_aud': {
+        base_url: 'adminGreyOpenaiAudBaseUrl',
+        api_key: 'adminGreyOpenaiAudApiKey',
+        model: 'adminGreyOpenaiAudModel',
+        timeout: 'adminGreyAudTimeoutSeconds',
+        label: '灰测审核引擎'
+    },
+    'grey_parse': {
+        base_url: 'adminGreyParseOpenaiBaseUrl',
+        api_key: 'adminGreyParseOpenaiApiKey',
+        model: 'adminGreyParseOpenaiModel',
+        timeout: 'adminGreyParseTimeoutSeconds',
+        label: '灰测解析引擎'
+    }
+};
+
+async function probeSingleEngineLeg(leg) {
+    const info = LEG_INPUT_MAP[leg];
+    if (!info) return;
+
+    const btn = document.getElementById('btnProbe_' + leg);
+    const statusTag = document.getElementById('probeStatus_' + leg);
+    const origText = btn ? btn.textContent : '测试此引擎';
+
+    const baseEl = document.getElementById(info.base_url);
+    const keyEl = document.getElementById(info.api_key);
+    const modelEl = document.getElementById(info.model);
+    const timeoutEl = document.getElementById(info.timeout);
+
+    const baseUrl = (baseEl ? baseEl.value : '').trim();
+    const apiKey = (keyEl ? keyEl.value : '').trim();
+    const model = (modelEl ? modelEl.value : '').trim();
+    let timeout = parseFloat(timeoutEl ? timeoutEl.value : '');
+    if (isNaN(timeout) || timeout <= 0) {
+        timeout = 8.0;
+    }
+
+    if (!baseUrl) {
+        showToast('请先输入 ' + info.label + ' 的 Base URL', 'warning');
+        if (statusTag) {
+            statusTag.className = 'probe-status-tag fail';
+            statusTag.textContent = '缺少 Base URL';
+        }
+        if (baseEl) baseEl.focus();
+        return;
+    }
+    if (!model) {
+        showToast('请先输入 ' + info.label + ' 的模型名称', 'warning');
+        if (statusTag) {
+            statusTag.className = 'probe-status-tag fail';
+            statusTag.textContent = '缺少模型名';
+        }
+        if (modelEl) modelEl.focus();
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '测试中...';
+    }
+    if (statusTag) {
+        statusTag.className = 'probe-status-tag';
+        statusTag.textContent = '连接中...';
+    }
+
+    try {
+        const res = await apiFetch('/api/admin/probe-single-engine', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                leg_type: leg,
+                leg: leg,
+                base_url: baseUrl,
+                api_key: apiKey,
+                model_name: model,
+                model: model,
+                timeout_seconds: timeout
+            })
+        });
+        const ret = await res.json();
+        if (ret && ret.status === 'success' && ret.data && ret.data.ok) {
+            const ms = ret.data.latency_ms || 0;
+            if (statusTag) {
+                statusTag.className = 'probe-status-tag ok';
+                statusTag.textContent = `连接正常 (${ms}ms)`;
+            }
+            showToast(`${info.label} 连接正常 (${ms}ms)`, 'success');
+        } else {
+            const err = (ret && ret.data && ret.data.error) || (ret && (ret.msg || ret.detail)) || '探测失败';
+            if (statusTag) {
+                statusTag.className = 'probe-status-tag fail';
+                statusTag.textContent = `失败: ${err.slice(0, 30)}`;
+            }
+            showToast(`${info.label} 探测未通过: ${err}`, 'error');
+        }
+    } catch (e) {
+        if (statusTag) {
+            statusTag.className = 'probe-status-tag fail';
+            statusTag.textContent = `网络异常`;
+        }
+        showToast(`${info.label} 探测请求失败: ${e.message || e}`, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = origText;
+        }
+    }
+}
+window.probeSingleEngineLeg = probeSingleEngineLeg;
+
+const LEG_PRICE_INPUTS = {
+    'rec': {
+        inId: 'adminPriceInputRec',
+        cachedId: 'adminPriceCachedInputRec',
+        outId: 'adminPriceOutputRec',
+        isAud: false,
+        label: '常规识别'
+    },
+    'aud': {
+        inId: 'adminPriceInputAud',
+        cachedId: 'adminPriceCachedInputAud',
+        outId: 'adminPriceOutputAud',
+        isAud: true,
+        label: '常规审核'
+    },
+    'parse': {
+        inId: 'adminPriceInputParse',
+        cachedId: 'adminPriceCachedInputParse',
+        outId: 'adminPriceOutputParse',
+        isAud: false,
+        label: '常规解析'
+    },
+    'grey_rec': {
+        inId: 'adminGreyPriceInputRec',
+        cachedId: 'adminGreyPriceCachedInputRec',
+        outId: 'adminGreyPriceOutputRec',
+        isAud: false,
+        label: '灰测识别'
+    },
+    'grey_aud': {
+        inId: 'adminGreyPriceInputAud',
+        cachedId: 'adminGreyPriceCachedInputAud',
+        outId: 'adminGreyPriceOutputAud',
+        isAud: true,
+        label: '灰测审核'
+    },
+    'grey_parse': {
+        inId: 'adminGreyPriceInputParse',
+        cachedId: 'adminGreyPriceCachedInputParse',
+        outId: 'adminGreyPriceOutputParse',
+        isAud: false,
+        label: '灰测解析'
+    }
+};
+
+const BENCHMARK_TOKENS = {
+    standard: {
+        inTokens: 2400,
+        cachedTokens: 1600,
+        outTokens: 800,
+        label: '标准',
+        formula: '公式: 2.4k非缓存输入 + 1.6k缓存输入 + 800输出'
+    },
+    complex: {
+        inTokens: 4500,
+        cachedTokens: 3000,
+        outTokens: 1500,
+        label: '全面',
+        formula: '公式: 4.5k非缓存输入 + 3.0k缓存输入 + 1.5k输出'
+    },
+    audit_only: {
+        inTokens: 1000,
+        cachedTokens: 500,
+        outTokens: 300,
+        label: '纯文本',
+        formula: '公式: 1.0k非缓存输入 + 0.5k缓存输入 + 300输出'
+    }
+};
+
+function updateEngineCostCalculator(leg) {
+    const meta = LEG_PRICE_INPUTS[leg];
+    if (!meta) return;
+
+    const inEl = document.getElementById(meta.inId);
+    const cachedEl = document.getElementById(meta.cachedId);
+    const outEl = document.getElementById(meta.outId);
+
+    const priceIn = (inEl && inEl.value.trim() !== '') ? parseFloat(inEl.value) : 0;
+    const priceCached = (cachedEl && cachedEl.value.trim() !== '') ? parseFloat(cachedEl.value) : (priceIn * 0.5);
+    const priceOut = (outEl && outEl.value.trim() !== '') ? parseFloat(outEl.value) : 0;
+
+    let selectedBench = 'standard';
+    const radios = document.getElementsByName('bench_' + leg);
+    for (let i = 0; i < radios.length; i++) {
+        if (radios[i].checked) {
+            selectedBench = radios[i].value;
+            break;
+        }
+    }
+    const bench = BENCHMARK_TOKENS[selectedBench] || BENCHMARK_TOKENS.standard;
+
+    // 单据成本换算公式: (inTokens * priceIn + cachedTokens * priceCached + outTokens * priceOut) / 1,000,000
+    const cost = (bench.inTokens * priceIn + bench.cachedTokens * priceCached + bench.outTokens * priceOut) / 1000000.0;
+
+    const costSpan = document.getElementById('calcCost_' + leg);
+    const breakdownSpan = document.getElementById('calcBreakdown_' + leg);
+
+    if (costSpan) {
+        costSpan.textContent = `约 ¥${parseFloat(cost.toFixed(4))} / 张发票`;
+    }
+    if (breakdownSpan) {
+        breakdownSpan.textContent = bench.formula;
+    }
+}
+window.updateEngineCostCalculator = updateEngineCostCalculator;
+
+function updateAllCostCalculators() {
+    ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(leg => {
+        updateEngineCostCalculator(leg);
+    });
+}
+window.updateAllCostCalculators = updateAllCostCalculators;
+
+let _engineFormOriginalSnapshot = null;
+let _engineIsDirty = false;
+
+function captureEngineFormSnapshot() {
+    const container = document.getElementById('tab-engine');
+    if (!container) return;
+    const snapshot = {};
+    const inputs = container.querySelectorAll('input, select, textarea');
+    inputs.forEach(el => {
+        if (!el.id) return;
+        if (el.type === 'checkbox') {
+            snapshot[el.id] = el.checked;
+        } else if (el.type === 'radio') {
+            if (el.checked) snapshot[el.name] = el.value;
+        } else {
+            snapshot[el.id] = el.value;
+        }
+    });
+    _engineFormOriginalSnapshot = JSON.stringify(snapshot);
+    _engineIsDirty = false;
+    updateEngineStickyFooterStatus(0);
+    if (typeof renderEngineOverview === 'function') {
+        renderEngineOverview();
+    }
+}
+window.captureEngineFormSnapshot = captureEngineFormSnapshot;
+
+function checkEngineDirty() {
+    if (!_engineFormOriginalSnapshot) return false;
+    const container = document.getElementById('tab-engine');
+    if (!container) return false;
+    const current = {};
+    let diffCount = 0;
+    const inputs = container.querySelectorAll('input, select, textarea');
+    inputs.forEach(el => {
+        if (!el.id) return;
+        if (el.type === 'checkbox') {
+            current[el.id] = el.checked;
+        } else if (el.type === 'radio') {
+            if (el.checked) current[el.name] = el.value;
+        } else {
+            current[el.id] = el.value;
+        }
+    });
+
+    const orig = JSON.parse(_engineFormOriginalSnapshot);
+    for (const k in current) {
+        if (current[k] !== orig[k]) {
+            diffCount++;
+        }
+    }
+    for (const k in orig) {
+        if (!(k in current)) {
+            diffCount++;
+        }
+    }
+
+    _engineIsDirty = (diffCount > 0);
+    updateEngineStickyFooterStatus(diffCount);
+    if (typeof renderEngineOverview === 'function') {
+        renderEngineOverview();
+    }
+    return _engineIsDirty;
+}
+window.checkEngineDirty = checkEngineDirty;
+
+function updateEngineStickyFooterStatus(diffCount = 0) {
+    const icon = document.getElementById('engineStickyStatusIcon');
+    const text = document.getElementById('engineStickyStatusText');
+    const discardBtn = document.getElementById('btnDiscardEngineChanges');
+
+    if (_engineIsDirty) {
+        if (icon) {
+            icon.className = 'sticky-status-badge status-dirty';
+            icon.innerHTML = '<span class="status-dot"></span>未保存';
+        }
+        if (text) {
+            text.textContent = `存在未保存的修改 (${diffCount} 项变更)`;
+        }
+        if (discardBtn) {
+            discardBtn.disabled = false;
+            discardBtn.style.opacity = '1';
+        }
+    } else {
+        if (icon) {
+            icon.className = 'sticky-status-badge status-synced';
+            icon.innerHTML = '<span class="status-dot"></span>已同步';
+        }
+        if (text) {
+            text.textContent = '配置与服务器已同步';
+        }
+        if (discardBtn) {
+            discardBtn.disabled = true;
+            discardBtn.style.opacity = '0.6';
+        }
+    }
+}
+
+function discardEngineDraftChanges() {
+    if (!_engineIsDirty) {
+        showToast('当前没有未保存的修改', 'info');
+        return;
+    }
+    showCustomConfirmModal({
+        title: '放弃未保存的修改',
+        message: '确认放弃所有未保存的修改并重新从服务器加载配置吗？\n\n放弃后，当前表单中尚未保存的修改将全部丢失。',
+        confirmText: '确认放弃',
+        cancelText: '取消',
+        onConfirm: () => {
+            _engineIsDirty = false;
+            loadAdminEngineConfig();
+            loadAdminSettings();
+            showToast('已放弃本地修改，重新加载服务器配置', 'info');
+        }
+    });
+}
+window.discardEngineDraftChanges = discardEngineDraftChanges;
+
+function validateAllAdminConfigs() {
+    document.querySelectorAll('.input-error-highlight').forEach(el => el.classList.remove('input-error-highlight'));
+    ['01', '02', '03'].forEach(num => {
+        const badge = document.getElementById('engineTabErr_' + num);
+        if (badge) {
+            badge.textContent = '';
+            badge.classList.add('hide');
+        }
+    });
+
+    const errors = [];
+
+
+    const recBaseEl = document.getElementById('adminOpenaiRecBaseUrl');
+    if (recBaseEl && recBaseEl.value.trim()) {
+        const u = recBaseEl.value.trim();
+        if (!/^https?:\/\//i.test(u)) {
+            errors.push({ view: '01', elementId: 'adminOpenaiRecBaseUrl', message: '常规识别 Base URL 必须以 http:// 或 https:// 开头' });
+        }
+    }
+
+    const recPriceEl = document.getElementById('adminPriceInputRec');
+    if (recPriceEl && recPriceEl.value.trim()) {
+        const p = parseFloat(recPriceEl.value.trim());
+        if (isNaN(p) || p < 0) {
+            errors.push({ view: '01', elementId: 'adminPriceInputRec', message: '常规识别 Input 价格不能为负数' });
+        }
+    }
+
+    const audEnabled = document.getElementById('adminAuditEnabled') && document.getElementById('adminAuditEnabled').value === 'true';
+    if (audEnabled) {
+        const audBaseEl = document.getElementById('adminOpenaiAudBaseUrl');
+        if (audBaseEl && audBaseEl.value.trim() && !/^https?:\/\//i.test(audBaseEl.value.trim())) {
+            errors.push({ view: '01', elementId: 'adminOpenaiAudBaseUrl', message: '常规审核 Base URL 必须以 http:// 或 https:// 开头' });
+        }
+    }
+
+    const parseEnabled = document.getElementById('adminParseEnabled') && document.getElementById('adminParseEnabled').value === 'true';
+    if (parseEnabled) {
+        const parseBaseEl = document.getElementById('adminParseOpenaiBaseUrl');
+        if (parseBaseEl && parseBaseEl.value.trim() && !/^https?:\/\//i.test(parseBaseEl.value.trim())) {
+            errors.push({ view: '01', elementId: 'adminParseOpenaiBaseUrl', message: '常规解析 Base URL 必须以 http:// 或 https:// 开头' });
+        }
+    }
+
+    // View 02
+    const greyEnabled = document.getElementById('adminGreyEnabled') && document.getElementById('adminGreyEnabled').value === 'true';
+    if (greyEnabled) {
+        const greyPercentEl = document.getElementById('adminGreyPercent');
+        if (greyPercentEl && greyPercentEl.value.trim()) {
+            const p = parseInt(greyPercentEl.value.trim(), 10);
+            if (isNaN(p) || p < 0 || p > 100) {
+                errors.push({ view: '02', elementId: 'adminGreyPercent', message: '灰测流量分流比例必须在 0% 到 100% 之间' });
+            }
+        }
+        const greyRecBase = document.getElementById('adminGreyOpenaiRecBaseUrl');
+        if (greyRecBase && greyRecBase.value.trim() && !/^https?:\/\//i.test(greyRecBase.value.trim())) {
+            errors.push({ view: '02', elementId: 'adminGreyOpenaiRecBaseUrl', message: '灰测识别 Base URL 必须以 http:// 或 https:// 开头' });
+        }
+    }
+
+    // View 03
+    if (typeof ADMIN_SETTINGS_FIELDS !== 'undefined') {
+        ADMIN_SETTINGS_FIELDS.forEach(([id, key, type]) => {
+            const el = document.getElementById(id);
+            if (!el || !el.value.trim()) return;
+            const n = Number(el.value.trim());
+            if (!isFinite(n) || n < 0) {
+                errors.push({ view: '03', elementId: id, message: `系统参数「${key}」必须为大于等于 0 的有效数值` });
+            }
+        });
+    }
+
+    if (errors.length > 0) {
+        const counts = { '01': 0, '02': 0, '03': 0 };
+        errors.forEach(e => {
+            counts[e.view] = (counts[e.view] || 0) + 1;
+            const el = document.getElementById(e.elementId);
+            if (el) el.classList.add('input-error-highlight');
+        });
+
+        ['01', '02', '03'].forEach(num => {
+            const badge = document.getElementById('engineTabErr_' + num);
+            if (badge) {
+                if (counts[num] > 0) {
+                    badge.textContent = String(counts[num]);
+                    badge.classList.remove('hide');
+                } else {
+                    badge.textContent = '';
+                    badge.classList.add('hide');
+                }
+            }
+        });
+
+        const firstErr = errors[0];
+        switchEngineSubView(firstErr.view, { scroll: false, updateHash: true });
+
+        const firstEl = document.getElementById(firstErr.elementId);
+        if (firstEl) {
+            firstEl.focus();
+            if (typeof firstEl.scrollIntoView === 'function') {
+                firstEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        showToast(firstErr.message, 'error');
+        return false;
+    }
+
+    return true;
+}
+window.validateAllAdminConfigs = validateAllAdminConfigs;
+
+async function saveUnifiedAdminConfigAction() {
+    const saveBtn = document.getElementById('btnSaveUnifiedConfig') || document.getElementById('adminSaveEngineBtn');
+    const origText = saveBtn ? saveBtn.textContent : '保存全部配置';
+
+    if (!validateAllAdminConfigs()) {
+        return;
+    }
+
+    const engineConfig = collectEngineConfigBody();
+    if (!engineConfig) return;
+
+    const settings = _collectAdminSettingsPayload();
+    if (settings === null) return;
+
+    const payload = {
+        version: (_engineConfigVersion != null ? _engineConfigVersion : undefined),
+        engine_config: engineConfig,
+        settings: settings
+    };
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = '正在保存全部配置...';
+    }
+
+    try {
+        const res = await apiFetch('/api/admin/unified-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const status = res.status;
+        const ret = await res.json();
+
+        if (status === 200 && ret && ret.status === 'success') {
+            showToast('系统与引擎全部配置已统一原子保存', 'success');
+            renderAdminEngineConfigSource('manual');
+            if (ret.data && ret.data.version != null) {
+                _engineConfigVersion = ret.data.version;
+            }
+            const eng = (ret && ret.data && ret.data.engine) || {};
+            const keyMap = {
+                adminOpenaiRecApiKey: eng.openai_rec_api_key,
+                adminOpenaiAudApiKey: eng.openai_aud_api_key,
+                adminParseOpenaiApiKey: eng.openai_parse_api_key,
+                adminGreyOpenaiRecApiKey: eng.grey_openai_rec_api_key,
+                adminGreyOpenaiAudApiKey: eng.grey_openai_aud_api_key,
+                adminGreyParseOpenaiApiKey: eng.grey_openai_parse_api_key
+            };
+            Object.entries(keyMap).forEach(([id, val]) => {
+                const el = document.getElementById(id);
+                if (el) {
+                    if (val !== undefined && val !== null) {
+                        el.value = val;
+                    }
+                }
+            });
+            setEngineStatusMessage('配置已统一保存，生效版本 v' + (_engineConfigVersion != null ? _engineConfigVersion : '-'), 'success');
+            loadEngineConfigRouting();
+            loadEngineConfigHistory();
+
+            captureEngineFormSnapshot();
+
+            document.querySelectorAll('.input-error-highlight').forEach(el => el.classList.remove('input-error-highlight'));
+            ['01', '02', '03'].forEach(num => {
+                const badge = document.getElementById('engineTabErr_' + num);
+                if (badge) badge.classList.add('hide');
+            });
+        } else if (status === 409 || (ret && ret.code === 'VERSION_CONFLICT')) {
+            showEngineVersionConflictModal(ret);
+        } else {
+            const errMsg = (ret && (ret.msg || ret.detail)) || '统一配置保存失败';
+            showToast(humanizeForbidden(errMsg) || errMsg, 'error');
+        }
+    } catch (err) {
+        showToast('保存异常: ' + (err.message || err), 'error');
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = origText;
+        }
+    }
+}
+window.saveUnifiedAdminConfigAction = saveUnifiedAdminConfigAction;
 
 let _adminEngineEventsBound = false;
 
@@ -12395,25 +14904,46 @@ function bindAdminEngineEventsOnce() {
     if (_adminEngineEventsBound) return;
     _adminEngineEventsBound = true;
 
+    // 监听 #tab-engine 全局输入以追踪草稿脏状态与实时消除校验错误
+    const engineTab = document.getElementById('tab-engine');
+    if (engineTab && !engineTab._dirtyBound) {
+        engineTab._dirtyBound = true;
+        const handleEngineInput = (e) => {
+            checkEngineDirty();
+            if (e && e.target && e.target.classList && e.target.classList.contains('input-error-highlight')) {
+                e.target.classList.remove('input-error-highlight');
+                if (typeof updateEngineErrorBadges === 'function') {
+                    updateEngineErrorBadges();
+                }
+            }
+        };
+        engineTab.addEventListener('input', handleEngineInput);
+        engineTab.addEventListener('change', handleEngineInput);
+    }
+
     // 审核开关控制置灰
     const auditEnabledEl = document.getElementById('adminAuditEnabled');
     if (auditEnabledEl) auditEnabledEl.addEventListener('change', updateAuditDisabledState);
     const greyAuditEnabledEl = document.getElementById('adminGreyAuditEnabled');
     if (greyAuditEnabledEl) greyAuditEnabledEl.addEventListener('change', updateGreyAuditDisabledState);
 
-    // 各 OpenAI 参数区独立预设网关绑定
+    // Base URL 变化时动态联动更新对应 API Key 占位符
     [
-        ['adminOpenaiRecPreset', 'adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey', 'adminOpenaiRecModel', false, 'adminPriceInputRec', 'adminPriceCachedInputRec', 'adminPriceOutputRec'],
-        ['adminOpenaiAudPreset', 'adminOpenaiAudBaseUrl', 'adminOpenaiAudApiKey', 'adminOpenaiAudModel', true, 'adminPriceInputAud', 'adminPriceCachedInputAud', 'adminPriceOutputAud'],
-        ['adminParseOpenaiPreset', 'adminParseOpenaiBaseUrl', 'adminParseOpenaiApiKey', 'adminParseOpenaiModel', false, 'adminPriceInputParse', 'adminPriceCachedInputParse', 'adminPriceOutputParse'],
-        ['adminGreyOpenaiRecPreset', 'adminGreyOpenaiRecBaseUrl', 'adminGreyOpenaiRecApiKey', 'adminGreyOpenaiRecModel', false, 'adminGreyPriceInputRec', 'adminGreyPriceCachedInputRec', 'adminGreyPriceOutputRec'],
-        ['adminGreyOpenaiAudPreset', 'adminGreyOpenaiAudBaseUrl', 'adminGreyOpenaiAudApiKey', 'adminGreyOpenaiAudModel', true, 'adminGreyPriceInputAud', 'adminGreyPriceCachedInputAud', 'adminGreyPriceOutputAud'],
-        ['adminGreyParseOpenaiPreset', 'adminGreyParseOpenaiBaseUrl', 'adminGreyParseOpenaiApiKey', 'adminGreyParseOpenaiModel', false, 'adminGreyPriceInputParse', 'adminGreyPriceCachedInputParse', 'adminGreyPriceOutputParse']
-    ].forEach(([presetId, bId, kId, mId, isAud, inId, cachedId, outId]) => {
-        const el = document.getElementById(presetId);
-        if (el) {
-            el.value = '';
-            el.addEventListener('change', () => applyBoxPreset(presetId, bId, kId, mId, isAud, inId, cachedId, outId));
+        ['adminOpenaiRecBaseUrl', 'adminOpenaiRecApiKey'],
+        ['adminOpenaiAudBaseUrl', 'adminOpenaiAudApiKey'],
+        ['adminParseOpenaiBaseUrl', 'adminParseOpenaiApiKey'],
+        ['adminGreyOpenaiRecBaseUrl', 'adminGreyOpenaiRecApiKey'],
+        ['adminGreyOpenaiAudBaseUrl', 'adminGreyOpenaiAudApiKey'],
+        ['adminGreyParseOpenaiBaseUrl', 'adminGreyParseOpenaiApiKey']
+    ].forEach(([baseId, keyId]) => {
+        const bEl = document.getElementById(baseId);
+        const kEl = document.getElementById(keyId);
+        if (bEl && kEl) {
+            const updatePh = () => {
+                kEl.placeholder = getVendorKeyPlaceholder(bEl.value);
+            };
+            bEl.addEventListener('input', updatePh);
+            bEl.addEventListener('change', updatePh);
         }
     });
 
@@ -12469,37 +14999,141 @@ function toggleAdvParams(legId) {
     if (isCollapsed) {
         drawer.classList.remove('collapsed');
         body.style.display = 'block';
-        if (toggleText) toggleText.textContent = '[收起]';
+        if (toggleText) toggleText.textContent = '收起';
     } else {
         drawer.classList.add('collapsed');
         body.style.display = 'none';
-        if (toggleText) toggleText.textContent = '[展开]';
+        if (toggleText) toggleText.textContent = '展开';
     }
 }
 window.toggleAdvParams = toggleAdvParams;
+
+function getEngineLegMeta(legId) {
+    if (typeof USER_ENGINE_LEG_MAP !== 'undefined' && USER_ENGINE_LEG_MAP[legId]) {
+        return USER_ENGINE_LEG_MAP[legId];
+    }
+    const map = {
+        'rec': { modelId: 'adminOpenaiRecModel', baseUrlId: 'adminOpenaiRecBaseUrl', reasoningEffortId: 'adminOpenaiRecReasoningEffort' },
+        'aud': { modelId: 'adminOpenaiAudModel', baseUrlId: 'adminOpenaiAudBaseUrl', reasoningEffortId: 'adminOpenaiAudReasoningEffort' },
+        'parse': { modelId: 'adminParseOpenaiModel', baseUrlId: 'adminParseOpenaiBaseUrl', reasoningEffortId: 'adminParseOpenaiReasoningEffort' },
+        'grey_rec': { modelId: 'adminGreyOpenaiRecModel', baseUrlId: 'adminGreyOpenaiRecBaseUrl', reasoningEffortId: 'adminGreyOpenaiRecReasoningEffort' },
+        'grey_aud': { modelId: 'adminGreyOpenaiAudModel', baseUrlId: 'adminGreyOpenaiAudBaseUrl', reasoningEffortId: 'adminGreyOpenaiAudReasoningEffort' },
+        'grey_parse': { modelId: 'adminGreyParseOpenaiModel', baseUrlId: 'adminGreyParseOpenaiBaseUrl', reasoningEffortId: 'adminGreyParseOpenaiReasoningEffort' }
+    };
+    return map[legId] || null;
+}
 
 function updateAdvBadge(legId) {
     const pfx = getAdvInputPrefix(legId);
     const badge = document.getElementById('adminAdvBadge_' + legId);
     if (!badge) return;
 
-    const tokensEl = document.getElementById(pfx + 'MaxTokens');
-    const tokens = (tokensEl && tokensEl.value.trim()) ? tokensEl.value.trim() : '4096';
+    // 1. 思考强度
+    const effortLabelMap = { '': '默认', 'low': 'Low', 'medium': 'Medium', 'high': 'High', 'xhigh': 'X-High', 'max': 'Max' };
+    let effortLabel = '默认';
+    const legMeta = getEngineLegMeta(legId);
+    if (legMeta && legMeta.reasoningEffortId) {
+        const effortEl = document.getElementById(legMeta.reasoningEffortId);
+        if (effortEl) {
+            const effortVal = effortEl.value.trim();
+            effortLabel = effortLabelMap[effortVal] !== undefined ? effortLabelMap[effortVal] : (effortVal || '默认');
+        }
+    }
 
+    // 2. 最大 Token 数
+    const tokensEl = document.getElementById(pfx + 'MaxTokens');
+    const defaultTokens = legId.includes('parse') ? '2048' : '4096';
+    const tokens = (tokensEl && tokensEl.value.trim()) ? tokensEl.value.trim() : defaultTokens;
+
+    // 3. 采样温度
     const tempEl = document.getElementById(pfx + 'Temperature');
     let temp = (tempEl && tempEl.value.trim() !== '') ? parseFloat(tempEl.value) : 0.0;
     if (isNaN(temp)) temp = 0.0;
     const tempStr = temp.toFixed(temp % 1 === 0 ? 1 : 2);
 
-    if (legId === 'rec' || legId === 'grey_rec') {
-        const detailEl = document.getElementById(pfx + 'ImageDetail');
-        const detail = (detailEl && detailEl.value) ? detailEl.value : 'high';
-        badge.textContent = `[${tokens} tokens | ${detail} detail | T=${tempStr}]`;
-    } else {
-        badge.textContent = `[${tokens} tokens | T=${tempStr}]`;
-    }
+    // 4. 视觉切片粒度
+    const detailMap = { high: '高精度', auto: '自适应', low: '粗粒度' };
+    const detailEl = document.getElementById(pfx + 'ImageDetail');
+    const defaultDetail = (legId === 'rec' || legId === 'grey_rec') ? 'high' : 'auto';
+    const detailVal = (detailEl && detailEl.value) ? detailEl.value : defaultDetail;
+    const detailLabel = detailMap[detailVal] || detailVal;
+
+    // 统一按照「思考强度 -> 最大 Token 数 -> 视觉切片粒度 -> 采样温度」顺序与冒号前缀格式展示
+    badge.textContent = `思考强度:${effortLabel} · 最大Token:${tokens} · 视觉切片:${detailLabel} · 采样温度:${tempStr}`;
 }
 window.updateAdvBadge = updateAdvBadge;
+
+function updateModelTraitHints(legId) {
+    const meta = getEngineLegMeta(legId);
+    const modelEl = meta ? document.getElementById(meta.modelId) : null;
+    const baseUrlEl = meta ? document.getElementById(meta.baseUrlId) : null;
+
+    const m = (modelEl && modelEl.value) ? modelEl.value.trim().toLowerCase() : '';
+    const u = (baseUrlEl && baseUrlEl.value) ? baseUrlEl.value.trim().toLowerCase() : '';
+
+    const isDeepSeek = u.includes('api.deepseek.com') || (m.includes('deepseek') && !u.includes('aliyun') && !u.includes('dashscope') && !u.includes('volces') && !u.includes('siliconflow') && !u.includes('openrouter'));
+    const isOReasoning = m.startsWith('o1') || m.startsWith('o3') || m.includes('-o1-') || m.includes('-o3-') || m.includes('/o1') || m.includes('/o3');
+
+    const boxEl = document.getElementById('adminAdvModelHint_' + legId);
+    const pfx = getAdvInputPrefix(legId);
+    const tokensHint = document.getElementById(pfx + 'TokensHint');
+    const reasoningHint = document.getElementById(pfx + 'ReasoningHint');
+    const tempHint = document.getElementById(pfx + 'TempHint');
+
+    if (isDeepSeek) {
+        if (boxEl) {
+            boxEl.style.display = 'block';
+            boxEl.textContent = '检测到 DeepSeek 模型：系统将自动钳制 Max Tokens <= 8192 并静默剥离 reasoning_effort。';
+        }
+        if (tokensHint) {
+            tokensHint.style.display = 'block';
+            tokensHint.textContent = 'DeepSeek 官方 API 最大支持 8192 Tokens（超过将自动钳制为 8192）';
+        }
+        if (reasoningHint) {
+            reasoningHint.style.display = 'block';
+            reasoningHint.textContent = 'DeepSeek 官方 API 无需传思考强度参数；直连官方网关时建议保持「默认」';
+        }
+        if (tempHint) {
+            tempHint.style.display = 'none';
+            tempHint.textContent = '';
+        }
+    } else if (isOReasoning) {
+        if (boxEl) {
+            boxEl.style.display = 'block';
+            boxEl.textContent = '检测到 OpenAI o1/o3 推理模型：系统将自动桥接 max_completion_tokens 并剥离采样温度。';
+        }
+        if (tokensHint) {
+            tokensHint.style.display = 'block';
+            tokensHint.textContent = '系统将自动为您桥接 max_completion_tokens 规范';
+        }
+        if (reasoningHint) {
+            reasoningHint.style.display = 'none';
+            reasoningHint.textContent = '';
+        }
+        if (tempHint) {
+            tempHint.style.display = 'block';
+            tempHint.textContent = 'OpenAI o1/o3 推理模型由服务商统一管理采样温度，系统将自动适配';
+        }
+    } else {
+        if (boxEl) {
+            boxEl.style.display = 'none';
+            boxEl.textContent = '';
+        }
+        if (tokensHint) {
+            tokensHint.style.display = 'none';
+            tokensHint.textContent = '';
+        }
+        if (reasoningHint) {
+            reasoningHint.style.display = 'none';
+            reasoningHint.textContent = '';
+        }
+        if (tempHint) {
+            tempHint.style.display = 'none';
+            tempHint.textContent = '';
+        }
+    }
+}
+window.updateModelTraitHints = updateModelTraitHints;
 
 function checkTempWarn(legId) {
     const pfx = getAdvInputPrefix(legId);
@@ -12519,10 +15153,12 @@ function bindAdvParamListeners() {
     const legs = ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'];
     legs.forEach(legId => {
         const pfx = getAdvInputPrefix(legId);
+        const meta = getEngineLegMeta(legId);
         const inputs = [
             document.getElementById(pfx + 'MaxTokens'),
             document.getElementById(pfx + 'ImageDetail'),
-            document.getElementById(pfx + 'Temperature')
+            document.getElementById(pfx + 'Temperature'),
+            meta && meta.reasoningEffortId ? document.getElementById(meta.reasoningEffortId) : null
         ];
         inputs.forEach(el => {
             if (!el || el.dataset.advBound) return;
@@ -12534,6 +15170,22 @@ function bindAdvParamListeners() {
             el.addEventListener('input', handler);
             el.addEventListener('change', handler);
         });
+
+        if (meta) {
+            const modelInputs = [
+                document.getElementById(meta.modelId),
+                document.getElementById(meta.baseUrlId)
+            ];
+            modelInputs.forEach(el => {
+                if (!el || el.dataset.modelTraitBound) return;
+                el.dataset.modelTraitBound = '1';
+                const handler = () => {
+                    updateModelTraitHints(legId);
+                };
+                el.addEventListener('input', handler);
+                el.addEventListener('change', handler);
+            });
+        }
     });
 }
 
@@ -12543,6 +15195,13 @@ function bindAdvParamListeners() {
 // 引擎配置版本（来自 routing DTO），保存时随 body 回传用于乐观锁
 let _engineConfigVersion = null;
 let _engineOverviewState = { routing: null, latest: null, message: null };
+window._engineOverviewState = _engineOverviewState;
+
+let _engineOverviewExpanded = (() => {
+    try { return localStorage.getItem('engine_overview_expanded') === '1'; } catch (e) { return false; }
+})();
+let _adminSettingsState = null;
+window._adminSettingsState = _adminSettingsState;
 
 function _formatEngineTime(v) {
     if (!v) return '-';
@@ -12556,42 +15215,372 @@ function _formatEngineTime(v) {
     }
 }
 
-const ENGINE_HISTORY_ACTION_LABELS = { save: '保存', promote: '推全', rollback: '回滚', reset: '恢复默认' };
+const ENGINE_HISTORY_ACTION_LABELS = {
+    save: '保存',
+    unified_save: '统一保存',
+    promote: '推全',
+    rollback: '回滚',
+    reset: '恢复默认'
+};
 
-// 概览条渲染：状态消息 + 生效态 + 最近变更（写入 #adminEngineStatus）
+// 切换概览全景拓扑展开/折叠状态
+function toggleEngineTopologyInspector() {
+    _engineOverviewExpanded = !_engineOverviewExpanded;
+    try {
+        localStorage.setItem('engine_overview_expanded', _engineOverviewExpanded ? '1' : '0');
+    } catch (e) {}
+    const btn = document.getElementById('btnToggleEngineTopology');
+    if (btn) {
+        btn.textContent = _engineOverviewExpanded ? '收起拓扑' : '展开拓扑';
+    }
+    const inspector = document.getElementById('engineOverviewInspector');
+    if (inspector) {
+        inspector.style.display = _engineOverviewExpanded ? 'flex' : 'none';
+    } else {
+        renderEngineOverview();
+    }
+}
+window.toggleEngineTopologyInspector = toggleEngineTopologyInspector;
+
+// 拓扑节点穿透下钻跳转
+function jumpToEngineSection(viewId, targetElementId) {
+    if (typeof switchEngineSubView === 'function') {
+        switchEngineSubView(viewId, { scroll: false, updateHash: true });
+    }
+    setTimeout(() => {
+        if (!targetElementId) return;
+        const target = document.getElementById(targetElementId);
+        if (!target) return;
+
+        // 若目标处于折叠状态，则主动展开
+        if (target.classList.contains('collapsed')) {
+            if (typeof toggleEngineCard === 'function' && (targetElementId === 'adminRecognitionCard' || targetElementId === 'adminAuditCard' || targetElementId === 'adminParseDrawer')) {
+                toggleEngineCard(targetElementId);
+            } else if (typeof toggleEngineDrawer === 'function') {
+                toggleEngineDrawer(targetElementId);
+            } else {
+                target.classList.remove('collapsed');
+            }
+        }
+
+        if (typeof target.scrollIntoView === 'function') {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        target.classList.add('flash-highlight');
+        setTimeout(() => {
+            target.classList.remove('flash-highlight');
+        }, 1600);
+    }, 150);
+}
+window.jumpToEngineSection = jumpToEngineSection;
+
+// 概览条与全景拓扑渲染：状态消息 + 路由决策层 + 串行执行流水线（写入 #adminEngineStatus）
 function renderEngineOverview() {
     const el = document.getElementById('adminEngineStatus');
     if (!el) return;
+
+    const isExpanded = (typeof window !== 'undefined' && typeof window._engineOverviewExpanded === 'boolean')
+        ? window._engineOverviewExpanded
+        : _engineOverviewExpanded;
+
+    // 同步切换按钮文字与状态
+    const toggleBtn = document.getElementById('btnToggleEngineTopology');
+    if (toggleBtn) {
+        toggleBtn.textContent = isExpanded ? '[收起全景拓扑]' : '[展开全景拓扑]';
+    }
+
     const parts = [];
-    const msg = _engineOverviewState.message;
+    const overviewState = (typeof window !== 'undefined' && window._engineOverviewState) || _engineOverviewState || {};
+    const msg = overviewState.message;
     if (msg) {
         parts.push(`<div class="engine-status-msg ${msg.kind || 'info'}">${escapeHtml(msg.text)}</div>`);
     }
-    const r = _engineOverviewState.routing;
-    if (r) {
-        const legs = (r.module_a && r.module_a.legs) || {};
-        const legHtml = ['rec', 'aud', 'parse'].map(leg => {
-            const info = legs[leg] || {};
-            const label = { rec: '识别', aud: '审核', parse: '解析' }[leg] || leg;
-            const model = info.model || info.base_url || '未配置';
-            return `<span class="engine-overview-leg"><b>${label}</b> ${escapeHtml(String(model))}</span>`;
-        }).join('');
-        const srcLabel = String(r.config_source) === 'manual' ? '管理台手工配置' : '.env 默认装配';
-        parts.push(`<div class="engine-overview-grid">
-            <span class="engine-overview-version">版本 v${escapeHtml(String(r.version))}</span>
-            <span class="engine-overview-source">来源：${escapeHtml(srcLabel)}</span>
-            ${legHtml}
-        </div>`);
-    } else {
-        parts.push('<div class="engine-overview-grid"><span>正在加载生效态...</span></div>');
+
+    const r = overviewState.routing;
+    if (!r) {
+        parts.push('<div class="engine-overview-grid"><span>正在加载生效态与运行拓扑...</span></div>');
+        el.innerHTML = parts.join('');
+        return;
     }
-    const lt = _engineOverviewState.latest;
-    if (lt) {
-        const actionLabel = ENGINE_HISTORY_ACTION_LABELS[lt.action] || lt.action;
-        parts.push(`<div class="engine-overview-history">最近变更：${escapeHtml(String(actionLabel))} · ${escapeHtml(String(lt.actor || '-'))} · ${_formatEngineTime(lt.created_at)}（v${escapeHtml(String(lt.version))}）</div>`);
+
+    const version = r.version || _engineConfigVersion || 1;
+    const configSource = String(r.config_source || (r.module_d && r.module_d.config_source) || 'auto');
+    const sourceLabel = configSource === 'manual' ? '管理台手工配置' : (configSource === 'preset' ? '模版预装配置' : '.env 默认装配');
+
+    const modA = r.module_a || {};
+    const regularLegs = modA.legs || {};
+    const recLeg = regularLegs.rec || {};
+    const audLeg = regularLegs.aud || {};
+    const parseLeg = regularLegs.parse || {};
+    const auditEnabled = !!modA.audit_enabled;
+    const parseLlmEnabled = !!modA.parse_llm_enabled;
+
+    const modC = r.module_c || {};
+    const greyLegs = modC.legs || {};
+    const greyRecLeg = greyLegs.grey_rec || {};
+    const greyAudLeg = greyLegs.grey_aud || {};
+    const greyParseLeg = greyLegs.grey_parse || {};
+    const greyEnabled = !!modC.grey_enabled;
+    const greyPercent = Number(modC.grey_percent || 0);
+    const greyAssignMode = String(modC.grey_assign_mode || '');
+    const greyModeLabel = greyAssignMode === 'supplier_hash' ? '供应商哈希' : (greyAssignMode === 'tenant_whitelist' ? '租户白名单' : '单据随机');
+
+    const experiments = (typeof window !== 'undefined' && Array.isArray(window._adminExperimentsList))
+        ? window._adminExperimentsList
+        : (Array.isArray(_adminExperimentsList) ? _adminExperimentsList : []);
+    const runningExp = experiments.find(e => String(e.status) === 'running');
+
+    const settings = (typeof window !== 'undefined' && window._adminSettingsState) || _adminSettingsState || {};
+    const blurVal = (settings.blur_laplacian_threshold !== undefined && settings.blur_laplacian_threshold !== null) ? Number(settings.blur_laplacian_threshold) : 30.0;
+    const ragBudget = (settings.memory_budget_facts_tokens !== undefined && settings.memory_budget_facts_tokens !== null) ? Number(settings.memory_budget_facts_tokens) : 800;
+    const memEnabled = settings.memory_enabled !== undefined ? !!settings.memory_enabled : true;
+    const vendorPrecheck = !!settings.vendor_precheck_enabled;
+    const evalLowConf = (settings.eval_candidate_low_confidence !== undefined && settings.eval_candidate_low_confidence !== null) ? Number(settings.eval_candidate_low_confidence) : 0.6;
+    const feedbackDistill = (settings.feedback_distill_threshold !== undefined && settings.feedback_distill_threshold !== null) ? Number(settings.feedback_distill_threshold) : 3;
+
+    // 1. 流量路由仲裁层判定 (P0 -> P1 -> P2)
+    let p0BadgeClass = 'badge-standby';
+    let p0BadgeText = '[就绪备用: 无运行实验]';
+    let p0Desc = '当前无运行实验 (独占接管就绪)';
+    let p0Active = false;
+    if (runningExp) {
+        p0Active = true;
+        p0BadgeClass = 'badge-takeover';
+        p0BadgeText = `[独占接管: 实验 #${runningExp.id}]`;
+        const expTarget = runningExp.target_percent || 50;
+        p0Desc = `实验 #${runningExp.id}「${escapeHtml(runningExp.name || '未命名')}」独占接管，挂起灰测 (对照 ${100 - expTarget}% / 实验 ${expTarget}%)`;
     }
+
+    let p1BadgeClass = 'badge-muted';
+    let p1BadgeText = '[未启用]';
+    let p1Desc = '灰度发布未启用 (0% 流量)';
+    let p1Active = false;
+    if (p0Active && greyEnabled) {
+        p1BadgeClass = 'badge-standby';
+        p1BadgeText = '[就绪备用: 实验独占挂起]';
+        p1Desc = `灰度已配置 (${greyPercent}%) 但被 A/B 实验独占暂停分流`;
+    } else if (!p0Active && greyEnabled && greyPercent > 0) {
+        p1Active = true;
+        p1BadgeClass = 'badge-active';
+        p1BadgeText = `[已启用: 灰度分流 ${greyPercent}%]`;
+        p1Desc = `${greyPercent}% 候选灰度 (${greyModeLabel}) -&gt; 灰测模型: 识别: [${escapeHtml(greyRecLeg.model || '未配')}] | 审核: [${escapeHtml(greyAudLeg.model || '未配')}]`;
+    } else if (!p0Active && greyEnabled) {
+        p1BadgeClass = 'badge-standby';
+        p1BadgeText = '[就绪备用: 灰度放量 0%]';
+        p1Desc = '灰度已开启但放量比例为 0% (就绪备用)';
+    }
+
+    let p2BadgeClass = 'badge-active';
+    let p2BadgeText = '[已启用: 生产基线 100%]';
+    let p2Desc = `100% 生产基线流量全量承载 -&gt; 识别: [${escapeHtml(recLeg.model || '未配')}] | 审核: [${escapeHtml(audLeg.model || '未配')}]`;
+    if (p0Active) {
+        p2BadgeClass = 'badge-standby';
+        p2BadgeText = '[就绪备用: 受实验控制]';
+        p2Desc = '流量分配完全受 A/B 实验分组规则托管';
+    } else if (p1Active) {
+        p2BadgeClass = 'badge-active';
+        p2BadgeText = `[已启用: 基线兜底 ${100 - greyPercent}%]`;
+        p2Desc = `${100 - greyPercent}% 基线兜底流量 -&gt; 生产模型: 识别: [${escapeHtml(recLeg.model || '未配')}] | 审核: [${escapeHtml(audLeg.model || '未配')}]`;
+    }
+
+    let routingSummary = '生产基线 100%';
+    let routingSummaryBadge = 'badge-active';
+    if (p0Active) {
+        routingSummary = `实验接管 (${runningExp.target_percent || 50}%)`;
+        routingSummaryBadge = 'badge-takeover';
+    } else if (p1Active) {
+        routingSummary = `灰度分流 ${greyPercent}% (${greyModeLabel})`;
+        routingSummaryBadge = 'badge-active';
+    }
+
+    // 2. 串行流水线阶段判定 (S0 ~ S5)
+    const s0Active = blurVal > 0;
+    const s0BadgeClass = s0Active ? 'badge-active' : 'badge-muted';
+    const s0BadgeText = s0Active ? '[已启用]' : '[未启用]';
+    const s0Summary = s0Active ? `模糊度: ${blurVal}` : '质检已关闭';
+    const s0Short = s0Active ? `[阈值 ${blurVal}]` : '[未启用]';
+
+    const s1Active = memEnabled;
+    const s1BadgeClass = s1Active ? 'badge-active' : 'badge-muted';
+    const s1BadgeText = s1Active ? '[已启用]' : '[未启用]';
+    const s1Summary = s1Active ? `预算: ${ragBudget} 词元${vendorPrecheck ? ' (预判开)' : ''}` : '记忆已停用';
+    const s1Short = s1Active ? `[${ragBudget} 词元]` : '[未启用]';
+
+    let s2ModelName = recLeg.model || '未配置';
+    if (p0Active) {
+        s2ModelName = 'A/B 实验动态';
+    } else if (p1Active) {
+        s2ModelName = `${recLeg.model || '基线'} / ${greyRecLeg.model || '灰测'}`;
+    }
+    const s2BadgeClass = 'badge-active';
+    const s2BadgeText = '[已启用]';
+    const s2Summary = `抽取: ${s2ModelName}`;
+    const s2Short = `[${escapeHtml(recLeg.model || '视觉识别')}]`;
+
+    const s3Active = parseLlmEnabled;
+    const s3BadgeClass = s3Active ? 'badge-bypass' : 'badge-muted';
+    const s3BadgeText = s3Active ? '[按需自愈]' : '[未启用]';
+    const s3Summary = s3Active ? `按需自愈 (${escapeHtml(parseLeg.model || '未配置')})` : '规则硬解析 (直通)';
+    const s3Short = s3Active ? '[按需自愈]' : '[未启用]';
+
+    const s4Active = auditEnabled;
+    const s4BadgeClass = s4Active ? 'badge-active' : 'badge-muted';
+    const s4BadgeText = s4Active ? '[已启用]' : '[未启用]';
+    const s4Summary = s4Active ? `双盲复核 (${escapeHtml(audLeg.model || '未配置')})` : '复核已关闭';
+    const s4Short = s4Active ? '[已启用]' : '[未启用]';
+
+    const s5Active = (evalLowConf > 0);
+    const s5BadgeClass = s5Active ? 'badge-active' : 'badge-muted';
+    const s5BadgeText = s5Active ? '[已启用]' : '[未启用]';
+    const s5Summary = s5Active ? `低置信 &lt;${evalLowConf} / 蒸馏 ${feedbackDistill}` : '治理回流已关闭';
+    const s5Short = s5Active ? '[已启用]' : '[未启用]';
+
+    // 3. 构建 Compact Flow Bar
+    const compactHtml = `
+        <div id="engineOverviewCompact" class="engine-topo-compact">
+            <div class="engine-topo-compact-left">
+                <span class="engine-node-badge ${routingSummaryBadge}">[路由决策: ${escapeHtml(routingSummary)}]</span>
+                <div class="engine-topo-chain">
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view03', 'setBlurLaplacianThreshold')" title="点击跳转: S0 质检熔断">
+                        <strong>S0</strong> <span class="engine-node-badge ${s0BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s0Short}</span>
+                    </span>
+                    <span class="engine-topo-arrow">-&gt;</span>
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view03', 'setMemoryBudgetFactsTokens')" title="点击跳转: S1 动态记忆注入">
+                        <strong>S1</strong> <span class="engine-node-badge ${s1BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s1Short}</span>
+                    </span>
+                    <span class="engine-topo-arrow">-&gt;</span>
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view01', 'adminRecognitionCard')" title="点击跳转: S2 核心视觉识别">
+                        <strong>S2</strong> <span class="engine-node-badge ${s2BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s2Short}</span>
+                    </span>
+                    <span class="engine-topo-arrow">-&gt;</span>
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view01', 'adminParseDrawer')" title="点击跳转: S3 语义自愈">
+                        <strong>S3</strong> <span class="engine-node-badge ${s3BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s3Short}</span>
+                    </span>
+                    <span class="engine-topo-arrow">-&gt;</span>
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view01', 'adminAuditCard')" title="点击跳转: S4 交叉审核">
+                        <strong>S4</strong> <span class="engine-node-badge ${s4BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s4Short}</span>
+                    </span>
+                    <span class="engine-topo-arrow">-&gt;</span>
+                    <span class="engine-topo-compact-chip" onclick="jumpToEngineSection('view03', 'setEvalCandidateLowConfidence')" title="点击跳转: S5 飞轮治理">
+                        <strong>S5</strong> <span class="engine-node-badge ${s5BadgeClass}" style="font-size:0.65rem; padding:1px 4px;">${s5Short}</span>
+                    </span>
+                </div>
+            </div>
+            <div class="engine-topo-compact-right">
+                <span class="engine-overview-source">${escapeHtml(sourceLabel)}</span>
+            </div>
+        </div>
+    `;
+    parts.push(compactHtml);
+
+    // 4. 构建 Diagnostic Inspector
+    let latestHistoryHtml = '';
+    if (overviewState.latest) {
+        const lat = overviewState.latest;
+        const actionLabel = ENGINE_HISTORY_ACTION_LABELS[lat.action] || lat.action || '变更';
+        const timeStr = _formatEngineTime(lat.created_at || lat.ts || '');
+        const op = escapeHtml(lat.operator || 'admin');
+        latestHistoryHtml = `<div class="engine-overview-history" style="font-size:0.75rem;">最近变更: <strong>[${escapeHtml(actionLabel)}]</strong> 于 ${timeStr} 由 ${op} 执行 (快照 v${escapeHtml(String(lat.version || ''))})</div>`;
+    }
+
+    const inspectorHtml = `
+        <div id="engineOverviewInspector" class="engine-topo-inspector" style="display:${isExpanded ? 'flex' : 'none'};">
+            <div class="engine-topo-grid">
+                <!-- 流量路由决策层 -->
+                <div class="engine-topo-plane engine-topo-plane-routing">
+                    <div class="engine-topo-plane-header">
+                        <div class="engine-topo-plane-title">
+                            <span>[流量路由决策层]</span>
+                            <span style="font-weight:400; font-size:0.72rem; color:#64748b;">仲裁顺序: P0 -&gt; P1 -&gt; P2 (独占/灰度/兜底)</span>
+                        </div>
+                    </div>
+                    <div class="engine-routing-list">
+                        <div class="engine-routing-item" onclick="jumpToEngineSection('view02', 'adminExperimentDrawer')" title="点击下钻 View 02: A/B 实验配置">
+                            <div class="engine-routing-item-main">
+                                <strong style="color:#1e293b;">P0 A/B 实验</strong>
+                                <span class="engine-node-badge ${p0BadgeClass}">${p0BadgeText}</span>
+                                <span style="color:#475569;">${p0Desc}</span>
+                            </div>
+                        </div>
+                        <div class="engine-routing-item" onclick="jumpToEngineSection('view02', 'adminGreyDrawer')" title="点击下钻 View 02: 金丝雀灰度配置">
+                            <div class="engine-routing-item-main">
+                                <strong style="color:#1e293b;">P1 灰度发布</strong>
+                                <span class="engine-node-badge ${p1BadgeClass}">${p1BadgeText}</span>
+                                <span style="color:#475569;">${p1Desc}</span>
+                            </div>
+                        </div>
+                        <div class="engine-routing-item" onclick="jumpToEngineSection('view01', 'adminRecognitionCard')" title="点击下钻 View 01: 核心生产基线配置">
+                            <div class="engine-routing-item-main">
+                                <strong style="color:#1e293b;">P2 生产基线</strong>
+                                <span class="engine-node-badge ${p2BadgeClass}">${p2BadgeText}</span>
+                                <span style="color:#475569;">${p2Desc}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 串行执行流水线 -->
+                <div class="engine-topo-plane engine-topo-plane-exec">
+                    <div class="engine-topo-plane-header">
+                        <div class="engine-topo-plane-title">
+                            <span>[串行执行流水线]</span>
+                            <span style="font-weight:400; font-size:0.72rem; color:#64748b;">单据流转时序: S0 -&gt; S1 -&gt; S2 -&gt; S3 -&gt; S4 -&gt; S5</span>
+                        </div>
+                    </div>
+                    <div class="engine-pipeline-chain">
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view03', 'setBlurLaplacianThreshold')" title="点击跳转 View 03 配置质检阈值">
+                            <div class="engine-topo-node-title">
+                                <span>S0 质检熔断</span>
+                                <span class="engine-node-badge ${s0BadgeClass}">${s0BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s0Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">0 词元 快速拦截</span></div>
+                        </div>
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view03', 'setMemoryBudgetFactsTokens')" title="点击跳转 View 03 配置记忆预算">
+                            <div class="engine-topo-node-title">
+                                <span>S1 动态记忆注入</span>
+                                <span class="engine-node-badge ${s1BadgeClass}">${s1BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s1Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">供应商记忆注入</span></div>
+                        </div>
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view01', 'adminRecognitionCard')" title="点击跳转 View 01 配置识别引擎">
+                            <div class="engine-topo-node-title">
+                                <span>S2 核心视觉识别</span>
+                                <span class="engine-node-badge ${s2BadgeClass}">${s2BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s2Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">核心视觉多模抽取</span></div>
+                        </div>
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view01', 'adminParseDrawer')" title="点击跳转 View 01 配置语义自愈">
+                            <div class="engine-topo-node-title">
+                                <span>S3 语义自愈</span>
+                                <span class="engine-node-badge ${s3BadgeClass}">${s3BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s3Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">格式损坏按需触发</span></div>
+                        </div>
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view01', 'adminAuditCard')" title="点击跳转 View 01 配置交叉审核">
+                            <div class="engine-topo-node-title">
+                                <span>S4 交叉审核</span>
+                                <span class="engine-node-badge ${s4BadgeClass}">${s4BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s4Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">独立双盲复核比对</span></div>
+                        </div>
+                        <div class="engine-topo-node" onclick="jumpToEngineSection('view03', 'setEvalCandidateLowConfidence')" title="点击跳转 View 03 配置治理规则">
+                            <div class="engine-topo-node-title">
+                                <span>S5 飞轮治理</span>
+                                <span class="engine-node-badge ${s5BadgeClass}">${s5BadgeText}</span>
+                            </div>
+                            <div class="engine-topo-node-desc">${escapeHtml(s5Summary)}<br/><span style="color:#94a3b8; font-size:0.65rem;">评测集与记忆候选</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            ${latestHistoryHtml}
+        </div>
+    `;
+    parts.push(inspectorHtml);
+
     el.innerHTML = parts.join('');
 }
+window.renderEngineOverview = renderEngineOverview;
 
 // routing DTO：version + 三腿生效模型 + config_source
 function loadEngineConfigRouting() {
@@ -12625,6 +15614,617 @@ function setEngineStatusMessage(text, kind) {
     renderEngineOverview();
 }
 
+let _userEnginePresetsCache = {};
+window._userEnginePresetsCache = _userEnginePresetsCache;
+let _currentSavePresetLeg = null;
+
+const USER_ENGINE_LEG_MAP = {
+    'rec': {
+        selectId: 'adminRecPresetSelect',
+        deleteBtnId: 'adminRecDeletePresetBtn',
+        baseUrlId: 'adminOpenaiRecBaseUrl',
+        apiKeyId: 'adminOpenaiRecApiKey',
+        modelId: 'adminOpenaiRecModel',
+        timeoutId: 'adminRecTimeoutSeconds',
+        retryId: 'adminRecMaxRetryRounds',
+        priceInputId: 'adminPriceInputRec',
+        priceCachedId: 'adminPriceCachedInputRec',
+        priceOutputId: 'adminPriceOutputRec',
+        reasoningEffortId: 'adminOpenaiRecReasoningEffort',
+        title: '识别引擎'
+    },
+    'aud': {
+        selectId: 'adminAudPresetSelect',
+        deleteBtnId: 'adminAudDeletePresetBtn',
+        baseUrlId: 'adminOpenaiAudBaseUrl',
+        apiKeyId: 'adminOpenaiAudApiKey',
+        modelId: 'adminOpenaiAudModel',
+        timeoutId: 'adminAudTimeoutSeconds',
+        retryId: 'adminAudMaxRetryRounds',
+        priceInputId: 'adminPriceInputAud',
+        priceCachedId: 'adminPriceCachedInputAud',
+        priceOutputId: 'adminPriceOutputAud',
+        reasoningEffortId: 'adminOpenaiAudReasoningEffort',
+        title: '审核引擎'
+    },
+    'parse': {
+        selectId: 'adminParsePresetSelect',
+        deleteBtnId: 'adminParseDeletePresetBtn',
+        baseUrlId: 'adminParseOpenaiBaseUrl',
+        apiKeyId: 'adminParseOpenaiApiKey',
+        modelId: 'adminParseOpenaiModel',
+        timeoutId: 'adminParseTimeoutSeconds',
+        retryId: 'adminParseMaxRetryRounds',
+        priceInputId: 'adminPriceInputParse',
+        priceCachedId: 'adminPriceCachedInputParse',
+        priceOutputId: 'adminPriceOutputParse',
+        reasoningEffortId: 'adminParseOpenaiReasoningEffort',
+        title: '语义解析自愈引擎'
+    },
+    'grey_rec': {
+        selectId: 'adminGreyRecPresetSelect',
+        deleteBtnId: 'adminGreyRecDeletePresetBtn',
+        baseUrlId: 'adminGreyOpenaiRecBaseUrl',
+        apiKeyId: 'adminGreyOpenaiRecApiKey',
+        modelId: 'adminGreyOpenaiRecModel',
+        timeoutId: 'adminGreyRecTimeoutSeconds',
+        retryId: 'adminGreyRecMaxRetryRounds',
+        priceInputId: 'adminGreyPriceInputRec',
+        priceCachedId: 'adminGreyPriceCachedInputRec',
+        priceOutputId: 'adminGreyPriceOutputRec',
+        reasoningEffortId: 'adminGreyOpenaiRecReasoningEffort',
+        title: '灰测识别引擎'
+    },
+    'grey_aud': {
+        selectId: 'adminGreyAudPresetSelect',
+        deleteBtnId: 'adminGreyAudDeletePresetBtn',
+        baseUrlId: 'adminGreyOpenaiAudBaseUrl',
+        apiKeyId: 'adminGreyOpenaiAudApiKey',
+        modelId: 'adminGreyOpenaiAudModel',
+        timeoutId: 'adminGreyAudTimeoutSeconds',
+        retryId: 'adminGreyAudMaxRetryRounds',
+        priceInputId: 'adminGreyPriceInputAud',
+        priceCachedId: 'adminGreyPriceCachedInputAud',
+        priceOutputId: 'adminGreyPriceOutputAud',
+        reasoningEffortId: 'adminGreyOpenaiAudReasoningEffort',
+        title: '灰测审核引擎'
+    },
+    'grey_parse': {
+        selectId: 'adminGreyParsePresetSelect',
+        deleteBtnId: 'adminGreyParseDeletePresetBtn',
+        baseUrlId: 'adminGreyParseOpenaiBaseUrl',
+        apiKeyId: 'adminGreyParseOpenaiApiKey',
+        modelId: 'adminGreyParseOpenaiModel',
+        timeoutId: 'adminGreyParseTimeoutSeconds',
+        retryId: 'adminGreyParseMaxRetryRounds',
+        priceInputId: 'adminGreyPriceInputParse',
+        priceCachedId: 'adminGreyPriceCachedInputParse',
+        priceOutputId: 'adminGreyPriceOutputParse',
+        reasoningEffortId: 'adminGreyParseOpenaiReasoningEffort',
+        title: '灰测解析 LLM'
+    }
+};
+
+async function loadUserEnginePresets() {
+    try {
+        const res = await apiFetch('/api/admin/engine-presets');
+        const body = await res.json();
+        if (body && body.status === 'success' && body.data) {
+            _userEnginePresetsCache = body.data || {};
+        } else {
+            _userEnginePresetsCache = {};
+        }
+    } catch (e) {
+        _userEnginePresetsCache = {};
+    }
+    window._userEnginePresetsCache = _userEnginePresetsCache;
+
+    const presetEntries = Object.entries(_userEnginePresetsCache);
+
+    Object.keys(USER_ENGINE_LEG_MAP).forEach(leg => {
+        const meta = USER_ENGINE_LEG_MAP[leg];
+        const sel = document.getElementById(meta.selectId);
+        if (!sel) return;
+        const currentVal = sel.value;
+
+        if (sel.tagName === 'INPUT') {
+            const wrap = sel.closest('.preset-combobox-wrap');
+            if (wrap) {
+                const menu = wrap.querySelector('.preset-dropdown-menu');
+                if (menu) renderEnginePresetMenuItems(leg, sel, menu);
+            }
+            const listId = sel.getAttribute('list') || (meta.selectId + 'List');
+            const datalist = document.getElementById(listId);
+            if (datalist) {
+                datalist.innerHTML = '';
+                presetEntries.forEach(([key, p]) => {
+                    const opt = document.createElement('option');
+                    opt.value = (p && p.label) ? p.label : key;
+                    opt.setAttribute('data-key', key);
+                    datalist.appendChild(opt);
+                });
+            }
+            let matchedKey = null;
+            if (currentVal) {
+                if (_userEnginePresetsCache[currentVal]) matchedKey = currentVal;
+                else {
+                    const match = presetEntries.find(([k, p]) => (p && p.label === currentVal) || k === currentVal);
+                    if (match) matchedKey = match[0];
+                }
+            }
+            const delBtn = document.getElementById(meta.deleteBtnId);
+            if (delBtn) {
+                delBtn.style.display = matchedKey ? 'inline-block' : 'none';
+            }
+        } else {
+            sel.innerHTML = '<option value="">— 手动填写 / 未选择 —</option>';
+            presetEntries.forEach(([key, p]) => {
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.textContent = (p && p.label) ? p.label : key;
+                sel.appendChild(opt);
+            });
+
+            if (currentVal && _userEnginePresetsCache[currentVal]) {
+                sel.value = currentVal;
+            } else {
+                sel.value = '';
+            }
+
+            const delBtn = document.getElementById(meta.deleteBtnId);
+            if (delBtn) {
+                delBtn.style.display = sel.value ? 'inline-block' : 'none';
+            }
+        }
+    });
+}
+window.loadUserEnginePresets = loadUserEnginePresets;
+
+function toggleEnginePresetMenu(leg) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    const input = document.getElementById(meta.selectId);
+    if (!input) return;
+    const wrap = input.closest('.preset-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.preset-dropdown-menu');
+    if (!menu) return;
+    if (menu.classList.contains('hide')) {
+        openEnginePresetMenu(leg);
+        input.focus();
+    } else {
+        menu.classList.add('hide');
+    }
+}
+window.toggleEnginePresetMenu = toggleEnginePresetMenu;
+
+function openEnginePresetMenu(leg) {
+    document.querySelectorAll('.preset-dropdown-menu').forEach(m => m.classList.add('hide'));
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    const input = document.getElementById(meta.selectId);
+    if (!input) return;
+    const wrap = input.closest('.preset-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.preset-dropdown-menu');
+    if (!menu) return;
+
+    if (!window._userEnginePresetsCache || Object.keys(window._userEnginePresetsCache).length === 0) {
+        if (typeof loadUserEnginePresets === 'function') {
+            loadUserEnginePresets().then(() => {
+                renderEnginePresetMenuItems(leg, input, menu);
+                menu.classList.remove('hide');
+            });
+            return;
+        }
+    }
+
+    renderEnginePresetMenuItems(leg, input, menu);
+    menu.classList.remove('hide');
+}
+window.openEnginePresetMenu = openEnginePresetMenu;
+
+function renderEnginePresetMenuItems(leg, inputElem, menuElem) {
+    const cur = (inputElem.value || '').trim().toLowerCase();
+    const presetEntries = Object.entries(_userEnginePresetsCache || {});
+
+    let html = '';
+    presetEntries.forEach(([key, p]) => {
+        const label = (p && p.label) ? p.label : key;
+        const model = (p && (p.model || p.rec_model || p.aud_model || p.parse_model)) || '';
+        const isMatch = !cur || key.toLowerCase().includes(cur) || label.toLowerCase().includes(cur) || model.toLowerCase().includes(cur);
+        if (isMatch) {
+            const isExact = (cur === key.toLowerCase() || cur === label.toLowerCase());
+            const safeKey = key.replace(/'/g, "\\'");
+            html += `<div class="preset-dropdown-item ${isExact ? 'active' : ''}" style="padding:6px 10px; font-size:0.78rem; color:#1e293b; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:8px; white-space:nowrap; border-bottom:1px solid #f1f5f9;" onmousedown="selectEnginePresetItem('${leg}', '${safeKey}')">
+                <div style="display:flex; flex-direction:column; gap:2px; text-align:left;">
+                    <span style="font-weight:600; color:#1e293b;">${escapeHtml(label)}</span>
+                    ${model ? `<span style="font-size:0.68rem; color:#64748b;">${escapeHtml(model)}</span>` : ''}
+                </div>
+                ${isExact ? '<span class="preset-badge" style="font-size:0.68rem; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; padding:1px 5px; border-radius:4px;">已选择</span>' : ''}
+            </div>`;
+        }
+    });
+
+    if (cur && !presetEntries.some(([k, p]) => k.toLowerCase() === cur || ((p && p.label) && p.label.toLowerCase() === cur))) {
+        html += `<div class="preset-dropdown-item" style="padding:6px 10px; font-size:0.78rem; border-top:1px dashed #e2e8f0; color:#0284c7; cursor:pointer; display:flex; justify-content:space-between; align-items:center;" onmousedown="closeEnginePresetMenuDelay('${leg}')">
+            <span>使用新 Provider: <b>${escapeHtml(inputElem.value.trim())}</b></span>
+            <span style="font-size:0.68rem; color:#0369a1; background:#f0f9ff; border:1px solid #bae6fd; padding:1px 5px; border-radius:4px;">点击保存入库</span>
+        </div>`;
+    }
+
+    if (!html) {
+        html = '<div class="preset-dropdown-item" style="padding:8px 10px; font-size:0.75rem; cursor:default; color:#94a3b8; text-align:center;">无匹配模版，可直接输入新名称并保存</div>';
+    }
+
+    menuElem.innerHTML = html;
+}
+window.renderEnginePresetMenuItems = renderEnginePresetMenuItems;
+
+function onInputEnginePresetSearch(leg, text) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    const input = document.getElementById(meta.selectId);
+    if (!input) return;
+    const wrap = input.closest('.preset-combobox-wrap');
+    if (!wrap) return;
+    const menu = wrap.querySelector('.preset-dropdown-menu');
+    if (menu) {
+        renderEnginePresetMenuItems(leg, input, menu);
+        menu.classList.remove('hide');
+    }
+    onInputUserEnginePreset(leg, text);
+}
+window.onInputEnginePresetSearch = onInputEnginePresetSearch;
+
+function closeEnginePresetMenuDelay(leg) {
+    setTimeout(() => {
+        const meta = USER_ENGINE_LEG_MAP[leg];
+        if (!meta) return;
+        const input = document.getElementById(meta.selectId);
+        if (!input) return;
+        const wrap = input.closest('.preset-combobox-wrap');
+        if (wrap) {
+            const menu = wrap.querySelector('.preset-dropdown-menu');
+            if (menu) menu.classList.add('hide');
+        }
+    }, 200);
+}
+window.closeEnginePresetMenuDelay = closeEnginePresetMenuDelay;
+
+function selectEnginePresetItem(leg, key) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    const input = document.getElementById(meta.selectId);
+    const preset = _userEnginePresetsCache ? _userEnginePresetsCache[key] : null;
+    if (input) {
+        input.value = (preset && preset.label) ? preset.label : key;
+    }
+    onSelectUserEnginePreset(leg, key);
+    const wrap = input ? input.closest('.preset-combobox-wrap') : null;
+    if (wrap) {
+        const menu = wrap.querySelector('.preset-dropdown-menu');
+        if (menu) menu.classList.add('hide');
+    }
+}
+window.selectEnginePresetItem = selectEnginePresetItem;
+
+function onInputUserEnginePreset(leg, text) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    const val = (text || '').trim();
+    const delBtn = document.getElementById(meta.deleteBtnId);
+
+    if (!val) {
+        if (delBtn) delBtn.style.display = 'none';
+        return;
+    }
+
+    let matchedKey = null;
+    if (_userEnginePresetsCache[val]) {
+        matchedKey = val;
+    } else {
+        const entry = Object.entries(_userEnginePresetsCache).find(([k, p]) => {
+            return k.toLowerCase() === val.toLowerCase() || (p && p.label && p.label.toLowerCase() === val.toLowerCase());
+        });
+        if (entry) {
+            matchedKey = entry[0];
+        }
+    }
+
+    if (matchedKey) {
+        onSelectUserEnginePreset(leg, matchedKey);
+        if (delBtn) delBtn.style.display = 'inline-block';
+    } else {
+        if (delBtn) delBtn.style.display = 'none';
+    }
+}
+window.onInputUserEnginePreset = onInputUserEnginePreset;
+
+function onSelectUserEnginePreset(leg, presetKey) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+
+    const delBtn = document.getElementById(meta.deleteBtnId);
+    if (!presetKey) {
+        if (delBtn) delBtn.style.display = 'none';
+        return;
+    }
+
+    const preset = _userEnginePresetsCache[presetKey];
+    if (!preset) return;
+
+    if (delBtn) delBtn.style.display = 'inline-block';
+
+    const sel = document.getElementById(meta.selectId);
+    if (sel) {
+        if (sel.tagName === 'INPUT') {
+            sel.value = (preset.label || presetKey);
+        } else {
+            sel.value = presetKey;
+        }
+    }
+
+    const setVal = (id, val) => {
+        const el = document.getElementById(id);
+        if (el && val !== undefined && val !== null) {
+            el.value = val;
+        }
+    };
+
+    setVal(meta.baseUrlId, preset.base_url || '');
+
+    const keyEl = document.getElementById(meta.apiKeyId);
+    if (keyEl) {
+        keyEl.value = preset.api_key || '';
+        keyEl.setAttribute('data-preset-key', presetKey);
+    }
+
+    setVal(meta.modelId, preset.model || preset.rec_model || preset.aud_model || preset.parse_model || '');
+
+    if (preset.timeout_seconds !== undefined && preset.timeout_seconds !== null) {
+        setVal(meta.timeoutId, preset.timeout_seconds);
+    }
+    if (preset.max_retry_rounds !== undefined && preset.max_retry_rounds !== null) {
+        setVal(meta.retryId, preset.max_retry_rounds);
+    }
+    if (preset.price_input !== undefined && preset.price_input !== null) {
+        setVal(meta.priceInputId, preset.price_input);
+    }
+    if (preset.price_cached !== undefined && preset.price_cached !== null) {
+        setVal(meta.priceCachedId, preset.price_cached);
+    }
+    if (preset.price_output !== undefined && preset.price_output !== null) {
+        setVal(meta.priceOutputId, preset.price_output);
+    }
+    if (preset.reasoning_effort !== undefined && preset.reasoning_effort !== null && meta.reasoningEffortId) {
+        setVal(meta.reasoningEffortId, preset.reasoning_effort);
+    }
+
+    if (typeof updateEngineCostCalculator === 'function') {
+        updateEngineCostCalculator(leg);
+    }
+
+    if (typeof updateModelTraitHints === 'function') {
+        updateModelTraitHints(leg);
+    }
+    if (typeof updateAdvBadge === 'function') {
+        updateAdvBadge(leg);
+    }
+
+    if (typeof checkEngineDirty === 'function') {
+        checkEngineDirty();
+    }
+
+    showToast('[INFO] 已回填模版「' + (preset.label || presetKey) + '」参数', 'info');
+}
+window.onSelectUserEnginePreset = onSelectUserEnginePreset;
+
+function saveCurrentConfigAsPreset(leg) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+    _currentSavePresetLeg = leg;
+
+    const sel = document.getElementById(meta.selectId);
+    const existingVal = (sel && sel.value ? sel.value.trim() : '');
+
+    if (existingVal && existingVal !== '— 手动填写 / 未选择 —') {
+        confirmSaveCurrentPresetWithLabel(leg, existingVal);
+        return;
+    }
+
+    const modal = document.getElementById('savePresetModal');
+    const input = document.getElementById('savePresetLabelInput');
+    const title = document.getElementById('savePresetModalTitle');
+
+    if (title) {
+        title.textContent = '保存配置模版 (' + meta.title + ')';
+    }
+    if (input) {
+        input.value = '';
+    }
+    if (modal) {
+        modal.classList.remove('hide');
+        if (input) setTimeout(() => input.focus(), 50);
+    } else {
+        const label = prompt('请输入新模版/Provider名称:');
+        if (label !== null) {
+            confirmSaveCurrentPresetWithLabel(leg, label);
+        }
+    }
+}
+window.saveCurrentConfigAsPreset = saveCurrentConfigAsPreset;
+window.openSavePresetModal = saveCurrentConfigAsPreset;
+
+function closeSavePresetModal() {
+    const modal = document.getElementById('savePresetModal');
+    if (modal) {
+        modal.classList.add('hide');
+    }
+    _currentSavePresetLeg = null;
+}
+window.closeSavePresetModal = closeSavePresetModal;
+
+async function confirmSaveCurrentPreset() {
+    const leg = _currentSavePresetLeg;
+    if (!leg) return;
+    const input = document.getElementById('savePresetLabelInput');
+    const label = (input ? input.value : '').trim();
+    await confirmSaveCurrentPresetWithLabel(leg, label);
+}
+window.confirmSaveCurrentPreset = confirmSaveCurrentPreset;
+
+async function confirmSaveCurrentPresetWithLabel(leg, label) {
+    if (!label) {
+        showToast('[WARN] 请输入模版名称', 'warning');
+        return;
+    }
+    if (label.length > 60) {
+        showToast('[WARN] 模版名称不能超过 60 个字符', 'warning');
+        return;
+    }
+
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+
+    const getVal = (id) => {
+        const el = document.getElementById(id);
+        return el ? el.value.trim() : '';
+    };
+
+    const baseUrl = getVal(meta.baseUrlId);
+    if (!baseUrl) {
+        showToast('[WARN] Base URL 不能为空', 'warning');
+        return;
+    }
+
+    const apiKey = getVal(meta.apiKeyId);
+    const model = getVal(meta.modelId);
+    const timeoutRaw = getVal(meta.timeoutId);
+    const retryRaw = getVal(meta.retryId);
+    const priceInRaw = getVal(meta.priceInputId);
+    const priceCachedRaw = getVal(meta.priceCachedId);
+    const priceOutRaw = getVal(meta.priceOutputId);
+    const reasoningEffort = meta.reasoningEffortId ? getVal(meta.reasoningEffortId) : '';
+
+    const payload = {
+        label: label,
+        base_url: baseUrl,
+        api_key: apiKey,
+        model: model,
+        rec_model: model,
+        aud_model: model,
+        parse_model: model,
+        reasoning_effort: reasoningEffort
+    };
+
+    if (timeoutRaw !== '') {
+        const t = parseInt(timeoutRaw, 10);
+        if (!isNaN(t)) payload.timeout_seconds = t;
+    }
+    if (retryRaw !== '') {
+        const r = parseInt(retryRaw, 10);
+        if (!isNaN(r)) payload.max_retry_rounds = r;
+    }
+    if (priceInRaw !== '') {
+        const pi = parseFloat(priceInRaw);
+        if (!isNaN(pi)) payload.price_input = pi;
+    }
+    if (priceCachedRaw !== '') {
+        const pc = parseFloat(priceCachedRaw);
+        if (!isNaN(pc)) payload.price_cached = pc;
+    }
+    if (priceOutRaw !== '') {
+        const po = parseFloat(priceOutRaw);
+        if (!isNaN(po)) payload.price_output = po;
+    }
+
+    const btn = document.getElementById('confirmSavePresetBtn');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await apiFetch('/api/admin/engine-presets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const ret = await res.json();
+        if (res.ok && ret && ret.status === 'success') {
+            closeSavePresetModal();
+            showToast('[OK] 模版「' + label + '」已成功保存至数据库', 'success');
+            await loadUserEnginePresets();
+            const sel = document.getElementById(meta.selectId);
+            if (sel && ret.key) {
+                if (sel.tagName === 'INPUT') {
+                    sel.value = label;
+                } else {
+                    sel.value = ret.key;
+                }
+            }
+            const delBtn = document.getElementById(meta.deleteBtnId);
+            if (delBtn) {
+                delBtn.style.display = 'inline-block';
+            }
+        } else {
+            const errMsg = (ret && (ret.msg || ret.detail)) || '保存模版失败';
+            showToast('[FAIL] 保存模版失败: ' + errMsg, 'error');
+        }
+    } catch (err) {
+        showToast('[FAIL] 保存模版网络异常: ' + (err.message || err), 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function deleteSelectedPreset(leg) {
+    const meta = USER_ENGINE_LEG_MAP[leg];
+    if (!meta) return;
+
+    const sel = document.getElementById(meta.selectId);
+    if (!sel || !sel.value) return;
+
+    let key = (sel.value || '').trim();
+    let preset = _userEnginePresetsCache[key];
+    if (!preset) {
+        const match = Object.entries(_userEnginePresetsCache).find(([k, p]) => (p && p.label === key) || k === key);
+        if (match) {
+            key = match[0];
+            preset = match[1];
+        }
+    }
+    const label = (preset && preset.label) ? preset.label : (sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : key);
+
+    if (!confirm('确定从数据库中删除模版「' + label + '」吗？此操作不可逆。')) {
+        return;
+    }
+
+    try {
+        const res = await apiFetch('/api/admin/engine-presets/' + encodeURIComponent(key), {
+            method: 'DELETE'
+        });
+        const ret = await res.json();
+        if (res.ok && ret && ret.status === 'success') {
+            showToast('[OK] 模版「' + label + '」已成功从数据库删除', 'success');
+            await loadUserEnginePresets();
+            Object.keys(USER_ENGINE_LEG_MAP).forEach(l => {
+                const s = document.getElementById(USER_ENGINE_LEG_MAP[l].selectId);
+                if (s && (s.value === key || s.value === label)) {
+                    s.value = '';
+                    const d = document.getElementById(USER_ENGINE_LEG_MAP[l].deleteBtnId);
+                    if (d) d.style.display = 'none';
+                }
+            });
+        } else {
+            const errMsg = (ret && (ret.msg || ret.detail)) || '删除模版失败';
+            showToast('[FAIL] 删除模版失败: ' + errMsg, 'error');
+        }
+    } catch (err) {
+        showToast('[FAIL] 删除模版网络异常: ' + (err.message || err), 'error');
+    }
+}
+window.deleteSelectedPreset = deleteSelectedPreset;
+window.deleteUserEnginePresetAction = deleteSelectedPreset;
+
 // 按模块渲染：A 引擎与凭据 / B 成本与计费 / C 发布与流量管理
 function loadAdminEngineConfig() {
     // 仅 admin 可查看
@@ -12632,6 +16232,8 @@ function loadAdminEngineConfig() {
     if (role !== 'admin') return;
     bindAdminEngineEventsOnce();
     loadAdminExperimentsList();
+    loadUserEnginePresets();
+    loadAdminSettings();
 
     _engineOverviewState.message = null;
     loadEngineConfigRouting();
@@ -12649,12 +16251,12 @@ function loadAdminEngineConfig() {
             renderEngineModuleA(cfg);
             renderEngineModuleB(cfg);
             renderEngineModuleC(cfg);
-            syncAdminEnginePresetOptions(cfg);
 
             bindAdvParamListeners();
             ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(legId => {
                 updateAdvBadge(legId);
                 checkTempWarn(legId);
+                updateModelTraitHints(legId);
             });
 
             // 高级模型推理参数回显与防呆
@@ -12670,10 +16272,12 @@ function loadAdminEngineConfig() {
 
             // Aud
             setElVal('adminAudMaxTokens', cfg.openai_aud_max_tokens, 4096);
+            setElVal('adminAudImageDetail', 'auto', 'auto');
             setElVal('adminAudTemperature', cfg.openai_aud_temperature !== undefined && cfg.openai_aud_temperature !== null ? cfg.openai_aud_temperature : 0.0, 0.0);
 
             // Parse
-            setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 4096);
+            setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 2048);
+            setElVal('adminParseImageDetail', 'auto', 'auto');
             setElVal('adminParseTemperature', cfg.openai_parse_temperature !== undefined && cfg.openai_parse_temperature !== null ? cfg.openai_parse_temperature : 0.0, 0.0);
 
             // Grey Rec
@@ -12683,10 +16287,12 @@ function loadAdminEngineConfig() {
 
             // Grey Aud
             setElVal('adminGreyAudMaxTokens', cfg.grey_openai_aud_max_tokens, 4096);
+            setElVal('adminGreyAudImageDetail', 'auto', 'auto');
             setElVal('adminGreyAudTemperature', cfg.grey_openai_aud_temperature !== undefined && cfg.grey_openai_aud_temperature !== null ? cfg.grey_openai_aud_temperature : 0.0, 0.0);
 
             // Grey Parse
-            setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 4096);
+            setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 2048);
+            setElVal('adminGreyParseImageDetail', 'auto', 'auto');
             setElVal('adminGreyParseTemperature', cfg.grey_openai_parse_temperature !== undefined && cfg.grey_openai_parse_temperature !== null ? cfg.grey_openai_parse_temperature : 0.0, 0.0);
 
             // 绑定事件并刷新 Badge 与温度警告
@@ -12694,6 +16300,7 @@ function loadAdminEngineConfig() {
             ['rec', 'aud', 'parse', 'grey_rec', 'grey_aud', 'grey_parse'].forEach(legId => {
                 updateAdvBadge(legId);
                 checkTempWarn(legId);
+                updateModelTraitHints(legId);
             });
 
             updateAuditDisabledState();
@@ -12701,42 +16308,58 @@ function loadAdminEngineConfig() {
             updateParseDisabledState();
             updateGreyParseDisabledState();
             updateGreyAuditDisabledState();
+
+            updateAllCostCalculators();
+            setTimeout(() => {
+                if (typeof captureEngineFormSnapshot === 'function') {
+                    captureEngineFormSnapshot();
+                }
+            }, 300);
         })
         .catch(() => showToast('读取引擎配置失败', 'error'));
 }
 
-// 模块 A — 引擎与凭据：全局默认调用参数 + 识别 / 审核 / 解析三腿
+// 模块 A — 引擎与凭据：识别 / 审核 / 解析三腿
 function renderEngineModuleA(cfg) {
-    const callTimeout = document.getElementById('adminCallTimeoutSeconds');
-    if (callTimeout) callTimeout.value = (cfg.call_timeout_seconds != null ? cfg.call_timeout_seconds : '');
-    const maxRetry = document.getElementById('adminMaxRetryRounds');
-    if (maxRetry) maxRetry.value = (cfg.max_retry_rounds != null ? cfg.max_retry_rounds : '');
-
     // 常规识别
     const recBase = document.getElementById('adminOpenaiRecBaseUrl');
     const recKey = document.getElementById('adminOpenaiRecApiKey');
     const recMod = document.getElementById('adminOpenaiRecModel');
     if (recBase) recBase.value = cfg.openai_rec_base_url || '';
-    if (recKey) recKey.value = cfg.openai_rec_api_key || '';
+    if (recKey) {
+        recKey.value = cfg.openai_rec_api_key || '';
+        recKey.placeholder = getVendorKeyPlaceholder(cfg.openai_rec_base_url);
+    }
     if (recMod) recMod.value = cfg.openai_rec_model || cfg.recognition_model || '';
     const recTimeout = document.getElementById('adminRecTimeoutSeconds');
     if (recTimeout) recTimeout.value = (cfg.rec_timeout_seconds != null ? cfg.rec_timeout_seconds : '');
+    const recRetry = document.getElementById('adminRecMaxRetryRounds');
+    if (recRetry) {
+        const v = cfg.openai_rec_max_retry_rounds != null ? cfg.openai_rec_max_retry_rounds : (cfg.rec_max_retry_rounds != null ? cfg.rec_max_retry_rounds : (cfg.max_retry_rounds != null ? cfg.max_retry_rounds : ''));
+        recRetry.value = v != null ? v : '';
+    }
     const recReasoning = document.getElementById('adminOpenaiRecReasoningEffort');
     if (recReasoning) recReasoning.value = cfg.openai_rec_reasoning_effort || '';
 
     // 常规审核
     const audEnabled = document.getElementById('adminAuditEnabled');
     if (audEnabled) audEnabled.value = cfg.audit_enabled ? 'true' : 'false';
-    const audMode = document.getElementById('adminAuditMode');
-    if (audMode) audMode.value = cfg.audit_mode || 'text';
     const audBase = document.getElementById('adminOpenaiAudBaseUrl');
     const audKey = document.getElementById('adminOpenaiAudApiKey');
     const audMod = document.getElementById('adminOpenaiAudModel');
     if (audBase) audBase.value = cfg.openai_aud_base_url || '';
-    if (audKey) audKey.value = cfg.openai_aud_api_key || '';
+    if (audKey) {
+        audKey.value = cfg.openai_aud_api_key || '';
+        audKey.placeholder = getVendorKeyPlaceholder(cfg.openai_aud_base_url);
+    }
     if (audMod) audMod.value = cfg.openai_aud_model || cfg.audit_model || '';
     const audTimeout = document.getElementById('adminAudTimeoutSeconds');
     if (audTimeout) audTimeout.value = (cfg.aud_timeout_seconds != null ? cfg.aud_timeout_seconds : '');
+    const audRetry = document.getElementById('adminAudMaxRetryRounds');
+    if (audRetry) {
+        const v = cfg.openai_aud_max_retry_rounds != null ? cfg.openai_aud_max_retry_rounds : (cfg.aud_max_retry_rounds != null ? cfg.aud_max_retry_rounds : '');
+        audRetry.value = v != null ? v : '';
+    }
     const audReasoning = document.getElementById('adminOpenaiAudReasoningEffort');
     if (audReasoning) audReasoning.value = cfg.openai_aud_reasoning_effort || '';
 
@@ -12747,14 +16370,22 @@ function renderEngineModuleA(cfg) {
     const parseKey = document.getElementById('adminParseOpenaiApiKey');
     const parseMod = document.getElementById('adminParseOpenaiModel');
     if (parseBase) parseBase.value = cfg.openai_parse_base_url || '';
-    if (parseKey) parseKey.value = cfg.openai_parse_api_key || '';
+    if (parseKey) {
+        parseKey.value = cfg.openai_parse_api_key || '';
+        parseKey.placeholder = getVendorKeyPlaceholder(cfg.openai_parse_base_url);
+    }
     if (parseMod) parseMod.value = cfg.openai_parse_model || cfg.parse_llm_model || '';
     const parseTimeout = document.getElementById('adminParseTimeoutSeconds');
     if (parseTimeout) parseTimeout.value = (cfg.parse_timeout_seconds != null ? cfg.parse_timeout_seconds : '');
+    const parseRetry = document.getElementById('adminParseMaxRetryRounds');
+    if (parseRetry) {
+        const v = cfg.openai_parse_max_retry_rounds != null ? cfg.openai_parse_max_retry_rounds : (cfg.parse_max_retry_rounds != null ? cfg.parse_max_retry_rounds : '');
+        parseRetry.value = v != null ? v : '';
+    }
     const parseReasoning = document.getElementById('adminParseOpenaiReasoningEffort');
     if (parseReasoning) parseReasoning.value = cfg.openai_parse_reasoning_effort || '';
 
-    // 高级工程参数回显（max_tokens / image_detail / temperature）
+    // 高级参数回显（max_tokens / image_detail / temperature）
     const setElVal = (id, val, fallback) => {
         const el = document.getElementById(id);
         if (el) el.value = (val !== null && val !== undefined && val !== '') ? val : fallback;
@@ -12763,24 +16394,43 @@ function renderEngineModuleA(cfg) {
     setElVal('adminRecImageDetail', cfg.openai_rec_image_detail, 'high');
     setElVal('adminRecTemperature', cfg.openai_rec_temperature !== undefined && cfg.openai_rec_temperature !== null ? cfg.openai_rec_temperature : 0.0, 0.0);
     setElVal('adminAudMaxTokens', cfg.openai_aud_max_tokens, 4096);
+    setElVal('adminAudImageDetail', 'auto', 'auto');
     setElVal('adminAudTemperature', cfg.openai_aud_temperature !== undefined && cfg.openai_aud_temperature !== null ? cfg.openai_aud_temperature : 0.0, 0.0);
-    setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 4096);
+    setElVal('adminParseMaxTokens', cfg.openai_parse_max_tokens, 2048);
+    setElVal('adminParseImageDetail', 'auto', 'auto');
     setElVal('adminParseTemperature', cfg.openai_parse_temperature !== undefined && cfg.openai_parse_temperature !== null ? cfg.openai_parse_temperature : 0.0, 0.0);
 
-    // 自动展开抽屉（对应功能启用时）
-    const auditDrawer = document.getElementById('adminAuditCard');
-    if (auditDrawer) {
-        const auditExpanded = !!cfg.audit_enabled;
-        auditDrawer.classList.toggle('collapsed', !auditExpanded);
-        const h = auditDrawer.querySelector('.engine-drawer-header');
-        if (h) h.setAttribute('aria-expanded', auditExpanded ? 'true' : 'false');
-    }
+    // 自动展开/折叠抽屉（对应功能启用时）
+    const setCoreEngineCardCollapse = (leg, isCollapsed) => {
+        const cardMap = {
+            'rec': { cardId: 'adminRecognitionCard', bodyId: 'adminOpenaiRecognitionBox' },
+            'aud': { cardId: 'adminAuditCard', bodyId: 'adminOpenaiAuditBox' },
+            'parse': { cardId: 'adminParseDrawer', bodyId: 'adminParseOpenaiBox' }
+        };
+        const item = cardMap[leg];
+        if (!item) return;
+        const card = document.getElementById(item.cardId);
+        if (!card) return;
+        card.classList.toggle('collapsed', isCollapsed);
+        const body = document.getElementById(item.bodyId);
+        if (body) {
+            body.style.display = isCollapsed ? 'none' : 'block';
+        }
+        const btns = card.querySelectorAll(`.engine-card-toggle-btn, #btnToggleCard_${leg}, #engineCardToggleBtn_${leg}`);
+        btns.forEach(b => {
+            b.textContent = isCollapsed ? '展开' : '收起';
+            b.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+        });
+        const h = card.querySelector('.engine-card-header');
+        if (h) h.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+    };
+
+    setCoreEngineCardCollapse('rec', false);
+    setCoreEngineCardCollapse('aud', !cfg.audit_enabled);
+    setCoreEngineCardCollapse('parse', !cfg.parse_llm_enabled);
     const parseDrawer = document.getElementById('adminParseDrawer');
     if (parseDrawer) {
-        const parseExpanded = !!cfg.parse_llm_enabled;
-        parseDrawer.classList.toggle('collapsed', !parseExpanded);
-        const h = parseDrawer.querySelector('.engine-drawer-header');
-        if (h) h.setAttribute('aria-expanded', parseExpanded ? 'true' : 'false');
+        parseDrawer.classList.toggle('collapsed', !cfg.parse_llm_enabled);
     }
 }
 
@@ -12788,7 +16438,7 @@ function renderEngineModuleA(cfg) {
 function renderEngineModuleB(cfg) {
     const setPrice = (id, val) => {
         const el = document.getElementById(id);
-        if (el) el.value = (val !== null && val !== undefined && !isNaN(val)) ? val : '';
+        if (el) el.value = formatCleanPrice(val);
     };
     setPrice('adminPriceInputRec', cfg.price_input_rec);
     setPrice('adminPriceCachedInputRec', cfg.price_cached_input_rec);
@@ -12808,6 +16458,7 @@ function renderEngineModuleB(cfg) {
     setPrice('adminGreyPriceInputParse', cfg.price_input_grey_parse);
     setPrice('adminGreyPriceCachedInputParse', cfg.price_cached_input_grey_parse);
     setPrice('adminGreyPriceOutputParse', cfg.price_output_grey_parse);
+    updateAllCostCalculators();
 }
 
 // 模块 C — 发布与流量管理：金丝雀灰测三腿（A/B 实验由既有实验端点渲染）
@@ -12819,15 +16470,28 @@ function renderEngineModuleC(cfg) {
     const greyAssign = document.getElementById('adminGreyAssignMode');
     if (greyAssign) greyAssign.value = cfg.grey_assign_mode || 'receipt';
 
+    if (typeof bindTrxSliderEvents === 'function') bindTrxSliderEvents();
+    if (typeof syncGreySplitSlider === 'function') syncGreySplitSlider(cfg.grey_percent || 0);
+    if (typeof onGreyAssignModeChange === 'function') onGreyAssignModeChange(cfg.grey_assign_mode || 'receipt');
+    if (typeof updateTrxGlobalHeader === 'function') updateTrxGlobalHeader();
+
     // 灰测识别
     const gRecBase = document.getElementById('adminGreyOpenaiRecBaseUrl');
     const gRecKey = document.getElementById('adminGreyOpenaiRecApiKey');
     const gRecMod = document.getElementById('adminGreyOpenaiRecModel');
     if (gRecBase) gRecBase.value = cfg.grey_openai_rec_base_url || '';
-    if (gRecKey) gRecKey.value = cfg.grey_openai_rec_api_key || '';
+    if (gRecKey) {
+        gRecKey.value = cfg.grey_openai_rec_api_key || '';
+        gRecKey.placeholder = getVendorKeyPlaceholder(cfg.grey_openai_rec_base_url);
+    }
     if (gRecMod) gRecMod.value = cfg.grey_openai_rec_model || cfg.grey_recognition_model || '';
     const gRecTimeout = document.getElementById('adminGreyRecTimeoutSeconds');
     if (gRecTimeout) gRecTimeout.value = (cfg.grey_rec_timeout_seconds != null ? cfg.grey_rec_timeout_seconds : '');
+    const gRecRetry = document.getElementById('adminGreyRecMaxRetryRounds');
+    if (gRecRetry) {
+        const v = cfg.grey_openai_rec_max_retry_rounds != null ? cfg.grey_openai_rec_max_retry_rounds : (cfg.grey_rec_max_retry_rounds != null ? cfg.grey_rec_max_retry_rounds : '');
+        gRecRetry.value = v != null ? v : '';
+    }
     const gRecReasoning = document.getElementById('adminGreyOpenaiRecReasoningEffort');
     if (gRecReasoning) gRecReasoning.value = cfg.grey_openai_rec_reasoning_effort || '';
 
@@ -12838,10 +16502,18 @@ function renderEngineModuleC(cfg) {
     const gAudKey = document.getElementById('adminGreyOpenaiAudApiKey');
     const gAudMod = document.getElementById('adminGreyOpenaiAudModel');
     if (gAudBase) gAudBase.value = cfg.grey_openai_aud_base_url || '';
-    if (gAudKey) gAudKey.value = cfg.grey_openai_aud_api_key || '';
+    if (gAudKey) {
+        gAudKey.value = cfg.grey_openai_aud_api_key || '';
+        gAudKey.placeholder = getVendorKeyPlaceholder(cfg.grey_openai_aud_base_url);
+    }
     if (gAudMod) gAudMod.value = cfg.grey_openai_aud_model || cfg.grey_audit_model || '';
     const gAudTimeout = document.getElementById('adminGreyAudTimeoutSeconds');
     if (gAudTimeout) gAudTimeout.value = (cfg.grey_aud_timeout_seconds != null ? cfg.grey_aud_timeout_seconds : '');
+    const gAudRetry = document.getElementById('adminGreyAudMaxRetryRounds');
+    if (gAudRetry) {
+        const v = cfg.grey_openai_aud_max_retry_rounds != null ? cfg.grey_openai_aud_max_retry_rounds : (cfg.grey_aud_max_retry_rounds != null ? cfg.grey_aud_max_retry_rounds : '');
+        gAudRetry.value = v != null ? v : '';
+    }
     const gAudReasoning = document.getElementById('adminGreyOpenaiAudReasoningEffort');
     if (gAudReasoning) gAudReasoning.value = cfg.grey_openai_aud_reasoning_effort || '';
 
@@ -12852,14 +16524,22 @@ function renderEngineModuleC(cfg) {
     const gParseKey = document.getElementById('adminGreyParseOpenaiApiKey');
     const gParseMod = document.getElementById('adminGreyParseOpenaiModel');
     if (gParseBase) gParseBase.value = cfg.grey_openai_parse_base_url || '';
-    if (gParseKey) gParseKey.value = cfg.grey_openai_parse_api_key || '';
+    if (gParseKey) {
+        gParseKey.value = cfg.grey_openai_parse_api_key || '';
+        gParseKey.placeholder = getVendorKeyPlaceholder(cfg.grey_openai_parse_base_url);
+    }
     if (gParseMod) gParseMod.value = cfg.grey_openai_parse_model || cfg.grey_parse_llm_model || '';
     const gParseTimeout = document.getElementById('adminGreyParseTimeoutSeconds');
     if (gParseTimeout) gParseTimeout.value = (cfg.grey_parse_timeout_seconds != null ? cfg.grey_parse_timeout_seconds : '');
+    const gParseRetry = document.getElementById('adminGreyParseMaxRetryRounds');
+    if (gParseRetry) {
+        const v = cfg.grey_openai_parse_max_retry_rounds != null ? cfg.grey_openai_parse_max_retry_rounds : (cfg.grey_parse_max_retry_rounds != null ? cfg.grey_parse_max_retry_rounds : '');
+        gParseRetry.value = v != null ? v : '';
+    }
     const gParseReasoning = document.getElementById('adminGreyParseOpenaiReasoningEffort');
     if (gParseReasoning) gParseReasoning.value = cfg.grey_openai_parse_reasoning_effort || '';
 
-    // 灰测高级工程参数
+    // 灰测高级参数
     const setElVal = (id, val, fallback) => {
         const el = document.getElementById(id);
         if (el) el.value = (val !== null && val !== undefined && val !== '') ? val : fallback;
@@ -12868,8 +16548,10 @@ function renderEngineModuleC(cfg) {
     setElVal('adminGreyRecImageDetail', cfg.grey_openai_rec_image_detail, 'high');
     setElVal('adminGreyRecTemperature', cfg.grey_openai_rec_temperature !== undefined && cfg.grey_openai_rec_temperature !== null ? cfg.grey_openai_rec_temperature : 0.0, 0.0);
     setElVal('adminGreyAudMaxTokens', cfg.grey_openai_aud_max_tokens, 4096);
+    setElVal('adminGreyAudImageDetail', 'auto', 'auto');
     setElVal('adminGreyAudTemperature', cfg.grey_openai_aud_temperature !== undefined && cfg.grey_openai_aud_temperature !== null ? cfg.grey_openai_aud_temperature : 0.0, 0.0);
-    setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 4096);
+    setElVal('adminGreyParseMaxTokens', cfg.grey_openai_parse_max_tokens, 2048);
+    setElVal('adminGreyParseImageDetail', 'auto', 'auto');
     setElVal('adminGreyParseTemperature', cfg.grey_openai_parse_temperature !== undefined && cfg.grey_openai_parse_temperature !== null ? cfg.grey_openai_parse_temperature : 0.0, 0.0);
 
     // 金丝雀抽屉自动展开
@@ -12880,58 +16562,6 @@ function renderEngineModuleC(cfg) {
         const h = greyDrawer.querySelector('.engine-drawer-header');
         if (h) h.setAttribute('aria-expanded', greyExpanded ? 'true' : 'false');
     }
-}
-
-// 预设网关下拉：注入自定义预设并回显当前 Base URL 对应的预设（供应商名不再由自由文本输入）
-function syncAdminEnginePresetOptions(cfg) {
-    const detectPresetKey = (baseUrl) => {
-        if (!baseUrl) return '';
-        const u = baseUrl.toLowerCase();
-        if (u.includes('siliconflow')) return 'siliconflow';
-        if (u.includes('dashscope') || u.includes('aliyuncs')) return 'bailian';
-        if (u.includes('agnes')) return 'agnes';
-        return '';
-    };
-    const setPresetVal = (presetId, baseUrl) => {
-        const el = document.getElementById(presetId);
-        if (el) el.value = detectPresetKey(baseUrl);
-    };
-    setPresetVal('adminOpenaiRecPreset', cfg.openai_rec_base_url);
-    setPresetVal('adminOpenaiAudPreset', cfg.openai_aud_base_url);
-    setPresetVal('adminParseOpenaiPreset', cfg.openai_parse_base_url);
-    setPresetVal('adminGreyOpenaiRecPreset', cfg.grey_openai_rec_base_url);
-    setPresetVal('adminGreyOpenaiAudPreset', cfg.grey_openai_aud_base_url);
-    setPresetVal('adminGreyParseOpenaiPreset', cfg.grey_openai_parse_base_url);
-
-    // 动态从后端同步预设配置（自动融入 .env 中的密钥 + 自定义预设）
-    apiFetch('/api/admin/engine-presets')
-        .then(r => r.json())
-        .then(pRet => {
-            if (pRet && pRet.status === 'success' && pRet.data) {
-                Object.assign(OPENAI_PRESETS, pRet.data);
-                const PRESET_SELECT_IDS = [
-                    'adminOpenaiRecPreset', 'adminOpenaiAudPreset', 'adminParseOpenaiPreset',
-                    'adminGreyOpenaiRecPreset', 'adminGreyOpenaiAudPreset', 'adminGreyParseOpenaiPreset',
-                ];
-                const BUILTIN_KEYS = new Set(['agnes', 'bailian', 'siliconflow']);
-                PRESET_SELECT_IDS.forEach(selId => {
-                    const sel = document.getElementById(selId);
-                    if (!sel) return;
-                    Array.from(sel.options).forEach(opt => {
-                        if (opt.value && !BUILTIN_KEYS.has(opt.value)) sel.removeChild(opt);
-                    });
-                    Object.entries(pRet.data).forEach(([key, preset]) => {
-                        if (!BUILTIN_KEYS.has(key) && preset.label) {
-                            const opt = document.createElement('option');
-                            opt.value = key;
-                            opt.textContent = preset.label + ' [自定义]';
-                            sel.appendChild(opt);
-                        }
-                    });
-                });
-            }
-        })
-        .catch(() => {});
 }
 
 // 采集表单字段并构建保存 / 测试 body（不包含供应商自由文本；携带乐观锁 version）
@@ -12945,6 +16575,12 @@ function collectEngineConfigBody() {
         if (!el || !el.value.trim()) return null;
         const v = parseInt(el.value.trim(), 10);
         return isNaN(v) ? null : v;
+    };
+    const getRetry = (id, fallback) => {
+        const el = document.getElementById(id);
+        if (!el || !el.value.trim()) return (fallback !== undefined ? fallback : null);
+        const v = parseInt(el.value.trim(), 10);
+        return isNaN(v) ? (fallback !== undefined ? fallback : null) : Math.max(0, Math.min(10, v));
     };
     const getInt = (id, fallback) => {
         const el = document.getElementById(id);
@@ -13005,31 +16641,33 @@ function collectEngineConfigBody() {
     const greyAudModel = getVal('adminGreyOpenaiAudModel');
     const greyParseModel = getVal('adminGreyParseOpenaiModel');
 
-    // 保留 **** 敏感掩码传回后端，后端自动比对并维持未改动的原密钥
+    // 敏感掩码传回后端保留，用户输入新值传新值，清空则传空串 "" 触发显式清空
+    const getKeyVal = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return undefined;
+        return el.value.trim();
+    };
+
     return {
         ...priceFields,
         // 乐观锁：来自 routing DTO；缺失时 undefined（JSON 序列化省略，后端按旧行为处理）
         version: (_engineConfigVersion != null ? _engineConfigVersion : undefined),
-        // 全局默认调用超时 / 整图重跑上限 / 审核模式
-        call_timeout_seconds: getTimeout('adminCallTimeoutSeconds'),
-        max_retry_rounds: getInt('adminMaxRetryRounds', 3),
-        audit_mode: getVal('adminAuditMode') || 'text',
 
         recognition_model: recModel,
         openai_rec_base_url: getVal('adminOpenaiRecBaseUrl'),
-        openai_rec_api_key: getVal('adminOpenaiRecApiKey'),
+        openai_rec_api_key: getKeyVal('adminOpenaiRecApiKey'),
         openai_rec_model: recModel,
 
         audit_enabled: document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false,
         audit_model: audModel,
         openai_aud_base_url: getVal('adminOpenaiAudBaseUrl'),
-        openai_aud_api_key: getVal('adminOpenaiAudApiKey'),
+        openai_aud_api_key: getKeyVal('adminOpenaiAudApiKey'),
         openai_aud_model: audModel,
 
         parse_llm_enabled: document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false,
         parse_llm_model: parseModel,
         openai_parse_base_url: getVal('adminParseOpenaiBaseUrl'),
-        openai_parse_api_key: getVal('adminParseOpenaiApiKey'),
+        openai_parse_api_key: getKeyVal('adminParseOpenaiApiKey'),
         openai_parse_model: parseModel,
 
         grey_enabled: document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false,
@@ -13038,53 +16676,70 @@ function collectEngineConfigBody() {
 
         grey_recognition_model: greyRecModel,
         grey_openai_rec_base_url: getVal('adminGreyOpenaiRecBaseUrl'),
-        grey_openai_rec_api_key: getVal('adminGreyOpenaiRecApiKey'),
+        grey_openai_rec_api_key: getKeyVal('adminGreyOpenaiRecApiKey'),
         grey_openai_rec_model: greyRecModel,
 
         grey_audit_enabled: document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false,
         grey_audit_model: greyAudModel,
         grey_openai_aud_base_url: getVal('adminGreyOpenaiAudBaseUrl'),
-        grey_openai_aud_api_key: getVal('adminGreyOpenaiAudApiKey'),
+        grey_openai_aud_api_key: getKeyVal('adminGreyOpenaiAudApiKey'),
         grey_openai_aud_model: greyAudModel,
 
         grey_parse_llm_enabled: document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false,
         grey_parse_llm_model: greyParseModel,
         grey_openai_parse_base_url: getVal('adminGreyParseOpenaiBaseUrl'),
-        grey_openai_parse_api_key: getVal('adminGreyParseOpenaiApiKey'),
+        grey_openai_parse_api_key: getKeyVal('adminGreyParseOpenaiApiKey'),
         grey_openai_parse_model: greyParseModel,
 
-        // 分引擎腿超时与思考强度
+        // 分引擎腿超时、重试上限与思考强度
         rec_timeout_seconds: getTimeout('adminRecTimeoutSeconds'),
+        openai_rec_max_retry_rounds: getRetry('adminRecMaxRetryRounds', 3),
+        rec_max_retry_rounds: getRetry('adminRecMaxRetryRounds', 3),
         openai_rec_reasoning_effort: getVal('adminOpenaiRecReasoningEffort'),
+
         aud_timeout_seconds: getTimeout('adminAudTimeoutSeconds'),
+        openai_aud_max_retry_rounds: getRetry('adminAudMaxRetryRounds', 1),
+        aud_max_retry_rounds: getRetry('adminAudMaxRetryRounds', 1),
         openai_aud_reasoning_effort: getVal('adminOpenaiAudReasoningEffort'),
+
         parse_timeout_seconds: getTimeout('adminParseTimeoutSeconds'),
+        openai_parse_max_retry_rounds: getRetry('adminParseMaxRetryRounds', 1),
+        parse_max_retry_rounds: getRetry('adminParseMaxRetryRounds', 1),
         openai_parse_reasoning_effort: getVal('adminParseOpenaiReasoningEffort'),
+
         grey_rec_timeout_seconds: getTimeout('adminGreyRecTimeoutSeconds'),
+        grey_openai_rec_max_retry_rounds: getRetry('adminGreyRecMaxRetryRounds', null),
+        grey_rec_max_retry_rounds: getRetry('adminGreyRecMaxRetryRounds', null),
         grey_openai_rec_reasoning_effort: getVal('adminGreyOpenaiRecReasoningEffort'),
+
         grey_aud_timeout_seconds: getTimeout('adminGreyAudTimeoutSeconds'),
+        grey_openai_aud_max_retry_rounds: getRetry('adminGreyAudMaxRetryRounds', null),
+        grey_aud_max_retry_rounds: getRetry('adminGreyAudMaxRetryRounds', null),
         grey_openai_aud_reasoning_effort: getVal('adminGreyOpenaiAudReasoningEffort'),
+
         grey_parse_timeout_seconds: getTimeout('adminGreyParseTimeoutSeconds'),
+        grey_openai_parse_max_retry_rounds: getRetry('adminGreyParseMaxRetryRounds', null),
+        grey_parse_max_retry_rounds: getRetry('adminGreyParseMaxRetryRounds', null),
         grey_openai_parse_reasoning_effort: getVal('adminGreyParseOpenaiReasoningEffort'),
 
-        // 高级工程参数 (Rec)
+        // 高级参数 (Rec)
         openai_rec_max_tokens: getInt('adminRecMaxTokens', 4096),
         openai_rec_image_detail: getVal('adminRecImageDetail') || 'high',
         openai_rec_temperature: getFloat('adminRecTemperature', 0.0),
-        // 高级工程参数 (Aud)
+        // 高级参数 (Aud)
         openai_aud_max_tokens: getInt('adminAudMaxTokens', 4096),
         openai_aud_temperature: getFloat('adminAudTemperature', 0.0),
-        // 高级工程参数 (Parse)
+        // 高级参数 (Parse)
         openai_parse_max_tokens: getInt('adminParseMaxTokens', 4096),
         openai_parse_temperature: getFloat('adminParseTemperature', 0.0),
-        // 高级工程参数 (Grey Rec)
+        // 高级参数 (Grey Rec)
         grey_openai_rec_max_tokens: getInt('adminGreyRecMaxTokens', 4096),
         grey_openai_rec_image_detail: getVal('adminGreyRecImageDetail') || 'high',
         grey_openai_rec_temperature: getFloat('adminGreyRecTemperature', 0.0),
-        // 高级工程参数 (Grey Aud)
+        // 高级参数 (Grey Aud)
         grey_openai_aud_max_tokens: getInt('adminGreyAudMaxTokens', 4096),
         grey_openai_aud_temperature: getFloat('adminGreyAudTemperature', 0.0),
-        // 高级工程参数 (Grey Parse)
+        // 高级参数 (Grey Parse)
         grey_openai_parse_max_tokens: getInt('adminGreyParseMaxTokens', 4096),
         grey_openai_parse_temperature: getFloat('adminGreyParseTemperature', 0.0),
     };
@@ -13114,22 +16769,23 @@ function saveAdminEngineConfig() {
                 // T1：管理台保存后来源置 manual（后端强制），重启不再被 .env 覆盖
                 renderAdminEngineConfigSource('manual');
                 if (ret.version != null) _engineConfigVersion = ret.version;
-                if (ret.data) {
-                    const d = ret.data;
-                    const keyEchoes = [
-                        ['adminOpenaiRecApiKey', d.openai_rec_api_key],
-                        ['adminOpenaiAudApiKey', d.openai_aud_api_key],
-                        ['adminParseOpenaiApiKey', d.openai_parse_api_key],
-                        ['adminGreyOpenaiRecApiKey', d.grey_openai_rec_api_key],
-                        ['adminGreyOpenaiAudApiKey', d.grey_openai_aud_api_key],
-                        ['adminGreyParseOpenaiApiKey', d.grey_openai_parse_api_key],
-                    ];
-                    keyEchoes.forEach(([id, val]) => {
-                        if (!val) return;
-                        const el = document.getElementById(id);
-                        if (el) el.value = val;
-                    });
-                }
+                const eng = (ret && ret.data) || {};
+                const keyMap = {
+                    adminOpenaiRecApiKey: eng.openai_rec_api_key,
+                    adminOpenaiAudApiKey: eng.openai_aud_api_key,
+                    adminParseOpenaiApiKey: eng.openai_parse_api_key,
+                    adminGreyOpenaiRecApiKey: eng.grey_openai_rec_api_key,
+                    adminGreyOpenaiAudApiKey: eng.grey_openai_aud_api_key,
+                    adminGreyParseOpenaiApiKey: eng.grey_openai_parse_api_key
+                };
+                Object.entries(keyMap).forEach(([id, val]) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        if (val !== undefined && val !== null) {
+                            el.value = val;
+                        }
+                    }
+                });
                 setEngineStatusMessage('配置已保存，生效版本 v' + (_engineConfigVersion != null ? _engineConfigVersion : '-'), 'success');
                 loadEngineConfigRouting();
                 loadEngineConfigHistory();
@@ -13220,20 +16876,8 @@ function testAdminEngineConnectivity() {
 }
 
 function renderAdminEngineConfigSource(source) {
-    // 配置来源展示（T1）：manual=管理台保存（重启保留）；auto=.env 启动装配（重启重装）
     const isManual = String(source || 'auto') === 'manual';
-    const badge = document.getElementById('adminEngineConfigSource');
-    const hint = document.getElementById('adminEngineConfigSourceHint');
     const resetBtn = document.getElementById('adminResetEngineConfigBtn');
-    if (badge) {
-        badge.textContent = isManual ? '管理台手工配置' : '.env 默认装配';
-        badge.className = 'badge ' + (isManual ? 'badge-warning' : 'badge-secondary');
-    }
-    if (hint) {
-        hint.textContent = isManual
-            ? '重启后保留，不会被 .env 覆盖'
-            : '重启后按 .env 重新装配';
-    }
     if (resetBtn) resetBtn.disabled = !isManual;
 }
 
@@ -13264,71 +16908,150 @@ function resetAdminEngineConfig() {
 function updateAuditDisabledState() {
     const enabled = document.getElementById('adminAuditEnabled') ? document.getElementById('adminAuditEnabled').value === 'true' : false;
     const box = document.getElementById('adminOpenaiAuditBox');
-    const preset = document.getElementById('adminOpenaiAudPreset');
-    if (preset) preset.disabled = !enabled;
     if (box) {
         box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
         box.style.opacity = enabled ? '1' : '0.45';
         box.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+    if (enabled) {
+        const card = document.getElementById('adminAuditCard');
+        if (card && card.classList.contains('collapsed')) {
+            toggleEngineCard('aud');
+        }
     }
 }
 
 function updateGreyAuditDisabledState() {
     const enabled = document.getElementById('adminGreyAuditEnabled') ? document.getElementById('adminGreyAuditEnabled').value === 'true' : false;
     const box = document.getElementById('adminGreyOpenaiAudBox');
-    const preset = document.getElementById('adminGreyOpenaiAudPreset');
-    if (preset) preset.disabled = !enabled;
     if (box) {
         box.querySelectorAll('input, select').forEach(el => {
             if (el.id !== 'adminGreyAuditEnabled') {
                 el.disabled = !enabled;
             }
         });
-        box.style.opacity = enabled ? '1' : '0.45';
+        box.style.opacity = enabled ? '1' : '0.55';
+    }
+    const badge = document.getElementById('trxLegAudBadge');
+    if (badge) {
+        badge.textContent = enabled ? '[开]' : '[关]';
+        badge.style.color = enabled ? '#16a34a' : '#94a3b8';
     }
 }
+window.updateGreyAuditDisabledState = updateGreyAuditDisabledState;
 
 function updateGreyDisabledState() {
     const enabled = document.getElementById('adminGreyEnabled') ? document.getElementById('adminGreyEnabled').value === 'true' : false;
     const body = document.getElementById('adminGreyBody');
     if (body) {
         body.querySelectorAll('input, select, button').forEach((el) => {
+            if (el.classList.contains('trx-leg-tab')) return;
             el.disabled = !enabled;
         });
-        body.style.opacity = enabled ? '1' : '0.45';
+        body.style.opacity = enabled ? '1' : '0.65';
         body.style.pointerEvents = enabled ? 'auto' : 'none';
+        const switcher = body.querySelector('.trx-leg-switcher');
+        if (switcher) switcher.style.pointerEvents = 'auto';
         if (enabled) {
             updateGreyAuditDisabledState();
             updateGreyParseDisabledState();
         }
     }
+    if (typeof updateTrxGlobalHeader === 'function') {
+        updateTrxGlobalHeader();
+    }
 }
+window.updateGreyDisabledState = updateGreyDisabledState;
 
 function updateParseDisabledState() {
     const enabled = document.getElementById('adminParseEnabled') ? document.getElementById('adminParseEnabled').value === 'true' : false;
     const box = document.getElementById('adminParseOpenaiBox');
-    const preset = document.getElementById('adminParseOpenaiPreset');
-    if (preset) preset.disabled = !enabled;
     if (box) {
         box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
         box.style.opacity = enabled ? '1' : '0.45';
         box.style.pointerEvents = enabled ? 'auto' : 'none';
+    }
+    if (enabled) {
+        const card = document.getElementById('adminParseDrawer');
+        if (card && card.classList.contains('collapsed')) {
+            toggleEngineCard('parse');
+        }
     }
 }
 
 function updateGreyParseDisabledState() {
     const enabled = document.getElementById('adminGreyParseEnabled') ? document.getElementById('adminGreyParseEnabled').value === 'true' : false;
-    const box = document.getElementById('adminGreyParseOpenaiBox');
-    const preset = document.getElementById('adminGreyParseOpenaiPreset');
-    if (preset) preset.disabled = !enabled;
+    const box = document.getElementById('adminGreyParseBox') || document.getElementById('adminGreyParseOpenaiBox');
     if (box) {
-        box.querySelectorAll('input, select').forEach(el => { el.disabled = !enabled; });
-        box.style.opacity = enabled ? '1' : '0.45';
-        box.style.pointerEvents = enabled ? 'auto' : 'none';
+        box.querySelectorAll('input, select').forEach(el => {
+            if (el.id !== 'adminGreyParseEnabled') {
+                el.disabled = !enabled;
+            }
+        });
+        box.style.opacity = enabled ? '1' : '0.55';
+    }
+    const badge = document.getElementById('trxLegParseBadge');
+    if (badge) {
+        badge.textContent = enabled ? '[开]' : '[关]';
+        badge.style.color = enabled ? '#16a34a' : '#94a3b8';
     }
 }
+window.updateGreyParseDisabledState = updateGreyParseDisabledState;
+
+function switchGreyLegTab(leg) {
+    const container = document.getElementById('adminGreyLegsContainer');
+    const recBox = document.getElementById('adminGreyOpenaiRecBox');
+    const audBox = document.getElementById('adminGreyOpenaiAudBox');
+    const parseBox = document.getElementById('adminGreyParseBox') || document.getElementById('adminGreyParseOpenaiBox');
+    
+    const tabAll = document.getElementById('tabBtn_grey_all');
+    const tabRec = document.getElementById('tabBtn_grey_rec');
+    const tabAud = document.getElementById('tabBtn_grey_aud');
+    const tabParse = document.getElementById('tabBtn_grey_parse');
+
+    [tabAll, tabRec, tabAud, tabParse].forEach(t => { if (t) t.classList.remove('active'); });
+
+    if (leg === 'grey_rec') {
+        if (tabRec) tabRec.classList.add('active');
+        if (container) {
+            container.style.display = 'block';
+        }
+        if (recBox) recBox.style.display = 'block';
+        if (audBox) audBox.style.display = 'none';
+        if (parseBox) parseBox.style.display = 'none';
+    } else if (leg === 'grey_aud') {
+        if (tabAud) tabAud.classList.add('active');
+        if (container) {
+            container.style.display = 'block';
+        }
+        if (recBox) recBox.style.display = 'none';
+        if (audBox) audBox.style.display = 'block';
+        if (parseBox) parseBox.style.display = 'none';
+    } else if (leg === 'grey_parse') {
+        if (tabParse) tabParse.classList.add('active');
+        if (container) {
+            container.style.display = 'block';
+        }
+        if (recBox) recBox.style.display = 'none';
+        if (audBox) audBox.style.display = 'none';
+        if (parseBox) parseBox.style.display = 'block';
+    } else {
+        // 'all' / 默认全景矩阵
+        if (tabAll) tabAll.classList.add('active');
+        if (container) {
+            container.style.display = 'grid';
+            container.style.gridTemplateColumns = 'repeat(3, minmax(0, 1fr))';
+            container.style.gap = '12px';
+        }
+        if (recBox) recBox.style.display = 'block';
+        if (audBox) audBox.style.display = 'block';
+        if (parseBox) parseBox.style.display = 'block';
+    }
+}
+window.switchGreyLegTab = switchGreyLegTab;
 
 // ---------------------------------- 推全 / 回滚 / 对比 ----------------------------------
+
 
 // 灰测↔常规配置对比：GET /api/admin/engine-config/diff
 function fetchAndRenderDiff(onRendered) {
@@ -13464,6 +17187,252 @@ function rollbackEngineConfig() {
 }
 
 /* =============================================================
+   SaaS 级流量调度中枢与预设模型定义 (View 02 Traffic & Experiments)
+   ============================================================= */
+const EXP_PRESET_MODELS = {
+    agnes: {
+        label: 'Agnes AI',
+        base_url: 'https://apihub.agnes-ai.com/v1',
+        api_key: '',
+        rec_model: 'agnes-2.0-flash',
+        aud_model: 'agnes-2.0-flash',
+    },
+    bailian: {
+        label: '阿里云百炼 · DashScope',
+        base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        api_key: '',
+        rec_model: 'qwen3.5-omni-flash',
+        aud_model: 'qwen3-vl-plus',
+    },
+    siliconflow: {
+        label: 'SiliconFlow · 硅基流动',
+        base_url: 'https://api.siliconflow.cn/v1',
+        api_key: '',
+        rec_model: 'Qwen/Qwen3-VL-32B-Instruct',
+        aud_model: 'zai-org/GLM-4.5V',
+    },
+};
+
+function applyExpPreset(side, presetKey) {
+    let baseUrlEl, apiKeyEl, modelEl;
+    if (side === 'ctrl') {
+        baseUrlEl = document.getElementById('newExpCtrlBaseUrl');
+        apiKeyEl = document.getElementById('newExpCtrlApiKey');
+        modelEl = document.getElementById('newExpControlModel');
+    } else {
+        baseUrlEl = document.getElementById('newExpTreatBaseUrl');
+        apiKeyEl = document.getElementById('newExpTreatApiKey');
+        modelEl = document.getElementById('newExpTreatmentModel');
+    }
+
+    if (presetKey === 'current_prod') {
+        const prodBase = document.getElementById('adminOpenaiRecBaseUrl');
+        const prodModel = document.getElementById('adminOpenaiRecModel');
+        const prodKey = document.getElementById('adminOpenaiRecApiKey');
+        if (baseUrlEl) baseUrlEl.value = (prodBase && prodBase.value.trim()) ? prodBase.value.trim() : 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+        if (modelEl) modelEl.value = (prodModel && prodModel.value.trim()) ? prodModel.value.trim() : 'qwen3.5-omni-flash';
+        if (apiKeyEl && prodKey && prodKey.value.trim()) apiKeyEl.value = prodKey.value.trim();
+        return;
+    }
+
+    const preset = EXP_PRESET_MODELS[presetKey];
+    if (!preset) return;
+
+    if (baseUrlEl) baseUrlEl.value = preset.base_url || '';
+    if (modelEl) modelEl.value = preset.rec_model || '';
+    if (apiKeyEl && preset.api_key) apiKeyEl.value = preset.api_key;
+}
+window.applyExpPreset = applyExpPreset;
+
+function syncGreySplitSlider(val) {
+    const numInput = document.getElementById('adminGreyPercent');
+    const slider = document.getElementById('adminGreySlider');
+    const ratioProd = document.getElementById('trxRatioProd');
+    const ratioCanary = document.getElementById('trxRatioCanary');
+    let percent = parseInt(val, 10);
+    if (isNaN(percent)) percent = 0;
+    if (percent < 0) percent = 0;
+    if (percent > 100) percent = 100;
+
+    if (numInput && parseInt(numInput.value, 10) !== percent) {
+        numInput.value = percent;
+    }
+    if (slider && parseInt(slider.value, 10) !== percent) {
+        slider.value = percent;
+    }
+    const canaryPct = percent;
+    const prodPct = 100 - canaryPct;
+    if (ratioProd) {
+        ratioProd.style.width = prodPct + '%';
+        ratioProd.textContent = '基线生产 ' + prodPct + '%';
+    }
+    if (ratioCanary) {
+        ratioCanary.style.width = canaryPct + '%';
+        ratioCanary.textContent = '金丝雀 ' + canaryPct + '%';
+    }
+    updateTrxGlobalHeader();
+}
+window.syncGreySplitSlider = syncGreySplitSlider;
+
+function bindTrxSliderEvents() {
+    const numInput = document.getElementById('adminGreyPercent');
+    const slider = document.getElementById('adminGreySlider');
+    if (slider && !slider._trxBound) {
+        slider._trxBound = true;
+        slider.addEventListener('input', function() {
+            syncGreySplitSlider(this.value);
+        });
+        slider.addEventListener('change', function() {
+            syncGreySplitSlider(this.value);
+        });
+    }
+    if (numInput && !numInput._trxBound) {
+        numInput._trxBound = true;
+        numInput.addEventListener('input', function() {
+            syncGreySplitSlider(this.value);
+        });
+        numInput.addEventListener('change', function() {
+            syncGreySplitSlider(this.value);
+        });
+    }
+}
+window.bindTrxSliderEvents = bindTrxSliderEvents;
+
+function onGreyAssignModeChange(mode) {
+    const expEl = document.getElementById('trxAssignModeExplanation');
+    if (!expEl) return;
+    if (mode === 'vendor') {
+        expEl.textContent = '[INFO] 供应商哈希：相同供应商一律路由至同一模型，避免同一商户在对账期出现不同模型的识别偏差，推荐生产放量与商户一致性体验保障。';
+    } else {
+        expEl.textContent = '[INFO] 单据随机：按单据 ID 哈希分流，流量均匀离散，适合全局快速探索与大样本随机分布。';
+    }
+}
+window.onGreyAssignModeChange = onGreyAssignModeChange;
+
+function updateTrxGlobalHeader() {
+    const baseRecModInput = document.getElementById('adminOpenaiRecModel');
+    const baseBadge = document.getElementById('trxStatusBaselineModel');
+    if (baseBadge) {
+        const m = (baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : 'gpt-4o-mini';
+        baseBadge.textContent = m;
+    }
+
+    const greyEnabled = document.getElementById('adminGreyEnabled') && document.getElementById('adminGreyEnabled').value === 'true';
+    const greyPercentEl = document.getElementById('adminGreyPercent');
+    const pct = greyPercentEl ? (parseInt(greyPercentEl.value, 10) || 0) : 0;
+    const canaryBadge = document.getElementById('trxStatusCanaryBadge');
+    const switchLabel = document.getElementById('trxGreySwitchLabel');
+    if (canaryBadge) {
+        if (greyEnabled) {
+            canaryBadge.textContent = `[GRAY: ACTIVE ${pct}%]`;
+            canaryBadge.className = 'trx-badge trx-badge-warning';
+        } else {
+            canaryBadge.textContent = '[GRAY: DISABLED]';
+            canaryBadge.className = 'trx-badge trx-badge-secondary';
+        }
+    }
+    if (switchLabel) {
+        switchLabel.textContent = greyEnabled ? '[ENABLED]' : '[DISABLED]';
+        switchLabel.className = greyEnabled ? 'trx-tag trx-tag-warning' : 'trx-tag trx-tag-secondary';
+    }
+
+    const expBadge = document.getElementById('trxStatusExpBadge');
+    if (expBadge) {
+        const runningCount = (_adminExperimentsList || []).filter(e => e.status === 'running').length;
+        if (runningCount > 0) {
+            expBadge.textContent = `[EXPERIMENTS: ${runningCount} ACTIVE]`;
+            expBadge.className = 'trx-badge trx-badge-info';
+        } else {
+            expBadge.textContent = '[EXPERIMENTS: 0 ACTIVE]';
+            expBadge.className = 'trx-badge trx-badge-secondary';
+        }
+    }
+
+    const topoText = document.getElementById('trxTopoSplitText');
+    if (topoText) {
+        if (greyEnabled) {
+            topoText.textContent = `${100 - pct}% 生产基线 / ${pct}% 候选灰度`;
+        } else {
+            topoText.textContent = '100% 生产基线 / 0% 候选灰度';
+        }
+    }
+}
+window.updateTrxGlobalHeader = updateTrxGlobalHeader;
+
+function refreshTrxCockpitHeader() {
+    updateTrxGlobalHeader();
+    if (typeof loadAdminExperimentsList === 'function') {
+        loadAdminExperimentsList();
+    }
+}
+window.refreshTrxCockpitHeader = refreshTrxCockpitHeader;
+
+async function updateAdminExpDetailMetrics(expId, targetN) {
+    if (!expId) return;
+    try {
+        const res = await apiFetch('/api/admin/experiments/' + expId);
+        const data = await res.json();
+        if (data && data.status === 'success' && data.metrics) {
+            const m = data.metrics;
+            const cN = (m.control && m.control.n) || 0;
+            const tN = (m.treatment && m.treatment.n) || 0;
+            const curN = Math.min(cN, tN);
+            const reqN = (targetN != null) ? Number(targetN) : 30;
+            const progTextEl = document.getElementById('adminExpProgressText');
+            const progBarEl = document.getElementById('adminExpProgressBar');
+            if (reqN <= 0) {
+                if (progTextEl) progTextEl.textContent = '[无门槛要求 (100%)]';
+                if (progBarEl) {
+                    progBarEl.style.width = '100%';
+                    progBarEl.style.background = '#16a34a';
+                }
+            } else {
+                const pct = Math.min(100, Math.round((curN / reqN) * 1000) / 10);
+                if (progTextEl) {
+                    if (curN >= reqN) {
+                        progTextEl.textContent = `[已达统计门槛 (${pct.toFixed(1)}%)]`;
+                    } else {
+                        progTextEl.textContent = `[样本积累中 ${curN} / ${reqN} (${pct.toFixed(1)}%)]`;
+                    }
+                }
+                if (progBarEl) {
+                    progBarEl.style.width = pct + '%';
+                    progBarEl.style.background = (curN >= reqN) ? '#16a34a' : '#2563eb';
+                }
+            }
+
+            const metric = (data.experiment && data.experiment.success_metric) || 'accuracy';
+            const test = m.tests && m.tests[metric];
+            const sumEl = document.getElementById('adminExpSignificanceSummary');
+            const badgeEl = document.getElementById('adminExpPValueBadge');
+            if (test && test.p_value != null) {
+                const pval = Number(test.p_value);
+                const pStr = pval < 0.001 ? 'p < 0.001' : `p = ${pval.toFixed(4)}`;
+                if (badgeEl) {
+                    badgeEl.textContent = `p-value: ${pStr}`;
+                    badgeEl.className = pval < 0.05 ? 'badge badge-success' : 'badge badge-secondary';
+                }
+                if (sumEl) {
+                    sumEl.textContent = pval < 0.05
+                        ? '统计显著性达成 (p < 0.05): 两组差异具有统计学显著意义'
+                        : '未达显著性水平 (p >= 0.05): 建议继续积累样本观测';
+                }
+            } else {
+                if (badgeEl) {
+                    badgeEl.textContent = 'p-value: -';
+                    badgeEl.className = 'badge badge-secondary';
+                }
+                if (sumEl) {
+                    sumEl.textContent = '统计显著性状态: 样本收集推进中，满足最小样本量后触发统计推断';
+                }
+            }
+        }
+    } catch (e) {
+        // 静默
+    }
+}
+
+/* =============================================================
    A/B 科学实验编排抽屉交互控制 (A/B Experimentation Drawer)
    ============================================================= */
 // A/B 实验状态唯一事实源：label=展示名，cls=徽章类（管理抽屉），style=内联配色（大盘/详情）。
@@ -13494,39 +17463,46 @@ let _adminExperimentsList = [];
 
 async function loadAdminExperimentsList() {
     const sel = document.getElementById('adminExpSelect');
-    if (!sel) return;
     try {
         const res = await apiFetch('/api/admin/experiments');
         const data = await res.json();
         if (data && data.status === 'success' && Array.isArray(data.data)) {
             _adminExperimentsList = data.data;
-            sel.innerHTML = '';
-            if (_adminExperimentsList.length === 0) {
-                sel.innerHTML = '<option value="">暂无实验 (请点击新建)</option>';
-                onAdminExpSelectChange('');
-                return;
+            if (typeof window !== 'undefined') window._adminExperimentsList = _adminExperimentsList;
+            if (typeof renderEngineOverview === 'function') {
+                renderEngineOverview();
             }
-            _adminExperimentsList.forEach(exp => {
-                const opt = document.createElement('option');
-                opt.value = exp.id;
-                const statusLabel = expStatusLabel(exp.status);
-                opt.innerHTML = `#${exp.id}: ${w2Escape(exp.name || '未命名')} (${statusLabel})`;
-                sel.appendChild(opt);
-            });
-            let activeId = _adminExperimentsList[0].id;
-            const prevSelected = sel.getAttribute('data-selected-id');
-            if (prevSelected) {
-                const found = _adminExperimentsList.find(e => String(e.id) === String(prevSelected));
-                if (found) activeId = found.id;
+            if (sel) {
+                sel.innerHTML = '';
+                if (_adminExperimentsList.length === 0) {
+                    sel.innerHTML = '<option value="">暂无实验 (请点击新建)</option>';
+                    onAdminExpSelectChange('');
+                    return;
+                }
+                _adminExperimentsList.forEach(exp => {
+                    const opt = document.createElement('option');
+                    opt.value = exp.id;
+                    const statusLabel = expStatusLabel(exp.status);
+                    opt.innerHTML = `#${exp.id}: ${w2Escape(exp.name || '未命名')} (${statusLabel})`;
+                    sel.appendChild(opt);
+                });
+                let activeId = _adminExperimentsList[0].id;
+                const prevSelected = sel.getAttribute('data-selected-id');
+                if (prevSelected) {
+                    const found = _adminExperimentsList.find(e => String(e.id) === String(prevSelected));
+                    if (found) activeId = found.id;
+                }
+                sel.value = String(activeId);
+                onAdminExpSelectChange(activeId);
             }
-            sel.value = String(activeId);
-            onAdminExpSelectChange(activeId);
-        } else {
+        } else if (sel) {
             sel.innerHTML = '<option value="">加载实验列表失败</option>';
         }
     } catch (err) {
         console.error('loadAdminExperimentsList error:', err);
-        sel.innerHTML = '<option value="">加载实验列表异常</option>';
+        if (sel) {
+            sel.innerHTML = '<option value="">加载实验列表异常</option>';
+        }
     }
 }
 
@@ -13543,6 +17519,10 @@ function onAdminExpSelectChange(expId) {
     const treatEl = document.getElementById('adminExpTreatModel');
     const startBtn = document.getElementById('adminExpStartBtn');
     const stopBtn = document.getElementById('adminExpStopBtn');
+    const progTextEl = document.getElementById('adminExpProgressText');
+    const progBarEl = document.getElementById('adminExpProgressBar');
+    const sumEl = document.getElementById('adminExpSignificanceSummary');
+    const pValueBadge = document.getElementById('adminExpPValueBadge');
 
     const exp = _adminExperimentsList.find(e => String(e.id) === String(expId));
     if (!exp) {
@@ -13558,6 +17538,11 @@ function onAdminExpSelectChange(expId) {
         if (treatEl) treatEl.textContent = '待测对比模型';
         if (startBtn) startBtn.disabled = true;
         if (stopBtn) stopBtn.disabled = true;
+        if (progTextEl) progTextEl.textContent = '[样本积累中 0 / 30 (0.0%)]';
+        if (progBarEl) progBarEl.style.width = '0%';
+        if (sumEl) sumEl.textContent = '统计显著性状态: 样本收集推进中，满足最小样本量后触发统计推断';
+        if (pValueBadge) { pValueBadge.textContent = 'p-value: -'; pValueBadge.className = 'badge badge-secondary'; }
+        updateTrxGlobalHeader();
         return;
     }
 
@@ -13577,7 +17562,7 @@ function onAdminExpSelectChange(expId) {
     // S2：min_sample=0（不做样本量门槛）是合法值，不能因 0 是 falsy 而显示成 30
     if (minSampleEl) minSampleEl.textContent = (exp.min_sample != null) ? `${exp.min_sample} 样本/组` : '30 样本/组';
 
-    // 状态徽标与操作控制（文案/样式取自 EXP_STATUS；未知状态按草稿处理，与后端默认值一致）
+    // 状态徽标与操作控制
     const status = exp.status || 'draft';
     if (badgeEl) {
         const spec = EXP_STATUS[status] || EXP_STATUS.draft;
@@ -13598,6 +17583,22 @@ function onAdminExpSelectChange(expId) {
 
     const treatmentModel = (snapshot && snapshot.treatment_model) ? snapshot.treatment_model : '待测对比模型';
     if (treatEl) treatEl.textContent = treatmentModel;
+
+    // 样本进度与显著性初始状态
+    const minN = (exp.min_sample != null) ? Number(exp.min_sample) : 30;
+    if (minN <= 0) {
+        if (progTextEl) progTextEl.textContent = '[无门槛要求 (100%)]';
+        if (progBarEl) { progBarEl.style.width = '100%'; progBarEl.style.background = '#16a34a'; }
+    } else {
+        if (progTextEl) progTextEl.textContent = `[样本积累中 0 / ${minN} (0.0%)]`;
+        if (progBarEl) { progBarEl.style.width = '0%'; progBarEl.style.background = '#2563eb'; }
+    }
+    if (sumEl) sumEl.textContent = '统计显著性状态: 样本收集推进中，满足最小样本量后触发统计推断';
+    if (pValueBadge) { pValueBadge.textContent = 'p-value: -'; pValueBadge.className = 'badge badge-secondary'; }
+
+    // 异步刷新即时样本指标
+    updateAdminExpDetailMetrics(expId, exp.min_sample);
+    updateTrxGlobalHeader();
 
     // 按钮禁用控制
     if (startBtn) {
@@ -13652,45 +17653,6 @@ async function stopCurrentExperiment() {
     }
 }
 
-function applyExpPreset(side, val) {
-    const isCtrl = (side === 'ctrl');
-    const baseUrlEl = document.getElementById(isCtrl ? 'newExpCtrlBaseUrl' : 'newExpTreatBaseUrl');
-    const apiKeyEl = document.getElementById(isCtrl ? 'newExpCtrlApiKey' : 'newExpTreatApiKey');
-    const modelEl = document.getElementById(isCtrl ? 'newExpControlModel' : 'newExpTreatmentModel');
-
-    if (val === 'current_prod') {
-        const baseRecModInput = document.getElementById('adminOpenaiRecModel');
-        const baseRecUrlInput = document.getElementById('adminOpenaiRecBaseUrl');
-        if (modelEl) modelEl.value = (baseRecModInput && baseRecModInput.value.trim()) ? baseRecModInput.value.trim() : 'gpt-4o-mini';
-        if (baseUrlEl) baseUrlEl.value = (baseRecUrlInput && baseRecUrlInput.value.trim()) ? baseRecUrlInput.value.trim() : 'https://apihub.agnes-ai.com/v1';
-        if (apiKeyEl) apiKeyEl.placeholder = '复用当前生产环境密钥';
-        return;
-    }
-
-    if (!val) {
-        // 手动填写
-        return;
-    }
-
-    // 优先检查 OPENAI_PRESETS
-    if (typeof OPENAI_PRESETS !== 'undefined' && OPENAI_PRESETS[val]) {
-        const p = OPENAI_PRESETS[val];
-        if (baseUrlEl) baseUrlEl.value = p.base_url || '';
-        if (modelEl) modelEl.value = p.rec_model || '';
-        if (apiKeyEl) {
-            apiKeyEl.placeholder = '请输入 ' + (p.label || '').split(' ·')[0] + ' 密钥（留空则复用系统密钥）';
-        }
-        return;
-    }
-
-    // 兼容直接传入模型名
-    if (modelEl) modelEl.value = val;
-}
-
-function onExpModelPresetChange(side, val) {
-    applyExpPreset(side, val);
-}
-
 function openCreateExperimentModal() {
     const modal = document.getElementById('createExperimentModal');
     if (modal) {
@@ -13703,19 +17665,25 @@ function openCreateExperimentModal() {
                 if (e.target === modal) closeCreateExperimentModal();
             });
         }
-        // 自动装配对照组（继承当前生产主力引擎配置）
-        const ctrlPreset = document.getElementById('newExpCtrlPreset');
-        if (ctrlPreset) ctrlPreset.value = 'current_prod';
-        applyExpPreset('ctrl', 'current_prod');
+        // 预设默认选择与初始填充
+        const ctrlPresetEl = document.getElementById('newExpCtrlPreset');
+        if (ctrlPresetEl && !ctrlPresetEl.value) {
+            ctrlPresetEl.value = 'current_prod';
+        }
+        const treatPresetEl = document.getElementById('newExpTreatPreset');
+        if (treatPresetEl && !treatPresetEl.value) {
+            treatPresetEl.value = 'siliconflow';
+        }
 
-        // 自动装配实验组（默认选用 SiliconFlow / 候选模型）
-        const treatPreset = document.getElementById('newExpTreatPreset');
-        if (treatPreset && !treatPreset.value) {
-            treatPreset.value = 'siliconflow';
+        const ctrlModelEl = document.getElementById('newExpControlModel');
+        if (ctrlModelEl && !ctrlModelEl.value) {
+            applyExpPreset('ctrl', 'current_prod');
         }
-        if (treatPreset && treatPreset.value) {
-            applyExpPreset('treat', treatPreset.value);
+        const treatModelEl = document.getElementById('newExpTreatmentModel');
+        if (treatModelEl && !treatModelEl.value) {
+            applyExpPreset('treat', 'siliconflow');
         }
+
         setTimeout(() => {
             const nameEl = document.getElementById('newExpName');
             if (nameEl) nameEl.focus();
@@ -13753,7 +17721,7 @@ async function submitCreateExperiment() {
     const controlModel = ctrlEl ? ctrlEl.value.trim() : '';
     const treatmentModel = treatEl ? treatEl.value.trim() : '';
     if (!treatmentModel) {
-        showToast('请输入实验组候选模型标识 (Treatment Model)', 'warning');
+        showToast('请输入实验组候选模型标识', 'warning');
         return;
     }
 
@@ -13778,7 +17746,8 @@ async function submitCreateExperiment() {
         control_base_url: ctrlBaseUrlEl ? ctrlBaseUrlEl.value.trim() : '',
         treatment_base_url: treatBaseUrlEl ? treatBaseUrlEl.value.trim() : '',
         control_api_key: ctrlApiKeyEl ? ctrlApiKeyEl.value.trim() : '',
-        treatment_api_key: treatApiKeyEl ? treatApiKeyEl.value.trim() : ''
+        treatment_api_key: treatApiKeyEl ? treatApiKeyEl.value.trim() : '',
+        production_data_outbound_acknowledged: true
     };
 
     try {
@@ -13793,6 +17762,12 @@ async function submitCreateExperiment() {
             closeCreateExperimentModal();
             if (nameEl) nameEl.value = '';
             if (hypEl) hypEl.value = '';
+            if (ctrlEl) ctrlEl.value = '';
+            if (treatEl) treatEl.value = '';
+            if (ctrlBaseUrlEl) ctrlBaseUrlEl.value = '';
+            if (treatBaseUrlEl) treatBaseUrlEl.value = '';
+            if (ctrlApiKeyEl) ctrlApiKeyEl.value = '';
+            if (treatApiKeyEl) treatApiKeyEl.value = '';
             if (data.id) {
                 const sel = document.getElementById('adminExpSelect');
                 if (sel) sel.setAttribute('data-selected-id', String(data.id));
@@ -13825,8 +17800,6 @@ window.openCreateExperimentModal = openCreateExperimentModal;
 window.closeCreateExperimentModal = closeCreateExperimentModal;
 window.submitCreateExperiment = submitCreateExperiment;
 window.gotoExperimentObservatory = gotoExperimentObservatory;
-window.onExpModelPresetChange = onExpModelPresetChange;
-window.applyExpPreset = applyExpPreset;
 
 /* =============================================================
    T10 Gap E3：系统配置（阈值规则配置化 + 预处理纠偏开关）
@@ -13863,6 +17836,11 @@ function loadAdminSettings() {
             if (!body || body.status !== 'success' || !body.data) return;
             _adminSettingsDefaults = body.defaults || {};
             const data = body.data;
+            _adminSettingsState = data;
+            if (typeof window !== 'undefined') window._adminSettingsState = _adminSettingsState;
+            if (typeof renderEngineOverview === 'function') {
+                renderEngineOverview();
+            }
             ADMIN_SETTINGS_FIELDS.forEach(([id, key]) => {
                 const el = document.getElementById(id);
                 if (el && data[key] !== undefined && data[key] !== null) el.value = String(data[key]);
@@ -13877,6 +17855,11 @@ function loadAdminSettings() {
             // P23-AQ1：LLM 抽取开关（settings 键 memory_extract_enabled，缺省 false），同款机制。
             const me = document.getElementById('setMemoryExtractEnabled');
             if (me) me.checked = !!data.memory_extract_enabled;
+            setTimeout(() => {
+                if (typeof captureEngineFormSnapshot === 'function') {
+                    captureEngineFormSnapshot();
+                }
+            }, 300);
         })
         .catch(() => { /* 读取失败静默，表单保持空态 */ });
 }
@@ -14176,7 +18159,7 @@ function vendorMemoryStatusLabel(status) {
 function vendorMemoryNumText(v) {
     if (v === null || v === undefined || v === '') return '未知';
     const n = Number(v);
-    return isFinite(n) ? String(n) : String(v);
+    return isFinite(n) ? (Number.isInteger(n) ? String(n) : parseFloat(n.toFixed(4)).toString()) : String(v);
 }
 
 // written_by 为空 → 「未知」（谁写的这条记忆必须有一个可见的落点，空白无信息）
@@ -14880,16 +18863,27 @@ function loadGoldenBoard(scope) {
 window.loadGoldenBoard = loadGoldenBoard;
 window.toggleGoldenSample = toggleGoldenSample;
 
-// 方案 A 重组：02 区推全深链——切到引擎配置 tab 并展开灰测抽屉，聚焦推全/回滚操作
+// 方案 A 重组：02 区推全深链——切到引擎配置 tab 并激活 02 子分页，展开灰测抽屉，聚焦推全/回滚操作
 function gotoGreyPromote() {
     const engineBtn = document.getElementById('adminEngineBtn');
     if (engineBtn) engineBtn.click();
     setTimeout(() => {
+        if (typeof switchEngineSubView === 'function') {
+            switchEngineSubView('view02', { scroll: false, updateHash: true });
+        }
         const drawer = document.getElementById('adminGreyDrawer');
         if (drawer && drawer.classList.contains('collapsed') && typeof toggleEngineDrawer === 'function') {
             toggleEngineDrawer('adminGreyDrawer');
         }
-        if (drawer) drawer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (drawer) {
+            const promoteBtn = drawer.querySelector('#btnCanaryPromote100') || drawer.querySelector('.canary-promote-btn') || drawer;
+            if (typeof promoteBtn.scrollIntoView === 'function') {
+                promoteBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+            if (promoteBtn !== drawer && typeof promoteBtn.focus === 'function') {
+                promoteBtn.focus();
+            }
+        }
     }, 250);
 }
 
@@ -15213,12 +19207,110 @@ function _analyticsStatHtml(label, value, sub, id, color, isRawSub, metricKey) {
     const subHtml = isRawSub ? (sub || '') : (sub ? w2Escape(sub) : '');
     const clickAttr = metricKey ? (' onclick="openKpiTrendModal(\'' + w2Escape(metricKey) + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();openKpiTrendModal(\'' + w2Escape(metricKey) + '\');}" role="button" tabindex="0" aria-haspopup="dialog" title="点击查看时序趋势与多维下钻"') : '';
     const cardClass = metricKey ? 'card kpi-trend-card' : 'card';
-    return '<div class="' + cardClass + '"' + clickAttr + ' style="padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; position:relative;">'
+    return '<div class="' + cardClass + '"' + clickAttr + ' style="flex:1 1 180px; padding:12px; margin-bottom:0; background:var(--bg-card); border:1px solid var(--border-color); border-radius:8px; position:relative;">'
         + '<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:4px; font-weight:500;">' + w2Escape(label) + '</div>'
         + '<div' + idAttr + ' style="font-size:1.35rem; font-weight:700; color:' + valColor + '; font-variant-numeric:tabular-nums;">' + w2Escape(String(value)) + '</div>'
         + (subHtml ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px; line-height:1.3;">' + subHtml + '</div>' : '')
         + '</div>';
 }
+
+// Tab B 全量埋点事件分布专属筛选状态与时间跨度控制
+window._eventsPeriod = { mode: 'all', startDate: null, endDate: null };
+window._lastRecoverySummaryData = null;
+
+const _EVENTS_PERIOD_BTN_IDS = {
+    'all': 'btnEventsRangeAll',
+    '24h': 'btnEventsRange24h',
+    '7d': 'btnEventsRange7d',
+    '14d': 'btnEventsRange14d',
+    '30d': 'btnEventsRange30d',
+};
+
+function _updateEventsPeriodButtons() {
+    const mode = window._eventsPeriod.mode;
+    Object.keys(_EVENTS_PERIOD_BTN_IDS).forEach(m => {
+        const btn = document.getElementById(_EVENTS_PERIOD_BTN_IDS[m]);
+        if (!btn) return;
+        if (m === mode) {
+            btn.className = 'btn btn-sm btn-primary';
+            btn.style.fontWeight = '600';
+        } else {
+            btn.className = 'btn btn-sm btn-secondary';
+            btn.style.fontWeight = 'normal';
+        }
+    });
+}
+
+function setEventsPeriod(mode) {
+    const p = window._eventsPeriod;
+    p.mode = mode;
+    p.startDate = null;
+    p.endDate = null;
+    const sEl = document.getElementById('eventsStartDate');
+    const eEl = document.getElementById('eventsEndDate');
+    if (sEl) sEl.value = '';
+    if (eEl) eEl.value = '';
+    _updateEventsPeriodButtons();
+    loadRecoverySummaryBlocks();
+}
+window.setEventsPeriod = setEventsPeriod;
+
+function applyEventsCustomPeriod(silent) {
+    const sEl = document.getElementById('eventsStartDate');
+    const eEl = document.getElementById('eventsEndDate');
+    const sVal = sEl && sEl.value ? sEl.value.trim() : '';
+    const eVal = eEl && eEl.value ? eEl.value.trim() : '';
+    if (!eVal) {
+        if (!silent) alert('请选择结束日期（开始日期留空默认从最早一条记录开始）');
+        return;
+    }
+    if (sVal && sVal > eVal) {
+        if (!silent) alert('开始日期不能晚于结束日期');
+        return;
+    }
+    const p = window._eventsPeriod;
+    p.mode = 'custom';
+    p.startDate = sVal || null;
+    p.endDate = eVal;
+    _updateEventsPeriodButtons();
+    loadRecoverySummaryBlocks();
+}
+window.applyEventsCustomPeriod = applyEventsCustomPeriod;
+
+function onEventsTenantChange(tenantId) {
+    const mainSel = document.getElementById('analyticsTenantSelect');
+    const plSel = document.getElementById('parsingLogTenantSelect');
+    const evSel = document.getElementById('eventsFilterTenant');
+    if (mainSel && mainSel.value !== tenantId) mainSel.value = tenantId;
+    if (plSel && plSel.value !== tenantId) plSel.value = tenantId;
+    if (evSel && evSel.value !== tenantId) evSel.value = tenantId;
+    loadRecoverySummaryBlocks(tenantId || 'all');
+}
+window.onEventsTenantChange = onEventsTenantChange;
+
+function resetEventsFilters() {
+    const tSel = document.getElementById('eventsFilterTenant');
+    if (tSel) tSel.value = '';
+    const mainSel = document.getElementById('analyticsTenantSelect');
+    if (mainSel) mainSel.value = '';
+    const catSel = document.getElementById('eventsCategorySelect');
+    if (catSel) catSel.value = 'all';
+    const sInput = document.getElementById('eventsSearchInput');
+    if (sInput) sInput.value = '';
+
+    const p = window._eventsPeriod;
+    p.mode = 'all';
+    p.startDate = null;
+    p.endDate = null;
+    const sEl = document.getElementById('eventsStartDate');
+    const eEl = document.getElementById('eventsEndDate');
+    if (sEl) sEl.value = '';
+    if (eEl) eEl.value = '';
+    _updateEventsPeriodButtons();
+
+    loadRecoverySummaryBlocks();
+}
+window.resetEventsFilters = resetEventsFilters;
 
 // 区块 1 + 2：全量事件分布 / 挽回与点踩指标（同一端点）
 function loadRecoverySummaryBlocks(tenantId) {
@@ -15226,8 +19318,32 @@ function loadRecoverySummaryBlocks(tenantId) {
     const recEl = document.getElementById('analyticsRecoveryBody');
     if (distEl) distEl.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted); font-size:0.85rem;">加载中...</div>';
     if (recEl) recEl.innerHTML = '加载中';
-    const tId = tenantId || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
-    const url = '/api/analytics/recovery-summary?tenant_id=' + encodeURIComponent(tId);
+
+    const tId = tenantId || (document.getElementById('eventsFilterTenant')?.value) || (document.getElementById('analyticsTenantSelect')?.value) || 'all';
+
+    // 双向同步租户输入框
+    const evTenant = document.getElementById('eventsFilterTenant');
+    const mainSel = document.getElementById('analyticsTenantSelect');
+    if (evTenant && tId !== 'all' && evTenant.value !== tId) evTenant.value = tId;
+    if (mainSel && tId !== 'all' && mainSel.value !== tId) mainSel.value = tId;
+
+    const period = window._eventsPeriod || { mode: 'all', startDate: null, endDate: null };
+    const params = new URLSearchParams({
+        tenant_id: tId,
+        date_range: 'all',
+    });
+    if (period.mode === 'custom') {
+        if (period.startDate) params.set('start_date', period.startDate + 'T00:00:00');
+        if (period.endDate) params.set('end_date', period.endDate + 'T23:59:59.999999');
+    } else if (period.mode === '7d' || period.mode === '14d' || period.mode === '30d') {
+        const n = parseInt(period.mode, 10);
+        params.set('start_date', _parsingLogDaysAgoStr(n - 1) + 'T00:00:00');
+        params.set('end_date', _parsingLogTodayStr() + 'T23:59:59.999999');
+    } else {
+        params.set('date_range', period.mode);
+    }
+
+    const url = '/api/analytics/recovery-summary?' + params.toString();
     // F3：stale-response 守卫——快速切换租户时，旧慢响应不得覆写新区块/租户选择器
     const isCurrent = _analyticsSeq('recovery');
     apiFetch(url)
@@ -15242,6 +19358,8 @@ function loadRecoverySummaryBlocks(tenantId) {
                 return;
             }
             const data = ret.data || {};
+            window._lastRecoverySummaryData = data;
+
             // 租户筛选为文本输入：已知租户 ID 仅供 datalist 提示，不覆盖用户输入
             const sel = document.getElementById('analyticsTenantSelect');
             const plSel = document.getElementById('parsingLogTenantSelect');
@@ -15255,6 +19373,9 @@ function loadRecoverySummaryBlocks(tenantId) {
             }
             if (sel && plSel && plSel.value !== sel.value) {
                 plSel.value = sel.value;
+            }
+            if (sel && evTenant && evTenant.value !== sel.value) {
+                evTenant.value = sel.value;
             }
             renderEventDistribution(distEl, data);
             renderRecoveryMetrics(recEl, data);
@@ -15366,12 +19487,35 @@ function _resolveEventCategory(eventType) {
 }
 
 function renderEventDistribution(el, data) {
+    if (!el) el = document.getElementById('analyticsEventDistBody');
     if (!el) return;
-    const dist = (data.event_distribution || []).filter(d => !_isExcludedTelemetryEvent(d.event_type));
+    if (!data) data = window._lastRecoverySummaryData;
+    if (!data) return;
+
+    let dist = (data.event_distribution || []).filter(d => !_isExcludedTelemetryEvent(d.event_type));
+
+    // 客户端类别与搜索过滤
+    const catSelect = document.getElementById('eventsCategorySelect');
+    const selectedCat = catSelect ? catSelect.value : 'all';
+    const searchInput = document.getElementById('eventsSearchInput');
+    const searchVal = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+    if (selectedCat && selectedCat !== 'all') {
+        dist = dist.filter(d => _resolveEventCategory(d.event_type) === selectedCat);
+    }
+    if (searchVal) {
+        dist = dist.filter(d => {
+            const alias = _eventTypeAlias(d.event_type).toLowerCase();
+            return d.event_type.toLowerCase().includes(searchVal) || alias.includes(searchVal);
+        });
+    }
+
     const countEl = document.getElementById('analyticsEventDistCount');
+    const filteredTotalEvents = dist.reduce((s, d) => s + Number(d.count || 0), 0);
+
     if (dist.length === 0) {
         if (countEl) countEl.textContent = '共 0 条事件、0 类';
-        el.innerHTML = '<div style="padding:32px; text-align:center; color:var(--text-muted); font-size:0.85rem;">暂无埋点事件。</div>';
+        el.innerHTML = '<div style="padding:32px; text-align:center; color:var(--text-muted); font-size:0.85rem;">暂无符合当前筛选条件的埋点事件记录。</div>';
         return;
     }
 
@@ -15381,17 +19525,24 @@ function renderEventDistribution(el, data) {
     buckets['__other__'] = [];
     dist.forEach(d => {
         const catKey = _resolveEventCategory(d.event_type);
-        buckets[catKey].push(d);
+        if (buckets[catKey]) {
+            buckets[catKey].push(d);
+        } else {
+            buckets['__other__'].push(d);
+        }
     });
 
     // 组装分组顺序：已知三类 + 兜底「其他」
-    const orderedCats = [...TELEMETRY_EVENT_CATEGORIES];
+    const orderedCats = [];
+    TELEMETRY_EVENT_CATEGORIES.forEach(c => {
+        if (buckets[c.key] && buckets[c.key].length > 0) orderedCats.push(c);
+    });
     if (buckets['__other__'].length > 0) {
         orderedCats.push({ key: '__other__', label: '其他自定义事件', desc: '', color: '#475569', bg: 'rgba(241,245,249,0.8)' });
     }
 
     if (countEl) {
-        let countText = '共 ' + Number(data.total_events || 0) + ' 条事件、' + dist.length + ' 类';
+        let countText = '共 ' + filteredTotalEvents + ' 条事件、' + dist.length + ' 类';
         if (data.low_confidence) {
             countText += '（样本 < 30，低置信度）';
         }
@@ -15466,6 +19617,17 @@ function renderEventDistribution(el, data) {
     html += '</tbody></table></div>';
     el.innerHTML = html;
 }
+window.renderEventDistribution = renderEventDistribution;
+
+function onEventsCategoryChange() {
+    renderEventDistribution();
+}
+window.onEventsCategoryChange = onEventsCategoryChange;
+
+function onEventsSearchInput() {
+    renderEventDistribution();
+}
+window.onEventsSearchInput = onEventsSearchInput;
 
 function toggleEventCatGroup(catKey, headerTr) {
     const table = headerTr.closest('table');
@@ -15724,16 +19886,76 @@ function renderAnalyticsEventTable(items, eventType) {
 }
 window.renderAnalyticsEventTable = renderAnalyticsEventTable;
 
-// 键盘 ESC 监听：关闭事件审计模态框与趋势模态框
+// 全局键盘监听：无障碍模态弹窗 Esc 安全关闭与 Tab/Shift+Tab 焦点封闭 (QA-P1-04, AC-08-05)
 document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape' || e.key === 'Esc') {
-        const modal = document.getElementById('analyticsEventModal');
-        if (modal && !modal.classList.contains('hide') && modal.style.display !== 'none') {
-            closeAnalyticsEventModal();
+    let modal = null;
+    if (typeof _activeAccessibleModals !== 'undefined' && _activeAccessibleModals.length > 0) {
+        modal = _activeAccessibleModals[_activeAccessibleModals.length - 1].modal;
+    }
+    if (!modal || modal.classList.contains('hide') || modal.style.display === 'none') {
+        const visibleModals = Array.from(document.querySelectorAll('.modal-backdrop:not(.hide)'))
+            .filter(el => el.style.display !== 'none');
+        if (visibleModals.length > 0) {
+            modal = visibleModals[visibleModals.length - 1];
+        } else {
+            return;
         }
-        const trendModal = document.getElementById('kpiTrendModal');
-        if (trendModal && !trendModal.classList.contains('hide') && trendModal.style.display !== 'none') {
+    }
+
+    if (e.key === 'Escape' || e.key === 'Esc') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (modal.id === 'modalApproveConfirmDialog') {
+            closeApproveConfirmModal();
+        } else if (modal.id === 'modalConflictDiffDialog') {
+            closeConflictDiffModal();
+        } else if (modal.id === 'modalStockMovementDialog') {
+            closeStockMovementModal();
+        } else if (modal.id === 'analyticsEventModal') {
+            closeAnalyticsEventModal();
+        } else if (modal.id === 'kpiTrendModal') {
             closeKpiTrendModal();
+        } else if (typeof closeAccessibleModal === 'function') {
+            closeAccessibleModal(modal);
+        } else {
+            modal.classList.add('hide');
+        }
+        return;
+    }
+
+    if (e.key === 'Tab') {
+        if (typeof getModalFocusableElements !== 'function') return;
+        const focusables = getModalFocusableElements(modal);
+        if (focusables.length === 0) {
+            e.preventDefault();
+            return;
+        }
+
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+
+        // 如果焦点在模态框外部，强行拉入内部
+        if (!modal.contains(active)) {
+            e.preventDefault();
+            if (e.shiftKey) {
+                last.focus();
+            } else {
+                first.focus();
+            }
+            return;
+        }
+
+        if (e.shiftKey) {
+            if (active === first) {
+                e.preventDefault();
+                last.focus();
+            }
+        } else {
+            if (active === last) {
+                e.preventDefault();
+                first.focus();
+            }
         }
     }
 });
@@ -16308,12 +20530,12 @@ function renderKpiTrendTable(records, meta) {
         return;
     }
 
-    // 元素收敛：构成样本与较前日环比两列移除（环比信息保留在图表 hover tooltip，
-    // 波动异常仍由健康评估的 [异动预警] 承载），表格只保留核心四列
     let html = '<table class="kpi-trend-table table" style="width:100%; border-collapse:collapse; font-size:0.8rem;">'
         + '<thead><tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; color:var(--text-muted);">'
         + '<th style="padding:9px 12px; font-weight:600; text-align:left;">日期</th>'
         + '<th style="padding:9px 12px; font-weight:600; text-align:right;">当日数值</th>'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:right;">构成样本</th>'
+        + '<th style="padding:9px 12px; font-weight:600; text-align:right;">较前日环比</th>'
         + '<th style="padding:9px 12px; font-weight:600; text-align:center;">健康评估</th>'
         + '<th style="padding:9px 12px; font-weight:600; text-align:center;">操作</th>'
         + '</tr></thead><tbody>';
@@ -16336,10 +20558,19 @@ function renderKpiTrendTable(records, meta) {
             displayVal = isInt ? String(Math.round(Number(r.value || 0))) : String(r.value || 0);
         }
 
+        const sampleText = r.formatted_ratio || (r.denominator != null ? String(r.denominator) : '-');
+        let momText = '-';
+        if (r.prev_diff_pct != null) {
+            const prefix = r.prev_diff_pct > 0 ? '+' : '';
+            momText = prefix + r.prev_diff_pct + (meta.is_rate ? ' pp' : '%');
+        }
+
         // [查看详情] 按钮联动
         html += '<tr class="kpi-trend-row" style="border-bottom:1px solid #f1f5f9;">'
             + '<td style="padding:8px 12px; text-align:left; font-family:monospace; font-weight:600;">' + w2Escape(r.date) + '</td>'
             + '<td style="padding:8px 12px; text-align:right; font-weight:700; color:#2563eb; font-variant-numeric:tabular-nums;">' + w2Escape(displayVal) + '</td>'
+            + '<td style="padding:8px 12px; text-align:right; color:var(--text-muted); font-variant-numeric:tabular-nums;">' + w2Escape(sampleText) + '</td>'
+            + '<td style="padding:8px 12px; text-align:right; font-variant-numeric:tabular-nums; color:' + (r.is_anomaly ? '#b91c1c;' : 'var(--text-primary);') + '">' + w2Escape(momText) + '</td>'
             + '<td style="padding:8px 12px; text-align:center;">' + statusBadge + '</td>'
             + '<td style="padding:8px 12px; text-align:center;">'
             + '<button class="btn btn-secondary btn-sm" onclick="drillDownKpiDate(\'' + w2Escape(r.date) + '\')" title="[查看当日单据详情]" style="font-size:0.75rem; padding:3px 10px; cursor:pointer;">查看详情</button>'
@@ -16359,6 +20590,8 @@ function drillDownKpiDate(dateStr) {
     // 1. 先填充时间筛选（单日 = 自定义区间的起止同为该日），再切页签，
     //    避免 switchTelemetrySubTab 内部按旧筛选发起加载
     setParsingLogCustomRange(dateStr, dateStr);
+    const dateRangeSel = document.getElementById('parsingLogDateRangeSelect');
+    if (dateRangeSel) dateRangeSel.value = 'custom';
     if (typeof switchTelemetrySubTab === 'function') {
         switchTelemetrySubTab('audit');
     }
@@ -16383,6 +20616,8 @@ function drillDownKpiRange() {
     // 1. 先填充时间筛选（统计周期区间），再切页签：switchTelemetrySubTab
     //    内部会按当前筛选触发 loadParsingLogs，若先切页签会以旧筛选加载
     setParsingLogCustomRange(dr.start_date, dr.end_date);
+    const dateRangeSel = document.getElementById('parsingLogDateRangeSelect');
+    if (dateRangeSel) dateRangeSel.value = 'custom';
 
     // 2. 切入「单据解析与链路审计」Tab（内部按已填充的区间筛选加载）
     if (typeof switchTelemetrySubTab === 'function') {
@@ -16880,6 +21115,7 @@ let dishDailyDishesCache = [];      // 极速录入在售餐品列表缓存
 let dailyKpiSummaryCache = {};      // 最近一次后端返回的当日流水汇总（KPI 预估叠加的实际值基准）
 let dishCostAnalysisData = null;    // 成本大盘分析数据缓存
 let dishViewMode = 'card';          // 'card' 或 'table'
+let dishCategoryAccordionState = {}; // key: categoryName (string), value: boolean (true = expanded, false = collapsed)
 let dishAnalysisDays = 7;           // 成本分析周期天数
 let dishAvailableSkus = [];         // 用于配方选择的可用 SKU 列表
 
@@ -17056,35 +21292,47 @@ function refreshDishCategoryOptions() {
 }
 
 /**
- * 重建 #dishCategoryFilter 下拉：全部分类 + 动态 distinct 分类（来自 dishCategoryList）
+ * 重建 #dishCategoryFilter 下拉：全部分类 + 动态 distinct 分类（来自 dishCategoryList，含「默认」）
  */
 function renderDishCategoryFilter() {
     const catSelect = document.getElementById('dishCategoryFilter');
     if (!catSelect) return;
     const current = catSelect.value;
     let html = '<option value="">全部分类</option>';
-    dishCategoryList.forEach(c => {
-        html += '<option value="' + w2Escape(c.name) + '">' + w2Escape(c.name) + '</option>';
+    const addedCats = new Set();
+    (dishCategoryList || []).forEach(c => {
+        const name = (typeof c === 'string' ? c : (c && c.name ? c.name : '')).trim();
+        if (name && !addedCats.has(name)) {
+            addedCats.add(name);
+            html += '<option value="' + w2Escape(name) + '">' + w2Escape(name) + '</option>';
+        }
     });
+    if (!addedCats.has('默认')) {
+        addedCats.add('默认');
+        html += '<option value="默认">默认</option>';
+    }
     catSelect.innerHTML = html;
-    if (current && dishCategoryList.some(c => c.name === current)) {
+    if (current && addedCats.has(current)) {
         catSelect.value = current;
     }
     filterDishBomLibrary();
 }
 
 /**
- * 重建分类建议集合（默认 9 项 + 当前 distinct 分类），供自定义 Combobox 下拉使用
+ * 重建分类建议集合（完全由 dishCategoryList 动态驱动，废除写死静态分类），供自定义 Combobox 下拉使用
  */
 let dishCategorySuggestions = [];
 
 function updateDishCategorySuggestions() {
-    const defaultCats = ['主食', '热菜', '凉菜', '汤品', '点心', '饮品', '甜品', '小吃', '其他'];
-    const customCats = new Set(defaultCats);
-    dishCategoryList.forEach(c => {
-        if (c.name && c.name.trim()) customCats.add(c.name.trim());
+    const cats = new Set();
+    (dishCategoryList || []).forEach(c => {
+        const name = (typeof c === 'string' ? c : (c && c.name ? c.name : '')).trim();
+        if (name) cats.add(name);
     });
-    dishCategorySuggestions = Array.from(customCats);
+    if (!cats.has('默认')) {
+        cats.add('默认');
+    }
+    dishCategorySuggestions = Array.from(cats);
 }
 
 /**
@@ -17149,6 +21397,10 @@ document.addEventListener('mousedown', (e) => {
  * 打开餐品分类管理弹窗（仅 owner，见 applyDishRoleVisibility）
  */
 function openDishCategoryManager() {
+    if (isStaffRoleNow()) {
+        showToast('店员无权管理餐品分类', 'warn');
+        return;
+    }
     const modal = document.getElementById('dishCategoryManagerModal');
     const body = document.getElementById('dishCategoryManagerBody');
     if (body) body.innerHTML = '<div style="padding:20px; text-align:center; color:var(--text-muted);">加载分类中…</div>';
@@ -17165,7 +21417,7 @@ function openDishCategoryManager() {
 }
 
 /**
- * 渲染分类管理列表（分类名 + 引用数 + 删除按钮；删除按钮走事件委托）
+ * 渲染分类管理列表（分类名 + 引用数 + 重命名/替换分类 + 删除按钮）
  */
 function renderDishCategoryManager(cats) {
     const body = document.getElementById('dishCategoryManagerBody');
@@ -17176,25 +21428,97 @@ function renderDishCategoryManager(cats) {
     }
     let html = '';
     cats.forEach(c => {
+        const isDefault = c.name === '默认';
+        const nameBadge = isDefault
+            ? '<span class="badge badge-info" style="font-size:0.8rem; background:rgba(37,99,235,0.1); color:#2563eb;">' + w2Escape(c.name) + '</span>'
+              + '<span class="badge badge-neutral" style="font-size:0.75rem; margin-left:6px;">[内置默认]</span>'
+            : '<span class="badge badge-info" style="font-size:0.8rem; background:rgba(37,99,235,0.1); color:#2563eb;">' + w2Escape(c.name) + '</span>';
+        const actionButtons = isDefault
+            ? '<button type="button" class="btn btn-secondary" disabled title="系统默认分组无法修改也无法删除" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px; opacity:0.5; cursor:not-allowed;">重命名</button>'
+              + '<button type="button" class="btn btn-danger" disabled title="系统默认分组无法修改也无法删除" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px; opacity:0.5; cursor:not-allowed; margin-left:6px;">删除</button>'
+            : '<button type="button" class="btn btn-secondary btn-rename-dish-cat" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;">重命名</button>'
+              + '<button type="button" class="btn btn-danger btn-delete-dish-cat" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;">删除</button>';
+
         html += '<div class="dish-cat-mgmt-row" data-cat-name="' + w2Escape(c.name) + '" data-cat-count="' + c.count + '"'
             + ' style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:8px;">'
             + '  <div style="display:flex; align-items:center; gap:8px;">'
-            + '    <span class="badge badge-info" style="font-size:0.8rem;">' + w2Escape(c.name) + '</span>'
+            + '    ' + nameBadge
             + '    <span style="font-size:0.78rem; color:var(--text-muted);">' + c.count + ' 道餐品引用</span>'
             + '  </div>'
-            + '  <button type="button" class="btn btn-danger btn-delete-dish-cat" style="padding:4px 10px; font-size:0.8rem; min-height:30px; height:30px;">删除</button>'
+            + '  <div style="display:flex; gap:6px;">'
+            + '    ' + actionButtons
+            + '  </div>'
             + '</div>';
     });
     body.innerHTML = html;
     body.onclick = (e) => {
+        const renameBtn = e.target && e.target.closest('.btn-rename-dish-cat');
+        if (renameBtn) {
+            const row = renameBtn.closest('.dish-cat-mgmt-row');
+            if (!row) return;
+            const name = row.getAttribute('data-cat-name') || '';
+            const count = parseInt(row.getAttribute('data-cat-count') || '0', 10) || 0;
+            renameDishCategory(name, count);
+            return;
+        }
         const delBtn = e.target && e.target.closest('.btn-delete-dish-cat');
-        if (!delBtn) return;
-        const row = delBtn.closest('.dish-cat-mgmt-row');
-        if (!row) return;
-        const name = row.getAttribute('data-cat-name') || '';
-        const count = parseInt(row.getAttribute('data-cat-count') || '0', 10) || 0;
-        deleteDishCategory(name, count);
+        if (delBtn) {
+            const row = delBtn.closest('.dish-cat-mgmt-row');
+            if (!row) return;
+            const name = row.getAttribute('data-cat-name') || '';
+            const count = parseInt(row.getAttribute('data-cat-count') || '0', 10) || 0;
+            deleteDishCategory(name, count);
+            return;
+        }
     };
+}
+
+/**
+ * 重命名 / 替换分类：弹出输入框修改分类名称或合并到目标分类
+ */
+function renameDishCategory(name, count) {
+    const oldName = name || '';
+    if (oldName === '默认') {
+        showToast('系统默认分组无法修改', 'warn');
+        return;
+    }
+    showCustomPromptModal({
+        title: '重命名 / 替换分类',
+        message: '当前有 ' + count + ' 道餐品归属于「' + oldName + '」。\n请输入新的分类名称（若输入已有分类，则餐品将自动归并）：',
+        defaultValue: oldName,
+        placeholder: '如：主食热菜、特色热菜',
+        maxLength: 20,
+        confirmText: '确认修改',
+        cancelText: '取消',
+        onConfirm: (newName) => {
+            const trimmed = (newName || '').trim();
+            if (!trimmed) {
+                showToast('分类名称不能为空', 'error');
+                return;
+            }
+            if (trimmed === oldName) {
+                showToast('新分类名称与原分类名称相同，未做更改', 'info');
+                return;
+            }
+            const url = '/api/dishes/categories/' + encodeURIComponent(oldName)
+                + '?replace_with=' + encodeURIComponent(trimmed);
+            apiFetch(url, { method: 'DELETE' })
+                .then(res => res.json())
+                .then(ret => {
+                    if (ret.status !== 'success') {
+                        showToast(ret.msg || '重命名分类失败', 'error');
+                        return;
+                    }
+                    showToast(ret.msg || '分类已更新', 'success');
+                    openDishCategoryManager();
+                    loadDishesList();
+                })
+                .catch(err => {
+                    console.error('renameDishCategory error:', err);
+                    showToast('网络异常，无法更新分类', 'error');
+                });
+        }
+    });
 }
 
 /**
@@ -17202,21 +21526,21 @@ function renderDishCategoryManager(cats) {
  */
 function deleteDishCategory(name, count) {
     const catName = name || '';
-    const isOtherCat = catName === '其他';
+    if (catName === '默认') {
+        showToast('系统默认分组无法删除', 'warn');
+        return;
+    }
     const title = '删除分类确认';
     const message = count > 0
-        ? (isOtherCat
-            ? '删除分类「' + catName + '」？\n将影响 ' + count + ' 道餐品，这些餐品将清空分类（不再属于任何分类）。'
-            : '删除分类「' + catName + '」？\n将影响 ' + count + ' 道餐品，这些餐品的分类将改为「其他」。')
-        : '删除分类「' + catName + '」？';
+        ? ('删除分类「' + catName + '」？\n将影响 ' + count + ' 道餐品，这些餐品的分类将改为「默认」。\n\n（提示：如需重命名或合并为其他指定分类，请使用「重命名」功能）')
+        : ('删除分类「' + catName + '」？');
     showCustomConfirmModal({
         title: title,
         message: message,
         confirmText: '确认删除',
         cancelText: '取消',
         onConfirm: () => {
-            const delUrl = '/api/dishes/categories/' + encodeURIComponent(catName)
-                + (isOtherCat ? '?replace_with=' : '');
+            const delUrl = '/api/dishes/categories/' + encodeURIComponent(catName);
             apiFetch(delUrl, { method: 'DELETE' })
                 .then(res => res.json())
                 .then(ret => {
@@ -17237,6 +21561,400 @@ function deleteDishCategory(name, count) {
 }
 
 /**
+ * 餐品 BOM 品类分组与折叠手风琴模块
+ */
+
+/**
+ * 依据餐品品类聚合餐品数据
+ * 规则：
+ * 1. 已定义品类优先级：优先依据 dishCategoryList 自然排序；
+ * 2. 动态出现品类：按字符/拼音升序排列；
+ * 3. 兜底归并：category 为空/null、未分类或「其他」的餐品统一归入「默认」；
+ * 4. 空数据过滤：餐品数为 0 的分组不返回。
+ */
+function groupDishesByCategory(dishes) {
+    if (!Array.isArray(dishes) || dishes.length === 0) {
+        return [];
+    }
+
+    const groupsMap = new Map();
+    dishes.forEach(d => {
+        const rawCat = (d.category || '').trim();
+        const isDefault = !rawCat || rawCat === '未分类' || rawCat === '其他' || rawCat === '默认';
+        const catName = isDefault ? '默认' : rawCat;
+
+        if (!groupsMap.has(catName)) {
+            groupsMap.set(catName, {
+                category: catName,
+                isDefault: catName === '默认',
+                dishes: []
+            });
+        }
+        groupsMap.get(catName).dishes.push(d);
+    });
+
+    const knownCats = (dishCategoryList || []).map(c => {
+        return (typeof c === 'string' ? c : (c && c.name ? c.name : '')).trim();
+    }).filter(Boolean);
+
+    const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => {
+        const idxA = knownCats.indexOf(a.category);
+        const idxB = knownCats.indexOf(b.category);
+
+        if (idxA !== -1 && idxB !== -1) {
+            return idxA - idxB;
+        }
+        if (idxA !== -1 && idxB === -1) {
+            return -1;
+        }
+        if (idxA === -1 && idxB !== -1) {
+            return 1;
+        }
+        return a.category.localeCompare(b.category, 'zh-CN');
+    });
+
+    sortedGroups.forEach(g => {
+        const count = g.dishes.length;
+        let sumPrice = 0;
+        let sumCost = 0;
+
+        g.dishes.forEach(d => {
+            sumPrice += Number(d.price) || 0;
+            sumCost += Number(d.theoretical_cost) || 0;
+        });
+
+        g.count = count;
+        g.avgPrice = count > 0 ? (sumPrice / count) : 0;
+        g.avgTheoreticalCost = count > 0 ? (sumCost / count) : 0;
+        g.avgMarginRate = (g.avgPrice > 0)
+            ? ((g.avgPrice - g.avgTheoreticalCost) / g.avgPrice) * 100
+            : 0;
+    });
+
+    return sortedGroups;
+}
+
+/**
+ * 渲染单个餐品卡片 HTML
+ */
+function renderDishCardHtml(d) {
+    const isActive = d.status === 'active';
+    const statusBadge = isActive
+        ? '<span class="badge badge-success" style="font-size:0.72rem;">在售</span>'
+        : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">已停用</span>';
+
+    const categoryTag = d.category
+        ? '<span class="badge badge-info" style="font-size:0.72rem; background: rgba(37,99,235,0.1); color:#2563eb; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;" title="' + w2Escape(d.category) + '">' + w2Escape(d.category) + '</span>'
+        : '';
+
+    const marginRate = Number(d.gross_margin_rate || 0);
+    const marginBadgeClass = marginClass(marginRate);
+
+    let ingredientsHtml = '';
+    if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
+        ingredientsHtml = d.ingredients.map(ing => {
+            return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
+                + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
+                + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
+                + ' <span style="color:var(--text-muted); font-size:0.7rem;">($' + fmtMoney(ing.ingredient_cost) + ')</span>'
+                + '</span>';
+        }).join('');
+    } else {
+        ingredientsHtml = '<span style="font-size:0.78rem; color:var(--text-muted); font-style:italic;">未配置食材配方</span>';
+    }
+
+    return '<div class="card dish-card" style="display:flex; flex-direction:column; justify-content:space-between; border-top: 3px solid ' + (isActive ? 'var(--primary, #0f766e)' : 'var(--border-color)') + ';">'
+        + '<div>'
+        + '  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:8px;">'
+        + '    <div>'
+        + '      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">'
+        + categoryTag
+        + statusBadge
+        + '      </div>'
+        + '      <h4 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
+        + '    </div>'
+        + '    <div style="text-align:right;">'
+        + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + '$' + fmtMoney(d.price) + '</div>'
+        + '      <div style="font-size:0.72rem; color:var(--text-muted);">建议售价</div>'
+        + '    </div>'
+        + '  </div>'
+        + (d.description ? ('<div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">' + w2Escape(d.description) + '</div>') : '')
+        + '  <div class="dish-metrics-box" style="background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">'
+        + '    <div>'
+        + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论单份成本</div>'
+        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">' + '$' + fmtMoney(d.theoretical_cost) + '</div>'
+        + '    </div>'
+        + '    <div>'
+        + '      <div style="font-size:0.72rem; color:var(--text-muted);">单份理论毛利</div>'
+        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">' + '$' + fmtMoney(d.gross_profit) + '</div>'
+        + '    </div>'
+        + '    <div>'
+        + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论毛利率</div>'
+        + '      <div><span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span></div>'
+        + '    </div>'
+        + '  </div>'
+        + '  <div style="margin-bottom:12px;">'
+        + '    <div style="font-size:0.78rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">BOM 食材清单 (' + (d.ingredients ? d.ingredients.length : 0) + ' 种):</div>'
+        + '    <div style="display:flex; flex-wrap:wrap;">' + ingredientsHtml + '</div>'
+        + '  </div>'
+        + '</div>'
+        + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
+        + (isOwnerRoleNow()
+            ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
+               + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
+            : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
+        + '</div>'
+        + '</div>';
+}
+
+/**
+ * 渲染单个餐品表格行 HTML
+ */
+function renderDishTableRowHtml(d) {
+    const isActive = d.status === 'active';
+    const marginRate = Number(d.gross_margin_rate || 0);
+    const marginBadgeClass = marginClass(marginRate);
+
+    const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
+
+    return '<tr>'
+        + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
+        + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
+        + '<td class="col-right" style="font-weight:600;">$' + fmtMoney(d.price) + '</td>'
+        + '<td style="font-size:0.82rem; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">' + w2Escape(ingSummary) + '</td>'
+        + '<td class="col-right">$' + fmtMoney(d.theoretical_cost) + '</td>'
+        + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
+        + '<td class="col-center">'
+        + (isOwnerRoleNow()
+            ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
+               + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
+            : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
+        + '</td>'
+        + '</tr>';
+}
+
+/**
+ * 渲染品类折叠项头部 HTML
+ */
+function renderDishCategoryHeaderHtml(group, isCollapsed) {
+    const badgeClass = group.isDefault ? 'badge-neutral' : 'badge-info';
+    return '<div class="dish-category-header" onclick=\'toggleDishCategoryAccordion(' + jsStr(group.category) + ')\'>'
+        + '  <div class="dish-category-header-left">'
+        + '    <span class="dish-category-chevron">'
+        + '      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+        + '        <path d="M6 9l6 6 6-6"/>'
+        + '      </svg>'
+        + '    </span>'
+        + '    <span class="dish-category-title">' + w2Escape(group.category) + '</span>'
+        + '    <span class="badge ' + badgeClass + ' dish-category-count-badge">' + group.count + ' 道餐品</span>'
+        + '  </div>'
+        + '  <div class="dish-category-header-right">'
+        + '    <span class="dish-category-summary-kpi">均价 $' + fmtMoney(group.avgPrice) + ' · 平均理论毛利 ' + group.avgMarginRate.toFixed(1) + '%</span>'
+        + '    <span class="dish-category-status-indicator">' + (isCollapsed ? '[已折叠]' : '[已展开]') + '</span>'
+        + '  </div>'
+        + '</div>';
+}
+
+/**
+ * 渲染餐品卡片网格（按品类手风琴折叠）
+ */
+function renderDishCards(dishes) {
+    const grid = document.getElementById('dishCardGrid');
+    if (!grid) return;
+
+    if (!dishes || dishes.length === 0) {
+        grid.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: 8px; border: 1px dashed var(--border-color);">'
+            + '<div style="font-size: 0.95rem; font-weight: 500;">暂无匹配的餐品数据</div>'
+            + '<div style="font-size: 0.8rem; margin-top: 4px;">可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方</div>'
+            + '</div>';
+        return;
+    }
+
+    const groups = groupDishesByCategory(dishes);
+    let html = '';
+    groups.forEach(group => {
+        const isCollapsed = dishCategoryAccordionState[group.category] === false;
+        let cardsHtml = '';
+        group.dishes.forEach(d => {
+            cardsHtml += renderDishCardHtml(d);
+        });
+
+        html += '<div class="dish-category-group' + (isCollapsed ? ' collapsed' : '') + '" data-category="' + w2Escape(group.category) + '">'
+            + renderDishCategoryHeaderHtml(group, isCollapsed)
+            + '<div class="dish-category-body">'
+            + '  <div class="dish-card-grid-inner">'
+            + cardsHtml
+            + '  </div>'
+            + '</div>'
+            + '</div>';
+    });
+
+    grid.innerHTML = html;
+}
+
+/**
+ * 渲染餐品表格视图（按品类手风琴折叠，并同步全量行到隐藏 #dishTableBody 兼容打印）
+ */
+function renderDishTable(dishes) {
+    const tableView = document.getElementById('dishTableView');
+    const hiddenTbody = document.getElementById('dishTableBody');
+
+    if (!dishes || dishes.length === 0) {
+        if (tableView) {
+            tableView.innerHTML = '<div style="padding: 40px 20px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: 8px; border: 1px dashed var(--border-color);">'
+                + '<div style="font-size: 0.95rem; font-weight: 500;">暂无匹配的餐品数据</div>'
+                + '<div style="font-size: 0.8rem; margin-top: 4px;">可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方</div>'
+                + '</div>';
+        }
+        if (hiddenTbody) {
+            hiddenTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-muted);">暂无匹配餐品数据</td></tr>';
+        }
+        return;
+    }
+
+    const groups = groupDishesByCategory(dishes);
+    let viewHtml = '';
+    let allRowsHtml = '';
+
+    groups.forEach(group => {
+        const isCollapsed = dishCategoryAccordionState[group.category] === false;
+        let groupRowsHtml = '';
+        group.dishes.forEach(d => {
+            const rowHtml = renderDishTableRowHtml(d);
+            groupRowsHtml += rowHtml;
+            allRowsHtml += rowHtml;
+        });
+
+        viewHtml += '<div class="dish-category-group' + (isCollapsed ? ' collapsed' : '') + '" data-category="' + w2Escape(group.category) + '">'
+            + renderDishCategoryHeaderHtml(group, isCollapsed)
+            + '<div class="dish-category-body">'
+            + '  <div class="table-container">'
+            + '    <table class="data-table">'
+            + '      <thead>'
+            + '        <tr>'
+            + '          <th>餐品名称</th>'
+            + '          <th>分类</th>'
+            + '          <th class="col-right">建议售价</th>'
+            + '          <th>食材配方组成</th>'
+            + '          <th class="col-right">理论单份成本</th>'
+            + '          <th class="col-right">理论毛利率</th>'
+            + '          <th class="col-center">操作</th>'
+            + '        </tr>'
+            + '      </thead>'
+            + '      <tbody>'
+            + groupRowsHtml
+            + '      </tbody>'
+            + '    </table>'
+            + '  </div>'
+            + '</div>'
+            + '</div>';
+    });
+
+    if (tableView) {
+        tableView.innerHTML = viewHtml;
+    }
+    if (hiddenTbody) {
+        hiddenTbody.innerHTML = allRowsHtml;
+    }
+}
+
+/**
+ * 切换单个品类折叠项状态（展开/折叠）
+ */
+function toggleDishCategoryAccordion(category) {
+    const isCurrentlyCollapsed = dishCategoryAccordionState[category] === false;
+    const nextState = isCurrentlyCollapsed; // 从折叠切换为展开 (true)，从展开切换为折叠 (false)
+    dishCategoryAccordionState[category] = nextState;
+
+    updateCategoryAccordionDom(category, nextState);
+    updateToggleAllDishCategoriesBtn();
+}
+
+/**
+ * 更新 DOM 中指定品类的折叠与状态指示器
+ */
+function updateCategoryAccordionDom(category, isExpanded) {
+    const groups = document.querySelectorAll('.dish-category-group');
+    groups.forEach(group => {
+        if (group.getAttribute('data-category') === category) {
+            if (isExpanded) {
+                group.classList.remove('collapsed');
+            } else {
+                group.classList.add('collapsed');
+            }
+            const indicator = group.querySelector('.dish-category-status-indicator');
+            if (indicator) {
+                indicator.textContent = isExpanded ? '[已展开]' : '[已折叠]';
+            }
+        }
+    });
+}
+
+/**
+ * 刷新「全部展开 / 全部折叠」按钮文案与状态
+ */
+function updateToggleAllDishCategoriesBtn() {
+    const btn = document.getElementById('btnToggleAllDishCategories');
+    if (!btn) return;
+
+    const catFilter = document.getElementById('dishCategoryFilter');
+    const selectedCat = catFilter ? catFilter.value : '';
+
+    if (selectedCat) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+        btn.innerText = '全部折叠';
+        return;
+    }
+    btn.disabled = false;
+    btn.style.opacity = '';
+    btn.style.cursor = '';
+
+    const groups = Array.from(document.querySelectorAll('#dishCardGrid .dish-category-group'));
+    if (groups.length === 0) {
+        btn.innerText = '全部折叠';
+        btn.disabled = true;
+        return;
+    }
+
+    const anyExpanded = groups.some(g => !g.classList.contains('collapsed'));
+    btn.innerText = anyExpanded ? '全部折叠' : '全部展开';
+}
+
+/**
+ * 全局一键展开全部或折叠全部品类手风琴
+ */
+function toggleAllDishCategoryAccordions() {
+    const groups = Array.from(document.querySelectorAll('#dishCardGrid .dish-category-group'));
+    if (groups.length === 0) return;
+
+    const anyExpanded = groups.some(g => !g.classList.contains('collapsed'));
+    const targetState = !anyExpanded;
+
+    const updatedCats = new Set();
+    groups.forEach(g => {
+        const cat = g.getAttribute('data-category');
+        if (cat) {
+            dishCategoryAccordionState[cat] = targetState;
+            updatedCats.add(cat);
+            updateCategoryAccordionDom(cat, targetState);
+        }
+    });
+
+    const tableGroups = Array.from(document.querySelectorAll('#dishTableView .dish-category-group'));
+    tableGroups.forEach(g => {
+        const cat = g.getAttribute('data-category');
+        if (cat && !updatedCats.has(cat)) {
+            dishCategoryAccordionState[cat] = targetState;
+            updateCategoryAccordionDom(cat, targetState);
+        }
+    });
+
+    updateToggleAllDishCategoriesBtn();
+}
+
+/**
  * 按搜索关键词、分类与在售状态筛选餐品 BOM 库
  */
 function filterDishBomLibrary() {
@@ -17251,148 +21969,48 @@ function filterDishBomLibrary() {
     let filtered = dishLibraryCache.filter(d => {
         if (status === 'active' && d.status !== 'active') return false;
         if (status === 'inactive' && d.status !== 'inactive') return false;
-        if (cat && d.category !== cat) return false;
+        if (cat && (d.category || '') !== cat) return false;
         if (q) {
             const nameMatch = (d.name || '').toLowerCase().includes(q);
             const descMatch = (d.description || '').toLowerCase().includes(q);
             const catMatch = (d.category || '').toLowerCase().includes(q);
-            if (!nameMatch && !descMatch && !catMatch) return false;
+            const ingMatch = Array.isArray(d.ingredients) && d.ingredients.some(ing => {
+                const sName = (ing.sku_name || '').toLowerCase();
+                return sName.includes(q);
+            });
+            if (!nameMatch && !descMatch && !catMatch && !ingMatch) return false;
         }
         return true;
     });
 
+    // 搜索词非空时，智能自动展开命中餐品的品类
+    if (q) {
+        filtered.forEach(d => {
+            const rawCat = (d.category || '').trim();
+            const catName = rawCat || '未分类';
+            dishCategoryAccordionState[catName] = true;
+        });
+    }
+
+    // 筛选指定分类时，该分类强制展开
+    if (cat) {
+        dishCategoryAccordionState[cat] = true;
+    }
+
     renderDishCards(filtered);
     renderDishTable(filtered);
+    updateToggleAllDishCategoriesBtn();
 }
 
-/**
- * 渲染餐品卡片网格
- */
-function renderDishCards(dishes) {
-    const grid = document.getElementById('dishCardGrid');
-    if (!grid) return;
+// 挂载到全局 window 对象供各视图与测试脚本调用
+window.groupDishesByCategory = groupDishesByCategory;
+window.renderDishCards = renderDishCards;
+window.renderDishTable = renderDishTable;
+window.filterDishBomLibrary = filterDishBomLibrary;
+window.toggleDishCategoryAccordion = toggleDishCategoryAccordion;
+window.toggleAllDishCategoryAccordions = toggleAllDishCategoryAccordions;
+window.updateToggleAllDishCategoriesBtn = updateToggleAllDishCategoriesBtn;
 
-    if (dishes.length === 0) {
-        grid.innerHTML = '<div style="grid-column: 1 / -1; padding: 40px 20px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: 8px; border: 1px dashed var(--border-color);">'
-            + '<div style="font-size: 0.95rem; font-weight: 500;">暂无匹配的餐品数据</div>'
-            + '<div style="font-size: 0.8rem; margin-top: 4px;">可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方</div>'
-            + '</div>';
-        return;
-    }
-
-    let html = '';
-    dishes.forEach(d => {
-        const isActive = d.status === 'active';
-        const statusBadge = isActive
-            ? '<span class="badge badge-success" style="font-size:0.72rem;">在售</span>'
-            : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">已停用</span>';
-
-        const categoryTag = d.category
-            ? '<span class="badge badge-info" style="font-size:0.72rem; background: rgba(37,99,235,0.1); color:#2563eb;">' + w2Escape(d.category) + '</span>'
-            : '';
-
-        const marginRate = Number(d.gross_margin_rate || 0);
-        const marginBadgeClass = marginClass(marginRate);
-
-        // 配方食材简述标签
-        let ingredientsHtml = '';
-        if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
-            ingredientsHtml = d.ingredients.map(ing => {
-                return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
-                    + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
-                    + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
-                    + ' <span style="color:var(--text-muted); font-size:0.7rem;">($' + fmtMoney(ing.ingredient_cost) + ')</span>'
-                    + '</span>';
-            }).join('');
-        } else {
-            ingredientsHtml = '<span style="font-size:0.78rem; color:var(--text-muted); font-style:italic;">未配置食材配方</span>';
-        }
-
-        html += '<div class="card dish-card" style="display:flex; flex-direction:column; justify-content:space-between; border-top: 3px solid ' + (isActive ? 'var(--primary, #0f766e)' : 'var(--border-color)') + ';">'
-            + '<div>'
-            + '  <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px; gap:8px;">'
-            + '    <div>'
-            + '      <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px;">'
-            + categoryTag
-            + statusBadge
-            + '      </div>'
-            + '      <h4 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
-            + '    </div>'
-            + '    <div style="text-align:right;">'
-            + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + '$' + fmtMoney(d.price) + '</div>'
-            + '      <div style="font-size:0.72rem; color:var(--text-muted);">建议售价</div>'
-            + '    </div>'
-            + '  </div>'
-            + (d.description ? ('<div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px; line-height:1.4;">' + w2Escape(d.description) + '</div>') : '')
-            + '  <div class="dish-metrics-box" style="background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">'
-            + '    <div>'
-            + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论单份成本</div>'
-            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">' + '$' + fmtMoney(d.theoretical_cost) + '</div>'
-            + '    </div>'
-            + '    <div>'
-            + '      <div style="font-size:0.72rem; color:var(--text-muted);">单份理论毛利</div>'
-            + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">' + '$' + fmtMoney(d.gross_profit) + '</div>'
-            + '    </div>'
-            + '    <div>'
-            + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论毛利率</div>'
-            + '      <div><span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span></div>'
-            + '    </div>'
-            + '  </div>'
-            + '  <div style="margin-bottom:12px;">'
-            + '    <div style="font-size:0.78rem; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">BOM 食材清单 (' + (d.ingredients ? d.ingredients.length : 0) + ' 种):</div>'
-            + '    <div style="display:flex; flex-wrap:wrap;">' + ingredientsHtml + '</div>'
-            + '  </div>'
-            + '</div>'
-            + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
-            + (isOwnerRoleNow()
-                ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
-                   + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
-                : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
-            + '</div>'
-            + '</div>';
-    });
-
-    grid.innerHTML = html;
-}
-
-/**
- * 渲染餐品表格视图
- */
-function renderDishTable(dishes) {
-    const tbody = document.getElementById('dishTableBody');
-    if (!tbody) return;
-
-    if (dishes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:30px; color:var(--text-muted);">暂无匹配餐品数据</td></tr>';
-        return;
-    }
-
-    let html = '';
-    dishes.forEach(d => {
-        const isActive = d.status === 'active';
-        const marginRate = Number(d.gross_margin_rate || 0);
-        const marginBadgeClass = marginClass(marginRate);
-
-        const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
-
-        html += '<tr>'
-            + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
-            + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
-            + '<td class="col-right" style="font-weight:600;">$' + fmtMoney(d.price) + '</td>'
-            + '<td style="font-size:0.82rem; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">' + w2Escape(ingSummary) + '</td>'
-            + '<td class="col-right">$' + fmtMoney(d.theoretical_cost) + '</td>'
-            + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
-            + '<td class="col-center">'
-            + (isOwnerRoleNow()
-                ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
-                   + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
-                : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
-            + '</td>'
-            + '</tr>';
-    });
-
-    tbody.innerHTML = html;
-}
 
 /**
  * 切换餐品 BOM 库卡片/表格视图
@@ -17413,6 +22031,65 @@ function toggleDishViewMode() {
         if (tableView) tableView.classList.add('hide');
         if (toggleBtn) toggleBtn.innerText = '切换列表视图';
     }
+}
+
+/**
+ * 打印餐品 BOM 标准配方档案（B2：原数据中心 dish_bom_recipes 报表移入餐品管理，
+ * 复用配方库列表视图的渲染结果出简单打印页；数据未加载时给温和提示）。
+ */
+function printDishBomLibrary() {
+    const table = document.getElementById('dishTableView')?.querySelector('table');
+    const tbody = document.getElementById('dishTableBody');
+    if (!table || !tbody || !tbody.children.length) {
+        showToast('配方库数据尚未加载完成，请稍候再试', 'warning');
+        return;
+    }
+    // 表格内容取自 renderDishTable 已用 w2Escape 转义的可信 HTML；标题为受控常量
+    const thead = table.querySelector('thead')?.innerHTML || '';
+    const body = tbody.innerHTML;
+
+    const printWin = window.open('', '_blank', 'width=960,height=720');
+    if (!printWin) {
+        showToast('弹出打印窗口被拦截，请在浏览器设置中允许弹窗后重试', 'warning');
+        return;
+    }
+    printWin.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>餐品 BOM 标准配方档案</title>
+            <meta charset="utf-8">
+            <style>
+                @page { size: A4 portrait; margin: 12mm 10mm 15mm 10mm; }
+                body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color:#000; background:#fff; padding:10px 15px; }
+                h2 { text-align:center; margin:0 0 6px 0; font-size:16pt; letter-spacing:1px; }
+                .meta-bar { text-align:center; font-size:9pt; color:#333; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:10px; }
+                table { width:100%; border-collapse:collapse; font-size:8.5pt; }
+                th, td { border:1px solid #000; padding:4px 6px; text-align:left; vertical-align:middle; white-space:nowrap; }
+                th { background:#f2f2f2; font-weight:700; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+                .col-right { text-align:right; }
+                .col-center { text-align:center; }
+                .print-footer { margin-top:30px; display:flex; justify-content:space-between; font-size:10pt; page-break-inside:avoid; }
+            </style>
+        </head>
+        <body>
+            <h2>餐品 BOM 标准配方档案</h2>
+            <div class="meta-bar">打印时间: ${new Date().toLocaleString('zh-HK', { hour12: false })}</div>
+            <table><thead>${thead}</thead><tbody>${body}</tbody></table>
+            <div class="print-footer">
+                <div>经办人签字：_______________</div>
+                <div>日期：_______________</div>
+            </div>
+            <script>
+                window.onload = function() {
+                    window.print();
+                    setTimeout(function() { window.close(); }, 500);
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    printWin.document.close();
 }
 
 /**
@@ -17503,13 +22180,18 @@ function openDishModal(dishId) {
     };
 
     const prepareModal = () => {
+        if (!dishCategoryList || dishCategoryList.length === 0) {
+            refreshDishCategoryOptions();
+        } else {
+            updateDishCategorySuggestions();
+        }
         if (dishId) {
             if (titleEl) titleEl.innerText = isOwnerRoleNow() ? '编辑餐品与配方' : '餐品配方详情（店员查阅）';
             const dish = dishLibraryCache.find(d => d.id === Number(dishId));
             if (dish) {
                 if (idInput) idInput.value = dish.id;
                 if (nameInput) nameInput.value = dish.name || '';
-                if (catInput) catInput.value = dish.category || '';
+                if (catInput) catInput.value = (dish.category || '').trim() || '默认';
                 if (priceInput) priceInput.value = dish.price != null ? dish.price : '';
                 if (descInput) descInput.value = dish.description || '';
                 if (statusInput) statusInput.value = dish.status || 'active';
@@ -17535,7 +22217,7 @@ function openDishModal(dishId) {
                         const d = ret.data;
                         if (idInput) idInput.value = d.id;
                         if (nameInput) nameInput.value = d.name || '';
-                        if (catInput) catInput.value = d.category || '';
+                        if (catInput) catInput.value = (d.category || '').trim() || '默认';
                         if (priceInput) priceInput.value = d.price != null ? d.price : '';
                         if (descInput) descInput.value = d.description || '';
                         if (statusInput) statusInput.value = d.status || 'active';
@@ -17556,7 +22238,7 @@ function openDishModal(dishId) {
             if (titleEl) titleEl.innerText = '新建餐品与配方';
             if (idInput) idInput.value = '';
             if (nameInput) nameInput.value = '';
-            if (catInput) catInput.value = '';
+            if (catInput) catInput.value = '默认';
             if (priceInput) priceInput.value = '';
             if (descInput) descInput.value = '';
             if (statusInput) statusInput.value = 'active';
@@ -17809,7 +22491,7 @@ function saveDishModal() {
 
     const dishId = (idInput ? idInput.value : '').trim();
     const name = (nameInput ? nameInput.value : '').trim();
-    const category = (catInput ? catInput.value : '').trim();
+    const category = (catInput ? catInput.value : '').trim().substring(0, 20);
     const priceVal = priceInput ? priceInput.value : '';
     const description = (descInput ? descInput.value : '').trim();
     const status = statusInput ? statusInput.value : 'active';
@@ -18994,6 +23676,7 @@ if (typeof window !== 'undefined') {
     window.loadDishesList = loadDishesList;
     window.filterDishBomLibrary = filterDishBomLibrary;
     window.toggleDishViewMode = toggleDishViewMode;
+    window.printDishBomLibrary = printDishBomLibrary;
     window.openDishModal = openDishModal;
     window.addDishIngredientRow = addDishIngredientRow;
     window.removeDishIngredientRow = removeDishIngredientRow;
@@ -19355,8 +24038,10 @@ function onUnifiedTenantChange(tId) {
     const v = (tId || '').trim();
     const mainSel = document.getElementById('analyticsTenantSelect');
     const plSel = document.getElementById('parsingLogTenantSelect');
+    const evSel = document.getElementById('eventsFilterTenant');
     if (mainSel && mainSel.value !== v) mainSel.value = v;
     if (plSel && plSel.value !== v) plSel.value = v;
+    if (evSel && evSel.value !== v) evSel.value = v;
     loadParsingLogs(1);
     loadRecoverySummaryBlocks(v || 'all');
 }
@@ -19364,7 +24049,7 @@ window.onUnifiedTenantChange = onUnifiedTenantChange;
 window.onAnalyticsTenantChange = onUnifiedTenantChange;
 
 function refreshUnifiedTelemetry() {
-    const tId = (document.getElementById('analyticsTenantSelect')?.value) || (document.getElementById('parsingLogTenantSelect')?.value) || 'all';
+    const tId = (document.getElementById('analyticsTenantSelect')?.value) || (document.getElementById('parsingLogTenantSelect')?.value) || (document.getElementById('eventsFilterTenant')?.value) || 'all';
     loadParsingLogs(1);
     loadRecoverySummaryBlocks(tId);
 }
@@ -19401,20 +24086,14 @@ function switchTelemetrySubTab(subTabKey) {
     if (contentAudit) contentAudit.style.display = isAudit ? 'block' : 'none';
     if (contentEvents) contentEvents.style.display = !isAudit ? 'block' : 'none';
 
-    // 按子页签显示对应的过滤器：流水明细表格用完整筛选；埋点分布接口只消费
-    // 租户维度，解析状态/门禁/反馈/人工干预/时间跨度/搜索对其无意义
-    const auditOnlyFilterIds = ['filterParsingStatus', 'filterGate', 'filterFeedback', 'filterModified', 'filterTimeRange', 'filterSearch'];
-    auditOnlyFilterIds.forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.style.display = isAudit ? '' : 'none';
-    });
+    // 两 Tab 卡片各自内聚独立专属筛选工具栏，平滑切换无空白塌陷
 
     if (isAudit) {
         if (!currentParsingLogsState.items || currentParsingLogsState.items.length === 0) {
             loadParsingLogs(1);
         }
     } else {
-        const sel = document.getElementById('analyticsTenantSelect') || document.getElementById('parsingLogTenantSelect');
+        const sel = document.getElementById('eventsFilterTenant') || document.getElementById('analyticsTenantSelect') || document.getElementById('parsingLogTenantSelect');
         const tId = sel ? sel.value : 'all';
         loadRecoverySummaryBlocks(tId);
     }
@@ -19458,6 +24137,23 @@ function _updateParsingLogPeriodButtons() {
     });
 }
 
+function onParsingLogDateRangeSelectChange(val) {
+    if (val === 'custom') {
+        const sEl = document.getElementById('parsingLogStartDate');
+        const eEl = document.getElementById('parsingLogEndDate');
+        if (sEl && eEl && sEl.value && eEl.value) {
+            applyParsingLogCustomPeriod(false);
+        } else {
+            window._parsingLogPeriod.mode = 'custom';
+            _updateParsingLogPeriodButtons();
+            if (sEl) sEl.focus();
+        }
+    } else {
+        setParsingLogPeriod(val);
+    }
+}
+window.onParsingLogDateRangeSelectChange = onParsingLogDateRangeSelectChange;
+
 function setParsingLogPeriod(mode) {
     const p = window._parsingLogPeriod;
     p.mode = mode;
@@ -19467,6 +24163,8 @@ function setParsingLogPeriod(mode) {
     const eEl = document.getElementById('parsingLogEndDate');
     if (sEl) sEl.value = '';
     if (eEl) eEl.value = '';
+    const selEl = document.getElementById('parsingLogDateRangeSelect');
+    if (selEl) selEl.value = mode;
     _updateParsingLogPeriodButtons();
     loadParsingLogs(1);
 }
@@ -19490,6 +24188,8 @@ function applyParsingLogCustomPeriod(silent) {
     p.mode = 'custom';
     p.startDate = sVal || null;
     p.endDate = eVal;
+    const selEl = document.getElementById('parsingLogDateRangeSelect');
+    if (selEl) selEl.value = 'custom';
     _updateParsingLogPeriodButtons();
     loadParsingLogs(1);
 }
@@ -19505,6 +24205,8 @@ function setParsingLogCustomRange(startDate, endDate) {
     const eEl = document.getElementById('parsingLogEndDate');
     if (sEl) sEl.value = startDate || '';
     if (eEl) eEl.value = endDate || '';
+    const selEl = document.getElementById('parsingLogDateRangeSelect');
+    if (selEl) selEl.value = 'custom';
     _updateParsingLogPeriodButtons();
 }
 window.setParsingLogCustomRange = setParsingLogCustomRange;
@@ -19786,6 +24488,8 @@ function resetParsingLogFilters() {
     const eEl = document.getElementById('parsingLogEndDate');
     if (sEl) sEl.value = '';
     if (eEl) eEl.value = '';
+    const drSel = document.getElementById('parsingLogDateRangeSelect');
+    if (drSel) drSel.value = 'all';
     _updateParsingLogPeriodButtons();
 
     loadParsingLogs(1);

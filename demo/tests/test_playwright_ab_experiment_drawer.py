@@ -49,8 +49,8 @@ from _playwright_server import start_pinned_server  # noqa: E402
 
 ROOT_DIR = os.path.abspath(os.path.join(TESTS_DIR, "../.."))
 DEMO_DIR = os.path.join(ROOT_DIR, "demo")
-LIVE_DB = os.path.join(DEMO_DIR, "receipt_demo.db")
-SCREENSHOT_DIR = os.path.join(DEMO_DIR, "gui-test-screenshots")
+LIVE_DB = os.environ.get("PW_TEST_DB_SOURCE", os.path.join(DEMO_DIR, "receipt_demo.db"))
+SCREENSHOT_DIR = os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or os.path.join(DEMO_DIR, "gui-test-screenshots")
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 # 自举端口刻意与共享夹具（15010、session 级、live 副本）分开：本用例需要「自己的受控
@@ -70,19 +70,20 @@ EXP_TREAT_MODEL = "fixture-treatment-model"
 
 
 def _prepare_data_db(data_dir):
-    """准备被测服务的数据源：live 库 -> 临时目录的单向只读拷贝。
-
-    拷贝方向恒为 live -> 临时目录，原库只被读取、绝不写入；WAL 模式下的 -wal/-shm
-    侧车文件一并拷贝，保证副本能读出主库之外的已提交数据。live 库缺失时退回一个全新
-    空库（宁可无数据也不让子进程落到 live 库上）。
-    """
+    """准备被测服务的数据源：受控数据源 -> 临时目录的单向只读拷贝。"""
     dst = os.path.join(data_dir, "ab_drawer_ui.db")
-    if os.path.isfile(LIVE_DB):
-        shutil.copy2(LIVE_DB, dst)
-        for suffix in ("-wal", "-shm"):
-            side = LIVE_DB + suffix
-            if os.path.isfile(side):
-                shutil.copy2(side, dst + suffix)
+    custom_source = os.environ.get("PW_TEST_DB_SOURCE", "").strip()
+    no_live = os.environ.get("PW_TEST_NO_LIVE_DB", "").strip() == "1"
+    src = custom_source if (custom_source and os.path.isfile(custom_source)) else (LIVE_DB if not no_live else None)
+    if src and os.path.isfile(src):
+        try:
+            shutil.copy2(src, dst)
+            for suffix in ("-wal", "-shm"):
+                side = src + suffix
+                if os.path.isfile(side):
+                    shutil.copy2(side, dst + suffix)
+        except OSError:
+            pass
     return dst
 
 
@@ -185,6 +186,10 @@ def test_playwright_ab_experiment_drawer():
             page.locator("#adminEngineBtn").click()
             page.wait_for_selector("#tab-engine", timeout=10000)
             assert page.locator("#tab-engine").is_visible(), "#tab-engine should be visible"
+
+            # 切换至「02 流量调度与实验」子分页
+            page.locator("#engineSubNav_02").click()
+            page.wait_for_timeout(200)
 
             # 3. 断言两个高级抽屉均存在且标题正确
             print("[Step 2] 校验金丝雀灰度发布抽屉与 A/B 科学实验编排抽屉...")

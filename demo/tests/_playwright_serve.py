@@ -41,6 +41,21 @@ def _pinned_getaddrinfo(host, port, *args, **kwargs):
 
 def main():
     socket.getaddrinfo = _pinned_getaddrinfo
+    if os.environ.get("PW_TEST_BLOCK_OUTBOUND", "1") == "1":
+        _orig_connect = socket.socket.connect
+        def _isolated_connect(self, address):
+            if isinstance(address, tuple) and address[0] not in ('127.0.0.1', 'localhost', '::1'):
+                raise OSError("Isolated test mode: outbound network blocked (%s)" % (address[0],))
+            return _orig_connect(self, address)
+        socket.socket.connect = _isolated_connect
+
+    # 禁止付费推理与外网调用，默认哈希 embedding
+    os.environ.setdefault("OPENAI_API_KEY", "")
+    os.environ.setdefault("SILICONFLOW_API_KEY", "")
+    os.environ.setdefault("QWEN_API_KEY", "")
+    os.environ.setdefault("RAG_EMBEDDING_PROVIDER", "hash")
+    os.environ.setdefault("MEMORY_EXTRACT_ENABLED", "0")
+
     demo_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if demo_dir not in sys.path:
         sys.path.insert(0, demo_dir)

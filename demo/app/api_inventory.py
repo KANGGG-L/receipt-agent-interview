@@ -56,15 +56,16 @@ def _standard_kg(current_stock, base_unit):
     return round(float(current_stock or 0) * factor, 4)
 
 
-def _compute_vs_avg_and_anomaly(sku_id, threshold_pct=None, tenant_id=None):
+def _compute_vs_avg_and_anomaly(sku_id, threshold_pct=None, tenant_id=None, days=30):
     """计算 vs_avg 涨幅与是否异动。返回 (vs_avg_pct, is_anomaly, avg_30d)。
 
     口径统一走 services.price_anomaly（U-02），阈值取 settings 实时读取
     （WS3：threshold 支持租户维度——租户覆盖 → 全局默认 → 缺省）。
+    days：均价窗口天数（FILTERS-§4：报表侧临时覆盖 7/30/60，缺省 30 不变味）。
     """
     from app.services.price_anomaly import compute_vs_avg_and_anomaly
     vs, is_anomaly, avg_30d, _latest = compute_vs_avg_and_anomaly(
-        sku_id, threshold_pct, tenant_id=tenant_id)
+        sku_id, threshold_pct, tenant_id=tenant_id, days=days)
     return vs, is_anomaly, avg_30d
 
 

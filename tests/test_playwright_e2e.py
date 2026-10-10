@@ -26,7 +26,7 @@ try:
 except Exception:  # pragma: no cover - 离线/未装 playwright 时走 skip 分支
     _PLAYWRIGHT_IMPORT_OK = False
 
-BASE_URL = "http://127.0.0.1:15010"
+BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
 
 # 仓库根（tests/<file> → 仓库根）与本用例的原定落盘目录（缺省回落点）
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -47,7 +47,7 @@ def _screenshot_dir():
     显式重定向时只认 override、不回落仓库目录：否则重定向目录不可写时隔离会静默失效、
     又写回仓库。
     """
-    override = os.environ.get("ARTIFACTS_DIR", "").strip()
+    override = os.environ.get("GUI_SCREENSHOT_DIR", "").strip() or os.environ.get("ARTIFACTS_DIR", "").strip()
     target = os.path.join(os.path.abspath(override), "e2e-refactor") if override else _REPO_E2E_DIR
     os.makedirs(target, exist_ok=True)
     return target
@@ -149,8 +149,10 @@ def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
 
 _SKIP_REASON = None if (_PLAYWRIGHT_IMPORT_OK and _PIL_OK) else "需要 playwright 与 Pillow"
 if _SKIP_REASON is None:
-    if not _service_reachable():
-        _SKIP_REASON = "需要活体服务与浏览器: 服务 %s 不可达" % BASE_URL
+    if not BASE_URL:
+        _SKIP_REASON = "未配置 PW_TEST_BASE_URL 或 TEST_BASE_URL，安全保护：禁止默认探测或访问 15010 真实开发服务"
+    elif not _service_reachable():
+        _SKIP_REASON = "需要活体服务与浏览器: 隔离测试服务 %s 不可达" % BASE_URL
     elif not _browser_available():
         _SKIP_REASON = "需要活体服务与浏览器: playwright 浏览器启动失败"
 # skip 只挂在本用例上（原先是模块级 pytestmark）：同模块的自校准用例不依赖活体服务，

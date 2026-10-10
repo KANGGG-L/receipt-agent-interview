@@ -3,9 +3,10 @@
 
 同一配方、同一数据，四处成本入口必须给出同一理论成本：
 1. `_dish_to_dict`（餐品详情 / 列表）
-2. 导出报表 5：餐品 BOM 标准配方明细表（理论整单成本列）
-3. 导出报表 6：每日销售与食材实际成本汇总表（理论基准成本 = 单份 * 份数）
-4. 导出报表 7：餐品理论毛利 vs 真实毛利偏差诊断表（理论成本列）
+2. 餐品 BOM 配方库展示层（`/api/dishes` 列表 theoretical_cost；BOM 报表已按
+   14→8 重构移出数据中心、归餐品管理维护档案，展示层口径守卫随迁）
+3. 导出报表 dish_cost_margin 按日粒度（理论基准成本 = 单份 * 份数）
+4. 导出报表 dish_cost_margin 按期间粒度（单位实际成本 vs 理论成本偏差归因）
 
 口径含单位换算（g -> kg）与出成率（有效领料量 = 用量 / yield_rate）。
 """
@@ -106,19 +107,22 @@ def test_theory_cost_caliber_consistent_across_detail_and_exports():
         s.close()
     assert theory == detail["theoretical_cost"] == 13.6
 
-    # 报表 5：餐品 BOM 标准配方明细表（理论整单成本列 index 9）
-    bom = ExportDataProcessor._handle_dish_bom_recipes({}, "default", False)
-    bom_rows = [r for r in bom["rows"] if r[0] == "口径一致测试煲"]
-    assert bom_rows, bom["rows"]
-    assert bom_rows[0][9] == detail["theoretical_cost"]
+    # 餐品 BOM 配方库展示层（/api/dishes 列表 theoretical_cost，index 由 _dish_to_dict 保证）
+    lst = client.get("/api/dishes", headers=_staff_headers()).json()["data"]
+    lib_items = [d for d in lst if d["name"] == "口径一致测试煲"]
+    assert lib_items, lst
+    assert lib_items[0]["theoretical_cost"] == detail["theoretical_cost"]
 
-    # 报表 7：毛利偏差诊断表（理论成本列 index 3）
-    mv = ExportDataProcessor._handle_dish_margin_variance({}, "default", False)
-    mv_rows = [r for r in mv["rows"] if r[0] == "口径一致测试煲"]
+    # 报表 dish_cost_margin 按期间粒度（成本偏差 = 单位实际成本 - 理论成本；无消耗时回落理论成本）
+    mv = ExportDataProcessor._handle_dish_cost_margin(
+        {"cost_granularity": "period"}, "default", False)
+    mv_rows = [r for r in mv["rows"] if r[1] == "口径一致测试煲"]
     assert mv_rows, mv["rows"]
-    assert mv_rows[0][3] == detail["theoretical_cost"]
+    # 列序: 0核算周期 1餐品名称 2分类 3份数 4标价 5营业额 6FIFO成本 7毛利额 8实际毛利率
+    #       9理论基准成本 10理论毛利率 11成本偏差 12侵蚀点 13建议 14状态
+    assert mv_rows[0][9] == 0.0  # 周期内暂无消耗，理论基准成本 = 单价理论 * 0 份
 
-    # 报表 6：每日销售成本表（理论基准成本 = 单份 * 份数，index 8）
+    # 报表 dish_cost_margin 按日粒度（理论基准成本 = 单份 * 份数，index 9）
     qty = 4
     batch = client.post("/api/dishes/daily_consumption/batch", json={
         "date": "2026-03-02",
@@ -126,8 +130,18 @@ def test_theory_cost_caliber_consistent_across_detail_and_exports():
     }, headers=_staff_headers())
     assert batch.status_code == 200, batch.text
 
-    ds = ExportDataProcessor._handle_dish_daily_sales_cost(
-        {"start_date": "2026-03-02", "end_date": "2026-03-02"}, "default", False)
+    ds = ExportDataProcessor._handle_dish_cost_margin(
+        {"start_date": "2026-03-02", "end_date": "2026-03-02",
+         "cost_granularity": "daily"}, "default", False)
     ds_rows = [r for r in ds["rows"] if r[1] == "口径一致测试煲"]
     assert ds_rows, ds["rows"]
-    assert ds_rows[0][8] == round(detail["theoretical_cost"] * qty, 2) == 54.4
+    assert ds_rows[0][9] == round(detail["theoretical_cost"] * qty, 2) == 54.4
+
+    # 期间粒度复跑：消耗已入账，理论基准成本与日度口径一致
+    mv2 = ExportDataProcessor._handle_dish_cost_margin(
+        {"start_date": "2026-03-01", "end_date": "2026-03-31",
+         "cost_granularity": "period"}, "default", False)
+    mv2_rows = [r for r in mv2["rows"] if r[1] == "口径一致测试煲"]
+    assert mv2_rows, mv2["rows"]
+    assert mv2_rows[0][3] == qty  # 售出份数聚合
+    assert mv2_rows[0][9] == round(detail["theoretical_cost"] * qty, 2) == 54.4

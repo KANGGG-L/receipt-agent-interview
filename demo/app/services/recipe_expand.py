@@ -179,11 +179,13 @@ def validate_recipe_components(session, dish_id, components,
         if depth > MAX_DEPTH:
             raise ValueError(f"配方嵌套超过最大深度 {MAX_DEPTH} 层")
         if d_id in stack:
-            raise ValueError(f"配方存在循环引用（餐品 #{d_id}）")
+            raise ValueError(f"配方存在循环引用（餐品 #{d_id} 重复出现在展开路径）")
         stack.add(d_id)
         try:
             for ctype, cid in _children(d_id):
                 if ctype == "dish" and cid is not None:
+                    if dish_exists(session, cid, tenant_id) is None:
+                        raise ValueError(f"子配方 #{cid} 不存在或无权使用")
                     _dfs(int(cid), depth + 1, stack)
         finally:
             stack.discard(d_id)

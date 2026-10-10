@@ -80,9 +80,8 @@ def _resolve_timeout(cfg=None, side="rec", use_grey=False) -> int:
 
     优先级：
       1. cfg 中对应的专属独立超时字段 (rec_timeout_seconds / aud_timeout_seconds 等)；
-      2. cfg.call_timeout_seconds 全局配置；
-      3. 环境变量 ENGINE_CALL_TIMEOUT；
-      4. 系统静态缺省值 DEFAULT_CALL_TIMEOUT (30s)。
+      2. 环境变量 ENGINE_CALL_TIMEOUT；
+      3. 系统静态缺省值 DEFAULT_CALL_TIMEOUT (30s)。
     """
     if cfg is not None:
         leg_field_map = {
@@ -98,10 +97,9 @@ def _resolve_timeout(cfg=None, side="rec", use_grey=False) -> int:
             v = getattr(cfg, field_name, None)
             if isinstance(v, int) and not isinstance(v, bool) and v > 0:
                 return min(int(v), CALL_TIMEOUT_SECONDS)
-
-        v = getattr(cfg, "call_timeout_seconds", None)
-        if isinstance(v, int) and not isinstance(v, bool) and v > 0:
-            return min(int(v), CALL_TIMEOUT_SECONDS)
+        call_timeout = getattr(cfg, "call_timeout_seconds", None)
+        if isinstance(call_timeout, int) and not isinstance(call_timeout, bool) and call_timeout > 0:
+            return min(int(call_timeout), CALL_TIMEOUT_SECONDS)
 
     env = os.environ.get("ENGINE_CALL_TIMEOUT")
     if env:
@@ -192,10 +190,6 @@ def get_timeout_advice(cfg=None) -> str:
         getattr(cfg, "openai_rec_base_url", ""),
         getattr(cfg, "openai_rec_api_key", ""),
     )
-    raw_ct = getattr(cfg, "call_timeout_seconds", None)
-    if isinstance(raw_ct, int) and not isinstance(raw_ct, bool) and raw_ct > CALL_TIMEOUT_SECONDS:
-        return (f"call_timeout_seconds={raw_ct} 超过硬上限 {CALL_TIMEOUT_SECONDS}s，"
-                f"已归一为 {CALL_TIMEOUT_SECONDS}s；填更大值不会延长实际等待（高压禁止长期空转）")
     for fld in (
         "rec_timeout_seconds", "aud_timeout_seconds", "parse_timeout_seconds",
         "grey_rec_timeout_seconds", "grey_aud_timeout_seconds", "grey_parse_timeout_seconds"
@@ -207,6 +201,145 @@ def get_timeout_advice(cfg=None) -> str:
     if engine == "openai" and not has_valid_qwen:
         return ("无有效DashScope凭证：openai引擎将超时60s≠9s，需配置dashscope+sk-以达9s")
     return ""
+
+
+# -------------------------------------------------------------
+# 多模型参数自适应与智能降级自愈引擎 (Model-Adaptive Params & Self-Healing Fallback)
+# Layer 1: 静态前置自适应与请求体智能归一 (Static Pre-adaptation)
+# Layer 2: 动态 400 就地参数剥离自愈 (Dynamic Self-Healing)
+# -------------------------------------------------------------
+
+class ModelProfile(dict):
+    """模型特征画像结构，同时支持字典下标访问与属性点号访问。"""
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(f"'ModelProfile' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        self[name] = value
+
+
+def classify_model_profile(model: str, base_url: str) -> ModelProfile:
+    """探测并归类底层模型画像特征。
+
+    规则：
+    - DeepSeek 官方 API：Base URL 包含 api.deepseek.com，或模型名含 deepseek 且未通过中转网关 (siliconflow, openrouter, aliyun, dashscope)；
+    - DeepSeek 任意架构：模型名或 URL 中含 deepseek；
+    - OpenAI 推理模型：模型名以 o1 / o3 开头，或包含 -o1 / -o3。
+    """
+    m = (model or "").strip().lower()
+    u = (base_url or "").strip().lower()
+
+    is_deepseek_official = ("api.deepseek.com" in u) or (
+        ("deepseek" in m) and not any(gw in u for gw in ["siliconflow", "openrouter", "aliyun", "dashscope"])
+    )
+    is_deepseek_any = ("deepseek" in m) or ("deepseek" in u)
+    last_seg = m.split("/")[-1]
+    is_openai_reasoning = (
+        last_seg.startswith("o1") or last_seg.startswith("o3") or
+        m.startswith("o1") or m.startswith("o3") or
+        ("-o1-" in m) or ("-o3-" in m) or ("-o1" in m) or ("-o3" in m) or ("/o1" in m) or ("/o3" in m)
+    )
+
+    supports_reasoning_effort = not is_deepseek_official
+    supports_temperature = not is_openai_reasoning
+    max_tokens_limit = 8192 if is_deepseek_official else None
+    max_tokens_field = "max_completion_tokens" if is_openai_reasoning else "max_tokens"
+
+    return ModelProfile({
+        "is_deepseek_official": is_deepseek_official,
+        "is_deepseek_any": is_deepseek_any,
+        "is_openai_reasoning": is_openai_reasoning,
+        "supports_reasoning_effort": supports_reasoning_effort,
+        "supports_temperature": supports_temperature,
+        "max_tokens_limit": max_tokens_limit,
+        "max_tokens_field": max_tokens_field,
+    })
+
+
+_classify_model_profile = classify_model_profile
+
+
+def _adapt_request_payload(payload: dict, profile: dict) -> tuple[dict, list[str]]:
+    """依据模型画像对请求体进行静态前置自适应与规范化归一。
+
+    返回: (adapted_payload, actions_taken)
+    """
+    adapted = dict(payload)
+    actions = []
+
+    # 1. reasoning_effort 静态剥离（DeepSeek 官方 API 严格不支持此参数，下发即 400）
+    if profile.get("is_deepseek_official") and "reasoning_effort" in adapted:
+        del adapted["reasoning_effort"]
+        actions.append("strip_reasoning_effort")
+
+    # 2. max_tokens / max_completion_tokens 桥接与钳制
+    if profile.get("is_openai_reasoning"):
+        # OpenAI o1/o3 推理模型废弃 max_tokens，强校验 max_completion_tokens
+        if "max_tokens" in adapted:
+            adapted["max_completion_tokens"] = adapted.pop("max_tokens")
+            actions.append("bridge_max_completion_tokens")
+    elif profile.get("is_deepseek_official"):
+        # DeepSeek 官方 API max_tokens 硬上限 8192
+        if "max_tokens" in adapted and isinstance(adapted["max_tokens"], int) and adapted["max_tokens"] > 8192:
+            adapted["max_tokens"] = 8192
+            actions.append("clamp_max_tokens_8192")
+
+    # 3. temperature 过滤（OpenAI o1/o3 不允许自定义 temperature）
+    if profile.get("is_openai_reasoning") and "temperature" in adapted:
+        del adapted["temperature"]
+        actions.append("strip_temperature")
+
+    return adapted, actions
+
+
+def _strip_detail_from_messages(messages_list):
+    """从 messages 列表中剥离所有 image_url 中的 detail 属性。"""
+    import copy
+    new_msgs = copy.deepcopy(messages_list)
+    for msg in new_msgs:
+        content = msg.get("content")
+        if isinstance(content, list):
+            for block in content:
+                if isinstance(block, dict):
+                    if "image_url" in block and isinstance(block["image_url"], dict):
+                        block["image_url"].pop("detail", None)
+                    block.pop("detail", None)
+    return new_msgs
+
+
+_PARAM_ERROR_SIGNATURES = {
+    "strip_reasoning_effort": [
+        re.compile(r"reasoning_effort", re.IGNORECASE),
+        re.compile(r"unrecognized request argument:?\s*reasoning_effort", re.IGNORECASE),
+        re.compile(r"extra inputs are not permitted.*reasoning_effort", re.IGNORECASE),
+        re.compile(r"unsupported parameter:?\s*['\"]?reasoning_effort['\"]?", re.IGNORECASE),
+    ],
+    "strip_temperature": [
+        re.compile(r"unsupported parameter:?\s*['\"]?temperature['\"]?", re.IGNORECASE),
+        re.compile(r"temperature is not supported", re.IGNORECASE),
+        re.compile(r"temperature must be 1", re.IGNORECASE),
+        re.compile(r"unrecognized request argument:?\s*temperature", re.IGNORECASE),
+    ],
+    "bridge_max_completion_tokens": [
+        re.compile(r"unsupported parameter:?\s*['\"]?max_tokens['\"]?.*use ['\"]?max_completion_tokens['\"]?", re.IGNORECASE),
+        re.compile(r"max_tokens is not supported.*max_completion_tokens", re.IGNORECASE),
+        re.compile(r"max_completion_tokens.*max_tokens", re.IGNORECASE),
+        re.compile(r"max_tokens.*max_completion_tokens", re.IGNORECASE),
+    ],
+    "clamp_max_tokens_8192": [
+        re.compile(r"max_tokens.*exceeds?.*8192", re.IGNORECASE),
+        re.compile(r"max_tokens.*less than or equal to 8192", re.IGNORECASE),
+        re.compile(r"max_tokens.*must be <= 8192", re.IGNORECASE),
+    ],
+    "strip_image_detail": [
+        re.compile(r"detail is not supported", re.IGNORECASE),
+        re.compile(r"unrecognized request argument:?\s*detail", re.IGNORECASE),
+        re.compile(r"unexpected.*['\"]?detail['\"]?", re.IGNORECASE),
+    ],
+}
 
 
 # -------------------------------------------------------------
@@ -426,16 +559,94 @@ class OpenAIChatModel(BaseChatModel):
         if self.reasoning_effort and self.reasoning_effort in {"low", "medium", "high", "xhigh", "max"}:
             payload["reasoning_effort"] = self.reasoning_effort
 
+        # Layer 1: 静态前置自适应与请求体智能归一
+        profile = classify_model_profile(str(self.model), str(self.base_url))
+        payload, static_actions = _adapt_request_payload(payload, profile)
+
+        MAX_SELF_HEALING_ROUNDS = 2
+        adapted_params_history = []
+        resp = None
+
         try:
-            resp = requests.post(
-                url, headers=headers,
-                json=payload,
-                timeout=call_timeout,
-                allow_redirects=False,
-            )
+            import copy
+            for attempt_idx in range(MAX_SELF_HEALING_ROUNDS + 1):
+                resp = requests.post(
+                    url, headers=headers,
+                    json=copy.deepcopy(payload),
+                    timeout=call_timeout,
+                    allow_redirects=False,
+                )
+                if resp.status_code == 200:
+                    break
+
+                # Layer 2: 动态 400 就地参数剥离自愈算法
+                if resp.status_code == 400 and attempt_idx < MAX_SELF_HEALING_ROUNDS:
+                    err_text = str(resp.text or "")
+                    actions_this_round = []
+
+                    # 1. 检查 reasoning_effort
+                    if "reasoning_effort" in payload and "strip_reasoning_effort" not in adapted_params_history:
+                        for pat in _PARAM_ERROR_SIGNATURES["strip_reasoning_effort"]:
+                            if pat.search(err_text):
+                                del payload["reasoning_effort"]
+                                actions_this_round.append("strip_reasoning_effort")
+                                break
+
+                    # 2. 检查 bridge_max_completion_tokens
+                    if "max_tokens" in payload and "bridge_max_completion_tokens" not in adapted_params_history:
+                        for pat in _PARAM_ERROR_SIGNATURES["bridge_max_completion_tokens"]:
+                            if pat.search(err_text):
+                                payload["max_completion_tokens"] = payload.pop("max_tokens")
+                                actions_this_round.append("bridge_max_completion_tokens")
+                                break
+
+                    # 3. 检查 clamp_max_tokens_8192
+                    if "max_tokens" in payload and "clamp_max_tokens_8192" not in adapted_params_history:
+                        for pat in _PARAM_ERROR_SIGNATURES["clamp_max_tokens_8192"]:
+                            if pat.search(err_text):
+                                payload["max_tokens"] = 8192
+                                actions_this_round.append("clamp_max_tokens_8192")
+                                break
+
+                    # 4. 检查 strip_temperature
+                    if "temperature" in payload and "strip_temperature" not in adapted_params_history:
+                        for pat in _PARAM_ERROR_SIGNATURES["strip_temperature"]:
+                            if pat.search(err_text):
+                                del payload["temperature"]
+                                actions_this_round.append("strip_temperature")
+                                break
+
+                    # 5. 检查 strip_image_detail
+                    if "strip_image_detail" not in adapted_params_history:
+                        has_detail = any(
+                            isinstance(m.get("content"), list) and any(
+                                isinstance(b, dict) and (("image_url" in b and isinstance(b["image_url"], dict) and "detail" in b["image_url"]) or "detail" in b)
+                                for b in m["content"]
+                            )
+                            for m in payload.get("messages", [])
+                        )
+                        if has_detail:
+                            for pat in _PARAM_ERROR_SIGNATURES["strip_image_detail"]:
+                                if pat.search(err_text):
+                                    payload["messages"] = _strip_detail_from_messages(payload["messages"])
+                                    actions_this_round.append("strip_image_detail")
+                                    break
+
+                    if actions_this_round:
+                        adapted_params_history.extend(actions_this_round)
+                        logging.getLogger("llm").warning(
+                            f"[WARN] 检测到上游网关不兼容参数，已自动执行参数自愈剥离并就地重试: {actions_this_round}"
+                        )
+                        continue
+
+                # 非 400、无匹配参数可自愈或已达自愈重试上限，跳出循环
+                break
+
             _call_ms = round((_t.time() - _call_start) * 1000, 1)
-            if resp.status_code != 200:
-                http_err = _classify_http_error(resp.status_code, resp.text)
+            if resp is None or resp.status_code != 200:
+                status_code = resp.status_code if resp is not None else 500
+                text = resp.text if resp is not None else "No response"
+                http_err = _classify_http_error(status_code, text)
                 try:
                     from app.services.llm_logger import record_llm_call
                     record_llm_call(
@@ -447,6 +658,7 @@ class OpenAIChatModel(BaseChatModel):
                         status="error",
                         error_msg=str(http_err),
                         error_category=getattr(http_err, "category", "") or "",
+                        adapted_params=adapted_params_history,
                     )
                 except Exception:
                     pass
@@ -474,10 +686,20 @@ class OpenAIChatModel(BaseChatModel):
                     cost_hkd=cost_val,
                     elapsed_ms=_call_ms,
                     status="success",
+                    adapted_params=adapted_params_history,
                 )
             except Exception:
                 pass
-            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
+
+            response_meta = {
+                "token_usage": token_usage,
+                "model": self.model,
+                "usage": raw_usage,
+            }
+            if adapted_params_history:
+                response_meta["adapted_params"] = adapted_params_history
+
+            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata=response_meta))])
         except Exception as e:
             if not isinstance(e, EngineCallError):
                 _call_ms = round((_t.time() - _call_start) * 1000, 1)

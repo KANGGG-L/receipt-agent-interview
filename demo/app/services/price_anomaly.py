@@ -56,7 +56,7 @@ def compute_vs_avg_and_anomaly(sku_id, threshold_pct=None, tenant_id=None, days=
     - 窗口内有效样本 < 2 时不判异动（保持既有"样本不足不告警"语义）。
     - 仅向上告警：vs > threshold_pct 才 is_anomaly（价格下跌不标红）。
 
-    ⚠️ 基准说明：本函数是 **SKU 级**判定（最新进价 vs 近 30 日均价），与收据**行级**判定
+    [WARN] 基准说明：本函数是 **SKU 级**判定（最新进价 vs 近 30 日均价），与收据**行级**判定
     （receipt_utils._match_sku 里"本笔进价 vs 该 SKU 上一笔进价"）是两套不同基准，二者
     共用同一阈值数值但语义不同，前端须各自标注基准（见 receipt_utils 同名注释）。
     """

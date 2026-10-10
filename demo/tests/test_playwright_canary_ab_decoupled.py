@@ -16,8 +16,8 @@ import os
 import pytest
 from playwright.sync_api import sync_playwright
 
-BASE_URL = "http://127.0.0.1:15010"
-SCREENSHOT_DIR = os.path.abspath(
+BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010"))
+SCREENSHOT_DIR = os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../gui-test-screenshots"))
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
@@ -55,7 +55,9 @@ def test_playwright_canary_ab_decoupled():
         print("\n[Test 1] 校验系统与引擎配置中的金丝雀灰度抽屉纯净化...")
         page.locator("#adminEngineBtn").click()
         page.wait_for_selector("#tab-engine", timeout=10000)
-        assert page.locator("#tab-engine").is_visible(), "#tab-engine should be visible"
+        # 切换至「02 流量调度与实验」子分页
+        page.locator("#engineSubNav_02").click()
+        page.wait_for_timeout(200)
 
         # 展开灰度抽屉
         drawer = page.locator("#adminGreyDrawer")
@@ -74,13 +76,10 @@ def test_playwright_canary_ab_decoupled():
 
         # 打开抽屉核验内容
         drawer_header = drawer.locator(".engine-drawer-header")
-        drawer_header.click()
-        page.wait_for_timeout(300)
+        if "collapsed" in (drawer.get_attribute("class") or ""):
+            drawer_header.click()
+            page.wait_for_timeout(300)
         assert "collapsed" not in (drawer.get_attribute("class") or ""), "Drawer should be expanded"
-
-        # 关闭抽屉
-        drawer_header.click()
-        page.wait_for_timeout(200)
 
         # ------------------------------------------------------------
         # Test 2: AI 效果观测与评测中心 4 功能区切换与截图

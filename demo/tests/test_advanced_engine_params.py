@@ -427,7 +427,11 @@ def test_ac09_model_cache_key_isolation():
 def test_ac_audit_model_temperature_hard_locking():
     """审核引擎安全硬锁定：无论配置温度多大，审核模型运行时 temperature 恒为 0.0。"""
     cfg = EngineConfig(
+        openai_aud_base_url="https://api.openai.com/v1",
+        openai_aud_api_key="sk-test-audit-key",
         openai_aud_temperature=0.45,
+        grey_openai_aud_base_url="https://api.openai.com/v1",
+        grey_openai_aud_api_key="sk-test-grey-audit-key",
         grey_openai_aud_temperature=0.35,
     )
 
@@ -478,21 +482,19 @@ def test_ac11_folding_interaction_logic():
 
     assert "function toggleAdvParams(legId)" in content
     assert "window.toggleAdvParams = toggleAdvParams" in content
-    assert "toggleText.textContent = '[收起]'" in content
-    assert "toggleText.textContent = '[展开]'" in content
+    assert ("toggleText.textContent = '收起'" in content) or ("toggleText.textContent = '[收起]'" in content)
+    assert ("toggleText.textContent = '展开'" in content) or ("toggleText.textContent = '[展开]'" in content)
 
 
 def test_ac12_dynamic_badge_text_formatting():
-    """AC-12: main.js 中 updateAdvBadge 支持动态格式化识别腿与其他腿的微缩 Badge 文本。"""
+    """AC-12: main.js 中 updateAdvBadge 支持动态格式化识别腿与其他腿的微缩 Badge 文本，满足统一前缀与顺序（思考强度、最大Token、视觉切片、采样温度）。"""
     js_file = DEMO_ROOT / "static" / "js" / "main.js"
     content = js_file.read_text(encoding="utf-8")
 
     assert "function updateAdvBadge(legId)" in content
     assert "window.updateAdvBadge = updateAdvBadge" in content
-    # 识别腿包含 detail（不含 response_format）
-    assert "badge.textContent = `[${tokens} tokens | ${detail} detail | T=${tempStr}]`" in content
-    # 其它腿不含 detail（不含 response_format）
-    assert "badge.textContent = `[${tokens} tokens | T=${tempStr}]`" in content
+    # 统一四段式微缩 Badge（思考强度、最大Token、视觉切片、采样温度）
+    assert "badge.textContent = `[思考强度:${effortLabel} | 最大Token:${tokens} | 视觉切片:${detailLabel} | 采样温度:${tempStr}]`" in content
 
 
 def test_ac13_hallucination_warning_logic():
@@ -505,6 +507,29 @@ def test_ac13_hallucination_warning_logic():
     assert "val > 0.2" in content
     assert "warnEl.classList.remove('hide')" in content
     assert "warnEl.classList.add('hide')" in content
+
+
+def test_adv_params_header_title_renamed_and_pricing_integrated():
+    """验证 6 处抽屉标题统一为'高级参数'且计费单价 engine-inline-economics 整体纳入抽屉主体 adminAdvBody_{leg}。"""
+    from bs4 import BeautifulSoup
+    html_file = DEMO_ROOT / "templates" / "index.html"
+    assert html_file.exists()
+    content = html_file.read_text(encoding="utf-8")
+    assert "高级工程参数" not in content, "HTML 模板中严禁残留 '高级工程参数'"
+    soup = BeautifulSoup(content, "html.parser")
+
+    legs = ["rec", "aud", "parse", "grey_rec", "grey_aud", "grey_parse"]
+    for leg in legs:
+        drawer = soup.find(id=f"adminAdvParams_{leg}")
+        assert drawer is not None, f"未找到抽屉容器 adminAdvParams_{leg}"
+        header = drawer.find("div", class_="engine-adv-header")
+        assert header is not None, f"卡片 {leg} 缺少 engine-adv-header"
+        assert "高级参数" in header.text, f"卡片 {leg} 抽屉标题必须包含 '高级参数'"
+
+        adv_body = drawer.find(id=f"adminAdvBody_{leg}")
+        assert adv_body is not None, f"卡片 {leg} 缺少抽屉主体 adminAdvBody_{leg}"
+        eco_block = adv_body.find("div", class_="engine-inline-economics")
+        assert eco_block is not None, f"卡片 {leg} 计费单价容器 engine-inline-economics 必须位于 adminAdvBody_{leg} 内部"
 
 
 # ==============================================================================
@@ -692,6 +717,7 @@ def test_ac18_audit_logging_and_desensitization():
         "grey_openai_rec_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "grey_openai_rec_api_key": "sk-grey-key",
         "grey_openai_rec_model": "qwen3.5-omni-flash",
+        "openai_rec_base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "openai_rec_api_key": "sk-real-secret-12345",
         "grey_openai_rec_max_tokens": 8192,
     }, headers=_admin_headers())

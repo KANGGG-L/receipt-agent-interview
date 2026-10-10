@@ -365,13 +365,15 @@ def test_dish_categories_list_and_delete():
     }, headers=_owner_headers()).json()
     assert dish_c["status"] == "success"
 
-    # 2. GET /api/dishes/categories：distinct 非空分类 + 引用数，按引用数降序
+    # 2. GET /api/dishes/categories：distinct 非空分类 + 引用数，按引用数降序，包含「默认」保底 (AC-03)
     cats_resp = client.get("/api/dishes/categories", headers=_staff_headers())
     assert cats_resp.status_code == 200
     data = cats_resp.json()["data"]
     by_name = {c["name"]: c["count"] for c in data}
     assert by_name.get("主食热菜") == 2
     assert by_name.get("主菜") == 1
+    assert "默认" in by_name
+    assert by_name["默认"] == 0
     assert "" not in by_name
 
     # 3. 店员无权限删除分类 -> 403
@@ -379,19 +381,21 @@ def test_dish_categories_list_and_delete():
                               headers=_staff_headers())
     assert del_staff.status_code == 403
 
-    # 4. owner 删除「主菜」（0 引用场景单独覆盖：先建再删），受影响条数正确
+    # 4. owner 删除「主菜」，未指定 replace_with 时默认归入「默认」 (AC-06)
     del_resp = client.delete("/api/dishes/categories/%E4%B8%BB%E8%8F%9C", headers=_owner_headers())
     assert del_resp.status_code == 200
     body = del_resp.json()
     assert body["status"] == "success"
     assert body["data"]["affected"] == 1
-    assert body["data"]["replace_with"] == "其他"
-    # 被引用餐品 category 已改写为「其他」
+    assert body["data"]["replace_with"] == "默认"
+    # 被引用餐品 category 已改写为「默认」
     updated = client.get(f"/api/dishes/{dish_c['data']['id']}", headers=_staff_headers()).json()["data"]
-    assert updated["category"] == "其他"
-    # 删除后 categories 集合不再包含该分类
+    assert updated["category"] == "默认"
+    # 删除后 categories 集合不再包含该分类，且「默认」分类计数增加
     after = client.get("/api/dishes/categories", headers=_staff_headers()).json()["data"]
     assert not any(c["name"] == "主菜" for c in after)
+    by_name_after = {c["name"]: c["count"] for c in after}
+    assert by_name_after.get("默认") == 1
 
     # 5. replace_with 参数生效：把「主食热菜」改为「主食」
     del2 = client.delete(
@@ -412,6 +416,106 @@ def test_delete_category_empty_name_returns_400():
         body = resp.json()
         assert body["status"] == "error"
         assert body["msg"] == "分类名称不能为空"
+
+
+def test_dish_category_spec_ac_edge_cases():
+    """验证 PRD Spec 验收标准：删除其他清空、自我替换拦截、404、过滤与20字符截断。"""
+    sku_id, _ = db.create_sku("配方测试料", base_unit="kg")
+    db.update_sku(sku_id, last_unit_price=10.0, current_stock=100.0)
+
+    # 1. 创建餐品并验证 category 超过 20 字符被截断
+    long_cat = "超长分类名称测试一二三四五六七八九十特别长"
+    create_resp = client.post("/api/dishes", json={
+        "name": "超长分类菜品",
+        "category": long_cat,
+        "price": 38.0,
+        "description": "这是美味的香脆烤鸡，特色慢烤",
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.5, "unit": "kg"}],
+    }, headers=_owner_headers())
+    assert create_resp.status_code == 200
+    dish_id = create_resp.json()["data"]["id"]
+    saved_cat = create_resp.json()["data"]["category"]
+    assert len(saved_cat) <= 20
+    assert saved_cat == long_cat[:20]
+
+    # 2. PUT 更新餐品 category 截断验证
+    put_resp = client.put(f"/api/dishes/{dish_id}", json={
+        "category": "另一个超长分类名称测试一二三四五六七八九十",
+    }, headers=_owner_headers())
+    assert put_resp.status_code == 200
+    new_cat = put_resp.json()["data"]["category"]
+    assert len(new_cat) <= 20
+
+    # 3. AC-01: 新建餐品未传 category 或传空字符串/纯空格，后端自动落库为 "默认"
+    dish_no_cat = client.post("/api/dishes", json={
+        "name": "未分类菜品A",
+        "category": "   ",
+        "price": 18.0,
+        "ingredients": [{"sku_id": sku_id, "consumption_qty": 0.2, "unit": "kg"}],
+    }, headers=_owner_headers()).json()
+    assert dish_no_cat["status"] == "success"
+    assert dish_no_cat["data"]["category"] == "默认"
+    dish_no_cat_id = dish_no_cat["data"]["id"]
+
+    # AC-02: 更新餐品传入 "" 或纯空格，后端自动纠正为 "默认"
+    put_blank_cat = client.put(f"/api/dishes/{dish_no_cat_id}", json={
+        "category": "",
+    }, headers=_owner_headers()).json()
+    assert put_blank_cat["status"] == "success"
+    assert put_blank_cat["data"]["category"] == "默认"
+
+    # 4. EC-01 / AC-04: 尝试删除内置「默认」分类 -> 400 阻断
+    del_default = client.delete("/api/dishes/categories/默认", headers=_owner_headers())
+    assert del_default.status_code == 400
+    assert del_default.json()["msg"] == "系统默认分组无法删除"
+
+    # EC-02 / AC-05: 尝试重命名内置「默认」分类 -> 400 阻断
+    rename_default = client.delete("/api/dishes/categories/默认?replace_with=基础类", headers=_owner_headers())
+    assert rename_default.status_code == 400
+    assert rename_default.json()["msg"] == "系统默认分组无法修改"
+
+    # EC-03: URL 编码删除内置「默认」分类 -> 400 阻断
+    del_default_enc = client.delete("/api/dishes/categories/%E9%BB%98%E8%AE%A4", headers=_owner_headers())
+    assert del_default_enc.status_code == 400
+    assert del_default_enc.json()["msg"] == "系统默认分组无法删除"
+
+    # 5. 删除分类时 replace_with 等于目标分类自身 -> 400 (EC-06)
+    del_same = client.delete(
+        f"/api/dishes/categories/{new_cat}?replace_with={new_cat}",
+        headers=_owner_headers(),
+    )
+    assert del_same.status_code == 400
+    assert del_same.json()["msg"] == "请选择一个与被删除分类不同的替代分类"
+
+    # 6. 删除不存在的分类 -> 404 (EC-09)
+    del_404 = client.delete("/api/dishes/categories/%E4%B8%8D%E5%AD%98%E5%9C%A8%E7%9A%84%E5%88%86%E7%B1%BB", headers=_owner_headers())
+    assert del_404.status_code == 404
+    assert del_404.json()["msg"] == "分类不存在"
+
+    # 7. EC-10: 零餐品租户查询分类始终包含 {"name": "默认", "count": 0}
+    empty_tenant_headers = {"X-Role": "staff", "X-Email": "staff@empty.hk", "X-Tenant-Id": "empty_tenant"}
+    empty_cats = client.get("/api/dishes/categories", headers=empty_tenant_headers).json()["data"]
+    assert len(empty_cats) >= 1
+    assert any(c["name"] == "默认" and c["count"] == 0 for c in empty_cats)
+
+    # 8. AC-07: 按 category=默认 过滤能检索到分类为默认的餐品
+    default_filter_resp = client.get("/api/dishes?category=默认", headers=_owner_headers())
+    assert default_filter_resp.status_code == 200
+    default_dish_ids = [d["id"] for d in default_filter_resp.json()["data"]]
+    assert dish_no_cat_id in default_dish_ids
+
+    # 6. GET /api/dishes 按分类过滤与按描述模糊搜索 (AC-06, AC-07)
+    # 按分类过滤（使用更新后的 new_cat）
+    cat_filter_resp = client.get(f"/api/dishes?category={new_cat}", headers=_staff_headers())
+    assert cat_filter_resp.status_code == 200
+    assert len(cat_filter_resp.json()["data"]) == 1
+    assert cat_filter_resp.json()["data"][0]["id"] == dish_id
+
+    # 按描述搜索关键字 "特色慢烤"
+    search_desc_resp = client.get("/api/dishes?q=%E7%89%B9%E8%89%B2%E6%85%A2%E7%83%A4", headers=_staff_headers())
+    assert search_desc_resp.status_code == 200
+    assert len(search_desc_resp.json()["data"]) == 1
+    assert search_desc_resp.json()["data"][0]["id"] == dish_id
 
 
 def test_cross_tenant_dish_creation_and_update_isolation():
@@ -677,4 +781,93 @@ def test_cost_analysis_cross_tenant_zero_leakage():
     assert "租户A牛肉饭" in dishes_in_a
     assert "租户B烤鸭套餐" not in dishes_in_a
     assert data_a["summary"]["total_sold_quantity"] == 2.0
+
+
+def test_cross_tenant_dish_category_isolation():
+    """[AC-16] 验证不同租户之间餐品分类统计、过滤与删除级联隔离，零数据泄漏。"""
+    headers_a_owner = {"X-Role": "owner", "X-Email": "boss@tenant-a.hk", "X-Tenant-Id": "tenant_a"}
+    headers_a_staff = {"X-Role": "staff", "X-Email": "staff@tenant-a.hk", "X-Tenant-Id": "tenant_a"}
+    headers_b_owner = {"X-Role": "owner", "X-Email": "boss@tenant-b.hk", "X-Tenant-Id": "tenant_b"}
+    headers_b_staff = {"X-Role": "staff", "X-Email": "staff@tenant-b.hk", "X-Tenant-Id": "tenant_b"}
+
+    # 1. 租户 A 创建 SKU 与餐品
+    sku_a_id, _ = db.create_sku("鲜虾仁", base_unit="kg", tenant_id="tenant_a")
+    db.update_sku(sku_a_id, current_stock=10.0, last_unit_price=40.0)
+
+    dish_a1 = client.post("/api/dishes", json={
+        "name": "粤式虾饺", "category": "粤点蒸点", "price": 32.0,
+        "ingredients": [{"sku_id": sku_a_id, "consumption_qty": 0.2, "unit": "kg"}]
+    }, headers=headers_a_owner).json()["data"]
+
+    dish_a2 = client.post("/api/dishes", json={
+        "name": "深井烧鹅", "category": "烧味烧腊", "price": 88.0,
+        "ingredients": [{"sku_id": sku_a_id, "consumption_qty": 0.5, "unit": "kg"}]
+    }, headers=headers_a_owner).json()["data"]
+
+    # 2. 租户 B 创建 SKU 与餐品
+    sku_b_id, _ = db.create_sku("高筋面粉", base_unit="kg", tenant_id="tenant_b")
+    db.update_sku(sku_b_id, current_stock=50.0, last_unit_price=5.0)
+
+    dish_b1 = client.post("/api/dishes", json={
+        "name": "重庆小面", "category": "川味面点", "price": 18.0,
+        "ingredients": [{"sku_id": sku_b_id, "consumption_qty": 0.25, "unit": "kg"}]
+    }, headers=headers_b_owner).json()["data"]
+
+    dish_b2 = client.post("/api/dishes", json={
+        "name": "麻婆豆腐", "category": "川味热菜", "price": 28.0,
+        "ingredients": [{"sku_id": sku_b_id, "consumption_qty": 0.1, "unit": "kg"}]
+    }, headers=headers_b_owner).json()["data"]
+
+    # 3. 验证 GET /api/dishes/categories 租户完全隔离
+    cats_a = client.get("/api/dishes/categories", headers=headers_a_staff).json()["data"]
+    names_a = [c["name"] for c in cats_a]
+    assert "粤点蒸点" in names_a
+    assert "烧味烧腊" in names_a
+    assert "川味面点" not in names_a
+    assert "川味热菜" not in names_a
+
+    cats_b = client.get("/api/dishes/categories", headers=headers_b_staff).json()["data"]
+    names_b = [c["name"] for c in cats_b]
+    assert "川味面点" in names_b
+    assert "川味热菜" in names_b
+    assert "粤点蒸点" not in names_b
+    assert "烧味烧腊" not in names_b
+
+    # 4. 验证 GET /api/dishes?category=... 租户隔离
+    query_a_self = client.get("/api/dishes?category=粤点蒸点", headers=headers_a_staff).json()["data"]
+    assert len(query_a_self) == 1
+    assert query_a_self[0]["id"] == dish_a1["id"]
+
+    query_a_other = client.get("/api/dishes?category=川味面点", headers=headers_a_staff).json()["data"]
+    assert len(query_a_other) == 0
+
+    query_b_self = client.get("/api/dishes?category=川味面点", headers=headers_b_staff).json()["data"]
+    assert len(query_b_other := query_b_self) == 1
+    assert query_b_other[0]["id"] == dish_b1["id"]
+
+    # 5. 验证跨租户删除保护：租户 A 尝试删除租户 B 的分类 -> 404
+    del_cross = client.delete("/api/dishes/categories/%E5%B7%9D%E5%91%B3%E9%9D%A2%E7%82%B9", headers=headers_a_owner)
+    assert del_cross.status_code == 404
+    assert del_cross.json()["msg"] == "分类不存在"
+
+    # 租户 B 的餐品分类未受任何影响
+    dish_b1_check = client.get(f"/api/dishes/{dish_b1['id']}", headers=headers_b_staff).json()["data"]
+    assert dish_b1_check["category"] == "川味面点"
+
+    # 6. 租户 A 删除自己租户的分类「粤点蒸点」-> 正常级联重定向至「其他」
+    del_a = client.delete("/api/dishes/categories/%E7%B2%A4%E7%82%B9%E8%92%B8%E7%82%B9", headers=headers_a_owner)
+    assert del_a.status_code == 200
+    assert del_a.json()["data"]["affected"] == 1
+    assert del_a.json()["data"]["replace_with"] == "默认"
+
+    dish_a1_updated = client.get(f"/api/dishes/{dish_a1['id']}", headers=headers_a_staff).json()["data"]
+    assert dish_a1_updated["category"] == "默认"
+
+    # 租户 B 的餐品和分类完好无损
+    cats_b_after = client.get("/api/dishes/categories", headers=headers_b_staff).json()["data"]
+    names_b_after = [c["name"] for c in cats_b_after]
+    assert "川味面点" in names_b_after
+    assert "川味热菜" in names_b_after
+    assert "默认" in names_b_after
+
 

@@ -235,8 +235,15 @@ def test_api_admin_get_engine_config_masks_keys():
         resp = client.get("/api/admin/engine-config")
         assert resp.status_code == 200
         data = resp.json()["data"]
-        assert data["openai_rec_api_key"] == "sk-sup****5678"
-        assert data["openai_aud_api_key"] == "sk-aud****4321"
+        assert data["openai_rec_api_key"].startswith("sk-sup")
+        assert data["openai_rec_api_key"].endswith("5678")
+        assert len(data["openai_rec_api_key"]) == len("sk-supersecretkey12345678")
+        assert "*" in data["openai_rec_api_key"]
+
+        assert data["openai_aud_api_key"].startswith("sk-aud")
+        assert data["openai_aud_api_key"].endswith("4321")
+        assert len(data["openai_aud_api_key"]) == len("sk-audsecretkey87654321")
+        assert "*" in data["openai_aud_api_key"]
 
         # 内部直接读取 DB 仍然是明文，不破坏后端任务调用
         internal_cfg = db.get_engine_config()
