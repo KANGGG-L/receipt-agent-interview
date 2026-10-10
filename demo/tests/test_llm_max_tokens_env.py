@@ -7,7 +7,14 @@ per-field F1 基线时，其 reasoning 段也消耗 completion 预算，llm.py �
 本用例用 mock requests.post 判别两种端点形态：
   1) 未设 OPENAI_REC_MAX_TOKENS → 载荷 max_tokens 保持 4000 原口径（回归守卫）；
   2) 设 OPENAI_REC_MAX_TOKENS=16384 → 载荷 max_tokens=16384，且请求路径仍是
-     base_url + "/chat/completions"（非 /responses，判别端点形态不漂移）。
+     base_url + "/chat/completions"（非 /responses，判别端点形态不漂移）；
+  3) DeepSeek 官方硬上限守卫：模型名含 deepseek 且 base_url 非已知网关时
+     （classify_model_profile 判 is_deepseek_official），env 抬到 16384 会被
+     钳到 8192（llm.py clamp_max_tokens_8192）。
+
+2026-10-10 契约对齐：env 覆盖判别改用非 deepseek 模型（qwen3.5-omni-flash）——
+原用的 deepseek 模型 + commandcode.ai base_url 在新增的模型画像分类下命中
+官方 DeepSeek 钳制，会污染「env 覆盖」这一被测机制的判别。
 """
 import os
 import sys
@@ -31,9 +38,14 @@ def _fake_response(content="ok"):
 
 
 class TestMaxTokensEnv(unittest.TestCase):
-    def _invoke(self, captured):
+    # 非 deepseek 模型：classify_model_profile 不判官方 DeepSeek，
+    # 请求路径无 8192 钳制 → env 覆盖机制可被纯净判别。
+    _PLAIN_MODEL = "qwen3.5-omni-flash"
+    _DEEPSEEK_MODEL = "deepseek/deepseek-v4.1-flash"
+
+    def _invoke(self, captured, model=None):
         m = OpenAIChatModel(base_url="https://api.commandcode.ai/provider/v1",
-                            api_key="k", model="deepseek/deepseek-v4.1-flash")
+                            api_key="k", model=model or self._PLAIN_MODEL)
         with mock.patch("app.llm.requests.post",
                         side_effect=lambda url, **kw: (captured.append((url, kw)), _fake_response())[1]):
             m.invoke([HumanMessage(content="hi")])
@@ -54,6 +66,17 @@ class TestMaxTokensEnv(unittest.TestCase):
         url, kw = captured[0]
         self.assertTrue(url.endswith("/chat/completions"))
         self.assertEqual(kw["json"]["max_tokens"], 16384)
+
+    def test_deepseek_model_clamps_env_override_to_8192(self):
+        """DeepSeek 官方硬上限守卫：模型名含 deepseek 且 base_url 非已知网关时，
+        即使 env 抬到 16384，载荷也会被 _adapt_request_payload 钳到 8192
+        （classify_model_profile 判 is_deepseek_official，llm.py clamp_max_tokens_8192）。"""
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_MAX_TOKENS": "16384"}):
+            self._invoke(captured, model=self._DEEPSEEK_MODEL)
+        url, kw = captured[0]
+        self.assertTrue(url.endswith("/chat/completions"))
+        self.assertEqual(kw["json"]["max_tokens"], 8192)
 
     def test_invalid_env_falls_back_to_4000(self):
         captured = []

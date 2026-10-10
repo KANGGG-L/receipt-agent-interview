@@ -213,14 +213,23 @@ def test_upstream_estimated_flag_is_inherited(monkeypatch):
 
 
 def test_extract_chain_result_carries_cost_marker_keys():
-    """extract_receipt 的每个 result 字典都必须同时带 cost_hkd 与成本可信度标记。"""
+    """extract_receipt 的每个 result 字典都必须同时带 cost_hkd 与成本可信度标记。
+
+    2026-10-10 契约对齐：bc260e7 将成功/回退两段近似重复的 result 组装去重合并，
+    `**_cost_meta()` 调用点 3→2（刻意重构）。判据改为结构不变量：
+    「**_cost_meta() 展开数 == "cost_hkd" 产出数」且两者非零（防 0==0 恒真），
+    不再钉快照计数。
+    """
     import inspect
     from app.chains import extract_chain
 
     src = inspect.getsource(extract_chain.extract_receipt)
-    assert src.count('**_cost_meta()') == 3
-    assert src.count('**_cost_meta()') == src.count('"cost_hkd"'), \
-        "每个产出 cost_hkd 的 result 都必须同时产出成本可信度标记"
+    meta_count = src.count('**_cost_meta()')
+    hkd_count = src.count('"cost_hkd"')
+    assert meta_count >= 1, "extract_receipt 至少应有一处 result 展开 **_cost_meta()"
+    assert meta_count == hkd_count, \
+        "每个产出 cost_hkd 的 result 都必须同时产出成本可信度标记 " \
+        f"(cost_meta={meta_count}, cost_hkd={hkd_count})"
 
 
 if __name__ == "__main__":

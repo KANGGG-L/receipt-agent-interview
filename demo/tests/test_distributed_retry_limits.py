@@ -54,6 +54,7 @@ def test_ac_ui_02_to_05_per_leg_retry_inputs_exist():
     content = html_path.read_text(encoding="utf-8")
 
     expected_inputs = [
+        # placeholder 用前缀匹配：数值默认值是契约（3/1/继承常规），后缀为运营建议文案可演化
         ("adminRecMaxRetryRounds", "openai_rec_max_retry_rounds", "3"),
         ("adminAudMaxRetryRounds", "openai_aud_max_retry_rounds", "1"),
         ("adminParseMaxRetryRounds", "openai_parse_max_retry_rounds", "1"),
@@ -65,7 +66,8 @@ def test_ac_ui_02_to_05_per_leg_retry_inputs_exist():
     for elem_id, field_name, placeholder in expected_inputs:
         assert f'id="{elem_id}"' in content, f"卡片中必须包含 id={elem_id}"
         assert f'name="{field_name}"' in content, f"卡片中必须包含 name={field_name}"
-        assert f'placeholder="{placeholder}"' in content, f"输入框 {elem_id} placeholder 必须为 {placeholder}"
+        assert f'placeholder="{placeholder}' in content, \
+            f"输入框 {elem_id} placeholder 必须以 {placeholder} 开头（数值默认值契约）"
 
     # 属性统配验证 min="0" max="10"
     for elem_id, _, _ in expected_inputs:

@@ -64,6 +64,12 @@ const sandbox = {
         error(...a) { sandboxWarns.push('[error] ' + a.map(String).join(' ')); },
     },
     setTimeout, clearTimeout,
+    // main.js 顶层在 window 上注册全局事件（beforeunload / 键盘委托）。
+    // 缺失会让顶层执行中断、后声明的 let/const 停在 TDZ（2026-10-10，
+    // 与 frontend_role_gate_harness.js 同因修复）。
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() { return true; },
     localStorage: {
         _s: {},
         getItem(k) { return (k in this._s) ? this._s[k] : null; },
