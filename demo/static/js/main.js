@@ -7415,7 +7415,7 @@ function renderWorkbenchQueueTable() {
 
         const thumb = row.image_url 
             ? `<img src="${row.image_url}" alt="原图" style="width:36px; height:36px; object-fit:cover; border-radius:4px; border:1px solid #cbd5e1;">`
-            : `<div style="width:36px; height:36px; background:#f1f5f9; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.7rem; color:#94a3b8;">无图</div>`;
+            : `<div style="width:36px; height:36px; background:#f1f5f9; border-radius:4px; display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#94a3b8;">无图</div>`;
 
         const dateStr = (row.receipt_date || (row.created_at ? row.created_at.slice(0, 10) : '未知日期')) + ' (HKT)';
         const supplierName = row.supplier_name || 'Vendor_A';
@@ -8513,8 +8513,16 @@ function loadInventoryData() {
         tbody.innerHTML = '';
 
         if (skus.length === 0) {
+            // AC-07-04：三种空/错状态必须可区分——
+            //   ① 接口失败：degradeInventoryLoad 保留旧数据 + 非最新标记（已有）
+            //   ② 真·空库：无任何筛选生效且结果为空 → 「库存还没有食材」+ 仅「新增食材」
+            //   ③ 筛选无结果：有筛选生效 → 「没有符合条件的食材」+ 清除筛选/新增食材
+            const hasActiveFilter = !!(InventoryUI.q || InventoryUI.category
+                || InventoryUI.stock !== 'all' || InventoryUI.price !== 'all'
+                || InventoryUI.includeInactive);
             const tr = document.createElement('tr');
-            tr.innerHTML = `
+            if (hasActiveFilter) {
+                tr.innerHTML = `
                 <td colspan="7" class="col-center" style="padding: 32px 16px; color: var(--text-muted, #6b7280);">
                     <div style="font-size: 1rem; margin-bottom: 8px;">没有符合条件的食材</div>
                     <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
@@ -8523,6 +8531,17 @@ function loadInventoryData() {
                     </div>
                 </td>
             `;
+            } else {
+                tr.innerHTML = `
+                <td colspan="7" class="col-center" style="padding: 32px 16px; color: var(--text-muted, #6b7280);">
+                    <div style="font-size: 1rem; margin-bottom: 8px;">库存还没有食材</div>
+                    <div style="font-size: 0.75rem; margin-bottom: 12px;">上传第一张进货单据后，食材会按明细自动建档</div>
+                    <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
+                        <button class="btn btn-primary" style="padding: 4px 12px; font-size: 0.82rem;" onclick="openAddSkuModal()">新增食材</button>
+                    </div>
+                </td>
+            `;
+            }
             tbody.appendChild(tr);
             return;
         }

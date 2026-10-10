@@ -2176,8 +2176,8 @@ table.data-table.receipt-item-table td {
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-muted);
-    width: 26px;
-    height: 26px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     cursor: pointer;
     font-size: 0.85rem;
@@ -2282,7 +2282,7 @@ table.data-table.receipt-item-table td {
     color: #fff;
     border-radius: 10px;
     padding: 0 5px;
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     min-width: 18px;
     height: 16px;
     text-align: center;
@@ -2832,7 +2832,7 @@ table.data-table td .inv-actions button {
 }
 #tab-inventory .inv-metric-stack .badge {
     padding: 2px 8px;
-    font-size: 0.70rem;
+    font-size: 0.75rem;
     line-height: 1.3;
 }
 .inv-metric-value.is-low  { color: var(--danger); }
