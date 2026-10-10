@@ -30,6 +30,13 @@ SHARED_EVALSET_DIR = os.path.abspath(os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "evalsets"))
 
 
+def _safe_float(v, default=0.0):
+    """GT JSON 里的金额可能含手写非数字（如"待續"），安全转换防崩溃。"""
+    try:
+        return float(v if v else 0.0)
+    except (ValueError, TypeError):
+        return default
+
 def _receipt_image_matches(receipt, abs_img_path: str) -> bool:
     """单据的 image_path 是否就是本样本的原图（绝对路径或文件名一致）。
 
@@ -92,7 +99,7 @@ def _receipt_matches_sample(receipt, abs_img_path: str, gt: Dict[str, Any]) -> b
             return True
         s_name = (gt.get("supplier_name") or "").strip()
         s_date = (gt.get("date") or "").strip()
-        s_total = float(gt.get("total_amount", 0.0) or 0.0)
+        s_total = _safe_float(gt.get("total_amount"))
         if s_name and s_date and s_total > 0:
             return ((receipt.supplier_name or "").strip() == s_name
                     and (receipt.receipt_date or "").strip() == s_date
@@ -199,7 +206,10 @@ def link_or_create_receipt_for_sample(
         if rid is None:
             s_name = (gt.get("supplier_name") or "").strip()
             s_date = (gt.get("date") or "").strip()
-            s_total = float(gt.get("total_amount", 0.0) or 0.0)
+            try:
+                s_total = _safe_float(gt.get("total_amount"))
+            except (ValueError, TypeError):
+                s_total = 0.0  # 非数字总额（如手写"待續"）→ 跳过三元组匹配路径
             if s_name and s_date and s_total > 0:
                 for r in db.list_receipt_rows(tenant_id=tenant_id):
                     if ((r.supplier_name or "").strip() == s_name and
@@ -219,7 +229,7 @@ def link_or_create_receipt_for_sample(
     # 4. 若仍未匹配到，则在 DB 中新增一条 receipt 记录
     if rid is None:
         doc_form = (manifest_row.get("doc_form") if manifest_row else "") or gt.get("doc_form", "") or ""
-        total_amt = float(gt.get("total_amount", 0.0) or 0.0)
+        total_amt = _safe_float(gt.get("total_amount"))
         items = gt.get("items", [])
         adj_notes = gt.get("adjustment_notes", [])
         adj_notes_json = json.dumps(adj_notes, ensure_ascii=False) if isinstance(adj_notes, list) else "[]"
@@ -236,8 +246,8 @@ def link_or_create_receipt_for_sample(
             tenant_id=tenant_id,
             adjustment_notes_json=adj_notes_json,
             payment_evidence=gt.get("payment_evidence", "") or "",
-            service_fee=float(gt.get("service_fee", 0.0) or 0.0),
-            tax_amount=float(gt.get("tax_amount", 0.0) or 0.0),
+            service_fee=_safe_float(gt.get("service_fee")),
+            tax_amount=_safe_float(gt.get("tax_amount")),
             payment_mark="paid" if gt.get("payment_marked") else "",
         )
 

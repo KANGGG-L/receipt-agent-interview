@@ -113,6 +113,10 @@ def test_u9_manual_save_semantics():
 def test_u9_approve_parsed_receipt_directly():
     """测试老板可直接审批通过 parsed 状态的单据（无需店员先编辑）。"""
     rid = _db.create_receipt(supplier_name="直通审批供应商", status="parsed")
+    # AC-05-04 收紧后 approve 需要 receipt_date + 明细行
+    _db.update_receipt(rid, receipt_date="2026-08-24", total_amount=50)
+    _db.set_receipt_items(rid, [dict(name="测试食材", quantity=1, unit="kg",
+                                     unit_price=50, amount=50, is_void=0)])
     row = _db.get_receipt_row(rid)
     
     # 老板直接审批
@@ -126,6 +130,9 @@ def test_u9_approve_parsed_receipt_directly():
 def test_u9_approve_edited_receipt():
     """测试老板正常审批通过 edited 状态的单据。"""
     rid = _db.create_receipt(supplier_name="正常审批供应商", status="edited")
+    _db.update_receipt(rid, receipt_date="2026-08-24", total_amount=50)
+    _db.set_receipt_items(rid, [dict(name="测试食材", quantity=1, unit="kg",
+                                     unit_price=50, amount=50, is_void=0)])
     row = _db.get_receipt_row(rid)
     
     resp = client.post(f"/api/receipt/{rid}/approve", json={"version": row.version}, headers={"X-Role": "owner"})

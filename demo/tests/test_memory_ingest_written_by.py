@@ -86,6 +86,7 @@ def _mk_parsed_receipt(_db, vendor):
     """造一张 parsed 单据（approve 端点接受的状态）带明细行。"""
     rid = _db.create_receipt_record(supplier_name=vendor, status="parsed",
                                     tenant_id="default")
+    _db.update_receipt(rid, receipt_date="2026-08-24", total_amount=20)
     _db.set_receipt_items(rid, [{
         "name": "菜心", "raw_name": "菜心", "quantity": 2, "unit": "斤",
         "raw_unit": "斤", "unit_price": 10, "amount": 20,

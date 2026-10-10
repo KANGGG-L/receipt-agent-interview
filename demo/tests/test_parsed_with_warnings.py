@@ -224,6 +224,10 @@ def test_auto_save_keeps_warning_status_and_trace(client):
 def test_approve_accepts_parsed_with_warnings(client):
     """老板仍可对 parsed_with_warnings 单据入账（状态白名单需接纳新状态，不得 409）。"""
     rid = db.create_receipt(supplier_name="测试供应商", status="parsed_with_warnings")
+    # AC-05-04 收紧后 approve 需要 date + 明细 + total
+    db.update_receipt(rid, receipt_date="2026-08-24", total_amount=50)
+    db.set_receipt_items(rid, [dict(name="测试食材", quantity=1, unit="kg",
+                                    unit_price=50, amount=50, is_void=0)])
     row = db.get_receipt_row(rid)
 
     resp = client.post("/api/receipt/%d/approve" % rid,
