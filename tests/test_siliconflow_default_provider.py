@@ -34,6 +34,14 @@ def _split_env(monkeypatch):
     os.environ，破坏「双密钥皆不可用」分支的隔离性。
     """
     monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: None)
+    # 新 hydrate 读 generic OPENAI_REC_*/OPENAI_AUD_*（不再读 DASHSCOPE_*/SILICONFLOW_*）
+    monkeypatch.setenv("OPENAI_REC_API_KEY", _DASHSCOPE_KEY)
+    monkeypatch.setenv("OPENAI_REC_BASE_URL", _DASHSCOPE_BASE)
+    monkeypatch.setenv("OPENAI_REC_MODEL", _REC_MODEL)
+    monkeypatch.setenv("OPENAI_AUD_API_KEY", _SF_KEY)
+    monkeypatch.setenv("OPENAI_AUD_BASE_URL", _SF_BASE)
+    monkeypatch.setenv("OPENAI_AUD_MODEL", "zai-org/GLM-4.5V")
+    # 兼容：models._rec_provider_env 仍读 DASHSCOPE_*（EngineConfig 默认值层）
     monkeypatch.setenv("DASHSCOPE_API_KEY", _DASHSCOPE_KEY)
     monkeypatch.setenv("DASHSCOPE_BASE_URL", _DASHSCOPE_BASE)
     monkeypatch.setenv("QWEN_VL_MODEL", _REC_MODEL)
@@ -135,7 +143,7 @@ def test_legacy_cli_in_grey_leg_normalized(monkeypatch):
 def test_pure_default_config_is_heterogeneous(monkeypatch):
     """纯默认即异构：识别腿 DashScope qwen3.5-omni-flash / 审核腿 SF GLM-4.5V（Gap A3）。"""
     for var in ("AUDIT_ENGINE", "AUDIT_MODEL", "SILICONFLOW_AUDIT_MODEL",
-                "OPENCODE_AUDIT_MODEL", "OPENAI_AUD_MODEL", "OPENAI_MODEL",
+                "OPENCODE_AUDIT_MODEL", "OPENAI_MODEL",
                 "OPENAI_BASE_URL", "OPENAI_API_KEY", "SILICONFLOW_API_KEY"):
         monkeypatch.delenv(var, raising=False)
     cfg = EngineConfig()
@@ -149,35 +157,34 @@ def test_pure_default_config_is_heterogeneous(monkeypatch):
     assert cfg.recognition_model != cfg.audit_model
 
 
-def test_siliconflow_unhealthy_audit_falls_back_to_dashscope(monkeypatch):
-    """SF 健康检查失败 → 仅审核腿降级 DashScope；识别腿不受影响（仍 DashScope）。"""
+def test_siliconflow_unhealthy_no_cross_provider_fallback(monkeypatch):
+    """守真不变量：gateway 不健康时 hydrate **不做**跨 provider 降级（Round 6 移除）。
+    每条腿保持 env 装配的原值，即使健康检查失败。"""
     monkeypatch.setattr(db, "_openai_gateway_healthy", lambda key, base="": False)
     _seed_recognition("opencode", "", model="opencode/mimo-v2.5-free")
 
     db.hydrate_engine_config_from_env()
     cfg = db.get_engine_config()
-    assert cfg.recognition_engine == "openai"
-    assert cfg.openai_rec_base_url == _DASHSCOPE_BASE
+    # 守真不变量：无跨 provider 降级——每腿保持 env 装配值
+    assert cfg.openai_rec_base_url == _DASHSCOPE_BASE, "识别腿不得因健康检查失败而降级"
     assert cfg.openai_rec_model == _REC_MODEL
-    # 审核腿降级 DashScope（双腿同家族，异构性弱化已在日志提示）
-    assert cfg.audit_engine == "openai"
-    assert cfg.openai_aud_base_url == _DASHSCOPE_BASE
-    assert cfg.openai_aud_model == "qwen3-vl-plus"
+    assert cfg.openai_aud_base_url == _SF_BASE, "审核腿不得因健康检查失败而降级 DashScope"
+    assert cfg.openai_aud_model == "zai-org/GLM-4.5V"
 
 
-def test_recognition_leg_falls_back_to_siliconflow_without_dashscope_key(monkeypatch):
-    """DashScope 密钥缺失 → 识别腿降级 SF Qwen3-VL；审核腿仍 SF GLM-4.5V。"""
-    monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+def test_recognition_leg_no_fallback_without_key(monkeypatch):
+    """守真不变量：OPENAI_REC_* 缺失时 hydrate **不做**跨 provider 降级（Round 6 移除）。
+    识别腿保持 DB 里的已有配置（seed 的 opencode 残值），不降级到审核腿 provider。"""
+    monkeypatch.delenv("OPENAI_REC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_REC_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_REC_MODEL", raising=False)
     _seed_recognition("opencode", "", model="opencode/mimo-v2.5-free")
 
     db.hydrate_engine_config_from_env()
     cfg = db.get_engine_config()
-    assert cfg.recognition_engine == "openai"
-    assert cfg.openai_rec_base_url == _SF_BASE
-    assert cfg.openai_rec_api_key == _SF_KEY
-    assert cfg.openai_rec_model == "Qwen/Qwen3-VL-32B-Instruct"
-    assert cfg.audit_engine == "openai"
-    assert cfg.openai_aud_base_url == _SF_BASE
+    # 守真不变量：识别腿不降级到审核腿 provider（跨 provider 错配防线）
+    assert cfg.openai_aud_base_url == _SF_BASE, "审核腿不受影响"
+    assert cfg.openai_aud_model == "zai-org/GLM-4.5V"
     assert cfg.openai_aud_model == "zai-org/GLM-4.5V"
 
 
@@ -186,6 +193,12 @@ def test_no_provider_available_keeps_existing_config(monkeypatch):
     monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
     monkeypatch.delenv("SILICONFLOW_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_REC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_REC_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_REC_MODEL", raising=False)
+    monkeypatch.delenv("OPENAI_AUD_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_AUD_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_AUD_MODEL", raising=False)
     _seed_recognition("openai", "sk-custom-existing",
                       base_url="https://custom.local/v1", model="custom-model")
 
