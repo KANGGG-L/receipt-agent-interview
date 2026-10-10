@@ -250,7 +250,7 @@
             </div>
 
             <!-- Wave 1：付款提醒横幅（02 章，有逾期/快到期时显示，点击进应付清单） -->
-            <div id="payReminderBanner" class="pay-reminder-banner hide" onclick="gotoPayablesList()" title="点击查看应付清单"></div>
+            <div id="payReminderBanner" class="pay-reminder-banner hide" role="button" tabindex="0" onclick="gotoPayablesList()" title="点击查看应付清单"></div>
 
             <!-- 主内容区 -->
             <main class="main-container">
@@ -459,7 +459,7 @@
                                     <div class="loading-header">
                                         <div class="loading-stage-badge">
                                             <span class="loading-spinner-dot"></span>
-                                            <span id="loadingStageName">视觉语义读取中 (25%)...</span>
+                                            <span id="loadingStageName" role="status" aria-live="polite">视觉语义读取中 (25%)...</span>
                                         </div>
                                         <div class="loading-timer-wrap">
                                             <span class="loading-timer-label">AI 分析耗时:</span>
@@ -515,7 +515,7 @@
                                         <span id="aiValidationStatusBadge" class="badge badge-info">校验未完成</span>
                                     </div>
                                     <div style="display:flex; align-items:center; gap:8px;">
-                                        <span id="reviewSaveStatusBadge" class="badge badge-secondary">未保存</span>
+                                        <span id="reviewSaveStatusBadge" class="badge badge-secondary" role="status" aria-live="polite">未保存</span>
                                     </div>
                                 </div>
 
@@ -562,7 +562,7 @@
                                      </div>
                                     <div class="form-group">
                                         <label>开单日期</label>
-                                        <input type="date" id="inpDate" class="form-control" onchange="autoFillSheetNameFromDate(this.value)">
+                                        <input type="date" id="inpDate" class="form-control" aria-label="开单日期" onchange="autoFillSheetNameFromDate(this.value)">
                                     </div>
                                     <div class="form-group">
                                         <label>归档月份</label>
@@ -570,11 +570,11 @@
                                     </div>
                                     <div class="form-group">
                                         <label>整单总金额</label>
-                                        <input type="number" step="0.01" id="inpTotal" class="form-control" style="font-weight:700; color:var(--primary);" oninput="renderCurrencySymbol()">
+                                        <input type="number" step="0.01" id="inpTotal" class="form-control" aria-label="整单总金额" style="font-weight:700; color:var(--primary);" oninput="renderCurrencySymbol()">
                                     </div>
                                     <div class="form-group">
                                         <label>结算方式</label>
-                                        <select id="inpSettlementType" class="form-control">
+                                        <select id="inpSettlementType" class="form-control" aria-label="结算方式">
                                             <option value="">请选择结算方式...</option>
                                             <option value="cash">现结 (现金单)</option>
                                             <option value="credit">月结 (赊账/对账)</option>
@@ -582,7 +582,7 @@
                                     </div>
                                     <div class="form-group">
                                         <label>单据形态</label>
-                                        <select id="inpDocForm" class="form-control">
+                                        <select id="inpDocForm" class="form-control" aria-label="单据版式">
                                             <option value="printed_delivery_note">印刷送货单</option>
                                             <option value="ncr_handwritten">街市手写单</option>
                                             <option value="thermal">热敏小票</option>
@@ -595,7 +595,7 @@
                                     </div>
                                     <div class="form-group">
                                         <label>币种</label>
-                                        <select id="inpCurrency" class="form-control" onchange="renderCurrencySymbol()">
+                                        <select id="inpCurrency" class="form-control" aria-label="币种" onchange="renderCurrencySymbol()">
                                             <option value="HKD">HKD (港币 HK$)</option>
                                             <option value="CNY">CNY (人民币 ¥)</option>
                                             <option value="USD">USD (美元 $)</option>
@@ -609,7 +609,7 @@
                                     <div class="form-group" style="grid-column: span 2;">
                                         <label>归属部门</label>
                                         <div style="display:flex; gap:8px; align-items:center;">
-                                            <select id="inpDepartmentId" class="form-control" style="flex:1;">
+                                            <select id="inpDepartmentId" class="form-control" aria-label="部门" style="flex:1;">
                                                 <option value="">未分配部门</option>
                                             </select>
                                             <button type="button" class="btn btn-secondary" style="padding:7px 14px; font-size:0.85rem; white-space:nowrap;" onclick="applyDeptToAll('itemTableBody','inpDepartmentId')">应用到全部明细</button>
@@ -626,7 +626,7 @@
 
                                 <!-- 附加费用可折叠小抽屉 -->
                                 <div class="fees-drawer-container">
-                                    <div class="fees-drawer-toggle" onclick="toggleFeesDrawer()" title="点击展开/收起附加费用调节">
+                                    <div class="fees-drawer-toggle" role="button" tabindex="0" onclick="toggleFeesDrawer()" title="点击展开/收起附加费用调节">
                                         <div style="display:flex; align-items:center; gap:8px;">
                                             <span class="fees-drawer-title">附加费用调节 (折扣 / 运费 / 服务费 / 税额 / 押金 / 抹零)</span>
                                             <span id="feesSummaryBadge" class="fees-summary-badge hide">$0.00</span>
@@ -644,7 +644,7 @@
 
                                 <!-- 手写注记可折叠小抽屉 (Gap 6: 拒收/短装/调整) -->
                                 <div class="fees-drawer-container">
-                                    <div class="fees-drawer-toggle" onclick="toggleNotesDrawer()" title="点击展开/收起手写注记">
+                                    <div class="fees-drawer-toggle" role="button" tabindex="0" onclick="toggleNotesDrawer()" title="点击展开/收起手写注记">
                                         <div style="display:flex; align-items:center; gap:8px;">
                                             <span class="fees-drawer-title">手写注记 (拒收 / 短装 / 调整)</span>
                                             <span id="notesSummaryBadge" class="fees-summary-badge hide">无</span>
@@ -797,7 +797,7 @@
                             </div>
                             <div id="priceAnomalyRadarList" class="price-anomaly-radar-list"></div>
                         </div>
-                        <div class="ai-lean-banner-header" onclick="toggleAiLeanDetails()">
+                        <div class="ai-lean-banner-header" role="button" tabindex="0" onclick="toggleAiLeanDetails()">
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <span class="ai-lean-badge">AI 发现</span>
                                 <span id="aiLeanSummaryText" style="font-weight:500; font-size:0.88rem;">检测到价格异常上涨，正在量化成本影响…</span>
@@ -810,15 +810,15 @@
                     </div>
 
                     <div class="metrics-grid">
-                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryStockFilter('all')" title="点击查看全部食材">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="setInventoryStockFilter('all')" title="点击查看全部食材">
                             <div style="color:var(--text-muted); font-size:0.9rem;">库存食材种数</div>
                             <div id="valTotalSKU" class="metric-value">0</div>
                         </div>
-                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryStockFilter('low')" title="点击筛选低库存食材">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="setInventoryStockFilter('low')" title="点击筛选低库存食材">
                             <div style="color:var(--text-muted); font-size:0.9rem;">低库存预警数</div>
                             <div id="valLowStock" class="metric-value" style="color:var(--danger);">0</div>
                         </div>
-                        <div class="metric-card" style="cursor:pointer;" onclick="setInventoryPriceFilter('anomaly')" title="点击筛选涨价预警食材">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="setInventoryPriceFilter('anomaly')" title="点击筛选涨价预警食材">
                             <div style="color:var(--text-muted); font-size:0.9rem;">涨价预警数</div>
                             <div id="valPriceAnomaly" class="metric-value" style="color:#f59e0b;">0</div>
                         </div>
@@ -834,7 +834,7 @@
                                     <input type="text" id="invSearchInput" class="form-control" style="font-size: 0.85rem; padding: 5px 8px;" placeholder="搜索食材品名 / 代码..." oninput="onInventorySearchInput(this.value)">
                                 </div>
                                 <!-- 分类筛选 -->
-                                <select id="invCategorySelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryCategoryChange(this.value)">
+                                <select id="invCategorySelect" class="form-control" aria-label="库存分类筛选" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryCategoryChange(this.value)">
                                     <option value="">全部分类</option>
                                     <option value="肉类">肉类</option>
                                     <option value="海鲜">海鲜</option>
@@ -847,7 +847,7 @@
                                     <option value="其他">其他</option>
                                 </select>
                                 <!-- 指标/筛选 -->
-                                <select id="invFilterSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryFilterSelectChange(this.value)">
+                                <select id="invFilterSelect" class="form-control" aria-label="库存状态筛选" style="font-size: 0.85rem; padding: 5px 8px; width: 110px;" onchange="onInventoryFilterSelectChange(this.value)">
                                     <option value="all">全部指标</option>
                                     <option value="low">仅低库存</option>
                                     <option value="anomaly">仅涨价</option>
@@ -916,19 +916,19 @@
                         <div class="inv-toolbar" style="justify-content: space-between;">
                             <div class="inv-toolbar-filters">
                                 <span style="font-weight: 600; font-size: 0.95rem; margin-right: 4px;">库存流水台账</span>
-                                <select id="invLedgerSkuSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 180px;" onchange="loadInventoryLedger()">
+                                <select id="invLedgerSkuSelect" class="form-control" aria-label="流水 SKU 筛选" style="font-size: 0.85rem; padding: 5px 8px; width: 180px;" onchange="loadInventoryLedger()">
                                     <option value="">全部食材</option>
                                 </select>
-                                <select id="invLedgerKindSelect" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 120px;" onchange="loadInventoryLedger()">
+                                <select id="invLedgerKindSelect" class="form-control" aria-label="流水类型筛选" style="font-size: 0.85rem; padding: 5px 8px; width: 120px;" onchange="loadInventoryLedger()">
                                     <option value="">全部类型</option>
                                     <option value="in">采购入库</option>
                                     <option value="consume">餐品消耗</option>
                                     <option value="waste">后厨报损</option>
                                     <option value="stocktake">盘点调整</option>
                                 </select>
-                                <input type="date" id="invLedgerStartDate" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
+                                <input type="date" id="invLedgerStartDate" class="form-control" aria-label="流水开始日期" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
                                 <span style="color: var(--text-muted); font-size: 0.85rem;">至</span>
-                                <input type="date" id="invLedgerEndDate" class="form-control" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
+                                <input type="date" id="invLedgerEndDate" class="form-control" aria-label="流水结束日期" style="font-size: 0.85rem; padding: 5px 8px; width: 150px;" onchange="loadInventoryLedger()">
                             </div>
                             <div class="inv-toolbar-actions">
                                 <button class="btn btn-secondary" style="padding: 5px 12px; font-size: 0.85rem;" onclick="loadInventoryLedger()">刷新台账</button>
@@ -1220,15 +1220,15 @@
 
                     <!-- ① 待办条（对齐「实时库存与价格」指标卡面板，可点击筛选，09 方案 M7） -->
                     <div id="todoBar" class="metrics-grid" style="margin-bottom:16px;">
-                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('pending')" title="点击筛选待审核单据">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="todoFilter('pending')" title="点击筛选待审核单据">
                             <div style="color:var(--text-muted); font-size:0.9rem;">待审核</div>
                             <div id="todoPendingNum" class="metric-value">0</div>
                         </div>
-                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('failed')" title="点击筛选识别失败单据">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="todoFilter('failed')" title="点击筛选识别失败单据">
                             <div style="color:var(--text-muted); font-size:0.9rem;">识别失败</div>
                             <div id="todoFailedNum" class="metric-value" style="color:var(--danger);">0</div>
                         </div>
-                        <div class="metric-card" style="cursor:pointer;" onclick="todoFilter('overdue')" title="点击筛选逾期赊单">
+                        <div class="metric-card" role="button" tabindex="0" style="cursor:pointer;" onclick="todoFilter('overdue')" title="点击筛选逾期赊单">
                             <div style="color:var(--text-muted); font-size:0.9rem;">逾期赊单</div>
                             <div id="todoOverdueNum" class="metric-value" style="color:#f59e0b;">0</div>
                         </div>
@@ -1310,7 +1310,7 @@
                             <button type="button" class="chip" data-range="week" onclick="setArchiveQuickRange('week')">本周</button>
                             <button type="button" class="chip" data-range="month" onclick="setArchiveQuickRange('month')">本月</button>
                             <button type="button" class="chip" data-range="last_month" onclick="setArchiveQuickRange('last_month')">上月</button>
-                            <span id="archiveAdvancedToggle" class="archive-advanced-toggle" onclick="toggleArchiveAdvanced()">高级筛选 ▾</span>
+                            <span id="archiveAdvancedToggle" class="archive-advanced-toggle" role="button" tabindex="0" onclick="toggleArchiveAdvanced()">高级筛选 ▾</span>
                         </div>
 
                         <div style="display: flex; flex-direction: column; gap: 14px;" id="archiveFilterGrid">
@@ -1776,7 +1776,7 @@
                                         <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                         <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                             <input type="text" id="adminRecPresetSelect" name="engine_preset_combobox_rec" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('rec')" onfocus="openEnginePresetMenu('rec')" oninput="onInputEnginePresetSearch('rec', this.value)" onblur="closeEnginePresetMenuDelay('rec')">
-                                            <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('rec')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                            <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('rec')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                             <div id="adminRecPresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                         </div>
                                         <button type="button" class="btn btn-sm btn-outline-primary" id="adminRecSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('rec')">保存</button>
@@ -1812,7 +1812,7 @@
 
                                     <!-- 高级参数折叠面板 (Rec) -->
                                     <div id="adminAdvParams_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
-                                        <div class="engine-adv-header" onclick="toggleAdvParams('rec')">
+                                        <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('rec')">
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                 <span id="adminAdvBadge_rec" class="engine-adv-badge">思考强度:默认 · 最大Token:4096 · 视觉切片:高精度 · 采样温度:0.0</span>
@@ -1921,7 +1921,7 @@
                                         <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                         <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                             <input type="text" id="adminAudPresetSelect" name="engine_preset_combobox_aud" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('aud')" onfocus="openEnginePresetMenu('aud')" oninput="onInputEnginePresetSearch('aud', this.value)" onblur="closeEnginePresetMenuDelay('aud')">
-                                            <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('aud')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                            <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('aud')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                             <div id="adminAudPresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                         </div>
                                         <button type="button" class="btn btn-sm btn-outline-primary" id="adminAudSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('aud')">保存</button>
@@ -1957,7 +1957,7 @@
 
                                     <!-- 高级参数折叠面板 (Aud) -->
                                     <div id="adminAdvParams_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
-                                        <div class="engine-adv-header" onclick="toggleAdvParams('aud')">
+                                        <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('aud')">
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                 <span id="adminAdvBadge_aud" class="engine-adv-badge">思考强度:默认 · 最大Token:4096 · 视觉切片:自适应 · 采样温度:0.0</span>
@@ -2066,7 +2066,7 @@
                                         <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                         <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                             <input type="text" id="adminParsePresetSelect" name="engine_preset_combobox_parse" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('parse')" onfocus="openEnginePresetMenu('parse')" oninput="onInputEnginePresetSearch('parse', this.value)" onblur="closeEnginePresetMenuDelay('parse')">
-                                            <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('parse')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                            <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('parse')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                             <div id="adminParsePresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                         </div>
                                         <button type="button" class="btn btn-sm btn-outline-primary" id="adminParseSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('parse')">保存</button>
@@ -2102,7 +2102,7 @@
 
                                     <!-- 高级参数折叠面板 (Parse) -->
                                     <div id="adminAdvParams_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:12px;">
-                                        <div class="engine-adv-header" onclick="toggleAdvParams('parse')">
+                                        <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('parse')">
                                             <div style="display:flex; align-items:center; gap:8px;">
                                                 <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                 <span id="adminAdvBadge_parse" class="engine-adv-badge">思考强度:默认 · 最大Token:2048 · 视觉切片:自适应 · 采样温度:0.0</span>
@@ -2339,7 +2339,7 @@
                                                     <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                                     <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                                         <input type="text" id="adminGreyRecPresetSelect" name="engine_preset_combobox_grey_rec" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('grey_rec')" onfocus="openEnginePresetMenu('grey_rec')" oninput="onInputEnginePresetSearch('grey_rec', this.value)" onblur="closeEnginePresetMenuDelay('grey_rec')">
-                                                        <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('grey_rec')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                                        <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('grey_rec')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                                         <div id="adminGreyRecPresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                                     </div>
                                                     <button type="button" class="btn btn-sm btn-outline-primary" id="adminGreyRecSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('grey_rec')">保存</button>
@@ -2372,7 +2372,7 @@
                                             </div>
                                             <!-- 高级参数折叠 (Grey Rec) -->
                                             <div id="adminAdvParams_grey_rec" class="engine-advanced-params-drawer collapsed" style="margin-top:10px;">
-                                                <div class="engine-adv-header" onclick="toggleAdvParams('grey_rec')">
+                                                <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('grey_rec')">
                                                     <div style="display:flex; align-items:center; gap:8px;">
                                                         <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                         <span id="adminAdvBadge_grey_rec" class="engine-adv-badge">思考强度:默认 · 最大Token:4096 · 视觉切片:高精度 · 采样温度:0.0</span>
@@ -2475,7 +2475,7 @@
                                                     <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                                     <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                                         <input type="text" id="adminGreyAudPresetSelect" name="engine_preset_combobox_grey_aud" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('grey_aud')" onfocus="openEnginePresetMenu('grey_aud')" oninput="onInputEnginePresetSearch('grey_aud', this.value)" onblur="closeEnginePresetMenuDelay('grey_aud')">
-                                                        <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('grey_aud')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                                        <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('grey_aud')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                                         <div id="adminGreyAudPresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                                     </div>
                                                     <button type="button" class="btn btn-sm btn-outline-primary" id="adminGreyAudSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('grey_aud')">保存</button>
@@ -2508,7 +2508,7 @@
                                             </div>
                                             <!-- 高级参数折叠 (Grey Aud) -->
                                             <div id="adminAdvParams_grey_aud" class="engine-advanced-params-drawer collapsed" style="margin-top:10px;">
-                                                <div class="engine-adv-header" onclick="toggleAdvParams('grey_aud')">
+                                                <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('grey_aud')">
                                                     <div style="display:flex; align-items:center; gap:8px;">
                                                         <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                         <span id="adminAdvBadge_grey_aud" class="engine-adv-badge">思考强度:默认 · 最大Token:4096 · 视觉切片:自适应 · 采样温度:0.0</span>
@@ -2611,7 +2611,7 @@
                                                     <span style="font-size:0.75rem; color:var(--text-muted, #666); white-space:nowrap;">配置模版:</span>
                                                     <div class="preset-combobox-wrap" style="position:relative; display:inline-flex; align-items:center;">
                                                         <input type="text" id="adminGreyParsePresetSelect" name="engine_preset_combobox_grey_parse" class="form-control form-control-sm engine-preset-select" placeholder="输入或选择模版/Provider..." style="font-size:0.75rem; padding:2px 22px 2px 8px; height:28px; width:160px; min-width:130px; max-width:200px;" autocomplete="new-password" autocorrect="off" autocapitalize="off" spellcheck="false" onclick="openEnginePresetMenu('grey_parse')" onfocus="openEnginePresetMenu('grey_parse')" oninput="onInputEnginePresetSearch('grey_parse', this.value)" onblur="closeEnginePresetMenuDelay('grey_parse')">
-                                                        <span class="preset-combobox-arrow" onclick="toggleEnginePresetMenu('grey_parse')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
+                                                        <span class="preset-combobox-arrow" role="button" tabindex="0" onclick="toggleEnginePresetMenu('grey_parse')" style="position:absolute; right:8px; cursor:pointer; font-size:0.65rem; color:#94a3b8; line-height:1; user-select:none;">▼</span>
                                                         <div id="adminGreyParsePresetDropdown" class="preset-dropdown-menu hide" style="position:absolute; top:calc(100% + 4px); left:0; min-width:100%; width:max-content; max-width:280px; max-height:220px; overflow-y:auto; background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.14); z-index:9999;"></div>
                                                     </div>
                                                     <button type="button" class="btn btn-sm btn-outline-primary" id="adminGreyParseSavePresetBtn" style="font-size:0.75rem; padding:2px 8px; height:28px; white-space:nowrap;" onclick="saveCurrentConfigAsPreset('grey_parse')">保存</button>
@@ -2644,7 +2644,7 @@
                                             </div>
                                             <!-- 高级参数折叠 (Grey Parse) -->
                                             <div id="adminAdvParams_grey_parse" class="engine-advanced-params-drawer collapsed" style="margin-top:10px;">
-                                                <div class="engine-adv-header" onclick="toggleAdvParams('grey_parse')">
+                                                <div class="engine-adv-header" role="button" tabindex="0" onclick="toggleAdvParams('grey_parse')">
                                                     <div style="display:flex; align-items:center; gap:8px;">
                                                         <span style="font-weight:600; font-size:0.8rem; color:#475569;">高级参数</span>
                                                         <span id="adminAdvBadge_grey_parse" class="engine-adv-badge">思考强度:默认 · 最大Token:2048 · 视觉切片:自适应 · 采样温度:0.0</span>

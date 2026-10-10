@@ -4878,6 +4878,7 @@ function appendFeeRow(feeKey, amountValue) {
 
     const sel = document.createElement('select');
     sel.className = 'fee-type-select form-control form-control-sm';
+    sel.setAttribute('aria-label', '费用原因');
     const blankOpt = document.createElement('option');
     blankOpt.value = '';
     blankOpt.textContent = '请选择费用原因';
@@ -6004,7 +6005,7 @@ function appendTableRow(item = {}) {
         </td>
         <td>
             <div class="price-input-wrap">
-                <input type="number" step="0.01" class="inp-price form-control text-right" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
+                <input type="number" step="0.01" class="inp-price form-control text-right" aria-label="单价" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
                 ${anomalyHtml}
                 <!-- P2-T4：供应商×SKU 历史价格区间提示（只做人类可见提示，不进生成侧 prompt）。
                      挂在单价单元格内 —— 不新增列、不改列序。 -->
@@ -6012,7 +6013,7 @@ function appendTableRow(item = {}) {
             </div>
         </td>
         <td>
-            <input type="number" step="0.01" class="inp-amount form-control text-right" value="${amount.toFixed(2)}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}>
+            <input type="number" step="0.01" class="inp-amount form-control text-right" aria-label="金额" value="${amount.toFixed(2)}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}>
         </td>
         <td>
             <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;" ${isVoidMain ? 'disabled' : ''}>
@@ -8320,6 +8321,14 @@ function initGlobalKeyboardShortcuts() {
             }
         }
 
+        // AC-08-06: role="button" 的非语义元素（banner/toggle/metric-card）键盘激活
+        if ((e.key === 'Enter' || e.key === ' ') && e.target
+                && e.target.getAttribute && e.target.getAttribute('role') === 'button'
+                && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
+            e.preventDefault();
+            e.target.click();
+            return;
+        }
         // 防止在输入框内按 Cmd+Enter 误触发审批 (AC-08-04)
         if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
