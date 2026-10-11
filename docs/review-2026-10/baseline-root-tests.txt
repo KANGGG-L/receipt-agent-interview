@@ -1,0 +1,292 @@
+........................................................................ [  5%]
+........................................................................ [ 11%]
+........................................................................ [ 16%]
+........................................................................ [ 22%]
+........................................................................ [ 28%]
+........................................................................ [ 33%]
+......................................................................F. [ 39%]
+........................................................................ [ 44%]
+........................................................................ [ 50%]
+........................................................................ [ 56%]
+........................................................................ [ 61%]
+........................................................................ [ 67%]
+.................s...................................................... [ 72%]
+........................................................................ [ 78%]
+........................................................................ [ 84%]
+........................................................................ [ 89%]
+........................................................................ [ 95%]
+.........................................s..................             [100%]
+=================================== FAILURES ===================================
+___________________ test_ledger_is_read_only_no_write_routes ___________________
+
+    def test_ledger_is_read_only_no_write_routes():
+        from app.main import app as fastapi_app
+    
+        write_methods = {"POST", "PUT", "PATCH", "DELETE"}
+        ledger_routes = [r for r in fastapi_app.routes
+                         if getattr(r, "path", "") == "/api/inventory/logs"]
+>       assert ledger_routes, "台账端点必须已注册"
+E       AssertionError: 台账端点必须已注册
+E       assert []
+
+tests/test_inventory_ledger_api.py:182: AssertionError
+=============================== warnings summary ===============================
+demo/app/services/rag.py:24
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/services/rag.py:24: DeprecationWarning: `langchain-community` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-community/issues/674 for details and migration guidance toward standalone integration packages.
+    from langchain_community.vectorstores import Chroma
+
+demo/app/main.py:60
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:60: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+../../.venvs/receipt/lib/python3.11/site-packages/fastapi/applications.py:4745: 8 warnings
+tests/test_fix_b_p0_sku_explosion.py: 8 warnings
+  /home/user/.venvs/receipt/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+demo/app/main.py:79
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:79: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:85
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:101
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:101: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:127
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:127: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:162
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:162: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:192
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:192: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:217
+tests/test_fix_b_p0_sku_explosion.py::test_api_inventory_create_normalizes
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/main.py:217: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_gt_review_api.py:2
+  /home/user/KANGGG-L/receipt-agent-interview/tests/test_gt_review_api.py:2: DeprecationWarning: invalid escape sequence '\.'
+    """T4 GT 异构生成 + 人工抽检台 测试（Gap A2）。
+
+tests/adversarial/test_image_adversarial.py::test_adv_image_batch_upload_interception_isolation
+tests/adversarial/test_image_adversarial.py::test_adv_image_batch_upload_interception_isolation
+tests/test_blur_frontend.py::test_blur_batch_forced_proceeds
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/services/contract.py:50: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+    pixels = list(im.getdata())
+
+tests/adversarial/test_provider_adversarial.py::test_provider_tampered_math_triggers_supervisor_fast_feedback_warning
+  /home/user/KANGGG-L/receipt-agent-interview/demo/app/services/rag.py:222: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs = Chroma(
+
+tests/test_memory_ab_baseline.py::test_z_test_p_value_matches_known_value
+  /home/user/.venvs/receipt/lib/python3.11/site-packages/_pytest/threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-234 (_run)
+  
+  Traceback (most recent call last):
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+      self.dialect.do_execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+  sqlite3.OperationalError: no such table: receipts
+  
+  The above exception was the direct cause of the following exception:
+  
+  Traceback (most recent call last):
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/services/receipt_utils.py", line 316, in _run
+      db.update_receipt(receipt_id, status="error")
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/db.py", line 2122, in _wrapper
+      return fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/db.py", line 2185, in update_receipt
+      row = s.get(_ReceiptRow, int(receipt_id))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3845, in get
+      return self._get_impl(
+             ^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 4032, in _get_impl
+      return db_load_fn(
+             ^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 702, in _load_on_pk_identity
+      session.execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+      return self._execute_internal(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+      compile_state_cls.orm_execute_statement(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+      result = conn.execute(
+               ^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+      return meth(
+             ^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+      return connection._execute_clauseelement(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+      ret = self._execute_context(
+            ^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+      return self._exec_single_context(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+      self._handle_dbapi_exception(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+      raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+      self.dialect.do_execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+  sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: receipts
+  [SQL: SELECT receipts.id, receipts.status, receipts.supplier_name, receipts.supplier_code, receipts.supplier_id, receipts.image_path, receipts.receipt_date, receipts.sheet_name, receipts.total_amount, receipts.settlement_type, receipts.payment_mark, receipts.doc_form, receipts.layout_type, receipts.department_id, receipts.version, receipts.math_warnings_json, receipts.quality_warnings_json, receipts.review_priority_score, receipts.items_json, receipts.raw_llm, receipts.audit_json, receipts.confidence, receipts.ai_prefill_json, receipts.expected_pay_date, receipts.paid_at, receipts.paid_method, receipts.payment_id, receipts.audit_logs_json, receipts.use_grey, receipts.is_golden_sample, receipts.rag_context_json, receipts.image_guard_json, receipts.currency, receipts.service_fee, receipts.tax_amount, receipts.adjustment_notes_json, receipts.payment_evidence, receipts.created_at, receipts.updated_at, receipts.deleted_at, receipts.tenant_id 
+  FROM receipts 
+  WHERE receipts.id = ?]
+  [parameters: (28,)]
+  (Background on this error at: https://sqlalche.me/e/21/e3q8)
+  
+  During handling of the above exception, another exception occurred:
+  
+  Traceback (most recent call last):
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+      self.dialect.do_execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+  sqlite3.OperationalError: no such table: receipts
+  
+  The above exception was the direct cause of the following exception:
+  
+  Traceback (most recent call last):
+    File "/home/user/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/threading.py", line 1045, in _bootstrap_inner
+      self.run()
+    File "/home/user/.local/share/uv/python/cpython-3.11.15-linux-x86_64-gnu/lib/python3.11/threading.py", line 982, in run
+      self._target(*self._args, **self._kwargs)
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/services/receipt_utils.py", line 408, in _run
+      db.update_receipt(receipt_id, status="error")
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/db.py", line 2122, in _wrapper
+      return fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^
+    File "/home/user/KANGGG-L/receipt-agent-interview/demo/app/db.py", line 2185, in update_receipt
+      row = s.get(_ReceiptRow, int(receipt_id))
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 3845, in get
+      return self._get_impl(
+             ^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 4032, in _get_impl
+      return db_load_fn(
+             ^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/loading.py", line 702, in _load_on_pk_identity
+      session.execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2473, in execute
+      return self._execute_internal(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/session.py", line 2363, in _execute_internal
+      compile_state_cls.orm_execute_statement(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/orm/context.py", line 316, in orm_execute_statement
+      result = conn.execute(
+               ^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1451, in execute
+      return meth(
+             ^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/sql/elements.py", line 533, in _execute_on_connection
+      return connection._execute_clauseelement(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1671, in _execute_clauseelement
+      ret = self._execute_context(
+            ^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1825, in _execute_context
+      return self._exec_single_context(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1965, in _exec_single_context
+      self._handle_dbapi_exception(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 2335, in _handle_dbapi_exception
+      raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/base.py", line 1946, in _exec_single_context
+      self.dialect.do_execute(
+    File "/home/user/.venvs/receipt/lib/python3.11/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+  sqlalchemy.exc.OperationalError: (sqlite3.OperationalError) no such table: receipts
+  [SQL: SELECT receipts.id, receipts.status, receipts.supplier_name, receipts.supplier_code, receipts.supplier_id, receipts.image_path, receipts.receipt_date, receipts.sheet_name, receipts.total_amount, receipts.settlement_type, receipts.payment_mark, receipts.doc_form, receipts.layout_type, receipts.department_id, receipts.version, receipts.math_warnings_json, receipts.quality_warnings_json, receipts.review_priority_score, receipts.items_json, receipts.raw_llm, receipts.audit_json, receipts.confidence, receipts.ai_prefill_json, receipts.expected_pay_date, receipts.paid_at, receipts.paid_method, receipts.payment_id, receipts.audit_logs_json, receipts.use_grey, receipts.is_golden_sample, receipts.rag_context_json, receipts.image_guard_json, receipts.currency, receipts.service_fee, receipts.tax_amount, receipts.adjustment_notes_json, receipts.payment_evidence, receipts.created_at, receipts.updated_at, receipts.deleted_at, receipts.tenant_id 
+  FROM receipts 
+  WHERE receipts.id = ?]
+  [parameters: (28,)]
+  (Background on this error at: https://sqlalche.me/e/21/e3q8)
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+tests/test_siliconflow_default_provider.py::test_dashscope_overwrites_db_siliconflow_config
+tests/test_siliconflow_default_provider.py::test_no_provider_available_keeps_existing_config
+  /home/user/.venvs/receipt/lib/python3.11/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='recognition_engine', input_value='openai', input_type=str])
+    return self.__pydantic_serializer__.to_python(
+
+tests/test_siliconflow_default_provider.py::test_audit_leg_forced_grey_untouched
+  /home/user/.venvs/receipt/lib/python3.11/site-packages/pydantic/main.py:520: UserWarning: Pydantic serializer warnings:
+    PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='audit_engine', input_value='openai', input_type=str])
+    PydanticSerializationUnexpectedValue(Expected `enum` - serialized value may not be as expected [field_name='grey_recognition_engine', input_value='openai', input_type=str])
+    return self.__pydantic_serializer__.to_python(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_inventory_ledger_api.py::test_ledger_is_read_only_no_write_routes
+1 failed, 1281 passed, 2 skipped, 42 warnings in 710.16s (0:11:50)

@@ -441,7 +441,7 @@ function setMainPreviewFromFile(file, objectUrl) {
 
 // 生成可安全嵌入单引号 HTML 属性（onclick='...'）的 JS 字符串字面量
 function jsStr(v) {
-    return JSON.stringify(String(v ?? '')).replace(/</g, '\\u003c').replace(/'/g, '\\u0027');
+    return JSON.stringify(String(v ?? '')).replace(/&/g, '\\u0026').replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/'/g, '\\u0027');
 }
 
 // =====================================================================
@@ -486,6 +486,13 @@ function isAuthInjectableUrl(url) {
 // 不依赖异步 /me 探测）——店员不发老板域请求（财务/对账/AI洞察/成本报表），避免全局 403 弹窗
 function isStaffRoleNow() {
     try { return localStorage.getItem('demo_role') === 'staff'; } catch (e) { return false; }
+}
+
+// 当前角色名（admin / owner / staff）：优先 /me 回填的服务端角色，其次 demo_role
+function currentRoleName() {
+    const r = AuthState && AuthState.account && AuthState.account.role;
+    if (r) return String(r);
+    try { return localStorage.getItem('demo_role') || 'admin'; } catch (e) { return 'admin'; }
 }
 
 // 纯函数：给定 url 与 token，返回应注入的请求头对象；不注入时返回 null
@@ -971,7 +978,7 @@ function loadDepartmentAdmin() {
 }
 
 // 契约②：新增部门（owner）
-function addDepartment() {
+async function addDepartment() {
     const modal = document.getElementById('departmentModal');
     const title = document.getElementById('departmentModalTitle');
     const input = document.getElementById('inpDepartmentName');
@@ -984,7 +991,7 @@ function addDepartment() {
         setTimeout(() => input.focus(), 50);
         return;
     }
-    const name = prompt('新增部门名称：');
+    const name = await uiPrompt({ title: '新增部门', label: '部门名称', confirmText: '添加' });
     if (name === null) return;
     const n = String(name).trim();
     if (!n) { showToast('部门名称不能为空', 'warning'); return; }
@@ -992,7 +999,7 @@ function addDepartment() {
 }
 
 // 契约③：重命名部门（owner）
-function renameDepartment(id) {
+async function renameDepartment(id) {
     const dept = (allDepartments || []).find(d => Number(d.id) === Number(id));
     const cur = dept ? dept.name : '';
     const modal = document.getElementById('departmentModal');
@@ -1007,7 +1014,7 @@ function renameDepartment(id) {
         setTimeout(() => input.focus(), 50);
         return;
     }
-    const name = prompt('重命名部门（原名：' + cur + '）：', cur);
+    const name = await uiPrompt({ title: '重命名部门', label: '新的部门名称（原名：' + cur + '）', value: cur, confirmText: '保存' });
     if (name === null) return;
     const n = String(name).trim();
     if (!n) { showToast('部门名称不能为空', 'warning'); return; }
@@ -1055,11 +1062,16 @@ function _saveDepartmentApi(id, n) {
 }
 
 // 契约④：停用部门（owner，软删除；不得停用最后一个启用部门——后端 400 兜底）
-function deactivateDepartment(id) {
+async function deactivateDepartment(id) {
     const dept = (allDepartments || []).find(d => Number(d.id) === Number(id));
     const label = dept ? dept.name : ('#' + Number(id));
-    if (!confirm('确定停用部门「' + label + '」？\n\n停用后它不再出现在「选部门」下拉中，'
-        + '但历史明细成本仍归属该部门并照常出现在花销报表。')) return;
+    const okDept = await uiConfirm({
+        title: '停用部门',
+        message: '确定停用部门「' + label + '」？\n停用后它不再出现在「选部门」下拉中，但以前的明细成本仍算在这个部门，花销报表照常显示。',
+        confirmText: '停用',
+        danger: true,
+    });
+    if (!okDept) return;
     apiFetch('/api/departments/' + Number(id), { method: 'DELETE' })
     .then(res => Promise.all([res.status, res.json().catch(() => null)]))
     .then(([httpStatus, ret]) => {
@@ -1269,7 +1281,11 @@ function loadCostReport() {
         body.appendChild(totalTr);
 
         if (summary) {
-            summary.textContent = '时段 ' + periodLabel + '：进货总额 $' + fmtMoney(d.month_total);
+            const incAll = !!(document.getElementById('costReportIncNonApproved') || {}).checked;
+            let txt = '时段 ' + periodLabel + '：' + (incAll ? '进货总额（含还没入账的单据）' : '已入账单据总额') + ' $' + fmtMoney(d.month_total) + '，含服务费、税、折扣。';
+            const missFx = Number(d.unconverted_count || d.missing_fx_count || 0);
+            if (missFx > 0) txt += ' 有 ' + missFx + ' 张外币单据还没有汇率，没算进来，请到「设置」里补上汇率。';
+            summary.textContent = txt;
         }
     })
     .catch(err => {
@@ -1398,7 +1414,6 @@ function initDeptAdminDetails() {
      initUpload();
     restoreBatchFromManifest(); // 刷新浏览器不丢失解析进度（从 manifest 恢复单据及解析状态）
     initFocalZoomAndCrop();
-    initAutoAnalyzeSetting();
     initVendorHintSelect();     // 上传前可选供应商：恢复该设备上次选择
     updateGlobalDatalistUnits();
     loadInventoryData();
@@ -1486,6 +1501,7 @@ function initTabs() {
             if (targetId === 'tab-analytics') {
                 loadAnalyticsBoard();    // 观测中心（按当前活跃子面板条件调度）
             }
+            if (typeof window.onAppTabActivated === 'function') window.onAppTabActivated(targetId);
             syncFeedbackVisibility();
             syncRecoveryVisibility();
         });
@@ -1502,16 +1518,6 @@ function initTabs() {
     });
 }
 
-function initAutoAnalyzeSetting() {
-    const chkAuto = document.getElementById('chkAutoAnalyze');
-    const savedAuto = localStorage.getItem('auto_analyze_receipt');
-    if (savedAuto !== null) {
-        chkAuto.checked = (savedAuto === 'true');
-    }
-    chkAuto.addEventListener('change', () => {
-        localStorage.setItem('auto_analyze_receipt', chkAuto.checked);
-    });
-}
 
 // -------------------------------------------------------------
 // 上传前可选供应商（vendor_hint）
@@ -1664,6 +1670,16 @@ function initUpload() {
             const files = Array.from(fileInput.files);
             fileInput.value = '';
             queueFilesSelect(files);
+        });
+    }
+
+    // S3-26：手机「拍照」入口（capture=environment，一次一张），拍完直接并入本批
+    const cameraInput = document.getElementById('receiptCamera');
+    if (cameraInput) {
+        cameraInput.addEventListener('change', () => {
+            const files = Array.from(cameraInput.files || []);
+            cameraInput.value = '';
+            if (files.length > 0) queueFilesSelect(files);
         });
     }
 
@@ -1833,8 +1849,8 @@ async function handleFileSelect(file, gen) {
             }
         }
 
-        const autoAnalyze = document.getElementById('chkAutoAnalyze')?.checked;
-        if (autoAnalyze) {
+        // S3-19：默认直接分析，只有画质预检不合格才停在确认卡让店员先看图
+        if (!qualityWarn) {
             triggerAnalysisNow(false);
         }
     } finally {
@@ -1937,48 +1953,28 @@ function checkImageQuality(file, gen) {
 let ocrTimerInterval = null;
 let ocrStartTime = 0;
 
-function updateLoadingStage(pct, stageName, stepNum) {
-    const bar = document.getElementById('loadingProgressBar');
-    if (bar) {
-        if (typeof pct === 'number') {
-            bar.style.width = Math.min(100, Math.max(0, pct)) + '%';
-        } else if (pct === 'indeterminate') {
-            bar.style.width = '60%';
-        }
-    }
+// 后端没有分步进度，所以不画百分比和步骤高亮，只更新一句说明。
+function updateLoadingStage(pct, stageName) {
     const stageNameEl = document.getElementById('loadingStageName');
     if (stageNameEl && stageName) stageNameEl.textContent = stageName;
-    for (let i = 1; i <= 4; i++) {
-        const stepEl = document.getElementById('loadingStep' + i);
-        if (stepEl) {
-            if (stepNum != null && i < stepNum) {
-                stepEl.className = 'loading-step-item done';
-            } else if (stepNum != null && i === stepNum) {
-                stepEl.className = 'loading-step-item active';
-            } else {
-                stepEl.className = 'loading-step-item';
-            }
-        }
-    }
 }
+
+const OCR_SLOW_HINT_SEC = 30;
 
 function startOcrTimer() {
     stopOcrTimer();
     ocrStartTime = Date.now();
     const timerElem = document.getElementById('ocrTimer');
-    if (timerElem) timerElem.innerText = '00:00.0';
-    updateLoadingStage('indeterminate', 'AI 正在读取收据内容与版面结构...', 1);
+    const slowHint = document.getElementById('loadingSlowHint');
+    if (timerElem) timerElem.innerText = '0 秒';
+    if (slowHint) slowHint.classList.add('hide');
+    updateLoadingStage(null, '正在识别这张单据...');
 
     ocrTimerInterval = setInterval(() => {
-        const elapsedMs = Date.now() - ocrStartTime;
-        const totalSec = Math.floor(elapsedMs / 1000);
-        const mins = Math.floor(totalSec / 60).toString().padStart(2, '0');
-        const secs = (totalSec % 60).toString().padStart(2, '0');
-        const tenths = Math.floor((elapsedMs % 1000) / 100);
-        if (timerElem) {
-            timerElem.innerText = `${mins}:${secs}.${tenths}`;
-        }
-    }, 100);
+        const sec = Math.floor((Date.now() - ocrStartTime) / 1000);
+        if (timerElem) timerElem.innerText = sec + ' 秒';
+        if (slowHint && sec >= OCR_SLOW_HINT_SEC) slowHint.classList.remove('hide');
+    }, 1000);
 }
 
 function stopOcrTimer() {
@@ -2011,7 +2007,6 @@ function pollReceiptJob(jobId, onSettled, opts) {
     const timeoutMs = (opts && opts.timeoutMs != null) ? opts.timeoutMs : JOB_POLL_TIMEOUT_MS;
     const intervalMs = (opts && opts.intervalMs != null) ? opts.intervalMs : JOB_POLL_INTERVAL_MS;
     const startTs = Date.now();
-    let fallbackNotified = false;   // 回退即时提示每个任务只弹一次
 
     (function tick() {
         const verdict = jobPollVerdict(token, startTs, Date.now(), timeoutMs);
@@ -2021,14 +2016,14 @@ function pollReceiptJob(jobId, onSettled, opts) {
         }
         if (verdict === 'timeout') {
             onSettled({ status: 'error',
-                msg: '识别任务轮询超时：超过设定时限仍未完成，已停止等待。请重试或检查后端服务状态。' });
+                msg: '等了太久还没读完，已经停止等待。请点「转手工录入」自己填，原图会保留。', code: 'ENGINE_TIMEOUT' });
             return;
         }
         apiFetch(`/api/job/${jobId}`)
             .then(res => res.json())
             .then(job => {
                 if (job && job.job_status === 'done') {
-                    updateLoadingStage(100, '解析完成，正在打开复核表单...', 4);
+                    updateLoadingStage(null, '读完了，正在打开核对表单...');
                     // done → result 与同步 upload 成功响应同构
                     const result = job.result || { status: 'error', msg: '识别结果为空' };
                     // 顶层 image_url 兜底（部分路径 result 可能缺字段）
@@ -2040,9 +2035,7 @@ function pollReceiptJob(jobId, onSettled, opts) {
                         msg: job.error_msg || '识别失败',
                         receipt_id: job.receipt_id,
                         image_url: job.image_url || null,
-                        fallback_triggered: job.fallback_triggered,
-                        fallback_failed: job.fallback_failed,
-                        fallback_reason: job.fallback_reason,
+                        error_code: job.error_code,
                         experiment_override: job.experiment_override,
                     });
                 } else if (job && job.status === 'error') {
@@ -2050,14 +2043,9 @@ function pollReceiptJob(jobId, onSettled, opts) {
                     onSettled({ status: 'error', msg: job.msg || '查询识别任务失败' });
                 } else {
                     if (job && job.job_status) {
-                        const stText = job.job_status === 'queued' ? '正在排队等待处理...' : '正在识别单据并核对明细...';
+                        const stText = job.job_status === 'queued' ? '正在排队，马上开始...' : '正在认字、对数、配食材...';
                         const stageNameEl = document.getElementById('loadingStageName');
                         if (stageNameEl) stageNameEl.textContent = stText;
-                    }
-                    // queued / running → 首选引擎发生降级回退：立即弹一次提示（不等解析完成）
-                    if (job && job.progress_fallback && !fallbackNotified) {
-                        fallbackNotified = true;
-                        notifyEngineFallbackProgress(job.progress_fallback);
                     }
                     // 若已有转码后的 image_url，提前通知（HEIC 预览）
                     if (job && job.image_url && typeof opts?.onProgress === 'function') {
@@ -2118,28 +2106,8 @@ function collectQualityWarnings(ret) {
     if (ret && Array.isArray(ret.quality_warnings)) list = ret.quality_warnings.slice();
     else if (ret && ret.data && Array.isArray(ret.data.quality_warnings)) list = ret.data.quality_warnings.slice();
     
-    // 若触发了引擎降级，将备用模型提示作为警告条目融入提示中
-    const isFallback = ret && (ret.fallback_triggered || (ret.data && ret.data.fallback_triggered));
-    if (isFallback) {
-        list.push('engine_fallback');
-    }
     return list;
 }
-
-// 回退原因是否指向「首选模型无响应/超时」（供即时与完成两类提示精准措辞）
-function isNoResponseFallbackReason(reason) {
-    return /超时|timeout|timed ?out|无响应|未响应|没有响应|read timed out/i.test(String(reason || ''));
-}
-
-// 解析进行中即时提示：首选引擎刚发生降级回退（轮询到 progress_fallback 即弹，不等解析完成）
-function notifyEngineFallbackProgress(fb) {
-    const reason = (fb && fb.reason) || '';
-    const msg = isNoResponseFallbackReason(reason)
-        ? '首选模型无响应，已自动为您切换备用模型继续解析，请稍候…'
-        : '首选模型服务异常，已自动为您切换备用模型继续解析，请稍候…';
-    showToast(msg, 'warning', 6000);
-}
-window.notifyEngineFallbackProgress = notifyEngineFallbackProgress;
 
 // P5：A/B 实验覆盖管理台引擎配置的可见化提示。后端在识别结果里透传
 // experiment_override={experiment_id, grp, model, base_url}，这里把「本次识别
@@ -2154,17 +2122,6 @@ function notifyExperimentOverrideIfApplied(ret) {
     return true;
 }
 window.notifyExperimentOverrideIfApplied = notifyExperimentOverrideIfApplied;
-
-// 自动降级全局弹出通知
-function notifyFallbackIfTriggered(ret) {
-    if (!ret) return;
-    const isFallback = ret.fallback_triggered || (ret.data && ret.data.fallback_triggered);
-    if (!isFallback) return;
-    const msg = isNoResponseFallbackReason(ret.fallback_reason)
-        ? '首选模型无响应，已自动为您切换至备用模型完成解析'
-        : 'AI 模型服务商连接异常，已自动为您切换至备用模型完成解析';
-    showToast(msg, 'warning', 6000);
-}
 
 // 画质预检问题精准映射与人话化引导（一事一词，精准归因，绝无冗余堆砌）
 const QUALITY_PROBLEM_MAP = {
@@ -2183,10 +2140,6 @@ const QUALITY_PROBLEM_MAP = {
     'duplicate': {
         title: '疑似重复单据',
         tip: '该图片疑似与历史单据重复，请核对单号避免重复入账'
-    },
-    'engine_fallback': {
-        title: '备用模型',
-        tip: 'AI 模型服务商响应异常，已自动为您切换至备用模型完成解析'
     }
 };
 
@@ -2198,9 +2151,6 @@ function formatQualityWarning(w) {
         return QUALITY_PROBLEM_MAP[raw];
     }
     const lower = raw.toLowerCase();
-    if (lower.includes('降级') || lower.includes('fallback') || lower.includes('回退') || lower.includes('备用')) {
-        return QUALITY_PROBLEM_MAP['engine_fallback'];
-    }
     if (lower.includes('模糊') || lower.includes('blur')) {
         return QUALITY_PROBLEM_MAP['image_blur'];
     }
@@ -2563,13 +2513,13 @@ function triggerAnalysisNow(forceFlag = false) {
         renderEditForm(ret.data);
         // Q29: 顶层 quality_warnings（含 duplicate_warning）多条可见
         showQualityWarnings(collectQualityWarnings(ret));
-        notifyFallbackIfTriggered(ret);
         notifyExperimentOverrideIfApplied(ret);
         // Q34: 同步成功路径的重复关联动作（queued 路径在轮询发起前已提示）
         offerDuplicateAction(ret);
         document.getElementById('prefillFormCard').classList.remove('hide');
         syncFeedbackVisibility();
         syncRecoveryVisibility();
+        if (typeof scrollReviewIntoView === 'function') scrollReviewIntoView();
     }
 }
 
@@ -2579,25 +2529,10 @@ function triggerAnalysisNow(forceFlag = false) {
 //      正文一律固定文案（engine 不透出原始 str(e)）；gate 原因经人话化包装。
 // -------------------------------------------------------------
 
-// U-3: 门禁 error_msg 最小改写为店员可读的「人话」（纯文本替换，输出仅经 innerText 文本节点渲染）
+// 门禁文案人话化统一在 terms.js（S2-12）；后端给了 gate_issues 的地方优先用 TERMS.formatGateIssues
 function humanizeGateMsg(msg) {
-    let s = (msg == null) ? '' : String(msg);
-    // 1) 去掉门禁前缀（算术门禁: / 契约校验失败:，容忍中英文冒号与空白）
-    s = s.replace(/^\s*(算术门禁|契约校验失败|契约门禁)\s*[:：]\s*/, '');
-    // 2) 契约字段名映射（未知字段原样保留）
-    s = s.replace(/payment_marked/g, 'AI 填写的“是否已付款”一项');
-    // 3) 英文校验短语映射（AC2-a：不残留裸英文吓用户；先具体短语，后 Input should be 兜底）
-    s = s.replace(/Input should be a valid boolean/g, '填写的内容格式不对');
-    s = s.replace(/Input should be/gi, '填写的内容格式不对');
-    s = s.replace(/unable to interpret/gi, '无法理解该内容');
-    s = s.replace(/missing/gi, '缺少必填内容');
-    s = s.replace(/field required/gi, '缺少必填内容');
-    // 4) 算术门禁话术人话化（预期总额= 连等号一起替换，避免「应为=265」磕绊）
-    s = s.replace(/明细合计=/g, '明细合计');
-    s = s.replace(/预期总额=/g, '应为 ');
-    s = s.replace(/，但总额=/g, '，但单据写着');
-    s = s.replace(/（差(-?[0-9.]+)）/g, '，相差 $1');
-    return s.trim();
+    if (typeof TERMS !== 'undefined' && TERMS.humanizeGateText) return TERMS.humanizeGateText(msg);
+    return msg ? '这张单据有数字对不上，请对照原图核对' : '';
 }
 
 /**
@@ -2617,25 +2552,23 @@ function routeRecognitionFailure(ret, receiptId) {
 
     const isGate = /算术门禁|契约校验|门禁|明细为空|总额不能|供应商为空|日期格式非法|数量非法|单价非法/.test(msg);
     if (isGate) {
-        const reason = humanizeGateMsg(msg) || '单据数字存在疑问';
-        showToast('[单据核对提示] ' + reason + '。已为您转入手工补录，请对照左侧原图核对金额', 'warning', 7000);
-        convertManualFromErrorCard();
+        const issues = (ret && Array.isArray(ret.gate_issues) && typeof TERMS !== 'undefined')
+            ? TERMS.formatGateIssues(ret.gate_issues) : [];
+        const reason = issues.length ? issues.join('；') : (humanizeGateMsg(msg) || '单据数字存在疑问');
+        convertManualFromErrorCard({
+            toastText: reason + '。已转到手工录入，请对照左边原图核对金额。',
+            toastType: 'warning',
+        });
         return true;
     }
 
-    const hadFallback = !!(ret && (ret.fallback_triggered || ret.fallback_failed));
-    const isAuth = /鉴权失败|密钥|Token is invalid|401|403|Unauthorized/i.test(msg);
-    let failMsg;
-    if (isAuth) {
-        failMsg = 'AI 识别服务鉴权失败（API 密钥无效或已过期），已转入手工补录。请到「管理后台 · 引擎配置」填入该服务商的真实密钥';
-    } else if (hadFallback) {
-        failMsg = 'AI 模型与备用模型均调用异常，已自动为您转入手工补录界面';
-    } else {
-        failMsg = 'AI 识别服务暂时不可用，已自动为您转入手工补录界面';
-    }
-    showToast(failMsg, 'warning', 7000);
-    convertManualFromErrorCard();
-    showQualityWarnings(['AI 服务暂时不可用，已为您转入手工补录，请对照左侧原图补录字段']);
+    // S3-04：只有「没开通 / 密钥有问题」才自动转手工；繁忙或原因不明停在错误卡，让店员自己选重试或手工
+    const kind = (typeof TERMS !== 'undefined') ? TERMS.classifyEngineFailure(ret) : 'other';
+    if (kind !== 'not_configured' && kind !== 'auth') return false;
+
+    let text = '自动识别暂时用不了，已转到手工录入。请对照左边原图填写，原图已保留。';
+    if (currentRoleName() === 'admin') text += '（管理员：请到「引擎配置」检查识别服务是否已开通、密钥是否有效）';
+    convertManualFromErrorCard({ toastText: text, toastType: 'warning' });
     return true;
 }
 window.routeRecognitionFailure = routeRecognitionFailure;
@@ -2694,7 +2627,7 @@ window.renderPrefillForm = function(data) {
     if (typeof renderEditForm === 'function') renderEditForm(data || {});
 };
 
-function showErrorCard(msg, receiptId, code) {
+function showErrorCard(msg, receiptId, code, opts) {
     lastErrorReceiptId = receiptId || null;
     const splitView = document.getElementById('splitViewArea');
     if (splitView) splitView.classList.remove('hide');
@@ -2733,7 +2666,7 @@ function showErrorCard(msg, receiptId, code) {
         // U-8: 连续画质/识别失败递进引导
         const count = incrementQualityFailCount();
 
-        if (titleElem) titleElem.innerText = '[提示] 图像画质预检未达标（可强制继续）';
+        if (titleElem) titleElem.innerText = '照片画质提示（可以继续）';
 
         if (count === 1) {
             // Level 1: 初次失败，温和提示
@@ -2786,7 +2719,7 @@ function showErrorCard(msg, receiptId, code) {
         }
     } else if (isGateIssue) {
         resetConvertBtnStyle();
-        if (titleElem) titleElem.innerText = '[拦截] AI 发现单据数字有疑问';
+        if (titleElem) titleElem.innerText = '单据上的数字对不上';
         if (badgeElem) {
             badgeElem.innerText = '需人工核对';
             badgeElem.className = 'badge badge-warning';
@@ -2811,25 +2744,47 @@ function showErrorCard(msg, receiptId, code) {
         }
     } else {
         resetConvertBtnStyle();
-        if (titleElem) titleElem.innerText = '[稍后重试] AI 服务暂时繁忙';
+        // S3-04：按原因分三类，不再把「没开通 / 密钥错」说成「繁忙，等 1 分钟」
+        const kind = (typeof TERMS !== 'undefined')
+            ? TERMS.classifyEngineFailure({ code: code, msg: rawMsg }) : 'other';
+        const unavailable = (kind === 'not_configured' || kind === 'auth');
+        if (titleElem) titleElem.innerText = unavailable ? '自动识别暂时用不了' : (kind === 'busy' ? '自动识别现在比较忙' : '这张单没能自动读出来');
         if (badgeElem) {
-            badgeElem.innerText = '非照片问题';
+            badgeElem.innerText = '不是照片的问题';
             badgeElem.className = 'badge badge-danger';
         }
-        if (headingElem) headingElem.innerText = 'AI 服务现在很忙，这张单据还没识别完';
-        if (msgElem) {
-            // 引擎异常不透出原始 str(e)，避免吓到用户
-            msgElem.innerText = '这不是照片的问题，请不要重新拍照。原图已保留。请稍等 1 分钟后点「重试」；如果连续失败，请转为手工录入，或联系店长。';
+        if (headingElem) {
+            headingElem.innerText = unavailable ? '自动识别暂时用不了，请手工录入'
+                : (kind === 'busy' ? '自动识别现在很忙，这张单还没读完' : '这张单没能自动读出来');
         }
-        // 引擎繁忙与画质无关：强制继续无意义，稍后重试或转手工；
-        // 隐藏时 title 同步复位为中性文案，消除隐藏元素上的画质语义残留
+        if (msgElem) {
+            msgElem.innerText = unavailable
+                ? '这不是照片的问题，不用重新拍。原图已保留在左边，请点「转手工录入」自己填。'
+                : (kind === 'busy'
+                    ? '这不是照片的问题，不用重新拍。原图已保留。可以等一会再点「重试」，也可以直接点「转手工录入」。'
+                    : '这不是照片的问题，不用重新拍。原图已保留。可以点「重试」再读一次，也可以直接点「转手工录入」。');
+        }
         if (btnForce) {
             btnForce.style.display = 'none';
             btnForce.title = '重新提交给 AI 解析';
         }
         if (btnRetry) {
-            btnRetry.style.display = '';
+            btnRetry.style.display = unavailable ? 'none' : '';
             btnRetry.title = '重新发起识别';
+        }
+        if (unavailable && convertBtn) {
+            convertBtn.className = 'btn btn-primary';
+            convertBtn.style.fontWeight = '600';
+        }
+        if (opts && opts.plain) {
+            if (titleElem) titleElem.innerText = '没能转成手工录入';
+            if (headingElem) headingElem.innerText = '转手工录入没有成功';
+            if (msgElem) msgElem.innerText = rawMsg;
+            if (btnRetry) btnRetry.style.display = 'none';
+            if (convertBtn) {
+                convertBtn.className = 'btn btn-primary';
+                convertBtn.style.fontWeight = '600';
+            }
         }
     }
 
@@ -2903,7 +2858,9 @@ function reuploadFromErrorCard() {
 }
 window.reuploadFromErrorCard = reuploadFromErrorCard;
 
-function convertManualFromErrorCard() {
+// opts.toastText：转手工成功后的唯一一条提示；失败只更新错误卡，不再另弹 toast
+function convertManualFromErrorCard(opts) {
+    const o = (opts && typeof opts === 'object' && !(opts instanceof Event)) ? opts : {};
     if (lastErrorReceiptId) {
         const receiptId = lastErrorReceiptId;
 
@@ -2911,23 +2868,23 @@ function convertManualFromErrorCard() {
         document.getElementById('loadingCard').classList.remove('hide');
 
         apiFetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
-        .then(res => res.json())
-        .then(ret => {
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
             document.getElementById('loadingCard').classList.add('hide');
-            if (ret.status !== 'success') {
-                showToast('转手工录入失败：' + (ret.msg || '请稍后重试'), 'error');
-                showErrorCard(ret.msg || '转手工录入失败', receiptId);
+            if (!ret || ret.status !== 'success') {
+                const why = (typeof TERMS !== 'undefined')
+                    ? TERMS.humanizeCode(ret && ret.code, ret && ret.msg) : '没能转成手工录入，请稍后再试';
+                showErrorCard(why + '。原图已保留，可以再点一次「转手工录入」。', receiptId, null, { plain: true });
                 return;
             }
             // D33: 转手工录入成功——保留原图，按返回数据渲染复核表单
             applyRecognizedResult(ret, receiptId);
-            showToast('已转为手工录入，请对照左侧原图补录字段', 'info');
+            showToast(o.toastText || '已转为手工录入，请对照左侧原图补录字段', o.toastType || 'info', 7000);
         })
         .catch(err => {
             document.getElementById('loadingCard').classList.add('hide');
             console.error('转手工录入请求异常', err);
-            showToast('转手工录入请求失败，请检查网络后重试', 'error');
-            showErrorCard('转手工录入失败，请稍后重试', receiptId);
+            showErrorCard('网络不通。原图已保留，请检查网络后再点一次「转手工录入」。', receiptId, null, { plain: true });
         });
     } else {
         // 无单据行时（如画质 400 快速失败）：保留原图直接切入手工录入表单
@@ -3032,13 +2989,13 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
     renderEditForm(ret.data || {});
     // Q29: 质量预检警告多条可见
     showQualityWarnings(collectQualityWarnings(ret));
-    notifyFallbackIfTriggered(ret);
     notifyExperimentOverrideIfApplied(ret);
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('errorCard').classList.add('hide');
     document.getElementById('prefillFormCard').classList.remove('hide');
     syncFeedbackVisibility();
     syncRecoveryVisibility();
+    if (typeof scrollReviewIntoView === 'function') scrollReviewIntoView();
 
     // 批量模式：同步当前激活照片状态
     const photo = getActivePhoto();
@@ -3130,11 +3087,13 @@ function setManualEntryLeftPanel(on) {
 function setManualEntryFormBadge(on) {
     const badge = document.getElementById('manualEntryFormBadge');
     if (badge) badge.classList.toggle('hide', !on);
+    const aiBadge = document.getElementById('aiPrefillNoticeBadge');
+    if (aiBadge) aiBadge.classList.toggle('hide', !!on);
     const title = document.getElementById('manualEntryFormTitle');
     if (title) {
         title.textContent = on
-            ? ' 步骤 2/2：手工录入复核与修改'
-            : ' 步骤 2/2：单据内容复核与修改';
+            ? '步骤 2/2：填写单据内容'
+            : '步骤 2/2：核对单据内容';
     }
 }
 
@@ -3193,6 +3152,7 @@ function startManualEntry() {
     populateDeptSelect(document.getElementById('inpDepartmentId'), null);
     showQualityWarnings([]);
     document.getElementById('itemTableBody').innerHTML = '';
+    if (typeof resetTotalOverride === 'function') resetTotalOverride();
     addEmptyRow({ silent: true });
 
     // 卡片切换：显示复核表单空态
@@ -3223,6 +3183,7 @@ function startManualEntry() {
         itemTableBody.addEventListener('change', () => refreshReceiptIssueSummary());
     }
     refreshReceiptIssueSummary();
+    if (typeof scrollReviewIntoView === 'function') scrollReviewIntoView();
 }
 
 // U-11: 识别过程随时转手工逃生通道（保留原图，中止识别，直接切入复核/手工表单）
@@ -3276,9 +3237,12 @@ function abortLoadingAndSwitchToManual() {
         isManualEntry = true;
     }
     const title = document.getElementById('manualEntryFormTitle');
-    if (title) title.textContent = ' 步骤 2/2：手工录入与复核';
+    if (title) title.textContent = '步骤 2/2：填写单据内容';
+    // 中途放弃等待转手工：原图还在左边，这时是「AI 没读出来、店员补录」，不是纯手工单
     const badge = document.getElementById('manualEntryFormBadge');
-    if (badge) badge.classList.add('hide');
+    if (badge) badge.classList.remove('hide');
+    const aiBadgeAbort = document.getElementById('aiPrefillNoticeBadge');
+    if (aiBadgeAbort) aiBadgeAbort.classList.add('hide');
 
     // 7. 表单字段初始化/保底（若为空则赋默认值，保留已有输入）
     const inpSupplier = document.getElementById('inpSupplier');
@@ -3320,6 +3284,7 @@ function abortLoadingAndSwitchToManual() {
     syncFeedbackButtonsUI(null);
     syncFeedbackVisibility();
     syncRecoveryVisibility();
+    if (typeof scrollReviewIntoView === 'function') scrollReviewIntoView();
 }
 
 // 工具激活状态: null (未选中任何工具), 'zoom' (定点放大模式), 'crop' (裁剪模式)
@@ -3981,7 +3946,7 @@ function renderUnitMenuItems(inputElem, menuElem) {
 
         html += `
             <div class="unit-dropdown-item ${highlightClass}" data-unit="${w2Escape(u)}">
-                <span>${w2Escape(u)}</span>
+                <span data-i18n-skip>${w2Escape(u)}</span>
                 ${badgeHTML}
             </div>
         `;
@@ -4083,6 +4048,7 @@ function selectSupplierItem(itemElem) {
     // 下拉选中是「程序化赋值」，不会触发 input 的 change 事件 → 显式重取提示
     // （P2-T4：供应商变了，历史价格区间的口径也变了）。
     refreshAllVendorPriceHints();
+    if (typeof applySupplierSettlementPref === 'function') applySupplierSettlementPref();
     setTimeout(() => {
         isSelectingSupplier = false;
     }, 300);
@@ -4144,7 +4110,7 @@ function renderSupplierMenuItems(inputElem, menuElem) {
         html += `
             <div class="unit-dropdown-item highlight" data-supplier-name="${safeRaw}" onmousedown="selectSupplierItem(this)">
                 <div>
-                    <span>使用新供应商: <strong>"${safeRaw}"</strong></span>
+                    <span>使用新供应商: <strong data-i18n-skip>"${safeRaw}"</strong></span>
                 </div>
                 <span class="badge-matched" style="color:#38bdf8; border-color:rgba(56,189,248,0.4);"> 确认使用新供应商</span>
             </div>
@@ -4169,7 +4135,7 @@ function renderSupplierMenuItems(inputElem, menuElem) {
         html += `
             <div class="unit-dropdown-item ${highlightClass}" data-supplier-name="${safeName}" onmousedown="selectSupplierItem(this)">
                 <div>
-                    <span>${safeName}</span>
+                    <span data-i18n-skip>${safeName}</span>
                     ${codeSpan}
                 </div>
                 ${badgeHTML}
@@ -4562,7 +4528,7 @@ function buildSkuDropdownItemsHtml(inputElem, candidates) {
             itemsHtml += `
                 <div class="unit-dropdown-item" data-sku-id="${w2Escape(c.sku_id)}" data-sku-name="${w2Escape(c.sku_name || '')}" onmousedown="selectSkuItem(this)">
                     <div>
-                        <span style="font-weight:500;">${w2Escape(c.sku_name || '')}</span>
+                        <span style="font-weight:500;" data-i18n-skip>${w2Escape(c.sku_name || '')}</span>
                         ${codeSpan}
                     </div>
                 </div>
@@ -4626,6 +4592,9 @@ function renderSkuDropdownHtml(inputElem, menuElem, candidates) {
 // -------------------------------------------------------------
 function renderEditForm(data) {
     if (!data) data = {};
+    if (typeof resetTotalOverride === 'function') resetTotalOverride();
+    if (typeof syncReviewSourceBadge === 'function') syncReviewSourceBadge(data);
+    if (typeof syncFlaggedLock === 'function') syncFlaggedLock(data);
     syncFeedbackVisibility(data);
     syncRecoveryVisibility(data);
     document.getElementById('inpSupplier').value = data.supplier_name || '';
@@ -4633,7 +4602,10 @@ function renderEditForm(data) {
     const _hintSupplierInput = document.getElementById('inpSupplier');
     if (_hintSupplierInput && !_hintSupplierInput.__vendorHintBound) {
         _hintSupplierInput.__vendorHintBound = true;
-        _hintSupplierInput.addEventListener('change', () => refreshAllVendorPriceHints());
+        _hintSupplierInput.addEventListener('change', () => {
+            refreshAllVendorPriceHints();
+            if (typeof applySupplierSettlementPref === 'function') applySupplierSettlementPref();
+        });
     }
     document.getElementById('inpDate').value = data.date || '';
     document.getElementById('inpSheet').value = data.sheet_name || (data.date ? data.date.slice(0, 7) : '');
@@ -4685,8 +4657,8 @@ function renderEditForm(data) {
     // 与行级角标严格分层——此处只提示「整单需要人工复核」，不给任何行刷标记。
     const reviewReasons = receiptReviewReasons(data);
     if (reviewReasons.length > 0) {
-        alertBanner.innerText = '[需人工复核] ' + reviewReasons.join('；')
-            + '。已为您自动填入已识别信息，请对照左侧原图重点核对或补录。';
+        alertBanner.innerText = '请重点核对：' + reviewReasons.join('；')
+            + (isManualReceiptData(data) ? '。' : '。已自动填入读到的内容，请对照左侧原图核对或补录。');
         alertBanner.classList.remove('hide');
     } else {
         alertBanner.classList.add('hide');
@@ -4695,8 +4667,10 @@ function renderEditForm(data) {
     // 门禁/花码整单警告：保留原有 toast 提示与字段级高亮（仅在有 math_warnings 时触发，
     // 手写单本身不弹 toast，避免每次打开都打扰店员）。
     if (data.math_warnings && data.math_warnings.length > 0) {
-        const warnText = data.math_warnings.map(humanizeGateMsg).join("；");
-        showToast('单据复核提示：AI 已完成解析，但检测到：' + warnText + '，请核对', 'warning', 7000);
+        const _gateTexts = (Array.isArray(data.gate_issues) && data.gate_issues.length && typeof TERMS !== 'undefined')
+            ? TERMS.formatGateIssues(data.gate_issues) : data.math_warnings.map(humanizeGateMsg);
+        const warnText = _gateTexts.join("；");
+        showToast((isManualReceiptData(data) ? '核对提示：' : '核对提示：系统读完了这张单，但发现：') + warnText + '，请核对', 'warning', 7000);
 
         // 针对具体问题精确定位高亮
         const warnStr = data.math_warnings.join(' ');
@@ -5290,11 +5264,11 @@ function setPaymentMarkBadge(marked) {
     if (!btn) return;
     const isPaid = (marked === true || marked === 'true');
     btn.dataset.marked = isPaid ? 'true' : 'false';
-    btn.textContent = isPaid ? '单据有付款印记' : '单据未见付款印章';
-    btn.title = isPaid ? '单面有付款印章/标记（点击切换）' : '单面未见付款印章（原单无盖章，不代表系统已付，点击切换）';
+    btn.title = isPaid ? '原单上有付款印章或「已付」字样（点一下取消）' : '原单上没有付款印章（原单有盖章或写「已付」就点一下打开；这不等于系统已付款）';
     btn.classList.toggle('payment-mark-paid', isPaid);
     btn.classList.toggle('payment-mark-unpaid', !isPaid);
     btn.setAttribute('aria-pressed', isPaid ? 'true' : 'false');
+    btn.setAttribute('aria-checked', isPaid ? 'true' : 'false');
 }
 
 function togglePaymentMarkBadge() {
@@ -5511,13 +5485,13 @@ function showToast(message, type = 'info', durationOrOpts) {
 function humanizeForbidden(detail, status) {
     const raw = String(detail || '').trim();
     // 已是后端人话文案（含角色指引）→ 原样透传
-    if (raw.includes('权限不足')) return raw;
+    if (raw.includes('权限不足')) return raw.replace(/[（(](staff|owner|admin)[）)]/gi, '').replace(/\b(staff|owner|admin)\b/gi, '');
     if (status != null && status !== 403) return null;
     if (raw.includes('仅 admin')) {
-        return '权限不足：此操作仅限超管（admin）执行，请切换为 admin 角色。';
+        return '这个操作只有系统管理员能做，请联系管理员。';
     }
-    if (raw) return '权限不足：' + raw + '。请切换角色或联系管理员。';
-    return '权限不足：当前角色无权执行此操作，请切换角色或联系管理员。';
+    if (raw && /[\u4e00-\u9fff]/.test(raw) && !/[A-Za-z]{3,}/.test(raw)) return '权限不足：' + raw + '。请联系老板处理。';
+    return '你的角色不能做这个操作，请联系老板处理。';
 }
 
 // U-10 文案去技术化：将 Pydantic 422 / 后端 400 / 500 / 堆栈错误翻译为店员人话
@@ -5525,6 +5499,13 @@ function humanizeBackendError(status, body) {
     if (status === 403) {
         const msg = (body && (body.detail || body.msg)) || '';
         return humanizeForbidden(msg, status);
+    }
+    // S1-P2-02：后端错误码统一映射成人话（换算缺失保留后端带单位名的原句）
+    if (body && body.code && typeof TERMS !== 'undefined') {
+        const _c = String(body.code).toUpperCase();
+        if (_c !== 'UNIT_CONVERSION_MISSING' && (TERMS.codeText[_c] || body.msg)) {
+            return TERMS.humanizeCode(_c, body.msg);
+        }
     }
     // 422 校验错误 (FastAPI / Pydantic)
     if (status === 422 || (body && Array.isArray(body.detail))) {
@@ -5606,6 +5587,12 @@ function humanizeBackendError(status, body) {
             return '服务处理异常，请稍后重试';
         }
     }
+    if (body && body.code && typeof TERMS !== 'undefined') {
+        return TERMS.humanizeCode(body.code, raw);
+    }
+    if (raw && typeof TERMS !== 'undefined' && !/[\u4e00-\u9fff]/.test(raw) && /[A-Za-z]{3,}/.test(raw)) {
+        return TERMS.genericError;
+    }
     if (status >= 500) {
         return 'AI 服务现在很忙，请稍后重试';
     }
@@ -5669,20 +5656,31 @@ function itemReviewBadgeHtml(flags, conf) {
 // HANDWRITTEN_DOC_FORM 与后端 DocForm.ncr_handwritten 同源。
 const HANDWRITTEN_DOC_FORM = 'ncr_handwritten';
 
+// 状态显示名取自 i18n 键值目录（status.*）；i18n 未加载（如 node 沙箱）时回落原文。
+function i18nLabel(key, fallback) {
+    const i18n = (typeof window !== 'undefined') ? window.I18N : null;
+    return (i18n && typeof i18n.t === 'function') ? i18n.t(key, null, fallback) : fallback;
+}
+
 // 单据状态唯一事实源：标签/徽章样式/悬停说明/聚合分组/筛选项文案集中在此，
 // 归档徽章（renderStatusBadge）、归档聚合过滤（STATUS_GROUP_MAP）、
 // 待办条计数（updateTodoBar）、筛选下拉（populateReceiptStatusFilter）四处共用。
 // 新增一个状态只需在此登记一次，不再出现「改了三处漏一处」的漂移。
 // review=true 表示「尚未经过人工核对」，供黄底/复核提示判定使用（区别于聚合分组的 pending）。
+function _termStatus(code, field) {
+    const t = (typeof TERMS !== 'undefined' && TERMS.status) ? TERMS.status[code] : null;
+    return t ? t[field] : '';
+}
 const RECEIPT_STATUSES = {
-    uploaded:             { label: '已上传',           cls: 'badge-warning', title: '已上传', group: 'pending', filter: '已上传',           review: true  },
-    parsing:              { label: '解析中',           cls: 'badge-warning', title: '解析中', group: 'pending', filter: '解析中',           review: true  },
-    parsed:               { label: '待核对',           cls: 'badge-warning', title: 'AI自动识别落库', group: 'pending', filter: '待核对 (AI自动入库)', review: true },
-    parsed_with_warnings: { label: '待核对(门禁警告)', cls: 'badge-warning', title: 'AI 已解析但门禁校验未通过（算术/契约/明细为空），请重点核对', group: 'pending', filter: '待核对 (门禁警告)', review: true },
-    edited:               { label: '已修改',           cls: 'badge-info',    title: '店员手工修改保存', group: 'pending', filter: '已修改 (店员人工保存)' },
-    approved:             { label: '已入账',           cls: 'badge-success', title: '老板审核通过', group: 'posted', filter: '已入账 (老板审核通过)' },
-    flagged:              { label: '有问题',           cls: 'badge-danger',  title: '已标记', group: 'problem', filter: '有问题 (已标记)' },
-    error:                { label: '失败',             cls: 'badge-danger',  title: '失败', group: 'failed', filter: '失败' },
+    uploaded:             { label: i18nLabel('status.uploaded', _termStatus('uploaded', 'label')),     cls: 'badge-warning', title: _termStatus('uploaded', 'title'), group: 'pending', filter: _termStatus('uploaded', 'filter'), review: true },
+    parsing:              { label: i18nLabel('status.parsing', _termStatus('parsing', 'label')),       cls: 'badge-warning', title: _termStatus('parsing', 'title'), group: 'pending', filter: _termStatus('parsing', 'filter'), review: true },
+    parsed:               { label: i18nLabel('status.parsed', _termStatus('parsed', 'label')),         cls: 'badge-warning', title: _termStatus('parsed', 'title'), group: 'pending', filter: _termStatus('parsed', 'filter'), review: true },
+    parsed_with_warnings: { label: i18nLabel('status.parsed_with_warnings', _termStatus('parsed_with_warnings', 'label')), cls: 'badge-warning', title: _termStatus('parsed_with_warnings', 'title'), group: 'pending', filter: _termStatus('parsed_with_warnings', 'filter'), review: true },
+    edited:               { label: i18nLabel('status.edited', _termStatus('edited', 'label')),         cls: 'badge-info',    title: _termStatus('edited', 'title'), group: 'pending', filter: _termStatus('edited', 'filter') },
+    approved:             { label: i18nLabel('status.approved', _termStatus('approved', 'label')),     cls: 'badge-success', title: _termStatus('approved', 'title'), group: 'posted', filter: _termStatus('approved', 'filter') },
+    flagged:              { label: i18nLabel('status.flagged', _termStatus('flagged', 'label')),       cls: 'badge-danger',  title: _termStatus('flagged', 'title'), group: 'problem', filter: _termStatus('flagged', 'filter') },
+    reversed:             { label: i18nLabel('status.reversed', _termStatus('reversed', 'label')),     cls: 'badge-secondary', title: _termStatus('reversed', 'title'), group: 'reversed', filter: _termStatus('reversed', 'filter') },
+    error:                { label: i18nLabel('status.error', _termStatus('error', 'label')),           cls: 'badge-danger',  title: _termStatus('error', 'title'), group: 'failed', filter: _termStatus('error', 'filter') },
 };
 
 // 「还没经过人工核对」的状态白名单（由 RECEIPT_STATUSES.review 派生，顺序与定义一致）
@@ -5695,6 +5693,21 @@ const STATUS_GROUP_MAP = Object.keys(RECEIPT_STATUSES).reduce((acc, key) => {
     (acc[g] || (acc[g] = [])).push(key);
     return acc;
 }, {});
+
+// 手工录入单：doc_form=manual_entry，或正处于「新建手工单」态
+function isManualReceiptData(data) {
+    if (data && String(data.doc_form || '') === 'manual_entry') return true;
+    return (typeof isManualEntry !== 'undefined') && isManualEntry && !(data && data.id);
+}
+
+// 复核卡标题只留一个来源徽章：手工录入 或 AI 预填
+function syncReviewSourceBadge(data) {
+    const manual = isManualReceiptData(data);
+    const mBadge = document.getElementById('manualEntryFormBadge');
+    const aBadge = document.getElementById('aiPrefillNoticeBadge');
+    if (mBadge) mBadge.classList.toggle('hide', !manual);
+    if (aBadge) aBadge.classList.toggle('hide', manual);
+}
 
 function isHandwrittenReceipt(data) {
     return String((data && data.doc_form) || '') === HANDWRITTEN_DOC_FORM;
@@ -5716,9 +5729,11 @@ function receiptReviewReasons(data) {
     if (isHandwrittenReceipt(data)) {
         reasons.push('街市手写单（NCR）：手写字迹与花码易误读，建议逐行对照原图');
     }
-    const mw = Array.isArray(data.math_warnings) ? data.math_warnings : [];
+    const hasStructured = Array.isArray(data.gate_issues) && data.gate_issues.length > 0 && typeof TERMS !== 'undefined';
+    const mw = hasStructured ? TERMS.formatGateIssues(data.gate_issues)
+        : (Array.isArray(data.math_warnings) ? data.math_warnings : []);
     mw.forEach(m => {
-        const t = humanizeGateMsg(m);
+        const t = hasStructured ? m : humanizeGateMsg(m);
         if (t && reasons.indexOf(t) === -1) reasons.push(t);
     });
     return reasons;
@@ -5978,7 +5993,7 @@ function appendTableRow(item = {}) {
     ` : '';
 
     tr.innerHTML = `
-        <td>
+        <td data-label="品名">
             <div class="item-name-sku-stack sku-combobox-wrap" style="position: relative;">
                 <input type="text" class="inp-name form-control" value="${w2Escape(finalRawName)}" placeholder="品名(如走地鸡)" autocomplete="off"
                        onfocus="openSkuMenuForNameInput(this)" onclick="openSkuMenuForNameInput(this)" oninput="onItemNameInput(this)" onblur="closeSkuMenuDelay(this)"
@@ -5988,20 +6003,21 @@ function appendTableRow(item = {}) {
                 <input type="hidden" class="inp-sku-id" value="${skuId || ''}">
                 <div class="unit-dropdown-menu sku-dropdown-floating hide"></div>
             </div>
+            <div class="sku-candidate-box hide"></div>
         </td>
-        <td>
+        <td data-label="数量">
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <input type="number" step="0.01" class="inp-qty form-control text-right" value="${finalQty}" oninput="recalcRow(this)" title="数量" placeholder="数量" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
                 <input type="number" step="0.01" class="inp-actual-qty form-control text-right" value="${w2Escape(actualQtyVal)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="font-size:0.78rem; padding:4px 6px;" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
             </div>
         </td>
-        <td>
+        <td data-label="单位">
             <div class="unit-combobox-wrap">
                 <input type="text" class="inp-unit form-control text-center" value="${w2Escape(finalUnit)}" placeholder="单位" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoidMain ? 'style="text-decoration:line-through; color:#94a3b8;"' : ''}>
                 <div class="unit-dropdown-menu hide"></div>
             </div>
         </td>
-        <td>
+        <td data-label="单价">
             <div class="price-input-wrap">
                 <input type="number" step="0.01" class="inp-price form-control text-right" aria-label="单价" value="${finalPrice}" oninput="recalcRow(this)" ${isVoidMain ? 'disabled' : ''}>
                 ${anomalyHtml}
@@ -6010,15 +6026,15 @@ function appendTableRow(item = {}) {
                 <div class="vendor-price-hint-box"></div>
             </div>
         </td>
-        <td>
+        <td data-label="金额">
             <input type="number" step="0.01" class="inp-amount form-control text-right" aria-label="金额" value="${amount.toFixed(2)}" oninput="recalcTotalSum()" ${isVoidMain ? 'disabled' : ''}>
         </td>
-        <td>
+        <td data-label="部门">
             <select class="inp-dept form-control" title="本行归属部门" style="width:100%; padding:6px; font-size:0.82rem;" ${isVoidMain ? 'disabled' : ''}>
                 ${deptSelectOptionsHtml(item.cost_center_id)}
             </select>
         </td>
-        <td style="text-align:center;">
+        <td style="text-align:center;" data-label="操作">
             <div class="row-actions">
                 ${itemReviewBadgeHtml(itemFlags, itemConfRaw)}
                 ${isVoidMain ? '<span class="badge badge-secondary" title="票面划线行：不计入总额与入库" style="margin-right:4px;">作废</span>' : ''}
@@ -6036,6 +6052,7 @@ function appendTableRow(item = {}) {
 
     const skuInput = tr.querySelector('.inp-sku');
     if (skuInput) skuInput.__skuCandidates = skuCandidates;
+    if (typeof renderSkuCandidates === 'function') renderSkuCandidates(tr, item);
 
     tr.addEventListener('input', () => { tr.dataset.manual = '1'; });
     tr.addEventListener('change', () => { tr.dataset.manual = '1'; });
@@ -6105,7 +6122,13 @@ function recalcTotalSum() {
 
     const netTotal = Math.max(0, itemsSum - fees.discount_amount - fees.rounding_adjustment
         + fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount);
-    document.getElementById('inpTotal').value = netTotal.toFixed(2);
+    // S3-19：店员手改过总额就不再被明细合计覆盖，只提示差额
+    if (typeof isTotalOverridden === 'function' && isTotalOverridden()) {
+        if (typeof updateTotalOverrideHint === 'function') updateTotalOverrideHint(netTotal);
+        if (typeof refreshReceiptIssueSummary === 'function') refreshReceiptIssueSummary();
+    } else {
+        document.getElementById('inpTotal').value = netTotal.toFixed(2);
+    }
     updateFeesSummaryBadge();
     renderCurrencySymbol();
 }
@@ -6612,7 +6635,7 @@ async function discardCurrentReceipt() {
     const targetReceiptId = (photo && photo.receiptId) || currentReceiptId;
     const displayName = photo ? (photo.fileName || (photo.file ? photo.file.name : null) || `单据 #${targetReceiptId || ''}`) : (targetReceiptId ? `单据 #${targetReceiptId}` : '当前单据');
 
-    if (!confirm(`确定要放弃上传「${displayName}」吗？\n\n放弃后该单据将移入回收站（可在管理后台恢复），并从上传侧栏移除，不再出现在归档与历史列表中。`)) {
+    if (!(await confirmDiscard(displayName))) {
         return;
     }
 
@@ -6624,7 +6647,7 @@ async function discardCurrentReceipt() {
             const res = await apiFetch(`/api/receipt/${targetReceiptId}/discard`, { method: 'POST' });
             const ret = await res.json().catch(() => null);
             if (!res.ok && res.status !== 404) {
-                const errorMsg = (ret && ret.msg) || `放弃单据失败 HTTP ${res.status}`;
+                const errorMsg = '没能放弃这张单：' + TERMS.humanizeCode(ret && ret.code, ret && ret.msg);
                 showToast(errorMsg, 'error');
                 if (btnDiscard) btnDiscard.disabled = false;
                 return;
@@ -6679,10 +6702,10 @@ async function discardCurrentReceipt() {
             syncRecoveryVisibility();
         }
 
-        showToast('已放弃该单据，已移入回收站（可在管理后台恢复）', 'info');
+        announceDiscarded(targetReceiptId);
     } catch (err) {
         console.error('放弃单据异常:', err);
-        showToast('放弃单据请求失败，请检查网络设置', 'error');
+        showToast('网络不通，没能放弃这张单，请检查网络后再试', 'error');
     } finally {
         if (btnDiscard) btnDiscard.disabled = false;
     }
@@ -6907,7 +6930,7 @@ function refreshReceiptIssueSummary(data) {
         if (blockers.length > 0) {
             if (valBadge) {
                 valBadge.className = 'badge badge-danger';
-                valBadge.textContent = `需修改 ${blockers.length} 处错误才能入账`;
+                valBadge.textContent = `必须先改 ${blockers.length} 处`;
             }
             if (guideText) guideText.textContent = blockers[0].guide;
         } else {
@@ -7099,7 +7122,17 @@ function submitSaveEdited(openNext = false) {
         return; // 零网络请求，本地阻断
     }
 
-    if (!isManualEntry && !requireSettlementMarked(data.settlement_type)) {
+    // S3-05：界面写着「必须修改」的问题就真的拦住，并跳到出错的地方（手工单也一样）
+    const _saveBlockers = calculateReceiptIssues(data).filter(i => i.type === 'blocker');
+    if (_saveBlockers.length > 0) {
+        currentReceiptIssues = calculateReceiptIssues(data);
+        currentIssueFocusIndex = -1;
+        showToast(`还有 ${_saveBlockers.length} 处必须先改的地方：${_saveBlockers[0].guide} 改好后再点「保存并提交审核」`, 'error', 7000);
+        focusNextReceiptIssue();
+        return;
+    }
+
+    if (!requireSettlementMarked(data.settlement_type)) {
         return;
     }
 
@@ -7233,6 +7266,9 @@ function submitSaveEdited(openNext = false) {
             currentReceiptData.id = currentReceiptId;
             currentReceiptData.receipt_id = currentReceiptId;
         }
+
+        // 保存成功后单据状态已是「待老板审批」，本地状态同步（审核入账按钮据此放行）
+        if (currentReceiptData) currentReceiptData.status = 'edited';
 
         // AC-03-03: 保存并下一张
         if (openNext) {
@@ -7404,7 +7440,7 @@ function renderWorkbenchQueueTable() {
             const count = (row.math_warnings ? row.math_warnings.length : 0) + (row.quality_warnings ? row.quality_warnings.length : 0);
             statusBadge = `<span class="badge badge-warning">发现 ${count} 处提醒</span>`;
         } else if (row.status === 'edited') {
-            statusBadge = '<span class="badge badge-primary">已提交·待审批</span>';
+            statusBadge = '<span class="badge badge-primary">' + _termStatus('edited', 'label') + '</span>';
         } else if (row.status === 'approved') {
             statusBadge = '<span class="badge badge-success">已入账</span>';
         } else if (row.status === 'flagged' || row.status === 'error') {
@@ -7535,7 +7571,7 @@ function openReceiptInWorkbench(receiptId, silent = false, _guarded = false) {
             checkAndPromptLocalDraft(receiptId);
 
             if (!silent) {
-                showToast(`已打开单据 #${receiptId}，可对照左侧原图复核`, 'info');
+                showToast(ret.data.image_url ? `已打开单据 #${receiptId}，可对照左侧原图核对` : `已打开单据 #${receiptId}（手工录入，没有原图）`, 'info');
             }
             prefillCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
         })
@@ -7824,6 +7860,19 @@ function onWorkbenchApproveClick() {
         return;
     }
 
+    // S1-P1-05：系统读出来但还没人核对过的单，不能直接入账
+    const _stNow = String((currentReceiptData && currentReceiptData.status) || '');
+    if (isReceiptPendingHumanReview(_stNow)) {
+        showToast('这张单还没有人核对过。请先对照原图核对，再点「保存并提交审核」，然后才能「审核入账」', 'warning', 7000);
+        const _saveBtn0 = document.getElementById('btnSaveReview');
+        if (_saveBtn0) _saveBtn0.focus();
+        return;
+    }
+    if (_stNow === 'flagged') {
+        showToast('这张单被标记了有问题，不能入账。请先点「解除异常标记」，确认没问题后再入账', 'warning', 6000);
+        return;
+    }
+
     let data;
     try { data = collectReviewFormData(); } catch (e) { data = currentReceiptData || {}; }
     data.id = receiptId;
@@ -7833,14 +7882,16 @@ function onWorkbenchApproveClick() {
     const issues = calculateReceiptIssues(data);
     const blockers = issues.filter(i => i.type === 'blocker');
     if (blockers.length > 0) {
-        showToast(`当前单据存在 ${blockers.length} 处阻断问题，请先修正后再审核`, 'error');
-        focusFirstIssueField(issues);
+        showToast(`这张单还有 ${blockers.length} 处必须先改的地方，改好并保存后再审核入账`, 'error');
+        currentReceiptIssues = issues;
+        currentIssueFocusIndex = -1;
+        focusNextReceiptIssue();
         return;
     }
 
     // AC-01-03: 未保存修改时安全阻断并提示先保存，杜绝静默预保存破坏取消零写入语义
     if (isReviewFormDirty()) {
-        showToast('单据修改尚未保存，请先点击【保存复核修改】保存后再审核入账', 'warning');
+        showToast('单据修改尚未保存，请先点「保存并提交审核」，再点「审核入账」', 'warning');
         const saveBtn = document.getElementById('btnSaveReview');
         if (saveBtn) saveBtn.focus();
         return;
@@ -7900,17 +7951,14 @@ function executeConfirmedApproval() {
             loadInventoryData();
             return;
         }
-        if (httpStatus === 422 && ret && ret.code === 'APPROVAL_BLOCKED') {
-            showToast('无法审核入账：单据存在算术不符或必填缺失', 'error', 6000);
-            return;
-        }
+        if (handleApproveError(httpStatus, ret, { receiptId: executingReceiptId, closeModal: closeApproveConfirmModal })) return;
         if (toastHttpError(httpStatus, ret)) return;
         if (!ret || ret.status !== 'success') {
-            showToast('审核失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            showToast('审核入账没有成功：' + TERMS.humanizeCode(ret && ret.code, ret && ret.msg), 'error');
             return;
         }
 
-        showToast(`单据 #${executingReceiptId} 审核通过，已正式入账并生成库存流水`, 'success');
+        showToast(`单据 #${executingReceiptId} 已审核入账，库存已增加`, 'success');
         closeApproveConfirmModal();
         loadWorkbenchQueue(true);
         loadInventoryData();
@@ -8239,7 +8287,46 @@ function updateStockMovementLabels() {
 }
 window.updateStockMovementLabels = updateStockMovementLabels;
 
-function submitStockMovement() {
+// 消耗/报损超过账面库存时：先问老板，明确确认并写明原因后才带 allow_negative 提交，库存不会悄悄变成负数。
+// 返回 null 表示老板选择不记录；'' 表示库存够、不需要确认；其余是老板写的原因。
+async function askStockOverdrawReason(message) {
+    return uiPrompt({
+        title: '库存不够扣',
+        message: message,
+        label: '要继续记录的话，请写明原因（会记在库存流水里）',
+        placeholder: '例如：上周的进货单还没录入',
+        confirmText: '我确认，继续记录',
+        cancelText: '先不记',
+        validate: v => (v ? '' : '请写明为什么要扣成负数，不然不能继续。'),
+    });
+}
+
+// 发出消耗/报损请求。返回 null = 老板取消；否则 { httpStatus, ret }。
+async function postStockOutflow(url, body, stock, unit, verb) {
+    const send = payload => apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(res => Promise.all([res.status, res.json().catch(() => null)]));
+    const qty = Number(body.quantity);
+    const have = Number(stock || 0);
+    let reason = '';
+    if (qty > have + 1e-9) {
+        const diff = Math.round((qty - have) * 1000) / 1000;
+        reason = await askStockOverdrawReason(
+            `账面库存只有 ${have} ${unit || ''}，这次要${verb} ${qty} ${unit || ''}，差 ${diff} ${unit || ''}。\n多半是进货单还没录入。如果实物确实用了这么多，可以继续记录，库存会显示成负数，请尽快补录进货单。`);
+        if (reason === null) return null;
+    }
+    let [httpStatus, ret] = await send(reason ? Object.assign({}, body, { allow_negative: true, override_reason: reason }) : body);
+    if (httpStatus === 409 && ret && ret.code === 'INSUFFICIENT_STOCK' && !reason) {
+        const again = await askStockOverdrawReason(ret.msg || '库存不够扣。');
+        if (again === null) return null;
+        [httpStatus, ret] = await send(Object.assign({}, body, { allow_negative: true, override_reason: again }));
+    }
+    return { httpStatus, ret };
+}
+
+async function submitStockMovement() {
     if (!currentMovementSku) return;
     const skuId = currentMovementSku.id;
     const kind = document.getElementById('stockMovementKind').value;
@@ -8259,13 +8346,18 @@ function submitStockMovement() {
         body = { quantity: qty, notes: note };
     }
 
-    apiFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    })
-    .then(res => Promise.all([res.status, res.json().catch(() => null)]))
-    .then(([httpStatus, ret]) => {
+    const movementSend = (kind === 'stocktake')
+        ? apiFetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }).then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        : postStockOutflow(url, body, currentMovementSku.stock, currentMovementSku.unit, kind === 'waste' ? '报损' : '扣减')
+            .then(o => (o ? [o.httpStatus, o.ret] : null));
+    movementSend
+    .then(pair => {
+        if (!pair) return;
+        const [httpStatus, ret] = pair;
         if (toastHttpError(httpStatus, ret)) return;
         if (!ret || ret.status !== 'success') {
             showToast('记录变动失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
@@ -8557,7 +8649,7 @@ function loadInventoryData() {
                 ? Number(sku.vs_avg_pct) : null;
             const priceText = sku.last_unit_price
                 ? `$${Number(sku.last_unit_price).toFixed(2)}`
-                : '-';
+                : '—';
 
             const isActive = sku.active !== 0;
             if (!isActive) tr.classList.add('inv-row-inactive');
@@ -8580,18 +8672,13 @@ function loadInventoryData() {
             // F5-L1：店员隐藏 owner-only 行内操作（价格走势 / 盘点 / 编辑 / 更多）。
             // 四个入口的后端接口均为 require_role("owner")，店员点击必 403，故渲染期直接不输出。
             const skuActionsHtml = isOwnerRoleNow() ? `
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                        <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.9rem; min-height:40px;"
                             onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>
-                        <button class="${priceBtnCls}" style="padding:4px 8px; font-size:0.85rem;" onclick="viewPriceHistory(${Number(sku.id)})">价格走势</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='openStocktakeModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>盘点</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                        <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.9rem; min-height:40px;"
                             onclick='openStockMovementModal(${Number(sku.id)}, ${jsStr(sku.name)}, ${skuStock}, ${jsStr(sku.base_unit)})'>变动录入</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='openEditSkuModal(${Number(sku.id)})'>编辑</button>
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
-                            onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▼</button>` : `
-                        <button class="btn btn-secondary" style="padding:4px 8px; font-size:0.85rem;"
+                        <button class="${priceAnomaly ? 'btn btn-price-anomaly' : 'btn btn-secondary'}" style="padding:4px 10px; font-size:0.9rem; min-height:40px;"
+                            aria-haspopup="menu" onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▾</button>` : `
+                        <button class="btn btn-secondary" style="padding:4px 10px; font-size:0.9rem; min-height:40px;"
                             onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>`;
 
             // 已停用 / 分类 等同属标签胶囊，统一走 .badge.badge-secondary（去掉内联自定义样式与间距，间距交由 .inv-name-cell 的 gap 控制）
@@ -8617,14 +8704,7 @@ function loadInventoryData() {
                 const kgVal = Number(sku.standard_kg);
                 kgCell = `${kgVal.toFixed(3)} kg`;
                 // hover 提示按实际单位显示换算率
-                const unitHintMap = {
-                    '司马斤': '司马斤 x 0.6048 = kg', '司馬斤': '司马斤 x 0.6048 = kg',
-                    '港斤': '港斤 x 0.6048 = kg',
-                    '市斤': '市斤 x 0.5 = kg', '斤': '斤 x 0.5 = kg',
-                    '两': '两 x 0.05 = kg', '市两': '市两 x 0.05 = kg',
-                    '磅': '磅 x 0.4536 = kg', 'lb': '磅 x 0.4536 = kg', 'lbs': '磅 x 0.4536 = kg'
-                };
-                const unitHint = unitHintMap[sku.base_unit] || '';
+                const unitHint = '按「设置」里的单位换算折算成公斤';
                 const weightHint = unitHint ? ` title="${unitHint}"` : '';
                 kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
             }
@@ -8842,13 +8922,19 @@ function loadInventoryLedger() {
         });
 }
 
-function deduplicateSkus() {
+async function deduplicateSkus() {
     // WS1 防御性门禁：越权直达（staff 直接调用）时拒绝，不发出写请求。
     if (!isOwnerRoleNow()) {
         showToast('权限不足：仅老板（owner）可执行一键清理重复食材', 'error');
         return;
     }
-    if (!confirm('确认一键清理重复食材？将按 canonical 归一合并所有 _\\d{10} 流水号变体（幂等、迁移流水、停用副 SKU、审计留痕）。')) return;
+    const okDedupe = await uiConfirm({
+        title: '一键清理重复食材',
+        message: '系统会把名字相同、只是后面多了流水号的重复食材合并成一个，库存流水一起并过去。\n合并过程会留下记录，确定要做吗？',
+        confirmText: '开始清理',
+        danger: true,
+    });
+    if (!okDedupe) return;
     apiFetch('/api/admin/maintenance/deduplicate', {
         method: 'POST',
         headers: _authHeaders({'Content-Type': 'application/json'})
@@ -8856,7 +8942,7 @@ function deduplicateSkus() {
         if (ret.status === 'success') {
             const cnt = ret.merged_skus || 0;
             const groups = ret.merged_groups || 0;
-            showToast(cnt > 0 ? `已清理 ${cnt} 个重复 SKU（${groups} 组）` : '无重复 SKU 需清理', 'success');
+            showToast(cnt > 0 ? `已清理 ${cnt} 个重复食材（${groups} 组）` : '没有重复食材需要清理', 'success');
             loadInventoryData();
         } else {
             showToast(ret.msg || ret.detail || '清理失败', 'error');
@@ -8912,8 +8998,8 @@ function toggleInventoryMoreMenu(btn, skuTarget) {
     menu.style.position = 'fixed';
     menu.style.top = (rect.bottom + 4) + 'px';
     menu.style.left = Math.max(10, rect.left - 40) + 'px';
-    menu.style.width = '140px';
-    menu.style.minWidth = '140px';
+    menu.style.width = '160px';
+    menu.style.minWidth = '160px';
     menu.style.zIndex = '99999';
     menu.dataset.activeId = skuId;
 
@@ -8921,9 +9007,12 @@ function toggleInventoryMoreMenu(btn, skuTarget) {
 
     // 产品合并：计用量/报损耗 → 统一出库（内部分类型），停用/删除保留在更多作为快捷，编辑内已含停用开关
     menu.innerHTML = `
-        <div class="unit-dropdown-item" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>出库</div>
-        <div class="unit-dropdown-item" style="color:${isActive ? '#ef4444' : '#10b981'};" onclick='closeInvMoreMenu(); toggleSkuActive(${Number(skuId)})'>${toggleText}</div>
-        <div class="unit-dropdown-item" style="color:#ef4444; border-top:1px dashed var(--border-color);" onclick='closeInvMoreMenu(); deleteSkuDirect(${Number(skuId)}, ${jsStr(skuName)})'>删除/清理</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); viewPriceHistory(${Number(skuId)})'>价格走势</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openStocktakeModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>盘点</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openEditSkuModal(${Number(skuId)})'>编辑</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>出库</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" style="color:${isActive ? '#b91c1c' : '#047857'};" onclick='closeInvMoreMenu(); toggleSkuActive(${Number(skuId)})'>${toggleText}</div>
+        <div class="unit-dropdown-item" role="menuitem" tabindex="0" style="color:#b91c1c; border-top:1px dashed var(--border-color);" onclick='closeInvMoreMenu(); deleteSkuDirect(${Number(skuId)}, ${jsStr(skuName)})'>删除/清理</div>
     `;
     menu.classList.remove('hide');
     setTimeout(() => {
@@ -8961,6 +9050,7 @@ function openAddSkuModal() {
     if (codeGrp) codeGrp.style.display = 'none';
 
     openModalById('skuModal');
+    if (typeof window.refreshSkuUnitChoices === 'function') window.refreshSkuUnitChoices();
 }
 
 function openEditSkuModal(skuTarget) {
@@ -9007,6 +9097,7 @@ function openEditSkuModal(skuTarget) {
     }
 
     openModalById('skuModal');
+    if (typeof window.refreshSkuUnitChoices === 'function') window.refreshSkuUnitChoices();
 }
 
 function submitSkuModal() {
@@ -9052,7 +9143,7 @@ function submitSkuModal() {
             if (ret.status === 'success') {
                 closeModalById('skuModal');
                 loadInventoryData();
-                showToast(`食材 SKU ${name} 创建成功`, 'success');
+                showToast(`食材「${name}」创建成功`, 'success');
 
                 // 若由明细行内联发起，自动绑定回该行
                 if (activeInlineSkuInput) {
@@ -9157,7 +9248,7 @@ function openSkuMergeModalFromInv() {
                     html += `
                         <label style="display:flex; align-items:center; gap:8px; margin:4px 0; cursor:pointer;">
                             <input type="checkbox" class="chk-sku-sec" value="${s.id}">
-                            <span>${w2Escape(s.name)} <small style="color:var(--text-muted);">[库存:${s.current_stock}${s.base_unit}]</small></span>
+                            <span>${w2Escape(s.name)} <small style="color:var(--text-muted);">[库存:${Number(s.current_stock) || 0}${w2Escape(s.base_unit)}]</small></span>
                         </label>
                     `;
                 }
@@ -9222,10 +9313,14 @@ function submitSkuMerge() {
     });
 }
 
-function deleteSkuDirect(skuId, skuName) {
-    if (!confirm(`确定要删除/停用食材 ${skuName} 吗？\n\n系统会自动判断：若无历史进货单据则彻底删除，若有单据关联则安全停用。`)) {
-        return;
-    }
+async function deleteSkuDirect(skuId, skuName) {
+    const okSku = await uiConfirm({
+        title: '删除食材',
+        message: '确定要删除食材「' + skuName + '」吗？\n如果从来没有进货记录，会直接删除；如果已经有进货记录，只会停用，数据不会丢。',
+        confirmText: '删除',
+        danger: true,
+    });
+    if (!okSku) return;
 
     apiFetch('/api/inventory/skus/' + skuId, {
         method: 'DELETE'
@@ -9482,7 +9577,7 @@ function revokePriceAnomalyAck(skuId) {
     });
 }
 
-function toggleSkuActive(skuTarget) {
+async function toggleSkuActive(skuTarget) {
     const sku = _resolveSkuObject(skuTarget);
     if (!sku) {
         showToast('无法读取食材档案信息', 'error');
@@ -9492,9 +9587,13 @@ function toggleSkuActive(skuTarget) {
     const targetActive = isActive ? 0 : 1;
 
     if (isActive) {
-        if (!confirm(`确定要停用食材 ${sku.name} 吗？\n\n停用后进货将不再自动匹配到此项，默认列表也不再显示。`)) {
-            return;
-        }
+        const okOff = await uiConfirm({
+            title: '停用食材',
+            message: '确定要停用食材「' + sku.name + '」吗？\n停用后进货不再自动对到这个食材，列表里也默认不显示；以后可以再启用。',
+            confirmText: '停用',
+            danger: true,
+        });
+        if (!okOff) return;
     }
 
     apiFetch('/api/inventory/skus/' + sku.id, {
@@ -9674,7 +9773,7 @@ function applyArchiveFilters(delay = 60) {
 
             // 2b. Wave 1 付款状态 Filter：unpaid=未付(含逾期)，paid=已付(含现结)
             if (payStateFilter === 'unpaid') {
-                if (r.payment_status !== 'unpaid' && r.payment_status !== 'overdue') return false;
+                if (r.payment_status !== 'unpaid' && r.payment_status !== 'overdue' && r.payment_status !== 'partial') return false;
             } else if (payStateFilter === 'paid') {
                 if (r.payment_status !== 'paid' && r.payment_status !== 'paid_at_delivery') return false;
             }
@@ -9915,8 +10014,15 @@ function renderArchiveTable(receipts) {
 // Q33/W6 Q1：approve 必须携带 version（缺失 → 400 VERSION_REQUIRED）；
 // 处理 409 VERSION_CONFLICT（提示 + 重载详情）；返回 Promise<boolean> 供弹窗决定是否关闭。
 function approveReceipt(receiptId, knownVersion) {
-    if (!confirm(`确定要把单据 #${receiptId} 审核通过吗？`)) return Promise.resolve(false);
+    return askConfirm({
+        title: '审核入账',
+        message: `单据 #${receiptId} 审核入账后会计入支出，库存也会增加。确定入账吗？`,
+        confirmText: '审核入账',
+        cancelText: '先不入账'
+    }).then(ok => ok ? _postApprove(receiptId, knownVersion) : false);
+}
 
+function _postApprove(receiptId, knownVersion) {
     // D17/W6 Q1：始终提交 JSON body 含 version（详情加载时记录于 currentArchiveDetailData）
     const body = { version: knownVersion };
     return apiFetch(`/api/receipt/${receiptId}/approve`, {
@@ -9936,10 +10042,11 @@ function approveReceipt(receiptId, knownVersion) {
             loadReceiptDetail(receiptId);
             return false;
         }
+        if (handleApproveError(httpStatus, ret, { receiptId: receiptId })) return false;
         // E-P1-4：403 人话统一（审批为 owner 专属，staff 触发时给出角色指引）
         if (toastHttpError(httpStatus, ret)) return false;
         if (!ret || ret.status !== 'success') {
-            showToast('审核失败：' + ((ret && ret.msg) || '请稍后重试'), 'error');
+            showToast('审核入账没有成功：' + TERMS.humanizeCode(ret && ret.code, ret && ret.msg), 'error');
             return false;
         }
         // P1-13: approve 成功后更新本地 version（响应契约带 version）
@@ -9947,7 +10054,7 @@ function approveReceipt(receiptId, knownVersion) {
             const nv = extractVersionFromResponse(ret);
             if (nv != null) currentArchiveDetailData.version = nv;
         }
-        showToast(`已审核通过单据 #${receiptId}`, 'success');
+        showToast(`已审核入账：单据 #${receiptId}`, 'success');
         loadReceiptsHistory();
         loadFinancePanel();     // Wave 1：approve 落库钩子可能写预期付款日快照 → 提醒联动
         return true;
@@ -9960,18 +10067,8 @@ function approveReceipt(receiptId, knownVersion) {
 }
 
 function flagReceipt(receiptId) {
-    if (!confirm(`确定要把单据 #${receiptId} 标记为异常吗？`)) return;
-    apiFetch(`/api/receipt/${receiptId}/flag`, { method: 'POST' })
-    .then(res => res.json())
-    .then(ret => {
-        if (ret.status !== 'success') {
-            showToast('标记失败：' + (ret.msg || '请稍后重试'), 'error');
-            return;
-        }
-        showToast(`已标记单据 #${receiptId} 为异常`, 'success');
-        loadReceiptsHistory();
-        loadFinancePanel();     // Wave 1：flagged 单据移出应付口径 → 提醒联动
-    });
+    // 应用内弹窗，可填原因；成功后刷新应付（flagged 单据移出应付口径）
+    return flagReceiptWithReason(receiptId, () => { loadFinancePanel(); });
 }
 
 function modalApproveReceipt() {
@@ -9990,8 +10087,8 @@ function modalApproveReceipt() {
 
 function modalFlagReceipt() {
     if (!currentArchiveReceiptId) return;
-    flagReceipt(currentArchiveReceiptId);
-    closeArchiveModal(true);
+    const rid = currentArchiveReceiptId;
+    flagReceipt(rid).then(ok => { if (ok) closeArchiveModal(true); });
 }
 
 // ---- Q35：归档列表 error 行的「重试 / 转手工」入口 ----
@@ -9999,7 +10096,10 @@ function modalFlagReceipt() {
 function retryReceiptFromArchive(receiptId) {
     const rid = Number(receiptId);
     if (!Number.isFinite(rid) || rid <= 0) return;
-    if (!confirm(`确定对单据 #${rid} 重新发起识别吗？`)) return;
+    askConfirm({ title: '重新识别', message: `让系统重新读一遍单据 #${rid}？`, confirmText: '重新识别', cancelText: '先不用' }).then(ok => { if (ok) _postRetryFromArchive(rid); });
+}
+
+function _postRetryFromArchive(rid) {
     showToast(`单据 #${rid} 重试已提交…`, 'info');
     apiFetch(`/api/receipt/${rid}/retry`, { method: 'POST' })
         .then(res => res.json())
@@ -10020,21 +10120,28 @@ function retryReceiptFromArchive(receiptId) {
 function convertReceiptFromArchive(receiptId) {
     const rid = Number(receiptId);
     if (!Number.isFinite(rid) || rid <= 0) return;
-    if (!confirm(`确定将单据 #${rid} 转为手工录入吗？将保留原图与已识别预填。`)) return;
-    showToast(`单据 #${rid} 转手工请求已提交…`, 'info');
+    askConfirm({
+        title: '转手工录入',
+        message: `把单据 #${rid} 改成手工录入？原图会保留，已经读出来的内容也会保留，你可以自己改。`,
+        confirmText: '转手工录入',
+        cancelText: '先不转'
+    }).then(ok => { if (ok) _postConvertFromArchive(rid); });
+}
+
+function _postConvertFromArchive(rid) {
     apiFetch(`/api/receipt/${rid}/convert_manual`, { method: 'POST' })
-        .then(res => res.json())
-        .then(ret => {
-            if (ret.status === 'success') {
-                showToast(`单据 #${rid} 已转为手工录入，可进入详情编辑`, 'success');
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([httpStatus, ret]) => {
+            if (ret && ret.status === 'success') {
+                showToast(`单据 #${rid} 已转为手工录入，点进详情就能修改，原图已保留`, 'success');
                 loadReceiptsHistory();   // 刷新归档列表（状态变为 edited）
             } else {
-                showToast('转手工失败：' + (ret.msg || '请稍后重试'), 'error');
+                showToast('没能转成手工录入：' + TERMS.humanizeCode(ret && ret.code, ret && ret.msg) + '。原图已保留，可以再点一次「转手工」', 'error', 7000);
             }
         })
         .catch(err => {
             console.error('转手工请求失败:', err);
-            showToast('转手工请求失败，请检查网络后重试', 'error');
+            showToast('网络不通，没能转成手工录入，请检查网络后再试', 'error');
         });
 }
 
@@ -10080,12 +10187,17 @@ function loadReceiptDetail(receiptId) {
         const archiveImageUrl = ret.image_url || '';
         const archivePreviewImg = document.getElementById('archivePreviewImg');
         const archiveOpenRawBtn = document.getElementById('btnArchiveOpenRaw');
+        const archiveNoImage = document.getElementById('archiveNoImage');
         if (archiveImageUrl) {
             archivePreviewImg.src = archiveImageUrl;
+            archivePreviewImg.style.display = '';
+            if (archiveNoImage) archiveNoImage.classList.add('hide');
             archiveOpenRawBtn.href = archiveImageUrl;
             archiveOpenRawBtn.classList.remove('hide');
         } else {
             archivePreviewImg.removeAttribute('src');
+            archivePreviewImg.style.display = 'none';
+            if (archiveNoImage) archiveNoImage.classList.remove('hide');
             archiveOpenRawBtn.removeAttribute('href');
             archiveOpenRawBtn.classList.add('hide');
         }
@@ -10104,6 +10216,7 @@ function loadReceiptDetail(receiptId) {
         if (arcDeptSel) arcDeptSel.onchange = markArcDirty;
 
         applyModalRoleVisibility();
+        if (typeof syncArchiveActionButtons === 'function') syncArchiveActionButtons(data);
         document.getElementById('archiveDetailModal').classList.remove('hide');
     })
     .catch(err => {
@@ -10178,6 +10291,7 @@ function actionBadge(type, props, fallback) {
 }
 
 function renderArchiveForm(data) {
+    if (typeof syncArchiveActionButtons === 'function') syncArchiveActionButtons(data);
     document.getElementById('arcSupplier').value = data.supplier_name || '';
     document.getElementById('arcDate').value = data.date || '';
     document.getElementById('arcSheet').value = data.sheet_name || '';
@@ -11001,8 +11115,10 @@ function renderPriceHistoryModal(ret) {
     // 指标卡
     const metricsEl = document.getElementById('priceHistoryMetrics');
     if (metricsEl) {
-        const vs = summary.vs_avg_pct;
-        const anomaly = !!summary.is_anomaly;
+        // 近 30 天没有进货时均价没有意义：显示「—」而不是 $0.00，避免看起来像价格是 0
+        const noRecent = !(Number(summary.avg_30d) > 0);
+        const vs = noRecent ? null : summary.vs_avg_pct;
+        const anomaly = !noRecent && !!summary.is_anomaly;
         const vsClass = anomaly ? 'ph-metric-danger' : (vs != null && vs < 0 ? 'ph-metric-ok' : '');
         metricsEl.innerHTML = `
             <div class="ph-metric">
@@ -11011,11 +11127,12 @@ function renderPriceHistoryModal(ret) {
             </div>
             <div class="ph-metric">
                 <div class="ph-metric-label">30 日均价</div>
-                <div class="ph-metric-value">${w2Escape(formatHkd(summary.avg_30d))}</div>
+                <div class="ph-metric-value">${noRecent ? '—' : w2Escape(formatHkd(summary.avg_30d))}</div>
+                ${noRecent ? '<div class="ph-metric-sub" style="font-size:0.78rem; color:var(--text-muted);">近 30 天无进货</div>' : ''}
             </div>
             <div class="ph-metric ${vsClass}">
                 <div class="ph-metric-label">较均价${anomaly ? ' · 异动' : ''}</div>
-                <div class="ph-metric-value">${w2Escape(formatPctSigned(vs))}</div>
+                <div class="ph-metric-value">${noRecent ? '—' : w2Escape(formatPctSigned(vs))}</div>
             </div>
             <div class="ph-metric">
                 <div class="ph-metric-label">区间低 / 高</div>
@@ -11090,7 +11207,7 @@ function renderPriceHistoryModal(ret) {
                 <td class="ph-supplier-cell" title="${w2Escape(supName)}">${w2Escape(supName)}</td>
                 <td class="col-right"><strong>${w2Escape(Number.isFinite(price) ? price.toFixed(2) : '—')}</strong></td>
                 <td class="col-right">${qty != null ? w2Escape(String(qty)) : '—'}</td>
-                <td><span class="badge badge-secondary">${w2Escape(item.source || '—')}</span></td>
+                <td><span class="badge badge-secondary">${w2Escape(({receipt: '进货单据', manual: '手工录入', initial: '初始单价', baseline: '初始单价'})[item.source] || item.source || '—')}</span></td>
                 <td class="col-right">${deltaCell}</td>
                 <td class="col-center">${receiptCell}</td>
             `;
@@ -11107,7 +11224,7 @@ function renderSkuOverview(data) {
     if (!el) return;
     if (!data) {
         // 取详情失败：仅本块降级为提示，价格曲线照常渲染；不抛出、不用 console.error。
-        el.innerHTML = '<div class="ph-overview-title">SKU 概览</div>'
+        el.innerHTML = '<div class="ph-overview-title">食材概况</div>'
             + '<div class="ph-overview-fail">详情加载失败</div>';
         return;
     }
@@ -11125,7 +11242,7 @@ function renderSkuOverview(data) {
     // WS4-6：SKU 概览补「在库批次」（口径与后端 avg_cost 同源：未关闭且剩余 > 0，FIFO 序）。
     const batches = Array.isArray(data.batches) ? data.batches : [];
     el.innerHTML = `
-        <div class="ph-overview-title">SKU 概览</div>
+        <div class="ph-overview-title">食材概况</div>
         <div class="ph-overview-grid">
             <div class="ph-overview-item"><span class="ph-overview-label">当前结存</span><span class="ph-overview-value">${w2Escape(String(stock))}${unit ? ' ' + w2Escape(unit) : ''}</span></div>
             <div class="ph-overview-item"><span class="ph-overview-label">单位</span><span class="ph-overview-value">${w2Escape(unit || '-')}</span></div>
@@ -11162,7 +11279,7 @@ function renderSkuOverviewBatches(batches, unit) {
 
 function loadSkuOverview(skuId) {
     const el = document.getElementById('priceHistorySkuOverview');
-    if (el) el.innerHTML = '<div class="ph-overview-title">SKU 概览</div><div class="ph-overview-fail">加载中…</div>';
+    if (el) el.innerHTML = '<div class="ph-overview-title">食材概况</div><div class="ph-overview-fail">加载中…</div>';
     apiFetch(`/api/inventory/skus/${skuId}`)
         .then(res => res.json().then(body => ({ ok: res.ok, body })))
         .then(({ ok, body }) => {
@@ -11197,7 +11314,7 @@ function openReceiptFromPriceHistory(receiptId) {
 function viewPriceHistory(skuId) {
     const id = Number(skuId);
     if (!Number.isFinite(id) || id <= 0) {
-        showToast('无效的 SKU', 'error');
+        showToast('找不到这个食材，请刷新页面再试。', 'error');
         return;
     }
     const modal = document.getElementById('priceHistoryModal');
@@ -11695,10 +11812,7 @@ async function handleFilesSelect(fileList, gen) {
         // 自动展开 sider 让用户看到 batch（仅当本批 >= 2 张时才弹出）
         if (BatchUploader.photos.length >= 2 && !BatchUploader.siderOpen) togglePhotoSider();
 
-        const autoAnalyze = document.getElementById('chkAutoAnalyze')?.checked;
-        if (autoAnalyze) {
-            triggerBatchAnalysis(false);
-        }
+        triggerBatchAnalysis(false);
     } finally {
         if (currentGen === fileSelectionGen) {
             showImagePrepIndicator(false);
@@ -12672,7 +12786,7 @@ window.applyPayablesFilters = applyPayablesFilters;
 // ==========================================================================
 // Wave 2 财务闭环（T7/M5-M8，D15/D18/D20）
 //   - CSV 导出（归档筛选参数透传）
-//   - 支付登记 + 未付赊单/账期/逾期看板
+//   - 支付登记 + 未付挂账单/账期/逾期看板
 //   - 月结对账引擎前端（任务列表 / 差异明细 / 处理 / 确认锁定）
 //   - 供应商合并（D18）
 //   - 盘点调整（D15）
@@ -12720,11 +12834,11 @@ const RECON_STATUS_BADGES = {
     confirmed: ['badge-success', '已确认'],
 };
 const MATCH_BADGES = {
-    matched: ['badge-success', '已匹配'],
-    pending: ['badge-warning', '待人工确认'],
-    amount_mismatch: ['badge-danger', '金额不符'],
-    supplier_only: ['badge-danger', '账单有·餐厅无'],
-    restaurant_only: ['badge-warning', '餐厅有·账单无'],
+    matched: ['badge-success', '已对上'],
+    pending: ['badge-warning', '待确认'],
+    amount_mismatch: ['badge-danger', '金额对不上'],
+    supplier_only: ['badge-danger', '账单有，我们没有单'],
+    restaurant_only: ['badge-warning', '我们有单，账单没有'],
 };
 
 // Wave 1：付款方式展示口径（契约① paid_method 四态；未付显示 —）
@@ -12764,7 +12878,7 @@ function daysFromToday(dateStr) {
 }
 
 // 应付清单行域（与 compute_supplier_payables 债务口径对齐）：
-// 现金单/赊单；月结账单 statement 是下属赊单汇总单避免重复计债；
+// 现金单/挂账单；月结账单 statement 是下属挂账单汇总单避免重复计债；
 // 仅 parsed/edited/approved 有效态（flagged 已隔离、识别中/失败不入债务）。
 function isPayableRow(r) {
     if (!r) return false;
@@ -12772,15 +12886,29 @@ function isPayableRow(r) {
     if (st !== 'credit' && st !== 'cash') return false;
     if (r.doc_form === 'statement') return false;
     const s = r.status || '';
-    // parsed_with_warnings（门禁带警告）仍是有效待核对态，计入应付口径
-    return s === 'parsed' || s === 'parsed_with_warnings' || s === 'edited' || s === 'approved';
+    // 应付只算已审批入账的单据（与供应商表「已入账未付挂账单」同口径）；没审批的挂账单入账后才计入
+    return s === 'approved';
 }
+
+// 7 天内到期：后端的 due_soon 字段目前恒为 false，前端按预期付款日自己算（未付清、没逾期、0 到 7 天内）
+function payIsDueSoon(r) {
+    if (!r) return false;
+    if (r.due_soon === true) return true;
+    if (typeof payOutstandingAmount === 'function' && payOutstandingAmount(r) <= 0) return false;
+    if (r.is_overdue === true || r.payment_status === 'overdue') return false;
+    const n = daysFromToday(r.expected_pay_date || r.due_date);
+    return n !== null && n >= 0 && n <= 7;
+}
+window.payIsDueSoon = payIsDueSoon;
 
 // Wave 1 付款状态徽章（契约①五态）；未知值兜底过 w2Escape（P0 硬规则）
 function payStatusBadgeHtml(r) {
     const st = r && r.payment_status;
     if (st === 'paid_at_delivery') return '<span class="badge badge-success">现结已付</span>';
-    if (st === 'paid') return '<span class="badge badge-success">已付</span>';
+    if (st === 'paid') return '<span class="badge badge-success">已付清</span>';
+    if (st === 'partial') {
+        return '<span class="badge badge-warning">部分已付</span>' + (r.is_overdue === true ? ' <span class="badge badge-danger">已逾期</span>' : '');
+    }
     if (st === 'overdue') {
         const n = daysFromToday(r.expected_pay_date);
         const daysTxt = (n !== null && n < 0) ? ' ' + (-n) + '天' : '';
@@ -12788,7 +12916,7 @@ function payStatusBadgeHtml(r) {
     }
     if (st === 'unpaid') {
         let badge = '<span class="badge badge-warning">未付</span>';
-        if (r.due_soon) {
+        if (payIsDueSoon(r)) {
             const n = daysFromToday(r.expected_pay_date);
             const daysTxt = (n !== null) ? n + '天到期' : '快到期';
             badge += '<div style="font-size:0.72rem; color:#d97706; margin-top:2px;">' + daysTxt + '</div>';
@@ -12803,7 +12931,7 @@ function payStatusBadgeHtml(r) {
 // 未进入付款域的单据（结算未识别/缺失）显示弱化 —，避免满屏噪音
 function payStatusLiteBadgeHtml(r) {
     const st = r && r.payment_status;
-    if (st === 'paid_at_delivery' || st === 'paid' || st === 'unpaid' || st === 'overdue') {
+    if (st === 'paid_at_delivery' || st === 'paid' || st === 'unpaid' || st === 'overdue' || st === 'partial') {
         return payStatusBadgeHtml(r);
     }
     return '<span style="color:var(--text-muted); font-size:0.8rem;">—</span>';
@@ -12814,12 +12942,12 @@ function computePayStats(receipts) {
     let unpaidTotal = 0, unpaidCount = 0, overdueCount = 0, dueSoonCount = 0;
     (receipts || []).forEach(r => {
         const st = r.payment_status;
-        if (st === 'unpaid' || st === 'overdue') {
-            unpaidTotal += Number(r.total_amount || 0);
+        if (st === 'unpaid' || st === 'overdue' || st === 'partial') {
+            unpaidTotal += (typeof payOutstandingAmount === 'function') ? payOutstandingAmount(r) : Number(r.total_amount || 0);
             unpaidCount += 1;
         }
-        if (st === 'overdue') overdueCount += 1;
-        if (r.due_soon) dueSoonCount += 1;
+        if (st === 'overdue' || r.is_overdue === true) overdueCount += 1;
+        if (payIsDueSoon(r)) dueSoonCount += 1;
     });
     return { unpaidTotal, unpaidCount, overdueCount, dueSoonCount };
 }
@@ -12872,15 +13000,18 @@ function renderPayablesSummary() {
     const sup = finState.supplierId
         ? finState.suppliers.find(s => s.id === finState.supplierId) : null;
 
+    const notPosted = (finState.receipts || []).filter(r => r.settlement_type === 'credit' && !r.deleted_at
+        && r.doc_form !== 'statement' && (r.status === 'edited' || r.status === 'parsed' || r.status === 'parsed_with_warnings'));
     let html = `
         <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-            <span style="font-size:1.02rem;">未付总额：
-                <strong style="color:${stats.unpaidTotal > 0 ? '#f59e0b' : '#10b981'};">
+            <span style="font-size:1.02rem;">已入账未付总额：
+                <strong style="color:${stats.unpaidTotal > 0 ? '#b45309' : '#047857'};">
                     $${fmtMoney(stats.unpaidTotal)}</strong>
                 （${stats.unpaidCount} 张）</span>
-            <span class="badge ${stats.overdueCount ? 'badge-danger' : 'badge-success'}">[高风险] 逾期 ${stats.overdueCount} 张</span>
-            <span class="badge ${stats.dueSoonCount ? 'badge-warning' : 'badge-success'}">[注意] 7 天内到期 ${stats.dueSoonCount} 张</span>
-        </div>`;
+            <span class="badge ${stats.overdueCount ? 'badge-danger' : 'badge-success'}">逾期 ${stats.overdueCount} 张</span>
+            <span class="badge ${stats.dueSoonCount ? 'badge-warning' : 'badge-success'}">7 天内到期 ${stats.dueSoonCount} 张</span>
+        </div>
+        <div style="font-size:0.88rem; color:var(--text-muted); margin-top:6px;">这里和上面「供应商」表的口径一样：只算已审批入账的挂账单。${notPosted.length ? '另有 ' + notPosted.length + ' 张挂账单还没审批，审批入账后才会算进来。' : ''}</div>`;
     if (sup) {
         const overdueBadge = sup.is_overdue
             ? `<span class="badge badge-danger">该供应商存在逾期</span>`
@@ -12891,8 +13022,8 @@ function renderPayablesSummary() {
         <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:8px;">
             <span class="badge badge-secondary">当前筛选：${w2Escape(sup.name)}</span>
             <span class="badge badge-secondary">账期 ${termsTxt}</span>
-            <span style="font-size:0.92rem;">未付赊单合计：
-                <strong style="color:${sup.unpaid_credit_total > 0 ? '#f59e0b' : '#10b981'};">
+            <span style="font-size:0.92rem;">已入账未付挂账单：
+                <strong style="color:${sup.unpaid_credit_total > 0 ? '#b45309' : '#047857'};">
                     $${fmtMoney(sup.unpaid_credit_total)}</strong>
                 （${sup.unpaid_credit_count} 张）</span>
             ${overdueBadge}
@@ -12913,13 +13044,13 @@ function getFilteredPayables() {
         if (sup) rows = rows.filter(r => r.supplier_name === sup.name);
     }
     if (fltPay === 'unpaid') {
-        rows = rows.filter(r => r.payment_status === 'unpaid' || r.payment_status === 'overdue');
+        rows = rows.filter(r => r.payment_status === 'unpaid' || r.payment_status === 'overdue' || r.payment_status === 'partial');
     } else if (fltPay === 'paid') {
         rows = rows.filter(r => r.payment_status === 'paid' || r.payment_status === 'paid_at_delivery');
     }
     if (fltMethod) rows = rows.filter(r => r.paid_method === fltMethod);
-    if (fltDue === 'overdue') rows = rows.filter(r => r.payment_status === 'overdue');
-    else if (fltDue === 'due_soon') rows = rows.filter(r => !!r.due_soon);
+    if (fltDue === 'overdue') rows = rows.filter(r => r.payment_status === 'overdue' || r.is_overdue === true);
+    else if (fltDue === 'due_soon') rows = rows.filter(r => payIsDueSoon(r));
     else if (fltDue === 'no_date') rows = rows.filter(r => r.payment_status === 'unpaid' && !r.expected_pay_date);
 
     // 默认排序（03 章二）：未付在前、expected_pay_date 升序（最急在前）、无日期沉底；
@@ -12961,17 +13092,17 @@ function renderPayablesTable(rows) {
         const rid = Number(r.id);
         const tr = document.createElement('tr');
         // 逾期行整行标红、快到期行高亮（02 章三）
-        if (r.payment_status === 'overdue') tr.className = 'payable-row-overdue';
-        else if (r.due_soon) tr.className = 'payable-row-due-soon';
+        if (r.payment_status === 'overdue' || r.is_overdue === true) tr.className = 'payable-row-overdue';
+        else if (payIsDueSoon(r)) tr.className = 'payable-row-due-soon';
 
         const supCode = r.supplier_code
             ? ' <span class="badge badge-secondary" style="font-size:0.72rem; font-family:monospace; opacity:0.85;">' + w2Escape(r.supplier_code) + '</span>'
             : '';
 
-        // 预期付款日：未付赊单行内日期可编辑（契约④，owner 专属）；其余只读
+        // 预期付款日：未付挂账单行内日期可编辑（契约④，owner 专属）；其余只读
         let dateCell;
         const editable = owner && r.settlement_type === 'credit' && !r.payment_id &&
-            (r.payment_status === 'unpaid' || r.payment_status === 'overdue');
+            (r.payment_status === 'unpaid' || r.payment_status === 'overdue' || r.payment_status === 'partial');
         if (editable) {
             dateCell = '<input type="date" class="form-control" style="font-size:0.8rem; padding:3px 6px; width:100%; max-width:140px; box-sizing:border-box;" ' +
                 'value="' + w2Escape(r.expected_pay_date || '') + '" ' +
@@ -12988,10 +13119,10 @@ function renderPayablesTable(rows) {
             ? w2Escape(PAY_METHOD_LABELS[r.paid_method] || r.paid_method)
             : '<span style="color:var(--text-muted);">—</span>';
 
-        // 操作：未付赊单可登记支付（沿用既有护栏：现结单/账单不可挂）
+        // 操作：未付挂账单可登记支付（沿用既有护栏：现结单/账单不可挂）
         let actionHtml;
-        if (r.settlement_type === 'credit' && !r.payment_id) {
-            actionHtml = '<button class="btn btn-primary" style="padding:2px 8px; font-size:0.75rem;" ' +
+        if (r.settlement_type === 'credit' && payOutstandingAmount(r) > 0) {
+            actionHtml = '<button class="btn btn-primary" style="min-height:40px; padding:4px 12px; font-size:0.85rem;" ' +
                 'onclick="openPaymentModalForReceipt(' + rid + ')"> 登记支付</button>';
         } else {
             actionHtml = '<span style="color:var(--text-muted); font-size:0.78rem;">—</span>';
@@ -13001,7 +13132,7 @@ function renderPayablesTable(rows) {
             <td style="vertical-align:middle; word-break:break-all; white-space:normal; text-align:center;">#${rid}<br>
                 <strong>${w2Escape(r.supplier_name || '-')}</strong>${supCode}</td>
             <td style="vertical-align:middle;">${renderDateCell(r.receipt_date)}</td>
-            <td style="vertical-align:middle;"><strong>$${fmtMoney(r.total_amount)}</strong></td>
+            <td style="vertical-align:middle;"><strong>$${fmtMoney(r.total_amount)}</strong>${payPaidAmount(r) > 0 && payOutstandingAmount(r) > 0 ? '<div style="font-size:0.78rem; color:var(--text-muted);">已付 $' + fmtMoney(payPaidAmount(r)) + '，待付 $' + fmtMoney(payOutstandingAmount(r)) + '</div>' : ''}</td>
             <td style="vertical-align:middle;">${payStatusBadgeHtml(r)}</td>
             <td style="vertical-align:middle;">${dateCell}</td>
             <td style="vertical-align:middle;">${methodCell}</td>
@@ -13019,6 +13150,11 @@ function updatePaymentReminders() {
         dot.textContent = count > 99 ? '99+' : String(count);
         dot.classList.toggle('hide', count === 0);
     }
+    const arcDot = document.getElementById('arcPayCount');
+    if (arcDot) {
+        arcDot.textContent = count > 99 ? '99+' : String(count);
+        arcDot.classList.toggle('hide', count === 0);
+    }
     const banner = document.getElementById('payReminderBanner');
     if (banner) {
         if (count === 0) {
@@ -13026,7 +13162,7 @@ function updatePaymentReminders() {
             banner.innerHTML = '';
         } else {
             const parts = [];
-            if (stats.overdueCount > 0) parts.push(w2Escape(String(stats.overdueCount)) + ' 张赊单已逾期');
+            if (stats.overdueCount > 0) parts.push(w2Escape(String(stats.overdueCount)) + ' 张挂账单已逾期');
             if (stats.dueSoonCount > 0) parts.push(w2Escape(String(stats.dueSoonCount)) + ' 张 7 天内到期');
             banner.innerHTML = '你有 <strong>' + parts.join('、') + '</strong>，点击查看应付清单 →';
             banner.classList.remove('hide');
@@ -13038,6 +13174,7 @@ function updatePaymentReminders() {
 function gotoPayablesList() {
     const btn = document.querySelector('.sidebar-btn[data-target="tab-archive"]');
     if (btn && btn.click) btn.click();
+    if (typeof showArchivePane === 'function') showArchivePane('payables');
     const card = document.getElementById('payablesCard');
     if (card && card.scrollIntoView) {
         setTimeout(() => card.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
@@ -13076,8 +13213,8 @@ function openPaymentModalForReceipt(receiptId) {
     if (!Number.isFinite(rid) || rid <= 0) return;
     const r = (finState.receipts || []).find(x => Number(x.id) === rid);
     if (!r) { showToast('未找到该单据，请刷新后重试', 'warning'); return; }
-    if (r.settlement_type !== 'credit' || r.payment_id) {
-        showToast('仅未付赊单可登记支付', 'warning');
+    if (r.settlement_type !== 'credit' || r.status !== 'approved' || payOutstandingAmount(r) <= 0) {
+        showToast('只有已审批入账、还没付清的挂账单可以登记支付。', 'warning');
         return;
     }
     const sup = (finState.suppliers || []).find(s => s.name === r.supplier_name);
@@ -13159,92 +13296,21 @@ function renderReconTasks(tasks) {
         const [cls, label] = RECON_STATUS_BADGES[t.status] || ['badge-secondary', w2Escape(t.status)];
         const tr = document.createElement('tr');
         tr.innerHTML = `
-            <td>#${Number(t.id)}</td>
+            <td>#${w2Escape(String(t.id))}</td>
             <td>${w2Escape(t.supplier_name || '-')}</td>
-            <td>${w2Escape(t.period_start)} ~ ${w2Escape(t.period_end)}</td>
+            <td>${t.period_start || t.period_end ? w2Escape(t.period_start || '开头') + ' ~ ' + w2Escape(t.period_end || '今天') : '没限定期间'}</td>
             <td>${w2Escape(t.period_type_label)}</td>
             <td><span class="badge ${cls}">${label}</span></td>
             <td>${t.summary.total_lines}</td>
-            <td style="color:#10b981;">${t.summary.matched}</td>
-            <td style="color:${t.summary.open_issues ? '#f59e0b' : '#10b981'};">${t.summary.open_issues}</td>
-            <td><button class="btn btn-secondary" style="padding:3px 10px; font-size:0.8rem;"
-                onclick="viewReconTask(${Number(t.id)})"> 查看详情</button></td>`;
+            <td style="color:#047857; font-weight:600;">${t.summary.matched}</td>
+            <td style="color:${t.summary.open_issues ? '#b45309' : '#047857'}; font-weight:600;">${t.summary.open_issues}</td>
+            <td><button class="btn btn-secondary" style="min-height:40px; padding:4px 14px; font-size:0.9rem;"
+                onclick='viewReconTask(${jsStr(t.id)})'> 查看详情</button></td>`;
         body.appendChild(tr);
     });
 }
 
-// ---- 登记支付 Modal ----
-function openPaymentModal() {
-    if (!finState.supplierId) { showToast('请先选择供应商', 'warning'); return; }
-    const sup = finState.suppliers.find(s => s.id === finState.supplierId);
-    document.getElementById('paymentSupplierHint').innerText =
-        `供应商：${sup.name}`;
-    document.getElementById('payAmount').value = sup.unpaid_credit_total > 0 ? sup.unpaid_credit_total : '';
-    document.getElementById('payDate').value = getTodayDateStr();
-    document.getElementById('payNotes').value = '';
-    document.getElementById('payVoucher').value = '';
-    document.getElementById('payCheckAll').checked = false;
-
-    // 拉取最新单据列表（payment_id 实时），列出该供应商未付赊单供勾选
-    apiFetch('/api/receipts')
-        .then(res => res.json())
-        .then(ret => {
-            if (ret.status !== 'success') return;
-            const body = document.getElementById('payReceiptBody');
-            body.innerHTML = '';
-            const rows = (ret.data || []).filter(r =>
-                r.supplier_name === sup.name && r.settlement_type === 'credit' && !r.payment_id);
-            if (!rows.length) {
-                body.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted);">该供应商暂无未付月结赊单</td></tr>';
-            }
-            rows.forEach(r => {
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td><input type="checkbox" class="pay-receipt-check" value="${r.id}" checked></td>
-                    <td>#${r.id}</td>
-                    <td>${renderDateCell(r.receipt_date)}</td>
-                    <td>$${fmtMoney(r.total_amount)}</td>
-                    <td>${w2Escape(r.status)}</td>`;
-                body.appendChild(tr);
-            });
-            document.getElementById('payCheckAll').checked = rows.length > 0;
-        });
-    document.getElementById('paymentModal').classList.remove('hide');
-}
-
-function togglePayCheckAll(cb) {
-    document.querySelectorAll('.pay-receipt-check').forEach(c => { c.checked = cb.checked; });
-}
-
-function submitPayment() {
-    const amount = parseFloat(document.getElementById('payAmount').value);
-    if (!amount || amount <= 0) { showToast('请输入有效的支付金额', 'warning'); return; }
-
-    const fd = new FormData();
-    fd.append('supplier_id', String(finState.supplierId));
-    fd.append('amount', String(amount));
-    fd.append('method', document.getElementById('payMethod').value);
-    const paidAt = document.getElementById('payDate').value;
-    if (paidAt) fd.append('paid_at', paidAt);
-    const notes = document.getElementById('payNotes').value.trim();
-    if (notes) fd.append('notes', notes);
-    document.querySelectorAll('.pay-receipt-check:checked').forEach(c => fd.append('receipt_ids', c.value));
-    const voucherFile = document.getElementById('payVoucher').files[0];
-    if (voucherFile) fd.append('voucher', voucherFile);
-
-    apiFetch('/api/payments', { method: 'POST', body: fd })
-        .then(res => res.json())
-        .then(ret => {
-            if (ret.status !== 'success') { showToast('登记支付失败' + toastFailDetail(ret.msg), 'error'); return; }
-            console.log('[payment] 登记支付成功', ret.msg);
-            showToast('已登记支付', 'success');
-            closeModalById('paymentModal');
-            loadFinancePanel();
-            loadReceiptsHistory();       // 刷新 payment_id 标记
-            loadSupplierAdmin();         // 未付合计联动
-        })
-        .catch(err => { console.error('登记支付异常', err); showToast('登记支付失败' + toastFailDetail(err), 'error'); });
-}
+// ---- 登记支付 Modal：见 finance.js ----
 
 // ---- 发起对账 Modal ----
 function openReconModal() {
@@ -13312,9 +13378,9 @@ function renderReconDetail() {
     const t = detail.task;
     const [cls, label] = RECON_STATUS_BADGES[t.status] || ['badge-secondary', t.status];
     document.getElementById('reconDetailTitle').innerHTML =
-        `任务 #${t.id}｜${w2Escape(t.period_start)} ~ ${w2Escape(t.period_end)}｜` +
-        `<span class="badge ${cls}">${label}</span>｜账单侧金额 $${fmtMoney(t.summary.statement_amount)}、` +
-        `餐厅侧未入账单 $${fmtMoney(t.summary.restaurant_only_amount)}`;
+        `任务 #${w2Escape(String(t.id))}｜${t.period_start || t.period_end ? w2Escape(t.period_start || '开头') + ' ~ ' + w2Escape(t.period_end || '今天') : '没限定期间'}｜` +
+        `<span class="badge ${cls}">${label}</span>` +
+        `<div class="recon-diff-note" id="reconDiffNote">${w2Escape(typeof reconDiffSummaryText === 'function' ? reconDiffSummaryText(detail.lines) : '')}</div>`;
 
     const locked = t.status === 'confirmed';
     document.getElementById('btnConfirmRecon').classList.toggle('hide', locked);
@@ -13325,9 +13391,9 @@ function renderReconDetail() {
         const [mCls, mLabel] = MATCH_BADGES[ln.match_status] || ['badge-secondary', ln.match_status];
         const sideLabel = ln.side === 'statement'
             ? '<span class="badge badge-secondary">账单行</span>'
-            : '<span class="badge badge-warning">餐厅赊单</span>';
+            : '<span class="badge badge-warning">餐厅挂账单</span>';
         const matchedDesc = ln.matched_receipt && ln.side === 'statement'
-            ? ` ↔ 赊单 #${ln.matched_receipt_id}` : '';
+            ? ` ↔ 挂账单 #${ln.matched_receipt_id}` : '';
 
         let actionHtml;
         if (locked) {
@@ -13336,12 +13402,12 @@ function renderReconDetail() {
             actionHtml = '<span class="badge badge-success">已处理</span>';
         } else {
             actionHtml = `
-                <button class="btn btn-success" style="padding:2px 8px; font-size:0.75rem; margin:1px;"
-                    onclick="resolveLine(${ln.id}, 'confirm_match')">确认匹配</button>
-                <button class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem; margin:1px;"
-                    onclick="resolveLine(${ln.id}, 'write_off')">核销</button>
-                <button class="btn btn-danger" style="padding:2px 8px; font-size:0.75rem; margin:1px;"
-                    onclick="resolveLine(${ln.id}, 'dispute')">争议</button>`;
+                <button class="btn btn-success" style="min-height:40px; padding:4px 12px; font-size:0.85rem; margin:2px;"
+                    onclick="resolveLine(${ln.id}, 'confirm_match')">确认对上</button>
+                <button class="btn btn-secondary" style="min-height:40px; padding:4px 12px; font-size:0.85rem; margin:2px;"
+                    onclick="resolveLine(${ln.id}, 'write_off')">这笔不用管</button>
+                <button class="btn btn-danger" style="min-height:40px; padding:4px 12px; font-size:0.85rem; margin:2px;"
+                    onclick="resolveLine(${ln.id}, 'dispute')">有争议</button>`;
         }
 
         const tr = document.createElement('tr');
@@ -13363,12 +13429,12 @@ function resolveLine(lineId, action) {
     const line = detail.lines.find(l => l.id === lineId);
     if (!line) return;
 
-    const titles = { confirm_match: ' 确认匹配', write_off: ' 核销差异', dispute: '[标记] 标记争议' };
+    const titles = { confirm_match: '确认对上', write_off: '这笔不用管（核销）', dispute: '标记有争议' };
     document.getElementById('reconResolveTitle').innerText = titles[action] || '处理对账差异';
     const esc = s => w2Escape(s == null ? '' : String(s));
     const sideDesc = line.side === 'statement'
         ? `账单行：${renderDateCell(line.line_date)}｜单号 ${esc(line.docket_no)}｜金额 $${fmtMoney(line.amount)}`
-        : `餐厅留底赊单 #${esc(line.matched_receipt_id)}｜${renderDateCell(line.line_date)}｜金额 $${fmtMoney(line.amount)}`;
+        : `餐厅留底挂账单 #${esc(line.matched_receipt_id)}｜${renderDateCell(line.line_date)}｜金额 $${fmtMoney(line.amount)}`;
     document.getElementById('reconResolveDesc').innerHTML =
         sideDesc + '<br>当前状态：' + esc(line.match_status_label || line.match_status);
     document.getElementById('reconResolveNote').value = '';
@@ -13378,16 +13444,16 @@ function resolveLine(lineId, action) {
         grp.classList.remove('hide');
         const sel = document.getElementById('reconResolveReceipt');
         sel.innerHTML = '';
-        // 候选 = 期间内尚未匹配的赊单 + 本行已有候选
+        // 候选 = 期间内尚未匹配的挂账单 + 本行已有候选
         const candidates = (detail.restaurant_receipts || []).filter(r =>
             !r.matched || r.id === line.matched_receipt_id);
         if (!candidates.length) {
-            sel.innerHTML = '<option value="">期间内无可选赊单</option>';
+            sel.innerHTML = '<option value="">期间内无可选挂账单</option>';
         }
         candidates.forEach(r => {
             const opt = document.createElement('option');
             opt.value = String(r.id);
-            opt.textContent = `赊单 #${r.id}｜${formatMonthDay(r.receipt_date)}｜$${fmtMoney(r.total_amount)}`;
+            opt.textContent = `挂账单 #${r.id}｜${formatMonthDay(r.receipt_date)}｜$${fmtMoney(r.total_amount)}`;
             sel.appendChild(opt);
         });
         if (line.matched_receipt_id) sel.value = String(line.matched_receipt_id);
@@ -13407,7 +13473,7 @@ function submitReconResolve() {
     if (note) payload.note = note;
     if (ctx.action === 'confirm_match') {
         const rid = document.getElementById('reconResolveReceipt').value;
-        if (!rid) { showToast('请选择要匹配的赊单', 'warning'); return; }
+        if (!rid) { showToast('请选择要匹配的挂账单', 'warning'); return; }
         payload.receipt_id = Number(rid);
     }
 
@@ -13428,10 +13494,15 @@ function submitReconResolve() {
         .catch(err => { console.error('对账处理异常', err); showToast('处理失败' + toastFailDetail(err), 'error'); });
 }
 
-function confirmReconTask() {
+async function confirmReconTask() {
     const taskId = finState.currentTaskId;
     if (!taskId) return;
-    if (!confirm(`确认对账任务 #${taskId} 完成？\n确认后该期间将锁定，差异行保留在履历中；后续如需改动单据请走冲销路径。`)) return;
+    const okRecon = await uiConfirm({
+        title: '确认对账完成',
+        message: `确认对账任务 #${taskId} 完成？\n确认后这个期间就锁定了，不能再改；没处理的差异会留在记录里。`,
+        confirmText: '确认完成',
+    });
+    if (!okRecon) return;
 
     apiFetch(`/api/reconciliation/${taskId}/confirm`, { method: 'POST' })
         .then(res => res.json())
@@ -13488,7 +13559,7 @@ function renderSupplierAdminRows(suppliers) {
         const termsText = (s.payment_terms_days != null && s.payment_terms_days !== '')
             ? `${s.payment_terms_days} 天` : '现结';
 
-        const prefText = ({cash:'现结', credit:'赊账', mixed:'混合'})[s.settlement_pref] || '';
+        const prefText = ({cash:'现结', credit:'挂账', mixed:'混合'})[s.settlement_pref] || '';
 
         // F5-L2：店员隐藏 owner-only 行内写操作（查看单据 / 编辑 / 更多）。
         // 查看单据=GET /api/suppliers/{id}/receipts、编辑=PATCH /api/suppliers/{id}、
@@ -13636,9 +13707,15 @@ function saveSupplier() {
         });
 }
 
-function deactivateSupplier(id) {
+async function deactivateSupplier(id) {
     closeSupplierMore();
-    if (!confirm('停用该供应商？\n停用后新单不会自动挂到此供应商；历史单据仍保留，可在「显示已停用」中查看。')) return;
+    const okSup = await uiConfirm({
+        title: '停用供应商',
+        message: '停用这家供应商？\n停用后新单不会再自动归到它名下；以前的单据都还在，勾选「显示已停用」可以看到，也可以随时重新启用。',
+        confirmText: '停用',
+        danger: true,
+    });
+    if (!okSup) return;
     patchSupplierActive(id, 0);
 }
 
@@ -13679,7 +13756,7 @@ function toggleSupplierMore(btn, id, active) {
     } else {
         items.push(`<div class="sup-more-item" onclick="activateSupplier(${Number(id)})">启用</div>`);
     }
-    items.push(`<div class="sup-more-item" onclick="openMergeModal(${Number(id)})">合并…</div>`);
+    items.push(`<div class="sup-more-item" onclick="closeSupplierMore(); openMergeModal(${Number(id)})">合并重复供应商…</div>`);
     menu.innerHTML = items.join('');
     document.body.appendChild(menu);
     const rect = btn.getBoundingClientRect();
@@ -13718,6 +13795,7 @@ function viewSupplierReceipts(id) {
         }
         sel.value = name;
     }
+    if (typeof showArchivePane === 'function') showArchivePane('docs');
     // 清空其它归档筛选，只看该家
     document.getElementById('fltKeyword').value = '';
     ArchiveUI.q = '';
@@ -13737,7 +13815,7 @@ function updateTodoBar() {
         const st = r.status || 'uploaded';
         if (STATUS_GROUP_MAP.pending.includes(st)) pending++;
         else if (st === 'error') failed++;
-        if (r.payment_status === 'overdue') overdue++;
+        if (r.payment_status === 'overdue' || r.is_overdue === true) overdue++;
     });
     setText('todoPendingNum', pending);
     setText('todoFailedNum', failed);
@@ -13745,6 +13823,7 @@ function updateTodoBar() {
 }
 
 function todoFilter(type) {
+    if (typeof showArchivePane === 'function') showArchivePane(type === 'overdue' ? 'payables' : 'docs');
     if (type === 'overdue') {
         const sel = document.getElementById('fltFinDue');
         if (sel) { sel.value = 'overdue'; if (typeof applyPayablesFilters === 'function') applyPayablesFilters(); }
@@ -13820,67 +13899,7 @@ function setText(id, val) {
     if (el) el.textContent = val;
 }
 
-let mergeDropId = null;
-
-function openMergeModal(dropId) {
-    mergeDropId = dropId;
-    apiFetch('/api/suppliers')
-        .then(res => res.json())
-        .then(ret => {
-            if (ret.status !== 'success') return;
-            const suppliers = ret.data || [];
-            const drop = suppliers.find(s => s.id === dropId);
-            if (!drop) { showToast('供应商不存在', 'error'); return; }
-
-            document.getElementById('mergeDropHint').innerHTML =
-                `被并供应商：<strong>${w2Escape(drop.name)}</strong>` +
-                ` <span class="badge badge-secondary" style="font-family:monospace;">${w2Escape(drop.supplier_code || '-')}</span>` +
-                `｜单据 ${drop.receipt_count} 张｜未付 $${fmtMoney(drop.unpaid_credit_total)}`;
-
-            const sel = document.getElementById('mergeKeepSelect');
-            sel.innerHTML = '';
-            suppliers.filter(s => s.id !== dropId).forEach(s => {
-                const opt = document.createElement('option');
-                opt.value = String(s.id);
-                opt.textContent = `${s.name} [${s.supplier_code || '-'}]`;
-                sel.appendChild(opt);
-            });
-            document.getElementById('mergeConfirmCheck').checked = false;
-            document.getElementById('mergeModal').classList.remove('hide');
-        });
-}
-
-function submitMerge() {
-    const keepId = Number(document.getElementById('mergeKeepSelect').value);
-    if (!mergeDropId || !keepId) { showToast('请选择保留的供应商', 'warning'); return; }
-    if (!document.getElementById('mergeConfirmCheck').checked) {
-        showToast('请先勾选确认框，确认理解合并影响', 'warning');
-        return;
-    }
-    const drop = (finState.suppliers || []).find(s => s.id === mergeDropId);
-    const keep = (finState.suppliers || []).find(s => s.id === keepId);
-    if (!confirm(`最后确认：把 [${drop ? drop.name : mergeDropId}] 并入 [${keep ? keep.name : keepId}]？\n` +
-        '被并供应商的全部单据/别称/记忆/支付/对账任务将迁移，其档案将被永久删除。')) return;
-
-    apiFetch('/api/suppliers/merge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_id: keepId, drop_id: mergeDropId }),
-    })
-        .then(res => res.json())
-        .then(ret => {
-            if (ret.status !== 'success') { showToast('合并供应商失败' + toastFailDetail(ret.msg), 'error'); return; }
-            console.log('[supplier] 合并成功', ret.msg);
-            showToast('已合并供应商', 'success', TOAST_DURATION.long);
-            closeModalById('mergeModal');
-            mergeDropId = null;
-            loadSuppliersData();
-            loadReceiptsHistory();
-            loadSupplierAdmin();
-            loadFinancePanel();
-        })
-        .catch(err => { console.error('合并供应商异常', err); showToast('合并失败' + toastFailDetail(err), 'error'); });
-}
+// ---- 供应商合并：见 finance.js ----
 
 // ---- 盘点调整（D15/M5） ----
 let stocktakeSkuId = null;
@@ -13976,7 +13995,7 @@ function openOutboundModal(skuId, skuName, currentStock, baseUnit, kind) {
     document.getElementById('outboundModal').classList.remove('hide');
 }
 
-function submitOutbound() {
+async function submitOutbound() {
     if (!outboundSkuId) return;
     // 以下拉当前值为准，兼容旧调用仍传 kind 的场景
     const sel = document.getElementById('outboundKind');
@@ -13993,17 +14012,17 @@ function submitOutbound() {
     const payload = { quantity: qty };
     const notes = document.getElementById('outboundNote').value.trim();
     if (notes) payload.notes = notes;
-
-    apiFetch(`/api/inventory/${outboundSkuId}/${meta.path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-    })
-        .then(res => res.json().then(body => ({ httpStatus: res.status, body })))
-        .then(({ httpStatus, body }) => {
+    const outSku = inventorySkusMap.get(outboundSkuId) || {};
+    postStockOutflow(`/api/inventory/${outboundSkuId}/${meta.path}`, payload, outSku.current_stock, outSku.base_unit, kind === 'waste' ? '报损' : '扣减')
+        .then(o => (o ? { httpStatus: o.httpStatus, body: o.ret } : null))
+        .then(res => {
+            if (!res) return;
+            const { httpStatus, body } = res;
             if (!body || body.status !== 'success') {
                 console.error('[inventory] 出库失败', httpStatus, body);
-                showToast(`${meta.title}失败，请稍后重试`, 'error');
+                const why = body && body.msg ? ('：' + body.msg) : '，请稍后重试';
+                showToast(`${meta.title}没有成功${why}`, 'error');
+                if (httpStatus === 409) loadInventoryData();
                 return;
             }
             console.log('[inventory] 出库成功', body.msg);
@@ -14033,8 +14052,8 @@ function initDemoRoleSwitch() {
         const role = sel.value;
         try { localStorage.setItem('demo_role', role); } catch (e) { /* ignore */ }
         applyDemoRoleColor(role);
-        const roleNameMap = { admin: '系统管理员', owner: '餐厅老板 / 店长', staff: '餐厅店员' };
-        showToast('角色已切换为：' + (roleNameMap[role] || role), 'info');
+        const roleName = i18nLabel('role.' + role, role);
+        showToast(i18nLabel('role.switched', '角色已切换为：{name}').replace('{name}', roleName), 'info');
         // 重探 /me 刷新 AuthState.account → isOwnerRole() 生效
         probeAuthAndEnter(true);
         // B1：即将整页重载，在途请求被浏览器中断属预期行为；
@@ -14099,7 +14118,13 @@ function applyRoleVisibility(role) {
     if (exportBtn) exportBtn.style.display = (role === 'staff') ? 'none' : '';
     // 当前停留在已隐藏的页签时回落到收据识别（admin 不受影响）
     // 评测中心（tab-analytics）为 admin 专属入口，黄金基准集与 GT 抽检确权均在其功能区 02/03 内
-    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-report', 'tab-analytics', 'tab-export']
+    // 店员只保留「识别复核」和「库存查看」：餐品成本、归档对账、部门花销、数据中心、设置、今日待办都隐藏
+    ['tab-dishes', 'tab-archive'].forEach(t => {
+        const b = document.querySelector('.sidebar-btn[data-target="' + t + '"]');
+        if (b) b.style.display = (role === 'staff') ? 'none' : '';
+    });
+    if (document.body) document.body.dataset.role = role;
+    const hiddenTabs = (role === 'staff') ? ['tab-engine', 'tab-report', 'tab-analytics', 'tab-export', 'tab-dishes', 'tab-archive', 'tab-settings', 'tab-today']
                      : (role === 'owner') ? ['tab-engine'] : [];
     const active = document.querySelector('.tab-content.active');
     if (active && hiddenTabs.indexOf(active.id) !== -1) {
@@ -16073,10 +16098,9 @@ function saveCurrentConfigAsPreset(leg) {
         modal.classList.remove('hide');
         if (input) setTimeout(() => input.focus(), 50);
     } else {
-        const label = prompt('请输入新模版/Provider名称:');
-        if (label !== null) {
-            confirmSaveCurrentPresetWithLabel(leg, label);
-        }
+        uiPrompt({ title: '保存配置模版', label: '模版名称', confirmText: '保存' }).then(label => {
+            if (label !== null) confirmSaveCurrentPresetWithLabel(leg, label);
+        });
     }
 }
 window.saveCurrentConfigAsPreset = saveCurrentConfigAsPreset;
@@ -16220,9 +16244,13 @@ async function deleteSelectedPreset(leg) {
     }
     const label = (preset && preset.label) ? preset.label : (sel.options && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : key);
 
-    if (!confirm('确定从数据库中删除模版「' + label + '」吗？此操作不可逆。')) {
-        return;
-    }
+    const okPreset = await uiConfirm({
+        title: '删除模版',
+        message: '确定删除模版「' + label + '」吗？删除后不能恢复。',
+        confirmText: '删除',
+        danger: true,
+    });
+    if (!okPreset) return;
 
     try {
         const res = await apiFetch('/api/admin/engine-presets/' + encodeURIComponent(key), {
@@ -17350,15 +17378,15 @@ function updateTrxGlobalHeader() {
     const switchLabel = document.getElementById('trxGreySwitchLabel');
     if (canaryBadge) {
         if (greyEnabled) {
-            canaryBadge.textContent = `[GRAY: ACTIVE ${pct}%]`;
+            canaryBadge.textContent = `灰度放量中（${pct}%）`;
             canaryBadge.className = 'trx-badge trx-badge-warning';
         } else {
-            canaryBadge.textContent = '[GRAY: DISABLED]';
+            canaryBadge.textContent = '灰度未开启';
             canaryBadge.className = 'trx-badge trx-badge-secondary';
         }
     }
     if (switchLabel) {
-        switchLabel.textContent = greyEnabled ? '[ENABLED]' : '[DISABLED]';
+        switchLabel.textContent = greyEnabled ? '已开启' : '已关闭';
         switchLabel.className = greyEnabled ? 'trx-tag trx-tag-warning' : 'trx-tag trx-tag-secondary';
     }
 
@@ -17366,10 +17394,10 @@ function updateTrxGlobalHeader() {
     if (expBadge) {
         const runningCount = (_adminExperimentsList || []).filter(e => e.status === 'running').length;
         if (runningCount > 0) {
-            expBadge.textContent = `[EXPERIMENTS: ${runningCount} ACTIVE]`;
+            expBadge.textContent = `进行中的对比实验：${runningCount} 个`;
             expBadge.className = 'trx-badge trx-badge-info';
         } else {
-            expBadge.textContent = '[EXPERIMENTS: 0 ACTIVE]';
+            expBadge.textContent = '没有进行中的对比实验';
             expBadge.className = 'trx-badge trx-badge-secondary';
         }
     }
@@ -18054,7 +18082,7 @@ function memoryMetricsRowsHtml(metrics) {
     html += memoryMetricRowHtml('memory_hit_effective', '记忆有效命中率（分母=有条件命中的单据）',
         eff.effective_rate_pct, eff.injected, eff.eligible_denominator,
         'rag_context_json 非空 / 供应商可确定且有可用记忆的单据', effNoDataText);
-    html += memoryMetricRowHtml('sku_match', 'SKU 匹配率', sku.rate_pct,
+    html += memoryMetricRowHtml('sku_match', '食材匹配率', sku.rate_pct,
         sku.matched, sku.items, 'matched=1 / 明细行');
     html += memoryMetricRowHtml('edit_rate_has_memory', '修改率（有记忆组）', hm.edited_rate_pct,
         hm.edited, hm.receipts, 'status=edited / 该组单据，分组键=供应商是否有记忆行');
@@ -18272,15 +18300,18 @@ function loadVendorMemoryGovernance() {
 
 // 删除单条已生效记忆：只调唯一删除端点 DELETE /api/memory/{memory_id}。
 // 删除前二次确认；成功后重载列表（该条随之消失）。取消 / 失败都不改列表。
-function deleteVendorMemory(memoryId, vendor) {
+async function deleteVendorMemory(memoryId, vendor) {
     const mid = (memoryId === null || memoryId === undefined) ? '' : String(memoryId).trim();
     if (!mid) return Promise.resolve(false);
     const name = (vendor === null || vendor === undefined || String(vendor).trim() === '')
         ? '该条' : ('「' + String(vendor).trim() + '」的该条');
-    if (!confirm('确定删除' + name + '已生效记忆？\n\n删除会同时移除该条记忆的向量索引，'
-            + '删除后不可恢复（需重新学习）。')) {
-        return Promise.resolve(false);
-    }
+    const okMem = await uiConfirm({
+        title: '删除已生效记忆',
+        message: '确定删除' + name + '已生效记忆？\n删除后系统会忘掉这条供应商习惯，不能恢复，需要重新学习。',
+        confirmText: '删除',
+        danger: true,
+    });
+    if (!okMem) return false;
     return apiFetch('/api/memory/' + encodeURIComponent(mid), { method: 'DELETE' })
         .then(res => res.json())
         .then(body => {
@@ -18975,8 +19006,15 @@ function loadPendingMemoryBadge() {
 }
 
 // 加入/移出黄金基准集（可逆策展标记；移出需二次确认）
-function toggleGoldenSample(receiptId, inSet) {
-    if (!inSet && !confirm('确认将单据 #' + receiptId + ' 移出黄金基准集？单据本体与审计记录不受影响，可随时重新加入。')) return;
+async function toggleGoldenSample(receiptId, inSet) {
+    if (!inSet) {
+        const okGolden = await uiConfirm({
+            title: '移出基准集',
+            message: '确认把单据 #' + receiptId + ' 移出黄金基准集？\n单据本身和审计记录不受影响，以后可以再加回来。',
+            confirmText: '移出',
+        });
+        if (!okGolden) return;
+    }
     apiFetch('/api/admin/golden-samples/' + Number(receiptId) + '/membership', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -19287,11 +19325,11 @@ function applyEventsCustomPeriod(silent) {
     const sVal = sEl && sEl.value ? sEl.value.trim() : '';
     const eVal = eEl && eEl.value ? eEl.value.trim() : '';
     if (!eVal) {
-        if (!silent) alert('请选择结束日期（开始日期留空默认从最早一条记录开始）');
+        if (!silent) showToast('请选择结束日期（开始日期留空默认从最早一条记录开始）', 'warning');
         return;
     }
     if (sVal && sVal > eVal) {
-        if (!silent) alert('开始日期不能晚于结束日期');
+        if (!silent) showToast('开始日期不能晚于结束日期', 'warning');
         return;
     }
     const p = window._eventsPeriod;
@@ -19426,7 +19464,7 @@ const TELEMETRY_EVENT_ALIASES = {
     receipt_review_submitted: '人工复核确认并保存提交',
     save_edited: '人工复核修改保存',
     edit: '人工复核编辑保存',
-    field_edited: '明细行离散编辑（增删行/SKU映射）',
+    field_edited: '明细行离散编辑（增删行、改食材对应）',
     receipt_approved: '收据审核通过并确认入库',
     approve: '收据审核通过并确认入库',
     receipt_flagged: '标记单据异常并转人工处理',
@@ -20074,11 +20112,11 @@ function applyKpiTrendCustomDate() {
     const eVal = eEl.value ? eEl.value.trim() : '';
 
     if (!eVal) {
-        alert('请选择结束日期（开始日期留空时默认从最早一条记录开始）');
+        showToast('请选择结束日期（开始日期留空时默认从最早一条记录开始）', 'warning');
         return;
     }
     if (sVal && sVal > eVal) {
-        alert('开始日期不能晚于结束日期');
+        showToast('开始日期不能晚于结束日期', 'warning');
         return;
     }
     let diffDays = null;
@@ -20087,7 +20125,7 @@ function applyKpiTrendCustomDate() {
         const dEnd = new Date(eVal);
         diffDays = Math.round((dEnd - dStart) / (1000 * 60 * 60 * 24)) + 1;
         if (diffDays > 90) {
-            alert('自定义时间段跨度不能超过 90 天');
+            showToast('自定义时间段跨度不能超过 90 天', 'warning');
             return;
         }
     }
@@ -21680,7 +21718,7 @@ function renderDishCardHtml(d) {
     if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
         ingredientsHtml = d.ingredients.map(ing => {
             return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
-                + w2Escape(ing.sku_name || ('SKU#' + ing.sku_id)) + ': '
+                + w2Escape(ing.sku_name || ('食材#' + ing.sku_id)) + ': '
                 + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
                 + ' <span style="color:var(--text-muted); font-size:0.7rem;">($' + fmtMoney(ing.ingredient_cost) + ')</span>'
                 + '</span>';
@@ -21741,7 +21779,7 @@ function renderDishTableRowHtml(d) {
     const marginRate = Number(d.gross_margin_rate || 0);
     const marginBadgeClass = marginClass(marginRate);
 
-    const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
+    const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('食材#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
 
     return '<tr>'
         + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
@@ -22115,6 +22153,8 @@ function printDishBomLibrary() {
         </body>
         </html>
     `);
+    // 打印窗口是独立文档，不在主页面 DOM 翻译器的观察范围内。
+    if (window.I18N) window.I18N.translateDocument(printWin.document);
     printWin.document.close();
 }
 
@@ -22320,7 +22360,7 @@ function dishComponentOptionsHtml(selectedValue) {
     });
 
     return '<option value="">-- 请选择食材 / 子配方 --</option>'
-        + '<optgroup label="食材 (SKU)">' + skuOpts + '</optgroup>'
+        + '<optgroup label="食材">' + skuOpts + '</optgroup>'
         + '<optgroup label="子配方 (餐品)">' + dishOpts + '</optgroup>';
 }
 
@@ -22560,7 +22600,7 @@ function saveDishModal() {
         if (!compVal && !qtyFilled) continue;
 
         if (!compVal) {
-            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行配方未选择食材 SKU 或子配方'; errEl.classList.remove('hide'); }
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行配方还没选食材或子配方'; errEl.classList.remove('hide'); }
             return;
         }
         // value 编码 "sku:<id>" / "dish:<id>"
@@ -22573,7 +22613,7 @@ function saveDishModal() {
         }
         const compKey = ctype + ':' + cid;
         if (seenComps.has(compKey)) {
-            if (errEl) { errEl.innerText = '配方中存在重复的组件（食材 SKU / 子配方），请合并为一行'; errEl.classList.remove('hide'); }
+            if (errEl) { errEl.innerText = '配方里有重复的食材或子配方，请合并成一行'; errEl.classList.remove('hide'); }
             return;
         }
         seenComps.add(compKey);
@@ -23041,7 +23081,7 @@ function renderDishConsumeEntryTable(dishes) {
 
     let html = '';
     dishes.forEach(d => {
-        const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('SKU#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '未配置配方';
+        const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('食材#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '未配置配方';
 
         html += '<tr class="dish-consume-row" data-dish-id="' + d.id + '" data-dish-name="' + w2Escape(d.name) + '" data-dish-price="' + (d.price || 0) + '" data-dish-cost="' + (d.theoretical_cost || 0) + '">'
             + '<td>'
@@ -23444,7 +23484,7 @@ function renderCostTraceModalContent(c) {
 function voidDailyConsumption(consumptionId) {
     showCustomConfirmModal({
         title: '冲销作废消耗流水',
-        message: '确定要冲销作废流水记录 #' + consumptionId + ' 吗？\n冲销后系统将自动把消耗扣减的批次剩余量（remaining_qty）完全原路回滚，并即时恢复对应食材 SKU 的实时库存。',
+        message: '确定要冲销作废流水记录 #' + consumptionId + ' 吗？\n冲销后，这笔消耗扣掉的库存会原样加回去，对应食材的库存马上恢复。',
         confirmText: '确认冲销',
         cancelText: '取消',
         onConfirm: () => {
@@ -24203,11 +24243,11 @@ function applyParsingLogCustomPeriod(silent) {
     const eVal = eEl && eEl.value ? eEl.value.trim() : '';
     // 日期选择后自动应用（silent）：结束日期未填时静默等待，不弹窗打断
     if (!eVal) {
-        if (!silent) alert('请选择结束日期（开始日期留空默认从最早一条记录开始）');
+        if (!silent) showToast('请选择结束日期（开始日期留空默认从最早一条记录开始）', 'warning');
         return;
     }
     if (sVal && sVal > eVal) {
-        if (!silent) alert('开始日期不能晚于结束日期');
+        if (!silent) showToast('开始日期不能晚于结束日期', 'warning');
         return;
     }
     const p = window._parsingLogPeriod;
@@ -25099,12 +25139,12 @@ function copyPLText(elementId) {
     const text = el.innerText || el.textContent || '';
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(text).then(() => {
-            alert('复制成功');
+            showToast('复制成功', 'success');
         }).catch(() => {
-            alert('复制失败，请手动选取');
+            showToast('复制失败，请手动选取', 'warning');
         });
     } else {
-        alert('浏览器不支持剪贴板API，请手动选取');
+        showToast('浏览器不支持剪贴板API，请手动选取', 'warning');
     }
 }
 

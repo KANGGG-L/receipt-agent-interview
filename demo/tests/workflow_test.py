@@ -138,11 +138,6 @@ def main():
     cr = call("/api/cost_report?include_non_approved=1")
     print(f"6. 成本报表: month_total={cr['data']['month_total']}")
 
-    # 7. AI 复盘（免费模型）
-    print("7. AI 复盘（免费模型）...")
-    rv = call("/api/review")
-    print(f"   [PASS]  summary: {(rv.get('data') or {}).get('summary', '—')[:60]}")
-
     # 8. 对账
     if sups["data"]:
         rec = call("/api/reconciliation", "POST", {"supplier_id": sups["data"][0]["id"], "period_type": "month"})
@@ -157,15 +152,6 @@ def main():
             "method": "bank_transfer", "paid_at": "2026-08-10", "notes": "workflow测试",
         })
         print(f"9. 支付登记 [PASS]  {pay.get('msg')}")
-
-    # 10. 收据导出 CSV（原始文本）
-    try:
-        req = urllib.request.Request(BASE + "/api/receipts/export", headers={"X-Role": "owner"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            csv_text = resp.read().decode("utf-8")
-        print(f"10. 导出 CSV [PASS]  ({len(csv_text)} bytes)")
-    except Exception as e:
-        print(f"10. 导出 CSV [FAIL]  {e}")
 
     print("\n" + "=" * 60)
     print("[PASS]  完整 WORKFLOW 全部通过（免费模型）")

@@ -55,10 +55,12 @@ def _meta(scene):
 # ============================================================
 
 def test_ac01_extract_system_prompt_from_registry():
-    """AC-01: extract_chain.SYSTEM_PROMPT 经 ai_registry 加载,与 golden v1_2_8 逐字节等价。"""
+    """AC-01: extract_chain.SYSTEM_PROMPT 经 ai_registry 加载,与 golden v1_2_0（线上准入版本）逐字节等价；
+    v1_2_8 已降级 draft，golden 仍可显式按版本加载比对。"""
     from ai_registry.registry import ai_registry
     from app.chains import extract_chain
-    assert extract_chain.SYSTEM_PROMPT == _golden("extract_v1_2_8_anti_injection.txt")
+    assert extract_chain.SYSTEM_PROMPT == _golden("extract_v1_2_0_sku_clean.txt")
+    assert ai_registry.get_prompt("extract", "v1_2_8_anti_injection") == _golden("extract_v1_2_8_anti_injection.txt")
     assert extract_chain.SYSTEM_PROMPT == ai_registry.get_prompt("extract")
     # 源码不再硬编码 import 具体版本文件
     src = _read(os.path.join(DEMO_DIR, "app", "chains", "extract_chain.py"))
@@ -156,17 +158,19 @@ def test_ac07_admin_prompts_api_shape_unchanged():
 
 
 def test_ac08_extract_metadata_complete_and_active_switched():
-    """AC-08: extract metadata active=v1_2_8_anti_injection,versions 键集==目录 13 个 .py,
+    """AC-08: extract metadata active=v1_2_0_sku_clean（有实测指标的准入版本；v1_2_8 无指标已降级 draft）,versions 键集==目录 13 个 .py,
     v1_2_0_sku_clean 置 archived,T7 的 v1_3_0_evidence 与 P2-2 的 v1_2_9_image_injection
     为 draft（灰测候选,非 production）。"""
     scene_dir = os.path.join(REPO_ROOT, "ai_registry", "prompts", "extract")
     py_versions = {f[:-3] for f in os.listdir(scene_dir) if f.endswith(".py")}
     assert len(py_versions) == 13
     meta = _meta("extract")
-    assert meta["active_version"] == "v1_2_8_anti_injection"
+    assert meta["active_version"] == "v1_2_0_sku_clean"
     assert set(meta["versions"].keys()) == py_versions
-    assert meta["versions"]["v1_2_0_sku_clean"]["status"] == "archived"
-    assert meta["versions"]["v1_2_8_anti_injection"]["status"] == "production"
+    assert meta["versions"]["v1_2_0_sku_clean"]["status"] == "production"
+    assert meta["versions"]["v1_2_0_sku_clean"]["admission"]["admitted"] is True
+    assert meta["versions"]["v1_2_8_anti_injection"]["status"] == "draft"
+    assert meta["versions"]["v1_2_8_anti_injection"]["admission"]["admitted"] is False
     assert meta["versions"]["v1_3_0_evidence"]["status"] == "draft"
     assert meta["versions"]["v1_2_9_image_injection"]["status"] == "draft"
 
@@ -186,19 +190,19 @@ def test_ac08b_audit_mirror_registered_as_new_version():
 
 def test_ac08c_extract_prompt_version_env_switch(monkeypatch):
     """AC-08(补): P2-2 EXTRACT_PROMPT_VERSION 环境开关可显式加载新版本 v1_2_9_image_injection;
-    未设置时仍加载 active v1_2_8_anti_injection（默认识别链路零变化）。
+    未设置时加载 active v1_2_0_sku_clean（线上准入版本）。
 
     why：v1_2_9 是 draft 灰测候选,只能经显式版本开关生效,不得改变默认识别链路。
     """
     from ai_registry.registry import ai_registry
     from app.chains import extract_chain
     assert ai_registry.get_prompt("extract") == \
-        ai_registry.get_prompt("extract", "v1_2_8_anti_injection")
+        ai_registry.get_prompt("extract", "v1_2_0_sku_clean")
 
-    # 不设置环境变量 -> active v1_2_8
+    # 不设置环境变量 -> active v1_2_0（线上准入版本）
     monkeypatch.delenv("EXTRACT_PROMPT_VERSION", raising=False)
     assert extract_chain._resolve_extract_system_prompt() == \
-        ai_registry.get_prompt("extract", "v1_2_8_anti_injection")
+        ai_registry.get_prompt("extract", "v1_2_0_sku_clean")
 
     # 显式设置 -> 加载新版本 v1_2_9（含图面隐含文字层条款,且保留 v1_2_8 既有条款）
     monkeypatch.setenv("EXTRACT_PROMPT_VERSION", "v1_2_9_image_injection")
@@ -312,6 +316,12 @@ MATH_CONSUMER_TEST_FILES = [
 MATH_CONSUMER_GOLDEN_BASELINE = {
     "tests/test_hallucination_adversarial.py":
         os.path.join(GOLDEN_DIR, "math_consumer_assert_baseline.json"),
+    "tests/test_gap3_discount_deposit_math.py":
+        os.path.join(GOLDEN_DIR, "math_consumer_assert_baseline_test_gap3_discount_deposit_math.json"),
+    "tests/test_gap6_strikethrough_notes.py":
+        os.path.join(GOLDEN_DIR, "math_consumer_assert_baseline_test_gap6_strikethrough_notes.json"),
+    "tests/test_u5_real_handwritten_long_receipts.py":
+        os.path.join(GOLDEN_DIR, "math_consumer_assert_baseline_test_u5_real_handwritten_long_receipts.json"),
 }
 
 

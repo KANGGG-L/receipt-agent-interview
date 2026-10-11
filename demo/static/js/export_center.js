@@ -1122,7 +1122,8 @@ function executeExportDownload() {
         body: JSON.stringify({
             report_id: reportId,
             params: params,
-            desensitized: desens
+            desensitized: desens,
+            lang: (window.I18N && typeof window.I18N.getLocale === 'function') ? window.I18N.getLocale() : undefined
         })
     })
     .then(async res => {
@@ -1300,6 +1301,8 @@ function printExportReport() {
         </body>
         </html>
     `);
+    // 打印窗口是独立文档，不在主页面 DOM 翻译器的观察范围内。
+    if (window.I18N) window.I18N.translateDocument(printWin.document);
     printWin.document.close();
 }
 

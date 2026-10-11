@@ -1,6 +1,6 @@
 {
   "scene": "extract",
-  "active_version": "v1_2_8_anti_injection",
+  "active_version": "v1_2_0_sku_clean",
   "description": "多模态 VLM 收据视觉抽取提示词",
   "versions": {
     "v1_0_0": {
@@ -38,7 +38,7 @@
     },
     "v1_2_0_sku_clean": {
       "release_date": "2026-08-21",
-      "status": "archived",
+      "status": "production",
       "description": "品名纯净性规范与流水号/条形码智能剥离版",
       "metrics": {
         "accuracy": 98.2,
@@ -52,8 +52,14 @@
       "changelog": [
         "新增食材品名纯净性提取规范，剥离下划线流水号、井号编码、前缀货号与条形码",
         "增加正反例 Few-Shot 对照，强化防误删保护（保留 M7/A级/头数/净重/品牌数字）",
-        "支持品名与追溯号/条形码独立结构化提取"
-      ]
+        "支持品名与追溯号/条形码独立结构化提取",
+        "S2-24：作为线上使用的准入版本（有实测指标且达标）重新登记为 production。"
+      ],
+      "admission": {
+        "admitted": true,
+        "basis": "metrics 为 2026-08-21 黄金样本评测批次实测（accuracy 98.2 / CER 1.8，达到 >=95 / <=4.0 门槛）",
+        "caveat": "该批次早于后续提示词版本；真实 judge 元评测（run_meta_eval --judge audit）尚未取得 evaluator_trustworthy=true 的报告，补齐后才算完整准入"
+      }
     },
     "v1_2_1_anti_stamp_pollution": {
       "release_date": "2026-08-22",
@@ -116,7 +122,7 @@
     },
     "v1_2_8_anti_injection": {
       "release_date": "2026-08-25",
-      "status": "production",
+      "status": "draft",
       "description": "供应商记忆 RAG 间接提示词注入防御 XML 数据沙箱 (Gap 8)",
       "metrics": {
         "injection_defense_rate": null,
@@ -128,8 +134,15 @@
       },
       "changelog": [
         "Gap 1-8 聚合版：供应商记忆先验一律经 XML 数据沙箱包裹，严禁作为指令执行",
-        "此前该版本文件已存在但未登记 metadata，本条为补登记（文本零改动）"
-      ]
+        "此前该版本文件已存在但未登记 metadata，本条为补登记（文本零改动）",
+        "S2-24：生产版本无任何准确率/CER 指标，不满足准入门槛，明确降级为 draft；线上改用有实测指标且达标的 v1_2_0_sku_clean。"
+      ],
+      "admission": {
+        "admitted": false,
+        "gate": "57 张黄金样本集 accuracy >= 95% 且 CER <= 4.0%（ai_registry/README.md 准入规则）",
+        "missing": "本版本从未在黄金样本集上实测 accuracy / CER；真实识别模型 key 才能跑，当前环境无法补测",
+        "to_promote": "配置真实识别模型后运行 demo/scripts/run_eval.py --prompt v1_2_8_anti_injection 并把结果登记到 metrics，再按准入规则晋升"
+      }
     },
     "v1_2_9_image_injection": {
       "release_date": "2026-09-07",

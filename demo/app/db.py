@@ -49,6 +49,8 @@ from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
+from app import money as _money
+
 # P3-T1（K2）：结构化事实的行字段唯一定义（纯逻辑模块，只依赖标准库，无导入环）。
 from app.services.memory_facts import ROW_FIELDS as _MEMORY_FACT_ROW_FIELDS
 
@@ -65,6 +67,27 @@ else:
 
 _engine = None
 _SessionLocal = None
+
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _install_sqlite_pragmas(engine):
+    """每条新连接都设 WAL + busy_timeout：读写并发时不立刻抛 database is locked。
+
+    内存库与不支持 WAL 的介质上 journal_mode 切换会静默保持原值，不视为错误。
+    """
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _on_connect(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=%d" % SQLITE_BUSY_TIMEOUT_MS)
+            cur.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cur.close()
+
 
 _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
@@ -87,14 +110,6 @@ _current_tenant_ctx = contextvars.ContextVar("current_tenant", default=None)
 _bypass_tenant_isolation_ctx = contextvars.ContextVar("bypass_tenant_isolation", default=False)
 
 
-_strict_tenant_ctx = contextvars.ContextVar("strict_tenant", default=False)
-
-
-class TenantBoundaryViolationError(RuntimeError):
-    """跨租户边界违规或未带租户过滤条件。"""
-    pass
-
-
 def set_current_tenant_id(tenant_id):
     """设置当前线程/协程请求的租户上下文。"""
     val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
@@ -107,16 +122,14 @@ def get_current_tenant_id():
 
 
 @contextmanager
-def tenant_context(tenant_id, strict=False):
-    """租户上下文管理器：在作用域内绑定租户身份；strict=True 时启用 DB 层漏带租户强制阻断。"""
+def tenant_context(tenant_id):
+    """租户上下文管理器：在作用域内绑定租户身份，供 scoped() 在未显式传租户时兜底过滤。"""
     val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
     t1 = _current_tenant_ctx.set(val)
-    t2 = _strict_tenant_ctx.set(bool(strict))
     try:
         yield
     finally:
         _current_tenant_ctx.reset(t1)
-        _strict_tenant_ctx.reset(t2)
 
 
 @contextmanager
@@ -154,7 +167,9 @@ def _make_engine():
     from sqlalchemy.orm import sessionmaker, declarative_base
     from sqlalchemy.sql import func
 
-    _engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+    _engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={
+        "check_same_thread": False, "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000.0})
+    _install_sqlite_pragmas(_engine)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     Base = declarative_base()
@@ -203,11 +218,20 @@ def _make_engine():
         # Gap 9 / Gap 6 店员可修正字段（识别直出 + save_edited 覆写，双写同列）
         service_fee = Column(Float, default=0.0)           # 加一服务费
         tax_amount = Column(Float, default=0.0)            # 税额/VAT/GST
+        discount_amount = Column(Float, default=0.0)
+        delivery_fee = Column(Float, default=0.0)
+        deposit_amount = Column(Float, default=0.0)
+        rounding_adjustment = Column(Float, default=0.0)
         adjustment_notes_json = Column(Text, default="[]") # 手写注记（拒收/短装/调整）list[str]
         payment_evidence = Column(Text, default="")        # 付款标记图面证据描述
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
         deleted_at = Column(String, nullable=True)  # 软删除时间戳
+        deleted_by = Column(String, nullable=True)  # 放弃单据的操作人（回收站展示）
+        # 冲销（approved -> reversed）留痕：谁、何时、为什么
+        reversed_at = Column(String, nullable=True)
+        reversed_by = Column(String, nullable=True)
+        reverse_reason = Column(Text, nullable=True)
         # Gap E2：租户隔离键（多租户贯穿业务主表）
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -956,6 +980,10 @@ def _make_engine():
         "ALTER TABLE receipts ADD COLUMN currency VARCHAR(8) DEFAULT 'HKD'",
         "ALTER TABLE receipts ADD COLUMN service_fee REAL DEFAULT 0",
         "ALTER TABLE receipts ADD COLUMN tax_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN discount_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN delivery_fee REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN deposit_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN rounding_adjustment REAL DEFAULT 0",
         "ALTER TABLE receipts ADD COLUMN adjustment_notes_json TEXT DEFAULT '[]'",
         "ALTER TABLE receipts ADD COLUMN payment_evidence TEXT DEFAULT ''",
         # P2-1 图内隐藏文字检测结果（只告警不拦截；'{}' = 未检测/无结果）
@@ -1018,7 +1046,7 @@ def _make_engine():
                     "WHERE tenant_id IS NULL OR tenant_id = ''"))
                 _c.commit()
         except Exception as _e:
-            logger.warning(
+            _migration_failed(
                 "[migrate] %s tenant_id backfill skipped: %s", _tbl_tid, _e)
 
     # D17：receipts.supplier_id 幂等回填（精确名匹配 -> 归一 key 匹配 -> 保持 NULL）。
@@ -1263,7 +1291,7 @@ def _make_engine():
                 ), {"mid": uuid.uuid4().hex, "rid": _r[0]})
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] vendor_memory memory_id backfill skipped: %s", _e)
+        _migration_failed("[migrate] vendor_memory memory_id backfill skipped: %s", _e)
 
     # 索引：memory_id 唯一约束 + vendor 查询索引（先查再执行幂等，放在回填之后）
     for _ddl in (
@@ -1365,7 +1393,7 @@ def _make_engine():
             ))
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
+        _migration_failed("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
 
     # 餐品分类基线重构：存量空值及「其他」分类一次性平滑迁移至「默认」
     try:
@@ -1378,7 +1406,7 @@ def _make_engine():
             ))
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] dishes category backfill skipped: %s", _e)
+        _migration_failed("[migrate] dishes category backfill skipped: %s", _e)
 
     # -----------------------------------------------------------------
     # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / suppliers /
@@ -1420,55 +1448,7 @@ def _make_engine():
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
     _SecurityEventRow = SecurityEventRow
 
-    # W-ISO-1：SQLite 数据库级租户行隔离兜底钩子（before_cursor_execute）
-    from sqlalchemy import event
-    import re as _re
-
-    _TENANT_PROTECTED_TABLES = (
-        "receipts", "receipt_items", "suppliers", "skus",
-        "inventory_log", "vendor_memory", "dishes", "payments",
-    )
-
-    @event.listens_for(_engine, "before_cursor_execute")
-    def _enforce_tenant_isolation(conn, cursor, statement, parameters, context, executemany):
-        if _bypass_tenant_isolation_ctx.get():
-            return
-        if not _strict_tenant_ctx.get():
-            return
-        tenant = _current_tenant_ctx.get()
-        if not tenant:
-            return
-        s = statement.lower()
-        # 仅对 SELECT / UPDATE / DELETE 做行级隔离拦截，放行 INSERT / PRAGMA / DDL
-        if not (s.startswith("select") or s.startswith("update") or s.startswith("delete")):
-            return
-        # 检查是否涉及核心业务表
-        matched_table = None
-        for tbl in _TENANT_PROTECTED_TABLES:
-            if _re.search(rf"\b{tbl}\b", s):
-                matched_table = tbl
-                break
-        if not matched_table:
-            return
-        # 检查是否具备 WHERE 过滤子句且 WHERE 子句中包含 tenant_id
-        m = _re.search(r"\bwhere\b", s)
-        if not m or "tenant_id" not in s[m.end():]:
-            err_msg = (
-                f"数据库层拦截跨租户越权查询：作用于业务表 '{matched_table}' 的 SQL "
-                f"缺失 tenant_id 隔离条件（当前租户={tenant}）"
-            )
-            try:
-                record_security_event(
-                    event_type="TENANT_VIOLATION_BLOCKED",
-                    severity="CRITICAL",
-                    source_module="db_enforcement",
-                    details={"table": matched_table, "tenant_id": tenant, "sql": statement[:200]},
-                    tenant_id=tenant,
-                )
-            except Exception:
-                pass
-            raise TenantBoundaryViolationError(err_msg)
-
+    _run_ordered_migrations(_engine)
     return Base
 
 
@@ -1546,11 +1526,101 @@ def _migration_ddl_already_applied(conn, ddl):
     return False
 
 
+# -------------------------------------------------------------
+# 有序迁移：schema_version 表记录已执行的版本，每个版本只执行一次。
+# v1 是「历史基线」：本文件 _make_engine 里按先查再执行写成的存量幂等 DDL/回填，
+# 它们全部成功后才记录 v1；此后所有新增结构变更只能追加到下面的列表，
+# 禁止再往 _make_engine 里堆新的 ALTER。任何一步失败直接抛 MigrationError 中止启动。
+# -------------------------------------------------------------
+def _migrate_v2_receipt_lifecycle_columns(engine):
+    for ddl in (
+        "ALTER TABLE receipts ADD COLUMN deleted_by VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reversed_at VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reversed_by VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reverse_reason TEXT",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v3_revoked_tokens(engine):
+    _apply_migration_ddl(
+        engine,
+        "CREATE TABLE IF NOT EXISTS revoked_tokens ("
+        " jti VARCHAR(64) PRIMARY KEY, exp INTEGER NOT NULL)")
+
+
+def _migrate_v4_receipt_list_indexes(engine):
+    for ddl in (
+        "CREATE INDEX IF NOT EXISTS ix_receipts_tenant_status "
+        "ON receipts (tenant_id, status, deleted_at)",
+        "CREATE INDEX IF NOT EXISTS ix_receipt_items_receipt "
+        "ON receipt_items (receipt_id)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+SCHEMA_MIGRATIONS = [
+    (1, "baseline_inline_schema", None),
+    (2, "receipt_lifecycle_columns", _migrate_v2_receipt_lifecycle_columns),
+    (3, "revoked_tokens", _migrate_v3_revoked_tokens),
+    (4, "receipt_list_indexes", _migrate_v4_receipt_list_indexes),
+]
+
+
+def _run_ordered_migrations(engine):
+    from sqlalchemy import text as _t
+    with engine.begin() as conn:
+        conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS schema_version ("
+            " version INTEGER PRIMARY KEY, name VARCHAR NOT NULL,"
+            " applied_at VARCHAR NOT NULL)"))
+        applied = {r[0] for r in conn.execute(_t("SELECT version FROM schema_version")).fetchall()}
+    for version, name, fn in SCHEMA_MIGRATIONS:
+        if version in applied:
+            continue
+        if fn is not None:
+            fn(engine)
+        with engine.begin() as conn:
+            conn.execute(_t(
+                "INSERT OR IGNORE INTO schema_version (version, name, applied_at) "
+                "VALUES (:v, :n, :t)"),
+                         {"v": version, "n": name, "t": datetime.now().isoformat(timespec="seconds")})
+
+
+def schema_version():
+    """当前库已执行到的最大迁移版本（0 表示尚无版本表）。"""
+    from sqlalchemy import text as _t
+    try:
+        with _engine.connect() as conn:
+            return int(conn.execute(_t("SELECT COALESCE(MAX(version), 0) FROM schema_version")).scalar() or 0)
+    except Exception:
+        return 0
+
+
+def ensure_schema_current():
+    """确保迁移已全部执行；缺任何一版即抛 MigrationError（启动时调用，失败中止启动）。"""
+    _run_ordered_migrations(_engine)
+    latest = SCHEMA_MIGRATIONS[-1][0]
+    if schema_version() != latest:
+        raise MigrationError(f"库结构版本 {schema_version()} 与程序要求的 {latest} 不一致，已中止启动")
+
+
+class MigrationError(RuntimeError):
+    """库结构迁移失败：直接中止启动，避免带着半套 schema 继续跑业务。"""
+
+
+def _migration_failed(fmt, *args):
+    msg = (fmt % args) if args else fmt
+    logger.error(msg)
+    raise MigrationError(msg)
+
+
 def _apply_migration_ddl(engine, ddl):
     """单条迁移 DDL 执行器（R5 静默幂等口径）：
 
     - 先查再执行：列/索引已存在则静默 continue（零日志，二次 import 干净）；
-    - 仅真实异常（DB locked 等）才 logger.warning 留痕，且不阻断启动。
+    - 真实异常（DB locked 等）抛 MigrationError 中止启动；并发进程抢先建好的
+      「已存在」不算失败。
     """
     from sqlalchemy import text as _t
     try:
@@ -1560,7 +1630,10 @@ def _apply_migration_ddl(engine, ddl):
             conn.execute(_t(ddl))
             conn.commit()
     except Exception as e:
-        logger.warning("[migrate] %s skipped: %s", ddl, e)
+        _low = str(e).lower()
+        if "duplicate column" in _low or "already exists" in _low:
+            return  # 另一进程抢先完成了同一条迁移
+        _migration_failed("[migrate] %s skipped: %s", ddl, e)
 
 
 def _drop_rebuild_tmp_table(engine, tmp):
@@ -1680,9 +1753,9 @@ def _rebuild_legacy_vendor_memory(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] vendor_memory legacy rebuild skipped: %s", e)
+        _migration_failed("[migrate] vendor_memory legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
 
 
@@ -1745,9 +1818,9 @@ def _rebuild_legacy_skus_name_unique(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] skus legacy rebuild skipped: %s", e)
+        _migration_failed("[migrate] skus legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
 
 
@@ -1812,9 +1885,9 @@ def _rebuild_legacy_suppliers_name_unique(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] suppliers legacy rebuild skipped: %s", e)
+        _migration_failed("[migrate] suppliers legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
 
 
@@ -1887,9 +1960,9 @@ def _rebuild_legacy_dish_ingredients(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
+        _migration_failed("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
 
 
@@ -1938,7 +2011,7 @@ def _migrate_app_settings_overrides(engine):
                     "[migrate] app_settings -> app_setting_overrides moved %s tenant row(s)",
                     moved)
     except Exception as e:
-        logger.warning("[migrate] app_settings override migration skipped: %s", e)
+        _migration_failed("[migrate] app_settings override migration skipped: %s", e)
 
 
 def _backfill_receipt_supplier_ids(engine):
@@ -2007,10 +2080,69 @@ def _backfill_receipt_supplier_ids(engine):
                         "UPDATE receipts SET supplier_id = :sid WHERE id = :rid"),
                         updates)
     except Exception as e:
-        logger.warning("[migrate] receipts.supplier_id backfill skipped: %s", e)
+        _migration_failed("[migrate] receipts.supplier_id backfill skipped: %s", e)
 
 
 _make_engine()
+
+
+_ambient_session_ctx = contextvars.ContextVar("ambient_session", default=None)
+
+
+class AtomicAborted(RuntimeError):
+    """atomic() 块内有函数调用了 rollback()：整个事务作废，不得部分提交。"""
+
+
+class _AmbientSession:
+    """atomic() 块内共享的会话代理。
+
+    块内所有经 get_session() 取会话的 db 函数拿到的是同一个会话：它们各自的
+    commit() 只做 flush（写入留在同一个事务里），close() 不关闭，真正的提交/回滚
+    只发生在 atomic() 退出时。这样 approve 等多步写入无需逐个函数改签名即可原子化。
+    """
+
+    def __init__(self, real):
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_poisoned", False)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def commit(self):
+        self._real.flush()
+
+    def close(self):
+        return None
+
+    def rollback(self):
+        object.__setattr__(self, "_poisoned", True)
+        self._real.rollback()
+
+
+@contextmanager
+def atomic():
+    """把块内全部 db 写入收进同一个事务：正常退出一次 commit，任何异常整体回滚。
+
+    可嵌套：内层直接加入外层事务。
+    """
+    existing = _ambient_session_ctx.get()
+    if existing is not None:
+        yield existing
+        return
+    real = _SessionLocal()
+    proxy = _AmbientSession(real)
+    token = _ambient_session_ctx.set(proxy)
+    try:
+        yield proxy
+        if proxy._poisoned:
+            raise AtomicAborted("事务内发生回滚，本次操作已整体撤销")
+        real.commit()
+    except BaseException:
+        real.rollback()
+        raise
+    finally:
+        _ambient_session_ctx.reset(token)
+        real.close()
 
 
 def get_session(tenant_id=None):
@@ -2018,7 +2150,11 @@ def get_session(tenant_id=None):
 
     当前 SQLite 单库实现不按租户分库，tenant_id 仅作上下文透传，
     过滤统一走 db.scoped(query, model, tenant_id)。
+    在 atomic() 块内返回共享的事务会话代理（见 _AmbientSession）。
     """
+    amb = _ambient_session_ctx.get()
+    if amb is not None:
+        return amb
     return _SessionLocal()
 
 
@@ -2175,6 +2311,13 @@ def get_receipt_row(receipt_id, tenant_id=None):
         s.close()
 
 
+# 金额类列统一舍入到分，数量/单价统一舍入口径见 app/money.py
+_RECEIPT_MONEY_FIELDS = frozenset({
+    "total_amount", "service_fee", "tax_amount", "discount_amount",
+    "delivery_fee", "deposit_amount", "rounding_adjustment",
+})
+
+
 @_guard_job_db_write()
 def update_receipt(receipt_id, **fields):
     """按字段更新收据；version 字段若传入则 +1。返回更新后的 row。"""
@@ -2187,6 +2330,8 @@ def update_receipt(receipt_id, **fields):
             return None
         for k, v in fields.items():
             if v is not None and hasattr(row, k):
+                if k in _RECEIPT_MONEY_FIELDS:
+                    v = _money.money(v)
                 setattr(row, k, v)
         row.updated_at = now_iso()
         s.commit()
@@ -2245,12 +2390,21 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
             row = dict(it)
             row.pop("id", None)  # 旧 id 不保留，重新自增
             row.pop("tenant_id", None)  # 租户以单据归属为准，不接受逐行覆盖
+            row.pop("sku_candidates", None)  # 读时现算的只读字段，不落库
             fuzzy = row.pop("fuzzy_candidates", [])
             entity = row.pop("entity_candidates", [])
             raw_name = row.pop("raw_name", None)
             raw_unit = row.pop("raw_unit", None)
             is_void = 1 if row.pop("is_void", 0) else 0
             actual_qty = row.pop("actual_qty", None)
+            if actual_qty is not None:
+                actual_qty = _money.qty(actual_qty)
+            if row.get("amount") is not None:
+                row["amount"] = _money.money(row["amount"])
+            if row.get("unit_price") is not None:
+                row["unit_price"] = _money.unit_price(row["unit_price"])
+            if row.get("quantity") is not None:
+                row["quantity"] = _money.qty(row["quantity"])
             # Gap E1 / T7：字段级证据（可选）——归一后落 evidence_json，非法降级 NULL 不阻断
             evidence = normalize_evidence(row.pop("evidence", None))
             s.add(_ItemRow(
@@ -2466,6 +2620,38 @@ def list_receipt_rows(tenant_id=None):
         _s.close()
 
 
+def list_receipt_rows_page(tenant_id=None, status=None, q=None, limit=None, offset=0):
+    """分页/过滤版单据列表：返回 (rows, total)。
+
+    status 可为逗号分隔的多个状态；q 在供应商名、开单日期、单号中模糊匹配；
+    limit 为 None 表示不分页（与 list_receipt_rows 同结果，保持无参调用兼容）。
+    """
+    from sqlalchemy import or_
+    _s = get_session()
+    try:
+        qry = scoped(_s.query(_ReceiptRow), _ReceiptRow, tenant_id).filter(
+            _ReceiptRow.deleted_at.is_(None))
+        if status:
+            wanted = [x.strip() for x in str(status).split(",") if x.strip()]
+            if wanted:
+                qry = qry.filter(_ReceiptRow.status.in_(wanted))
+        if q and str(q).strip():
+            term = str(q).strip()
+            like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            conds = [_ReceiptRow.supplier_name.like(like, escape="\\"),
+                     _ReceiptRow.receipt_date.like(like, escape="\\")]
+            if term.lstrip("#").isdigit():
+                conds.append(_ReceiptRow.id == int(term.lstrip("#")))
+            qry = qry.filter(or_(*conds))
+        total = qry.count()
+        qry = qry.order_by(_ReceiptRow.id.desc())
+        if limit is not None:
+            qry = qry.offset(max(0, int(offset or 0))).limit(max(1, int(limit)))
+        return qry.all(), total
+    finally:
+        _s.close()
+
+
 def get_receipt_items(receipt_id, tenant_id=None):
     s = get_session()
     try:
@@ -2628,6 +2814,8 @@ def find_sku_by_name(name, tenant_id=None):
 def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     kind, note="", tenant_id="default"):
     """写库存流水 + 更新 SKU 当前库存 + 挂载入库/消耗批次处理钩子。"""
+    qty = _money.qty(qty)
+    amount = _money.money(amount)
     s = get_session()
     try:
         log_amount = amount
@@ -2635,11 +2823,13 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
             sku = s.get(_SkuRow, int(sku_id))
             if sku:
                 if kind in ("in", "stocktake"):
-                    sku.current_stock += qty if kind == "in" else (qty - sku.current_stock)
+                    sku.current_stock = _money.qty(
+                        sku.current_stock + qty if kind == "in" else qty)
                     if kind == "in" and amount > 0:
-                        sku.last_unit_price = amount / qty if qty else sku.last_unit_price
+                        sku.last_unit_price = (_money.unit_price(amount / qty) if qty
+                                               else sku.last_unit_price)
                 elif kind in ("consume", "waste"):
-                    sku.current_stock = round(sku.current_stock - qty, 4)
+                    sku.current_stock = _money.qty(sku.current_stock - qty)
                     from app.services.costing_service import CostingService
                     fifo_cost, _ = CostingService.deduct_consumption_fifo(
                         session=s,
@@ -3091,7 +3281,12 @@ def list_sku_tenant_ids():
         s.close()
 
 
-def deduplicate_skus_by_canonical(tenant_id=None):
+def find_duplicate_sku_groups(tenant_id=None):
+    """只读巡检：列出会被「流水号变体合并」影响的重复货品分组，不改任何数据。"""
+    return deduplicate_skus_by_canonical(tenant_id=tenant_id, dry_run=True)
+
+
+def deduplicate_skus_by_canonical(tenant_id=None, dry_run=False):
     """B-P0-1 存量脏数据迁移：按 canonical 名归一去重，合并 _\\d{10} 变体。
 
     遍历全部 SKU（含停用），以 canonical_name 为分组键，将同组内的
@@ -3149,6 +3344,13 @@ def deduplicate_skus_by_canonical(tenant_id=None):
             sec_ids = [m.id for m in secondaries]
             sec_names = [m.name for m in secondaries]
             if not sec_ids:
+                continue
+            if dry_run:
+                reports.append({
+                    "canonical": canon, "primary_id": primary.id,
+                    "primary_name": primary.name, "merged_ids": sec_ids,
+                    "merged_names": sec_names,
+                })
                 continue
             old_primary_name = primary.name
             # 若主仍带流水号或繁体别名差异，归一重命名为 canonical
@@ -3214,6 +3416,8 @@ def deduplicate_skus_by_canonical(tenant_id=None):
                 "new_stock": primary.current_stock,
                 "alias_repointed": alias_moved,
             })
+        if dry_run:
+            return reports
         # 兜底清理：处理残留的 _17871* 命名（包括历史已停用但无流水的可物理删除，确保 sqlite 验证清零）
         has_residual = False
         try:
@@ -3423,14 +3627,25 @@ def get_dish_recipe_version(dish_id, version, tenant_id=None):
         s.close()
 
 
+def _drop_reversed_in_rows(s, rows, tenant_id=None):
+    """剔除已被冲销的单据产生的入库流水（价格历史与进价区间不应再计入）。"""
+    rids = {r.receipt_id for r in rows if r.receipt_id is not None}
+    if not rids:
+        return rows
+    gone = {x[0] for x in scoped(s.query(_StockLogRow.receipt_id), _StockLogRow, tenant_id).filter(
+        _StockLogRow.kind == "reversal", _StockLogRow.receipt_id.in_(rids)).all()}
+    return [r for r in rows if r.receipt_id not in gone] if gone else rows
+
+
 def price_history(sku_id, tenant_id=None):
-    """SKU 价格历史：从库存流水（kind=in）推导单价 = amount/qty。"""
+    """SKU 价格历史：从库存流水（kind=in）推导单价 = amount/qty；已冲销单据不计入。"""
     s = get_session()
     try:
         rows = scoped(s.query(_StockLogRow), _StockLogRow, tenant_id).filter(
             _StockLogRow.sku_id == int(sku_id),
             _StockLogRow.kind == "in",
         ).order_by(_StockLogRow.date.asc()).all()
+        rows = _drop_reversed_in_rows(s, rows, tenant_id)
         out = []
         for r in rows:
             unit_price = (r.amount / r.qty) if r.qty else 0.0
@@ -3463,6 +3678,7 @@ def vendor_price_history(sku_id, vendor, tenant_id=None):
             _StockLogRow.kind == "in",
             _StockLogRow.vendor == name,
         ).order_by(_StockLogRow.date.asc()).all()
+        rows = _drop_reversed_in_rows(s, rows, tenant_id)
         out = []
         for r in rows:
             qty = float(r.qty or 0.0)
@@ -3912,14 +4128,9 @@ def supplier_stats(supplier_id, tenant_id=None):
                 "unpaid_credit_total": 0.0,
                 "unpaid_credit_count": 0,
             }
-        receipts = _receipts_for_supplier(s, _sup, tenant_id)
-        return {
-            "receipt_count": len(receipts),
-            "unpaid_credit_total": sum((r.total_amount or 0.0) for r in receipts
-                                       if r.settlement_type == "credit" and r.status == "approved"),
-            "unpaid_credit_count": sum(1 for r in receipts
-                                       if r.settlement_type == "credit" and r.status == "approved"),
-        }
+        from app import recon_store
+        tid = tenant_id or getattr(_sup, "tenant_id", None) or "default"
+        return recon_store.supplier_stat(tid, _sup.id)
     finally:
         s.close()
 
@@ -5456,7 +5667,8 @@ def get_engine_config():
             from app.models import EngineConfig
             return EngineConfig()
         from app.models import EngineConfig
-        stored = json.loads(row.value)
+        from app import secret_store
+        stored = secret_store.decrypt_config_dict(json.loads(row.value))
         # 旧配置迁移：openai_* 单组 → 拆分为 rec/aud 两组
         if "openai_base_url" in stored and not stored.get("openai_rec_base_url"):
             stored["openai_rec_base_url"] = stored.get("openai_base_url", "")
@@ -5567,7 +5779,9 @@ def set_engine_config(cfg, source=None):
         if row is None:
             row = _AppSettingRow(key="engine_config")
             s.add(row)
-        row.value = json.dumps(cfg.model_dump(), ensure_ascii=False)
+        from app import secret_store
+        row.value = json.dumps(secret_store.encrypt_config_dict(cfg.model_dump()),
+                               ensure_ascii=False)
         s.commit()
     finally:
         s.close()
@@ -6591,9 +6805,22 @@ def log_ai_decision(
     field_path="", ai_value=None, user_value=None, adopted=None,
     confidence=None, is_hallucination=None, extra=None,
 ):
-    """写一条 AI 决策日志。采纳/用户值/幻觉标记可留 NULL，approve 时回填。"""
+    """写一条 AI 决策日志。采纳/用户值/幻觉标记可留 NULL，approve 时回填。
+
+    单据若被分配进某个 A/B 实验，实验 ID 与分组以实验分配表为准（调用方没传就自动补），
+    这样识别各轮、审核、approve 行都带同一个实验 ID 和分组。
+    """
     s = get_session()
     try:
+        if receipt_id:
+            _assign_q = s.query(_ExperimentAssignRow).filter(
+                _ExperimentAssignRow.receipt_id == int(receipt_id))
+            if experiment_id:
+                _assign_q = _assign_q.filter(_ExperimentAssignRow.experiment_id == int(experiment_id))
+            _assign = _assign_q.order_by(_ExperimentAssignRow.assigned_at.desc()).first()
+            if _assign is not None:
+                experiment_id = _assign.experiment_id
+                grp = _assign.grp
         row = _DecisionLogRow(
             ts=now_iso(),
             receipt_id=int(receipt_id) if receipt_id else None,
@@ -7118,25 +7345,48 @@ def get_experiment_metrics(exp_id):
     finally:
         s.close()
 
-    groups = {"control": [], "treatment": []}
-    for r in rows:
-        g = str(r.grp) if r.grp else "control"
-        if g in groups:
-            groups[g].append(r)
+    # 分组以实验分配表为准；样本单位是单据（一张单有多轮识别加审核、approve 多条决策行，
+    # 逐行统计会让样本不独立、z 检验失真）。没有单据号的行（离线脚本写入）各自算一个样本。
+    s2 = get_session()
+    try:
+        assign_map = {a.receipt_id: str(a.grp) for a in s2.query(_ExperimentAssignRow).filter(
+            _ExperimentAssignRow.experiment_id == int(exp_id)).all()}
+    finally:
+        s2.close()
 
-    def _stats(recs):
-        n = len(recs)
+    units = {}
+    for r in rows:
+        key = ("r", r.receipt_id) if r.receipt_id else ("row", r.id)
+        g = assign_map.get(r.receipt_id) if r.receipt_id else None
+        if g is None:
+            g = str(r.grp) if r.grp else "control"
+        unit = units.setdefault(key, {"grp": g, "rows": []})
+        unit["rows"].append(r)
+
+    groups = {"control": [], "treatment": []}
+    for unit in units.values():
+        if unit["grp"] in groups:
+            groups[unit["grp"]].append(unit["rows"])
+
+    def _stats(unit_rows):
+        n = len(unit_rows)
         if n == 0:
-            return {"n": 0, "accuracy": None, "hallucination_rate": None,
-                    "edit_rate": None}
-        adopted = sum(1 for r in recs if r.adopted == 1)
-        hallu = sum(1 for r in recs if r.is_hallucination == 1)
-        edited = sum(1 for r in recs if r.user_value and r.user_value.strip() not in ("", "{}"))
+            return {"n": 0, "n_reviewed": 0, "accuracy": None,
+                    "hallucination_rate": None, "edit_rate": None}
+        # 已有人工结论（approve 行写了 adopted）的单据才进入准确率等比率的分母
+        reviewed = [rs for rs in unit_rows if any(r.adopted is not None for r in rs)]
+        nr = len(reviewed)
+        adopted = sum(1 for rs in reviewed
+                      if all(r.adopted == 1 for r in rs if r.adopted is not None))
+        hallu = sum(1 for rs in reviewed if any(r.is_hallucination == 1 for r in rs))
+        edited = sum(1 for rs in reviewed
+                     if any(r.user_value and r.user_value.strip() not in ("", "{}") for r in rs))
         return {
             "n": n,
-            "accuracy": round(adopted / n, 6) if n else None,
-            "hallucination_rate": round(hallu / n, 6) if n else None,
-            "edit_rate": round(edited / n, 6) if n else None,
+            "n_reviewed": nr,
+            "accuracy": round(adopted / nr, 6) if nr else None,
+            "hallucination_rate": round(hallu / nr, 6) if nr else None,
+            "edit_rate": round(edited / nr, 6) if nr else None,
         }
 
     c = _stats(groups["control"])
@@ -7168,10 +7418,10 @@ def get_experiment_metrics(exp_id):
         return {"z": round(z, 6), "p_value": round(pval, 8),
                 "effect_size_pp": round((p2 - p1) * 100, 4)}
 
-    z_acc = _z_test(c["accuracy"], t["accuracy"], c["n"], t["n"])
+    z_acc = _z_test(c["accuracy"], t["accuracy"], c["n_reviewed"], t["n_reviewed"])
     z_hall = _z_test(c["hallucination_rate"], t["hallucination_rate"],
-                     c["n"], t["n"])
-    z_edit = _z_test(c["edit_rate"], t["edit_rate"], c["n"], t["n"])
+                     c["n_reviewed"], t["n_reviewed"])
+    z_edit = _z_test(c["edit_rate"], t["edit_rate"], c["n_reviewed"], t["n_reviewed"])
 
     return {
         "experiment_id": int(exp_id),
@@ -7182,7 +7432,7 @@ def get_experiment_metrics(exp_id):
             "hallucination_rate": z_hall,
             "edit_rate": z_edit,
         },
-        "low_confidence": min(c["n"], t["n"]) < 30,
+        "low_confidence": min(c["n_reviewed"], t["n_reviewed"]) < 30,
     }
 
 

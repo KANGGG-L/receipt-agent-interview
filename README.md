@@ -63,7 +63,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 > LangChain 负责模型层抽象（多模态封装/可插拔引擎/向量检索）。
 
 关键设计：
-- **重试阶梯**：识别失败 → 契约反馈重试 → 引擎切换 → 显式 error（绝不静默兜底）
+- **重试与降级**：引擎瞬时故障（网络/上游 5xx）只重试 1 次、读超时不重试，整条管线有约 45 秒总时长预算和整体看门狗；门禁不过 → 可选的纯文本修正一次 → 仍不过则带警告交人工（不整图重读）；确定性失败（没配引擎、密钥错、图片打不开）立即显式 error（绝不静默兜底）
 - **交叉审核 Agent**：一模型识别、一模型审核（不同模型家族盲点互补）
 - **VendorMemory RAG**：按供应商积累别称/单位/版式记忆，越用越准（护城河）
 - **算术不交给 LLM**：数量×单价、Σ总额用确定性代码校验，校验+建议不静默改
@@ -83,8 +83,12 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 - **注入黑名单可被语义改写绕过**：`prompt_injection_guard` 挡住的是字符层/词汇层绕过
   （有限语料），对**语义型注入**（换说法 / 跨轮指代 / 拼音转写）无通用检出率。XML 数据
   沙箱提供的是「指令与数据结构可分」的隔离，不等于「内容无害」。
-- **图内隐藏文字检测只告警、不拦截**：`image_injection_guard` 对淡墨层 / 极小字 / 边距外
-  文字产出信号，但热敏纸收据天然低对比度，为避免误伤只告警，不阻断上传。
+- **图内隐藏文字检测：高置信命中会拦截，低置信只告警**：`image_injection_guard` 对淡墨层 /
+  极小字 / 边距外文字产出信号。命中高置信注入特征（至少两个独立信号）时，单据直接置为
+  `flagged`、**不发起识别**，原图保留，上传响应的 `msg` 用大白话告诉店员「图片里发现了
+  肉眼看不清的小字，没有让 AI 识别，请对照原图手工录入或请老板看一下」；只有单个弱信号
+  时（热敏纸天然低对比度）只写入 `quality_warnings` 告警，照常识别。检测本身出错时降级放行
+  并标记 `image_guard_degraded` 待审。`api_receipts.py` 的单张上传、批量上传、换图三处同口径。
 - **契约/算术门禁只保证结构与守恒**：Pydantic `extra="forbid"` 拒绝 schema 外字段，
   算术门禁只保证「数量×单价 / Σ明细」守恒——两者都不保证语义正确（捏造品名、重复行等
   幻觉无自动处置，见 `tests/test_hallucination_adversarial.py`）。
@@ -139,7 +143,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 ```
 上传真实收据图
   → 识别出供应商/日期/金额/明细（如祥興快餐用品，1343.0 元，6 条明细）
-  → 算术门禁当场抓到 AI 算错（10×130=1300 但写 130）→ 反馈重试修正
+  → 算术门禁当场抓到 AI 算错（10×130=1300 但写 130）→ 带警告交人工，页面逐行写明「第 N 行 xx：单据写 130 元，按数量单价应是 1300 元，相差 1170 元」
   → 交叉审核通过 → 人工复核提交 → owner approve 入账
   → 自动建 SKU + 供应商建档 → 成本报表累计 → AI 复盘
 ```
@@ -166,7 +170,7 @@ uploaded → parsing → parsed → edited → approved
 | :--- | :--- | :--- | :--- |
 | 1. 上传 | `uploaded` | staff | 上传收据图，创建异步识别 Job |
 | 2. 识别 | `parsing` | 后端 Job 线程 | LangChain 多模态 VLM 读图 → 结构化 JSON（40s~4min） |
-| 3. 门禁校验 | `parsed` / `error` | 代码引擎 | 契约校验 + 算术校验，不过 → 反馈重试，仍败 → error |
+| 3. 门禁校验 | `parsed` / `parsed_with_warnings` / `error` | 代码引擎 | 契约分级校验（结构致命才 error，字段可疑带警告保留明细）+ 算术校验；不过 → 纯文本修正一次，仍不过 → 带警告交人工 |
 | 4. 人工复核 | `edited` | staff | Side-by-Side 对照原图修正，乐观锁防冲突 |
 | 5. 审批入账 | `approved` | owner | 幂等写入 SKU 库存 + 供应商自动建档 + VendorMemory 回写 |
 | 6. 标记异常 | `flagged` | owner | 可疑单据标记，不入账 |
@@ -182,14 +186,15 @@ run_pipeline(image_path, config)
   │
   ├─ 灰测分配：should_use_grey(config, supplier) → 本单走常规 or 灰测组引擎
   │
-  ├─ [重试阶梯 ≤ 3 轮]
+  ├─ [总时长预算约 45 秒；瞬时故障最多重试 1 次]
   │    └─ extract_chain.extract_receipt()      ← VLM 读图 → 原始 JSON
   │         ├─ VendorMemory RAG 注入 <vendor_context>（按供应商记忆）
   │         ├─ 可选「解析 LLM」二次规范化（纯文本，可开关）
-  │         └─ 契约校验（Pydantic extra=forbid，拒绝 schema 外字段）
-  │    └─ _run_gates()                          ← 契约 + 算术双门禁（零 token）
+  │         └─ 契约分级校验（结构致命才失败；字段可疑带警告，schema 外字段记入警告）
+  │    └─ _run_gates_ex()                       ← 契约 + 算术双门禁（零 token），输出结构化 gate_issues
   │         ├─ 数量×单价 == 小计？Σ明细 == 总额？
-  │         └─ 不过 → 把错误喂回 prompt 重试（"上一轮被门禁打回，请修正"）
+  │         └─ 不过 → 可选纯文本修正一次（不重读图）→ 仍不过：带警告交人工，不做整图重识别
+  │              （一次整图识别要 30 秒以上，放不进 45 秒预算，重读同一张图也很难改变结论）
   │
   ├─ 交叉审核：audit_chain.run_audit()         ← 另一引擎对照原图复核
   │         ├─ 一致 → pass；有分歧 → flag（供人工复核排序）
@@ -205,8 +210,8 @@ run_pipeline(image_path, config)
 | 层 | 执行者 | 文件 | 干什么 | 失败怎么办 |
 | :--- | :--- | :--- | :--- | :--- |
 | VLM 预填 | 多模态模型（可插拔） | `extract_chain.py` | 读图 → 结构化 JSON，自报置信度 | 允许出错，交给下一层 |
-| 契约门禁 | Pydantic | `services/contract.py` | 拒绝 schema 外字段/非法枚举/NaN | 打回重试（≤3 轮） |
-| 算术门禁 | 确定性代码 | `services/math_engine.py` | 数量×单价、Σ总额，零 token | 打回重试 + 差异清单 |
+| 契约门禁 | Pydantic | `services/contract.py` | 结构致命（非 JSON、缺明细、总额非法）才失败；日期、单据类型、单行数值等字段可疑带警告保留明细 | 致命：转手工并保留原图与部分字段；可疑：带警告交人工 |
+| 算术门禁 | 确定性代码 | `services/math_engine.py` | 数量×单价、Σ总额，零 token | 带警告交人工 + 结构化差异清单 gate_issues |
 | 交叉审核 | 另一引擎 | `audit_chain.py` | 对照原图逐字段复核 | 分歧 → flag 提示人工 |
 | 人工背书 | 老板 | `api_receipts.py` approve | Side-by-Side 复核后审批 | 库存只在 approve 写入 |
 
@@ -281,8 +286,8 @@ demo/app/
 
 ```bash
 cd demo
-cp .env.example .env        # 默认识别腿百炼 DashScope qwen3.5-omni-flash，零配置可跑
-pip install -r requirements.txt
+cp .env.example .env        # 复制配置模板；识别服务密钥默认是空的，需要自己填（见下）
+pip install -r requirements.txt   # 想完全复现验证环境：pip install -r requirements.lock
 
 ./demo.sh run               # 启动 http://127.0.0.1:15010
 ./demo.sh test              # 快速单测子集（test_demo.py）；根 tests/ 全量 512 passed+1 条件 skip，见「测试体系」

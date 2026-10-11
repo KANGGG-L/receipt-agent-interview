@@ -208,7 +208,7 @@ def test_ac_ux_04_and_05_modal_table_governance():
 def test_ac_gov_01_events_logs_api_security_and_pagination(client):
     """
     AC-GOV-01:
-    - /api/analytics/events/logs 与 /api/analytics/events 均要求 admin 权限
+    - /api/analytics/events/logs 要求 admin 权限
     - 支持 event_type 过滤、search 过滤、分页与按 ts 稳定倒序
     """
     # 1. 匿名与普通用户访问拦截
@@ -226,8 +226,9 @@ def test_ac_gov_01_events_logs_api_security_and_pagination(client):
     assert "pagination" in data_logs
     assert "items" in data_logs
 
+    # 重复路由 /api/analytics/events 已删除，只保留 /events/logs
     resp_events = client.get("/api/analytics/events?page=1&page_size=10", headers=headers)
-    assert resp_events.status_code == 200
+    assert resp_events.status_code == 404
 
     # 3. 验证时间戳无原生 T，且时序按 ts 降序
     items = data_logs.get("items", [])

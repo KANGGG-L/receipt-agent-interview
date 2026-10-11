@@ -324,10 +324,10 @@ def test_scenario_3_arithmetic_gate_coerced_total_hallucination():
 
     problems_zero = validate_and_report(receipt_data_zero)
     assert len(problems_zero) > 0
-    assert "明细合计=120.0" in problems_zero[0]
-    assert "预期总额=120.0" in problems_zero[0]
-    assert "但总额=0.0" in problems_zero[0]
-    assert "差120.0" in problems_zero[0]
+    assert "各行加起来 120 元" in problems_zero[0]
+    assert "应付 120 元" in problems_zero[0]
+    assert "单据总额写 0 元" in problems_zero[0]
+    assert "相差 120 元" in problems_zero[0]
 
     # Verify auditable trail includes the flagged discrepancy
     trail = audit_trail(receipt_data_zero)
@@ -351,10 +351,10 @@ def test_scenario_3_arithmetic_gate_coerced_total_hallucination():
 
     problems_disc = validate_and_report(receipt_data_discrepancy)
     assert len(problems_disc) > 0
-    assert "明细合计=120.0" in problems_disc[0]
-    assert "预期总额=120.0" in problems_disc[0]
-    assert "但总额=50.0" in problems_disc[0]
-    assert "差70.0" in problems_disc[0]
+    assert "各行加起来 120 元" in problems_disc[0]
+    assert "应付 120 元" in problems_disc[0]
+    assert "单据总额写 50 元" in problems_disc[0]
+    assert "相差 70 元" in problems_disc[0]
 
 
 # =====================================================================

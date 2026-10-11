@@ -33,12 +33,13 @@ from app import db
 client = TestClient(app)
 
 
-def _owner_headers():
-    return {"X-Role": "owner", "X-Email": "boss@demo.hk"}
-
 
 def _staff_headers():
     return {"X-Role": "staff", "X-Email": "staff@demo.hk"}
+
+
+def _owner_headers():
+    return {"X-Role": "owner", "X-Email": "boss@demo.hk"}
 
 
 @pytest.fixture(autouse=True)
@@ -57,7 +58,7 @@ def _preview(report_id, params, headers=None, **extra):
     body = {"report_id": report_id, "params": params}
     body.update(extra)
     res = client.post(
-        "/api/export/preview", json=body, headers=headers or _staff_headers()
+        "/api/export/preview", json=body, headers=headers or _owner_headers()
     )
     assert res.status_code == 200, res.text
     return res.json()["data"]

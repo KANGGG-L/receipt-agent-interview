@@ -5,7 +5,7 @@
   "prompts": [
     {
       "scene": "extract",
-      "active_version": "v1_2_8_anti_injection",
+      "active_version": "v1_2_0_sku_clean",
       "accuracy": 98.2,
       "cer": 1.8,
       "clean_name_accuracy": 99.1,
@@ -13,7 +13,7 @@
       "code_extraction_recall": 98.6,
       "avg_tokens": 820,
       "description": "Gap1-8 聚合版：供应商记忆 RAG 注入防御 XML 数据沙箱",
-      "metrics_provenance": "以上 accuracy/cer/clean_name_accuracy/code_extraction_recall 系 v1_2_0_sku_clean 黄金样本评测批次（2026-08-21）的快照，未对 active 版本 v1_2_8 重测，仅作该系谱历史参考，不得当作 v1_2_8 的实测值"
+      "metrics_provenance": "以上 accuracy/cer/clean_name_accuracy/code_extraction_recall 系 v1_2_0_sku_clean 黄金样本评测批次（2026-08-21）的实测快照；线上使用的就是该版本。v1_2_8 从未实测，已降级为 draft"
     },
     {
       "scene": "parse",

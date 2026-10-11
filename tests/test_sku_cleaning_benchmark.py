@@ -84,7 +84,7 @@ def test_registry_asset_loading():
     prompt_text, meta = ai_registry.get_prompt("extract", "v1_2_0_sku_clean", with_metadata=True)
     assert "品名纯净性要求" in prompt_text
     assert "有机菜心_1787140420" in prompt_text
-    assert meta.get("status") == "archived"
+    assert meta.get("status") == "production"  # S2-24: 线上使用的准入版本
 
     # 1b. active 版本（v1_2_8_anti_injection）加载成功且状态为 production
     active_text, active_meta = ai_registry.get_prompt("extract", with_metadata=True)

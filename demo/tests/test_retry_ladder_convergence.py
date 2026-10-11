@@ -107,8 +107,6 @@ def _patch_build(monkeypatch, model, counter):
     # 关闭识别引擎的自动兜底：本文件断言的是「重试阶梯」本身，兜底可用会把失败吞掉。
     # 历史注记：兜底原为本机 CodeBuddy CLI（判据是模型 kind != "codebuddy"），
     # 已于 2026-09-02 弃用，现为 DashScope 官方通道兜底（判据见下）。
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
 
 
 def _log_actions(state):
@@ -151,8 +149,6 @@ def test_output_quality_error_marker_matches_key_absence(tmp_path, monkeypatch):
     """锁住判据：JSON/契约失败返回不带 error_category，引擎失败返回带。"""
     # 关闭识别引擎的自动兜底：否则 DashScope 兜底会真的发起调用并返回正常结果，
     # 让「引擎失败」这一段测不到 error_category（本用例只关心判据本身）。
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
     out_ret = extract_chain.extract_receipt(
         _valid_png(tmp_path), model=_CountingModel(output="不是 JSON"), enable_canary=False)
     assert out_ret["error"] and "error_category" not in out_ret
@@ -192,27 +188,28 @@ def test_deterministic_category_classifier():
 
 
 # ---------------------------------------------------------------
-# 3. 引擎瞬时故障：仍跑满上限（防过度收敛）
+# 3. 引擎瞬时故障：只重试 1 次（总共 2 次调用），不再跑满 MAX_RETRY（S2-05）
 # ---------------------------------------------------------------
-def test_transient_engine_failure_still_retries_to_max(tmp_path, monkeypatch):
+def test_transient_engine_failure_retries_once(tmp_path, monkeypatch):
     model = _CountingModel(exc=RuntimeError("connection reset"))
     state, _ = _run(tmp_path, monkeypatch, model)
 
-    assert state["attempt"] == supervisor.MAX_RETRY, \
-        f"未归类的瞬时故障应重试到 {supervisor.MAX_RETRY} 轮，实际 {state['attempt']}"
-    assert model.calls == supervisor.MAX_RETRY
+    expected_calls = 1 + supervisor.MAX_TRANSIENT_RETRIES
+    assert state["attempt"] == expected_calls, \
+        f"未归类的瞬时故障只重试 {supervisor.MAX_TRANSIENT_RETRIES} 次，实际 {state['attempt']} 轮"
+    assert model.calls == expected_calls
     assert not state.get("deterministic_error")
     assert not state.get("output_reject_fast")
     assert state["status"] == "error"
 
 
 def test_upstream_category_also_retries(tmp_path, monkeypatch):
-    """upstream（5xx/50507）是服务商侧瞬时故障，属设计内重试场景，不得被短路。"""
+    """upstream（5xx/50507）是服务商侧瞬时故障，属设计内重试场景（只重试 1 次），不得被短路。"""
     model = _CountingModel(exc=_UpstreamError("HTTP 503 / code=50507"))
     state, _ = _run(tmp_path, monkeypatch, model)
 
-    assert model.calls == supervisor.MAX_RETRY
-    assert state["attempt"] == supervisor.MAX_RETRY
+    assert model.calls == 1 + supervisor.MAX_TRANSIENT_RETRIES
+    assert state["attempt"] == 1 + supervisor.MAX_TRANSIENT_RETRIES
 
 
 # ---------------------------------------------------------------

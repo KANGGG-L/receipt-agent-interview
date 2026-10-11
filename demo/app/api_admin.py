@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""admin 端点：引擎/模型配置 + 灰测范围 + AI 复盘。
+"""admin 端点：引擎/模型配置 + 灰测范围。
 
 - /api/admin/engine-config（GET/PUT）：换识别/审核模型、切灰测模式
 - /api/admin/grey-test：灰测状态可视化
-- /api/review：AI 复盘（价格异动/供应商洞察，owner 可用）
 - /api/vendor_price_hint：复核侧「供应商×SKU 历史价格区间」只读提示（不上生成侧）
 - /api/admin/vendor-memory（GET）与 /api/admin/vendor-memory/{memory_id}（GET）：
   已生效记忆的治理视图（D5 人可查看的记忆界面），取数一律复用 db.list_vendor_memory
@@ -1324,9 +1323,9 @@ def get_engine_config(request: Request):
             "grey_parse": _resolve_timeout(cfg, side="parse", use_grey=True),
         },
         "call_timeout_seconds": int(getattr(cfg, "call_timeout_seconds", 60) or 60),
-        "timeout_policy": (f"实际生效超时硬上限 {MAX_CALL_TIMEOUT_SECONDS}s"
-                           "（llm._resolve_timeout 钳制 min(v, 硬上限)）；"
-                           "omni 实测 2.6-7.1s 结余充足，禁止长期空转"),
+        "timeout_policy": (f"单次引擎调用缺省 30s、最长 {MAX_CALL_TIMEOUT_SECONDS}s"
+                           "（超时只放弃这次等待，不会终止任何进程）；"
+                           "整张单识别另有约 45s 总时长预算，用完即停止并转手工录入，原图保留"),
     }
     data = mask_engine_config_dict(cfg.model_dump())
 
@@ -1873,7 +1872,9 @@ def save_unified_admin_config(payload: UnifiedAdminConfigPayload, request: Reque
         if row_eng is None:
             row_eng = db._AppSettingRow(key="engine_config")
             s.add(row_eng)
-        row_eng.value = json.dumps(new_cfg.model_dump(), ensure_ascii=False)
+        from app import secret_store
+        row_eng.value = json.dumps(secret_store.encrypt_config_dict(new_cfg.model_dump()),
+                                   ensure_ascii=False)
 
         # 批量写入系统设置各行
         for k, v in payload.settings.items():
@@ -2441,6 +2442,16 @@ def admin_metrics(request: Request):
         s = db.get_session()
         try:
             rows = s.query(db._DecisionLogRow).filter(db._DecisionLogRow.decision_type == "extract").all()
+            # 以数据库为准且分租户：只统计本租户单据的决策（没有单据号的离线记录归 default）
+            _my_tenant = _tenant_id(request)
+            _rids = {r.receipt_id for r in rows if r.receipt_id}
+            _tenant_of = {}
+            if _rids:
+                for _rr in s.query(db._ReceiptRow.id, db._ReceiptRow.tenant_id).filter(
+                        db._ReceiptRow.id.in_(_rids)).all():
+                    _tenant_of[_rr[0]] = (_rr[1] or "default")
+            rows = [r for r in rows
+                    if (_tenant_of.get(r.receipt_id, "default") if r.receipt_id else "default") == _my_tenant]
         finally:
             s.close()
     except Exception:
@@ -2535,14 +2546,20 @@ def admin_metrics(request: Request):
             f_elapsed = []
             f_success = 0
             f_count = 0
+            from collections import deque
+            _my_tenant = _tenant_id(request)
             with open(str(fpath), "r", encoding="utf-8") as fh:
-                for line in fh:
+                # 只读文件尾部最近 5000 行（文件会轮转，且这里只是排障用的补充读数）
+                for line in deque(fh, maxlen=5000):
                     line=line.strip()
                     if not line:
                         continue
                     try:
                         rec = _json.loads(line)
                     except Exception:
+                        continue
+                    # 早期记录没有 tenant_id，按 default 租户计；不同租户互不可见
+                    if str(rec.get("tenant_id") or "default") != _my_tenant:
                         continue
                     f_count += 1
                     try:
@@ -2717,47 +2734,6 @@ def canary_history(request: Request):
 
 
 
-@router.get("/api/admin/trash")
-def trash_list(request: Request):
-    """回收站：软删除单据列表。"""
-    require_admin(request)
-    rows = db.list_trash_receipts()
-    data = []
-    for r in rows:
-        data.append({
-            "id": r.id,
-            "supplier_name": r.supplier_name or "",
-            "receipt_date": r.receipt_date or "",
-            "total_amount": r.total_amount or 0.0,
-            "status": r.status,
-            "created_at": r.created_at or "",
-            "deleted_at": r.deleted_at or "",
-        })
-    return {"status": "success", "data": data}
-
-
-@router.post("/api/admin/trash/{receipt_id}/restore")
-def restore_trash(receipt_id: int, request: Request):
-    """从回收站恢复单据。"""
-    require_admin(request)
-    if not db.restore_receipt(receipt_id):
-        return JSONResponse(content={"status": "error", "msg": "单据不存在或不在回收站"},
-                            status_code=404)
-    return {"status": "success", "receipt_id": receipt_id,
-            "msg": f"单据 #{receipt_id} 已恢复"}
-
-
-@router.get("/api/review")
-def ai_review(request: Request):
-    require_role("owner")(request)
-    from app.services.inventory import cost_summary
-    from app.chains import review_chain
-    cost = cost_summary(tenant_id=_tenant_id(request))
-    cfg = db.get_engine_config()
-    result = review_chain.run_review(cost.get("items", {}), config=cfg)
-    return {"status": "success", "data": result}
-
-
 @router.get("/api/cost")
 def cost_summary(request: Request):
     require_role("owner")(request)
@@ -2840,33 +2816,6 @@ def ai_insights(request: Request):
     cost = get_cost(tenant_id=_tenant_id(request))
     data = review_chain.weekly_insights(cost)
     return {"status": "success", "data": data}
-
-
-# -------------------------------------------------------------
-# 阶段 4：对话式查询 & 生成式 UI 卡片
-# -------------------------------------------------------------
-class ChatQueryBody(BaseModel):
-    question: str = ""
-
-
-@router.post("/api/chat/query")
-def chat_query(body: ChatQueryBody, request: Request):
-    """对话式查询 Agent：自然语言查询库存、价格走势与未付账单。"""
-    require_role("staff")(request)
-    from app.chains.query_chain import run_query
-    res = run_query(body.question, tenant_id=_tenant_id(request))
-    return {"status": "success", "data": res}
-
-
-@router.get("/api/insight-cards")
-def get_insight_cards(request: Request):
-    """生成式 UI 卡片：多步推理输出异动预警卡、谈判策略卡与健康度卡片。"""
-    require_role("owner")(request)
-    from app.services.inventory import cost_summary as get_cost
-    from app.chains.review_chain import generate_insight_cards
-    cost = get_cost(tenant_id=_tenant_id(request))
-    cards = generate_insight_cards(cost)
-    return {"status": "success", "cards": cards}
 
 
 # -------------------------------------------------------------
@@ -3343,7 +3292,9 @@ def maintenance_deduplicate(request: Request):
 
     幂等、无损历史流水（迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕）。
     权限：owner / admin 均可触发（店员 403）。
-    前端 inventory 页 “一键清理重复食材” 按钮调用此接口；启动时亦自动执行 demo/app/main.py:42
+    旧路径别名（下个版本删除）：老板级接口不应挂在 /api/admin 下，新路径是
+    POST /api/inventory/sku-duplicates/merge（先 GET /api/inventory/sku-duplicates 看清单）。
+    启动时不再自动合并，只做只读巡检。
     """
     require_role("owner")(request)
     account = getattr(request.state, "account", {})

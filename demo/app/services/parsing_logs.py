@@ -942,8 +942,27 @@ def calculate_recovery_and_feedback_metrics(
 
     error_count = sum(1 for r in receipt_rows if r[1] == "error")
     warning_count = sum(1 for r in receipt_rows if r[1] == "parsed_with_warnings")
-    success_count = max(0, total_parses - error_count - warning_count)
-    success_rate = round(success_count / total_parses, 3) if total_parses > 0 else 0.0
+    # 解析成功率只统计「走过 AI 识别」的单据：分母是有 ocr_parse_started 埋点的单据，
+    # 分子是 AI 解析完成且门禁通过（没有 parsed_with_warnings）的单据。手工新建的单、
+    # 转手工录入的单、店员已改过的单都不再冒充「AI 解析成功」。
+    ai_started_rids = set()
+    ai_success_rids = set()
+    for i in range(0, len(all_rids), 900):
+        chunk = all_rids[i:i + 900]
+        for ev_rid, ev_type, ev_props in s.query(
+                db._UserEventRow.receipt_id, db._UserEventRow.event_type,
+                db._UserEventRow.properties).filter(
+                db._UserEventRow.receipt_id.in_(chunk),
+                db._UserEventRow.event_type.in_(("ocr_parse_started", "ocr_parsed"))).all():
+            if ev_type == "ocr_parse_started":
+                ai_started_rids.add(ev_rid)
+            else:
+                ai_started_rids.add(ev_rid)
+                if _safe_json_loads(ev_props, default={}).get("parse_status") != "parsed_with_warnings":
+                    ai_success_rids.add(ev_rid)
+    ai_parse_total = len(ai_started_rids)
+    success_count = len(ai_success_rids)
+    success_rate = round(success_count / ai_parse_total, 3) if ai_parse_total > 0 else 0.0
 
     reject_rids = set()
     if all_rids:
@@ -1073,6 +1092,7 @@ def calculate_recovery_and_feedback_metrics(
     return {
         "total_parses": total_parses,
         "success_count": success_count,
+        "ai_parse_total": ai_parse_total,
         "warning_count": warning_count,
         "error_count": error_count,
         "success_rate": success_rate,
@@ -1204,6 +1224,7 @@ def _compute_summary(
     res = {
         "total_parses": metrics["total_parses"],
         "success_count": metrics["success_count"],
+        "ai_parse_total": metrics.get("ai_parse_total", 0),
         "warning_count": metrics["warning_count"],
         "error_count": metrics["error_count"],
         "success_rate": metrics["success_rate"],
@@ -1550,6 +1571,15 @@ def compute_kpi_trends(
             if rid is not None:
                 receipt_feedbacks.setdefault(rid, []).append(lk)
 
+    # 解析成功率只统计走过 AI 识别的单据（有 ocr_parse_started 埋点），手工单不计入
+    ai_started_rids = set()
+    if metric_key == "success_rate" and rids:
+        for _i in range(0, len(rids), 900):
+            for (_rid,) in s.query(db._UserEventRow.receipt_id).filter(
+                    db._UserEventRow.receipt_id.in_(rids[_i:_i + 900]),
+                    db._UserEventRow.event_type.in_(("ocr_parse_started", "ocr_parsed"))).all():
+                ai_started_rids.add(_rid)
+
     # 预加载异常挽回埋点事件数据
     rec_events_by_date: Dict[str, List[Any]] = {d: [] for d in all_query_dates}
     succ_events_by_rid: Dict[int, List[Tuple[str, int]]] = {}
@@ -1596,7 +1626,8 @@ def compute_kpi_trends(
             val = float(total_parses)
 
         elif metric_key == "success_rate":
-            den = total_parses
+            day_receipts = [r for r in day_receipts if r.id in ai_started_rids]
+            den = len(day_receipts)
             succ = 0
             for r in day_receipts:
                 is_err = (r.status == "error")

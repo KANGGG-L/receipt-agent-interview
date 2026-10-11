@@ -1,0 +1,25 @@
+# 由当前验证环境导出的精确版本（直接依赖）。升级时同步更新 requirements.txt 的上限。
+langchain==1.4.4
+langchain-core==1.6.9
+langchain-community==0.4.2
+langchain-dashscope==0.1.8
+chromadb==1.5.9
+fastapi==0.143.0
+starlette==1.7.0
+uvicorn==0.54.0
+python-dotenv==1.2.4
+pydantic==2.14.0
+sqlalchemy==2.1.4
+requests==2.34.2
+httpx==0.28.1
+urllib3==2.8.0
+python-multipart==0.0.32
+Pillow==12.3.0
+pillow-heif==1.8.0
+PyYAML==6.0.3
+numpy==2.4.6
+pandas==3.0.6
+openpyxl==3.1.5
+opencv-python-headless==5.0.0.93
+dashscope==1.27.7
+cryptography==50.0.2

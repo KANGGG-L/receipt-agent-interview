@@ -75,7 +75,7 @@ def test_ac2_csv_utf8_bom_and_rfc5987(client):
     res = client.post(
         "/api/export/download",
         json={"report_id": "inventory_stocktake", "params": {}},
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res.status_code == 200
     content = res.content
@@ -136,7 +136,7 @@ def test_ac5_date_inversion_auto_correction(client):
             "report_id": "inventory_stock_logs",
             "params": {"start_date": "2026-08-31", "end_date": "2026-08-01"},
         },
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res.status_code == 200
     body = res.json()
@@ -152,7 +152,7 @@ def test_ac6_empty_state_contract(client):
             "report_id": "inventory_stock_logs",
             "params": {"start_date": "2099-01-01", "end_date": "2099-01-02"},
         },
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res.status_code == 200
     body = res.json()
@@ -167,7 +167,7 @@ def test_ac7_preview_sampling_limit(client):
     res = client.post(
         "/api/export/preview",
         json={"report_id": "inventory_stocktake", "params": {}},
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res.status_code == 200
     body = res.json()
@@ -197,7 +197,7 @@ def test_ac8_desensitization_masking_consistency(client):
             "params": {},
             "desensitized": True,
         },
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res_preview.status_code == 200
     p_rows = res_preview.json()["data"]["preview_rows"]
@@ -210,7 +210,7 @@ def test_ac8_desensitization_masking_consistency(client):
             "params": {},
             "desensitized": True,
         },
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res_download.status_code == 200
     d_text = res_download.content.decode("utf-8-sig")
@@ -245,7 +245,7 @@ def test_ac10_financial_precision_and_zero_division(client):
             "report_id": "dish_cost_margin",
             "params": {"cost_granularity": "daily"},
         },
-        headers={"X-Role": "staff"},
+        headers={"X-Role": "owner"},
     )
     assert res.status_code == 200
     data = res.json()["data"]
@@ -270,7 +270,7 @@ def test_ac11_multi_tenant_isolation(client):
             "report_id": "receipts_itemized_ledger",
             "params": {"supplier_id": "99999999"},
         },
-        headers={"X-Role": "staff", "X-Tenant-Id": "tenant_test_isolated"},
+        headers={"X-Role": "owner", "X-Tenant-Id": "tenant_test_isolated"},
     )
     assert res.status_code == 200
     data = res.json()["data"]

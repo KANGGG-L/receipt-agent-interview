@@ -285,12 +285,21 @@
         if (!built) { return; }
         var payload = { gt: built.gt };
         if (built.blankTotal) {
-            if (!window.confirm('总额为空。若图面确无总额（如月结单）可留空确认；' +
-                    '否则请核实图面金额。确定留空吗？')) {
-                return;
-            }
-            payload.confirm_blank_total = true;
+            uiConfirm({
+                title: '总额是空的',
+                message: '总额没有填。如果单上确实没有总额（例如月结单）可以留空；否则请对照原图填上金额。确定留空吗？',
+                confirmText: '确定留空'
+            }).then(function (ok) {
+                if (!ok) { return; }
+                payload.confirm_blank_total = true;
+                sendEvalConfirm(payload, built);
+            });
+            return;
         }
+        sendEvalConfirm(payload, built);
+    }
+
+    function sendEvalConfirm(payload, built) {
         var btn = document.getElementById('btnSaveReview');
         if (btn) { btn.disabled = true; }
         fetch('/api/evalset/sample/' + encodeURIComponent(sampleId) + '/confirm', {

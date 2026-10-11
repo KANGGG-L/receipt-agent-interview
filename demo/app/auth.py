@@ -22,16 +22,48 @@ import hashlib
 import hmac
 import os
 import re
+import secrets
+import threading
 import time
 
 from fastapi import Request, HTTPException
 
-# email -> (password, role, tenant)
+# email -> (password_hash, role, tenant)。口令只存 PBKDF2 哈希，比较用 compare_digest；
+# 为兼容测试与外部注入的明文账号，不带 "pbkdf2_sha256$" 前缀的值按明文常量时间比较。
 ACCOUNTS = {
-    "admin@demo.hk": ("admin123", "admin", "default"),
-    "boss@demo.hk": ("boss123", "owner", "default"),
-    "staff@demo.hk": ("staff123", "staff", "default"),
+    "admin@demo.hk": (
+        "pbkdf2_sha256$150000$a1c0de01$9c20aa8a26dcd8bdc416a64b2255eef437ad050f317d561f7d4350e972a56bee",
+        "admin", "default"),
+    "boss@demo.hk": (
+        "pbkdf2_sha256$150000$b055c0de$c4efa44c3af2e850f62d00dcf29c62b1bb1eb3b978a29532becd5c645b4a73b6",
+        "owner", "default"),
+    "staff@demo.hk": (
+        "pbkdf2_sha256$150000$57aff001$dea5b33e472e82b66c08e9eada23e2ca5c0a3524e853db333e28d37353569912",
+        "staff", "default"),
 }
+
+_WEAK_DEFAULT_PASSWORDS = ("admin123", "boss123", "staff123")
+
+
+def hash_password(password: str, salt_hex: str = "", iterations: int = 150000) -> str:
+    salt = bytes.fromhex(salt_hex) if salt_hex else secrets.token_bytes(8)
+    digest = hashlib.pbkdf2_hmac("sha256", str(password).encode(), salt, iterations).hex()
+    return f"pbkdf2_sha256${iterations}${salt.hex()}${digest}"
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """常量时间校验口令；stored 为哈希串或（兼容用的）明文。"""
+    password = str(password or "")
+    stored = str(stored or "")
+    if stored.startswith("pbkdf2_sha256$"):
+        try:
+            _, iters, salt_hex, digest = stored.split("$", 3)
+            calc = hashlib.pbkdf2_hmac(
+                "sha256", password.encode(), bytes.fromhex(salt_hex), int(iters)).hex()
+        except (ValueError, TypeError):
+            return False
+        return hmac.compare_digest(calc, digest)
+    return hmac.compare_digest(password.encode(), stored.encode())
 
 ROLE_RANK = {"admin": 3, "owner": 2, "staff": 1}
 
@@ -126,11 +158,11 @@ def enforce_production_checklist():
     if not is_production_env():
         # 开发/演示/面试展示：预置账号是刻意的公开口令，允许启动（见函数 docstring）。
         return
-    weak_passwords = {"admin123", "boss123", "staff123"}
     for email, creds in ACCOUNTS.items():
-        if creds[0] in weak_passwords:
+        weak = next((w for w in _WEAK_DEFAULT_PASSWORDS if verify_password(w, creds[0])), None)
+        if weak:
             raise RuntimeError(
-                f"生产环境鉴权已开启（AUTH_ENABLED=1，ENV={env_name()}），但预置账号 {email} 仍在使用内置默认弱口令 ({creds[0]})。"
+                f"生产环境鉴权已开启（AUTH_ENABLED=1，ENV={env_name()}），但预置账号 {email} 仍在使用内置默认弱口令 ({weak})。"
                 "生产环境严禁使用默认弱口令，请重设密码或在生产配置中禁用预置账号后重启服务。"
             )
 
@@ -150,85 +182,208 @@ def _sign(payload: str) -> str:
     return hmac.new(_TOKEN_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
 
 
+# 已吊销令牌（登出）：jti -> exp。进程内缓存 + 落库（见 app/session_store.py），
+# 过期条目随查询顺手清理，表不会无限增长。
+_REVOKED = {}
+_REVOKED_LOCK = threading.Lock()
+
+
+def revoke_jti(jti: str, exp: int) -> None:
+    with _REVOKED_LOCK:
+        _REVOKED[jti] = int(exp)
+    try:
+        from app import session_store
+        session_store.persist_revoked(jti, int(exp))
+    except Exception:  # noqa: BLE001 落库失败不影响本进程内的吊销生效
+        pass
+
+
+def load_revoked_from_store() -> None:
+    try:
+        from app import session_store
+        rows = session_store.load_revoked()
+    except Exception:  # noqa: BLE001
+        return
+    with _REVOKED_LOCK:
+        _REVOKED.update(rows)
+
+
+def is_revoked(jti: str) -> bool:
+    now = int(time.time())
+    with _REVOKED_LOCK:
+        if len(_REVOKED) > 512:
+            for k in [k for k, v in _REVOKED.items() if v <= now]:
+                _REVOKED.pop(k, None)
+        return jti in _REVOKED
+
+
 def issue_token(email: str, role: str, tenant: str = _DEFAULT_TENANT) -> str:
-    """签发 token：email.role.exp.tenant.signature。
+    """签发 token：email.role.exp.tenant.jti.signature。
 
     tenant（D19）随令牌一起签进载荷，成为生产态租户归属的唯一来源：客户端
     X-Tenant-Id 头在生产态被整体忽略（见 resolve_tenant），越租请求拿不到他租数据。
-    tenant 由登录账号在 ACCOUNTS 中的第 3 个元素给出（api_auth.login 透传）。
+    jti 是每枚令牌唯一的编号，登出时按它吊销（见 revoke_jti）。
     """
     tenant = str(tenant or "").strip() or _DEFAULT_TENANT
     if "." in tenant:
-        # 载荷以点分段、tenant 是最后一段：含点的 tenant 会被 parse_token 切碎，
-        # 导致「签发成功但令牌永远验不过」的静默失配，故在此显式拒绝。
+        # 载荷以点分段：含点的 tenant 会被 parse_token 切碎，导致「签发成功但令牌永远
+        # 验不过」的静默失配，故在此显式拒绝。
         raise ValueError(f"租户标识不得包含 '.'：{tenant!r}")
     exp = int(time.time()) + _TOKEN_TTL
-    payload = f"{email}.{role}.{exp}.{tenant}"
+    jti = secrets.token_hex(8)
+    payload = f"{email}.{role}.{exp}.{tenant}.{jti}"
     return f"{payload}.{_sign(payload)}"
 
 
-def parse_token(token: str):
-    """验签解析 token → (email, role, tenant) | None。
+def parse_token_full(token: str):
+    """验签解析 token → dict(email, role, tenant, exp, jti) | None（含吊销检查）。
 
-    why 从右侧切分：payload 结构是 email.role.exp.tenant，而本项目预置账号全是
-    `xx@demo.hk`（邮箱本身含点），旧的 payload.split(".") 会切出 4 段导致
-    解包 ValueError、被 except 静默吞掉，parse_token 恒返回 None（Bearer 链路
-    实际不可用）。role 是已知枚举（admin/owner/staff）、exp 是纯数字、tenant 是
-    内部配置的标识（issue_token 已拒绝含点值），都不含点，故 rsplit(".", 3) 从右侧
-    切三段可把点安全地留在 email 段内。
-    账号特征三要素（role / tenant / 存在于 ACCOUNTS）必须与签名载荷完全一致，
-    否则视为无效令牌：tenant 一并校验，可防「用合法账号签出他租令牌」。
+    why 从右侧切分：email 本身含点（xx@demo.hk），role/exp/tenant/jti 都不含点，
+    故 rsplit(".", 4) 从右侧切四段可把点安全地留在 email 段内。
+    账号特征三要素（role / tenant / 存在于 ACCOUNTS）必须与签名载荷完全一致。
     """
     try:
         payload, sig = token.rsplit(".", 1)
-        email, role, exp, tenant = payload.rsplit(".", 3)
+        email, role, exp, tenant, jti = payload.rsplit(".", 4)
         if hmac.compare_digest(_sign(payload), sig) and int(exp) > int(time.time()):
             acct = ACCOUNTS.get(email)
-            if acct and acct[1] == role and acct[2] == tenant:
-                return email, role, tenant
-    except (ValueError, TypeError, IndexError):
+            if acct and acct[1] == role and acct[2] == tenant and not is_revoked(jti):
+                return {"email": email, "role": role, "tenant": tenant,
+                        "exp": int(exp), "jti": jti}
+    except (ValueError, TypeError, IndexError, AttributeError):
         pass
     return None
 
 
-def authenticate(email: str, password: str):
-    acct = ACCOUNTS.get((email or "").strip())
-    if acct is None or acct[0] != password:
+def parse_token(token: str):
+    """验签解析 token → (email, role, tenant) | None。"""
+    full = parse_token_full(token)
+    if full is None:
         return None
-    return {"email": email.strip(), "role": acct[1], "tenant": acct[2]}
+    return full["email"], full["role"], full["tenant"]
+
+
+# 登录失败计数与退避：同一「邮箱 + 来源地址」连续失败 5 次后开始等待，
+# 每多失败一次等待翻倍（上限 15 分钟）；成功登录清零。进程内计数，重启清零。
+_LOGIN_FAILS = {}
+_LOGIN_LOCK = threading.Lock()
+_LOGIN_FREE_ATTEMPTS = 5
+_LOGIN_MAX_WAIT = 900
+
+
+def _login_key(email: str, client: str) -> str:
+    return f"{(email or '').strip().lower()}|{client or ''}"
+
+
+def login_wait_seconds(email: str, client: str = "") -> int:
+    """距离允许下一次尝试还需等待的秒数（0 表示可以尝试）。"""
+    with _LOGIN_LOCK:
+        rec = _LOGIN_FAILS.get(_login_key(email, client))
+        if not rec:
+            return 0
+        return max(0, int(rec["until"] - time.time() + 0.999))
+
+
+def record_login_failure(email: str, client: str = "") -> int:
+    with _LOGIN_LOCK:
+        key = _login_key(email, client)
+        rec = _LOGIN_FAILS.setdefault(key, {"count": 0, "until": 0.0})
+        rec["count"] += 1
+        over = rec["count"] - _LOGIN_FREE_ATTEMPTS
+        wait = min(_LOGIN_MAX_WAIT, 2 ** over) if over >= 0 else 0
+        rec["until"] = time.time() + wait
+        if len(_LOGIN_FAILS) > 2000:
+            now = time.time()
+            for k in [k for k, v in _LOGIN_FAILS.items() if v["until"] < now - 3600]:
+                _LOGIN_FAILS.pop(k, None)
+        return wait
+
+
+def clear_login_failures(email: str, client: str = "") -> None:
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.pop(_login_key(email, client), None)
+
+
+def reset_login_throttle() -> None:
+    with _LOGIN_LOCK:
+        _LOGIN_FAILS.clear()
+
+
+def authenticate(email: str, password: str):
+    key = (email or "").strip()
+    acct = ACCOUNTS.get(key)
+    # 账号不存在时也做一次同成本的哈希比较，避免从耗时差异探测账号是否存在
+    stored = acct[0] if acct else ACCOUNTS["staff@demo.hk"][0]
+    ok = verify_password(password, stored)
+    if acct is None or not ok:
+        return None
+    return {"email": key, "role": acct[1], "tenant": acct[2]}
+
+
+SESSION_COOKIE = "receipt_session"
+# 带 Cookie 会话的写请求必须携带该头：跨站表单与图片请求无法自定义请求头，
+# 浏览器对跨站带自定义头的 fetch 又会先发预检（本服务不开 CORS），从而挡住 CSRF；
+# Cookie 本身另设 SameSite=Lax。
+CSRF_HEADER = "x-requested-with"
+_UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _request_token(request: Request):
+    """从请求取令牌：Authorization Bearer 优先，其次 HttpOnly 会话 Cookie。返回 (token, 来源)。"""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:].strip(), "token"
+    cookie = request.cookies.get(SESSION_COOKIE) if hasattr(request, "cookies") else None
+    if cookie:
+        return cookie, "cookie"
+    return None, None
+
+
+def csrf_ok(request: Request, account: dict) -> bool:
+    """仅对 Cookie 会话的写请求要求自定义头；Bearer 与演示身份不涉及 CSRF。"""
+    if (account or {}).get("source") != "cookie":
+        return True
+    if request.method.upper() not in _UNSAFE_METHODS:
+        return True
+    return bool(request.headers.get(CSRF_HEADER))
+
+
+def set_session_cookie(response, token: str) -> None:
+    response.set_cookie(
+        SESSION_COOKIE, token, max_age=_TOKEN_TTL, httponly=True, samesite="lax",
+        secure=is_production_env(), path="/")
+
+
+def clear_session_cookie(response) -> None:
+    response.delete_cookie(SESSION_COOKIE, path="/")
 
 
 def resolve_account(request: Request):
-    """从请求解析当前账号身份，区分三种来源，不做静默降级。
+    """从请求解析当前账号身份，区分来源，不做静默降级。
 
     返回 dict：{"email", "role", "tenant", "source"}；匿名时 role/tenant=None
     （由调用方决定拒绝方式）。
-      - source="token"  ：Bearer 令牌验签通过（最强）；tenant 取自令牌载荷
-                          （令牌由 ACCOUNTS 的账号租户签发，故不可跨租户伪造）
+      - source="token"  ：Bearer 令牌验签通过；tenant 取自令牌载荷
+      - source="cookie" ：HttpOnly 会话 Cookie 中的令牌验签通过（同一种令牌，
+                          写请求另需 CSRF 自定义头，见 csrf_ok）
       - source="header" ：X-Role 头声明（仅在 AUTH_ENABLED=0 的 demo 免密模式）；
-                          此时无真实身份，tenant 取自 X-Tenant-Id 头（缺省 default），
-                          与 resolve_tenant 在开发态的口径保持一致
-      - source=None     ：匿名。曾默认成 owner，使「角色头被中途丢弃」表现为
-                          「当前角色为老板」的误导性 403，故显式置空。
+                          没有真实身份，email 固定为「角色@demo.hk」的演示身份，
+                          不再采信客户端自报的 X-Email（审计里的操作人不可伪造）
+      - source=None     ：匿名。
 
-    AUTH_ENABLED=1（生产）时不再回落 X-Role / X-Email：这两个头是客户端可任意声明的，
-    回落等于把「鉴权开启」降级成「任何人都能自称 admin」。此时身份只能来自 Bearer 验签，
-    无有效令牌即匿名（role=None, tenant=None），由 _reject_anonymous 统一给出 401。
-
-    AUTH_ENABLED=0 时的行为保持不变：Bearer 优先，其次 X-Role（demo 免密角色切换通道）。
+    AUTH_ENABLED=1（生产）时不回落 X-Role：身份只能来自令牌。
     """
-    auth = request.headers.get("Authorization", "")
-    if auth.startswith("Bearer "):
-        parsed = parse_token(auth[7:].strip())
+    tok, origin = _request_token(request)
+    if tok:
+        parsed = parse_token(tok)
         if parsed:
             return {"email": parsed[0], "role": parsed[1], "tenant": parsed[2],
-                    "source": "token"}
+                    "source": origin}
     if auth_enabled():
-        # 生产态：X-Role / X-Email 声明一律不采信，匿名交给调用方以 401 拒绝。
         return {"email": None, "role": None, "tenant": None, "source": None}
     role = request.headers.get("X-Role")
     if role in ROLE_RANK:
-        return {"email": request.headers.get("X-Email", f"{role}@demo.hk"),
+        return {"email": f"{role}@demo.hk",
                 "role": role, "tenant": client_declared_tenant(request),
                 "source": "header"}
     return {"email": None, "role": None, "tenant": None, "source": None}
@@ -286,13 +441,20 @@ def resolve_request_tenant(request: Request, client_claimed: str = "") -> str:
 
 _ROLE_LABEL = {"admin": "超管", "owner": "老板", "staff": "店员"}
 
-_UNAUTHENTICATED_DETAIL = ("未认证：请求未携带身份信息（既无有效 Bearer 令牌，也无 X-Role 角色头）。"
-                           "这通常意味着角色头在传输中被丢弃，并非权限不足——请确认前端已随请求附带 X-Role。")
+_UNAUTHENTICATED_DETAIL = "请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。"
 
 
 def _reject_anonymous():
     """匿名请求走 401（未认证），与 403（已认证但权限不足）语义分开。"""
     raise HTTPException(status_code=401, detail=_UNAUTHENTICATED_DETAIL)
+
+
+def _forbidden_detail(cur: str, need: str) -> str:
+    need_label = _ROLE_LABEL.get(need, need)
+    cur_label = _ROLE_LABEL.get(cur, cur)
+    if need == "admin":
+        return f"权限不足：这个操作只有超管能做，你现在是{cur_label}。请用超管账号登录，或联系管理员。"
+    return f"权限不足：这个操作需要{need_label}或更高权限，你现在是{cur_label}。请联系{need_label}来操作。"
 
 
 def require_role(role: str):
@@ -303,9 +465,7 @@ def require_role(role: str):
         if cur is None:
             _reject_anonymous()
         if ROLE_RANK.get(cur, 0) < ROLE_RANK.get(role, 99):
-            need_label = _ROLE_LABEL.get(role, role)
-            cur_label = _ROLE_LABEL.get(cur, cur)
-            raise HTTPException(status_code=403, detail=f"权限不足：当前角色为{cur_label}（{cur}），此操作需{need_label}（{role}）及以上权限。请切换角色或联系管理员。")
+            raise HTTPException(status_code=403, detail=_forbidden_detail(cur, role))
         try:
             request.state.account = account
         except AttributeError:
@@ -320,8 +480,7 @@ def require_admin(request: Request):
     if cur is None:
         _reject_anonymous()
     if cur != "admin":
-        cur_label = _ROLE_LABEL.get(cur, cur)
-        raise HTTPException(status_code=403, detail=f"权限不足：此操作仅限超管（admin）执行，当前角色为{cur_label}（{cur}）。请切换为 admin 角色。")
+        raise HTTPException(status_code=403, detail=_forbidden_detail(cur, "admin"))
     request.state.account = account
     return account
 
@@ -348,7 +507,8 @@ def require_admin(request: Request):
 #
 # 两种模式（AUTH_ENABLED=0 开发态 / =1 生产态）都生效：判定复用 resolve_account，
 # 开发态身份来自 X-Role 头（与现状一致），生产态身份只能来自 Bearer 验签。
-_WHITELIST_EXACT = frozenset({"/api/auth/login", "/api/auth/me", "/api/health"})
+_WHITELIST_EXACT = frozenset({"/api/auth/login", "/api/auth/me", "/api/auth/logout", "/api/health",
+                              "/api/csp-report"})
 # {id} / {name} 是路径参数：穿越/编码形态（如 `..%2Fsecret` 解码后含 '/'）也必须放行到
 # 端点，由端点自身的签名 + basename/realpath 收敛判定给出 404/403——这两条端点本就
 # 匿名可用，中间件不得改变它们的既有可观测行为（tests/test_no_uploads_static_exposure.py
@@ -394,14 +554,18 @@ class EarlyAuthMiddleware:
             return
 
         from starlette.requests import Request as _StarletteRequest
-        from starlette.responses import JSONResponse as _JSONResponse
+        from app.errors import error_response as _error_response
 
-        account = resolve_account(_StarletteRequest(scope, receive=receive))
+        request = _StarletteRequest(scope, receive=receive)
+        account = resolve_account(request)
         if account.get("role") is None:
-            response = _JSONResponse(
-                status_code=401,
-                content={"status": "error", "detail": _UNAUTHENTICATED_DETAIL},
-            )
+            response = _error_response(401, "UNAUTHENTICATED", _UNAUTHENTICATED_DETAIL)
+            await response(scope, receive, send)
+            return
+        if not csrf_ok(request, account):
+            response = _error_response(
+                403, "CSRF_REJECTED",
+                "这次操作来源不明，已被拦下。请回到本系统页面重新操作；如果一直这样，请重新登录。")
             await response(scope, receive, send)
             return
 
@@ -417,11 +581,5 @@ class EarlyAuthMiddleware:
             _db.set_current_tenant_id(tenant_id or _DEFAULT_TENANT)
         try:
             await self.app(scope, receive, send)
-        except _db.TenantBoundaryViolationError:
-            response = _JSONResponse(
-                status_code=404,
-                content={"status": "error", "msg": "未找到指定资源", "code": "RESOURCE_NOT_FOUND"},
-            )
-            await response(scope, receive, send)
         finally:
             _db.set_current_tenant_id(None)

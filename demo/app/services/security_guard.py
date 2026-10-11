@@ -10,9 +10,11 @@
 2. mask_secret_key: 敏感 API 密钥脱敏工具。
 """
 
+import contextlib
 import ipaddress
 import logging
 import socket
+import threading
 from typing import Optional, Tuple, Union
 from urllib.parse import urlparse
 
@@ -93,6 +95,8 @@ def validate_safe_external_url(
     url: str,
     allow_localhost: bool = False,
     allow_unresolved: bool = False,
+    require_https: bool = False,
+    _resolved_out: Optional[dict] = None,
 ) -> Tuple[bool, Optional[str]]:
     """验证外部 API Base URL 是否安全，阻断 SSRF 攻击。
 
@@ -103,6 +107,10 @@ def validate_safe_external_url(
       这样也能避免把「解析失败」静默当成「安全」。
     - True（显式放行）：放行并记 warning。仅用于离线/内网自测环境里使用不可解析的
       占位域名；必须由明确知道自己身处离线环境的调用方显式传入。
+
+    require_https: 生产环境只允许 https（API 密钥不得明文发出）。
+    _resolved_out: 传入 dict 时，域名校验通过后写入 {"host","port","ip"}，供调用方把后续
+      连接固定到这次校验过的 IP（防 DNS 重绑定），见 resolve_safe_external_url。
     """
     if not url or not str(url).strip():
         return False, "URL 不能为空"
@@ -112,6 +120,8 @@ def validate_safe_external_url(
         parsed = urlparse(cleaned_url)
         if parsed.scheme not in ("http", "https"):
             return False, f"不支持的协议: {parsed.scheme}，仅支持 http/https"
+        if require_https and parsed.scheme != "https":
+            return False, "生产环境只允许 https 地址，请改用 https:// 开头的接口地址"
 
         host = parsed.hostname
         if not host:
@@ -164,6 +174,7 @@ def validate_safe_external_url(
 
             if not addr_info:
                 return False, f"域名 {host} DNS 解析结果为空"
+            _safe_ips = []
             for item in addr_info:
                 ip_str = item[4][0]
                 try:
@@ -188,6 +199,13 @@ def validate_safe_external_url(
                             break
                 if not is_safe:
                     return False, f"域名 {host} 解析到危险私网/元数据 IP ({resolved_ip})，已被安全策略拦截"
+                _safe_ips.append(str(resolved_ip))
+            if _resolved_out is not None and _safe_ips:
+                _resolved_out.update({
+                    "host": host,
+                    "port": parsed.port or (443 if parsed.scheme == "https" else 80),
+                    "ip": _safe_ips[0],
+                })
 
 
         return True, None
@@ -195,6 +213,68 @@ def validate_safe_external_url(
         # 非预期异常（含代码缺陷）一律 fail-closed，且必须可观测，不得静默放行
         logger.warning("[SSRF] URL 校验出现非预期异常，按 fail-closed 拒绝: %s (%s)", cleaned_url, e)
         return False, f"URL 解析异常: {str(e)}"
+
+
+def resolve_safe_external_url(
+    url: str,
+    allow_localhost: bool = False,
+    allow_unresolved: bool = False,
+    require_https: bool = False,
+) -> Tuple[bool, Optional[str], Optional[dict]]:
+    """校验外部 URL，并返回校验时解析出的 IP（域名形态才有），连接时用 pinned_dns 固定到它。"""
+    out: dict = {}
+    kwargs = {}
+    if allow_localhost:
+        kwargs["allow_localhost"] = True
+    if allow_unresolved:
+        kwargs["allow_unresolved"] = True
+    if require_https:
+        kwargs["require_https"] = True
+    try:
+        ok, reason = validate_safe_external_url(url, _resolved_out=out, **kwargs)
+    except TypeError:
+        # 测试里把校验函数替换成固定签名的桩时，不支持固定 IP 的扩展参数，退回基础调用
+        ok, reason = validate_safe_external_url(url, **{k: v for k, v in kwargs.items() if k != "require_https"})
+    return ok, reason, (out or None)
+
+
+_pin_local = threading.local()
+_pin_patch_lock = threading.Lock()
+_pin_patched = False
+
+
+def _install_connection_pin():
+    """让 urllib3 建立 TCP 连接时优先使用当前线程的固定 IP；其它线程与其它主机完全不受影响。"""
+    global _pin_patched
+    with _pin_patch_lock:
+        if _pin_patched:
+            return
+        from urllib3.util import connection as _u3conn
+        _orig = _u3conn.create_connection
+
+        def _pinned_create_connection(address, *args, **kwargs):
+            pin = getattr(_pin_local, "pin", None)
+            if pin and address and str(address[0]).lower() == pin["host"].lower() and int(address[1]) == int(pin["port"]):
+                address = (pin["ip"], address[1])
+            return _orig(address, *args, **kwargs)
+
+        _u3conn.create_connection = _pinned_create_connection
+        _pin_patched = True
+
+
+@contextlib.contextmanager
+def pinned_dns(pin: Optional[dict]):
+    """在 with 块内，对 pin["host"]:pin["port"] 的连接一律连到 pin["ip"]（TLS 仍按域名校验证书）。"""
+    if not pin:
+        yield
+        return
+    _install_connection_pin()
+    previous = getattr(_pin_local, "pin", None)
+    _pin_local.pin = pin
+    try:
+        yield
+    finally:
+        _pin_local.pin = previous
 
 
 def mask_secret_key(key: Optional[str], equal_length: bool = False) -> str:

@@ -220,9 +220,9 @@ def _read(rel_path):
 def test_extract_chain_whitelist_keeps_confidence():
     src = _read(os.path.join("app", "chains", "extract_chain.py"))
     # 归一化白名单必须含 confidence
-    m = re.search(r"_allowed_item = \{(.*?)\}", src, re.S)
-    assert m is not None, "未找到 _allowed_item 白名单"
-    assert '"confidence"' in m.group(1), "_allowed_item 必须放行 confidence"
+    m = re.search(r"_ALLOWED_ITEM_KEYS = \{(.*?)\}", src, re.S)
+    assert m is not None, "未找到 _ALLOWED_ITEM_KEYS 白名单"
+    assert '"confidence"' in m.group(1), "_ALLOWED_ITEM_KEYS 必须放行 confidence"
     # pop 清单不得再包含 confidence
     m_pop = re.search(r"for _ik in \[(.*?)\]:", src, re.S)
     assert m_pop is not None, "未找到 item 字段 pop 清单"

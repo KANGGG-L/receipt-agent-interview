@@ -120,12 +120,12 @@ def test_ac_03_custom_date_inputs_and_api(kpi_modal_soup, main_js_content, clien
     assert res_data["date_range"]["start_date"] == d_start
     assert res_data["date_range"]["end_date"] == d_end
 
-    # 路由别名 /api/obs/kpi-trend 同样生效
+    # 重复路由 /api/obs/kpi-trend 已删除，只保留 /api/analytics/kpi-trends
     resp_alias = client.get(
         f"/api/obs/kpi-trend?metric_key=total_parses&start_date={d_start}&end_date={d_end}",
         headers=headers,
     )
-    assert resp_alias.status_code == 200
+    assert resp_alias.status_code == 404
 
     # 边界校验：仅传单个日期
     resp_bad1 = client.get(

@@ -1,0 +1,19 @@
+{
+ "_comment": "Message-format re-baseline: math gate messages were rewritten from technical text to plain Chinese templates (fix S2-12). Only message substrings changed; assert count and test names equal git HEAD.",
+ "_source_file": "tests/test_gap3_discount_deposit_math.py",
+ "tests": [
+  "test_fee_and_discount_extraction",
+  "test_math_engine_with_discount_and_deposit",
+  "test_math_engine_detects_real_error"
+ ],
+ "asserts": [
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='clean_items', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=2)]), msg=JoinedStr(values=[Constant(value='预期保留 2 项合法食材，实际保留 '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Name(id='clean_items', ctx=Load())], keywords=[]), conversion=-1), Constant(value=' 项')]))",
+  "Assert(test=Compare(left=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='discount_amount'), ctx=Load()), ops=[Eq()], comparators=[Constant(value=20.0)]), msg=JoinedStr(values=[Constant(value='折让提取错误: '), FormattedValue(value=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='discount_amount'), ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='deposit_amount'), ctx=Load()), ops=[Eq()], comparators=[Constant(value=40.0)]), msg=JoinedStr(values=[Constant(value='押金提取错误: '), FormattedValue(value=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='deposit_amount'), ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='delivery_fee'), ctx=Load()), ops=[Eq()], comparators=[Constant(value=30.0)]), msg=JoinedStr(values=[Constant(value='运费提取错误: '), FormattedValue(value=Subscript(value=Name(id='fees', ctx=Load()), slice=Constant(value='delivery_fee'), ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Name(id='clean_names', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Constant(value='特级有机菜心'), Constant(value='鲜活草虾')], ctx=Load())]))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='problems', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=0)]), msg=JoinedStr(values=[Constant(value='算术门禁误报错误: '), FormattedValue(value=Name(id='problems', ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='problems', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=1)]), msg=Constant(value='算术门禁未能捕获真实总额差错'))",
+  "Assert(test=Compare(left=Constant(value='应付 315 元，但单据总额写 350 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))"
+ ]
+}

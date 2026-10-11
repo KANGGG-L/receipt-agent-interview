@@ -64,12 +64,23 @@ def _mk_receipt(image_path, data=b"x", tenant_id="default"):
     return rid
 
 
-def _create_payment_with_voucher(client, name="v1.jpg", content=b"VOUCHER-BYTES",
-                                 tenant="default"):
+def _real_jpeg(color=(200, 30, 30)):
+    """付款凭证现在会校验文件内容并重新编码，测试必须上传真实图片。"""
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), color).save(buf, "JPEG")
+    return buf.getvalue()
+
+
+def _create_payment_with_voucher(client, name="v1.jpg", content=None, tenant="default"):
     """走真实端点登记一笔带凭证的付款，返回 payment_id（凭证落临时凭证目录）。"""
+    content = content or _real_jpeg()
+    sup = db.find_supplier_by_name("凭证供应商", tenant_id=tenant)
+    sid = sup.id if sup else db.create_supplier("凭证供应商", tenant_id=tenant)[0]
     r = client.post(
         "/api/payments",
-        data={"supplier_id": "1", "amount": "10", "method": "cash",
+        data={"supplier_id": str(sid), "amount": "10", "method": "cash",
               "paid_at": "2026-01-01", "notes": "test"},
         files={"voucher": (name, content, "image/jpeg")},
         headers={"X-Role": "owner", "X-Tenant-Id": tenant},
@@ -160,7 +171,8 @@ def test_uploads_static_mount_is_gone(client):
     assert b"REAL-VOUCHER-ON-DISK" not in r.content
 
     # 路由表里不应再有 /uploads 挂载（静态挂载已整体移除）
-    assert not any(getattr(rt, "path", None) == "/uploads" for rt in app.routes)
+    from app.routes_util import iter_routes
+    assert not any(getattr(rt, "path", None) == "/uploads" for rt in iter_routes(app))
 
 
 # -------------------------------------------------------------
@@ -176,7 +188,7 @@ def _voucher_url_parts(url):
 
 def test_voucher_endpoint_requires_valid_signature(client):
     """正确签名 → 200 且字节与原件一致；篡改/缺失签名 → 403。"""
-    content = b"VOUCHER-CONTENT-OK"
+    content = _real_jpeg((10, 20, 30))
     pid = _create_payment_with_voucher(client, "v1.jpg", content)
     url = [p for p in _payment_rows(client) if p["id"] == pid][0]["voucher_image_url"]
     name, v, sig, tenant_param = _voucher_url_parts(url)
@@ -187,7 +199,10 @@ def test_voucher_endpoint_requires_valid_signature(client):
 
     ok = client.get(url)
     assert ok.status_code == 200, ok.text
-    assert ok.content == content
+    import io
+    from PIL import Image
+    assert Image.open(io.BytesIO(ok.content)).size == (8, 8)   # 重新编码后的同一张图
+    assert ok.headers["x-content-type-options"] == "nosniff"
 
     # 篡改签名任一位 → 403，绝不因「参数形态对」而放行
     bad_sig = ("0" if sig[-1] != "0" else "1")
@@ -202,7 +217,7 @@ def test_voucher_endpoint_requires_valid_signature(client):
 
 def test_voucher_endpoint_cross_tenant(client):
     """跨租户：签名绑定租户，换租户签名/参数一律取不到图。"""
-    pid = _create_payment_with_voucher(client, "cross.jpg", b"CROSS", tenant="tenant_b")
+    pid = _create_payment_with_voucher(client, "cross.jpg", _real_jpeg((1, 2, 3)), tenant="tenant_b")
     url_tb = [p for p in _payment_rows(client, "tenant_b")
               if p["id"] == pid][0]["voucher_image_url"]
     name, v, sig, tenant_param = _voucher_url_parts(url_tb)
@@ -267,7 +282,7 @@ def test_job_status_requires_staff(client):
     assert client.get("/api/job/whatever").status_code == 401
     r = client.get("/api/job/whatever", headers={"X-Role": "staff"})
     assert r.status_code == 404, r.text
-    assert r.json()["msg"] == "未找到该识别任务"
+    assert r.json()["code"] == "JOB_NOT_FOUND"
 
 
 def test_convert_image_requires_staff(client):

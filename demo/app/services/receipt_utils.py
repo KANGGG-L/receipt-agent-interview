@@ -13,7 +13,10 @@ import os
 import re
 import threading
 import time
+import uuid
 from urllib.parse import quote
+
+from app.errors import human_job_error
 
 from app import db
 _APPROVE_LOCK = db.receipt_write_lock  # QA-Lock-Split §13.4：与 API 端点共用单据写锁
@@ -46,6 +49,8 @@ except Exception:
 
 # 在内存 job 表（单进程部署约束，对齐完整版）
 JOBS = {}
+# 人工已经接管或定论的状态：迟到的识别 Job 不得覆盖（否则老板标的异常、店员的修改会被悄悄抹掉）
+HUMAN_FINAL_STATUSES = ("edited", "approved", "flagged", "reversed")
 JOBS_LOCK = threading.Lock()
 
 
@@ -145,6 +150,34 @@ def _log_gate_rejects(result):
 # -------------------------------------------------------------
 # AI 管线：异步 Job
 # -------------------------------------------------------------
+def _humanize_job_error(result):
+    from app.services.contract import humanize_contract_error
+    return humanize_contract_error(result.get("contract_error") or result.get("last_error"))
+
+
+def _save_error_prefill(receipt_id, result):
+    """识别失败时也保留 AI 的原始输出与已解析出的部分字段，前端据此预填手工录入页。
+
+    只在单据仍是 error 状态时写入：已被人工接管的单据不动。
+    """
+    fields = {}
+    raw = result.get("raw")
+    if raw:
+        fields["raw_llm"] = str(raw)
+    salvage = result.get("salvage")
+    if isinstance(salvage, dict) and salvage:
+        try:
+            fields["ai_prefill_json"] = json.dumps(salvage, ensure_ascii=False, default=str)
+        except Exception as e:
+            logging.getLogger("receipt_utils").warning("部分识别结果序列化失败，跳过预填: %s", e)
+    if not fields:
+        return
+    with _APPROVE_LOCK:
+        row = db.get_receipt_row(receipt_id)
+        if row is not None and row.status == "error" and not row.deleted_at:
+            db.update_receipt(receipt_id, **fields)
+
+
 def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                           tenant_id=None, image_guard=None,
                           vendor_hint_origin="", raw_image_path=None, quality_warnings=None):
@@ -165,7 +198,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     receipts.image_path 恒指向 raw_image_path，识别管线使用 image_path（可为预处理图）。
     quality_warnings（W-SEC-4）：前置画质/安全扫描告警（如 image_guard_degraded）。
     """
-    job_id = db.new_id()
+    job_id = uuid.uuid4().hex
     # R1：捕获任务创建时的库路径，随后台线程一起带走。每次写库前校验生效的
     # db.DB_PATH 是否仍等于它；不一致说明库已被切换，宁可放弃写入也不能污染新库。
     job_db_path = db.DB_PATH
@@ -194,7 +227,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     with JOBS_LOCK:
         JOBS[job_id] = {"job_id": job_id, "job_status": "queued",
                         "receipt_id": receipt_id, "started_ts": time.time(),
-                        "image_guard": image_guard}
+                        "image_guard": image_guard, "tenant_id": _tenant}
     _track_internal("ocr_parse_started", receipt_id, {"job_id": job_id})
 
     def _run():
@@ -208,19 +241,6 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 job_id, bind_err)
         with JOBS_LOCK:
             JOBS[job_id]["job_status"] = "running"
-
-        def _on_event(ev):
-            # 首选引擎降级回退时实时写入 Job，供前端轮询第一时间弹提示
-            try:
-                if isinstance(ev, dict) and ev.get("type") == "engine_fallback":
-                    with JOBS_LOCK:
-                        JOBS[job_id]["progress_fallback"] = {
-                            "reason": str(ev.get("reason") or "")[:300],
-                            "from": str(ev.get("from") or "")[:60],
-                            "to": str(ev.get("to") or "")[:60],
-                        }
-            except Exception:
-                pass
 
         try:
             # 线程启动到真正开工之间库可能已被切换：提前放弃，省掉无谓的引擎调用
@@ -296,12 +316,11 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             _pipeline_kwargs = {}
             if str(vendor_hint_origin or "").strip():
                 _pipeline_kwargs["vendor_hint_origin"] = vendor_hint_origin
-            result = supervisor.run_pipeline(
+            result = supervisor.run_pipeline_guarded(
                 image_path, vendor_hint=vendor_hint, config=cfg,
                 supplier_name=vendor_hint or "",
                 receipt_id=receipt_id,  # U-2: 透传 receipt_id，AI 决策履历落库关联单据
                 experiment_id=experiment_id,
-                on_event=_on_event,
                 image_guard=image_guard,  # P2-1 图内隐藏文字 flags 随管线落 extract 决策 extra
                 # Gap H1：把 Job 启动时捕获的租户带进识别管线，VendorMemory 读侧与
                 # approve 写侧（api_receipts 回写）因此同租户；_tenant 是派发线程前的
@@ -313,20 +332,19 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             if data is None:
                 if _db_path_switched(job_id, "error_writeback"):
                     return
-                db.update_receipt(receipt_id, status="error")
+                _mark_job_failed(receipt_id)
+                _save_error_prefill(receipt_id, result)
                 with JOBS_LOCK:
                     JOBS[job_id].update({
                         "job_status": "error",
-                        "error_msg": result.get("contract_error") or result.get("last_error") or "识别失败",
-                        "fallback_triggered": result.get("fallback_triggered", False),
-                        "fallback_failed": result.get("fallback_failed", False),
-                        "fallback_from": result.get("fallback_from", ""),
-                        "fallback_engine": result.get("fallback_engine", ""),
+                        "error_msg": result.get("user_error") or _humanize_job_error(result),
+                        "error_code": result.get("error_code") or "RECOGNITION_FAILED",
                     })
                 _track_internal("ocr_error", receipt_id, {
                     "job_id": job_id, "status": "error",
                     "elapsed_ms": _job_elapsed_ms(job_id),
                     "reason": str(result.get("contract_error") or result.get("last_error") or "识别失败")[:300],
+                    "error_code": result.get("error_code") or "",
                     "attempts": _log_max_attempt(result),
                     "gate_rejects": _log_gate_rejects(result),
                 })
@@ -366,10 +384,6 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "quality_warnings": quality_warnings,
                         # P2-1：图内隐藏文字检测结果随 job 结果透传（前端轮询可见）
                         "image_guard": image_guard,
-                        "fallback_triggered": result.get("fallback_triggered", False),
-                        "fallback_reason": result.get("fallback_reason", ""),
-                        "fallback_from": result.get("fallback_from", ""),
-                        "fallback_engine": result.get("fallback_engine", ""),
                         "experiment_override": experiment_override,
                         # FP-1：run 级 hint 来源标记随 Job result 透传（"first_round"
                         # 或空串）。恒有键：Job result 是内存态非落盘，新增键对前端纯增量；
@@ -405,9 +419,11 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
             # 库被切换时优先按「放弃写入」收口，不要把 db_path_changed 伪装成识别错误
             if _db_path_switched(job_id, "exception"):
                 return
-            db.update_receipt(receipt_id, status="error")
+            _mark_job_failed(receipt_id)
             with JOBS_LOCK:
-                JOBS[job_id].update({"job_status": "error", "error_msg": str(e)})
+                JOBS[job_id].update({"job_status": "error",
+                                     "error_msg": human_job_error(e),
+                                     "error_detail": str(e)[:500]})
             _track_internal("ocr_error", receipt_id, {
                 "job_id": job_id, "status": "error",
                 "elapsed_ms": _job_elapsed_ms(job_id),
@@ -553,10 +569,49 @@ def sweep_parsing_timeout(timeout_seconds=None):
         s.close()
 
 
-def get_job(job_id):
+def _mark_job_failed(receipt_id):
+    """识别失败置 error；单据若已被人工接管（保存/标记/入账）则保持原状态，不被迟到失败覆盖。"""
+    with _APPROVE_LOCK:
+        row = db.get_receipt_row(receipt_id)
+        if row is not None and (row.status in HUMAN_FINAL_STATUSES or row.deleted_at):
+            return
+        db.update_receipt(receipt_id, status="error")
+
+
+JOB_TTL_SECONDS = 15 * 60
+_JOB_FINAL = ("done", "error")
+
+
+def purge_expired_jobs(now=None, ttl=JOB_TTL_SECONDS) -> int:
+    """淘汰已结束且超过 ttl 的 Job（内存只增不减的泄漏点）；返回淘汰条数。
+
+    运行中/排队中的 Job 不动；结束时间取 finished_ts，缺失时退回 started_ts。
+    """
+    now = time.time() if now is None else now
+    removed = 0
+    with JOBS_LOCK:
+        for jid in list(JOBS.keys()):
+            job = JOBS[jid]
+            if job.get("job_status") not in _JOB_FINAL:
+                continue
+            ended = job.get("finished_ts")
+            if not ended:
+                # 首次发现已结束：从此刻起计 TTL（各终态写入点不必逐个补时间戳）
+                job["finished_ts"] = now
+                continue
+            if now - ended > ttl:
+                JOBS.pop(jid, None)
+                removed += 1
+    return removed
+
+
+def get_job(job_id, tenant_id=None):
+    """取 Job；传入 tenant_id 时只返回本租户的 Job（别家的一律当作不存在）。"""
     with JOBS_LOCK:
         job = dict(JOBS.get(job_id, {}))
     if not job:
+        return None
+    if tenant_id is not None and job.get("tenant_id") not in (None, str(tenant_id)):
         return None
     if job.get("job_status") == "done":
         row = db.get_receipt_row(job["receipt_id"])
@@ -700,7 +755,7 @@ def save_parsed_data(receipt_id, data, result):
         # 迟到的识别结果绝不覆盖人工数据。
         if _ctx_row.deleted_at is not None:
             return build_detail(_ctx_row)
-        if _ctx_row.status in ("edited", "approved") or (_ctx_row.doc_form or "") == "manual_entry":
+        if _ctx_row.status in HUMAN_FINAL_STATUSES or (_ctx_row.doc_form or "") == "manual_entry":
             return build_detail(_ctx_row)
 
         _tenant_ctx = (getattr(_ctx_row, "tenant_id", "") or "").strip() or None
@@ -794,6 +849,13 @@ def save_parsed_data(receipt_id, data, result):
             review_priority_score = 0.0
         else:
             review_priority_score = 0.1 if discrepancies == [] else 0.0
+        if isinstance(audit_res, dict) and audit_res.get("skipped"):
+            # 审核没跑成（超时、解析失败、握手失败）不等于“审核一致”：提高复核优先级，
+            # 并在详情里明确提示这张单没有经过第二次核对。
+            review_priority_score = max(review_priority_score,
+                                        0.9 if audit_res.get("canary_blocked") else 0.6)
+            audit_res = dict(audit_res)
+            audit_res["unverified_notice"] = "这张单没有经过第二次核对，请对照原图多留意"
 
         # 红章补充 + AC-01-05 三态：LLM 未标记但图片含红章 → stamp；图片可解码但无印记 →
         # 「未付款」（明确未检测到）；无原图/读图失败 → ""（不确定，绝不折算成未付款）。
@@ -815,7 +877,7 @@ def save_parsed_data(receipt_id, data, result):
         # P15：按管线返回的最终状态落库，不再无条件写 parsed——门禁带警告的单据
         # （state["status"]="parsed_with_warnings"）必须如实落库，否则"解析成功"的假象仍在。
         _final_status = str(result.get("status") or "").strip() or "parsed"
-        if _final_status not in ("parsed", "parsed_with_warnings"):
+        if _final_status not in ("parsed", "parsed_with_warnings", "flagged"):
             _final_status = "parsed"
         db.update_receipt(
             receipt_id,
@@ -831,8 +893,10 @@ def save_parsed_data(receipt_id, data, result):
             audit_json=json.dumps(audit_res, ensure_ascii=False),
             ai_prefill_json=json.dumps(data.model_dump(), ensure_ascii=False),
             math_warnings_json=json.dumps(
-                _merge_math_warnings(result.get("math_problems", []),
-                                     getattr(data, "math_warnings", [])),
+                _merge_math_warnings(
+                    _merge_math_warnings(result.get("math_problems", []),
+                                         getattr(data, "field_warnings", [])),
+                    getattr(data, "math_warnings", [])),
                 ensure_ascii=False),
             use_grey=use_grey,
             review_priority_score=review_priority_score,
@@ -841,6 +905,10 @@ def save_parsed_data(receipt_id, data, result):
             # Gap 9 / Gap 6：识别直出费用与注记落列（店员可在 save_edited 修正覆写）
             service_fee=sanitize_nan(getattr(data, "service_fee", 0.0)),
             tax_amount=sanitize_nan(getattr(data, "tax_amount", 0.0)),
+            discount_amount=sanitize_nan(getattr(data, "discount_amount", 0.0)),
+            delivery_fee=sanitize_nan(getattr(data, "delivery_fee", 0.0)),
+            deposit_amount=sanitize_nan(getattr(data, "deposit_amount", 0.0)),
+            rounding_adjustment=sanitize_nan(getattr(data, "rounding_adjustment", 0.0)),
             adjustment_notes_json=json.dumps(
                 [str(n) for n in (getattr(data, "adjustment_notes", None) or [])],
                 ensure_ascii=False),
@@ -907,19 +975,25 @@ def _match_sku(item, tenant_id=None, supplier_id=None):
     if sku is None:
         sku = db.find_sku_by_name(name, tenant_id=tenant_id)
     if sku is None:
-        core = _normalize_sku_name(name)
-        if len(core) >= 2:
-            for s in db.list_skus(tenant_id=tenant_id):
-                s_core = _normalize_sku_name(s.name)
-                # 双向匹配都要求核心词 ≥2（避免"茶"这类单字 SKU 误配到任何含该字的长商品）
-                if s_core and len(s_core) >= 2 and (s_core in core or core in s_core):
-                    sku = s
-                    break
+        # 流水号变体归一后的精确命中；包含关系（牛肉/牛肉丸、菜心/菜心(大)）只作候选，
+        # 由 find_sku_candidates 交人工确认，这里不自动采用。
+        _canon = canonical_sku_name(name)
+        if _canon and _canon != name:
+            sku = db.find_sku_by_name(_canon, tenant_id=tenant_id)
     if sku:
         item["sku_id"] = sku.id
         item["matched"] = 1
-        if sku.last_unit_price and item["unit_price"]:
-            diff_pct = round((item["unit_price"] - sku.last_unit_price) / sku.last_unit_price * 100, 1)
+        # 价格比较统一按库存基准单位：明细单位和 SKU 单位不同时先把单价折成基准单位，
+        # 换算不了就不比（不拿「每箱」的价格去比「每斤」的价格）
+        _cmp_price = item["unit_price"]
+        _iu = (item.get("unit") or "").strip()
+        _bu = (getattr(sku, "base_unit", "") or "").strip()
+        if _cmp_price and _iu and _bu:
+            from app.services.unit_factors import conversion_factor
+            _f = conversion_factor(_iu, _bu, tenant_id)
+            _cmp_price = (_cmp_price / _f) if _f else None
+        if sku.last_unit_price and _cmp_price:
+            diff_pct = round((_cmp_price - sku.last_unit_price) / sku.last_unit_price * 100, 1)
             item["price_diff_percent"] = diff_pct
             # WS3：行级阈值改由 settings 实时读取（本链路租户维度），消除硬编码 10。
             # [WARN] 基准说明（前端标注依赖）：此处是**行级**判定 —— 本笔进价 vs 该 SKU 的
@@ -933,6 +1007,51 @@ def _match_sku(item, tenant_id=None, supplier_id=None):
             if abs(diff_pct) > _threshold_pct:
                 item["price_anomaly"] = 1
                 item["price_anomaly_direction"] = "up" if diff_pct > 0 else "down"
+
+
+def find_sku_candidates(items, tenant_id=None, limit=5):
+    """给没有 SKU 指向的明细挑候选 SKU（名字互相包含），交人工在复核界面确认。
+
+    只读、不改库。一次取全部 SKU，对每行内存比对，避免逐行扫表。
+    返回 {明细下标: [{sku_id, name, unit, reason, unit_compatible}]}。
+    """
+    todo = [(i, it) for i, it in enumerate(items or [])
+            if not it.get("sku_id") and not it.get("is_void")]
+    if not todo:
+        return {}
+    from app.services.unit_factors import check_unit_compatibility
+    skus = []
+    for s in db.list_skus(tenant_id=tenant_id):
+        s_core = _normalize_sku_name(s.name)
+        if s_core and len(s_core) >= 2:
+            skus.append((s, s_core))
+    out = {}
+    for i, it in todo:
+        name = it.get("name") or ""
+        core = _normalize_sku_name(name)
+        if len(core) < 2:
+            continue
+        scored = []
+        for s, s_core in skus:
+            if s.name == name:
+                continue
+            if not (s_core in core or core in s_core):
+                continue
+            ratio = min(len(s_core), len(core)) / max(len(s_core), len(core))
+            iu = (it.get("unit") or "").strip()
+            su = (getattr(s, "base_unit", "") or "").strip()
+            compat = True
+            if iu and su:
+                compat = check_unit_compatibility(iu, su, tenant_id)[0]
+            reason = "名字相近：「%s」和「%s」互相包含" % (name, s.name)
+            if not compat:
+                reason += "；单位「%s」和库存单位「%s」没有换算关系，可能不是同一种东西" % (iu, su)
+            scored.append((ratio, {"sku_id": s.id, "name": s.name, "unit": su,
+                                   "reason": reason, "unit_compatible": compat}))
+        if scored:
+            scored.sort(key=lambda x: -x[0])
+            out[i] = [c for _r, c in scored[:limit]]
+    return out
 
 
 # -------------------------------------------------------------
@@ -956,11 +1075,62 @@ def _load_json_obj(raw):
     return val if isinstance(val, dict) else {}
 
 
+def compute_gate_issues(row, items):
+    """用单据当前内容（店员改过就按改后的）实时重算结构化门禁结果。
+
+    返回 [{code,row_index,item_name,field,expected,actual,diff,hint}]，hint 是人话；
+    构造失败（手工单字段不全等）返回 []，不影响详情接口。
+    """
+    try:
+        from app.models import DocForm, ReceiptData, ReceiptItem
+        from app.services import math_engine
+        try:
+            doc = DocForm(row.doc_form) if row.doc_form else DocForm.PRINTED
+        except ValueError:
+            doc = DocForm.PRINTED
+        parsed = []
+        for it in items or []:
+            actual_qty = it.get("actual_qty")
+            parsed.append(ReceiptItem(
+                name=str(it.get("name", "") or ""),
+                qty=float(it.get("quantity", 0) or 0),
+                unit=str(it.get("unit", "") or ""),
+                unit_price=float(it.get("unit_price", 0) or 0),
+                amount=float(it.get("amount", 0) or 0),
+                is_void=bool(it.get("is_void", 0) or 0),
+                actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None)))
+        if not parsed:
+            return []
+        data = ReceiptData(
+            doc_form=doc, vendor=row.supplier_name or "通用供应商", date=row.receipt_date or "",
+            items=parsed, total=float(row.total_amount or 0),
+            discount_amount=float(getattr(row, "discount_amount", 0) or 0),
+            deposit_amount=float(getattr(row, "deposit_amount", 0) or 0),
+            delivery_fee=float(getattr(row, "delivery_fee", 0) or 0),
+            service_fee=float(getattr(row, "service_fee", 0) or 0),
+            tax_amount=float(getattr(row, "tax_amount", 0) or 0),
+            rounding_adjustment=float(getattr(row, "rounding_adjustment", 0) or 0),
+            payment_marked=False, confidence=1.0)
+        return math_engine.validate_and_issues(data)
+    except Exception as e:
+        logging.getLogger("receipt_utils").warning("门禁结果重算失败(不影响详情): %s", e)
+        return []
+
+
 def build_detail(row):
     """收据行 → ReceiptDetail（/api/receipt/{id} 与 upload data 结构）。"""
     if row is None:
         return None
     items = db.get_receipt_items(row.id)
+    for _it in items:
+        _it["sku_candidates"] = []
+    if row.status != "approved":
+        try:
+            for _i, _c in find_sku_candidates(
+                    items, tenant_id=getattr(row, "tenant_id", None)).items():
+                items[_i]["sku_candidates"] = _c
+        except Exception as _e:
+            logging.getLogger("receipt_utils").warning("SKU 候选生成失败（不影响复核）：%s", _e)
     dept_name = ""
     if row.department_id:
         for d in db.list_departments():
@@ -984,7 +1154,7 @@ def build_detail(row):
         "sheet_name": row.sheet_name or "",
         "total_amount": row.total_amount or 0.0,
         "status": row.status,
-        "settlement_type": row.settlement_type or "credit",
+        "settlement_type": row.settlement_type or "",
         "payment_mark": payment_mark_val,
         # AC-01-05：付款标记三态的**向量化标签**（detected / not_detected / uncertain），
         # 供 HTTP/前端区分「明确未检测到」与「不确定」，不改变既有 payment_mark 契约。
@@ -1001,6 +1171,10 @@ def build_detail(row):
         "audit_logs": json.loads(row.audit_logs_json or "[]"),
         "ai_prefill": json.loads(row.ai_prefill_json or "{}"),
         "audit_result": _patch_audit_reason(json.loads(row.audit_json or "{}")),
+        # S2-12：结构化门禁结果，前端按模板渲染；S2-10：审核没跑成时的提示
+        "gate_issues": compute_gate_issues(row, items),
+        "audit_skipped": bool((json.loads(row.audit_json or "{}") or {}).get("skipped")),
+        "audit_notice": str((json.loads(row.audit_json or "{}") or {}).get("unverified_notice") or ""),
         "use_grey": row.use_grey or 0,
         "confidence": row.confidence or 0.0,
         "currency": getattr(row, "currency", None) or "HKD",
@@ -1008,6 +1182,10 @@ def build_detail(row):
         # Gap 9 / Gap 6：店员可修正字段回读（复核界面与识别 prefill 同名直灌）
         "service_fee": float(getattr(row, "service_fee", 0.0) or 0.0),
         "tax_amount": float(getattr(row, "tax_amount", 0.0) or 0.0),
+        "discount_amount": float(getattr(row, "discount_amount", 0.0) or 0.0),
+        "delivery_fee": float(getattr(row, "delivery_fee", 0.0) or 0.0),
+        "deposit_amount": float(getattr(row, "deposit_amount", 0.0) or 0.0),
+        "rounding_adjustment": float(getattr(row, "rounding_adjustment", 0.0) or 0.0),
         "adjustment_notes": _load_json_list(getattr(row, "adjustment_notes_json", None)),
         "payment_evidence": str(getattr(row, "payment_evidence", "") or ""),
         # P2-1：图内隐藏文字检测结果（{flagged, reasons, metrics}）；缺省 {} = 未检测/无结果。
@@ -1202,6 +1380,15 @@ def build_row(row):
                 payment_status = "overdue"
     elif row.settlement_type == "cash":
         payment_status = "paid_at_delivery"
+    # 已入账赊单：状态按付款分配推导（unpaid/partial/paid），逾期按到期日或账期天数
+    _pinfo = None
+    try:
+        from app import recon_store
+        _pinfo = recon_store.list_row_payment_info(row)
+    except Exception as _pe:
+        logging.getLogger("receipt_utils").warning("付款状态推导失败，沿用旧口径：%s", _pe)
+    if _pinfo:
+        payment_status = _pinfo["payment_status"]
 
     # W2 列表性能修复：列表行不再逐条读图补红章，直接返回已落库的 payment_mark。
     # why: 旧实现对本行 payment_mark 为空时调 contract.payment_mark_from_image →
@@ -1236,6 +1423,10 @@ def build_row(row):
         "due_soon": False,
         "paid_at": row.paid_at or "",
         "payment_id": row.payment_id,
+        "paid_amount": (_pinfo or {}).get("paid_amount", 0.0),
+        "outstanding_amount": (_pinfo or {}).get("outstanding_amount", 0.0),
+        "is_overdue": bool((_pinfo or {}).get("is_overdue", False)),
+        "due_date": (_pinfo or {}).get("due_date", row.expected_pay_date or ""),
         "use_grey": row.use_grey or 0,
         "payment_mark": payment_mark_val,
         "quality_warnings": quality_warnings,

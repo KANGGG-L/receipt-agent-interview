@@ -10,13 +10,22 @@
 #   ./demo.sh approve-imported    # 把已导入的 edited 收据全部 approve 入库
 #
 set -euo pipefail
-PY=~/.pyenv/versions/3.9.6/bin/python
+# 解释器：优先用环境变量 PYTHON；其次当前已激活的虚拟环境；最后退回系统 python3。
+# 不再写死某个 pyenv 路径。首次使用先装依赖：pip install -r requirements.txt
+if [ -n "${PYTHON:-}" ]; then
+  PY="$PYTHON"
+elif [ -n "${VIRTUAL_ENV:-}" ] && [ -x "$VIRTUAL_ENV/bin/python" ]; then
+  PY="$VIRTUAL_ENV/bin/python"
+else
+  PY="$(command -v python3 || command -v python)"
+fi
 IMG="${2:-samples/20161001_711_thermal_receipt.jpg}"
 
 case "${1:-}" in
   run)
-    echo "启动 API: http://127.0.0.1:15010 （完整版前端 + LangChain 精简后端，已开启热重载）"
-    $PY -m uvicorn app.main:app --port 15010 --reload \
+    echo "启动 API: http://127.0.0.1:15010 （只监听本机；已开启热重载）"
+    echo "没有配置识别服务密钥时，上传识别会失败，请在页面里选「手工录入」建单（详见 README）。"
+    $PY -m uvicorn app.main:app --host 127.0.0.1 --port 15010 --reload \
       --reload-dir app --reload-dir ../ai_registry --reload-dir templates --reload-dir static \
       --reload-include "*.py" --reload-include "*.js" --reload-include "*.css" --reload-include "*.html"
     ;;

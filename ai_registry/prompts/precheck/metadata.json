@@ -1,0 +1,16 @@
+{
+  "scene": "precheck",
+  "active_version": "v1_0_0",
+  "description": "上传阶段供应商预判提示词（抬头区域，只抽 vendor）",
+  "versions": {
+    "v1_0_0": {
+      "release_date": "2026-10-11",
+      "status": "production",
+      "metrics": null,
+      "metrics_note": "预判仅提供可选提示，结果不入账；尚无独立评测集，不登记任何指标数字。",
+      "changelog": [
+        "S2-24：由 vendor_precheck.py 内联常量原文迁入 registry，文本零改动"
+      ]
+    }
+  }
+}

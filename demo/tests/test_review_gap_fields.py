@@ -189,7 +189,7 @@ def test_math_gate_flags_mismatch_with_user_values(client):
     data = _detail(client, rid)
     warnings = data["math_warnings"]
     assert warnings, "门禁必须用店员提交的 service_fee 重算并报不一致"
-    assert any("服务费=15" in w for w in warnings), warnings
+    assert any("加服务费 15 元" in w for w in warnings), warnings
 
 
 # -------------------------------------------------------------

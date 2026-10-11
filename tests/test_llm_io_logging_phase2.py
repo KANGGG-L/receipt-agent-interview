@@ -97,8 +97,8 @@ def test_image_sanitization_and_masking():
 
 def test_mock_llm_invocation_interception(monkeypatch):
     """测试 mock 模式下全量调用拦截落盘。"""
-    monkeypatch.setenv("MOCK_QWEN_FLASH", "1")
-    model = OpenAIChatModel(model="qwen3-vl-flash")
+    from stubs_mock_qwen_flash import MockQwenFlashModel
+    model = MockQwenFlashModel(model="qwen3-vl-flash")
     test_rid = 99999
 
     with llm_context(receipt_id=test_rid, leg="extract", attempt=1):

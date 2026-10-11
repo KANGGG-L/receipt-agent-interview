@@ -53,8 +53,9 @@ def test_no_duplicate_route_method_path_pairs():
     """app.routes 中不得存在重复的 (method, path)：先注册者生效，后者不可达。"""
     from app.main import app
 
+    from app.routes_util import iter_routes
     seen = {}
-    for r in app.routes:
+    for r in iter_routes(app):
         path = getattr(r, "path", None)
         methods = getattr(r, "methods", None) or ()
         if not path or not methods:
@@ -72,8 +73,9 @@ def test_experiments_post_route_is_bound_once():
     """POST /api/admin/experiments 必须有且仅有一个注册，且绑定到 api_admin。"""
     from app.main import app
 
+    from app.routes_util import iter_routes
     hits = [
-        r for r in app.routes
+        r for r in iter_routes(app)
         if getattr(r, "path", None) == "/api/admin/experiments"
         and "POST" in (getattr(r, "methods", None) or ())
     ]

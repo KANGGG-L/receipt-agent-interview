@@ -84,11 +84,10 @@ def test_multi_variant_receipts_link_to_same_supplier():
 
     # supplier_stats：全部变体计入同一供应商
     assert _db.supplier_stats(sup_id)["receipt_count"] == len(_XIANGXING_VARIANTS)
-    # get_supplier_receipts：时间线同样包含全部变体
-    body = _client().get(f"/api/suppliers/{sup_id}/receipts",
-                         headers={"X-Role": "owner"}).json()
-    assert body["receipt_count"] == len(_XIANGXING_VARIANTS)
-    assert {x["id"] for x in body["receipts"]} == set(rids.values())
+    # list_receipts_for_supplier：同样包含全部变体
+    matched = _db.list_receipts_for_supplier(sup_id)
+    assert len(matched) == len(_XIANGXING_VARIANTS)
+    assert {x.id for x in matched} == set(rids.values())
 
 
 # -------------------------------------------------------------

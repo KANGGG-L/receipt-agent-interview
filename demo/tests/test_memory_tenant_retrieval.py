@@ -59,8 +59,6 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(supervisor, "_memory_log_path",
                         lambda: str(tmp_path / "parse_log.jsonl"))
     monkeypatch.setattr(extract_chain, "generate_canary_token", lambda: "")
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **k: False)
     monkeypatch.setattr(supervisor, "_run_audit",
                         lambda *a, **k: {"skipped": True, "reason": "test"})
 

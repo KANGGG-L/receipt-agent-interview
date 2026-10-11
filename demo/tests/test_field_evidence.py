@@ -440,8 +440,8 @@ def test_registry_v1_3_0_evidence_loadable_via_get_prompt():
 def test_metadata_v1_3_0_registered_draft_active_unchanged():
     from ai_registry.registry import ai_registry
     meta = ai_registry.get_prompt_metadata("extract")
-    assert meta["active_version"] == "v1_2_8_anti_injection", \
-        "active 必须保持 v1_2_8 不动（灰测验证通过前不置 production）"
+    assert meta["active_version"] == "v1_2_0_sku_clean", \
+        "active 为有实测指标的准入版本 v1_2_0（v1_3_0 灰测验证通过前不置 production）"
     v130 = meta["versions"].get("v1_3_0_evidence")
     assert v130 is not None, "v1_3_0_evidence 未登记 metadata"
     assert v130["status"] == "draft", "灰测验证通过前 status 必须为 draft"

@@ -165,19 +165,20 @@ def test_pvalue_card_returns_three_metric_cards_with_threshold_note():
 # E-P1-4 403 人话统一
 # -------------------------------------------------------------
 def test_403_message_includes_role_guidance_for_owner_api():
-    resp = client.get("/api/receipts/export", headers={"X-Role": "staff"})
+    resp = client.get("/api/cost", headers={"X-Role": "staff"})
     assert resp.status_code == 403
     detail = resp.json().get("detail", "")
     assert "权限不足" in detail
-    assert "staff" in detail and "owner" in detail
-    assert "切换角色" in detail or "联系管理员" in detail
+    assert "店员" in detail and "老板" in detail
+    assert "staff" not in detail and "owner" not in detail
+    assert "联系" in detail
 
 
 def test_403_message_includes_role_guidance_for_admin_api():
     resp = client.get("/api/admin/engine-config", headers={"X-Role": "owner"})
     assert resp.status_code == 403
     detail = resp.json().get("detail", "")
-    assert "权限不足" in detail and "admin" in detail
+    assert "权限不足" in detail and "超管" in detail and "admin" not in detail
 
 
 # -------------------------------------------------------------

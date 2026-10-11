@@ -79,4 +79,4 @@ def test_math_engine_detects_real_error():
 
     problems = math_engine.validate_and_report(data)
     assert len(problems) == 1, "算术门禁未能捕获真实总额差错"
-    assert "预期总额=315.0，但总额=350.0" in problems[0]
+    assert "应付 315 元，但单据总额写 350 元" in problems[0]

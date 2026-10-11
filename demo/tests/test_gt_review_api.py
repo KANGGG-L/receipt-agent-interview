@@ -263,14 +263,15 @@ def test_confirm_requires_admin(evalset_env, client):
     resp = client.post("/api/evalset/sample/%s/confirm" % sid, json={"gt": _CANDIDATE_GT})
     assert resp.status_code == 401, "匿名应判未认证 401，实际 %s" % resp.status_code
     detail = resp.json()["detail"]
-    assert "未认证" in detail and "X-Role" in detail, detail
+    assert "请先登录" in detail and "X-Role" not in detail and "Bearer" not in detail, detail
+    assert resp.json()["code"] == "UNAUTHENTICATED"
 
 
 def test_stats_requires_admin(evalset_env, client):
     assert client.get("/api/evalset/stats", headers={"X-Role": "owner"}).status_code == 403
     anonymous = client.get("/api/evalset/stats")
     assert anonymous.status_code == 401, "匿名应判未认证 401"
-    assert "未认证" in anonymous.json()["detail"]
+    assert "请先登录" in anonymous.json()["detail"]
 
 
 def test_sample_detail_requires_admin(evalset_env, client):

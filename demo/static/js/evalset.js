@@ -9,6 +9,11 @@
 (function () {
     'use strict';
 
+    function ask(opts) {
+        return typeof window.uiConfirm === 'function' ? window.uiConfirm(opts)
+            : Promise.resolve(window.confirm(opts.message));
+    }
+
     var samples = [];          // 当前过滤条件下的样本列表
     var pos = -1;              // 当前样本下标
     var current = null;        // 当前样本详情（含 gt，仅用于缩略图渲染）
@@ -58,7 +63,9 @@
                     var msg = (data && data.detail) || (data && data.msg) ||
                               ('请求失败（HTTP ' + resp.status + '）');
                     if (resp.status === 403) {
-                        msg = '权限不足：GT 抽检台仅限 admin 角色。请回主界面右上角切换角色为 admin 后刷新本页。';
+                        msg = '这个页面只有系统管理员能用。请回到主界面，在左侧栏最上方的「当前角色」里选「系统管理员」，再回来刷新。';
+                    } else if (resp.status === 404) {
+                        msg = '还没有评测集（评测集清单文件不存在）。请让技术人员先运行 build_evalset.py 生成评测集，再点「刷新」。';
                     }
                     var err = new Error(msg);
                     err.status = resp.status;
@@ -152,10 +159,39 @@
         });
     }
 
+    // 评测集缺失或接口失败：每个面板都给出空状态/错误状态，不能一直停在「加载中…」
+    function panelState(bodyId, emptyId, cols, msg) {
+        var body = document.getElementById(bodyId);
+        var empty = document.getElementById(emptyId);
+        if (body) { body.innerHTML = ''; }
+        if (empty) { empty.textContent = msg; empty.className = 'loading-note'; }
+    }
+
+    function showEvalUnavailable(e) {
+        var msg = (e && e.message) || '评测集暂时读不出来，请稍后点「刷新」重试。';
+        document.getElementById('progressText').textContent = '评测集不可用';
+        document.getElementById('progressFill').style.width = '0%';
+        document.getElementById('posText').textContent = '';
+        document.getElementById('imgBox').innerHTML = '<div class="loading-note">没有可预览的单据</div>';
+        document.getElementById('sampleList').innerHTML = '<div class="loading-note">' + esc(msg) + '</div>';
+        document.getElementById('infoArea').style.display = 'none';
+        var note = document.getElementById('emptyNote');
+        note.textContent = msg;
+        note.className = 'loading-note';
+        var batch = document.getElementById('batchBtn');
+        if (batch) { batch.disabled = true; }
+    }
+
     function reloadAll() {
-        loadStats().then(loadSamples).catch(showErr);
-        loadCandidates().catch(function () {});
-        loadPendingMemories().catch(function () {});
+        var batch = document.getElementById('batchBtn');
+        if (batch) { batch.disabled = false; }
+        loadStats().then(loadSamples).catch(showEvalUnavailable);
+        loadCandidates().catch(function (e) {
+            panelState('reflowBody', 'reflowEmpty', 6, (e && e.status === 404) ? '评测集还没建好，暂时没有回流候选。' : ((e && e.message) || '回流候选加载失败，请点「刷新」重试。'));
+        });
+        loadPendingMemories().catch(function (e) {
+            panelState('pendingMemoryBody', 'pendingMemoryEmpty', 7, (e && e.message) || '待确认记忆加载失败，请点「刷新」重试。');
+        });
     }
 
     function onFilterChange() {
@@ -266,11 +302,16 @@
         var draftCount = samples.length;
         if (!draftCount) { toast('本批没有待抽检样本', true); return; }
         var ids = samples.map(function (s) { return s.sample_id; });
-        if (!window.confirm('即将原样确认本批 ' + ids.length + ' 张 draft 样本：\n' + ids.join('、') +
-                '\n\n警告：这些 GT 未经人工逐张核对，将直接参与出分。' +
-                '如需人工校正（含付款标记），请逐张进工作台核对。确定继续？')) {
-            return;
-        }
+        ask({
+            title: '批量确认待抽检样本',
+            message: '即将原样确认本批 ' + ids.length + ' 张待抽检样本。\n这些标准答案没有人工逐张核对过，确认后会直接参与评分。需要人工校正（含付款标记）的，请逐张进工作台核对。',
+            details: ids.length > 12 ? ids.slice(0, 12).concat(['……一共 ' + ids.length + ' 张']) : ids,
+            confirmText: '确定继续',
+            danger: true
+        }).then(function (okBatch) { if (okBatch) runBatch(ids); });
+    }
+
+    function runBatch(ids) {
         var done = 0, failed = 0;
         function next(i) {
             if (i >= ids.length) {
@@ -356,11 +397,14 @@
     }
 
     function promoteCandidate(id, split) {
-        if (!window.confirm('把候选 #' + id + ' 晋升到 ' + split + ' 集？\n' +
-                '将复制原图与 AI 候选 GT（未经人工核对，状态为 draft），' +
-                '晋升后请在工作台逐张核对确认。')) {
-            return;
-        }
+        ask({
+            title: '加入评测集',
+            message: '把候选 #' + id + ' 加入「' + split + '」评测集？\n会复制原图和 AI 预填的标准答案（还没人工核对），加入后请到工作台逐张核对确认。',
+            confirmText: '加入'
+        }).then(function (ok) { if (ok) doPromote(id, split); });
+    }
+
+    function doPromote(id, split) {
         api('/api/evalset/candidates/' + id + '/promote?split=' + encodeURIComponent(split), {
             method: 'POST'
         }).then(function (data) {
@@ -372,9 +416,11 @@
     }
 
     function rejectCandidate(id) {
-        if (!window.confirm('不收录候选 #' + id + '？该样本将不进入评测集。')) {
-            return;
-        }
+        ask({ title: '不收录这个候选', message: '不收录候选 #' + id + '？这张样本不会进入评测集。', confirmText: '不收录', danger: true })
+            .then(function (ok) { if (ok) doReject(id); });
+    }
+
+    function doReject(id) {
         api('/api/evalset/candidates/' + id + '/reject', { method: 'POST' })
             .then(function () {
                 toast('已驳回候选 #' + id);
@@ -456,7 +502,11 @@
     function reviewPendingMemory(id, action) {
         var verb = action === 'approve' ? '批准记忆 #' + id + ' 并注入后续识别？' :
             '拒绝记忆 #' + id + '？拒绝后不会写入任何记忆库。';
-        if (!window.confirm(verb)) { return; }
+        ask({ title: action === 'approve' ? '批准这条记忆' : '拒绝这条记忆', message: verb, confirmText: action === 'approve' ? '批准' : '拒绝', danger: action !== 'approve' })
+            .then(function (ok) { if (ok) doReviewMemory(id, action); });
+    }
+
+    function doReviewMemory(id, action) {
         api('/api/memory/pending/' + id + '/' + action, { method: 'POST' })
             .then(function () {
                 toast(action === 'approve' ? '已批准记忆 #' + id + '（已写入供应商记忆）' :
@@ -513,8 +563,15 @@
     });
 
     // ---------------- 启动 ----------------
-    document.getElementById('roleNote').textContent =
-        '当前角色：' + role() + (role() === 'admin' ? '' : '（非 admin，接口将返回 403，请回主界面切换角色）');
+    document.getElementById('roleNote').textContent = '当前角色：' + ({ admin: '系统管理员', owner: '餐厅老板', staff: '餐厅店员' }[role()] || role());
+    if (role() !== 'admin') {
+        document.body.innerHTML = '<div style="max-width:560px; margin:80px auto; padding:24px; background:#fff; border-radius:16px; font-family:inherit; line-height:1.8;" role="alert">'
+            + '<h1 style="font-size:1.3rem; margin:0 0 12px;">这个页面只有系统管理员能用</h1>'
+            + '<p style="margin:0 0 16px;">你现在的角色没有权限。如果需要使用，请回到主界面，在左侧栏最上方的「当前角色」下拉里选「系统管理员」，再回来刷新本页。</p>'
+            + '<a href="/" style="display:inline-block; min-height:44px; line-height:44px; padding:0 22px; background:#032425; color:#fff; border-radius:10px; text-decoration:none; font-weight:600;">回到主界面</a>'
+            + '</div>';
+        return;
+    }
     reloadAll();
 
     // 暴露给 inline onclick

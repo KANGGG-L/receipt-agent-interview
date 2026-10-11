@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from app import db
 from app.api_receipts import _mask_sensitive
 from app.auth import ROLE_RANK, _ROLE_LABEL, require_role, resolve_account, resolve_tenant
+from app.i18n_text import localize
 from app.services.costing_service import CostingService
 from app.services.recipe_cost import compute_recipe_theory
 
@@ -108,6 +109,7 @@ REPORTS_META = [
     },
     {
         "id": "dish_ingredient_consumption",
+        "min_role": "owner",
         "category": "stocktake",
         "category_name": "盘点与补货",
         "title": "采购补货建议清单",
@@ -119,6 +121,7 @@ REPORTS_META = [
     # 使用者组二：经营与毛利（owner）
     {
         "id": "inventory_valuation",
+        "min_role": "owner",
         "category": "business",
         "category_name": "经营与毛利",
         "title": "库存货值结存表",
@@ -129,6 +132,7 @@ REPORTS_META = [
     },
     {
         "id": "inventory_price_anomaly",
+        "min_role": "owner",
         "category": "business",
         "category_name": "经营与毛利",
         "title": "采购进价波动与比价表",
@@ -139,6 +143,7 @@ REPORTS_META = [
     },
     {
         "id": "dish_cost_margin",
+        "min_role": "owner",
         "category": "business",
         "category_name": "经营与毛利",
         "title": "菜品成本与毛利表",
@@ -161,6 +166,7 @@ REPORTS_META = [
     # 使用者组三：台账与合规（出纳/审计）
     {
         "id": "inventory_stock_logs",
+        "min_role": "owner",
         "category": "ledger",
         "category_name": "台账与合规",
         "title": "出入库全量流水台账",
@@ -171,6 +177,7 @@ REPORTS_META = [
     },
     {
         "id": "receipts_itemized_ledger",
+        "min_role": "owner",
         "category": "ledger",
         "category_name": "台账与合规",
         "title": "采购入账明细台账",
@@ -359,7 +366,7 @@ class ExportDataProcessor:
             if stock_flt == "low" and not is_low:
                 continue
 
-            kg_val = _standard_kg(s.current_stock, s.base_unit)
+            kg_val = _standard_kg(s.current_stock, s.base_unit, tenant_id=tenant_id)
             if kg_val:
                 total_kg += kg_val
             unit_p = s.last_unit_price or 0.0
@@ -880,7 +887,7 @@ class ExportDataProcessor:
                 sku_stats[sid]["qty"] += float(l.qty or 0.0)
                 # B4: 折算口径与成本层同源（unit_factors SSOT）；仅重量单位折算，
                 # 计件/体积/空单位不假装折算（factor 为 None 时不计 kg 合计）。
-                factor = unit_to_kg_factor(l.unit)
+                factor = unit_to_kg_factor(l.unit, tenant_id)
                 if factor is not None:
                     sku_stats[sid]["kg"] += float(l.qty or 0.0) * factor
                 sku_stats[sid]["cost"] += float(l.amount or 0.0)
@@ -979,7 +986,7 @@ class ExportDataProcessor:
             return "unpaid"
 
         rows_db = db.list_receipt_rows(tenant_id=tenant_id)
-        depts = {d.id: d.name for d in db.list_departments()}
+        depts = {d.id: d.name for d in db.list_departments(tenant_id=tenant_id)}
         sup_phones = {s.name: s.contact_phone or "" for s in db.list_suppliers(tenant_id=tenant_id)}
 
         headers = [
@@ -1186,17 +1193,17 @@ class ExportDataProcessor:
             pivot = "department"
         inc_non = int(params.get("include_non_approved", 0))
 
-        rows_db = db.list_receipt_rows(tenant_id=tenant_id)
-        if inc_non == 0:
-            rows_db = [r for r in rows_db if r.status == "approved"]
+        from app.services import cost_report as cr
 
         prev_month, prev_start, prev_end = _prev_period(month, start, end)
+        has_prev = bool(prev_month or prev_start)
+        dept_list = db.list_departments(tenant_id=tenant_id)
 
         # 维度桶：部门（含未分配）或供应商（未注明单列一桶）
         if pivot == "department":
             buckets = {
                 d.id: {"label": d.name, "total": 0.0, "prev_total": 0.0, "count": 0}
-                for d in db.list_departments()
+                for d in dept_list
             }
             unalloc_label = "未分配"
         else:
@@ -1207,45 +1214,30 @@ class ExportDataProcessor:
             unalloc_label = "未注明供应商"
         unalloc = {"label": unalloc_label, "total": 0.0, "prev_total": 0.0, "count": 0}
 
-        matching_receipts = []
-        for r in rows_db:
-            is_cur = _in_period(r.receipt_date or "", month, start, end)
-            is_prv = (
-                _in_period(r.receipt_date or "", prev_month, prev_start, prev_end)
-                if (prev_month or prev_start)
-                else False
-            )
-            if is_cur or is_prv:
-                matching_receipts.append((r, is_cur, is_prv))
+        # 与 /api/cost_report 同一口径（services/cost_report.py）：已入账单据总额，
+        # 外币折港币，按明细比例分摊；本期笔数 = 本期有金额落在该桶的单据张数。
+        built = cr.build_allocations(
+            tenant_id,
+            lambda d: _in_period(d, month, start, end),
+            (lambda d: _in_period(d, prev_month, prev_start, prev_end)) if has_prev else (lambda d: False),
+            include_non_approved=bool(inc_non),
+            valid_dept_ids={d.id for d in dept_list})
 
-        items_by_receipt = db.get_receipt_items_multi(
-            [r.id for r, _, _ in matching_receipts], tenant_id=tenant_id)
-
-        def _bucket_for(r, cost_center_id=None):
-            if pivot == "department":
-                key = cost_center_id or r.department_id
-                return buckets.get(key, unalloc)
-            return buckets.get(r.supplier_name or "", unalloc)
-
-        for r, is_cur, is_prv in matching_receipts:
-            items = items_by_receipt.get(r.id, [])
-            if items:
-                for it in items:
-                    b = _bucket_for(r, it.get("cost_center_id"))
-                    amt = float(it.get("amount") or 0.0)
-                    if is_cur:
-                        b["total"] += amt
+        for a in built["allocs"]:
+            r = a["receipt"]
+            counted = set()
+            for part in a["alloc"]["parts"]:
+                if pivot == "department":
+                    b = buckets.get(part["dept_id"], unalloc)
+                else:
+                    b = buckets.get(r.supplier_name or "", unalloc)
+                if a["is_cur"]:
+                    b["total"] += part["amount_hkd"]
+                    if id(b) not in counted:
                         b["count"] += 1
-                    if is_prv:
-                        b["prev_total"] += amt
-            else:
-                b = _bucket_for(r)
-                amt = r.total_amount or 0.0
-                if is_cur:
-                    b["total"] += amt
-                    b["count"] += 1
-                if is_prv:
-                    b["prev_total"] += amt
+                        counted.add(id(b))
+                if a["is_prv"]:
+                    b["prev_total"] += part["amount_hkd"]
 
         dim_label = "部门" if pivot == "department" else "供应商"
         headers = [
@@ -1279,7 +1271,7 @@ class ExportDataProcessor:
             if dept_focus and dept_focus != "0":
                 try:
                     focus_label = next(
-                        (d.name for d in db.list_departments()
+                        (d.name for d in db.list_departments(tenant_id=tenant_id)
                          if str(d.id) == dept_focus), None)
                 except (TypeError, ValueError):
                     focus_label = None
@@ -1386,6 +1378,9 @@ class ExportReq(BaseModel):
     report_id: str
     params: Optional[Dict[str, Any]] = {}
     desensitized: Optional[bool] = False
+    # 界面语言（zh-Hans / zh-Hant-HK）。只影响 CSV 表头与下载文件名；行数据原样输出，
+    # 不做简繁转换（供应商名、品名属于业务数据，导出后可能回灌或对账）。缺省为简体原文。
+    lang: Optional[str] = None
 
 
 @router.post("/api/export/preview")
@@ -1429,8 +1424,8 @@ def download_report(req: ExportReq, request: Request):
         req.report_id, req.params or {}, tenant_id, is_desens=bool(req.desensitized)
     )
 
-    filename = data.get("filename", "export_report") + ".csv"
-    headers = data.get("headers", [])
+    filename = localize(data.get("filename", "export_report"), req.lang) + ".csv"
+    headers = [localize(h, req.lang) for h in data.get("headers", [])]
     rows = data.get("rows", [])
 
     def row_generator():

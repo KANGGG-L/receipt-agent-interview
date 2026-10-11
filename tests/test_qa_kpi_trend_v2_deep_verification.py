@@ -42,7 +42,7 @@ def kpi_modal_soup(index_html_content):
 # 1. API 自定义日期范围与边界校验 (AC-03, Router Alias, 400 Bad Request)
 # ==============================================================================
 class TestKpiTrendApiCustomDates:
-    """测试 /api/analytics/kpi-trends 与 /api/obs/kpi-trend 自定义起止日期及安全边界校验。"""
+    """测试 /api/analytics/kpi-trends 自定义起止日期及安全边界校验。"""
 
     headers = {"X-Role": "admin"}
 
@@ -51,7 +51,7 @@ class TestKpiTrendApiCustomDates:
         s_date = (today - timedelta(days=10)).strftime("%Y-%m-%d")
         e_date = (today - timedelta(days=2)).strftime("%Y-%m-%d")
 
-        for endpoint in ["/api/analytics/kpi-trends", "/api/obs/kpi-trend"]:
+        for endpoint in ["/api/analytics/kpi-trends"]:
             resp = client.get(
                 f"{endpoint}?metric_key=total_parses&start_date={s_date}&end_date={e_date}",
                 headers=self.headers,

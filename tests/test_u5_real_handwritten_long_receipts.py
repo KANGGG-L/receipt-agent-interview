@@ -129,10 +129,10 @@ def test_ac3_supervisor_arithmetic_discrepancy_and_retry():
 
     problems = math_engine.validate_and_report(data)
     assert len(problems) == 1
-    assert "明细合计=1185.0" in problems[0]
-    assert "预期总额=1185.0" in problems[0]
-    assert "总额=510.0" in problems[0]
-    assert "差675.0" in problems[0]
+    assert "各行加起来 1185 元" in problems[0]
+    assert "应付 1185 元" in problems[0]
+    assert "单据总额写 510 元" in problems[0]
+    assert "相差 675 元" in problems[0]
 
 
 def test_ac4_rag_context_json_storage_and_query():

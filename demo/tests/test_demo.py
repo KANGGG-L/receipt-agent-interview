@@ -518,7 +518,7 @@ def test_recognition_summary_aggregation(client):
 def test_funnel_includes_canonical_steps(client):
     db.log_user_event(event_type="upload")
     db.log_user_event(event_type="ocr_parse_started")
-    body = client.get("/api/admin/funnel", headers={"X-Role": "owner"}).json()
+    body = client.get("/api/funnel", headers={"X-Role": "owner"}).json()
     steps = [s["step"] for s in body["data"]["steps"]]
     assert "ocr_parse_started" in steps and "ocr_parsed" in steps
     counts = {s["step"]: s["count"] for s in body["data"]["steps"]}

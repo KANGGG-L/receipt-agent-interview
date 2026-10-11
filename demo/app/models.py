@@ -81,6 +81,7 @@ class ReceiptData(BaseModel):
     # 若不在契约内声明则触发 extra="forbid" 整单打回；可选、缺失合法。
     contains_huama: bool = Field(default=False, description="整单是否检测到街市花码（苏州码子）")
     math_warnings: list[str] = Field(default_factory=list, description="门禁数学/花码等复核警告（只增不改，供人工复核提示）")
+    field_warnings: list[str] = Field(default_factory=list, description="字段存疑提示（日期没读清、数量为负等）：明细照常保留，交人工核对")
 
 
 # -------------------------------------------------------------
@@ -244,6 +245,15 @@ def env_model_or_default(raw, fallback: str) -> str:
 #   2. db.hydrate_engine_config_from_env —— 存量 DB 值归一（消除「显示 90 实际 60」的误导）
 #   3. api_admin PUT /api/admin/engine-config —— 保存时归一，使落库值恒等于生效值
 MAX_CALL_TIMEOUT_SECONDS = 60
+
+# 模型单价按人民币刊例价计。租户设置表（/api/settings/fx_rates）没有人民币汇率时的兜底：
+# 1 人民币折合多少港币。
+CNY_TO_HKD_FALLBACK_RATE = 1.08
+
+# 单张单据识别的总时长预算（秒）与看门狗宽限（秒）：预算内不再开新一轮，
+# 预算+宽限仍未返回则强制转人工，卡住的单据不会一直停在“识别中”。
+PIPELINE_BUDGET_SECONDS = 45
+PIPELINE_WATCHDOG_GRACE_SECONDS = 15
 VALID_REASONING_EFFORTS = frozenset({"", "low", "medium", "high", "xhigh", "max"})
 
 
@@ -898,9 +908,18 @@ def should_use_grey(cfg: "EngineConfig", supplier_name: str = "", supplier_id: O
     if cfg.grey_percent <= 0:
         return False
     pct = max(0, min(100, int(cfg.grey_percent)))
-    if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER and supplier_name:
+    if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER:
+        # 按供应商灰测：同一家供应商永远落在同一组。没有供应商名时归常规组（不随机，
+        # 否则“同供应商一致命中”无从谈起）；名称先归一（繁简、空格、公司后缀）再 hash。
+        if not str(supplier_name or "").strip():
+            return False
         import hashlib
-        bucket = int(hashlib.md5(supplier_name.encode("utf-8")).hexdigest(), 16) % 100
+        try:
+            from app.services.rag import _norm_vendor_name, _vendor_core_token
+            norm_name = _vendor_core_token(_norm_vendor_name(supplier_name)) or str(supplier_name).strip()
+        except Exception:
+            norm_name = str(supplier_name).strip()
+        bucket = int(hashlib.md5(norm_name.encode("utf-8")).hexdigest(), 16) % 100
         return bucket < pct
     import random
     return random.random() * 100 < pct

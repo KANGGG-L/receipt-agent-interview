@@ -1,13 +1,28 @@
 <!DOCTYPE html>
-<html lang="zh-HK">
+<html lang="zh-Hans">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GT 抽检确权台</title>
+<script src="/static/js/i18n/zh-hant-data.js?v=20261011_i18n"></script>
+<script src="/static/js/i18n/zh-hant-hk-glossary.js?v=20261011_i18n"></script>
+<script src="/static/js/i18n/locales/zh-Hans.js?v=20261011_i18n"></script>
+<script src="/static/js/i18n/locales/zh-Hant-HK.js?v=20261011_i18n"></script>
+<script src="/static/js/i18n/i18n.js?v=20261011_i18n"></script>
 <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", sans-serif;
+    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
            background: #f1f5f9; color: #1e293b; font-size: 14px; }
+    html:lang(zh-Hant-HK) body { font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", "Noto Sans TC", sans-serif; }
+    .lang-switch { display: flex; align-items: center; gap: 8px; }
+    .lang-switch-label { font-size: 0.78rem; color: #64748b; }
+    .lang-switch-group { display: flex; gap: 6px; }
+    .lang-switch-btn { min-height: 38px; padding: 6px 12px; border-radius: 6px; border: 1px solid #6b7280;
+                       background: #fff; color: #1e293b; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
+    .lang-switch-btn:lang(zh-Hans) { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
+    .lang-switch-btn:lang(zh-Hant-HK) { font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", sans-serif; }
+    .lang-switch-btn.active { background: #1e293b; border-color: #1e293b; color: #fff; font-weight: 600; }
+    .lang-switch-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
     .topbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 20px;
               display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .topbar h1 { font-size: 1.05rem; font-weight: 700; }
@@ -112,6 +127,7 @@
             <button class="btn-secondary" onclick="reloadAll()">刷新</button>
             <button class="btn-secondary" id="batchBtn" onclick="batchConfirmUntouched()">批量原样确认本批（未经逐张核对）</button>
         </div>
+        <div id="langSwitch" data-i18n-switcher></div>
     </div>
 
     <div class="progress-wrap">
@@ -211,6 +227,7 @@
     </div>
 
     <div class="toast" id="toast"></div>
+    <script src="/static/js/ui-dialog.js?v=20261012_f1b"></script>
     <script src="/static/js/evalset.js"></script>
 </body>
 </html>

@@ -1,0 +1,134 @@
+/* F1b：设置页、今日待办、归档子 Tab、回收站、库存操作列等新增与覆盖样式 */
+.st-wrap { max-width: 980px; margin: 0 auto; }
+.st-head h2 { margin: 0 0 4px; font-size: 1.4rem; }
+.st-sub { color: var(--text-muted); font-size: 0.92rem; margin: 0 0 12px; }
+.st-card { margin-bottom: 18px; }
+.st-card h3 { margin: 0 0 6px; font-size: 1.1rem; }
+.st-note { background: var(--warning-bg); color: #7a3d06; padding: 12px 14px; border-radius: 10px; font-size: 1rem; }
+.st-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border-strong); }
+.st-conv-form { flex-direction: column; align-items: stretch; }
+.st-form-title { font-weight: 700; }
+.st-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.st-field label { font-size: 0.88rem; font-weight: 600; color: var(--text-main); }
+.st-field .form-control, .st-fx-row .form-control { min-height: 44px; font-size: 1rem; }
+.st-sentence { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.st-sentence .st-field { flex: 1 1 130px; }
+.st-word { font-size: 1.15rem; font-weight: 700; min-height: 44px; display: inline-flex; align-items: center; }
+.st-note-field { max-width: 460px; }
+.st-btn { min-height: 44px; padding: 8px 18px; font-size: 0.95rem; }
+.st-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.st-msg { color: var(--danger-strong); font-size: 0.92rem; min-height: 22px; margin-top: 8px; }
+.st-preview { background: var(--bg-main); border-radius: 10px; padding: 8px 12px; font-size: 0.92rem; color: var(--text-main); min-height: 0; }
+.st-preview:empty { display: none; }
+.st-table-wrap { overflow-x: auto; }
+.st-table td, .st-table th { padding: 10px 12px; vertical-align: middle; }
+.st-rev { color: var(--text-muted); font-size: 0.85rem; margin-top: 2px; }
+.st-ops { display: flex; gap: 8px; flex-wrap: wrap; }
+.st-tag { display: inline-block; padding: 3px 10px; border-radius: 999px; background: var(--bg-muted); color: var(--text-main); font-size: 0.85rem; }
+.st-tag-own { background: var(--success-bg); }
+.st-state { padding: 14px; border-radius: 10px; background: var(--bg-main); color: var(--text-main); }
+.st-state-error { background: var(--danger-bg); color: #7f1d1d; }
+.st-fx-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 8px 0; }
+.st-fx-row label { font-weight: 600; min-width: 90px; }
+.st-fx-in { width: 140px; }
+.st-fx-code { width: 100px; text-transform: uppercase; }
+.st-fx-add { padding-top: 10px; border-top: 1px dashed var(--border-strong); }
+@media (max-width: 640px) {
+    .st-sentence .st-field { flex: 1 1 100%; }
+    .st-word { min-height: 0; }
+    .st-fx-in, .st-fx-code { width: 100%; }
+}
+
+/* 归档对账子 Tab */
+.arc-subtabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.arc-subtab { min-height: 44px; padding: 8px 22px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--bg-card); color: var(--text-main); font-size: 1rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.arc-subtab.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+.arc-subtab:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.arc-pane-hidden { display: none !important; }
+.trash-summary { cursor: pointer; font-weight: 700; min-height: 40px; display: flex; align-items: center; gap: 8px; }
+
+/* 今日待办 */
+.today-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.today-card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.today-num { font-size: 2.4rem; font-weight: 800; line-height: 1.1; margin: 4px 0 8px; }
+.today-num.is-hot { color: var(--danger-strong); }
+.today-unit { font-size: 1rem; font-weight: 600; color: var(--text-muted); margin-left: 4px; }
+.today-list { margin: 0 0 12px; padding-left: 18px; font-size: 0.95rem; }
+
+/* 供应商合并预览 */
+.merge-preview { background: var(--bg-main); border-radius: 10px; padding: 10px 14px; margin-top: 8px; font-size: 0.93rem; }
+.merge-preview:empty { display: none; }
+.merge-preview ul { margin: 6px 0 0; padding-left: 20px; line-height: 1.7; }
+.merge-title { font-weight: 700; }
+.merge-warn { color: var(--danger-strong); font-weight: 600; }
+.recon-diff-note { margin-top: 6px; padding: 8px 12px; background: var(--warning-bg); color: #7a3d06; border-radius: 8px; font-weight: 500; font-size: 0.92rem; }
+.sku-unit-hint { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+.sku-unit-hint.is-warn { color: #7a3d06; background: var(--warning-bg); padding: 6px 10px; border-radius: 8px; }
+
+/* 库存表：不超出容器，操作列只留 2 个主按钮 + 更多 */
+#tab-inventory .table-container { overflow-x: auto; max-width: 100%; }
+#tab-inventory table#inventoryTable { width: 100%; table-layout: auto; }
+#tab-inventory table#inventoryTable col { width: auto !important; }
+#tab-inventory .inv-actions { flex-wrap: nowrap; }
+#tab-inventory .inv-actions button, #tab-inventory .inv-actions .btn { min-height: 40px; }
+.unit-dropdown-item { min-height: 40px; display: flex; align-items: center; }
+
+/* 体验反馈：不竖排 */
+.feedback-inline { white-space: nowrap; align-items: center; flex-shrink: 0; }
+.feedback-inline > span { white-space: nowrap; }
+.report-basis { background: var(--bg-main); border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; color: var(--text-main); margin: 6px 0; }
+
+/* admin 页面：最小字号 12px 以上 */
+.engine-node-badge, .engine-adv-badge, .engine-module-badge, .analytics-section-badge, .analytics-segment-num,
+.trx-tag, .preset-combobox-arrow { font-size: 0.8rem !important; }
+#tab-engine [style*="font-size:0.6"], #tab-engine [style*="font-size: 0.6"],
+#tab-engine [style*="font-size:0.7"], #tab-engine [style*="font-size: 0.7"],
+#tab-analytics [style*="font-size:0.6"], #tab-analytics [style*="font-size: 0.6"],
+#tab-analytics [style*="font-size:0.7"], #tab-analytics [style*="font-size: 0.7"] { font-size: 0.8rem !important; }
+
+/* 手机：admin 页面不超出屏幕宽度 */
+@media (max-width: 640px) {
+    #tab-engine, #tab-analytics { max-width: 100%; }
+    #tab-engine .engine-preset-toolbar, #tab-engine .preset-combobox-wrap,
+    #tab-analytics .btn-group, #tab-analytics #filterTimeRange,
+    #tab-analytics .analytics-segmented-bar, #tab-analytics .parsing-log-filter-label { flex-wrap: wrap; max-width: 100%; }
+    #tab-engine .engine-preset-toolbar > *, #tab-analytics #filterTimeRange > * { min-width: 0; max-width: 100%; }
+    #tab-analytics .analytics-segment-btn { flex: 1 1 45%; min-width: 0; }
+    #tab-engine .preset-combobox-wrap { width: 100%; }
+    #tab-engine button, #tab-analytics button { white-space: normal; }
+}
+@media (max-width: 640px) {
+    #tab-engine .engine-overview-head, #tab-engine .engine-overview-head > div { flex-wrap: wrap; max-width: 100%; }
+    #tab-engine .engine-preset-toolbar { flex-direction: column; align-items: stretch; }
+    #tab-engine .engine-preset-toolbar > * { width: 100%; }
+    #tab-engine .vm-hcell { min-width: 0; }
+    #tab-engine [class*="vm-"] { max-width: 100%; }
+}
+@media (max-width: 640px) {
+    #tab-engine .engine-preset-toolbar, #tab-engine .engine-preset-toolbar * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+    #tab-engine .btn-outline { max-width: 100%; }
+}
+@media (max-width: 640px) {
+    #tab-engine .engine-card-header { flex-wrap: wrap; gap: 8px; }
+    #tab-engine .engine-card-header > * { min-width: 0; max-width: 100%; }
+    #tab-engine .engine-card-header .engine-preset-toolbar { flex: 1 1 100%; }
+}
+.engine-topo-compact-chip strong { font-size: 0.85rem; }
+.engine-node-badge.badge-muted { color: #4b5563; }
+span.badge[title="算术契约检验全部通过"] { color: #166534 !important; }
+.kpi-basis-note { font-size: 0.8rem; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }
+.st-tag-warn { background: var(--warning-bg); color: #7a3d06; }
+body[data-role="staff"] .mobile-tab[data-tab="tab-archive"] { display: none; }
+@media (max-width: 640px) {
+    .st-table { min-width: 0 !important; }
+    .st-table th, .st-table td { padding: 8px 6px; }
+    .st-table .st-btn { min-width: 0; padding: 6px 12px; }
+    .st-ops { flex-wrap: wrap; }
+}
+
+/* 登记支付弹窗 */
+#paymentModal .table-container { overflow-x: auto; }
+#paymentModal .data-table th, #paymentModal .data-table td { padding: 8px 8px; white-space: nowrap; }
+#paymentModal #payAmount[readonly] { background: var(--bg-main); color: var(--text-main); font-weight: 700; cursor: default; }
+#paymentModal .form-control { min-height: 44px; }
+#paymentModal .pay-amt-input { min-height: 40px; background: var(--bg-card); color: var(--text-main); }

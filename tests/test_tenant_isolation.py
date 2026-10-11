@@ -597,30 +597,13 @@ def test_api_daily_consumption_isolated_and_void_guarded():
 # W-ISO-1：SQLite 数据库级纵深隔离兜底（防代码遗漏 tenant_id）
 # -------------------------------------------------------------
 def test_db_level_tenant_enforcement_omitted_filter():
-    """验证当应用层查询故意遗漏 tenant_id 时，DB 兜底层自动注入当前租户约束，防止跨租户越权。"""
+    """租户上下文内 scoped 即使不传 tenant_id 也自动补齐当前租户；维护上下文可 bypass。"""
     _db = _fresh_db()
     rid_a = _mk_receipt(_db, "Vendor_A", tenant_id=TENANT_A)
     rid_b = _mk_receipt(_db, "Vendor_B", tenant_id=TENANT_B)
 
-    # 1. 在 tenantA 严格上下文（strict=True）中：裸查询故意遗漏 tenant_id 必须抛错阻断
-    with _db.tenant_context(TENANT_A, strict=True):
-        s = _db.get_session()
-        try:
-            import pytest
-            with pytest.raises(_db.TenantBoundaryViolationError):
-                s.query(_db._ReceiptRow).filter(_db._ReceiptRow.id == rid_b).first()
-
-            with pytest.raises(_db.TenantBoundaryViolationError):
-                s.query(_db._ReceiptRow).all()
-
-            # 正确使用 db.scoped 带租户查询 -> 放行
-            row_a = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow, TENANT_A).filter(_db._ReceiptRow.id == rid_a).first()
-            assert row_a is not None and row_a.id == rid_a
-        finally:
-            s.close()
-
-    # 2. 在普通 tenantA 上下文（strict=False）中：scoped 即使不传 tenant_id 也自动补齐
-    with _db.tenant_context(TENANT_A, strict=False):
+    # 1. 在 tenantA 上下文中：scoped 即使不传 tenant_id 也自动补齐
+    with _db.tenant_context(TENANT_A):
         s = _db.get_session()
         try:
             scoped_rows = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow).all()

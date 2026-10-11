@@ -35,7 +35,7 @@ from app.services.canary_guard import (
     inject_canary_instructions,
     verify_canary_in_text,
 )
-from app.services.contract import validate_contract
+from app.services.contract import validate_contract_tiered
 
 # T12 SSOT：AUDIT_SYSTEM 改经 ai_registry 加载（active 版本）。
 # active=v2_1_0_overall_schema（overall_consistent schema，与 _parse_audit 解析逻辑匹配）；
@@ -69,13 +69,12 @@ def build_audit_prompt(image_path: str, data: ReceiptData) -> list:
 
     why（P1-2）：识别结果 JSON 是「生成器-评估器」护栏的判定输入。此前把
     data.model_dump() 直接裸拼进 prompt，污染它即等于让被篡改的识别结果被判成
-    「一致」。现统一经 PromptInjectionGuardTool.wrap_untrusted_input_sandbox 包裹
+    「一致」。现统一经 extract_chain.wrap_data_channel（数据沙箱，不改写正文）包裹
     （tag receipt_json），指令（System）+ 数据（沙箱）结构可分。
     """
     from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import PromptInjectionGuardTool
     receipt_json = json.dumps(data.model_dump(), ensure_ascii=False, indent=2)
-    sandboxed_json = PromptInjectionGuardTool().wrap_untrusted_input_sandbox(
-        receipt_json, tag="receipt_json")
+    sandboxed_json = extract_chain.wrap_data_channel(receipt_json, "receipt_json")
     return [
         SystemMessage(content=AUDIT_SYSTEM),
         HumanMessage(content=[
@@ -194,6 +193,7 @@ def run_audit(image_path: str, data: ReceiptData,
                 logging.getLogger("audit_chain").warning(
                     f"[SECURITY_ALERT] 审核腿 Canary Token 握手失败: {canary_err}")
                 return {"skipped": True, "reason": f"audit_canary_blocked: {canary_err}",
+                        "canary_blocked": True,
                         "mode": AUDIT_MODE_VLM,
                         "audit_ms": round((time.time() - start) * 1000, 1),
                         "token_usage": audit_tu,
@@ -226,7 +226,7 @@ def run_text_audit(data: ReceiptData) -> dict:
     """
     discrepancies = []
 
-    _, contract_err = validate_contract(data.model_dump())
+    _, contract_err, _warns = validate_contract_tiered(data.model_dump())
     if contract_err:
         discrepancies.append({"field": "contract", "issue": contract_err})
 
@@ -280,6 +280,38 @@ def _check_vendor(data: ReceiptData) -> list:
     return []
 
 
+_TRUE_WORDS = frozenset({"true", "yes", "y", "1", "是", "一致"})
+_FALSE_WORDS = frozenset({"false", "no", "n", "0", "否", "不一致"})
+
+
+def _strict_bool(value):
+    """严格布尔化：只认真正的 bool、0/1 和明确的是/否词；字符串 "false" 不是真值。其余返回 None。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        word = value.strip().lower()
+        if word in _TRUE_WORDS:
+            return True
+        if word in _FALSE_WORDS:
+            return False
+    return None
+
+
+def _clamp_trust(value):
+    """trust 限制在 [0, 1]；缺失或不是数字返回 None。"""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    if num != num or num in (float("inf"), float("-inf")):
+        return None
+    return max(0.0, min(1.0, num))
+
+
 def _parse_audit(raw: str) -> dict:
     if not raw:
         return {"skipped": True, "reason": "empty_output"}
@@ -308,11 +340,20 @@ def _parse_audit(raw: str) -> dict:
         reason = "；".join(parts) if parts else "交叉审核发现分歧"
     elif not reason:
         reason = "AI 识别与原图一致"
+    if not isinstance(payload, dict):
+        return {"skipped": True, "reason": "unparseable"}
+    consistent = _strict_bool(payload.get("overall_consistent"))
+    if consistent is None:
+        return {"skipped": True, "reason": "audit_invalid_result: overall_consistent 不是明确的是/否"}
+    if not isinstance(discrepancies, list):
+        discrepancies = []
+    if not isinstance(corrected, dict):
+        corrected = {}
     return {
-        "overall_consistent": payload.get("overall_consistent"),
+        "overall_consistent": consistent,
         "discrepancies": discrepancies,
         "corrected_suggestions": corrected,
-        "trust": payload.get("trust"),
+        "trust": _clamp_trust(payload.get("trust")),
         "reason": reason,
         "skipped": False,
     }

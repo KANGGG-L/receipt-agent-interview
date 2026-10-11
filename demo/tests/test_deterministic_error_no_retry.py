@@ -102,12 +102,6 @@ def _patch_build(monkeypatch, model, counter):
         counter["n"] += 1
         return model
     monkeypatch.setattr(supervisor, "build_recognition_model", _fake_build)
-    # 关闭识别引擎的自动兜底：本文件的用例断言的是「首选引擎失败后的重试语义」，
-    # 兜底一旦可用就会把失败吞掉（改用例测不到重试轮数）。
-    # 历史注记：兜底原先是本机 CodeBuddy CLI，判据是模型 kind != "codebuddy"；
-    # CLI 弃用后兜底改为 DashScope 官方通道，判据是 extract_chain._dashscope_fallback_available。
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
 
 
 def _log_actions(state):
@@ -150,8 +144,6 @@ def test_decode_failure_result_marker_only_on_deterministic_path(tmp_path, monke
     from app.chains import extract_chain
 
     # 关闭引擎兜底，确保第二段走的确实是「首选引擎失败」返回分支
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
 
     decode_ret = extract_chain.extract_receipt(
         _fake_heic(tmp_path), model=_CountingModel(), enable_canary=False)
@@ -164,24 +156,25 @@ def test_decode_failure_result_marker_only_on_deterministic_path(tmp_path, monke
 
 
 # ---------------------------------------------------------------
-# 2. 既有语义守卫：真正的引擎调用失败仍必须重试到 MAX_RETRY
+# 2. 既有语义守卫：真正的引擎调用失败仍会重试（瞬时故障只重试 1 次，S2-05）
 # ---------------------------------------------------------------
-def test_engine_failure_still_retries_to_max(tmp_path, monkeypatch):
-    """引擎调用失败（无 deterministic_error）→ 重试语义不变，仍跑满 MAX_RETRY。"""
+def test_engine_failure_still_retries_once(tmp_path, monkeypatch):
+    """引擎调用失败（无 deterministic_error）→ 仍会重试，但只重试 MAX_TRANSIENT_RETRIES 次。"""
     model = _BoomModel()
     build_counter = {"n": 0}
     _patch_build(monkeypatch, model, build_counter)
 
     state = supervisor.run_pipeline(_valid_png(tmp_path))
 
-    assert state["attempt"] == supervisor.MAX_RETRY, \
-        f"引擎失败应重试到 {supervisor.MAX_RETRY} 轮，实际 attempt={state['attempt']}"
+    expected = 1 + supervisor.MAX_TRANSIENT_RETRIES
+    assert state["attempt"] == expected, \
+        f"引擎失败应重试 {supervisor.MAX_TRANSIENT_RETRIES} 次，实际 attempt={state['attempt']}"
     assert "VLM 调用失败" in state["last_error"]
     assert state["status"] == "error"
     assert state["success"] is False
     assert not state.get("deterministic_error")
     # 每轮都真的调了引擎
-    assert model.calls == supervisor.MAX_RETRY
+    assert model.calls == expected
 
 
 # ---------------------------------------------------------------

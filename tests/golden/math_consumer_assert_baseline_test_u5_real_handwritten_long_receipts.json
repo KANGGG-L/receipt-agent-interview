@@ -1,0 +1,36 @@
+{
+ "_comment": "Message-format re-baseline: math gate messages were rewritten from technical text to plain Chinese templates (fix S2-12). Only message substrings changed; assert count and test names equal git HEAD.",
+ "_source_file": "tests/test_u5_real_handwritten_long_receipts.py",
+ "tests": [
+  "test_ac1_rag_vendor_memory_retrieval_and_variations",
+  "test_ac2_long_multi_row_receipt_parsing",
+  "test_ac3_supervisor_arithmetic_discrepancy_and_retry",
+  "test_ac4_rag_context_json_storage_and_query"
+ ],
+ "asserts": [
+  "Assert(test=Compare(left=Constant(value='德利行'), ops=[In()], comparators=[Name(id='ctx_1', ctx=Load())]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Constant(value='獅球嘜粟米油'), ops=[In()], comparators=[Name(id='ctx_1', ctx=Load())]), Compare(left=Constant(value='街市NCR'), ops=[In()], comparators=[Name(id='ctx_1', ctx=Load())])]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Constant(value='德利行'), ops=[In()], comparators=[Name(id='ctx_2', ctx=Load())]), Compare(left=Constant(value='Tak Lee Hong'), ops=[In()], comparators=[Name(id='ctx_2', ctx=Load())])]))",
+  "Assert(test=Compare(left=Constant(value='德利行'), ops=[In()], comparators=[Name(id='ctx_3', ctx=Load())]))",
+  "Assert(test=Compare(left=Constant(value='祥興'), ops=[In()], comparators=[Name(id='ctx_4', ctx=Load())]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Constant(value='环保发泡胶碗'), ops=[In()], comparators=[Name(id='ctx_4', ctx=Load())]), Compare(left=Constant(value='耗材批发商'), ops=[In()], comparators=[Name(id='ctx_4', ctx=Load())])]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Constant(value='祥興'), ops=[In()], comparators=[Name(id='ctx_5', ctx=Load())]), Compare(left=Constant(value='祥兴'), ops=[In()], comparators=[Name(id='ctx_5', ctx=Load())])]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Name(id='ctx_buyer', ctx=Load()), ops=[Eq()], comparators=[Constant(value='')]), BoolOp(op=And(), values=[Compare(left=Constant(value='德利行'), ops=[NotIn()], comparators=[Name(id='ctx_buyer', ctx=Load())]), Compare(left=Constant(value='祥興'), ops=[NotIn()], comparators=[Name(id='ctx_buyer', ctx=Load())])])]))",
+  "Assert(test=Compare(left=Name(id='err', ctx=Load()), ops=[Is()], comparators=[Constant(value=None)]), msg=JoinedStr(values=[Constant(value='解析失败: '), FormattedValue(value=Name(id='err', ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Name(id='data', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='data', ctx=Load()), attr='items', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=14)]), msg=JoinedStr(values=[Constant(value='明细行被截断，预期 14 行，实际 '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='data', ctx=Load()), attr='items', ctx=Load())], keywords=[]), conversion=-1), Constant(value=' 行')]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='data', ctx=Load()), attr='vendor', ctx=Load()), ops=[Eq()], comparators=[Constant(value='德利行 Tak Lee Hong')]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='data', ctx=Load()), attr='total', ctx=Load()), ops=[Eq()], comparators=[Constant(value=3296.5)]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='data', ctx=Load()), attr='payment_marked', ctx=Load()), ops=[Is()], comparators=[Constant(value=True)]))",
+  "Assert(test=BoolOp(op=Or(), values=[Compare(left=Constant(value='樽'), ops=[In()], comparators=[Name(id='item_units', ctx=Load())]), Compare(left=Constant(value='包'), ops=[In()], comparators=[Name(id='item_units', ctx=Load())]), Compare(left=Constant(value='罐'), ops=[In()], comparators=[Name(id='item_units', ctx=Load())]), Compare(left=Constant(value='扎'), ops=[In()], comparators=[Name(id='item_units', ctx=Load())])]))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='problems', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=1)]))",
+  "Assert(test=Compare(left=Constant(value='各行加起来 1185 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))",
+  "Assert(test=Compare(left=Constant(value='应付 1185 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))",
+  "Assert(test=Compare(left=Constant(value='单据总额写 510 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))",
+  "Assert(test=Compare(left=Constant(value='相差 675 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))",
+  "Assert(test=Compare(left=Name(id='detail', ctx=Load()), ops=[IsNot()], comparators=[Constant(value=None)]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='row', ctx=Load()), attr='rag_context_json', ctx=Load()), ops=[Eq()], comparators=[Name(id='sample_vendor_ctx', ctx=Load())]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='row', ctx=Load()), attr='supplier_name', ctx=Load()), ops=[Eq()], comparators=[Constant(value='德利行 Tak Lee Hong')]))",
+  "Assert(test=Compare(left=Attribute(value=Name(id='row', ctx=Load()), attr='status', ctx=Load()), ops=[Eq()], comparators=[Constant(value='parsed')]))"
+ ]
+}

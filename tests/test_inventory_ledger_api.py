@@ -175,16 +175,17 @@ def test_tenant_isolation():
 # -------------------------------------------------------------
 def test_ledger_is_read_only_no_write_routes():
     from app.main import app as fastapi_app
+    from app.routes_util import iter_routes
 
     write_methods = {"POST", "PUT", "PATCH", "DELETE"}
-    ledger_routes = [r for r in fastapi_app.routes
+    ledger_routes = [r for r in iter_routes(fastapi_app)
                      if getattr(r, "path", "") == "/api/inventory/logs"]
     assert ledger_routes, "台账端点必须已注册"
     for r in ledger_routes:
         assert not (set(r.methods) & write_methods), \
             f"台账端点不得有写方法：{r.methods}"
     # 任何以台账路径开头的路由也不得有写方法（防止新增写子路径）
-    for r in fastapi_app.routes:
+    for r in iter_routes(fastapi_app):
         path = getattr(r, "path", "")
         if path.startswith("/api/inventory/logs"):
             assert not (set(getattr(r, "methods", set())) & write_methods), \

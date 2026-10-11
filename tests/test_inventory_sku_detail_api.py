@@ -107,8 +107,8 @@ def test_staff_reads_detail_and_weight_unit_kg():
         assert field in data, f"缺少字段 {field}: {data}"
     assert data["id"] == sku and data["name"] == "詳情菜心"
     assert data["current_stock"] == 10.0
-    # 斤 → 0.5 kg：10 * 0.5 = 5.0
-    assert data["standard_kg"] == 5.0, data
+    # 斤 → 0.6048 kg（港斤）：10 * 0.6048 = 6.048
+    assert data["standard_kg"] == 6.048, data
     assert data["is_low_stock"] is False
     assert _get(client, sku, role="owner").status_code == 200
 
