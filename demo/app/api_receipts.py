@@ -369,8 +369,8 @@ def _assert_retryable(row, action, verb):
     if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "edited", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许{action}：仅 uploaded/parsed/parsed_with_warnings/edited/error 单据可{verb}"
-                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
+                     "code": "INVALID_STATUS",
+                     "msg": f"这张单现在的状态不能{action}（识别中、已入账或被标记有问题的单据不行）。"},
             status_code=409)
     if (row.doc_form or "") == "manual_entry":
         return JSONResponse(
@@ -609,12 +609,12 @@ async def convert_image(
             logging.getLogger("api_receipts").warning(
                 f"[WARN] /api/convert-image 超大图拒绝: {e}")
             return JSONResponse(status_code=400, content={
-                "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": str(e)})
+                "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": "这张照片的尺寸太大了，系统处理不了。请把照片缩小，或重新拍一张再上传。"})
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+        return JSONResponse(status_code=500, content={"status": "error", "msg": "这张照片转换失败了，请换一张或重新拍照再试。"})
     except Exception as e:
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+        return JSONResponse(status_code=500, content={"status": "error", "msg": "这张照片转换失败了，请换一张或重新拍照再试。"})
     finally:
         if tmp_path:
             try:
@@ -1239,7 +1239,7 @@ def get_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
     row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     # 印章判定补红章：详情视图补充，避免 payment_mark 空
     if not (row.payment_mark or "").strip():
@@ -2314,7 +2314,7 @@ def acknowledge_warning(receipt_id: int, body: AcknowledgeWarningBody, request: 
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"}, status_code=404)
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG}, status_code=404)
         # QA-Scope 对齐：approve/save/discard 都拒绝已弃单（409 RECEIPT_DISCARDED /
         # 404），ack 此前缺这一守卫 → 已入回收站的单据仍可被确认留痕。纳入同族。
         if row.deleted_at:
@@ -2484,7 +2484,7 @@ def retry_receipt(receipt_id: int, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2497,7 +2497,7 @@ def retry_receipt(receipt_id: int, request: Request):
         if not row.image_path or not os.path.exists(row.image_path):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"原图缺失（{row.image_path}），无法重试；请重新上传或转手工录入。"},
+                         "msg": "这张单的原图找不到了，没办法重新识别。请重新上传照片，或转手工录入。"},
                 status_code=400)
         # P0-1: 重试链路租户透传（row 已按租户校验归属）
         # P2-T6: 从单据行派生 vendor_hint（不调预判模型）——行上已有供应商即可注入首轮
@@ -2548,7 +2548,7 @@ async def replace_receipt_image(
     # + Job 创建）。锁不再跨越任何重 I/O（qa-report §12 已知边界的补齐）。
     row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     if row.deleted_at:
         return JSONResponse(
@@ -2591,7 +2591,7 @@ async def replace_receipt_image(
         row2 = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row2 is None:
             _discard_new_file()
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row2.deleted_at:
             _discard_new_file()
@@ -2678,7 +2678,7 @@ def convert_manual(receipt_id: int, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2689,7 +2689,7 @@ def convert_manual(receipt_id: int, request: Request):
         if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "error"):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"当前状态 [{old_status}] 不允许转手工录入：仅 uploaded/parsed/parsed_with_warnings/error 单据可转换。"},
+                         "msg": "这张单现在的状态不能转手工录入。只有识别中断、识别失败或还没保存的单据才能转。"},
                 status_code=409)
         db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
         row = db.get_receipt_row(receipt_id)
@@ -2743,7 +2743,7 @@ def set_pay_date(receipt_id: int, body: PayDateBody, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2759,14 +2759,14 @@ def set_pay_date(receipt_id: int, body: PayDateBody, request: Request):
             if not _re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
                 return JSONResponse(
                     content={"status": "error",
-                             "msg": f"expected_pay_date 必须为 YYYY-MM-DD 格式日期，当前值：'{raw}'"},
+                             "msg": "付款日期格式不对，请按「年-月-日」填写，例如 2026-10-31。"},
                     status_code=400)
             try:
                 _dt.strptime(raw, "%Y-%m-%d")
             except ValueError:
                 return JSONResponse(
                     content={"status": "error",
-                             "msg": f"expected_pay_date '{raw}' 不是真实存在的日期"},
+                             "msg": "这个付款日期不存在，请重新选择。"},
                     status_code=400)
             new_date = raw
         row = db.set_expected_pay_date(receipt_id, new_date)
@@ -2802,7 +2802,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2821,7 +2821,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
         if not m:
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"非法 field 值：'{field}'（须形如 items[0].qty）"},
+                         "msg": "要反馈的字段不对，请刷新页面后再试。"},
                 status_code=400)
         idx = int(m.group(1))
         # 越界下标：items[N] 必须在 0..len(row.items)-1 范围内
@@ -2829,7 +2829,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
         if idx < 0 or idx >= len(items):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"items 下标越界：items[{idx}]，当前单据仅有 {len(items)} 条明细（0..{max(len(items)-1, 0)}）"},
+                         "msg": f"这张单只有 {len(items)} 行明细，没有第 {idx + 1} 行。请刷新页面后再试。"},
                 status_code=400)
         new_val = body.new if body.new is not None else body.ai_value
         old_val = body.old if body.old is not None else body.user_value
@@ -2871,7 +2871,7 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     # 单据归属校验：跨租户单据视为不存在（Gap E2）
     row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     # QA-Lock-Inventory：软删守卫（G6 实证：已弃单仍可提交反馈）。此处为锁外快速
     # 预检；审计读改写已移入下方锁内短临界区（重 I/O 蒸馏留锁外，见 qa-report §13）。
@@ -2889,13 +2889,13 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
         try:
             item_idx = int(item_idx)
         except Exception:
-            return JSONResponse(content={"status": "error", "msg": "item_index 必须为整数"},
+            return JSONResponse(content={"status": "error", "msg": "行号不对，请刷新页面后再试。"},
                                 status_code=400)
         items = db.get_receipt_items(receipt_id, tenant_id=tenant_id)
         if item_idx < 0 or item_idx >= len(items):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"item_index 越界：{item_idx}，当前仅 {len(items)} 行"},
+                         "msg": f"这张单只有 {len(items)} 行明细，没有第 {item_idx + 1} 行。请刷新页面后再试。"},
                 status_code=400)
     # like 至少需提供一项反馈（点赞/点踩 或 文本非空）
     from app.models import FEEDBACK_COMMENT_MAXLEN, FEEDBACK_DISTILL_THRESHOLD
@@ -2926,7 +2926,7 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     with _APPROVE_LOCK:
         row2 = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
         if row2 is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row2.deleted_at:
             return JSONResponse(
@@ -2990,7 +2990,7 @@ def list_feedback(receipt_id: int, request: Request):
     tenant_id = _tenant_id(request)
     row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     fbs = db.list_receipt_feedbacks(receipt_id=receipt_id, tenant_id=tenant_id)
     return {"status": "success", "receipt_id": receipt_id, "feedbacks": fbs}

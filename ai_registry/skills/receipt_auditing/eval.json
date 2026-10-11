@@ -2,13 +2,13 @@
   "skill_name": "receipt_auditing",
   "version": "v1.2.0",
   "last_evaluated": "2026-08-18",
-  "benchmark_score": 96.5,
-  "pass_rate": 98.2,
-  "test_cases_total": 57,
-  "test_cases_passed": 56,
+  "benchmark_score": null,
+  "pass_rate": null,
   "metrics": {
-    "false_positive_rate": 1.8,
-    "discrepancy_recall": 97.5,
-    "avg_execution_time_sec": 3.8
+    "false_positive_rate": null,
+    "discrepancy_recall": null,
+    "avg_execution_time_sec": null,
+    "claim_unsupported": true,
+    "claim_unsupported_note": "原登记的评测分数没有任何评测语料、脚本或报告支撑（技能本身是 SKILL.md 描述的流程，没有可执行的评测入口），判定为无支撑指标，改为 null。补齐可复现评测前不得引用。"
   }
 }

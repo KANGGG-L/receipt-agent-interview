@@ -4,11 +4,10 @@
 
 角色从低到高：staff（店员）< owner（老板）< admin（管理员）。门槛是「至少需要的角色」，高角色自动包含低角色的权限。
 
-共 165 个端点。
+共 162 个端点。
 
 | 方法 | 路径 | 最低角色 | 备注 |
 |---|---|---|---|
-| GET | `/api/admin/ai-metrics` | owner |  |
 | GET | `/api/admin/canary/history` | admin |  |
 | GET | `/api/admin/csp-violations` | admin |  |
 | GET | `/api/admin/engine-config` | admin |  |
@@ -34,7 +33,6 @@
 | GET | `/api/admin/golden-samples` | admin |  |
 | POST | `/api/admin/golden-samples/import` | admin |  |
 | POST | `/api/admin/golden-samples/{receipt_id}/membership` | admin |  |
-| GET | `/api/admin/grey-compare` | owner |  |
 | GET | `/api/admin/grey-test` | admin |  |
 | GET | `/api/admin/grey-test/samples` | admin |  |
 | POST | `/api/admin/guardian/check` | admin |  |
@@ -56,7 +54,6 @@
 | GET | `/api/admin/vendor-memory/{memory_id}` | admin |  |
 | GET | `/api/admin/vendor-sku-alias-consistency` | admin |  |
 | GET | `/api/ai-insights` | owner |  |
-| GET | `/api/analytics/events` | admin |  |
 | GET | `/api/analytics/events/logs` | admin |  |
 | GET | `/api/analytics/kpi-trends` | admin |  |
 | GET | `/api/analytics/parsing-logs` | admin |  |
@@ -66,7 +63,6 @@
 | POST | `/api/auth/login` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | POST | `/api/auth/logout` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | GET | `/api/auth/me` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
-| POST | `/api/chat/query` | staff |  |
 | POST | `/api/convert-image` | staff |  |
 | GET | `/api/cost` | owner |  |
 | GET | `/api/cost_report` | owner |  |
@@ -99,13 +95,15 @@
 | POST | `/api/export/download` | staff | 按报表分级，见下表 |
 | POST | `/api/export/preview` | staff | 按报表分级，见下表 |
 | GET | `/api/export/reports` | staff |  |
+| GET | `/api/funnel` | owner |  |
 | GET | `/api/health` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
-| GET | `/api/insight-cards` | owner |  |
 | GET | `/api/inventory` | staff |  |
 | GET | `/api/inventory/logs` | staff |  |
 | GET | `/api/inventory/negative_stock` | owner |  |
 | GET | `/api/inventory/price_threshold` | owner |  |
 | PUT | `/api/inventory/price_threshold` | owner |  |
+| GET | `/api/inventory/sku-duplicates` | owner |  |
+| POST | `/api/inventory/sku-duplicates/merge` | owner |  |
 | POST | `/api/inventory/skus` | staff |  |
 | POST | `/api/inventory/skus/merge` | owner |  |
 | DELETE | `/api/inventory/skus/{sku_id}` | owner |  |
@@ -123,7 +121,6 @@
 | DELETE | `/api/memory/vendor/{vendor_name}` | admin |  |
 | DELETE | `/api/memory/{memory_id}` | admin |  |
 | POST | `/api/memory/{memory_id}/revive` | admin |  |
-| GET | `/api/obs/kpi-trend` | admin |  |
 | GET | `/api/payables` | owner |  |
 | GET | `/api/payment/voucher/{name}` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | GET | `/api/payments` | owner |  |
@@ -142,17 +139,15 @@
 | POST | `/api/receipt/{receipt_id}/pay_date` | owner |  |
 | POST | `/api/receipt/{receipt_id}/replace-image` | staff |  |
 | POST | `/api/receipt/{receipt_id}/retry` | staff |  |
+| POST | `/api/receipt/{receipt_id}/reverse` | owner |  |
 | POST | `/api/receipt/{receipt_id}/unflag` | owner |  |
 | GET | `/api/receipts` | staff |  |
-| GET | `/api/receipts/export` | owner |  |
 | GET | `/api/reconciliation` | owner |  |
 | POST | `/api/reconciliation` | owner |  |
 | POST | `/api/reconciliation/import-statement` | owner |  |
 | GET | `/api/reconciliation/{task_id}` | owner |  |
 | POST | `/api/reconciliation/{task_id}/confirm` | owner |  |
-| GET | `/api/reconciliation/{task_id}/discrepancies` | owner |  |
 | POST | `/api/reconciliation/{task_id}/resolve` | owner |  |
-| GET | `/api/review` | owner |  |
 | POST | `/api/save_edited` | staff |  |
 | GET | `/api/settings/fx_rates` | owner |  |
 | PUT | `/api/settings/fx_rates` | owner |  |
@@ -168,8 +163,10 @@
 | POST | `/api/suppliers/merge` | owner |  |
 | DELETE | `/api/suppliers/{supplier_id}` | owner |  |
 | PATCH | `/api/suppliers/{supplier_id}` | owner |  |
-| GET | `/api/suppliers/{supplier_id}/receipts` | owner |  |
 | POST | `/api/track` | staff |  |
+| GET | `/api/trash/receipts` | owner |  |
+| DELETE | `/api/trash/receipts/{receipt_id}` | owner |  |
+| POST | `/api/trash/receipts/{receipt_id}/restore` | owner |  |
 | POST | `/api/upload` | staff |  |
 | POST | `/api/upload_batch` | staff |  |
 | GET | `/api/vendor_price_hint` | staff |  |

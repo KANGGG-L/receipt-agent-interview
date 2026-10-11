@@ -132,7 +132,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 - **多租户隔离**：`tenant_id` 贯穿 7 张业务主表 + `vendor_memory`（幂等迁移 + 索引），`db.scoped()` 统一过滤，跨租户查询返回空（有专项单测）
 - **记忆治理与预算**：每条 VendorMemory 带 `memory_id / version / source_kind / source_ref / decay_score / status`，读取侧 `MemoryBudget`（条数/token 双预算）控制注入，命中可回溯到触发单据
 - **registry SSOT 收敛**：生产链路所有 Prompt/Tool 一律经 `ai_registry.registry` 加载，镜像注册表退役，metadata 与目录实体自洽（有 SSOT 专项单测）
-- **评测集三分法与抽检台**：真实语料去标识落 `demo/evalsets/`（train/val/test 分层，语料不入库）；GT 由异构模型生成候选，抽检工作台（复用店员复核界面）人工逐张确认，`run_eval --require-confirmed` 保证对外数字只出自人工确认过的 test 集
+- **评测集三分法与抽检台**：真实语料去标识落 `demo/evalsets/`（train/val/test 分层，语料不入库）；GT 由异构模型生成候选，抽检工作台（复用店员复核界面）人工逐张确认，`run_eval --require-confirmed` 保证对外数字只出自人工确认过的 test 集；评测默认只测「单次抽取」，加 `--pipeline` 走与线上同一条完整流程（门禁、记忆注入、部署配置），`--memory-ab` 同批样本各跑记忆开/关度量记忆收益；GT 与冻结基线出分前自动备份（`scripts/eval_assets_backup.py`），重冻结必须写原因，GT 变少会被拒绝
 - **元评测（评估器可信度自检）**：25 条已确证二元样本固化 `meta_eval_set.json`，`run_meta_eval.py` 在引擎/模型/Prompt 变更上线前自检评估器（判对 100% / 判错 100% 才可信）
 - **低置信自动回流**：低置信/门禁拒绝/用户修改/审核分歧四类线上信号自动入队为评测候选，promote 后进入评测集——「线上失败 → 评测集 → 下一轮评测」通路打通，候选采纳仍需人工确认
 

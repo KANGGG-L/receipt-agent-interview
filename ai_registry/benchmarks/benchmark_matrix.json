@@ -132,30 +132,34 @@
     {
       "skill_name": "receipt_auditing",
       "version": "v1.2.0",
-      "benchmark_score": 96.5,
-      "pass_rate": 98.2,
-      "description": "收据原图交叉审核与分歧打标技能"
+      "benchmark_score": null,
+      "pass_rate": null,
+      "description": "收据原图交叉审核与分歧打标技能",
+      "claim_unsupported": true
     },
     {
       "skill_name": "price_negotiation_review",
       "version": "v1.1.0",
-      "benchmark_score": 93.0,
-      "pass_rate": 95.0,
-      "description": "食材暴涨谈判卡片与采购复盘技能"
+      "benchmark_score": null,
+      "pass_rate": null,
+      "description": "食材暴涨谈判卡片与采购复盘技能",
+      "claim_unsupported": true
     },
     {
       "skill_name": "supplier_reconciliation",
       "version": "v1.0.0",
-      "benchmark_score": 98.0,
-      "pass_rate": 99.0,
-      "description": "供应商月结 Statement 四向差异比对技能"
+      "benchmark_score": null,
+      "pass_rate": null,
+      "description": "供应商月结 Statement 四向差异比对技能",
+      "claim_unsupported": true
     },
     {
       "skill_name": "natural_nl_query",
       "version": "v1.0.0",
-      "benchmark_score": 97.2,
-      "pass_rate": 98.5,
-      "description": "粤语与多维跨表进销存问答技能"
+      "benchmark_score": null,
+      "pass_rate": null,
+      "description": "粤语与多维跨表进销存问答技能",
+      "claim_unsupported": true
     }
   ]
 }

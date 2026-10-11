@@ -235,3 +235,15 @@ def test_payables_and_valuation_use_hkd(client):
         "paid_at": date.today().isoformat(), "receipt_ids": [str(rid)]})
     assert pay.status_code == 200, pay.text
     assert client.get("/api/payables", headers=hdr(tn)).json()["data"]["total_outstanding"] == 0.0
+
+
+def test_foreign_receipt_stock_value_and_price_recorded_in_hkd(client):
+    tn = new_tenant()
+    client.put("/api/settings/fx_rates", headers=hdr(tn), json={"rates": [{"currency": "USD", "rate": 8.0}]})
+    sid, _ = db.create_sku("外币货值菜", base_unit="斤", tenant_id=tn)
+    rid, ap = make_receipt(client, tn, [item("外币货值菜", 5, "斤", 10)], 50.0, currency="USD")
+    assert ap.status_code == 200, ap.text
+    sku = db.get_sku(sid, tenant_id=tn)
+    assert sku.current_stock == 5.0 and sku.last_unit_price == 80.0     # 10 美元 x 8 = 80 港币/斤
+    logs = client.get("/api/inventory/logs?sku_id=%d" % sid, headers=hdr(tn)).json()
+    assert "原币种 USD 50.00" in str(logs)

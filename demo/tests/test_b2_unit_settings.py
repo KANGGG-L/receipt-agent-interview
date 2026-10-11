@@ -24,6 +24,23 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def _clean_tenant_settings():
+    """用例只动 default / shop2 两个租户的设置；前后都清掉，避免影响同进程里的其他测试文件。"""
+    from sqlalchemy import text
+    from app import units_store
+
+    def wipe():
+        with units_store._engine().begin() as conn:
+            for tbl in ("tenant_units", "tenant_unit_conversions", "tenant_fx_rates"):
+                conn.execute(text("DELETE FROM %s WHERE tenant_id IN ('default','shop2')" % tbl))
+        uf.invalidate_cache()
+
+    wipe()
+    yield
+    wipe()
+
+
 def _conv(client, a, b, f, headers=OWNER, note=""):
     return client.post("/api/settings/unit_conversions", headers=headers,
                        json={"from_unit": a, "to_unit": b, "factor": f, "note": note})

@@ -74,8 +74,11 @@ def apply_receipt_to_inventory(row, tenant_id=None):
     items = db.get_receipt_items(row.id)
     # 预检必须在写任何流水之前完成：币种汇率、单位换算有一项不满足就整张单拒绝入账，
     # 不会出现前几行已入库、后几行失败的部分入账。
-    precheck_receipt_for_inventory(row, items, _tenant, _supplier_id)
-    for it in items:
+    planned = precheck_receipt_for_inventory(row, items, _tenant, _supplier_id)
+    from app import units_store
+    _cur = units_store.norm_currency(getattr(row, "currency", None))
+    _fx_rate = units_store.hkd_rate_for_receipt(_tenant, row.id, _cur) or 1.0
+    for _idx, it in enumerate(items):
         # 口径对齐门禁/总额：票面划线作废行（拒收/退货）不入库、不进成本
         if it.get("is_void"):
             continue
@@ -112,9 +115,13 @@ def apply_receipt_to_inventory(row, tenant_id=None):
             # 传副本并显式清空 sku_id/matched：解析期调用前这两个值恒为 None/0，
             # 而 `_match_sku` **未命中时不会清空**传入值 —— 不清就会读到残留旧值
             # （死指向、或被上面判为"无证据"的旧指向），把它当成匹配结果（实测踩到）。
-            _probe = dict(it, sku_id=None, matched=0)
-            _match_sku(_probe, tenant_id=_tenant, supplier_id=_supplier_id)
-            sku_id = _probe.get("sku_id")
+            if _idx in planned:
+                # 预检时已用同一个匹配实现算过一次，这里直接沿用，不重复匹配
+                sku_id = planned[_idx]
+            else:
+                _probe = dict(it, sku_id=None, matched=0)
+                _match_sku(_probe, tenant_id=_tenant, supplier_id=_supplier_id)
+                sku_id = _probe.get("sku_id")
 
         if not sku_id:
             # 仍未命中 → 核心词归一后建 SKU（避免流水号变体各建一个）
@@ -165,12 +172,18 @@ def apply_receipt_to_inventory(row, tenant_id=None):
             _in_qty = convert_unit_quantity(float(_in_qty or 0), _in_unit, _base_unit,
                                             tenant_id=_tenant)
             _in_unit = _base_unit
+        # 库存货值、进价、批次成本一律按港币记；外币单按入账时存的汇率折算，原币种金额留在备注里
+        _amount = it.get("amount", 0)
+        _note = ""
+        if _fx_rate != 1.0:
+            _note = "原币种 %s %.2f，汇率 %s" % (_cur, float(_amount or 0), _fx_rate)
+            _amount = round(float(_amount or 0) * _fx_rate, 2)
         db.apply_stock_log(
             sku_id=sku_id, name=canonical_sku_name(name),
             qty=_in_qty, unit=_in_unit,
-            amount=it.get("amount", 0), vendor=row.supplier_name,
+            amount=_amount, vendor=row.supplier_name,
             date=row.receipt_date or "", receipt_id=row.id, kind="in",
-            tenant_id=_tenant,
+            note=_note, tenant_id=_tenant,
         )
     # P2-T2：别名登记结果汇总留痕。`NO_SUPPLIER` 是**正常**情形（该单据的供应商没有
     # 档案，别名表按供应商建键故无从登记）→ info；其余原因（INVALID_SKU / CONFLICT /
@@ -208,11 +221,9 @@ def precheck_receipt_for_inventory(row, items, tenant_id, supplier_id=None):
         if not rate:
             raise FxRateMissing(cur)
     pairs, seen = [], set()
-    for it in items:
+    planned = {}
+    for _idx, it in enumerate(items):
         if it.get("is_void"):
-            continue
-        in_unit = (it.get("unit") or "").strip()
-        if not in_unit:
             continue
         sku = None
         sid = it.get("sku_id")
@@ -221,8 +232,12 @@ def precheck_receipt_for_inventory(row, items, tenant_id, supplier_id=None):
         if sku is None:
             probe = dict(it, sku_id=None, matched=0)
             _match_sku(probe, tenant_id=tenant_id, supplier_id=supplier_id)
+            planned[_idx] = probe.get("sku_id")
             if probe.get("sku_id"):
                 sku = db.get_sku(probe["sku_id"], tenant_id=tenant_id)
+        in_unit = (it.get("unit") or "").strip()
+        if not in_unit:
+            continue
         base = (getattr(sku, "base_unit", "") or "").strip() if sku else ""
         if not base:
             continue
@@ -236,6 +251,7 @@ def precheck_receipt_for_inventory(row, items, tenant_id, supplier_id=None):
         raise UnitConversionMissing(pairs)
     if cur != units_store.BASE_CURRENCY:
         units_store.save_receipt_fx(tenant_id, row.id, cur, rate)
+    return planned
 
 
 def cost_summary(tenant_id=None) -> dict:

@@ -3022,8 +3022,8 @@ table.data-table tr.inv-row-low-stock td {
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
 }
-.supplier-unpaid-amount.is-unpaid { color: #f59e0b; }
-.supplier-unpaid-amount.is-paid { color: #10b981; }
+.supplier-unpaid-amount.is-unpaid { color: #b45309; }
+.supplier-unpaid-amount.is-paid { color: #047857; }
 .supplier-unpaid-count {
     font-size: 0.75rem;
     color: var(--text-muted);

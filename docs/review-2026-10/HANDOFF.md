@@ -75,3 +75,13 @@ python -m uvicorn app.main:app --port 15010
 
 - 共享的演示库里留有 subagent 的测试数据（S1 的 `s1test` 租户、S4 的 XSS 样本供应商与收据、S3 的失败上传单据、测试 SKU），在会话沙箱里，不在仓库中。
 - 分支中没有提交任何 .env、数据库文件、上传图片或密钥（`.gitignore` 已忽略）。
+
+## 8. 进度更新（B2 已交付）
+
+B2 已交付并全部修完自己的 ID，见 `docs/review-2026-10/fix-B2.md`（接口契约在文件开头）。权限矩阵在 `docs/permission-matrix.md`，生成脚本 `demo/scripts/permission_scan.py --write`，任何人增删端点后必须重跑，否则 `test_matrix_file_matches_code` 失败。B2 另补审了 api_dishes.py，发现并修复 B2-1 到 B2-7（硬删除餐品留孤儿数据、每日消耗无幂等、历史收入随改价改写、停用餐品仍可录消耗、日期份数无校验、状态售价无校验、异常文案带 str(e)）。
+
+B2 点名需要其他人配合的事项（未确认已完成，接手时核对）：
+- F1b：对账页要加「导入对账单」界面，`import-statement` 目前没有前端入口，否则成为新的无引用端点。
+- B1：approve 不得吞掉 UNIT_CONVERSION_MISSING 与 FX_RATE_MISSING，它们靠 main.py 统一处理器转 422（B2 已验证原样抛出）。
+- 前端：每日消耗提交要带 `request_id` 才有防双击；不带则保持同日同餐品合并累加。
+- 两个测试在当前工作树失败，需要所属方处理：`test_dish_bom_versioning`（B1 的 auth.py 不再采信 X-Email，需改测试断言）和 `test_frontend_inventory_supplier_role_gate`（前端 main.js 并行改动所致）。两者在基线上通过。

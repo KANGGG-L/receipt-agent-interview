@@ -10,8 +10,7 @@
     'use strict';
 
     function ask(opts) {
-        return typeof window.uiConfirm === 'function' ? window.uiConfirm(opts)
-            : Promise.resolve(window.confirm(opts.message));
+        return window.uiConfirm(opts);
     }
 
     var samples = [];          // 当前过滤条件下的样本列表

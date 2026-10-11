@@ -82,7 +82,7 @@ def _headers(role="staff", tenant=None):
     return h
 
 
-def _get(client, sku_id, role="staff", tenant=None):
+def _get(client, sku_id, role="owner", tenant=None):
     return client.get(f"/api/inventory/skus/{sku_id}",
                       headers=_headers(role, tenant))
 
@@ -96,7 +96,7 @@ def test_staff_reads_detail_and_weight_unit_kg():
     sku = _sku(_db, "詳情菜心", base_unit="斤", min_stock_alert=2.0)
     _in(_db, sku, 10.0, qty=10.0)   # current_stock 10 斤
 
-    ret = _get(client, sku)
+    ret = _get(client, sku, role="staff")
     assert ret.status_code == 200, ret.text
     data = ret.json()["data"]
     for field in ("id", "name", "sku_code", "category", "base_unit",

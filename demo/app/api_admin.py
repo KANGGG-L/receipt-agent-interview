@@ -878,7 +878,7 @@ def promote_grey_config(request: Request):
     db.set_engine_config(new_cfg, source="manual")
 
     # 把灰测组清空/重置回默认（关闭灰测，恢复默认识别/审核模型，关闭灰测审核/解析开关）
-    from app.models import GreyAssignMode, EngineKind, is_legacy_cli_engine
+    from app.models import GreyAssignMode, EngineKind
     grey_defaults = {
         "grey_enabled": False,
         "grey_percent": 0,
@@ -1296,7 +1296,7 @@ def get_engine_config(request: Request):
     require_admin(request)
     cfg = db.get_engine_config()
     from app.llm import get_timeout_advice, _resolve_timeout
-    from app.models import MAX_CALL_TIMEOUT_SECONDS, is_legacy_cli_engine
+    from app.models import MAX_CALL_TIMEOUT_SECONDS
     advice = get_timeout_advice(cfg)
     # 性能基线与当前达标判定
     engine_str = str(getattr(cfg, "recognition_engine", "") or "")
@@ -1334,10 +1334,6 @@ def get_engine_config(request: Request):
     if advice:
         resp["timeout_advice"] = advice
         resp["warning"] = advice
-    if is_legacy_cli_engine(engine_str):
-        resp["degradation_notice"] = (
-            "提示：历史本地 CLI 引擎已彻底下线，系统已自动转换为 OpenAI 兼容接口。"
-        )
     return resp
 
 
@@ -2098,7 +2094,9 @@ def memory_consistency_report(request: Request, tenant: Optional[str] = None):
         report = mc.check_memory_consistency(tenant_id=tenant, db_path=db.DB_PATH)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆一致性巡检失败: %s", e)
-        return {"status": "error", "msg": "记忆一致性巡检失败: %s" % e, "report": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "report": None,
+            "msg": "记忆一致性巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "report": report}
 
 
@@ -2173,7 +2171,9 @@ def vendor_sku_alias_consistency(request: Request, tenant: Optional[str] = None)
             db_path=db.DB_PATH, tenant_id=tenant, simulate_backfill=False)
     except Exception as e:
         logging.getLogger("api_admin").error("别名一致性巡检失败: %s", e)
-        return {"status": "error", "msg": "别名一致性巡检失败: %s" % e, "report": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "report": None,
+            "msg": "别名一致性巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "report": report}
 
 
@@ -2206,8 +2206,9 @@ def parsing_stale_report(request: Request, tenant: Optional[str] = None):
         timeout_seconds = ru.parsing_timeout_seconds()
     except Exception as e:
         logging.getLogger("api_admin").error("超期 parsing 巡检失败: %s", e)
-        return {"status": "error", "msg": "超期 parsing 巡检失败: %s" % e,
-                "rows": None, "count": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "rows": None, "count": None,
+            "msg": "超时单据巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "timeout_seconds": timeout_seconds,
             "count": len(rows), "rows": rows}
 
@@ -2283,9 +2284,11 @@ def memory_metrics_dashboard(request: Request):
         metrics = mod.collect()
     except Exception as e:
         logging.getLogger("api_admin").error("记忆度量取数失败: %s", e)
-        return {"status": "error", "msg": "记忆度量取数失败: %s" % e,
-                "memory_enabled": memory_on, "metrics": None,
-                "retrieve_failures": retrieve_failures}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "METRICS_FAILED",
+            "msg": "记忆统计取数失败，请稍后再试。",
+            "memory_enabled": memory_on, "metrics": None,
+            "retrieve_failures": retrieve_failures})
     return {"status": "success", "memory_enabled": memory_on, "metrics": metrics,
             "retrieve_failures": retrieve_failures}
 
@@ -2356,8 +2359,9 @@ def list_vendor_memory_governance(request: Request, vendor: str = "",
                                      supplier_id=supplier_id)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆治理视图取数失败: %s", e)
-        return {"status": "error", "code": "MEMORY_LIST_FAILED",
-                "msg": "记忆列表取数失败: %s" % e, "data": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "MEMORY_LIST_FAILED", "data": None,
+            "msg": "记忆列表没有读出来，请稍后再试。"})
     if st:
         rows = [r for r in rows if (r.get("status") or "active") == st]
     total = len(rows)
@@ -2403,8 +2407,9 @@ def get_vendor_memory_governance(memory_id: str, request: Request):
         rows = db.list_vendor_memory(tenant_id=tenant_id, include_archived=True)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆治理详情取数失败: %s", e)
-        return {"status": "error", "code": "MEMORY_READ_FAILED",
-                "msg": "记忆详情取数失败: %s" % e, "data": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "MEMORY_READ_FAILED", "data": None,
+            "msg": "这条记忆没有读出来，请稍后再试。"})
     for r in rows:
         if str(r.get("memory_id") or "") == mid:
             return {"status": "success", "data": r}
@@ -2624,7 +2629,7 @@ def grey_test_status(request: Request):
 
 
 def _normalize_audit_model_name(val: str, fallback: str = "deepseek/deepseek-v4.1-flash") -> str:
-    """平滑映射：如果历史审计记录存的是 engine kind (EngineKind.OPENAI / openai / opencode 等)，
+    """平滑映射：如果历史审计记录存的是 engine kind (EngineKind.OPENAI / openai 等)，
     转换为实际对应的模型名称。如果已是模型名称则保留。
     """
     if not val:
@@ -2633,8 +2638,6 @@ def _normalize_audit_model_name(val: str, fallback: str = "deepseek/deepseek-v4.
     s_lower = s.lower()
     if "enginekind.openai" in s_lower or s_lower == "openai":
         return fallback
-    if "enginekind.opencode" in s_lower or s_lower in ("opencode", "codebuddy", "enginekind.codebuddy"):
-        return "Qwen/Qwen3-VL-32B-Instruct"
     if "mock" in s_lower:
         return "mock-vlm-rec"
     if s_lower == "qwen" or "enginekind.qwen" in s_lower:
@@ -2672,7 +2675,7 @@ def canary_history(request: Request):
             promote_count += 1
             old_m = _normalize_audit_model_name(old_val, fallback=cur_prod_model)
             new_m = _normalize_audit_model_name(new_val, fallback=cur_grey_model)
-            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen")):
                 new_m = cur_grey_model
             history.append({
                 "ts": ts,
@@ -2688,7 +2691,7 @@ def canary_history(request: Request):
             rollback_count += 1
             old_m = _normalize_audit_model_name(old_val, fallback=cur_grey_model)
             new_m = _normalize_audit_model_name(new_val, fallback=cur_prod_model)
-            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen")):
                 old_m = cur_grey_model
             history.append({
                 "ts": ts,
@@ -2769,7 +2772,9 @@ def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
     sku = db.get_sku(int(sku_id), tenant_id=tenant_id)
     if sku is None:
         # 跨租户同样落到这里（get_sku 对跨租户返回 None）—— 一律视为不存在
-        return {"status": "error", "msg": "SKU 不存在"}
+        return JSONResponse(status_code=404, content={
+            "status": "error", "code": "SKU_NOT_FOUND",
+            "msg": "找不到这个货品，可能已被删除。请刷新页面后再试。"})
 
     prices = []
     for row in db.price_history(int(sku_id), tenant_id=tenant_id):
@@ -2874,7 +2879,7 @@ def get_grey_test_samples(request: Request):
         request, request.query_params.get("tenant_id"))
 
     rows = db.list_receipt_rows(tenant_id=effective_tenant)
-    # 分流引擎标签读真实引擎配置（不再硬编码 opencode/mimo 文案）
+    # 分流引擎标签读真实引擎配置
     _cfg = db.get_engine_config()
 
     def _leg_label(engine, model, fallback_model):
@@ -3283,7 +3288,10 @@ def import_golden_samples(request: Request, limit: int = 10):
         ok = res.returncode == 0
         return {"status": "success" if ok else "error", "msg": out.strip()[:2000], "limit": limit}
     except Exception as e:
-        return {"status": "error", "msg": str(e), "limit": limit}
+        logging.getLogger("api_admin").error("维护脚本执行失败: %s", e)
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "SCRIPT_FAILED", "limit": limit,
+            "msg": "维护脚本没有跑成功，请看服务日志。"})
 
 
 @router.post("/api/admin/maintenance/deduplicate")
@@ -3811,7 +3819,9 @@ def analytics_parsing_log_detail(
     try:
         detail = get_parsing_log_detail(s=s, record_id=record_id, job_id=job_id)
         if not detail:
-            return {"status": "error", "detail": "单据或链路未找到"}
+            return JSONResponse(status_code=404, content={
+                "status": "error", "code": "RECORD_NOT_FOUND",
+                "msg": "单据或链路未找到", "detail": "单据或链路未找到"})
         return {"status": "success", "data": detail}
     finally:
         s.close()

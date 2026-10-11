@@ -688,6 +688,11 @@
 
     function boot() {
         initMobileNav();
+        var sup = $('inpSupplier');
+        if (sup) {
+            sup.addEventListener('change', root.applySupplierSettlementPref);
+            sup.addEventListener('blur', function () { root.setTimeout(root.applySupplierSettlementPref, 250); });
+        }
     }
     if (doc.readyState === 'loading') doc.addEventListener('DOMContentLoaded', boot);
     else boot();

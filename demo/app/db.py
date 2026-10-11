@@ -1559,11 +1559,122 @@ def _migrate_v4_receipt_list_indexes(engine):
         _apply_migration_ddl(engine, ddl)
 
 
+_LEGACY_CLI_ENGINES = ("opencode", "codebuddy")
+_LEGACY_CLI_MODEL_PREFIXES = ("opencode", "codebuddy")
+_LEGACY_CLI_MODEL_NAMES = ("minimax-m3-pay",)
+_LEGACY_CLI_REMOVED_KEYS = (
+    "recognition_transport", "audit_transport", "parse_transport",
+    "grey_recognition_transport", "grey_audit_transport", "grey_parse_transport",
+)
+# 引擎字段 -> (模型字段, 迁移时使用的默认模型名)
+_LEGACY_CLI_LEGS = (
+    ("recognition_engine", "recognition_model", "rec"),
+    ("audit_engine", "audit_model", "aud"),
+    ("parse_llm_engine", "parse_llm_model", "parse"),
+    ("grey_recognition_engine", "grey_recognition_model", "rec"),
+    ("grey_audit_engine", "grey_audit_model", "aud"),
+    ("grey_parse_llm_engine", "grey_parse_llm_model", "parse"),
+)
+_LEGACY_CLI_DEFAULT_MODELS = {
+    "rec": "qwen3.5-omni-flash",
+    "aud": "zai-org/GLM-4.5V",
+    "parse": "Qwen/Qwen3-VL-32B-Instruct",
+}
+
+
+def _scrub_legacy_cli(obj):
+    """递归清理一份配置 JSON 里的 opencode/codebuddy 遗留（引擎值、模型名、transport 键）。
+
+    返回是否有改动。只在迁移 v5 里用，运行期代码不再认识这两个引擎。
+    """
+    changed = False
+    if isinstance(obj, list):
+        for x in obj:
+            changed = _scrub_legacy_cli(x) or changed
+        return changed
+    if not isinstance(obj, dict):
+        return False
+    for k in _LEGACY_CLI_REMOVED_KEYS:
+        if k in obj:
+            obj.pop(k)
+            changed = True
+    for eng_f, mod_f, kind in _LEGACY_CLI_LEGS:
+        eng = str(obj.get(eng_f) or "").strip().lower()
+        if eng.startswith("enginekind."):
+            eng = eng.split(".", 1)[1]
+        model = str(obj.get(mod_f) or "").strip()
+        m_low = model.lower()
+        legacy_model = bool(m_low) and (m_low.startswith(_LEGACY_CLI_MODEL_PREFIXES)
+                                        or m_low in _LEGACY_CLI_MODEL_NAMES)
+        if eng in _LEGACY_CLI_ENGINES:
+            obj[eng_f] = "openai"
+            changed = True
+        if legacy_model or (eng in _LEGACY_CLI_ENGINES and not model):
+            obj[mod_f] = _LEGACY_CLI_DEFAULT_MODELS[kind]
+            changed = True
+    for v in list(obj.values()):
+        changed = _scrub_legacy_cli(v) or changed
+    return changed
+
+
+def _migrate_v5_drop_legacy_cli_engines(engine):
+    """把存量库里 opencode/codebuddy 的引擎值、模型名与已删除的 transport 键一次性改写。
+
+    覆盖：app_settings.engine_config（含内嵌的 rollback_snapshot）、engine_config_history.snapshot、
+    experiments.grey_snapshot、系统审计里记录的引擎名。改写后运行期代码不再保留任何兼容分支。
+    """
+    from sqlalchemy import text as _t
+    targets = (
+        ("app_settings", "key", "value", "key = 'engine_config'"),
+        ("engine_config_history", "id", "snapshot", "1=1"),
+        ("experiments", "id", "grey_snapshot", "1=1"),
+    )
+    with engine.begin() as conn:
+        for table, pk, col, where in targets:
+            cols = _table_columns(conn, table)
+            if not cols or col not in cols:
+                continue
+            for pk_val, raw in conn.execute(_t(f"SELECT {pk}, {col} FROM {table} WHERE {where}")).fetchall():
+                if not raw or not any(w in raw.lower() for w in
+                                      ("opencode", "codebuddy", "minimax-m3-pay", "_transport")):
+                    continue
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    continue
+                if _scrub_legacy_cli(data):
+                    conn.execute(_t(f"UPDATE {table} SET {col} = :v WHERE {pk} = :k"),
+                                 {"v": json.dumps(data, ensure_ascii=False), "k": pk_val})
+        cols = _table_columns(conn, "app_settings")
+        if cols:
+            row = conn.execute(_t(
+                "SELECT value FROM app_settings WHERE key = 'system_audit_json'")).fetchone()
+            if row and row[0] and any(w in row[0].lower() for w in ("opencode", "codebuddy")):
+                try:
+                    logs = json.loads(row[0])
+                except ValueError:
+                    logs = None
+                if isinstance(logs, list):
+                    touched = False
+                    for entry in logs:
+                        if not isinstance(entry, dict):
+                            continue
+                        for f in ("old", "new"):
+                            v = str(entry.get(f, "")).strip().lower()
+                            if v in _LEGACY_CLI_ENGINES or v in ("enginekind.opencode", "enginekind.codebuddy"):
+                                entry[f] = "openai"
+                                touched = True
+                    if touched:
+                        conn.execute(_t("UPDATE app_settings SET value = :v WHERE key = 'system_audit_json'"),
+                                     {"v": json.dumps(logs, ensure_ascii=False)})
+
+
 SCHEMA_MIGRATIONS = [
     (1, "baseline_inline_schema", None),
     (2, "receipt_lifecycle_columns", _migrate_v2_receipt_lifecycle_columns),
     (3, "revoked_tokens", _migrate_v3_revoked_tokens),
     (4, "receipt_list_indexes", _migrate_v4_receipt_list_indexes),
+    (5, "drop_legacy_cli_engines", _migrate_v5_drop_legacy_cli_engines),
 ]
 
 
@@ -1755,8 +1866,8 @@ def _rebuild_legacy_vendor_memory(engine):
             except Exception as e:
                 _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        _migration_failed("[migrate] vendor_memory legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] vendor_memory legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_skus_name_unique(engine):
@@ -1820,8 +1931,8 @@ def _rebuild_legacy_skus_name_unique(engine):
             except Exception as e:
                 _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        _migration_failed("[migrate] skus legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] skus legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_suppliers_name_unique(engine):
@@ -1887,8 +1998,8 @@ def _rebuild_legacy_suppliers_name_unique(engine):
             except Exception as e:
                 _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        _migration_failed("[migrate] suppliers legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] suppliers legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_dish_ingredients(engine):
@@ -1962,8 +2073,8 @@ def _rebuild_legacy_dish_ingredients(engine):
             except Exception as e:
                 _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        _migration_failed("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
 
 
 def _ensure_app_setting_overrides_table(engine):
@@ -5645,20 +5756,6 @@ def list_app_settings(tenant_id=None):
 # -------------------------------------------------------------
 # 引擎配置（admin 管理）
 # -------------------------------------------------------------
-def _normalize_legacy_cli_leg(eng, model, default_model):
-    """单腿的遗留 CLI 归一：引擎枚举 opencode/codebuddy → openai；CLI 模型名 → default_model。
-
-    返回 (new_eng, new_model)，**未改动的侧为 None**，调用方只写回非 None 的侧。
-    这个「只写改动侧」的约定必须保留：读闸门面对的是可能缺字段的存量 JSON，
-    把原本不存在的字段填成 None 会让 EngineConfig(**stored) 校验失败。
-    判定全部走 models.is_legacy_cli_model 单一实现（原先在 db.py 里抄了 9 份）。
-    """
-    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
-    new_eng = EngineKind.OPENAI if is_legacy_cli_engine(eng) else None
-    new_model = default_model if is_legacy_cli_model(model) else None
-    return new_eng, new_model
-
-
 def get_engine_config():
     s = get_session()
     try:
@@ -5684,21 +5781,6 @@ def get_engine_config():
             stored.pop("grey_mode", None)
         # 清理已废弃的全局超时字段（UI 已移除，extra=forbid 会拒绝该字段）
         stored.pop("call_timeout_seconds", None)
-        # 清理历史已保存的 opencode / codebuddy CLI 引擎与模型配置
-        for eng_field, mod_field, def_model in (
-            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
-            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
-            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
-            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
-        ):
-            new_eng, new_model = _normalize_legacy_cli_leg(
-                stored.get(eng_field), stored.get(mod_field), def_model)
-            if new_eng is not None:
-                stored[eng_field] = new_eng
-            if new_model is not None:
-                stored[mod_field] = new_model
         return EngineConfig(**stored)
     finally:
         s.close()
@@ -5759,22 +5841,6 @@ def set_engine_config(cfg, source=None):
         for df in ("openai_rec_image_detail", "grey_openai_rec_image_detail"):
             if hasattr(cfg, df) and getattr(cfg, df, None) is not None:
                 setattr(cfg, df, clamp_image_detail(getattr(cfg, df)))
-        # 写入前确保不残留 opencode / codebuddy 引擎及模型
-        for eng_field, mod_field, def_model in (
-            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
-            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
-            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
-            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
-        ):
-            new_eng, new_model = _normalize_legacy_cli_leg(
-                getattr(cfg, eng_field, None), getattr(cfg, mod_field, None), def_model)
-            if new_eng is not None:
-                setattr(cfg, eng_field, new_eng)
-            if new_model is not None:
-                setattr(cfg, mod_field, new_model)
-
         row = s.get(_AppSettingRow, "engine_config")
         if row is None:
             row = _AppSettingRow(key="engine_config")
@@ -6020,11 +6086,6 @@ def hydrate_engine_config_from_env():
                 cfg.parse_llm_model = parse_model
             changed = True
 
-        _normalize_legacy_cli_engines(cfg, log, rec_base=cfg.openai_rec_base_url,
-                                      rec_key=cfg.openai_rec_api_key,
-                                      rec_model=cfg.openai_rec_model,
-                                      aud_base=cfg.openai_aud_base_url,
-                                      aud_key=cfg.openai_aud_api_key)
         _align_grey_recognition_leg(cfg, cfg.openai_rec_base_url, cfg.openai_rec_api_key,
                                     cfg.openai_rec_model, log)
         if changed or timeout_fixed:
@@ -6091,98 +6152,6 @@ def _align_grey_recognition_leg(cfg, rec_base: str, rec_key: str, rec_model: str
             g_base, rec_base,
         )
     return False
-
-
-def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "",
-                                  rec_model: str = "", aud_base: str = "", aud_key: str = "") -> None:
-    """归一历史遗留的 opencode / codebuddy CLI 引擎配置。幂等；业务开关一律不动。
-
-    引擎值 opencode/codebuddy → openai；模型 opencode/* / codebuddy/* / minimax-m3-pay → 标准模型；
-    灰测识别腿沿用识别腿 provider（rec_base/rec_key/rec_model，缺失时回落 SF 默认），
-    灰测审核腿与解析腿沿用审核腿 provider（aud_base/aud_key）。
-    """
-    # 本模块未在模块级导入 EngineKind（其余函数均为函数内惰性导入），此处必须显式导入：
-    # 漏掉会抛 NameError，被 hydrate 的 except 静默吞掉，导致整套归一逻辑形同虚设。
-    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
-    changed = []
-
-    def _enum_str(v):
-        # EngineKind 等枚举字段的字符串取值（str(enum) 是 "EngineKind.X" 形态，不能直接比较）
-        return str(getattr(v, "value", v) or "").lower()
-
-    def _is_cli(eng, mod):
-        # 判定统一走 models 的单一实现（原先在这里抄了一份 opencode/codebuddy/minimax 字面量）
-        return is_legacy_cli_engine(eng) or is_legacy_cli_model(mod)
-
-    # 主识别腿
-    if _is_cli(getattr(cfg, "recognition_engine", ""), getattr(cfg, "recognition_model", "")):
-        cfg.recognition_engine = EngineKind.OPENAI
-        m = str(cfg.recognition_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.recognition_model = _SF_DEFAULT_REC_MODEL
-        changed.append("rec")
-
-    # 主审核腿
-    if _is_cli(getattr(cfg, "audit_engine", ""), getattr(cfg, "audit_model", "")):
-        cfg.audit_engine = EngineKind.OPENAI
-        m = str(cfg.audit_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.audit_model = _SF_DEFAULT_AUD_MODEL
-        changed.append("aud")
-
-    # 解析腿
-    if _is_cli(getattr(cfg, "parse_llm_engine", ""), getattr(cfg, "parse_llm_model", "")):
-        cfg.parse_llm_engine = EngineKind.OPENAI
-        m = str(cfg.parse_llm_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.parse_llm_model = _SF_DEFAULT_REC_MODEL
-        changed.append("parse")
-
-    # 灰测识别腿
-    if _is_cli(getattr(cfg, "grey_recognition_engine", ""), getattr(cfg, "grey_recognition_model", "")):
-        cfg.grey_recognition_engine = EngineKind.OPENAI
-        m = str(cfg.grey_recognition_model or "")
-        if is_legacy_cli_model(m) or not m:
-            # 跟随识别腿模型（否则会出现 DashScope base + SF 模型名的错配）
-            cfg.grey_recognition_model = rec_model or _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_rec_base_url", "") and rec_base:
-            cfg.grey_openai_rec_base_url = rec_base
-        if not getattr(cfg, "grey_openai_rec_api_key", "") and rec_key:
-            cfg.grey_openai_rec_api_key = rec_key
-        if not getattr(cfg, "grey_openai_rec_model", ""):
-            cfg.grey_openai_rec_model = rec_model or _SF_DEFAULT_REC_MODEL
-        changed.append("grey_rec")
-
-    # 灰测审核腿
-    if _is_cli(getattr(cfg, "grey_audit_engine", ""), getattr(cfg, "grey_audit_model", "")):
-        cfg.grey_audit_engine = EngineKind.OPENAI
-        m = str(cfg.grey_audit_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.grey_audit_model = _SF_DEFAULT_AUD_MODEL
-        if not getattr(cfg, "grey_openai_aud_base_url", "") and aud_base:
-            cfg.grey_openai_aud_base_url = aud_base
-        if not getattr(cfg, "grey_openai_aud_api_key", "") and aud_key:
-            cfg.grey_openai_aud_api_key = aud_key
-        if not getattr(cfg, "grey_openai_aud_model", ""):
-            cfg.grey_openai_aud_model = _SF_DEFAULT_AUD_MODEL
-        changed.append("grey_aud")
-
-    # 灰测解析腿
-    if _is_cli(getattr(cfg, "grey_parse_llm_engine", ""), getattr(cfg, "grey_parse_llm_model", "")):
-        cfg.grey_parse_llm_engine = EngineKind.OPENAI
-        m = str(cfg.grey_parse_llm_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.grey_parse_llm_model = _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_parse_base_url", "") and aud_base:
-            cfg.grey_openai_parse_base_url = aud_base
-        if not getattr(cfg, "grey_openai_parse_api_key", "") and aud_key:
-            cfg.grey_openai_parse_api_key = aud_key
-        if not getattr(cfg, "grey_openai_parse_model", ""):
-            cfg.grey_openai_parse_model = _SF_DEFAULT_REC_MODEL
-        changed.append("grey_parse")
-
-    if changed:
-        log.info("[engine-env] 已归一遗留 opencode/codebuddy CLI 配置 → OpenAI 兼容通道: %s", ",".join(changed))
 
 
 def _openai_gateway_healthy(api_key: str, base_url: str = "") -> bool:

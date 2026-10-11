@@ -154,7 +154,7 @@ def test_retry_missing_image_400(client, job_stub):
     rid = db.create_receipt(status="edited")
     r = client.post(f"/api/receipt/{rid}/retry", headers={"X-Role": "staff"})
     assert r.status_code == 400
-    assert "原图缺失" in r.json()["msg"]
+    assert "原图" in r.json()["msg"] and "找不到" in r.json()["msg"]
 
 
 def test_retry_not_found_404(client, job_stub):

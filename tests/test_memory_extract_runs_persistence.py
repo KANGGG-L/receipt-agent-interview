@@ -234,9 +234,8 @@ def test_save_edited_writes_run_record(client, monkeypatch):
     # reject_reasons_json 必须"可读"（合法 JSON 数组，本行无丢弃故为空数组而非 NULL）
     assert json.loads(r["reject_reasons_json"]) == [], r
     assert r["error"] == "", r
-    # prompt_source 必须反映本次实际用到的文案（回退率是治理信号，不能为空）
-    assert r["prompt_source"] in (mx.PROMPT_SOURCE_REGISTRY,
-                                  mx.PROMPT_SOURCE_BUILTIN_FALLBACK), r
+    # prompt_source 必须反映本次实际用到的文案（读不到提示词是治理信号，不能为空）
+    assert r["prompt_source"] == mx.PROMPT_SOURCE_REGISTRY, r
     assert stats.model.calls == 1
 
 

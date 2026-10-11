@@ -266,7 +266,7 @@ def test_only_admin_can_read():
 # -------------------------------------------------------------
 # 6. 失败不抛 500：巡检异常 → 200 + status=error + report=None
 # -------------------------------------------------------------
-def test_check_failure_returns_error_field_not_500(monkeypatch):
+def test_check_failure_returns_error_envelope(monkeypatch):
     _fresh_db()
     client = _client()
 
@@ -277,10 +277,11 @@ def test_check_failure_returns_error_field_not_500(monkeypatch):
 
     monkeypatch.setattr(mc, "check_memory_consistency", _boom)
     ret = _get_consistency(client)
-    assert ret.status_code == 200, ret.text
+    assert ret.status_code == 500, ret.text
     body = ret.json()
-    assert body["status"] == "error", body
+    assert body["status"] == "error" and body["code"] == "CHECK_FAILED", body
     assert "msg" in body and body["msg"], body
+    assert "模拟巡检不可用" not in ret.text, "不得把内部异常原文给用户"
     # report=None 是「不得显示一致」的契约（前端/运维据此显示错误态而非「一致」）
     assert body["report"] is None, body
 

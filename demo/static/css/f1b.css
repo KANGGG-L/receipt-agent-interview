@@ -132,3 +132,17 @@ body[data-role="staff"] .mobile-tab[data-tab="tab-archive"] { display: none; }
 #paymentModal #payAmount[readonly] { background: var(--bg-main); color: var(--text-main); font-weight: 700; cursor: default; }
 #paymentModal .form-control { min-height: 44px; }
 #paymentModal .pay-amt-input { min-height: 40px; background: var(--bg-card); color: var(--text-main); }
+#vendorMemoryGovernancePanel { overflow-x: auto; }
+#vendorMemoryGovernancePanel .vm-head, #vendorMemoryGovernancePanel .vm-row { min-width: 760px; }
+#tab-engine small, #tab-analytics small { font-size: 0.8rem; }
+.btn-golden-ghost { font-size: 0.8rem !important; }
+#tab-analytics div:has(> #parsingLogStartDate) { flex-wrap: wrap; }
+
+/* admin 页面：控件最小高度 40px，手指能点准 */
+#tab-engine .btn, #tab-analytics .btn, #tab-engine select, #tab-analytics select,
+#tab-engine input[type="text"], #tab-analytics input[type="text"], #tab-engine input[type="date"], #tab-analytics input[type="date"],
+#tab-engine input[type="number"], #tab-analytics input[type="number"], #tab-engine input[type="password"] { min-height: 40px; }
+#tab-analytics #parsingLogStartDate, #tab-analytics #parsingLogEndDate { height: auto !important; }
+@media (max-width: 640px) {
+    #tab-analytics #filterTimeRange { flex-wrap: wrap !important; max-width: 100%; }
+}

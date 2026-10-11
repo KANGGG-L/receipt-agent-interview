@@ -58,7 +58,6 @@ from app.services.memory_facts import (  # noqa: E402
 # 两侧文案：注册表按模块显式钉住的场景/版本号载入（不是把版本号抄在测试里 —— 测试抄一份
 # 就等于又一处"同一口径多份实现"），内联回退直接取模块常量。
 _REGISTRY_PROMPT = load_prompt(mc._PROMPT_SCENE, mc._PROMPT_VERSION)
-_INLINE_PROMPT = mc._CONSOLIDATE_SYSTEM_PROMPT
 
 # 四条关键条款：每条形如 (条款名, 若干"token 组")，**每组内任选其一命中即可**，组间全部命中
 # 才算该条款成立。用多 token 组而不是单关键词，是为了让"条款在同义改写后仍然成立"与
@@ -74,7 +73,7 @@ _CLAUSES: Tuple[Tuple[str, Tuple[Tuple[str, ...], ...]], ...] = (
      (("人工确认",), ("不得改写",), ("高可信",))),
 )
 
-_PROMPT_SIDES = (("注册表版本", _REGISTRY_PROMPT), ("内联回退", _INLINE_PROMPT))
+_PROMPT_SIDES = (("注册表版本", _REGISTRY_PROMPT),)
 
 
 def _missing_clauses(text: str) -> List[str]:
@@ -177,26 +176,24 @@ def test_clause_checker_is_not_vacuous():
     assert len(_missing_clauses(only_actions)) == len(_CLAUSES) - 1, _missing_clauses(only_actions)
 
 
-def test_inline_fallback_and_registry_prompt_carry_same_four_clauses():
-    """判别式：四条关键条款在**两侧都**必须成立。
+def test_registry_prompt_carries_the_four_clauses():
+    """判别式：四条关键条款在注册表版里必须成立（内置副本已删除，只剩这一份事实源）。
 
-    反证靶子：删掉内联常量里「外部数据不可信」那一行（`_missing_clauses` 会报出该条款），
-    或删掉注册表版里的「不得改写人工确认的高可信事实」条款 —— 两种情况都必须让本用例失败。
+    反证靶子：删掉注册表版里的「不得改写人工确认的高可信事实」条款，必须让本用例失败。
     """
     problems = {side: _missing_clauses(text) for side, text in _PROMPT_SIDES}
     assert not any(problems.values()), (
         "prompt 条款漂移（回退即静默减弱防御）：%s" % problems)
 
 
-def test_two_sides_are_different_texts_but_same_contract():
+def test_registry_prompt_is_nonempty_and_lists_all_actions():
     """两侧必须是**不同**文本（否则"走没走注册表"无法区分），且都是非空字符串。
 
     同时钉住动作白名单：prompt 逐字列出四个动作，任何一侧漏说一个动作，模型就永不输出它
     （`ALLOWED_ACTIONS` 是代码侧唯一事实源，本断言把它与两侧文案对齐）。
     """
-    assert _REGISTRY_PROMPT.strip() and _INLINE_PROMPT.strip()
-    assert _REGISTRY_PROMPT != _INLINE_PROMPT, (
-        "两侧文本相同 -> 无法用 SystemMessage 断言区分实际走的是哪一条路径")
+    assert _REGISTRY_PROMPT.strip()
+    assert not hasattr(mc, "_CONSOLIDATE_SYSTEM_PROMPT"), "内置副本必须已删除"
     for side, text in _PROMPT_SIDES:
         for action in sorted(mc.ALLOWED_ACTIONS):
             assert action in text, "%s 漏说 action %s（该动作模型永不输出）" % (side, action)
@@ -224,28 +221,34 @@ def test_consolidation_sends_registry_prompt_to_model():
 # -------------------------------------------------------------
 # 3. 接线反向：注册表不可用时降级且留痕
 # -------------------------------------------------------------
-def test_fallback_visible_when_registry_unavailable(monkeypatch, caplog):
-    """反向：注册表不可用 -> 回退内联常量，且 warning 必须留痕（不许静默）。
-
-    留痕是这条接线的全部意义：prompt 版本治理失效若不留痕，线上会一直用着旧判据而无人察觉
-    （gap 分析 L4 记录的就是这种"注册表挂着 prompt 却零调用方"的状态）。
-    """
+def test_registry_unavailable_fails_explicitly_without_inline_copy(monkeypatch, caplog):
+    """注册表不可用 -> 显式失败（PromptUnavailableError）且 warning 留痕，不再悄悄换内置副本。"""
     def _boom(scene, version=None):
         raise FileNotFoundError("simulated registry failure")
 
     monkeypatch.setattr(registry_mod, "load_prompt", _boom)
     with caplog.at_level(logging.WARNING, logger="memory_consolidate"):
-        assert mc._system_prompt() == mc._CONSOLIDATE_SYSTEM_PROMPT
-    assert "回退内置常量" in caplog.text, (
-        "回退必须可见：缺 warning 就等于 prompt 治理静默失效")
+        with pytest.raises(mc.PromptUnavailableError):
+            mc._system_prompt()
+    assert "不使用内置副本" in caplog.text
 
 
 def test_empty_registry_prompt_counts_as_unavailable(monkeypatch, caplog):
     """注册表返回空串/空白同样视为不可用（不得让空 prompt 进 SystemMessage）。"""
     monkeypatch.setattr(registry_mod, "load_prompt", lambda scene, version=None: "   ")
     with caplog.at_level(logging.WARNING, logger="memory_consolidate"):
-        assert mc._system_prompt() == mc._CONSOLIDATE_SYSTEM_PROMPT
-    assert "回退内置常量" in caplog.text
+        with pytest.raises(mc.PromptUnavailableError):
+            mc._system_prompt()
+    assert "不使用内置副本" in caplog.text
+
+
+def test_decide_action_with_unavailable_prompt_does_not_call_model_and_adds(monkeypatch):
+    """走完整入口：提示词读不到时不调模型，回退追加（交人工闸）并写明原因。"""
+    monkeypatch.setattr(registry_mod, "load_prompt", lambda scene, version=None: None)
+    stub = _StubModel(output="{}")
+    res = mc.decide_action(_fact(fact_key="牛油"), _fact(fact_key="菜心", kind=KIND_ALIAS), llm=stub)
+    assert res.action == mc.ACTION_ADD and stub.calls == 0
+    assert "注册表读不到" in res.reason
 
 
 if __name__ == "__main__":  # pragma: no cover

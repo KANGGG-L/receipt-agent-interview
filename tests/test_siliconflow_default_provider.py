@@ -62,6 +62,8 @@ def _seed_recognition(engine, api_key, base_url="", model=""):
     cfg.openai_rec_base_url = base_url
     cfg.openai_rec_model = model
     db.set_engine_config(cfg)
+    # 存量库里的遗留引擎值由迁移 v5 一次性改写（运行期不再有兼容分支）
+    db._migrate_v5_drop_legacy_cli_engines(db._engine)
 
 
 def _assert_split_legs(cfg):
@@ -117,7 +119,7 @@ def test_audit_leg_forced_grey_untouched(monkeypatch):
 
 
 def test_legacy_cli_in_grey_leg_normalized(monkeypatch):
-    """灰测组若残留历史 codebuddy CLI 配置，水合时自动归一并跟随识别腿 provider。"""
+    """灰测组若残留历史 codebuddy CLI 配置，由迁移 v5 改写为 openai 与标准模型名。"""
     import json
     s = db.get_session()
     try:
@@ -133,6 +135,7 @@ def test_legacy_cli_in_grey_leg_normalized(monkeypatch):
     finally:
         s.close()
 
+    db._migrate_v5_drop_legacy_cli_engines(db._engine)
     db.hydrate_engine_config_from_env()
     after = db.get_engine_config()
     assert after.grey_recognition_engine == "openai"

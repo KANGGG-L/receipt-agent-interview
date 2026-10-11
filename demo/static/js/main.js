@@ -1221,7 +1221,7 @@ function loadCostReport() {
                     const tag = prevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
                     deltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(dep.delta)}</span>${tag}`;
                 } else if (dep.delta < 0) {
-                    deltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(dep.delta))}</span>`;
+                    deltaHtml = `<span style="color:#047857; font-weight:600;">-$${fmtMoney(Math.abs(dep.delta))}</span>`;
                 }
 
                 tr.innerHTML = `
@@ -1250,7 +1250,7 @@ function loadCostReport() {
             const tag = unallocPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
             unallocDeltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(unalloc.delta)}</span>${tag}`;
         } else if (unalloc.delta < 0) {
-            unallocDeltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(unalloc.delta))}</span>`;
+            unallocDeltaHtml = `<span style="color:#047857; font-weight:600;">-$${fmtMoney(Math.abs(unalloc.delta))}</span>`;
         }
 
         unallocTr.innerHTML = `
@@ -1270,7 +1270,7 @@ function loadCostReport() {
             const tag = totalPrevVal === 0 ? ' <span style="font-size:0.72rem; color:var(--primary); font-weight:normal;">新增</span>' : '';
             totalDeltaHtml = `<span style="color:#ef4444; font-weight:600;">+$${fmtMoney(d.delta)}</span>${tag}`;
         } else if (d.delta < 0) {
-            totalDeltaHtml = `<span style="color:#10b981; font-weight:600;">-$${fmtMoney(Math.abs(d.delta))}</span>`;
+            totalDeltaHtml = `<span style="color:#047857; font-weight:600;">-$${fmtMoney(Math.abs(d.delta))}</span>`;
         }
 
         totalTr.innerHTML = `
@@ -6732,7 +6732,7 @@ function syncReviewSaveBadgeFromStatus(status) {
     const saveBadge = document.getElementById('reviewSaveStatusBadge');
     if (!saveBadge) return;
     if (status === 'edited') {
-        saveBadge.textContent = '已保存·待审批';
+        saveBadge.textContent = '已提交，待老板审批';
         saveBadge.className = 'badge badge-info';
     } else if (status === 'approved') {
         saveBadge.textContent = '已入账 (锁定)';
@@ -7223,7 +7223,7 @@ function submitSaveEdited(openNext = false) {
         } catch(e) {}
 
         if (saveStatusBadge) {
-            saveStatusBadge.textContent = '已保存·待审批';
+            saveStatusBadge.textContent = '已提交，待老板审批';
             saveStatusBadge.className = 'badge badge-info';
         }
 
@@ -7556,7 +7556,7 @@ function openReceiptInWorkbench(receiptId, silent = false, _guarded = false) {
             const saveBadge = document.getElementById('reviewSaveStatusBadge');
             if (saveBadge) {
                 if (ret.data.status === 'edited') {
-                    saveBadge.textContent = '已保存·待审批';
+                    saveBadge.textContent = '已提交，待老板审批';
                     saveBadge.className = 'badge badge-info';
                 } else if (ret.data.status === 'approved') {
                     saveBadge.textContent = '已入账 (锁定)';
@@ -9093,7 +9093,7 @@ function openEditSkuModal(skuTarget) {
     const codeGrp = document.getElementById('skuModalAdvancedCode');
     if (codeGrp) {
         codeGrp.style.display = 'block';
-        document.getElementById('skuModalCodeDisplay').innerText = sku.sku_code || '';
+        document.getElementById('skuModalCodeDisplay').innerText = String(sku.sku_code || '').replace(/^SKU-/i, '');
     }
 
     openModalById('skuModal');
@@ -9947,7 +9947,7 @@ function renderArchiveTable(receipts) {
                 '<td style="vertical-align:middle;">#' + rid + '</td>' +
                 '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + handwrittenBadge + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
-                '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:#60a5fa;">' + editDate + '</span></td>' +
+                '<td style="vertical-align:middle;"><span style="font-size:0.85rem; color:var(--text-main);">' + editDate + '</span></td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + recDate + '</span></td>' +
                 '<td style="vertical-align:middle; text-align:center;"><strong style="font-size:1.02rem; font-weight:700;">' + formatCurrency(r.total_amount, r.currency) + '</strong></td>' +
                 // Wave 2（D44）：归档列表展示单据级部门（未打 → 未分配）
@@ -12706,57 +12706,17 @@ function retryPhotoFromSider(idx) {
 }
 
 // -------------------------------------------------------------
-// 解析即自动写库：每张照片解析完成（status=parsed 且有预填数据）后，
-// 以 AI 预填数据调 save_edited 落库；成功后状态变 saved（sider 显示「已保存」）。
-// 发即弃、无确认弹窗；仅 admin 触发；失败仅提示，保留 parsed 供手动重试。
+// 解析完成后的列表状态：服务端任务已经把识别结果存好，这里只把侧栏状态记为 saved
+// （显示「已保存」），不再发任何写库请求。
 // -------------------------------------------------------------
 function autoSaveParsedPhoto(idx) {
     const p = BatchUploader.photos[idx];
-    if (!p || p.status !== 'parsed' || !p.data || p.autoSaving) return;
-    if (!isAdmin()) return;   // 仅 admin 可写库（与旧「全部保存」角色限制一致）
-
-    p.autoSaving = true;
-    // 解析即按 AI 预填保存，不读取正在编辑的表单，避免覆盖用户复核中的内容
-    const data = p.data;
-    const payload = buildSavePayloadFromData(data, p.receiptId);
-    payload.source = 'auto';
-
-    apiFetch('/api/save_edited', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-        .then(res => res.json().then(body => ({ res, body })).catch(() => ({ res, body: null })))
-        .then(({ res, body }) => {
-            p.autoSaving = false;
-            if (res.status === 409 && body && body.code === 'VERSION_CONFLICT') {
-                // D17: 版本冲突，保留 parsed 供手动重试
-                showToast(`第 ${idx + 1} 张保存冲突，请打开详情重载后再试`, 'warning');
-                return;
-            }
-            if (res.status === 400 && body && body.code === 'VERSION_REQUIRED') {
-                showToast(`第 ${idx + 1} 张缺少版本号，请打开详情重载后再试`, 'warning');
-                return;
-            }
-            if (!res.ok || !body || body.status !== 'success') {
-                showToast(`第 ${idx + 1} 张自动保存失败`, 'error');
-                return;
-            }
-            // 保存成功
-            resetQualityFailCount();
-            p.status = 'saved';
-            p.data = data;
-            const newVersion = extractVersionFromResponse(body);
-            if (newVersion != null && p.data) p.data.version = newVersion;
-            if (idx === BatchUploader.activeIndex) currentReceiptData = p.data;
-            renderSider();
-            updateSelectionUI();
-        })
-        .catch(err => {
-            p.autoSaving = false;
-            console.error('自动保存异常', err);
-            showToast(`第 ${idx + 1} 张自动保存失败`, 'error');
-        });
+    if (!p || p.status !== 'parsed' || !p.data) return;
+    // 识别结果由服务端任务在读完时就已经保存；前端不能再以「自动识别」的名义写库
+    // （后端只允许服务端任务这样写，人工录入必须走「保存并提交审核」）。
+    p.status = 'saved';
+    renderSider();
+    updateSelectionUI();
 }
 
 window.togglePhotoSider = togglePhotoSider;

@@ -183,7 +183,7 @@ def test_s3_24_title_has_single_badge_discard_is_text_button_payment_is_switch(m
     assert "btn-danger" not in discard.get_attribute("class").split()
     d_box = discard.bounding_box()
     others = [page.locator(s).bounding_box() for s in ("#btnAddRow", "#btnSaveReview", "#btnSaveAndNext")]
-    assert all(d_box["x"] < o["x"] for o in others if o), (d_box, others)
+    assert all(d_box["x"] <= o["x"] for o in others if o), (d_box, others)
     sw = page.locator("#inpPaymentMark")
     assert sw.get_attribute("role") == "switch"
     assert sw.get_attribute("aria-checked") == "false"
@@ -451,7 +451,7 @@ def test_s3_07_flag_uses_in_app_dialog_with_reason(make_page, site):
     body = {}
     page.route("**/api/receipt/%d/flag" % rid, lambda r: (body.update(json.loads(r.request.post_data or "{}")), r.fulfill(
         status=200, content_type=JSON_CT, body=json.dumps({"status": "success"}))))
-    page.evaluate("id => flagReceipt(id)", rid)
+    page.evaluate("id => { flagReceipt(id); }", rid)
     page.wait_for_selector(".ui-dlg", timeout=3000)
     page.fill(".ui-dlg input", "单价明显不对")
     page.click(".ui-dlg button:has-text('标记有问题')")

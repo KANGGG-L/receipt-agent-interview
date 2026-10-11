@@ -1225,7 +1225,7 @@ def test_ac_qa_detail_01_endpoint_and_audit_events_lifecycle(client):
 
         # 5. 查询不存在的单据 -> 错误响应
         resp_404 = client.get("/api/analytics/parsing-logs/detail?record_id=99999999", headers=headers)
-        assert resp_404.status_code == 200
+        assert resp_404.status_code == 404
         assert resp_404.json()["status"] == "error"
         assert resp_404.json()["detail"] == "单据或链路未找到"
 

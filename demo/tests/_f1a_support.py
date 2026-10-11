@@ -5,6 +5,8 @@ import os
 import socket
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 
 import pytest
@@ -41,15 +43,19 @@ class Site:
         req.add_header("X-Role", role)
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        try:
-            with urllib.request.urlopen(req, timeout=30) as r:
-                return r.status, json.loads(r.read().decode("utf-8") or "null")
-        except urllib.error.HTTPError as e:
-            raw = e.read().decode("utf-8") or "null"
+        for attempt in range(30):
             try:
-                return e.code, json.loads(raw)
-            except ValueError:
-                return e.code, {"raw": raw}
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    return r.status, json.loads(r.read().decode("utf-8") or "null")
+            except urllib.error.HTTPError as e:
+                raw = e.read().decode("utf-8") or "null"
+                try:
+                    return e.code, json.loads(raw)
+                except ValueError:
+                    return e.code, {"raw": raw}
+            except urllib.error.URLError:
+                time.sleep(1)
+        raise RuntimeError("服务一直连不上：" + path)
 
     def make_receipt(self, items=None, total=None, supplier="测试供应商", settlement="cash",
                      status="edited", role="staff", date="2026-10-05", **extra):
@@ -75,6 +81,8 @@ def site():
     try:
         yield Site(handle, port, workdir)
     finally:
+        if handle.proc.poll() is not None:
+            print("服务进程提前退出，日志尾部：\n" + handle.read_log()[-3000:])
         handle.stop()
 
 

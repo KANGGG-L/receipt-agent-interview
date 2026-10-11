@@ -15,8 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import pytest
 from fastapi.testclient import TestClient
 
-from app import auth, db, maintenance, money, secret_store, web_assets
-from app.main import app, resolve_bind_host
+from app import auth, db
+from app.main import app
+
+try:  # 基线（修复前）代码没有这些模块：导入失败时置 None，让依赖它们的用例在基线上以失败收场
+    from app import maintenance, money, secret_store, web_assets
+    from app.main import resolve_bind_host
+except ImportError:  # pragma: no cover
+    maintenance = money = secret_store = web_assets = resolve_bind_host = None
 
 client = TestClient(app)
 ADMIN = {"X-Role": "admin"}
@@ -28,9 +34,10 @@ TECH_WORDS = ("Bearer", "X-Role", "magic bytes", "status='", "GET /api", "JSON",
 
 @pytest.fixture(autouse=True)
 def _reset_throttle():
-    auth.reset_login_throttle()
+    reset = getattr(auth, "reset_login_throttle", lambda: None)
+    reset()
     yield
-    auth.reset_login_throttle()
+    reset()
 
 
 # ---- S1-P2-01 / S1-P2-02 错误信封与人话 ----------------------------------
@@ -103,12 +110,14 @@ def test_business_errors_use_4xx_not_200():
 
 
 def test_upload_rejection_is_plain_language(tmp_path):
-    files = {"receipt": ("a.jpg", b"not an image at all", "image/jpeg")}
+    # 文件头像 JPEG、内容是垃圾：走「图片无法解析」分支，修复前文案带 magic bytes / 解码库英文报错
+    files = {"receipt": ("a.jpg", b"\xff\xd8\xff\xe0" + b"junk" * 50, "image/jpeg")}
     r = client.post("/api/upload", headers=STAFF, files=files, data={"async_": "true"})
     assert r.status_code == 400
     body = r.json()
-    assert "magic" not in body["msg"].lower() and "Truncated" not in body["msg"]
-    assert "照片" in body["msg"] or "图片" in body["msg"]
+    for bad in ("magic", "Truncated", "cannot identify", "Errno", "verify"):
+        assert bad.lower() not in body["msg"].lower(), body["msg"]
+    assert "照片" in body["msg"] and "重新" in body["msg"]
 
 
 def test_unhandled_exception_returns_envelope_without_internals():
@@ -705,9 +714,7 @@ def test_b1_1_pending_memory_concurrent_approve_ingests_once(monkeypatch):
         return None
 
     monkeypatch.setattr(rag, "approve_pending_to_memory", slow)
-    pid = db.enqueue_pending_memory("并发供应商", "单位习惯：一箱=12瓶", tenant_id="default")
-    pid = pid if isinstance(pid, int) else (pid or {}).get("id") or db.list_pending_memory(
-        status="pending", tenant_id="default")[0]["id"]
+    pid, _new = db.enqueue_pending_memory("并发供应商", "单位习惯：一箱=12瓶", tenant_id="default")
 
     def go(_):
         return client.post(f"/api/memory/pending/{pid}/approve", headers=ADMIN).status_code
@@ -720,9 +727,7 @@ def test_b1_1_pending_memory_concurrent_approve_ingests_once(monkeypatch):
 
 def test_b1_2_memory_errors_are_plain_language(monkeypatch):
     from app.services import rag
-    pid = db.enqueue_pending_memory("报错供应商", "内容", tenant_id="default")
-    pid = pid if isinstance(pid, int) else db.list_pending_memory(
-        status="pending", tenant_id="default")[0]["id"]
+    pid, _new = db.enqueue_pending_memory("报错供应商", "内容", tenant_id="default")
 
     def boom(*a, **kw):
         raise RuntimeError("chroma: segment lock Errno 11 /var/lib/x")
@@ -767,3 +772,115 @@ def test_b1_3_evalset_manifest_write_is_atomic_and_writes_are_serialized(tmp_pat
     assert peak[0] == 1
     for fn in (api_evalset.confirm_sample, api_evalset.promote_candidate, api_evalset.reject_candidate):
         assert hasattr(fn, "__wrapped__"), f"{fn.__name__} 必须经 _serialized 串行化"
+
+
+# ---- S1-P3-02 弃用 CLI 引擎兼容代码已删除，存量行经迁移改写 -----------------------
+def test_legacy_cli_engine_compat_code_is_gone_and_rows_migrate_correctly():
+    from app import models
+    for name in ("is_legacy_cli_engine", "is_legacy_cli_model", "LEGACY_CLI_ENGINE_VALUES"):
+        assert not hasattr(models, name)
+    assert not hasattr(db, "_normalize_legacy_cli_leg")
+    assert not hasattr(db, "_normalize_legacy_cli_engines")
+    for rel in ("app/models.py", "app/api_admin.py"):
+        src = open(os.path.join(DEMO_DIR, rel), encoding="utf-8").read().lower()
+        assert "opencode" not in src and "codebuddy" not in src, rel
+    models_src = open(os.path.join(DEMO_DIR, "app/models.py"), encoding="utf-8").read()
+    assert "LEGACY_CLI" not in models_src and "is_legacy_cli" not in models_src
+    # 存量行：引擎值、模型名、transport 键、回滚快照、历史快照、审计值
+    legacy = db.get_engine_config().model_dump()
+    legacy.update({"recognition_engine": "opencode", "recognition_model": "opencode/mimo-v2.5-free",
+                   "audit_engine": "EngineKind.CODEBUDDY", "audit_model": "minimax-m3-pay",
+                   "grey_parse_llm_engine": "codebuddy", "grey_parse_llm_model": "",
+                   "recognition_transport": "cli",
+                   "rollback_snapshot": {"prev": {"parse_llm_engine": "opencode",
+                                                  "parse_llm_model": "codebuddy/x"}}})
+    s = db.get_session()
+    try:
+        row = s.get(db._AppSettingRow, "engine_config") or db._AppSettingRow(key="engine_config")
+        s.add(row)
+        row.value = json.dumps(legacy)
+        audit = s.get(db._AppSettingRow, "system_audit_json") or db._AppSettingRow(key="system_audit_json")
+        s.add(audit)
+        audit.value = json.dumps([{"action": "promote_grey_config", "old": "opencode", "new": "openai"}])
+        s.commit()
+    finally:
+        s.close()
+    db._migrate_v5_drop_legacy_cli_engines(db._engine)
+    cfg = db.get_engine_config()
+    assert cfg.recognition_engine == "openai" and cfg.recognition_model == "qwen3.5-omni-flash"
+    assert cfg.audit_engine == "openai" and cfg.audit_model == "zai-org/GLM-4.5V"
+    assert cfg.grey_parse_llm_engine == "openai" and cfg.grey_parse_llm_model == "Qwen/Qwen3-VL-32B-Instruct"
+    raw = _raw_engine_row().lower()
+    assert "opencode" not in raw and "codebuddy" not in raw and "_transport" not in raw
+    assert json.loads(_raw_engine_row())["rollback_snapshot"]["prev"]["parse_llm_engine"] == "openai"
+    s = db.get_session()
+    try:
+        assert "opencode" not in s.get(db._AppSettingRow, "system_audit_json").value
+    finally:
+        s.close()
+    mapped = __import__("app.api_admin", fromlist=["x"])._normalize_audit_model_name("opencode")
+    assert mapped == "opencode"  # 不再有特殊映射：旧值只会存在于迁移前的库里
+
+
+# ---- S1-P2-12 依赖声明完整、带版本上限、有锁文件 -----------------------------------
+def test_requirements_declare_every_direct_import_with_upper_bounds():
+    import ast
+    import re as _re
+    root = os.path.abspath(os.path.join(DEMO_DIR, ".."))
+    reqs = open(os.path.join(DEMO_DIR, "requirements.txt"), encoding="utf-8").read()
+    declared = {}
+    for line in reqs.splitlines():
+        line = line.split("#")[0].strip()
+        if line:
+            m = _re.match(r"^([A-Za-z0-9_.-]+)\s*([<>=!~].*)?$", line)
+            declared[m.group(1).lower().replace("_", "-")] = m.group(2) or ""
+    for name, spec in declared.items():
+        assert "<" in spec, f"{name} 没有版本上限: {spec!r}"
+    mapping = {"PIL": "pillow", "yaml": "pyyaml", "dotenv": "python-dotenv",
+               "cv2": "opencv-python-headless", "pillow_heif": "pillow-heif",
+               "langchain_core": "langchain-core", "langchain_community": "langchain-community",
+               "langchain_dashscope": "langchain-dashscope"}
+    imported = set()
+    for base in (os.path.join(DEMO_DIR, "app"), os.path.join(root, "ai_registry")):
+        for dp, _dn, fns in os.walk(base):
+            for fn in fns:
+                if not fn.endswith(".py"):
+                    continue
+                tree = ast.parse(open(os.path.join(dp, fn), encoding="utf-8").read())
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        imported.update(a.name.split(".")[0] for a in node.names)
+                    elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                        imported.add(node.module.split(".")[0])
+    third_party = {m for m in imported
+                   if m not in sys.stdlib_module_names and m not in ("app", "ai_registry")
+                   and not m.startswith("_")}
+    missing = sorted(m for m in third_party
+                     if mapping.get(m, m).lower().replace("_", "-") not in declared)
+    assert missing == [], f"这些直接 import 的包没有写进 requirements.txt: {missing}"
+    for extra in ("pandas", "openpyxl", "opencv-python-headless", "numpy", "httpx", "cryptography", "dashscope"):
+        assert extra in declared, extra
+    lock = open(os.path.join(DEMO_DIR, "requirements.lock"), encoding="utf-8").read()
+    for name in declared:
+        assert _re.search(rf"^{_re.escape(name)}==", lock.lower().replace("_", "-"), _re.M), \
+            f"requirements.lock 缺少 {name} 的精确版本"
+    dev = open(os.path.join(DEMO_DIR, "requirements-dev.txt"), encoding="utf-8").read().lower()
+    assert "beautifulsoup4" in dev and "segno" in dev and "pytest" in dev
+
+
+def test_demo_script_has_no_hardcoded_interpreter_and_binds_loopback():
+    sh = open(os.path.join(DEMO_DIR, "demo.sh"), encoding="utf-8").read()
+    assert ".pyenv" not in sh and "3.9.6" not in sh
+    assert "--host 127.0.0.1" in sh and "0.0.0.0" not in sh
+    readme = open(os.path.join(DEMO_DIR, "README.md"), encoding="utf-8").read()
+    assert "零配置" not in readme and "手工录入" in readme
+    top = open(os.path.join(DEMO_DIR, "..", "README.md"), encoding="utf-8").read()
+    assert "零配置" not in top
+    env = open(os.path.join(DEMO_DIR, ".env.example"), encoding="utf-8").read()
+    assert "APP_SECRET_KEY" in env
+
+
+def test_fastapi_143_route_iteration_helper_sees_business_routes():
+    from app.routes_util import iter_routes
+    paths = {getattr(r, "path", "") for r in iter_routes(app)}
+    assert {"/api/receipts", "/api/save_edited", "/api/trash/receipts", "/api/health"} <= paths
