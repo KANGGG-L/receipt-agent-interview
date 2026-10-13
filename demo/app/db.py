@@ -49,6 +49,8 @@ from datetime import datetime, timedelta
 
 from dotenv import load_dotenv
 
+from app import money as _money
+
 # P3-T1（K2）：结构化事实的行字段唯一定义（纯逻辑模块，只依赖标准库，无导入环）。
 from app.services.memory_facts import ROW_FIELDS as _MEMORY_FACT_ROW_FIELDS
 
@@ -63,8 +65,56 @@ if not _raw_db_path or _raw_db_path in ("./receipt_demo.db", "receipt_demo.db"):
 else:
     DB_PATH = _raw_db_path
 
+
+def _normalized_db_path(path=None):
+    """把库路径归一成 realpath。空串和默认相对名与第 61 行同一口径。"""
+    if path is None:
+        path = DB_PATH
+    raw = "" if path is None else str(path).strip()
+    if not raw or raw in ("./receipt_demo.db", "receipt_demo.db"):
+        return os.path.realpath(_default_db_path)
+    return os.path.realpath(raw)
+
+
+def _protected_category_db_realpaths():
+    repo_root = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    demo_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+    return frozenset({
+        os.path.realpath(_default_db_path),
+        os.path.realpath(os.path.join(repo_root, "app.db")),
+        os.path.realpath(os.path.join(repo_root, "receipts.db")),
+        os.path.realpath(os.path.join(demo_dir, "receipts.db")),
+    })
+
+
+def is_category_migration_protected(path=None):
+    """保护路径不得执行分类注册表迁移。符号链接按 realpath 目标判断。"""
+    return _normalized_db_path(path) in _protected_category_db_realpaths()
+
+
 _engine = None
 _SessionLocal = None
+
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _install_sqlite_pragmas(engine):
+    """每条新连接都设 WAL + busy_timeout：读写并发时不立刻抛 database is locked。
+
+    内存库与不支持 WAL 的介质上 journal_mode 切换会静默保持原值，不视为错误。
+    """
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _on_connect(dbapi_conn, _record):
+        cur = dbapi_conn.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=%d" % SQLITE_BUSY_TIMEOUT_MS)
+            cur.execute("PRAGMA synchronous=NORMAL")
+        finally:
+            cur.close()
+
 
 _ReceiptRow = _ItemRow = _SkuRow = _StockLogRow = _SupplierRow = None
 _DeptRow = _PaymentRow = _VendorMemoryRow = _AppSettingRow = None
@@ -87,14 +137,6 @@ _current_tenant_ctx = contextvars.ContextVar("current_tenant", default=None)
 _bypass_tenant_isolation_ctx = contextvars.ContextVar("bypass_tenant_isolation", default=False)
 
 
-_strict_tenant_ctx = contextvars.ContextVar("strict_tenant", default=False)
-
-
-class TenantBoundaryViolationError(RuntimeError):
-    """跨租户边界违规或未带租户过滤条件。"""
-    pass
-
-
 def set_current_tenant_id(tenant_id):
     """设置当前线程/协程请求的租户上下文。"""
     val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
@@ -107,16 +149,14 @@ def get_current_tenant_id():
 
 
 @contextmanager
-def tenant_context(tenant_id, strict=False):
-    """租户上下文管理器：在作用域内绑定租户身份；strict=True 时启用 DB 层漏带租户强制阻断。"""
+def tenant_context(tenant_id):
+    """租户上下文管理器：在作用域内绑定租户身份，供 scoped() 在未显式传租户时兜底过滤。"""
     val = str(tenant_id).strip() if tenant_id and str(tenant_id).strip() else None
     t1 = _current_tenant_ctx.set(val)
-    t2 = _strict_tenant_ctx.set(bool(strict))
     try:
         yield
     finally:
         _current_tenant_ctx.reset(t1)
-        _strict_tenant_ctx.reset(t2)
 
 
 @contextmanager
@@ -154,7 +194,9 @@ def _make_engine():
     from sqlalchemy.orm import sessionmaker, declarative_base
     from sqlalchemy.sql import func
 
-    _engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False})
+    _engine = create_engine(f"sqlite:///{DB_PATH}", connect_args={
+        "check_same_thread": False, "timeout": SQLITE_BUSY_TIMEOUT_MS / 1000.0})
+    _install_sqlite_pragmas(_engine)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
 
     Base = declarative_base()
@@ -203,11 +245,20 @@ def _make_engine():
         # Gap 9 / Gap 6 店员可修正字段（识别直出 + save_edited 覆写，双写同列）
         service_fee = Column(Float, default=0.0)           # 加一服务费
         tax_amount = Column(Float, default=0.0)            # 税额/VAT/GST
+        discount_amount = Column(Float, default=0.0)
+        delivery_fee = Column(Float, default=0.0)
+        deposit_amount = Column(Float, default=0.0)
+        rounding_adjustment = Column(Float, default=0.0)
         adjustment_notes_json = Column(Text, default="[]") # 手写注记（拒收/短装/调整）list[str]
         payment_evidence = Column(Text, default="")        # 付款标记图面证据描述
         created_at = Column(String, default="")
         updated_at = Column(String, default="")
         deleted_at = Column(String, nullable=True)  # 软删除时间戳
+        deleted_by = Column(String, nullable=True)  # 放弃单据的操作人（回收站展示）
+        # 冲销（approved -> reversed）留痕：谁、何时、为什么
+        reversed_at = Column(String, nullable=True)
+        reversed_by = Column(String, nullable=True)
+        reverse_reason = Column(Text, nullable=True)
         # Gap E2：租户隔离键（多租户贯穿业务主表）
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -956,6 +1007,10 @@ def _make_engine():
         "ALTER TABLE receipts ADD COLUMN currency VARCHAR(8) DEFAULT 'HKD'",
         "ALTER TABLE receipts ADD COLUMN service_fee REAL DEFAULT 0",
         "ALTER TABLE receipts ADD COLUMN tax_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN discount_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN delivery_fee REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN deposit_amount REAL DEFAULT 0",
+        "ALTER TABLE receipts ADD COLUMN rounding_adjustment REAL DEFAULT 0",
         "ALTER TABLE receipts ADD COLUMN adjustment_notes_json TEXT DEFAULT '[]'",
         "ALTER TABLE receipts ADD COLUMN payment_evidence TEXT DEFAULT ''",
         # P2-1 图内隐藏文字检测结果（只告警不拦截；'{}' = 未检测/无结果）
@@ -1018,7 +1073,7 @@ def _make_engine():
                     "WHERE tenant_id IS NULL OR tenant_id = ''"))
                 _c.commit()
         except Exception as _e:
-            logger.warning(
+            _migration_failed(
                 "[migrate] %s tenant_id backfill skipped: %s", _tbl_tid, _e)
 
     # D17：receipts.supplier_id 幂等回填（精确名匹配 -> 归一 key 匹配 -> 保持 NULL）。
@@ -1263,7 +1318,7 @@ def _make_engine():
                 ), {"mid": uuid.uuid4().hex, "rid": _r[0]})
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] vendor_memory memory_id backfill skipped: %s", _e)
+        _migration_failed("[migrate] vendor_memory memory_id backfill skipped: %s", _e)
 
     # 索引：memory_id 唯一约束 + vendor 查询索引（先查再执行幂等，放在回填之后）
     for _ddl in (
@@ -1365,7 +1420,7 @@ def _make_engine():
             ))
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
+        _migration_failed("[migrate] daily_dish_consumptions tenant_id backfill skipped: %s", _e)
 
     # 餐品分类基线重构：存量空值及「其他」分类一次性平滑迁移至「默认」
     try:
@@ -1378,7 +1433,7 @@ def _make_engine():
             ))
             _c.commit()
     except Exception as _e:
-        logger.warning("[migrate] dishes category backfill skipped: %s", _e)
+        _migration_failed("[migrate] dishes category backfill skipped: %s", _e)
 
     # -----------------------------------------------------------------
     # 遗留物理形态重建（本轮单独授权，仅限 vendor_memory / skus / suppliers /
@@ -1420,55 +1475,11 @@ def _make_engine():
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
     _SecurityEventRow = SecurityEventRow
 
-    # W-ISO-1：SQLite 数据库级租户行隔离兜底钩子（before_cursor_execute）
-    from sqlalchemy import event
-    import re as _re
-
-    _TENANT_PROTECTED_TABLES = (
-        "receipts", "receipt_items", "suppliers", "skus",
-        "inventory_log", "vendor_memory", "dishes", "payments",
-    )
-
-    @event.listens_for(_engine, "before_cursor_execute")
-    def _enforce_tenant_isolation(conn, cursor, statement, parameters, context, executemany):
-        if _bypass_tenant_isolation_ctx.get():
-            return
-        if not _strict_tenant_ctx.get():
-            return
-        tenant = _current_tenant_ctx.get()
-        if not tenant:
-            return
-        s = statement.lower()
-        # 仅对 SELECT / UPDATE / DELETE 做行级隔离拦截，放行 INSERT / PRAGMA / DDL
-        if not (s.startswith("select") or s.startswith("update") or s.startswith("delete")):
-            return
-        # 检查是否涉及核心业务表
-        matched_table = None
-        for tbl in _TENANT_PROTECTED_TABLES:
-            if _re.search(rf"\b{tbl}\b", s):
-                matched_table = tbl
-                break
-        if not matched_table:
-            return
-        # 检查是否具备 WHERE 过滤子句且 WHERE 子句中包含 tenant_id
-        m = _re.search(r"\bwhere\b", s)
-        if not m or "tenant_id" not in s[m.end():]:
-            err_msg = (
-                f"数据库层拦截跨租户越权查询：作用于业务表 '{matched_table}' 的 SQL "
-                f"缺失 tenant_id 隔离条件（当前租户={tenant}）"
-            )
-            try:
-                record_security_event(
-                    event_type="TENANT_VIOLATION_BLOCKED",
-                    severity="CRITICAL",
-                    source_module="db_enforcement",
-                    details={"table": matched_table, "tenant_id": tenant, "sql": statement[:200]},
-                    tenant_id=tenant,
-                )
-            except Exception:
-                pass
-            raise TenantBoundaryViolationError(err_msg)
-
+    _run_ordered_migrations(_engine)
+    if is_category_migration_protected(DB_PATH):
+        pass
+    else:
+        _apply_category_registry_migration(_engine)
     return Base
 
 
@@ -1546,11 +1557,222 @@ def _migration_ddl_already_applied(conn, ddl):
     return False
 
 
+# -------------------------------------------------------------
+# 有序迁移：schema_version 表记录已执行的版本，每个版本只执行一次。
+# v1 是「历史基线」：本文件 _make_engine 里按先查再执行写成的存量幂等 DDL/回填，
+# 它们全部成功后才记录 v1；此后所有新增结构变更只能追加到下面的列表，
+# 禁止再往 _make_engine 里堆新的 ALTER。任何一步失败直接抛 MigrationError 中止启动。
+# -------------------------------------------------------------
+def _migrate_v2_receipt_lifecycle_columns(engine):
+    for ddl in (
+        "ALTER TABLE receipts ADD COLUMN deleted_by VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reversed_at VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reversed_by VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN reverse_reason TEXT",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v3_revoked_tokens(engine):
+    _apply_migration_ddl(
+        engine,
+        "CREATE TABLE IF NOT EXISTS revoked_tokens ("
+        " jti VARCHAR(64) PRIMARY KEY, exp INTEGER NOT NULL)")
+
+
+def _migrate_v4_receipt_list_indexes(engine):
+    # legacy 受控库的 receipts 只有 id / supplier_name / tenant_id。
+    # 索引引用 status、deleted_at；缺列时先补列，否则 CREATE INDEX 中止整次迁移。
+    # 列已存在（create_all 建的新库）由 _apply_migration_ddl 静默跳过。
+    for ddl in (
+        "ALTER TABLE receipts ADD COLUMN status VARCHAR DEFAULT 'uploaded'",
+        "ALTER TABLE receipts ADD COLUMN deleted_at VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
+        "CREATE INDEX IF NOT EXISTS ix_receipts_tenant_status "
+        "ON receipts (tenant_id, status, deleted_at)",
+        "CREATE INDEX IF NOT EXISTS ix_receipt_items_receipt "
+        "ON receipt_items (receipt_id)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+_LEGACY_CLI_ENGINES = ("opencode", "codebuddy")
+_LEGACY_CLI_MODEL_PREFIXES = ("opencode", "codebuddy")
+_LEGACY_CLI_MODEL_NAMES = ("minimax-m3-pay",)
+_LEGACY_CLI_REMOVED_KEYS = (
+    "recognition_transport", "audit_transport", "parse_transport",
+    "grey_recognition_transport", "grey_audit_transport", "grey_parse_transport",
+)
+# 引擎字段 -> (模型字段, 迁移时使用的默认模型名)
+_LEGACY_CLI_LEGS = (
+    ("recognition_engine", "recognition_model", "rec"),
+    ("audit_engine", "audit_model", "aud"),
+    ("parse_llm_engine", "parse_llm_model", "parse"),
+    ("grey_recognition_engine", "grey_recognition_model", "rec"),
+    ("grey_audit_engine", "grey_audit_model", "aud"),
+    ("grey_parse_llm_engine", "grey_parse_llm_model", "parse"),
+)
+_LEGACY_CLI_DEFAULT_MODELS = {
+    "rec": "qwen3.5-omni-flash",
+    "aud": "zai-org/GLM-4.5V",
+    "parse": "Qwen/Qwen3-VL-32B-Instruct",
+}
+
+
+def _scrub_legacy_cli(obj):
+    """递归清理一份配置 JSON 里的 opencode/codebuddy 遗留（引擎值、模型名、transport 键）。
+
+    返回是否有改动。只在迁移 v5 里用，运行期代码不再认识这两个引擎。
+    """
+    changed = False
+    if isinstance(obj, list):
+        for x in obj:
+            changed = _scrub_legacy_cli(x) or changed
+        return changed
+    if not isinstance(obj, dict):
+        return False
+    for k in _LEGACY_CLI_REMOVED_KEYS:
+        if k in obj:
+            obj.pop(k)
+            changed = True
+    for eng_f, mod_f, kind in _LEGACY_CLI_LEGS:
+        eng = str(obj.get(eng_f) or "").strip().lower()
+        if eng.startswith("enginekind."):
+            eng = eng.split(".", 1)[1]
+        model = str(obj.get(mod_f) or "").strip()
+        m_low = model.lower()
+        legacy_model = bool(m_low) and (m_low.startswith(_LEGACY_CLI_MODEL_PREFIXES)
+                                        or m_low in _LEGACY_CLI_MODEL_NAMES)
+        if eng in _LEGACY_CLI_ENGINES:
+            obj[eng_f] = "openai"
+            changed = True
+        if legacy_model or (eng in _LEGACY_CLI_ENGINES and not model):
+            obj[mod_f] = _LEGACY_CLI_DEFAULT_MODELS[kind]
+            changed = True
+    for v in list(obj.values()):
+        changed = _scrub_legacy_cli(v) or changed
+    return changed
+
+
+def _migrate_v5_drop_legacy_cli_engines(engine):
+    """把存量库里 opencode/codebuddy 的引擎值、模型名与已删除的 transport 键一次性改写。
+
+    覆盖：app_settings.engine_config（含内嵌的 rollback_snapshot）、engine_config_history.snapshot、
+    experiments.grey_snapshot、系统审计里记录的引擎名。改写后运行期代码不再保留任何兼容分支。
+    """
+    from sqlalchemy import text as _t
+    targets = (
+        ("app_settings", "key", "value", "key = 'engine_config'"),
+        ("engine_config_history", "id", "snapshot", "1=1"),
+        ("experiments", "id", "grey_snapshot", "1=1"),
+    )
+    with engine.begin() as conn:
+        for table, pk, col, where in targets:
+            cols = _table_columns(conn, table)
+            if not cols or col not in cols:
+                continue
+            for pk_val, raw in conn.execute(_t(f"SELECT {pk}, {col} FROM {table} WHERE {where}")).fetchall():
+                if not raw or not any(w in raw.lower() for w in
+                                      ("opencode", "codebuddy", "minimax-m3-pay", "_transport")):
+                    continue
+                try:
+                    data = json.loads(raw)
+                except ValueError:
+                    continue
+                if _scrub_legacy_cli(data):
+                    conn.execute(_t(f"UPDATE {table} SET {col} = :v WHERE {pk} = :k"),
+                                 {"v": json.dumps(data, ensure_ascii=False), "k": pk_val})
+        cols = _table_columns(conn, "app_settings")
+        if cols:
+            row = conn.execute(_t(
+                "SELECT value FROM app_settings WHERE key = 'system_audit_json'")).fetchone()
+            if row and row[0] and any(w in row[0].lower() for w in ("opencode", "codebuddy")):
+                try:
+                    logs = json.loads(row[0])
+                except ValueError:
+                    logs = None
+                if isinstance(logs, list):
+                    touched = False
+                    for entry in logs:
+                        if not isinstance(entry, dict):
+                            continue
+                        for f in ("old", "new"):
+                            v = str(entry.get(f, "")).strip().lower()
+                            if v in _LEGACY_CLI_ENGINES or v in ("enginekind.opencode", "enginekind.codebuddy"):
+                                entry[f] = "openai"
+                                touched = True
+                    if touched:
+                        conn.execute(_t("UPDATE app_settings SET value = :v WHERE key = 'system_audit_json'"),
+                                     {"v": json.dumps(logs, ensure_ascii=False)})
+
+
+SCHEMA_MIGRATIONS = [
+    (1, "baseline_inline_schema", None),
+    (2, "receipt_lifecycle_columns", _migrate_v2_receipt_lifecycle_columns),
+    (3, "revoked_tokens", _migrate_v3_revoked_tokens),
+    (4, "receipt_list_indexes", _migrate_v4_receipt_list_indexes),
+    (5, "drop_legacy_cli_engines", _migrate_v5_drop_legacy_cli_engines),
+]
+
+
+def _run_ordered_migrations(engine):
+    from sqlalchemy import text as _t
+    with engine.begin() as conn:
+        conn.execute(_t(
+            "CREATE TABLE IF NOT EXISTS schema_version ("
+            " version INTEGER PRIMARY KEY, name VARCHAR NOT NULL,"
+            " applied_at VARCHAR NOT NULL)"))
+        applied = {r[0] for r in conn.execute(_t("SELECT version FROM schema_version")).fetchall()}
+    for version, name, fn in SCHEMA_MIGRATIONS:
+        if version in applied:
+            continue
+        if fn is not None:
+            fn(engine)
+        with engine.begin() as conn:
+            conn.execute(_t(
+                "INSERT OR IGNORE INTO schema_version (version, name, applied_at) "
+                "VALUES (:v, :n, :t)"),
+                         {"v": version, "n": name, "t": datetime.now().isoformat(timespec="seconds")})
+
+
+def schema_version():
+    """当前库已执行到的最大迁移版本（0 表示尚无版本表）。"""
+    from sqlalchemy import text as _t
+    try:
+        with _engine.connect() as conn:
+            return int(conn.execute(_t("SELECT COALESCE(MAX(version), 0) FROM schema_version")).scalar() or 0)
+    except Exception:
+        return 0
+
+
+def ensure_schema_current():
+    """确保迁移已全部执行；缺任何一版即抛 MigrationError（启动时调用，失败中止启动）。"""
+    _run_ordered_migrations(_engine)
+    latest = SCHEMA_MIGRATIONS[-1][0]
+    if schema_version() != latest:
+        raise MigrationError(f"库结构版本 {schema_version()} 与程序要求的 {latest} 不一致，已中止启动")
+    if is_category_migration_protected(DB_PATH):
+        pass
+    else:
+        _apply_category_registry_migration(_engine)
+
+
+class MigrationError(RuntimeError):
+    """库结构迁移失败：直接中止启动，避免带着半套 schema 继续跑业务。"""
+
+
+def _migration_failed(fmt, *args):
+    msg = (fmt % args) if args else fmt
+    logger.error(msg)
+    raise MigrationError(msg)
+
+
 def _apply_migration_ddl(engine, ddl):
     """单条迁移 DDL 执行器（R5 静默幂等口径）：
 
     - 先查再执行：列/索引已存在则静默 continue（零日志，二次 import 干净）；
-    - 仅真实异常（DB locked 等）才 logger.warning 留痕，且不阻断启动。
+    - 真实异常（DB locked 等）抛 MigrationError 中止启动；并发进程抢先建好的
+      「已存在」不算失败。
     """
     from sqlalchemy import text as _t
     try:
@@ -1560,7 +1782,10 @@ def _apply_migration_ddl(engine, ddl):
             conn.execute(_t(ddl))
             conn.commit()
     except Exception as e:
-        logger.warning("[migrate] %s skipped: %s", ddl, e)
+        _low = str(e).lower()
+        if "duplicate column" in _low or "already exists" in _low:
+            return  # 另一进程抢先完成了同一条迁移
+        _migration_failed("[migrate] %s skipped: %s", ddl, e)
 
 
 def _drop_rebuild_tmp_table(engine, tmp):
@@ -1680,10 +1905,10 @@ def _rebuild_legacy_vendor_memory(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] vendor_memory legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] vendor_memory legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_skus_name_unique(engine):
@@ -1745,10 +1970,10 @@ def _rebuild_legacy_skus_name_unique(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] skus legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] skus legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_suppliers_name_unique(engine):
@@ -1812,10 +2037,10 @@ def _rebuild_legacy_suppliers_name_unique(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] suppliers legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] suppliers legacy rebuild skipped: %s", e)
 
 
 def _rebuild_legacy_dish_ingredients(engine):
@@ -1887,10 +2112,10 @@ def _rebuild_legacy_dish_ingredients(engine):
                 with engine.begin() as conn:
                     conn.execute(_t(ddl))
             except Exception as e:
-                logger.warning("[migrate] %s skipped: %s", ddl, e)
+                _migration_failed("[migrate] %s skipped: %s", ddl, e)
     except Exception as e:
-        logger.warning("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
         _drop_rebuild_tmp_table(engine, tmp)
+        _migration_failed("[migrate] dish_ingredients legacy rebuild skipped: %s", e)
 
 
 def _ensure_app_setting_overrides_table(engine):
@@ -1938,7 +2163,7 @@ def _migrate_app_settings_overrides(engine):
                     "[migrate] app_settings -> app_setting_overrides moved %s tenant row(s)",
                     moved)
     except Exception as e:
-        logger.warning("[migrate] app_settings override migration skipped: %s", e)
+        _migration_failed("[migrate] app_settings override migration skipped: %s", e)
 
 
 def _backfill_receipt_supplier_ids(engine):
@@ -2007,10 +2232,505 @@ def _backfill_receipt_supplier_ids(engine):
                         "UPDATE receipts SET supplier_id = :sid WHERE id = :rid"),
                         updates)
     except Exception as e:
-        logger.warning("[migrate] receipts.supplier_id backfill skipped: %s", e)
+        _migration_failed("[migrate] receipts.supplier_id backfill skipped: %s", e)
+
+
+class CategoryResolveError(Exception):
+    """分类解析失败。code 是机器码，msg 是给店员看的中文。"""
+
+    def __init__(self, code, msg):
+        super().__init__(msg)
+        self.code = code
+        self.msg = msg
+
+
+_CATEGORY_TABLES = ("skus", "dishes")
+_CATEGORY_DOMAINS = ("sku", "dish")
+_CATEGORY_NOT_FOUND_MSG = "分类不存在"
+_CATEGORY_MISMATCH_MSG = "代码和分类名称不是同一条"
+
+
+def _category_tenant(tenant_id):
+    text = "" if tenant_id is None else str(tenant_id).strip()
+    return text or "default"
+
+
+def _category_master_key(label):
+    from app.i18n_text import master_key
+    return master_key("" if label is None else str(label))
+
+
+def category_choose_label(pairs):
+    """同一折叠组里选定一种显示写法：行数、最小 id、Unicode 码点。"""
+    counts = {}
+    min_id = {}
+    for row_id, label in pairs or ():
+        spelling = "" if label is None else str(label)
+        counts[spelling] = counts.get(spelling, 0) + 1
+        try:
+            rid = int(row_id)
+        except (TypeError, ValueError):
+            rid = 0
+        if spelling not in min_id or rid < min_id[spelling]:
+            min_id[spelling] = rid
+    if not counts:
+        return ""
+    return sorted(
+        counts,
+        key=lambda spelling: (-counts[spelling], min_id[spelling], spelling),
+    )[0]
+
+
+def _category_tables(conn):
+    from sqlalchemy import text
+    return {row[0] for row in conn.execute(text(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"))}
+
+
+def _category_columns(conn, table):
+    from sqlalchemy import text
+    if table not in _CATEGORY_TABLES:
+        return []
+    return [row[1] for row in conn.execute(text(
+        "PRAGMA table_info(%s)" % table))]
+
+
+def category_schema_ready(engine=None):
+    """注册表和两列 category_id 都在才算已迁移。不缓存，换库后必须重探。"""
+    eng = _engine if engine is None else engine
+    if eng is None:
+        return False
+    try:
+        with eng.connect() as conn:
+            if "category_registry" not in _category_tables(conn):
+                return False
+            for table in _CATEGORY_TABLES:
+                if "category_id" not in _category_columns(conn, table):
+                    return False
+        return True
+    except Exception:
+        return False
+
+
+def _category_row_dict(row):
+    if row is None:
+        return None
+    return {
+        "id": int(row[0]),
+        "tenant_id": row[1],
+        "domain": row[2],
+        "label": row[3],
+        "match_key": row[4],
+        "system_default": int(row[5] or 0),
+    }
+
+
+def _category_find_by_key(session, tenant, domain, match_key):
+    from sqlalchemy import text
+    row = session.execute(text(
+        "SELECT id, tenant_id, domain, label, match_key, system_default "
+        "FROM category_registry "
+        "WHERE tenant_id = :t AND domain = :d AND match_key = :k"
+    ), {
+        "t": _category_tenant(tenant),
+        "d": domain,
+        "k": match_key,
+    }).fetchone()
+    return _category_row_dict(row)
+
+
+def _category_find_by_id(session, tenant, domain, category_id):
+    from sqlalchemy import text
+    try:
+        cid = int(category_id)
+    except (TypeError, ValueError):
+        return None
+    row = session.execute(text(
+        "SELECT id, tenant_id, domain, label, match_key, system_default "
+        "FROM category_registry "
+        "WHERE id = :i AND tenant_id = :t AND domain = :d"
+    ), {
+        "i": cid,
+        "t": _category_tenant(tenant),
+        "d": domain,
+    }).fetchone()
+    return _category_row_dict(row)
+
+
+def _category_insert_registry(session, tenant, domain, label, match_key, system_default):
+    """插入或复用一行。唯一约束冲突时重读已有 id 和已有 label。"""
+    tenant = _category_tenant(tenant)
+    found = _category_find_by_key(session, tenant, domain, match_key)
+    if found is not None:
+        return found["id"], found["label"]
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    params = {
+        "t": tenant,
+        "d": domain,
+        "l": label,
+        "k": match_key,
+        "s": 1 if int(system_default or 0) else 0,
+    }
+    try:
+        with session.begin_nested():
+            inserted = session.execute(text(
+                "INSERT INTO category_registry "
+                "(tenant_id, domain, label, match_key, system_default) "
+                "VALUES (:t, :d, :l, :k, :s) RETURNING id"
+            ), params).fetchone()
+            new_id = int(inserted[0])
+        return new_id, label
+    except IntegrityError:
+        found = _category_find_by_key(session, tenant, domain, match_key)
+        if found is not None:
+            return found["id"], found["label"]
+        raise
+
+
+def _category_ensure_system_default(session, tenant):
+    """餐品域系统行：label 固定「默认」。已正确则不改写。"""
+    tenant = _category_tenant(tenant)
+    key = _category_master_key("默认")
+    found = _category_find_by_key(session, tenant, "dish", key)
+    if found is not None:
+        if found["label"] != "默认" or int(found["system_default"] or 0) != 1:
+            from sqlalchemy import text
+            session.execute(text(
+                "UPDATE category_registry "
+                "SET label = :l, system_default = 1 WHERE id = :i"
+            ), {"l": "默认", "i": found["id"]})
+        return found["id"], "默认"
+    return _category_insert_registry(session, tenant, "dish", "默认", key, 1)
+
+
+def _normalize_category_label(domain, raw):
+    text = "" if raw is None else str(raw).strip()
+    if domain == "dish":
+        text = text[:20]
+        if not text or text == "其他":
+            text = "默认"
+    return text
+
+
+def bind_category(session, tenant_id, domain, *, label=None, label_set=False,
+                  category_id=None, category_id_set=False):
+    """写路径解析。返回 (存储标签, category_id 或 None)。"""
+    if domain not in _CATEGORY_DOMAINS:
+        raise CategoryResolveError("CATEGORY_NOT_FOUND", _CATEGORY_NOT_FOUND_MSG)
+    tenant = _category_tenant(tenant_id)
+
+    def _by_id(cid):
+        found = _category_find_by_id(session, tenant, domain, cid)
+        if found is None:
+            raise CategoryResolveError("CATEGORY_NOT_FOUND", _CATEGORY_NOT_FOUND_MSG)
+        return found
+
+    if category_id_set and not label_set:
+        found = _by_id(category_id)
+        return found["label"], int(found["id"])
+
+    if label_set and category_id_set:
+        found = _by_id(category_id)
+        norm = _normalize_category_label(domain, label)
+        if domain == "sku" and not norm:
+            raise CategoryResolveError("CATEGORY_MISMATCH", _CATEGORY_MISMATCH_MSG)
+        if _category_master_key(norm) != found["match_key"]:
+            raise CategoryResolveError("CATEGORY_MISMATCH", _CATEGORY_MISMATCH_MSG)
+        return found["label"], int(found["id"])
+
+    if label_set:
+        norm = _normalize_category_label(domain, label)
+        if domain == "sku" and not norm:
+            return "", None
+        key = _category_master_key(norm)
+        if domain == "dish" and key == _category_master_key("默认"):
+            cid, stored = _category_ensure_system_default(session, tenant)
+            return stored, int(cid)
+        found = _category_find_by_key(session, tenant, domain, key)
+        if found is not None:
+            return found["label"], int(found["id"])
+        cid, stored = _category_insert_registry(
+            session, tenant, domain, norm, key, 0)
+        return stored, int(cid)
+
+    if domain == "dish":
+        cid, stored = _category_ensure_system_default(session, tenant)
+        return stored, int(cid)
+    return "", None
+
+
+def _category_schema_ready_session(session):
+    try:
+        if "category_registry" not in _category_tables(session):
+            return False
+        for table in _CATEGORY_TABLES:
+            if "category_id" not in _category_columns(session, table):
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _assign_category_id(session, table, row_id, category_id):
+    if table not in _CATEGORY_TABLES:
+        return
+    from sqlalchemy import text
+    if "category_id" not in _category_columns(session, table):
+        return
+    session.execute(text(
+        "UPDATE %s SET category_id = :c WHERE id = :i" % table
+    ), {"c": category_id, "i": int(row_id)})
+
+
+def _read_category_id_conn(conn, table, row_id):
+    from sqlalchemy import text
+    if table not in _CATEGORY_TABLES:
+        return None
+    if "category_id" not in _category_columns(conn, table):
+        return None
+    row = conn.execute(text(
+        "SELECT category_id FROM %s WHERE id = :i" % table
+    ), {"i": int(row_id)}).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def read_category_id_for_row(table, row_id, engine=None, session=None):
+    if table not in _CATEGORY_TABLES:
+        return None
+    if session is not None:
+        if not _category_schema_ready_session(session):
+            return None
+        return _read_category_id_conn(session, table, row_id)
+    if not category_schema_ready(engine):
+        return None
+    from sqlalchemy import text
+    eng = _engine if engine is None else engine
+    with eng.connect() as conn:
+        row = conn.execute(text(
+            "SELECT category_id FROM %s WHERE id = :i" % table
+        ), {"i": int(row_id)}).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def _read_category_id_map_conn(conn, table, ids):
+    from sqlalchemy import text
+    out = {rid: None for rid in ids}
+    if "category_id" not in _category_columns(conn, table):
+        return out
+    step = 500
+    for start in range(0, len(ids), step):
+        chunk = ids[start:start + step]
+        params = {("i%d" % n): value for n, value in enumerate(chunk)}
+        holders = ", ".join(":%s" % key for key in params)
+        rows = conn.execute(text(
+            "SELECT id, category_id FROM %s WHERE id IN (%s)" % (table, holders)
+        ), params).fetchall()
+        for rid, cid in rows:
+            out[int(rid)] = None if cid is None else int(cid)
+    return out
+
+
+def read_category_id_map(table, row_ids, engine=None, session=None):
+    ids = []
+    for raw in row_ids or ():
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    out = {rid: None for rid in ids}
+    if not ids or table not in _CATEGORY_TABLES:
+        return out
+    if session is not None:
+        if not _category_schema_ready_session(session):
+            return out
+        return _read_category_id_map_conn(session, table, ids)
+    if not category_schema_ready(engine):
+        return out
+    eng = _engine if engine is None else engine
+    with eng.connect() as conn:
+        return _read_category_id_map_conn(conn, table, ids)
+
+
+def resolve_category_filter(domain, tenant_id, filter_text, engine=None):
+    """把筛选标签解析成 category_id。解析不到返回 None，调用方排除全部。
+
+    不把纯数字标签转成整数。餐品筛选先走空值、「其他」和 20 字截断。
+    """
+    if domain not in _CATEGORY_DOMAINS or not category_schema_ready(engine):
+        return None
+    norm = _normalize_category_label(domain, filter_text)
+    if domain == "sku" and not norm:
+        return None
+    key = _category_master_key(norm)
+    session = get_session()
+    try:
+        found = _category_find_by_key(session, tenant_id, domain, key)
+        if found is None:
+            return None
+        return int(found["id"])
+    finally:
+        session.close()
+
+
+def _category_backfill(session, domain, table):
+    from sqlalchemy import text
+    rows = session.execute(text(
+        "SELECT id, tenant_id, category, category_id FROM %s" % table
+    )).fetchall()
+    if domain == "dish":
+        tenants = {_category_tenant(row[1]) for row in rows}
+        for tenant in tenants:
+            _category_ensure_system_default(session, tenant)
+    pending = {}
+    for rid, tenant_raw, category, category_id in rows:
+        tenant = _category_tenant(tenant_raw)
+        if category_id is not None:
+            existing = _category_find_by_id(session, tenant, domain, category_id)
+            if existing is not None:
+                continue
+        raw = "" if category is None else str(category)
+        stripped = raw.strip()
+        if domain == "sku":
+            if not stripped:
+                if category_id is not None or raw != "":
+                    session.execute(text(
+                        "UPDATE skus SET category = '', category_id = NULL WHERE id = :i"
+                    ), {"i": int(rid)})
+                continue
+            key = _category_master_key(stripped)
+            pending.setdefault((tenant, key), []).append((int(rid), stripped))
+            continue
+        if not stripped or stripped == "其他":
+            sys_id, sys_label = _category_ensure_system_default(session, tenant)
+            session.execute(text(
+                "UPDATE dishes SET category = :c, category_id = :cid WHERE id = :i"
+            ), {"c": sys_label, "cid": int(sys_id), "i": int(rid)})
+            continue
+        key = _category_master_key(stripped)
+        if key == _category_master_key("默认"):
+            sys_id, sys_label = _category_ensure_system_default(session, tenant)
+            session.execute(text(
+                "UPDATE dishes SET category = :c, category_id = :cid WHERE id = :i"
+            ), {"c": sys_label, "cid": int(sys_id), "i": int(rid)})
+            continue
+        pending.setdefault((tenant, key), []).append((int(rid), stripped))
+    for (tenant, key), items in pending.items():
+        chosen = category_choose_label(items)
+        cid, stored = _category_insert_registry(
+            session, tenant, domain, chosen, key, 0)
+        for rid, _spelling in items:
+            session.execute(text(
+                "UPDATE %s SET category = :c, category_id = :cid WHERE id = :i" % table
+            ), {"c": stored, "cid": int(cid), "i": int(rid)})
+
+
+def _apply_category_registry_migration(engine):
+    """非保护库上的分类注册表迁移。调用方必须先判断保护路径。"""
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS category_registry ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " tenant_id VARCHAR,"
+            " domain VARCHAR NOT NULL,"
+            " label VARCHAR NOT NULL,"
+            " match_key VARCHAR NOT NULL,"
+            " system_default INTEGER NOT NULL DEFAULT 0,"
+            " UNIQUE (tenant_id, domain, match_key))"
+        ))
+        tables = _category_tables(conn)
+        for table in _CATEGORY_TABLES:
+            if table not in tables:
+                continue
+            if "category_id" not in _category_columns(conn, table):
+                conn.execute(text(
+                    "ALTER TABLE %s ADD COLUMN category_id INTEGER" % table))
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    session = maker()
+    try:
+        if "skus" in _category_tables_of(engine):
+            _category_backfill(session, "sku", "skus")
+        if "dishes" in _category_tables_of(engine):
+            _category_backfill(session, "dish", "dishes")
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _category_tables_of(engine):
+    with engine.connect() as conn:
+        return _category_tables(conn)
 
 
 _make_engine()
+
+
+_ambient_session_ctx = contextvars.ContextVar("ambient_session", default=None)
+
+
+class AtomicAborted(RuntimeError):
+    """atomic() 块内有函数调用了 rollback()：整个事务作废，不得部分提交。"""
+
+
+class _AmbientSession:
+    """atomic() 块内共享的会话代理。
+
+    块内所有经 get_session() 取会话的 db 函数拿到的是同一个会话：它们各自的
+    commit() 只做 flush（写入留在同一个事务里），close() 不关闭，真正的提交/回滚
+    只发生在 atomic() 退出时。这样 approve 等多步写入无需逐个函数改签名即可原子化。
+    """
+
+    def __init__(self, real):
+        object.__setattr__(self, "_real", real)
+        object.__setattr__(self, "_poisoned", False)
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def commit(self):
+        self._real.flush()
+
+    def close(self):
+        return None
+
+    def rollback(self):
+        object.__setattr__(self, "_poisoned", True)
+        self._real.rollback()
+
+
+@contextmanager
+def atomic():
+    """把块内全部 db 写入收进同一个事务：正常退出一次 commit，任何异常整体回滚。
+
+    可嵌套：内层直接加入外层事务。
+    """
+    existing = _ambient_session_ctx.get()
+    if existing is not None:
+        yield existing
+        return
+    real = _SessionLocal()
+    proxy = _AmbientSession(real)
+    token = _ambient_session_ctx.set(proxy)
+    try:
+        yield proxy
+        if proxy._poisoned:
+            raise AtomicAborted("事务内发生回滚，本次操作已整体撤销")
+        real.commit()
+    except BaseException:
+        real.rollback()
+        raise
+    finally:
+        _ambient_session_ctx.reset(token)
+        real.close()
 
 
 def get_session(tenant_id=None):
@@ -2018,7 +2738,11 @@ def get_session(tenant_id=None):
 
     当前 SQLite 单库实现不按租户分库，tenant_id 仅作上下文透传，
     过滤统一走 db.scoped(query, model, tenant_id)。
+    在 atomic() 块内返回共享的事务会话代理（见 _AmbientSession）。
     """
+    amb = _ambient_session_ctx.get()
+    if amb is not None:
+        return amb
     return _SessionLocal()
 
 
@@ -2175,6 +2899,13 @@ def get_receipt_row(receipt_id, tenant_id=None):
         s.close()
 
 
+# 金额类列统一舍入到分，数量/单价统一舍入口径见 app/money.py
+_RECEIPT_MONEY_FIELDS = frozenset({
+    "total_amount", "service_fee", "tax_amount", "discount_amount",
+    "delivery_fee", "deposit_amount", "rounding_adjustment",
+})
+
+
 @_guard_job_db_write()
 def update_receipt(receipt_id, **fields):
     """按字段更新收据；version 字段若传入则 +1。返回更新后的 row。"""
@@ -2187,6 +2918,8 @@ def update_receipt(receipt_id, **fields):
             return None
         for k, v in fields.items():
             if v is not None and hasattr(row, k):
+                if k in _RECEIPT_MONEY_FIELDS:
+                    v = _money.money(v)
                 setattr(row, k, v)
         row.updated_at = now_iso()
         s.commit()
@@ -2245,12 +2978,21 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
             row = dict(it)
             row.pop("id", None)  # 旧 id 不保留，重新自增
             row.pop("tenant_id", None)  # 租户以单据归属为准，不接受逐行覆盖
+            row.pop("sku_candidates", None)  # 读时现算的只读字段，不落库
             fuzzy = row.pop("fuzzy_candidates", [])
             entity = row.pop("entity_candidates", [])
             raw_name = row.pop("raw_name", None)
             raw_unit = row.pop("raw_unit", None)
             is_void = 1 if row.pop("is_void", 0) else 0
             actual_qty = row.pop("actual_qty", None)
+            if actual_qty is not None:
+                actual_qty = _money.qty(actual_qty)
+            if row.get("amount") is not None:
+                row["amount"] = _money.money(row["amount"])
+            if row.get("unit_price") is not None:
+                row["unit_price"] = _money.unit_price(row["unit_price"])
+            if row.get("quantity") is not None:
+                row["quantity"] = _money.qty(row["quantity"])
             # Gap E1 / T7：字段级证据（可选）——归一后落 evidence_json，非法降级 NULL 不阻断
             evidence = normalize_evidence(row.pop("evidence", None))
             s.add(_ItemRow(
@@ -2466,6 +3208,38 @@ def list_receipt_rows(tenant_id=None):
         _s.close()
 
 
+def list_receipt_rows_page(tenant_id=None, status=None, q=None, limit=None, offset=0):
+    """分页/过滤版单据列表：返回 (rows, total)。
+
+    status 可为逗号分隔的多个状态；q 在供应商名、开单日期、单号中模糊匹配；
+    limit 为 None 表示不分页（与 list_receipt_rows 同结果，保持无参调用兼容）。
+    """
+    from sqlalchemy import or_
+    _s = get_session()
+    try:
+        qry = scoped(_s.query(_ReceiptRow), _ReceiptRow, tenant_id).filter(
+            _ReceiptRow.deleted_at.is_(None))
+        if status:
+            wanted = [x.strip() for x in str(status).split(",") if x.strip()]
+            if wanted:
+                qry = qry.filter(_ReceiptRow.status.in_(wanted))
+        if q and str(q).strip():
+            term = str(q).strip()
+            like = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            conds = [_ReceiptRow.supplier_name.like(like, escape="\\"),
+                     _ReceiptRow.receipt_date.like(like, escape="\\")]
+            if term.lstrip("#").isdigit():
+                conds.append(_ReceiptRow.id == int(term.lstrip("#")))
+            qry = qry.filter(or_(*conds))
+        total = qry.count()
+        qry = qry.order_by(_ReceiptRow.id.desc())
+        if limit is not None:
+            qry = qry.offset(max(0, int(offset or 0))).limit(max(1, int(limit)))
+        return qry.all(), total
+    finally:
+        _s.close()
+
+
 def get_receipt_items(receipt_id, tenant_id=None):
     s = get_session()
     try:
@@ -2561,7 +3335,8 @@ def get_sku(sku_id, tenant_id=None):
 
 
 def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
-               tenant_id="default"):
+               tenant_id="default", *, category_id=None, category_set=False,
+               category_id_set=False):
     s = get_session()
     try:
         # P2-1: 重名检查按租户 scope（上游须传租户；tenant 为空时不过滤，向后兼容）
@@ -2569,11 +3344,31 @@ def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
                           tenant_id).filter(_SkuRow.name == name).first()
         if existing:
             return None, "SKU_NAME_CONFLICT"
-        row = _SkuRow(name=name, category=category, base_unit=base_unit,
+        stored_category = category
+        bound_id = None
+        write_id = False
+        if _category_schema_ready_session(s):
+            label_set = bool(category_set) or (
+                not category_id_set and bool(str(category or "").strip()))
+            try:
+                stored_category, bound_id = bind_category(
+                    s, tenant_id, "sku",
+                    label=category, label_set=label_set,
+                    category_id=category_id, category_id_set=category_id_set,
+                )
+            except CategoryResolveError as exc:
+                s.rollback()
+                return None, exc.code
+            write_id = True
+        row = _SkuRow(name=name, category=stored_category or "",
+                      base_unit=base_unit,
                       min_stock_alert=min_stock_alert,
                       tenant_id=str(tenant_id or "default"),
                       sku_code="SKU-" + new_id().upper())
         s.add(row)
+        s.flush()
+        if write_id:
+            _assign_category_id(s, "skus", row.id, bound_id)
         s.commit()
         s.refresh(row)
         return row.id, None
@@ -2581,7 +3376,8 @@ def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
         s.close()
 
 
-def update_sku(sku_id, tenant_id=None, **fields):
+def update_sku(sku_id, tenant_id=None, *, category_id=None,
+               category_id_set=False, **fields):
     """更新 SKU。P2-1: 重命名重名检查按租户 scope；
     tenant_id 缺省 None 时不过滤（保持既有全局行为，向后兼容）。
     注意 tenant_id 为显式参数，不会落入 fields 覆盖行的租户归属。
@@ -2595,6 +3391,12 @@ def update_sku(sku_id, tenant_id=None, **fields):
     """
     s = get_session()
     try:
+        if "category_id" in fields:
+            if not category_id_set:
+                incoming = fields.get("category_id")
+                category_id = incoming
+                category_id_set = incoming is not None
+            fields.pop("category_id", None)
         row = s.get(_SkuRow, int(sku_id))
         if row is None:
             return None, "NOT_FOUND"
@@ -2607,9 +3409,28 @@ def update_sku(sku_id, tenant_id=None, **fields):
         if new_unit and str(new_unit) != str(row.base_unit or "") \
                 and (row.current_stock or 0) != 0:
             return None, "UNIT_CHANGE_BLOCKED"
-        for k, v in fields.items():
-            if v is not None and hasattr(row, k):
-                setattr(row, k, v)
+        if _category_schema_ready_session(s) and ("category" in fields or category_id_set):
+            try:
+                stored, bound = bind_category(
+                    s, row.tenant_id, "sku",
+                    label=fields.get("category"),
+                    label_set=("category" in fields),
+                    category_id=category_id,
+                    category_id_set=category_id_set,
+                )
+            except CategoryResolveError as exc:
+                s.rollback()
+                return None, exc.code
+            fields["category"] = stored
+            for k, v in fields.items():
+                if v is not None and hasattr(row, k):
+                    setattr(row, k, v)
+            s.flush()
+            _assign_category_id(s, "skus", row.id, bound)
+        else:
+            for k, v in fields.items():
+                if v is not None and hasattr(row, k):
+                    setattr(row, k, v)
         s.commit()
         return row, None
     finally:
@@ -2628,6 +3449,8 @@ def find_sku_by_name(name, tenant_id=None):
 def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     kind, note="", tenant_id="default"):
     """写库存流水 + 更新 SKU 当前库存 + 挂载入库/消耗批次处理钩子。"""
+    qty = _money.qty(qty)
+    amount = _money.money(amount)
     s = get_session()
     try:
         log_amount = amount
@@ -2635,11 +3458,13 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
             sku = s.get(_SkuRow, int(sku_id))
             if sku:
                 if kind in ("in", "stocktake"):
-                    sku.current_stock += qty if kind == "in" else (qty - sku.current_stock)
+                    sku.current_stock = _money.qty(
+                        sku.current_stock + qty if kind == "in" else qty)
                     if kind == "in" and amount > 0:
-                        sku.last_unit_price = amount / qty if qty else sku.last_unit_price
+                        sku.last_unit_price = (_money.unit_price(amount / qty) if qty
+                                               else sku.last_unit_price)
                 elif kind in ("consume", "waste"):
-                    sku.current_stock = round(sku.current_stock - qty, 4)
+                    sku.current_stock = _money.qty(sku.current_stock - qty)
                     from app.services.costing_service import CostingService
                     fifo_cost, _ = CostingService.deduct_consumption_fifo(
                         session=s,
@@ -3091,7 +3916,12 @@ def list_sku_tenant_ids():
         s.close()
 
 
-def deduplicate_skus_by_canonical(tenant_id=None):
+def find_duplicate_sku_groups(tenant_id=None):
+    """只读巡检：列出会被「流水号变体合并」影响的重复货品分组，不改任何数据。"""
+    return deduplicate_skus_by_canonical(tenant_id=tenant_id, dry_run=True)
+
+
+def deduplicate_skus_by_canonical(tenant_id=None, dry_run=False):
     """B-P0-1 存量脏数据迁移：按 canonical 名归一去重，合并 _\\d{10} 变体。
 
     遍历全部 SKU（含停用），以 canonical_name 为分组键，将同组内的
@@ -3149,6 +3979,13 @@ def deduplicate_skus_by_canonical(tenant_id=None):
             sec_ids = [m.id for m in secondaries]
             sec_names = [m.name for m in secondaries]
             if not sec_ids:
+                continue
+            if dry_run:
+                reports.append({
+                    "canonical": canon, "primary_id": primary.id,
+                    "primary_name": primary.name, "merged_ids": sec_ids,
+                    "merged_names": sec_names,
+                })
                 continue
             old_primary_name = primary.name
             # 若主仍带流水号或繁体别名差异，归一重命名为 canonical
@@ -3214,6 +4051,8 @@ def deduplicate_skus_by_canonical(tenant_id=None):
                 "new_stock": primary.current_stock,
                 "alias_repointed": alias_moved,
             })
+        if dry_run:
+            return reports
         # 兜底清理：处理残留的 _17871* 命名（包括历史已停用但无流水的可物理删除，确保 sqlite 验证清零）
         has_residual = False
         try:
@@ -3423,14 +4262,25 @@ def get_dish_recipe_version(dish_id, version, tenant_id=None):
         s.close()
 
 
+def _drop_reversed_in_rows(s, rows, tenant_id=None):
+    """剔除已被冲销的单据产生的入库流水（价格历史与进价区间不应再计入）。"""
+    rids = {r.receipt_id for r in rows if r.receipt_id is not None}
+    if not rids:
+        return rows
+    gone = {x[0] for x in scoped(s.query(_StockLogRow.receipt_id), _StockLogRow, tenant_id).filter(
+        _StockLogRow.kind == "reversal", _StockLogRow.receipt_id.in_(rids)).all()}
+    return [r for r in rows if r.receipt_id not in gone] if gone else rows
+
+
 def price_history(sku_id, tenant_id=None):
-    """SKU 价格历史：从库存流水（kind=in）推导单价 = amount/qty。"""
+    """SKU 价格历史：从库存流水（kind=in）推导单价 = amount/qty；已冲销单据不计入。"""
     s = get_session()
     try:
         rows = scoped(s.query(_StockLogRow), _StockLogRow, tenant_id).filter(
             _StockLogRow.sku_id == int(sku_id),
             _StockLogRow.kind == "in",
         ).order_by(_StockLogRow.date.asc()).all()
+        rows = _drop_reversed_in_rows(s, rows, tenant_id)
         out = []
         for r in rows:
             unit_price = (r.amount / r.qty) if r.qty else 0.0
@@ -3463,6 +4313,7 @@ def vendor_price_history(sku_id, vendor, tenant_id=None):
             _StockLogRow.kind == "in",
             _StockLogRow.vendor == name,
         ).order_by(_StockLogRow.date.asc()).all()
+        rows = _drop_reversed_in_rows(s, rows, tenant_id)
         out = []
         for r in rows:
             qty = float(r.qty or 0.0)
@@ -3912,14 +4763,9 @@ def supplier_stats(supplier_id, tenant_id=None):
                 "unpaid_credit_total": 0.0,
                 "unpaid_credit_count": 0,
             }
-        receipts = _receipts_for_supplier(s, _sup, tenant_id)
-        return {
-            "receipt_count": len(receipts),
-            "unpaid_credit_total": sum((r.total_amount or 0.0) for r in receipts
-                                       if r.settlement_type == "credit" and r.status == "approved"),
-            "unpaid_credit_count": sum(1 for r in receipts
-                                       if r.settlement_type == "credit" and r.status == "approved"),
-        }
+        from app import recon_store
+        tid = tenant_id or getattr(_sup, "tenant_id", None) or "default"
+        return recon_store.supplier_stat(tid, _sup.id)
     finally:
         s.close()
 
@@ -5434,20 +6280,6 @@ def list_app_settings(tenant_id=None):
 # -------------------------------------------------------------
 # 引擎配置（admin 管理）
 # -------------------------------------------------------------
-def _normalize_legacy_cli_leg(eng, model, default_model):
-    """单腿的遗留 CLI 归一：引擎枚举 opencode/codebuddy → openai；CLI 模型名 → default_model。
-
-    返回 (new_eng, new_model)，**未改动的侧为 None**，调用方只写回非 None 的侧。
-    这个「只写改动侧」的约定必须保留：读闸门面对的是可能缺字段的存量 JSON，
-    把原本不存在的字段填成 None 会让 EngineConfig(**stored) 校验失败。
-    判定全部走 models.is_legacy_cli_model 单一实现（原先在 db.py 里抄了 9 份）。
-    """
-    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
-    new_eng = EngineKind.OPENAI if is_legacy_cli_engine(eng) else None
-    new_model = default_model if is_legacy_cli_model(model) else None
-    return new_eng, new_model
-
-
 def get_engine_config():
     s = get_session()
     try:
@@ -5456,7 +6288,8 @@ def get_engine_config():
             from app.models import EngineConfig
             return EngineConfig()
         from app.models import EngineConfig
-        stored = json.loads(row.value)
+        from app import secret_store
+        stored = secret_store.decrypt_config_dict(json.loads(row.value))
         # 旧配置迁移：openai_* 单组 → 拆分为 rec/aud 两组
         if "openai_base_url" in stored and not stored.get("openai_rec_base_url"):
             stored["openai_rec_base_url"] = stored.get("openai_base_url", "")
@@ -5472,21 +6305,6 @@ def get_engine_config():
             stored.pop("grey_mode", None)
         # 清理已废弃的全局超时字段（UI 已移除，extra=forbid 会拒绝该字段）
         stored.pop("call_timeout_seconds", None)
-        # 清理历史已保存的 opencode / codebuddy CLI 引擎与模型配置
-        for eng_field, mod_field, def_model in (
-            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
-            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
-            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
-            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
-        ):
-            new_eng, new_model = _normalize_legacy_cli_leg(
-                stored.get(eng_field), stored.get(mod_field), def_model)
-            if new_eng is not None:
-                stored[eng_field] = new_eng
-            if new_model is not None:
-                stored[mod_field] = new_model
         return EngineConfig(**stored)
     finally:
         s.close()
@@ -5547,27 +6365,13 @@ def set_engine_config(cfg, source=None):
         for df in ("openai_rec_image_detail", "grey_openai_rec_image_detail"):
             if hasattr(cfg, df) and getattr(cfg, df, None) is not None:
                 setattr(cfg, df, clamp_image_detail(getattr(cfg, df)))
-        # 写入前确保不残留 opencode / codebuddy 引擎及模型
-        for eng_field, mod_field, def_model in (
-            ("recognition_engine", "recognition_model", _REC_DEFAULT_MODEL),
-            ("audit_engine", "audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("parse_llm_engine", "parse_llm_model", _SF_DEFAULT_REC_MODEL),
-            ("grey_recognition_engine", "grey_recognition_model", _REC_DEFAULT_MODEL),
-            ("grey_audit_engine", "grey_audit_model", _SF_DEFAULT_AUD_MODEL),
-            ("grey_parse_llm_engine", "grey_parse_llm_model", _SF_DEFAULT_REC_MODEL),
-        ):
-            new_eng, new_model = _normalize_legacy_cli_leg(
-                getattr(cfg, eng_field, None), getattr(cfg, mod_field, None), def_model)
-            if new_eng is not None:
-                setattr(cfg, eng_field, new_eng)
-            if new_model is not None:
-                setattr(cfg, mod_field, new_model)
-
         row = s.get(_AppSettingRow, "engine_config")
         if row is None:
             row = _AppSettingRow(key="engine_config")
             s.add(row)
-        row.value = json.dumps(cfg.model_dump(), ensure_ascii=False)
+        from app import secret_store
+        row.value = json.dumps(secret_store.encrypt_config_dict(cfg.model_dump()),
+                               ensure_ascii=False)
         s.commit()
     finally:
         s.close()
@@ -5806,11 +6610,6 @@ def hydrate_engine_config_from_env():
                 cfg.parse_llm_model = parse_model
             changed = True
 
-        _normalize_legacy_cli_engines(cfg, log, rec_base=cfg.openai_rec_base_url,
-                                      rec_key=cfg.openai_rec_api_key,
-                                      rec_model=cfg.openai_rec_model,
-                                      aud_base=cfg.openai_aud_base_url,
-                                      aud_key=cfg.openai_aud_api_key)
         _align_grey_recognition_leg(cfg, cfg.openai_rec_base_url, cfg.openai_rec_api_key,
                                     cfg.openai_rec_model, log)
         if changed or timeout_fixed:
@@ -5877,98 +6676,6 @@ def _align_grey_recognition_leg(cfg, rec_base: str, rec_key: str, rec_model: str
             g_base, rec_base,
         )
     return False
-
-
-def _normalize_legacy_cli_engines(cfg, log, rec_base: str = "", rec_key: str = "",
-                                  rec_model: str = "", aud_base: str = "", aud_key: str = "") -> None:
-    """归一历史遗留的 opencode / codebuddy CLI 引擎配置。幂等；业务开关一律不动。
-
-    引擎值 opencode/codebuddy → openai；模型 opencode/* / codebuddy/* / minimax-m3-pay → 标准模型；
-    灰测识别腿沿用识别腿 provider（rec_base/rec_key/rec_model，缺失时回落 SF 默认），
-    灰测审核腿与解析腿沿用审核腿 provider（aud_base/aud_key）。
-    """
-    # 本模块未在模块级导入 EngineKind（其余函数均为函数内惰性导入），此处必须显式导入：
-    # 漏掉会抛 NameError，被 hydrate 的 except 静默吞掉，导致整套归一逻辑形同虚设。
-    from app.models import EngineKind, is_legacy_cli_engine, is_legacy_cli_model
-    changed = []
-
-    def _enum_str(v):
-        # EngineKind 等枚举字段的字符串取值（str(enum) 是 "EngineKind.X" 形态，不能直接比较）
-        return str(getattr(v, "value", v) or "").lower()
-
-    def _is_cli(eng, mod):
-        # 判定统一走 models 的单一实现（原先在这里抄了一份 opencode/codebuddy/minimax 字面量）
-        return is_legacy_cli_engine(eng) or is_legacy_cli_model(mod)
-
-    # 主识别腿
-    if _is_cli(getattr(cfg, "recognition_engine", ""), getattr(cfg, "recognition_model", "")):
-        cfg.recognition_engine = EngineKind.OPENAI
-        m = str(cfg.recognition_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.recognition_model = _SF_DEFAULT_REC_MODEL
-        changed.append("rec")
-
-    # 主审核腿
-    if _is_cli(getattr(cfg, "audit_engine", ""), getattr(cfg, "audit_model", "")):
-        cfg.audit_engine = EngineKind.OPENAI
-        m = str(cfg.audit_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.audit_model = _SF_DEFAULT_AUD_MODEL
-        changed.append("aud")
-
-    # 解析腿
-    if _is_cli(getattr(cfg, "parse_llm_engine", ""), getattr(cfg, "parse_llm_model", "")):
-        cfg.parse_llm_engine = EngineKind.OPENAI
-        m = str(cfg.parse_llm_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.parse_llm_model = _SF_DEFAULT_REC_MODEL
-        changed.append("parse")
-
-    # 灰测识别腿
-    if _is_cli(getattr(cfg, "grey_recognition_engine", ""), getattr(cfg, "grey_recognition_model", "")):
-        cfg.grey_recognition_engine = EngineKind.OPENAI
-        m = str(cfg.grey_recognition_model or "")
-        if is_legacy_cli_model(m) or not m:
-            # 跟随识别腿模型（否则会出现 DashScope base + SF 模型名的错配）
-            cfg.grey_recognition_model = rec_model or _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_rec_base_url", "") and rec_base:
-            cfg.grey_openai_rec_base_url = rec_base
-        if not getattr(cfg, "grey_openai_rec_api_key", "") and rec_key:
-            cfg.grey_openai_rec_api_key = rec_key
-        if not getattr(cfg, "grey_openai_rec_model", ""):
-            cfg.grey_openai_rec_model = rec_model or _SF_DEFAULT_REC_MODEL
-        changed.append("grey_rec")
-
-    # 灰测审核腿
-    if _is_cli(getattr(cfg, "grey_audit_engine", ""), getattr(cfg, "grey_audit_model", "")):
-        cfg.grey_audit_engine = EngineKind.OPENAI
-        m = str(cfg.grey_audit_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.grey_audit_model = _SF_DEFAULT_AUD_MODEL
-        if not getattr(cfg, "grey_openai_aud_base_url", "") and aud_base:
-            cfg.grey_openai_aud_base_url = aud_base
-        if not getattr(cfg, "grey_openai_aud_api_key", "") and aud_key:
-            cfg.grey_openai_aud_api_key = aud_key
-        if not getattr(cfg, "grey_openai_aud_model", ""):
-            cfg.grey_openai_aud_model = _SF_DEFAULT_AUD_MODEL
-        changed.append("grey_aud")
-
-    # 灰测解析腿
-    if _is_cli(getattr(cfg, "grey_parse_llm_engine", ""), getattr(cfg, "grey_parse_llm_model", "")):
-        cfg.grey_parse_llm_engine = EngineKind.OPENAI
-        m = str(cfg.grey_parse_llm_model or "")
-        if is_legacy_cli_model(m) or not m:
-            cfg.grey_parse_llm_model = _SF_DEFAULT_REC_MODEL
-        if not getattr(cfg, "grey_openai_parse_base_url", "") and aud_base:
-            cfg.grey_openai_parse_base_url = aud_base
-        if not getattr(cfg, "grey_openai_parse_api_key", "") and aud_key:
-            cfg.grey_openai_parse_api_key = aud_key
-        if not getattr(cfg, "grey_openai_parse_model", ""):
-            cfg.grey_openai_parse_model = _SF_DEFAULT_REC_MODEL
-        changed.append("grey_parse")
-
-    if changed:
-        log.info("[engine-env] 已归一遗留 opencode/codebuddy CLI 配置 → OpenAI 兼容通道: %s", ",".join(changed))
 
 
 def _openai_gateway_healthy(api_key: str, base_url: str = "") -> bool:
@@ -6591,9 +7298,22 @@ def log_ai_decision(
     field_path="", ai_value=None, user_value=None, adopted=None,
     confidence=None, is_hallucination=None, extra=None,
 ):
-    """写一条 AI 决策日志。采纳/用户值/幻觉标记可留 NULL，approve 时回填。"""
+    """写一条 AI 决策日志。采纳/用户值/幻觉标记可留 NULL，approve 时回填。
+
+    单据若被分配进某个 A/B 实验，实验 ID 与分组以实验分配表为准（调用方没传就自动补），
+    这样识别各轮、审核、approve 行都带同一个实验 ID 和分组。
+    """
     s = get_session()
     try:
+        if receipt_id:
+            _assign_q = s.query(_ExperimentAssignRow).filter(
+                _ExperimentAssignRow.receipt_id == int(receipt_id))
+            if experiment_id:
+                _assign_q = _assign_q.filter(_ExperimentAssignRow.experiment_id == int(experiment_id))
+            _assign = _assign_q.order_by(_ExperimentAssignRow.assigned_at.desc()).first()
+            if _assign is not None:
+                experiment_id = _assign.experiment_id
+                grp = _assign.grp
         row = _DecisionLogRow(
             ts=now_iso(),
             receipt_id=int(receipt_id) if receipt_id else None,
@@ -7118,25 +7838,48 @@ def get_experiment_metrics(exp_id):
     finally:
         s.close()
 
-    groups = {"control": [], "treatment": []}
-    for r in rows:
-        g = str(r.grp) if r.grp else "control"
-        if g in groups:
-            groups[g].append(r)
+    # 分组以实验分配表为准；样本单位是单据（一张单有多轮识别加审核、approve 多条决策行，
+    # 逐行统计会让样本不独立、z 检验失真）。没有单据号的行（离线脚本写入）各自算一个样本。
+    s2 = get_session()
+    try:
+        assign_map = {a.receipt_id: str(a.grp) for a in s2.query(_ExperimentAssignRow).filter(
+            _ExperimentAssignRow.experiment_id == int(exp_id)).all()}
+    finally:
+        s2.close()
 
-    def _stats(recs):
-        n = len(recs)
+    units = {}
+    for r in rows:
+        key = ("r", r.receipt_id) if r.receipt_id else ("row", r.id)
+        g = assign_map.get(r.receipt_id) if r.receipt_id else None
+        if g is None:
+            g = str(r.grp) if r.grp else "control"
+        unit = units.setdefault(key, {"grp": g, "rows": []})
+        unit["rows"].append(r)
+
+    groups = {"control": [], "treatment": []}
+    for unit in units.values():
+        if unit["grp"] in groups:
+            groups[unit["grp"]].append(unit["rows"])
+
+    def _stats(unit_rows):
+        n = len(unit_rows)
         if n == 0:
-            return {"n": 0, "accuracy": None, "hallucination_rate": None,
-                    "edit_rate": None}
-        adopted = sum(1 for r in recs if r.adopted == 1)
-        hallu = sum(1 for r in recs if r.is_hallucination == 1)
-        edited = sum(1 for r in recs if r.user_value and r.user_value.strip() not in ("", "{}"))
+            return {"n": 0, "n_reviewed": 0, "accuracy": None,
+                    "hallucination_rate": None, "edit_rate": None}
+        # 已有人工结论（approve 行写了 adopted）的单据才进入准确率等比率的分母
+        reviewed = [rs for rs in unit_rows if any(r.adopted is not None for r in rs)]
+        nr = len(reviewed)
+        adopted = sum(1 for rs in reviewed
+                      if all(r.adopted == 1 for r in rs if r.adopted is not None))
+        hallu = sum(1 for rs in reviewed if any(r.is_hallucination == 1 for r in rs))
+        edited = sum(1 for rs in reviewed
+                     if any(r.user_value and r.user_value.strip() not in ("", "{}") for r in rs))
         return {
             "n": n,
-            "accuracy": round(adopted / n, 6) if n else None,
-            "hallucination_rate": round(hallu / n, 6) if n else None,
-            "edit_rate": round(edited / n, 6) if n else None,
+            "n_reviewed": nr,
+            "accuracy": round(adopted / nr, 6) if nr else None,
+            "hallucination_rate": round(hallu / nr, 6) if nr else None,
+            "edit_rate": round(edited / nr, 6) if nr else None,
         }
 
     c = _stats(groups["control"])
@@ -7168,10 +7911,10 @@ def get_experiment_metrics(exp_id):
         return {"z": round(z, 6), "p_value": round(pval, 8),
                 "effect_size_pp": round((p2 - p1) * 100, 4)}
 
-    z_acc = _z_test(c["accuracy"], t["accuracy"], c["n"], t["n"])
+    z_acc = _z_test(c["accuracy"], t["accuracy"], c["n_reviewed"], t["n_reviewed"])
     z_hall = _z_test(c["hallucination_rate"], t["hallucination_rate"],
-                     c["n"], t["n"])
-    z_edit = _z_test(c["edit_rate"], t["edit_rate"], c["n"], t["n"])
+                     c["n_reviewed"], t["n_reviewed"])
+    z_edit = _z_test(c["edit_rate"], t["edit_rate"], c["n_reviewed"], t["n_reviewed"])
 
     return {
         "experiment_id": int(exp_id),
@@ -7182,7 +7925,7 @@ def get_experiment_metrics(exp_id):
             "hallucination_rate": z_hall,
             "edit_rate": z_edit,
         },
-        "low_confidence": min(c["n"], t["n"]) < 30,
+        "low_confidence": min(c["n_reviewed"], t["n_reviewed"]) < 30,
     }
 
 

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""收据端点：上传(异步Job)/轮询/列表/详情/保存(乐观锁)/approve/flag/retry/导出。"""
+"""收据端点：上传(异步Job)/轮询/列表/详情/保存(乐观锁)/approve/flag/retry。"""
 
 import io
 import json
@@ -142,28 +142,32 @@ def _cleanup_unreferenced_preview_cache(image_path) -> bool:
 
 
 def _version_error(payload_version, row, action):
-    """乐观锁预检（对齐完整版）：缺失/非法 → 400 VERSION_REQUIRED；不匹配 → 409 VERSION_CONFLICT。"""
+    """乐观锁预检：缺失/非法 → 400 VERSION_REQUIRED；不匹配 → 409 VERSION_CONFLICT。
+
+    code 给程序判断；msg 是给店员看的人话（发生了什么 + 下一步怎么做）。
+    """
     current = row.version if row.version is not None else 1
     if payload_version is None:
         return JSONResponse(
-            content={"status": "error", "code": "VERSION_REQUIRED",
-                     "msg": f"{action}已有单据必须携带当前 version（整数）。"
-                            f"请先 GET /api/receipt/{{id}} 获取 version 后再提交；"
-                            f"当前单据 version={current}。"},
+            content={"status": "error", "code": "VERSION_REQUIRED", "current_version": current,
+                     "msg": f"这张单的内容还没加载完整，暂时不能{action}。请刷新页面，重新打开这张单后再{action}。"},
             status_code=400)
     if isinstance(payload_version, bool):
         return JSONResponse(content={"status": "error", "code": "VERSION_REQUIRED",
-                                     "msg": "version 字段必须为整数"}, status_code=400)
+                                     "current_version": current,
+                                     "msg": f"这张单的内容有点问题，暂时不能{action}。请刷新页面，重新打开后再试。"},
+                            status_code=400)
     try:
         v = int(payload_version)
     except (TypeError, ValueError):
         return JSONResponse(content={"status": "error", "code": "VERSION_REQUIRED",
-                                     "msg": "version 字段必须为整数"}, status_code=400)
+                                     "current_version": current,
+                                     "msg": f"这张单的内容有点问题，暂时不能{action}。请刷新页面，重新打开后再试。"},
+                            status_code=400)
     if v != current:
         return JSONResponse(
-            content={"status": "error", "code": "VERSION_CONFLICT",
-                     "msg": f"版本冲突：提交的 version={v}，单据当前 version={current}。"
-                            f"该单据已被他人修改，请刷新加载最新数据后再{action}。"},
+            content={"status": "error", "code": "VERSION_CONFLICT", "current_version": current,
+                     "msg": f"这张单刚刚被别人改过，你看到的是旧内容。请刷新页面，看到最新内容后再{action}。"},
             status_code=409)
     return None
 
@@ -257,21 +261,21 @@ def _sanitize_upload_bytes(data: bytes, family: str) -> bytes:
         opened = Image.open(io.BytesIO(data))
     except Image.DecompressionBombError as e:
         raise _reject("IMAGE_PIXELS_EXCEEDED",
-                      f"图片声明像素超过上限 {image_web.MAX_IMAGE_PIXELS}，已拒绝：{e}") from e
+                      "这张照片的尺寸太大了，系统处理不了。请把照片缩小，或重新拍一张再上传。") from e
     except Exception as e:
-        raise _reject("INVALID_IMAGE", f"图片无法解析（magic bytes 与实际内容不符或文件损坏）：{e}") from e
+        raise _reject("INVALID_IMAGE", "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。") from e
     with opened as img:
         pixels = int(img.size[0]) * int(img.size[1])
         if pixels > image_web.MAX_IMAGE_PIXELS:
             raise _reject("IMAGE_PIXELS_EXCEEDED",
-                          f"图片像素 {pixels} 超过上限 {image_web.MAX_IMAGE_PIXELS}（疑似解压炸弹），已拒绝")
+                          "这张照片的尺寸太大了，系统处理不了。请把照片缩小，或重新拍一张再上传。")
 
     # 2) 结构校验：verify() 检查容器完整性，不解码像素（防伪造成本低）
     try:
         with Image.open(io.BytesIO(data)) as vimg:
             vimg.verify()
     except Exception as e:
-        raise _reject("INVALID_IMAGE", f"图片结构校验失败（文件损坏或伪造）：{e}") from e
+        raise _reject("INVALID_IMAGE", "这张照片文件有问题（可能已损坏）。请重新拍一张再上传。") from e
 
     # 3) 全量解码 → 重编码（verify 之后的 Image 对象不可复用，必须重开）
     try:
@@ -296,7 +300,7 @@ def _sanitize_upload_bytes(data: bytes, family: str) -> bytes:
     except UploadRejected:
         raise
     except Exception as e:
-        raise _reject("INVALID_IMAGE", f"图片解码/重编码失败，已拒绝：{e}") from e
+        raise _reject("INVALID_IMAGE", "这张照片处理失败，请重新拍一张再上传。") from e
 
 
 def _read_upload_bounded(file: UploadFile) -> bytes:
@@ -311,7 +315,7 @@ def _read_upload_bounded(file: UploadFile) -> bytes:
         if total > MAX_UPLOAD_BYTES:
             raise UploadRejected(
                 "FILE_TOO_LARGE",
-                f"上传文件超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限，请压缩后重试")
+                f"照片太大了（超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB），请压缩后再上传，或重新拍小一点的照片。")
         buf.write(chunk)
     return buf.getvalue()
 
@@ -328,7 +332,7 @@ def _save_upload(file: UploadFile) -> str:
     if family is None:
         raise UploadRejected(
             "UNSUPPORTED_IMAGE_FORMAT",
-            "不支持的图片格式：仅接受 JPG/PNG/WEBP/HEIC/TIFF（按文件内容而非扩展名判定）")
+            "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。")
     clean = _sanitize_upload_bytes(data, family)
     ext, _fmt = _FAMILY_OUTPUT[family]
     path = UPLOAD_DIR / f"{db.new_id()}{ext}"
@@ -351,6 +355,37 @@ def _image_quality_reject(msg, warnings, **extra):
     return JSONResponse(status_code=400, content=body)
 
 
+def _recognition_engine_unconfigured() -> bool:
+    """识别腿没有可用地址或密钥。只读当前配置，不发网络请求。"""
+    try:
+        cfg = db.get_engine_config()
+    except Exception:
+        return False
+    kind = getattr(cfg, "recognition_engine", None)
+    kind_text = str(getattr(kind, "value", kind) or "").strip().lower()
+    if kind_text == "qwen":
+        return not (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+    base = str(getattr(cfg, "openai_rec_base_url", "") or "").strip()
+    key = str(getattr(cfg, "openai_rec_api_key", "") or "").strip()
+    return (not base) or (not key)
+
+
+def _unconfigured_recognition_response(image_path: str, request: Request):
+    """无密钥时同步失败并保留原图，店员可以立刻转手工，不必等异步任务。"""
+    from app.chains.supervisor import ENGINE_NOT_CONFIGURED_MSG
+    tenant = _tenant_id(request)
+    receipt_id = db.create_receipt(status="error", tenant_id=tenant)
+    db.update_receipt(receipt_id, image_path=image_path)
+    return {
+        "status": "error",
+        "code": "ENGINE_NOT_CONFIGURED",
+        "msg": ENGINE_NOT_CONFIGURED_MSG,
+        "receipt_id": receipt_id,
+        "image_url": public_image_url(receipt_id, image_path, tenant),
+        "job_id": None,
+    }
+
+
 def _assert_retryable(row, action, verb):
     """挽回动作状态门（/retry 与 /replace-image 共用）。
 
@@ -365,8 +400,8 @@ def _assert_retryable(row, action, verb):
     if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "edited", "error"):
         return JSONResponse(
             content={"status": "error",
-                     "msg": f"当前状态 [{old_status}] 不允许{action}：仅 uploaded/parsed/parsed_with_warnings/edited/error 单据可{verb}"
-                            f"（parsing 解析在途、approved 已入账、flagged 须先人工处置）。"},
+                     "code": "INVALID_STATUS",
+                     "msg": f"这张单现在的状态不能{action}（识别中、已入账或被标记有问题的单据不行）。"},
             status_code=409)
     if (row.doc_form or "") == "manual_entry":
         return JSONResponse(
@@ -583,10 +618,10 @@ async def convert_image(
                 if total > MAX_UPLOAD_BYTES:
                     raise UploadRejected(
                         "FILE_TOO_LARGE",
-                        f"上传文件超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB 上限，请压缩后重试")
+                        f"照片太大了（超过 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB），请压缩后再上传，或重新拍小一点的照片。")
                 tmp.write(chunk)
         if total == 0:
-            return JSONResponse(status_code=400, content={"status": "error", "msg": "上传文件为空"})
+            return JSONResponse(status_code=400, content={"status": "error", "code": "EMPTY_FILE", "msg": "没有收到照片，请重新选择照片再上传。"})
 
         # 临时文件无扩展名：按字节流 ftyp brand 判定 HEIC 并注册解码器（对齐
         # transcode_bytes_to_jpeg 对字节流的输入收窄口径）。注册失败时抛与
@@ -605,12 +640,17 @@ async def convert_image(
             logging.getLogger("api_receipts").warning(
                 f"[WARN] /api/convert-image 超大图拒绝: {e}")
             return JSONResponse(status_code=400, content={
-                "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": str(e)})
+                "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": "这张照片的尺寸太大了，系统处理不了。请把照片缩小，或重新拍一张再上传。"})
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+        # 解码器缺失要让店员/排障看到稳定原因；不把异常尾部（可能含内部模拟信息）回传。
+        if "解码器不可用" in str(e):
+            msg = "HEIC/HEIF 解码器不可用（请确认已安装 pillow-heif 且版本兼容）"
+        else:
+            msg = "这张照片转换失败了，请换一张或重新拍照再试。"
+        return JSONResponse(status_code=500, content={"status": "error", "msg": msg})
     except Exception as e:
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "msg": f"图片转换失败: {str(e)}"})
+        return JSONResponse(status_code=500, content={"status": "error", "msg": "这张照片转换失败了，请换一张或重新拍照再试。"})
     finally:
         if tmp_path:
             try:
@@ -765,7 +805,7 @@ def _vendor_hint_from_row(row, tenant_id=None) -> str:
 
 
 @router.post("/api/upload")
-async def upload_receipt(
+def upload_receipt(
     request: Request,
     receipt: UploadFile = File(...),
     treatment: str = Form("true"),
@@ -789,6 +829,10 @@ async def upload_receipt(
         return _image_quality_reject(
             "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
             ["image_empty_or_corrupted"])
+
+    # 无密钥时不要把图删掉再排队。同步告诉店员转手工，原图留在这张单上。
+    if _recognition_engine_unconfigured():
+        return _unconfigured_recognition_response(image_path, request)
 
     # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进识别管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断
@@ -857,7 +901,8 @@ async def upload_receipt(
             "image_url": image_url,
             "quality_warnings": quality_warnings,
             "image_guard": image_guard,
-            "msg": "检测到高风险图内注入，已拦截进入人工审核队列（防静默入库）"
+            "msg": "这张图片里发现了肉眼看不清的小字，可能是有人故意加的，为了安全没有让 AI 识别。"
+                   "请对照原图手工录入，或请老板先看一下，原图已经保留"
         }
 
     raw_image_path = image_path
@@ -918,22 +963,10 @@ async def upload_receipt(
                              "image_path": os.path.basename(image_path),
                              "async": async_.lower() == "true"},
                  grp=grp)
-    # async=true → queued + job_id（前端轮询）；否则等同步结果
-    if async_.lower() == "true":
-        return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
-                "image_url": image_url}
-
-    # 同步模式：等 job 完成
-    import time
-    for _ in range(600):
-        job = get_job(job_id)
-        if job["job_status"] == "done":
-            return job["result"]
-        if job["job_status"] == "error":
-            return {"status": "error", "msg": job.get("error_msg", "识别失败"),
-                    "receipt_id": receipt_id, "image_url": image_url}
-        time.sleep(1)
-    return {"status": "error", "msg": "识别超时", "receipt_id": receipt_id}
+    # 一律立即返回 job_id 由前端轮询。曾有的同步等待模式（sleep 轮询最多 10 分钟）
+    # 会卡死整个服务，已删除；async 参数保留只为兼容旧调用方，不再影响行为。
+    return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
+            "image_url": image_url}
 
 
 @router.get("/api/job/{job_id}")
@@ -943,15 +976,17 @@ def job_status(job_id: str, request: Request):
     前端轮询经 apiFetch 会带 X-Role / Bearer，不破坏演示；匿名访问改 401。
     """
     require_role("staff")(request)
-    job = get_job(job_id)
+    job = get_job(job_id, tenant_id=_tenant_id(request))
     if job is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到该识别任务"},
-                            status_code=404)
+        return _receipt_error(
+            404, "JOB_NOT_FOUND",
+            "找不到这次识别任务，可能已经过期。请到单据列表里查看这张单。")
+    job.pop("tenant_id", None)
     return job
 
 
 @router.post("/api/upload_batch")
-async def upload_batch(
+def upload_batch(
     request: Request,
     files: list[UploadFile] = File(...),
     treatment: str = Form("true"),
@@ -1195,11 +1230,19 @@ def _blank_unreachable_image_urls(rows, data):
 
 
 @router.get("/api/receipts")
-def list_receipts(request: Request):
+def list_receipts(request: Request, limit: Optional[int] = None, offset: int = 0,
+                  status: Optional[str] = None, q: Optional[str] = None):
+    """单据列表。无参数时返回全部（向后兼容）；可选 limit/offset/status/q 做分页与过滤，
+    响应里的 total 是过滤后的总条数（不受 limit 影响）。"""
     # 列表查看对店员开放（上传/复核需要看到列表）；导出仍限 owner
     require_role("staff")(request)
+    if limit is not None and not (1 <= limit <= 1000):
+        return _receipt_error(422, "VALIDATION_ERROR", "每页条数需要在 1 到 1000 之间。")
+    if offset < 0:
+        return _receipt_error(422, "VALIDATION_ERROR", "起始位置不能小于 0。")
     desensitized = request.query_params.get("desensitized", "false").lower() == "true"
-    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
+    rows, total = db.list_receipt_rows_page(
+        tenant_id=_tenant_id(request), status=status, q=q, limit=limit, offset=offset)
     # W2 列表性能修复：列表不再逐条读图补红章，直接返回已落库的 payment_mark。
     # why: 旧实现对本条 payment_mark 为空的单据调 _supplement_payment_mark →
     # contract.payment_mark_from_image → detect_red_stamp，会逐条打开并解码图片；
@@ -1225,35 +1268,10 @@ def list_receipts(request: Request):
             data.append(d)
     # X1：展示层剔除死链（文件不存在的 image_url 置空），两条分支统一收口
     data = _blank_unreachable_image_urls(rows, data)
-    return {"status": "success", "data": data}
-
-
-@router.get("/api/receipts/export")
-def export_receipts(request: Request, desensitized: str = "false"):
-    """导出收据 CSV。支持 ?desensitized=true 脱敏导出。"""
-    require_role("owner")(request)
-    is_desens = desensitized.lower() == "true"
-    rows = db.list_receipt_rows(tenant_id=_tenant_id(request))
-    data = [
-        {
-            "id": r.id,
-            "supplier": _mask_sensitive(r.supplier_name or "") if is_desens else (r.supplier_name or ""),
-            "date": r.receipt_date or "",
-            "total": r.total_amount or 0.0,
-            "status": r.status,
-            "doc_form": r.doc_form or "",
-        }
-        for r in rows
-    ]
-    df = pd.DataFrame(data)
-    buf = io.StringIO()
-    df.to_csv(buf, index=False, encoding="utf-8-sig")
-    buf.seek(0)
-    return StreamingResponse(
-        iter([buf.getvalue()]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=receipts_export.csv"},
-    )
+    resp = {"status": "success", "data": data, "total": total}
+    if limit is not None:
+        resp.update({"limit": limit, "offset": offset})
+    return resp
 
 
 @router.get("/api/receipt/{receipt_id}")
@@ -1261,7 +1279,7 @@ def get_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
     row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     # 印章判定补红章：详情视图补充，避免 payment_mark 空
     if not (row.payment_mark or "").strip():
@@ -1322,57 +1340,78 @@ class SaveEditedBody(BaseModel):
     adjustment_notes: list = []
     payment_evidence: str = ""
     source: Optional[str] = "manual"
+    # 算术对不上时的提交契约：None=旧客户端，照常保存并在响应里带上 math_blockers；
+    # False=先检查，有阻断项则返回 MATH_MISMATCH_CONFIRM（不写库）让界面弹确认；
+    # True=店员已确认，照常保存。
+    confirm_mismatch: Optional[bool] = None
+
+
+def _math_gate(*, doc_form, vendor, date, items, total, service_fee=0.0, tax_amount=0.0,
+               discount_amount=0.0, delivery_fee=0.0, deposit_amount=0.0,
+               rounding_adjustment=0.0, adjustment_notes=None, payment_mark="",
+               payment_evidence="", currency="HKD") -> list:
+    """算术门禁的唯一入口：保存（save_edited）与入账（approve）都走这里，口径必须一致。
+
+    items 是 [{name, quantity, unit, unit_price, amount, is_void, actual_qty}]。
+    返回阻断项文案列表（空 = 通过）。构造契约对象失败时抛出，由调用方决定是否吞掉。
+    """
+    from app.models import DocForm, ReceiptData, ReceiptItem
+    from app.services import math_engine
+    try:
+        doc = DocForm(doc_form) if doc_form else DocForm.PRINTED
+    except ValueError:
+        doc = DocForm.PRINTED
+    parsed = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        actual_qty = it.get("actual_qty")
+        parsed.append(ReceiptItem(
+            name=str(it.get("name", "") or ""),
+            qty=float(it.get("quantity", 0) or 0),
+            unit=str(it.get("unit", "") or ""),
+            unit_price=float(it.get("unit_price", 0) or 0),
+            amount=float(it.get("amount", 0) or 0),
+            is_void=bool(it.get("is_void", 0) or 0),
+            actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None),
+        ))
+    data = ReceiptData(
+        doc_form=doc,
+        vendor=vendor or "通用供应商",
+        date=date or "",
+        items=parsed,
+        total=float(total or 0),
+        discount_amount=float(discount_amount or 0),
+        deposit_amount=float(deposit_amount or 0),
+        delivery_fee=float(delivery_fee or 0),
+        service_fee=float(service_fee or 0),
+        tax_amount=float(tax_amount or 0),
+        rounding_adjustment=float(rounding_adjustment or 0),
+        adjustment_notes=[str(n) for n in (adjustment_notes or [])],
+        payment_marked="已付款" in str(payment_mark or ""),
+        payment_evidence=str(payment_evidence or ""),
+        currency=currency,
+        confidence=1.0,
+    )
+    return math_engine.validate_and_report(data)
 
 
 def _recompute_math_warnings(body: "SaveEditedBody", currency: str) -> list:
     """F5 门禁联动：save_edited 用店员提交值（而非仅识别值）重算算术门禁。
 
-    用提交的费用字段（service_fee/tax_amount 等）构造契约对象喂 math_engine，
-    结果落 math_warnings_json 供复核界面提示；纯建议性，不阻断保存主链路。
-    任何构造失败（如手工单字段不全）返回 []，不影响保存。
+    结果落 math_warnings_json 供复核界面提示。任何构造失败（如手工单字段不全）返回 []，
+    不影响保存；是否因此要求二次确认由 save_edited 的 confirm_mismatch 契约决定。
     """
     try:
-        from app.models import DocForm, ReceiptData, ReceiptItem
-        from app.services import math_engine
-        try:
-            doc = DocForm(body.doc_form) if body.doc_form else DocForm.PRINTED
-        except ValueError:
-            doc = DocForm.PRINTED
-        items = []
-        for it in body.items or []:
-            if not isinstance(it, dict):
-                continue
-            actual_qty = it.get("actual_qty")
-            items.append(ReceiptItem(
-                name=str(it.get("name", "") or ""),
-                qty=float(it.get("quantity", 0) or 0),
-                unit=str(it.get("unit", "") or ""),
-                unit_price=float(it.get("unit_price", 0) or 0),
-                amount=float(it.get("amount", 0) or 0),
-                is_void=bool(it.get("is_void", 0) or 0),
-                actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None),
-            ))
-        data = ReceiptData(
-            doc_form=doc,
-            vendor=body.supplier_name or "通用供应商",
-            date=body.date or "",
-            items=items,
-            total=float(body.total_amount or 0),
-            discount_amount=float(body.discount_amount or 0),
-            deposit_amount=float(body.deposit_amount or 0),
-            delivery_fee=float(body.delivery_fee or 0),
-            service_fee=float(body.service_fee or 0),
-            tax_amount=float(body.tax_amount or 0),
-            rounding_adjustment=float(body.rounding_adjustment or 0),
-            adjustment_notes=[str(n) for n in (body.adjustment_notes or [])],
-            payment_marked=(body.payment_mark or "").strip() == "已付款",
-            payment_evidence=str(body.payment_evidence or ""),
-            currency=currency,
-            confidence=1.0,
-        )
-        return math_engine.validate_and_report(data)
+        return _math_gate(
+            doc_form=body.doc_form, vendor=body.supplier_name, date=body.date,
+            items=body.items, total=body.total_amount,
+            service_fee=body.service_fee, tax_amount=body.tax_amount,
+            discount_amount=body.discount_amount, delivery_fee=body.delivery_fee,
+            deposit_amount=body.deposit_amount, rounding_adjustment=body.rounding_adjustment,
+            adjustment_notes=body.adjustment_notes, payment_mark=body.payment_mark,
+            payment_evidence=body.payment_evidence, currency=currency)
     except Exception as e:  # noqa: BLE001 门禁联动失败不阻断保存
-        import logging
         logging.getLogger("api_receipts").warning(f"[WARN] save_edited 算术门禁重算失败: {e}")
         return []
 
@@ -1784,6 +1823,36 @@ def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
         return None
 
 
+def _receipt_error(status_code, code, msg, **extra):
+    return JSONResponse(content={"status": "error", "code": code, "msg": msg, **extra},
+                        status_code=status_code)
+
+
+_NOT_FOUND_MSG = "找不到这张单，可能已被删除。请刷新页面后再试。"
+_ALLOWED_SETTLEMENT = ("cash", "credit")
+
+
+def _check_modifiable(row, who_action="修改"):
+    """已入账/已冲销/已标异常/已放弃的单据不能被保存覆盖；返回错误响应或 None。"""
+    if row.deleted_at:
+        return _receipt_error(
+            409, "RECEIPT_DISCARDED",
+            f"这张单已经放弃并放进回收站，不能再{who_action}。请老板到「回收站」把它恢复后再改。")
+    if row.status == "approved":
+        return _receipt_error(
+            409, "CANNOT_MODIFY_APPROVED",
+            "这张单已经入账了，不能直接修改。如果录错了，请老板在单据详情里点「冲销」，再重新录一张。")
+    if row.status == "reversed":
+        return _receipt_error(
+            409, "CANNOT_MODIFY_REVERSED",
+            "这张单已经冲销作废，不能再修改。请重新录一张新单。")
+    if row.status == "flagged":
+        return _receipt_error(
+            409, "RECEIPT_FLAGGED",
+            "这张单被老板标成了「有问题」，店员不能直接改。请找老板处理，老板确认没问题后才能继续修改。")
+    return None
+
+
 @router.post("/api/save_edited")
 def save_edited(body: SaveEditedBody, request: Request):
     require_role("staff")(request)
@@ -1791,44 +1860,10 @@ def save_edited(body: SaveEditedBody, request: Request):
     who = account.get("email", "unknown")
     tenant_id = _tenant_id(request)
 
-    # 初始化，新建手工单路径不会有历史数据
-    row = None
-    old_items = []
-    is_auto = (body.source == "auto")
-    target_status = "parsed" if is_auto else "edited"
-    action_type = "auto_save" if is_auto else "save_edited"
-    action_details = "AI自动识别落库" if is_auto else "[店员手工修改/保存]"
-
-    if body.receipt_id is None:
-        # 新建手工单
-        rid = db.create_receipt(supplier_name=body.supplier_name or "通用供应商",
-                                status=target_status, tenant_id=tenant_id)
-        db.append_audit_log(rid, who, action_type, "receipt", None, rid, details=action_details)
-    else:
-        rid = body.receipt_id
-        row = db.get_receipt_row(rid, tenant_id=tenant_id)
-        if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
-                                status_code=404)
-        if row.status == "approved":
-            return JSONResponse(
-                content={"status": "error", "code": "CANNOT_MODIFY_APPROVED",
-                         "msg": "该单据已审核入账，无法直接保存修改；如需修正请使用冲销功能。"},
-                status_code=409)
-        ver_err = _version_error(body.version, row, "保存")
-        if ver_err is not None:
-            return ver_err
-        old_status = row.status
-        # P14/P15：解析后自动保存（source=auto）是识别主链路的正常回写，不得把
-        # 门禁带警告的 parsed_with_warnings 静默降级为 parsed，否则新状态刚落库就被抹掉。
-        if is_auto and old_status == "parsed_with_warnings":
-            target_status = "parsed_with_warnings"
-        old_items = db.get_receipt_items(rid, tenant_id=tenant_id)
-        db.append_audit_log(rid, who, action_type, "status", old_status, target_status, details=action_details)
-
-    if body.settlement_type is None and body.receipt_id is not None:
-        return {"status": "error", "code": "SETTLEMENT_REQUIRED",
-                "msg": "缺少结算方式"}
+    # 状态与审计只由服务端决定：对外 API 的 source 字段不能凭空造出「AI 识别」单据。
+    # 唯一保留的兼容口子：前端识别完成后会把识别结果「同步保存」一次，此时单据本来就是
+    # 服务端 Job 写出的 parsed / parsed_with_warnings，状态保持不变、仍视为未经人工复核。
+    requested_auto = (body.source == "auto")
 
     items_raw = []
     for it in body.items or []:
@@ -1863,58 +1898,94 @@ def save_edited(body: SaveEditedBody, request: Request):
     # Gap 6：手写注记归一（list[str]，空行/空白剔除）
     _notes = [str(n).strip() for n in (body.adjustment_notes or [])
               if str(n).strip()]
-    # F5 门禁联动：以店员提交值重算算术门禁（建议性，不阻断）
+    # F5 门禁联动：以店员提交值重算算术门禁
     _math_warnings = _recompute_math_warnings(body, cur)
-    # P14/P15：带警告单据的自动保存沿用识别期门禁留痕——提交值未必能复现
-    # 契约类门禁错误，重算为空时保留原警告，避免自动保存把门禁留痕抹掉。
-    if is_auto and row is not None and row.status == "parsed_with_warnings" and not _math_warnings:
-        try:
-            _prev_warnings = json.loads(row.math_warnings_json or "[]")
-        except Exception:
-            _prev_warnings = []
-        if isinstance(_prev_warnings, list) and _prev_warnings:
-            _math_warnings = _prev_warnings
-    # QA-Round6 P1 修复：save_edited 的「读→乐观锁校验→写」窗口此前没有串行化，
-    # 两个并发同版本保存都能通过 _version_error 并各自 +1（last-writer-wins，
-    # 乐观锁被击穿）。QA-Race 验证后统一使用 _APPROVE_LOCK：save/save、
-    # save/approve 都必须串行（save 与 approve 交错会让 approve 对保存后的新内容
-    # 直接入账、绕过阻断重验）。单一锁、无嵌套获取，无死锁面。
+    settlement = str(body.settlement_type or "").strip()
+
+    # QA-Round6 P1：「读→乐观锁校验→写」整体在单据写锁内串行（save/save、save/approve
+    # 交错会击穿乐观锁或绕过 approve 的阻断重验）。所有校验都在第一次写库（含审计）之前。
     with _APPROVE_LOCK:
+        row = None
+        old_items = []
         if body.receipt_id is not None:
-            _row_now = db.get_receipt_row(rid, tenant_id=tenant_id)
-            if _row_now is None:
-                return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
-                                    status_code=404)
-            if _row_now.deleted_at:
-                return JSONResponse(
-                    content={"status": "error", "code": "RECEIPT_DISCARDED",
-                             "msg": "该单据已放弃并进入回收站，不能再保存修改。"},
-                    status_code=409)
-            _ver_err_now = _version_error(body.version, _row_now, "保存")
-            if _ver_err_now is not None:
-                return _ver_err_now
-        db.update_receipt(
-            rid,
-            supplier_name=body.supplier_name or "通用供应商",
-            receipt_date=body.date or "",
-            sheet_name=body.sheet_name or (body.date or "")[:7],
-            total_amount=float(body.total_amount or 0),
-            settlement_type=body.settlement_type,
-            payment_mark=body.payment_mark or "",
-            doc_form=body.doc_form or "",
-            layout_type=body.layout_type or "",
-            department_id=body.department_id,
-            status=target_status,
-            version=body.version + 1 if body.version is not None else 1,
-            currency=cur,
-            # Gap 9 / Gap 6：店员修正的费用/注记/付款证据落库（回读经 build_detail）
-            service_fee=float(body.service_fee or 0),
-            tax_amount=float(body.tax_amount or 0),
-            adjustment_notes_json=json.dumps(_notes, ensure_ascii=False),
-            payment_evidence=str(body.payment_evidence or "").strip(),
-            math_warnings_json=json.dumps(_math_warnings, ensure_ascii=False),
-        )
-        db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
+            rid = body.receipt_id
+            row = db.get_receipt_row(rid, tenant_id=tenant_id)
+            if row is None:
+                return _receipt_error(404, "RECEIPT_NOT_FOUND", _NOT_FOUND_MSG)
+            blocked = _check_modifiable(row)
+            if blocked is not None:
+                return blocked
+            ver_err = _version_error(body.version, row, "保存")
+            if ver_err is not None:
+                return ver_err
+        is_auto = bool(requested_auto and row is not None
+                       and row.status in ("parsed", "parsed_with_warnings"))
+        target_status = row.status if is_auto else "edited"
+        action_type = "auto_save" if is_auto else "save_edited"
+        action_details = ("识别结果同步保存（未经人工复核）" if is_auto
+                          else "[店员手工修改/保存]")
+
+        if not is_auto:
+            if not settlement:
+                return _receipt_error(
+                    422, "SETTLEMENT_REQUIRED",
+                    "请先选择这张单是「现结」还是「挂账」，再保存。")
+            if settlement not in _ALLOWED_SETTLEMENT:
+                return _receipt_error(
+                    422, "SETTLEMENT_REQUIRED",
+                    "结算方式只能选「现结」或「挂账」，请重新选择。")
+            if _math_warnings and body.confirm_mismatch is False:
+                return _receipt_error(
+                    422, "MATH_MISMATCH_CONFIRM",
+                    "单据上的数字对不上：" + "；".join(str(w) for w in _math_warnings)
+                    + "。老板入账前必须改对，确定要先提交吗？",
+                    data={"warnings": _math_warnings})
+        # P14/P15：带警告单据的同步保存沿用识别期门禁留痕——提交值未必能复现
+        # 契约类门禁错误，重算为空时保留原警告，避免同步保存把门禁留痕抹掉。
+        if is_auto and row.status == "parsed_with_warnings" and not _math_warnings:
+            try:
+                _prev_warnings = json.loads(row.math_warnings_json or "[]")
+            except Exception:
+                _prev_warnings = []
+            if isinstance(_prev_warnings, list) and _prev_warnings:
+                _math_warnings = _prev_warnings
+
+        with db.atomic():
+            if row is None:
+                rid = db.create_receipt(supplier_name=body.supplier_name or "通用供应商",
+                                        status="edited", tenant_id=tenant_id)
+                db.append_audit_log(rid, who, action_type, "receipt", None, rid,
+                                    details=action_details)
+            else:
+                old_items = db.get_receipt_items(rid, tenant_id=tenant_id)
+                db.append_audit_log(rid, who, action_type, "status", row.status,
+                                    target_status, details=action_details)
+            db.update_receipt(
+                rid,
+                supplier_name=body.supplier_name or "通用供应商",
+                receipt_date=body.date or "",
+                sheet_name=body.sheet_name or (body.date or "")[:7],
+                total_amount=float(body.total_amount or 0),
+                settlement_type=settlement or None,
+                payment_mark=body.payment_mark or "",
+                doc_form=body.doc_form or "",
+                layout_type=body.layout_type or "",
+                department_id=body.department_id,
+                status=target_status,
+                version=body.version + 1 if body.version is not None else 1,
+                currency=cur,
+                # Gap 9 / Gap 6：店员修正的费用/注记/付款证据落库（回读经 build_detail）
+                service_fee=float(body.service_fee or 0),
+                tax_amount=float(body.tax_amount or 0),
+                discount_amount=float(body.discount_amount or 0),
+                delivery_fee=float(body.delivery_fee or 0),
+                deposit_amount=float(body.deposit_amount or 0),
+                rounding_adjustment=float(body.rounding_adjustment or 0),
+                adjustment_notes_json=json.dumps(_notes, ensure_ascii=False),
+                payment_evidence=str(body.payment_evidence or "").strip(),
+                math_warnings_json=json.dumps(_math_warnings, ensure_ascii=False),
+            )
+            db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
 
     # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
     if not is_auto and body.receipt_id is not None and row is not None:
@@ -2028,7 +2099,8 @@ def save_edited(body: SaveEditedBody, request: Request):
         _extract_and_enqueue_memory_facts(
             rid, row, tenant_id, _ai_prefill_items(row), items_raw,
             trigger="save_edited")
-    return {"status": "success", "id": rid, "receipt_id": rid, "version": row.version}
+    return {"status": "success", "id": rid, "receipt_id": rid, "version": row.version,
+            "math_blockers": _math_warnings, "status_after": row.status}
 
 
 # -------------------------------------------------------------
@@ -2048,154 +2120,98 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
-                                status_code=404)
+            return _receipt_error(404, "RECEIPT_NOT_FOUND", _NOT_FOUND_MSG)
         # QA-Race 验证补充：get_receipt_row 不过滤软删行；已放弃（回收站）的单据
         # 必须拒绝入账，否则顺序执行「discard → approve」也会对已删单据入账。
         if row.deleted_at:
-            return JSONResponse(
-                content={"status": "error", "code": "RECEIPT_DISCARDED",
-                         "msg": "该单据已放弃并进入回收站，不能审核入账；请先在管理后台恢复。"},
-                status_code=409)
+            return _receipt_error(
+                409, "RECEIPT_DISCARDED",
+                "这张单已经放弃并放进回收站，不能入账。请先到「回收站」把它恢复。")
         if row.status == "approved":
-            return JSONResponse(
-                content={"status": "error", "code": "ALREADY_APPROVED",
-                         "msg": "该单据此前已审核入账，未重复入库。"},
-                status_code=409)
+            return _receipt_error(
+                409, "ALREADY_APPROVED", "这张单之前已经入账了，没有重复入库。")
+        if row.status == "reversed":
+            return _receipt_error(
+                409, "INVALID_STATUS", "这张单已经冲销作废，不能再入账。请重新录一张新单。")
+        if row.status == "flagged":
+            return _receipt_error(
+                409, "INVALID_STATUS",
+                "这张单被标成了「有问题」，不能入账。请先点「解除异常标记」，确认没问题后再入账。")
         if row.status not in ("parsed", "parsed_with_warnings", "edited"):
-            return JSONResponse(
-                content={"status": "error", "code": "INVALID_STATUS",
-                         "msg": f"仅 status='parsed'/'parsed_with_warnings'/'edited' 的单据可 approve，当前 status='{row.status}'"},
-                status_code=409)
-        ver_err = _version_error(body.version, row, "审核")
+            return _receipt_error(
+                409, "INVALID_STATUS",
+                "这张单还没有整理好（识别中、识别失败或还没保存），暂时不能入账。"
+                "请等识别完成，或改成手工录入并保存后再入账。")
+        ver_err = _version_error(body.version, row, "入账")
         if ver_err is not None:
             return ver_err
 
         # QA-P1-02 & AC-05-04: 必填基本信息阻断（供应商名称与开单日期）
         supplier = (row.supplier_name or "").strip()
         if not supplier or supplier == "通用供应商":
-            return JSONResponse(
-                content={"status": "error", "code": "APPROVAL_BLOCKED",
-                         "msg": "缺少供应商名称，无法审核入账。请先填写有效供应商名称。"},
-                status_code=422)
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "缺少供应商名称，无法入账。请先填写真实的供应商名称。")
 
         import re
         from datetime import datetime
         date_str = (row.receipt_date or "").strip()
         if not date_str or not re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
-            return JSONResponse(
-                content={"status": "error", "code": "APPROVAL_BLOCKED",
-                         "msg": "缺少开单日期或日期格式不正确，无法审核入账。请选择正确的开单日期。"},
-                status_code=422)
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "缺少开单日期或日期格式不对，无法入账。请选择正确的开单日期。")
         try:
             datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            return JSONResponse(
-                content={"status": "error", "code": "APPROVAL_BLOCKED",
-                         "msg": "开单日期不存在于公历日历中，无法审核入账。请选择正确的开单日期。"},
-                status_code=422)
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "开单日期不是日历上真实存在的日子，无法入账。请选择正确的开单日期。")
 
         # AC-05-04: 重算权威字段完整性与算术阻断（防篡改 DOM 绕过）
         items = db.get_receipt_items(receipt_id, tenant_id=tenant_id)
         if not items:
-            return JSONResponse(
-                content={"status": "error", "code": "APPROVAL_BLOCKED",
-                         "msg": "单据明细为空，无法审核入账。"},
-                status_code=422)
+            return _receipt_error(422, "APPROVAL_BLOCKED",
+                                  "这张单没有任何明细，无法入账。请先录入明细。")
 
-        from app.models import ReceiptData, ReceiptItem, DocForm
-        from app.services import math_engine
         try:
-            doc_enum = DocForm(row.doc_form) if row.doc_form else DocForm.PRINTED
-        except ValueError:
-            doc_enum = DocForm.PRINTED
-        parsed_items = []
-        for it in items:
-            act_qty = it.get("actual_qty")
-            parsed_items.append(
-                ReceiptItem(
-                    name=str(it.get("name") or ""),
-                    qty=float(it.get("quantity", 0) or 0),
-                    unit=str(it.get("unit") or ""),
-                    unit_price=float(it.get("unit_price", 0) or 0),
-                    amount=float(it.get("amount", 0) or 0),
-                    is_void=bool(it.get("is_void", 0) or 0),
-                    actual_qty=float(act_qty) if act_qty not in (None, "") else None
-                )
-            )
-        rc_data = ReceiptData(
-            doc_form=doc_enum,
-            vendor=row.supplier_name or "通用供应商",
-            date=row.receipt_date or "",
-            items=parsed_items,
-            total=float(row.total_amount or 0),
-            service_fee=float(row.service_fee or 0),
-            tax_amount=float(row.tax_amount or 0),
-            currency=row.currency or "HKD",
-            payment_marked=bool(row.payment_mark and "已付款" in str(row.payment_mark)),
-            confidence=1.0,
-        )
-        math_blockers = math_engine.validate_and_report(rc_data)
+            _notes_now = json.loads(row.adjustment_notes_json or "[]")
+        except Exception:
+            _notes_now = []
+        math_blockers = _math_gate(
+            doc_form=row.doc_form, vendor=row.supplier_name, date=row.receipt_date,
+            items=items, total=row.total_amount,
+            service_fee=row.service_fee, tax_amount=row.tax_amount,
+            discount_amount=row.discount_amount, delivery_fee=row.delivery_fee,
+            deposit_amount=row.deposit_amount, rounding_adjustment=row.rounding_adjustment,
+            adjustment_notes=_notes_now, payment_mark=row.payment_mark,
+            payment_evidence=row.payment_evidence, currency=row.currency or "HKD")
         if math_blockers:
             return JSONResponse(
                 content={
                     "status": "error",
                     "code": "APPROVAL_BLOCKED",
-                    "msg": f"单据存在未解决的金额矛盾或算术阻断，无法入账：{'；'.join(math_blockers)}",
+                    "msg": f"单据上的数字对不上，不能入账：{'；'.join(math_blockers)}。请先把数字改对再入账。",
                     "blockers": math_blockers
                 },
                 status_code=422)
 
         old_status = row.status
-        # 供应商自动建档（approve 后成为正式供应商，归入当前租户）
-        if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) is None:
-            db.create_supplier(row.supplier_name, tenant_id=tenant_id)
+        # 未经人工复核：状态仍是识别直出（parsed / parsed_with_warnings），从没有人保存过。
+        # 规则：老板仍可直接入账（老板本身就是复核人），但响应带 needs_review 让界面提示，
+        # 审计里单独标明「未经店员复核」，便于事后追溯。
+        needs_review = old_status in ("parsed", "parsed_with_warnings")
 
-        # 事务性原子补偿入账：先快照库存流水与批次状态，任一步骤失败立即补偿回滚
-        _s = db.get_session()
-        try:
-            _existing_logs = [l.id for l in _s.query(db._StockLogRow).filter_by(receipt_id=receipt_id).all()]
-            _existing_batches = [b.id for b in _s.query(db._InventoryBatchRow).filter_by(receipt_id=receipt_id).all()]
-        finally:
-            _s.close()
-
+        # 所有写入（供应商自动建档、SKU 建档/别名、库存流水、批次、单据状态、审计）
+        # 在同一个事务里，一次提交；任何一步失败整体回滚，进程中途崩溃也不会留下半套数据。
         from app.services.inventory import apply_receipt_to_inventory
-        try:
+        with db.atomic():
+            if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) is None:
+                db.create_supplier(row.supplier_name, tenant_id=tenant_id)
             apply_receipt_to_inventory(row, tenant_id=tenant_id)
             db.update_receipt(receipt_id, status="approved", version=row.version + 1)
-        except Exception as _appr_err:
-            # 补偿回滚：删除本轮新增的库存流水与批次，回滚受影响 SKU 的 current_stock
-            _rollback_s = db.get_session()
-            try:
-                _new_logs = _rollback_s.query(db._StockLogRow).filter(
-                    db._StockLogRow.receipt_id == receipt_id,
-                    ~db._StockLogRow.id.in_(_existing_logs) if _existing_logs else True
-                ).all()
-                for _nl in _new_logs:
-                    if _nl.sku_id and _nl.kind == 'in':
-                        _sku_obj = _rollback_s.get(db._SkuRow, int(_nl.sku_id))
-                        if _sku_obj:
-                            _sku_obj.current_stock = round(_sku_obj.current_stock - _nl.qty, 4)
-                    _rollback_s.delete(_nl)
-                _new_batches = _rollback_s.query(db._InventoryBatchRow).filter(
-                    db._InventoryBatchRow.receipt_id == receipt_id,
-                    ~db._InventoryBatchRow.id.in_(_existing_batches) if _existing_batches else True
-                ).all()
-                for _nb in _new_batches:
-                    _rollback_s.delete(_nb)
-                # 恢复单据原状态与版本
-                _rc_row = _rollback_s.get(db._ReceiptRow, int(receipt_id))
-                if _rc_row:
-                    _rc_row.status = old_status
-                    _rc_row.version = row.version
-                _rollback_s.commit()
-            except Exception:
-                _rollback_s.rollback()
-            finally:
-                _rollback_s.close()
-            raise _appr_err
-
-        db.append_audit_log(receipt_id, who, "approve_receipt", "status", old_status, "approved")
+            db.append_audit_log(
+                receipt_id, who, "approve_receipt", "status", old_status, "approved",
+                details=("未经店员复核，由老板直接入账" if needs_review else None))
         row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     # 回写 VendorMemory（只认正向信号：老板批准）
     # T3 Gap B1：透传 tenant_id 与触发 receipt_id（source_ref 可回溯）
@@ -2209,10 +2225,16 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     # 若它抛错则整请求 500，但单据其实已入账 —— 客户端会误判失败。这里兜住异常并返回
     # success（状态/库存已一致），保证重试命中 ALREADY_APPROVED、绝不二次入库。
     try:
-        ingest_memory(row.supplier_name, items_text, notes=f"版式：{row.doc_form}",
-                      tenant_id=_tenant_id(request), receipt_id=receipt_id,
-                      supplier_id=getattr(row, "supplier_id", None),
-                      written_by=who)
+        if old_status == "parsed_with_warnings":
+            # 带警告且没人改过的识别直出：数字可能本身就是错的，不能固化成该供应商的先验。
+            import logging
+            logging.getLogger("api_receipts").info(
+                "单据 %s 带未确认警告直接入账，不写入供应商记忆", receipt_id)
+        else:
+            ingest_memory(row.supplier_name, items_text, notes=f"版式：{row.doc_form}",
+                          tenant_id=_tenant_id(request), receipt_id=receipt_id,
+                          supplier_id=getattr(row, "supplier_id", None),
+                          written_by=who)
     except Exception as _mem_err:
         import logging
         logging.getLogger("api_receipts").warning(
@@ -2266,7 +2288,10 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
     except Exception as _ack_err:
         import logging
         logging.getLogger("api_receipts").warning(f"[WARN] 审批确认提醒留痕失败（不阻断入账）：{_ack_err}")
-    return {"status": "success", "version": row.version}
+    resp = {"status": "success", "version": row.version, "needs_review": needs_review}
+    if needs_review:
+        resp["review_notice"] = "这张单是系统识别的，还没有店员核对过就入账了，请留意核对内容。"
+    return resp
 
 
 def _collect_receipt_warning_rules(row):
@@ -2329,7 +2354,7 @@ def acknowledge_warning(receipt_id: int, body: AcknowledgeWarningBody, request: 
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"}, status_code=404)
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG}, status_code=404)
         # QA-Scope 对齐：approve/save/discard 都拒绝已弃单（409 RECEIPT_DISCARDED /
         # 404），ack 此前缺这一守卫 → 已入回收站的单据仍可被确认留痕。纳入同族。
         if row.deleted_at:
@@ -2378,7 +2403,12 @@ def acknowledge_warning(receipt_id: int, body: AcknowledgeWarningBody, request: 
             doc_form=doc_enum, vendor=row.supplier_name or "通用供应商",
             date=row.receipt_date or "", items=rc_items,
             total=float(row.total_amount or 0), service_fee=float(row.service_fee or 0),
-            tax_amount=float(row.tax_amount or 0), currency=row.currency or "HKD",
+            tax_amount=float(row.tax_amount or 0),
+            discount_amount=float(row.discount_amount or 0),
+            delivery_fee=float(row.delivery_fee or 0),
+            deposit_amount=float(row.deposit_amount or 0),
+            rounding_adjustment=float(row.rounding_adjustment or 0),
+            currency=row.currency or "HKD",
             payment_marked=bool(row.payment_mark and "已付款" in str(row.payment_mark)),
             confidence=1.0)
         if math_engine.validate_and_report(rc_data):
@@ -2400,40 +2430,90 @@ def acknowledge_warning(receipt_id: int, body: AcknowledgeWarningBody, request: 
         return {"status": "success", "acknowledgement": dict(details, warning_id=ack_id)}
 
 
+class FlagBody(BaseModel):
+    version: Optional[int] = None
+    reason: Optional[str] = None
+
+
 @router.post("/api/receipt/{receipt_id}/flag")
-def flag_receipt(receipt_id: int, request: Request):
+def flag_receipt(receipt_id: int, request: Request, body: Optional[FlagBody] = None):
+    """老板把单据标成「有问题」：标记后店员不能保存，也不能入账，直到老板解除。
+
+    version 可选（旧客户端不传）：传了就做乐观锁校验。标记会让版本号 +1 并写审计。
+    """
     require_role("owner")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
-    # QA-Lock-Inventory：与 approve/save/discard/ack 共用单据写锁；并补软删守卫
-    # （修复前已弃单可被 owner flag 成功——G1 实证）。
+    body = body or FlagBody()
+    # QA-Lock-Inventory：与 approve/save/discard/ack 共用单据写锁；并补软删守卫。
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
-                                status_code=404)
+            return _receipt_error(404, "RECEIPT_NOT_FOUND", _NOT_FOUND_MSG)
         if row.deleted_at:
-            return JSONResponse(
-                content={"status": "error", "code": "RECEIPT_DISCARDED",
-                         "msg": "该单据已放弃并进入回收站，不能标记异常。"},
-                status_code=409)
+            return _receipt_error(
+                409, "RECEIPT_DISCARDED", "这张单已经放弃并放进回收站，不能标记。")
         old_status = row.status
         if old_status == "flagged":
-            return {"status": "success",
-                    "msg": f"单据 #{receipt_id} 已处于 flagged 状态，幂等跳过。"}
-        # 对齐完整版：uploaded/parsing/parsed/parsed_with_warnings/edited → flagged；approved 409
+            return {"status": "success", "version": row.version,
+                    "msg": f"单据 #{receipt_id} 已经是「有问题」状态，无需重复标记。"}
         if old_status not in ("uploaded", "parsing", "parsed", "parsed_with_warnings", "edited"):
-            return JSONResponse(
-                content={"status": "error",
-                         "msg": f"非法状态转移 [{old_status}] → [flagged]：仅 uploaded/parsing/parsed/parsed_with_warnings/edited 单据可标记异常"
-                                f"（已审核单据的问题修正必须走冲销路径）。"},
-                status_code=409)
-        db.update_receipt(receipt_id, status="flagged")
-        db.append_audit_log(receipt_id, who, "flag_receipt", "status", old_status, "flagged")
+            return _receipt_error(
+                409, "INVALID_STATUS",
+                "这张单当前的状态不能标记为「有问题」。已入账的单据如果录错了，请用「冲销」来更正。")
+        if body.version is not None:
+            ver_err = _version_error(body.version, row, "标记")
+            if ver_err is not None:
+                return ver_err
+        with db.atomic():
+            db.update_receipt(receipt_id, status="flagged",
+                              version=(row.version or 1) + 1)
+            db.append_audit_log(receipt_id, who, "flag_receipt", "status", old_status,
+                                "flagged", details=(body.reason or None))
+        new_version = (row.version or 1) + 1
     _track_event(account, getattr(request.state, "session_id", ""),
                  "receipt_flagged", receipt_id=receipt_id,
                  properties={"old_status": old_status})
-    return {"status": "success", "msg": f"单据 #{receipt_id} 已标记为异常"}
+    return {"status": "success", "version": new_version,
+            "msg": f"单据 #{receipt_id} 已标记为「有问题」"}
+
+
+@router.post("/api/receipt/{receipt_id}/unflag")
+def unflag_receipt(receipt_id: int, request: Request, body: Optional[FlagBody] = None):
+    """老板解除「有问题」标记，单据回到标记之前的状态（查不到则回到 edited）。"""
+    require_role("owner")(request)
+    account = getattr(request.state, "account", {})
+    who = account.get("email", "unknown")
+    body = body or FlagBody()
+    with _APPROVE_LOCK:
+        row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
+        if row is None:
+            return _receipt_error(404, "RECEIPT_NOT_FOUND", _NOT_FOUND_MSG)
+        if row.deleted_at:
+            return _receipt_error(
+                409, "RECEIPT_DISCARDED", "这张单已经放弃并放进回收站，不能操作。")
+        if row.status != "flagged":
+            return _receipt_error(409, "INVALID_STATUS", "这张单没有被标成「有问题」，不需要解除。")
+        if body.version is not None:
+            ver_err = _version_error(body.version, row, "解除标记")
+            if ver_err is not None:
+                return ver_err
+        restore_to = "edited"
+        try:
+            for entry in reversed(json.loads(row.audit_logs_json or "[]")):
+                if entry.get("action") == "flag_receipt" and entry.get("old") in (
+                        "uploaded", "parsed", "parsed_with_warnings", "edited"):
+                    restore_to = entry["old"]
+                    break
+        except Exception:  # noqa: BLE001 审计损坏时退回 edited，不阻断解除
+            pass
+        with db.atomic():
+            db.update_receipt(receipt_id, status=restore_to, version=(row.version or 1) + 1)
+            db.append_audit_log(receipt_id, who, "unflag_receipt", "status", "flagged",
+                                restore_to, details=(body.reason or None))
+        new_version = (row.version or 1) + 1
+    return {"status": "success", "version": new_version, "status_after": restore_to,
+            "msg": f"单据 #{receipt_id} 已解除「有问题」标记"}
 
 
 @router.post("/api/receipt/{receipt_id}/retry")
@@ -2444,7 +2524,7 @@ def retry_receipt(receipt_id: int, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2457,7 +2537,7 @@ def retry_receipt(receipt_id: int, request: Request):
         if not row.image_path or not os.path.exists(row.image_path):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"原图缺失（{row.image_path}），无法重试；请重新上传或转手工录入。"},
+                         "msg": "这张单的原图找不到了，没办法重新识别。请重新上传照片，或转手工录入。"},
                 status_code=400)
         # P0-1: 重试链路租户透传（row 已按租户校验归属）
         # P2-T6: 从单据行派生 vendor_hint（不调预判模型）——行上已有供应商即可注入首轮
@@ -2508,7 +2588,7 @@ async def replace_receipt_image(
     # + Job 创建）。锁不再跨越任何重 I/O（qa-report §12 已知边界的补齐）。
     row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     if row.deleted_at:
         return JSONResponse(
@@ -2551,7 +2631,7 @@ async def replace_receipt_image(
         row2 = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row2 is None:
             _discard_new_file()
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row2.deleted_at:
             _discard_new_file()
@@ -2603,7 +2683,8 @@ async def replace_receipt_image(
                 "image_url": public_image_url(receipt_id, image_path, _tenant_id(request)),
                 "quality_warnings": qw,
                 "image_guard": image_guard,
-                "msg": "新图片检测到高风险图内注入，已拦截重跑识别并置为待人工审核状态"
+                "msg": "新换的图片里发现了肉眼看不清的小字，可能是有人故意加的，为了安全没有重新识别。"
+                       "请对照原图手工录入，或请老板先看一下"
             }
 
         # 换图落库（旧图文件保留不删，可审计）+ 审计；W5 预览缓存定向清理
@@ -2631,13 +2712,13 @@ async def replace_receipt_image(
 
 @router.post("/api/receipt/{receipt_id}/convert_manual")
 def convert_manual(receipt_id: int, request: Request):
-    # 对齐完整版：转手工录入改写单据形态与状态，需 owner
-    require_role("owner")(request)
+    # 店员是识别失败后的第一责任人，转手工是保留原图的逃生通道，需 staff 即可（只改形态与状态，不入账）
+    require_role("staff")(request)
     # QA-Lock-Inventory：状态改写入锁 + 补软删守卫（G3 实证：已弃单被转手工 200）。
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2648,7 +2729,7 @@ def convert_manual(receipt_id: int, request: Request):
         if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "error"):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"当前状态 [{old_status}] 不允许转手工录入：仅 uploaded/parsed/parsed_with_warnings/error 单据可转换。"},
+                         "msg": "这张单现在的状态不能转手工录入。只有识别中断、识别失败或还没保存的单据才能转。"},
                 status_code=409)
         db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
         row = db.get_receipt_row(receipt_id)
@@ -2664,28 +2745,30 @@ def discard_receipt(receipt_id: int, request: Request):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
     who = account.get("email", "unknown")
+    is_owner = account.get("role") in ("owner", "admin")
     # QA-Race：与 approve/save 共用单据写锁，防止「discard 与 approve 交错 →
     # 已软删单据被入账」。读→判态→软删整体在锁内，判定与写入原子。
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
-        if row is None:
-            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND",
-                                         "msg": "单据不存在或已被删除"}, status_code=404)
-        if row.deleted_at:
-            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND",
-                                         "msg": "单据不存在或已被删除"}, status_code=404)
-        if row.status == "approved":
-            return JSONResponse(
-                content={"status": "error", "code": "CANNOT_DISCARD_APPROVED",
-                         "msg": "该单据已审核确认并入账，无法直接放弃删除；请使用冲销功能修正。"},
-                status_code=409)
-        # 软删除：保留单据（含原图），进入回收站
+        if row is None or row.deleted_at:
+            return _receipt_error(404, "RECEIPT_NOT_FOUND", "找不到这张单，可能已经被放弃了。请刷新页面。")
+        if row.status in ("approved", "reversed"):
+            return _receipt_error(
+                409, "CANNOT_DISCARD_APPROVED",
+                "这张单已经入账了，不能直接放弃。录错了请老板用「冲销」来更正。")
+        if row.status == "flagged" and not is_owner:
+            return _receipt_error(
+                403, "FLAGGED_OWNER_ONLY",
+                "这张单被老板标成了「有问题」，只有老板能放弃它。请找老板处理。")
+        # 软删除：保留单据（含原图），进入回收站，老板可在「回收站」恢复。
         # W5：此处刻意不清理 `<stem>_web.jpg` 预览缓存 —— 软删单据仍持有 image_path，
         # 经回收站恢复后仍要展示原图，缓存依旧被引用；真正的无主缓存由启动期兜底扫描回收。
-        db.soft_delete_receipt(receipt_id)
-        db.append_audit_log(receipt_id, who, "discard_receipt", "deleted_at", None, "now")
+        with db.atomic():
+            db.soft_delete_receipt(receipt_id)
+            db.update_receipt(receipt_id, deleted_by=who)
+            db.append_audit_log(receipt_id, who, "discard_receipt", "deleted_at", None, "now")
     return {"status": "success", "receipt_id": receipt_id,
-            "msg": "已放弃该单据（进入回收站，可在管理后台恢复）"}
+            "msg": "已放弃这张单，它放进了「回收站」，老板可以在那里恢复。"}
 
 
 class PayDateBody(BaseModel):
@@ -2700,7 +2783,7 @@ def set_pay_date(receipt_id: int, body: PayDateBody, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2716,14 +2799,14 @@ def set_pay_date(receipt_id: int, body: PayDateBody, request: Request):
             if not _re.match(r"^\d{4}-\d{2}-\d{2}$", raw):
                 return JSONResponse(
                     content={"status": "error",
-                             "msg": f"expected_pay_date 必须为 YYYY-MM-DD 格式日期，当前值：'{raw}'"},
+                             "msg": "付款日期格式不对，请按「年-月-日」填写，例如 2026-10-31。"},
                     status_code=400)
             try:
                 _dt.strptime(raw, "%Y-%m-%d")
             except ValueError:
                 return JSONResponse(
                     content={"status": "error",
-                             "msg": f"expected_pay_date '{raw}' 不是真实存在的日期"},
+                             "msg": "这个付款日期不存在，请重新选择。"},
                     status_code=400)
             new_date = raw
         row = db.set_expected_pay_date(receipt_id, new_date)
@@ -2759,7 +2842,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row.deleted_at:
             return JSONResponse(
@@ -2778,7 +2861,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
         if not m:
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"非法 field 值：'{field}'（须形如 items[0].qty）"},
+                         "msg": "要反馈的字段不对，请刷新页面后再试。"},
                 status_code=400)
         idx = int(m.group(1))
         # 越界下标：items[N] 必须在 0..len(row.items)-1 范围内
@@ -2786,7 +2869,7 @@ def adopt_ai(receipt_id: int, body: AdoptAIBody, request: Request):
         if idx < 0 or idx >= len(items):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"items 下标越界：items[{idx}]，当前单据仅有 {len(items)} 条明细（0..{max(len(items)-1, 0)}）"},
+                         "msg": f"这张单只有 {len(items)} 行明细，没有第 {idx + 1} 行。请刷新页面后再试。"},
                 status_code=400)
         new_val = body.new if body.new is not None else body.ai_value
         old_val = body.old if body.old is not None else body.user_value
@@ -2828,7 +2911,7 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     # 单据归属校验：跨租户单据视为不存在（Gap E2）
     row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     # QA-Lock-Inventory：软删守卫（G6 实证：已弃单仍可提交反馈）。此处为锁外快速
     # 预检；审计读改写已移入下方锁内短临界区（重 I/O 蒸馏留锁外，见 qa-report §13）。
@@ -2846,13 +2929,13 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
         try:
             item_idx = int(item_idx)
         except Exception:
-            return JSONResponse(content={"status": "error", "msg": "item_index 必须为整数"},
+            return JSONResponse(content={"status": "error", "msg": "行号不对，请刷新页面后再试。"},
                                 status_code=400)
         items = db.get_receipt_items(receipt_id, tenant_id=tenant_id)
         if item_idx < 0 or item_idx >= len(items):
             return JSONResponse(
                 content={"status": "error",
-                         "msg": f"item_index 越界：{item_idx}，当前仅 {len(items)} 行"},
+                         "msg": f"这张单只有 {len(items)} 行明细，没有第 {item_idx + 1} 行。请刷新页面后再试。"},
                 status_code=400)
     # like 至少需提供一项反馈（点赞/点踩 或 文本非空）
     from app.models import FEEDBACK_COMMENT_MAXLEN, FEEDBACK_DISTILL_THRESHOLD
@@ -2883,7 +2966,7 @@ def submit_feedback(receipt_id: int, body: FeedbackBody, request: Request):
     with _APPROVE_LOCK:
         row2 = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
         if row2 is None:
-            return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+            return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
         if row2.deleted_at:
             return JSONResponse(
@@ -2947,7 +3030,7 @@ def list_feedback(receipt_id: int, request: Request):
     tenant_id = _tenant_id(request)
     row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到指定收据"},
+        return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                             status_code=404)
     fbs = db.list_receipt_feedbacks(receipt_id=receipt_id, tenant_id=tenant_id)
     return {"status": "success", "receipt_id": receipt_id, "feedbacks": fbs}

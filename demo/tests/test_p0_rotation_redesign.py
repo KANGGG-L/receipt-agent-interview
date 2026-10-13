@@ -370,8 +370,12 @@ def test_ac_fe_ui_elements_and_static_contract():
     # 验证常驻旋转 90° 按钮存在
     assert 'id="btnRotate"' in html_content
 
-    with open(js_path, "r", encoding="utf-8") as f:
-        js_content = f.read()
+    # F5 S4-11：旋转烘焙与重识别实现已随上传域迁至 upload.js（状态变量仍在 main.js）。
+    # 静态契约判据改为 main.js + 全部域文件联合全文（与浏览器加载集合同构，判据不放宽）。
+    import sys as _sys
+    _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import f4_frontend_sources as _ffs
+    js_content = _ffs.frontend_union()
 
     # 验证核心旋转烘焙与重识别函数
     assert "async function bakeCurrentRotation" in js_content or "bakeCurrentRotation(" in js_content

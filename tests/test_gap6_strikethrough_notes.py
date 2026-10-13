@@ -79,4 +79,4 @@ def test_math_engine_detects_mismatch_with_void():
 
     problems = validate_and_report(data)
     assert len(problems) == 1, "未成功检测出包含作废行时的总额不守恒"
-    assert "预期总额=265.0" in problems[0]
+    assert "应付 265 元" in problems[0]

@@ -120,7 +120,6 @@ def _metrics_are_sourced_or_flagged(block: dict) -> bool:
 # 测试抄一份就等于又一处"同一口径多份实现"），内置回退直接取模块常量。
 _EXTRACT_PROMPT_SIDES = (
     ("注册表版本", _prompt_text("v1_1_0_extract")),
-    ("内置回退", mx._SYSTEM_PROMPT),
 )
 
 
@@ -381,11 +380,7 @@ def test_extraction_sends_registry_prompt_to_model():
         "sup-0001", "tenant-a", model=stub)
     assert _system_message_contents(stub) == [
         _expected_system_with_canary(_prompt_text("v1_1_0_extract"), stub)]
-    # 这里原先写的是「内置常量必须与注册表版本不同，否则本用例无法区分是否真走了注册表」——
-    # 那条断言把「回退文案比注册表少防注入条款」固化成合法行为（缺陷固化断言：任何修复都会
-    # 被自己的用例判红）。现改为断言**两侧条款等价**（四类 kind / JSON 数组契约 / 防注入）。
-    assert not _missing_extract_clauses(mx._SYSTEM_PROMPT), (
-        _missing_extract_clauses(mx._SYSTEM_PROMPT))
+    assert not hasattr(mx, "_SYSTEM_PROMPT"), "内置副本必须已删除，注册表是唯一事实源"
     # 运行状态也要标出本次用的是注册表版（回退率是可观测的治理信号）
     assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_REGISTRY
 
@@ -410,42 +405,38 @@ def test_extraction_prefers_registry_when_both_texts_are_available(monkeypatch):
     assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_REGISTRY
 
 
-def test_extraction_falls_back_visibly_when_registry_unavailable(monkeypatch, caplog):
-    """反向：注册表不可用 -> 回退内置常量，且 warning 必须留痕（不许静默）。"""
+def test_extraction_fails_explicitly_when_registry_unavailable(monkeypatch, caplog):
+    """注册表不可用 -> 显式失败且 warning 留痕，不再回退内置副本。"""
     def _boom(scene, version=None):
         raise FileNotFoundError("simulated registry failure")
 
     monkeypatch.setattr(registry_mod, "load_prompt", _boom)
     with caplog.at_level(logging.WARNING, logger="memory_extract"):
-        assert mx._system_prompt() == mx._SYSTEM_PROMPT
-    assert "回退内置常量" in caplog.text, "回退必须可见：缺 warning 就等于 prompt 治理静默失效"
+        with pytest.raises(mx.PromptUnavailableError):
+            mx._system_prompt()
+    assert "不使用内置副本" in caplog.text
 
 
-def test_fallback_run_is_marked_in_last_run(monkeypatch, caplog):
-    """回退只在日志里可见是不够的：运行状态必须标出「本次用的是回退文案」。
-
-    why：`get_last_run()` 是上层落库/告警/度量的取数口（`error` 只覆盖"这次没跑成"，
-    回退则是"跑成了但治理降级"）。若回退不落进这个字段，长期走回退在指标上完全不可见，
-    正是本仓高发的"异常被静默吞掉导致功能静默失效"。
-    """
+def test_unavailable_run_is_marked_and_does_not_call_model(monkeypatch, caplog):
+    """提示词读不到时：不调模型、返回 []，运行状态标 unavailable 并带明确错误原因。"""
     def _boom(scene, version=None):
         raise FileNotFoundError("simulated registry failure")
 
     monkeypatch.setattr(registry_mod, "load_prompt", _boom)
     stub = _StubModel(output="[]")
     with caplog.at_level(logging.WARNING, logger="memory_extract"):
-        mx.extract_candidate_facts(
+        out = mx.extract_candidate_facts(
             [{"name": "黑牛", "qty": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
             [{"name": "黑牛腩", "quantity": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
             "sup-0001", "tenant-a", model=stub)
-    assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_BUILTIN_FALLBACK
-    assert _system_message_contents(stub) == [
-        _expected_system_with_canary(mx._SYSTEM_PROMPT, stub)]
-    # 回退不是 error：文案条款等价、结果可用；它是治理信号，不是本次失败
-    assert mx.get_last_run()["error"] == ""
+    assert out == []
+    run = mx.get_last_run()
+    assert run["prompt_source"] == mx.PROMPT_SOURCE_UNAVAILABLE
+    assert "注册表读不到" in run["error"]
+    assert run["model_called"] is False
 
 
-def test_no_prompt_used_is_distinct_from_fallback(monkeypatch, caplog):
+def test_no_prompt_used_is_distinct_from_unavailable(monkeypatch, caplog):
     """没用到 prompt 的一次运行（无差异提前返回）不得被记成「用了回退文案」。
 
     判别力：若 `_reset_state` 漏了初始化 `prompt_source`，本用例第二步会沿用**上一次调用**
@@ -457,12 +448,12 @@ def test_no_prompt_used_is_distinct_from_fallback(monkeypatch, caplog):
     monkeypatch.setattr(registry_mod, "load_prompt", _boom)
     stub = _StubModel(output="[]")
     with caplog.at_level(logging.WARNING, logger="memory_extract"):
-        # 第一次：有差异 -> 走回退，prompt_source = builtin_fallback
+        # 第一次：有差异 -> 提示词读不到，prompt_source = unavailable
         mx.extract_candidate_facts(
             [{"name": "黑牛", "qty": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
             [{"name": "黑牛腩", "quantity": 1, "unit": "斤", "unit_price": 10, "amount": 10}],
             "sup-0001", "tenant-a", model=stub)
-        assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_BUILTIN_FALLBACK
+        assert mx.get_last_run()["prompt_source"] == mx.PROMPT_SOURCE_UNAVAILABLE
         # 第二次：无差异 -> 不取 prompt，取值必须回到"未使用"，不得沿用上一次
         same = [{"name": "菜心", "quantity": 1, "unit": "斤", "unit_price": 6, "amount": 6}]
         assert mx.extract_candidate_facts(same, same, "sup-0001", "tenant-a",

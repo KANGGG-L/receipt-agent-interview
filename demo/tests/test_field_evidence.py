@@ -440,8 +440,8 @@ def test_registry_v1_3_0_evidence_loadable_via_get_prompt():
 def test_metadata_v1_3_0_registered_draft_active_unchanged():
     from ai_registry.registry import ai_registry
     meta = ai_registry.get_prompt_metadata("extract")
-    assert meta["active_version"] == "v1_2_8_anti_injection", \
-        "active 必须保持 v1_2_8 不动（灰测验证通过前不置 production）"
+    assert meta["active_version"] == "v1_2_0_sku_clean", \
+        "active 为有实测指标的准入版本 v1_2_0（v1_3_0 灰测验证通过前不置 production）"
     v130 = meta["versions"].get("v1_3_0_evidence")
     assert v130 is not None, "v1_3_0_evidence 未登记 metadata"
     assert v130["status"] == "draft", "灰测验证通过前 status 必须为 draft"
@@ -490,7 +490,11 @@ def test_main_js_evidence_highlight_wiring():
 
 def test_main_js_evidence_survives_save_roundtrip():
     """证据随保存链路透传：采集（collect）与 payload 构造（build）均不丢证据。"""
-    src = _read_static("js/main.js")
+    # F5 S4-11：复核保存链路已随域迁至 review_core.js；联合全文口径（判据不放宽）。
+    src = "\n".join(_read_static("js/" + f) for f in
+                    ("main.js", "common.js", "upload.js", "review_core.js",
+                     "workbench_queue.js", "review_modal.js", "version_conflict.js",
+                     "photo_sider.js", "finance_ops.js"))
     collect_start = src.index("function collectReviewFormData")
     collect_end = src.index("function buildSavePayloadFromData")
     assert "evidence" in src[collect_start:collect_end], \

@@ -142,7 +142,10 @@ def _read(rel_path):
 
 
 def test_render_row_exposes_t5_fields_on_dataset():
-    js = _read(os.path.join("static", "js", "main.js"))
+    # F5 S4-11：appendTableRow/buildSavePayloadFromData 已随复核核心域迁至 review_core.js；
+    # 联合全文口径（判据不放宽）。
+    js = "\n".join(_read(os.path.join("static", "js", f)) for f in
+                   ("main.js", "review_core.js", "archive_list.js"))
     assert "tr.dataset.confidence" in js, (
         "appendTableRow 必须把 item 置信度挂到行 dataset，否则复核保存采集不到")
     assert "tr.dataset.unitConversionWarning" in js, (

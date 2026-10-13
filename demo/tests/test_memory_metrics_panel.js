@@ -33,6 +33,13 @@ const mainPath = process.argv[2] || path.join(demoDir, 'static', 'js', 'main.js'
 const indexPath = path.join(demoDir, 'templates', 'index.html');
 const src = fs.readFileSync(mainPath, 'utf8');
 const indexHtml = fs.readFileSync(indexPath, 'utf8');
+// F4 S4-11 起 main.js 按域拆分：源码级扫描断言作用于「main.js + 全部域文件」联合全文
+// （与浏览器实际加载的代码集合同构），不再钉「必须在 main.js」。
+const F4_LOADER = require('./f4_load_domains.js');
+const srcAll = [src].concat(
+    F4_LOADER.F4_DOMAIN_FILES.map(name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8'))
+).join('\n');
+
 
 let pass = 0, fail = 0;
 function ok(name, cond, detail) {
@@ -84,6 +91,8 @@ const sandbox = {
     fetch: dispatcher,
 };
 sandbox.window = sandbox;
+sandbox.addEventListener = function () {};
+sandbox.removeEventListener = function () {};
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 sandbox.location = { href: 'http://127.0.0.1/', reload() {}, assign() {} };
@@ -122,6 +131,11 @@ function dispatcher(url) {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => console.log(m) });
 
 const { memoryMetricRateHtml, memoryMetricsRowsHtml, memoryMetricsSwitchHtml,
         renderMemoryMetrics, loadMemoryMetrics } = sandbox;
@@ -332,7 +346,7 @@ async function main() {
         '缺失=' + JSON.stringify(MM_ALL.filter(c => !renderedCls.has(c))));
 
     // 源码侧反查：看板区块里写下的 mm-* 类名必须都被渲染出来（定义了必有消费方）
-    const panelSrc = src.split('记忆度量看板（收敛计划 P2-T5')[1].split('function escapeHtml')[0];
+    const panelSrc = srcAll.split('记忆度量看板（收敛计划 P2-T5')[1].split('function escapeHtml')[0];
     const srcCls = new Set((panelSrc.match(/mm-[a-z0-9-]+/g) || []));
     ok('样式消费方: 源码看板区块里的 mm-* 类名全部被渲染出来（防「定义了没接线」）',
         srcCls.size > 0 && [...srcCls].every(c => renderedCls.has(c)),
@@ -395,7 +409,7 @@ async function main() {
     // ---- 6. 接线：HTML 锚点 + tab-engine 分支调用 ----
     ok('接线: index.html 存在 #memoryMetricsPanel 锚点',
         indexHtml.indexOf('id="memoryMetricsPanel"') !== -1, '未找到锚点');
-    const engineBranch = src.split("if (targetId === 'tab-engine')")[1];
+    const engineBranch = srcAll.split("if (targetId === 'tab-engine')")[1];
     ok('接线: tab-engine 分支调用 loadMemoryMetrics()（不是定义了没人调）',
         !!engineBranch && engineBranch.split('}')[0].indexOf('loadMemoryMetrics()') !== -1,
         'branch=' + (engineBranch || '').split('}')[0]);

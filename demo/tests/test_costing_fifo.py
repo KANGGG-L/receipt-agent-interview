@@ -218,7 +218,7 @@ def test_fifo_exhaustion_and_new_inbound():
 
 
 def test_multi_unit_conversion_deduction():
-    """多单位换算：入库 10斤 @ 25元/斤，配方消耗 250g，验证折算 0.5斤（0.25kg），扣减 12.50元。"""
+    """多单位换算：入库 10斤 @ 25元/斤，配方消耗 302.4g，验证折算 0.5斤（斤=0.6048kg），扣减 12.50元。"""
     from app import db
     from app.services.costing_service import CostingService
 
@@ -235,20 +235,20 @@ def test_multi_unit_conversion_deduction():
         )
         session.commit()
 
-        # 消耗 250g
+        # 消耗 302.4g
         total_cost, details = CostingService.deduct_consumption_fifo(
             session=session,
             sku_id=sku_id,
-            qty_needed=250.0,
+            qty_needed=302.4,
             unit_needed="g",
             date="2026-08-26",
         )
         session.commit()
 
-        # 250g = 0.5斤, 0.5 * 25 = 12.50
+        # 302.4g = 0.5斤, 0.5 * 25 = 12.50
         assert total_cost == 12.50
         assert len(details) == 1
-        assert details[0]["qty_consumed"] == 250.0
+        assert details[0]["qty_consumed"] == 302.4
         assert details[0]["unit"] == "g"
         assert details[0]["total_cost"] == 12.50
 
@@ -590,7 +590,7 @@ def test_cross_dimension_unit_conversion_runtime():
 
     with pytest.raises(ValueError) as excinfo:
         CostingService.convert_unit_quantity(5, "份", "kg")
-    assert "跨量纲单位不可换算" in str(excinfo.value)
+    assert "还没有换算关系" in str(excinfo.value)
 
     # 2. 同量纲合法折算
     compat_ok, _ = check_unit_compatibility("g", "kg")

@@ -95,24 +95,45 @@ def _read(rel_path):
         return f.read()
 
 
+def _frontend_js_sources():
+    """main.js + 已抽离域文件的全文映射（F4/F5 S4-11 起 main.js 按域拆分为多文件，
+    行级/整单级判据的调用点分布在 main.js 与域文件两侧，守真不变量按并集判定）。"""
+    rels = ["static/js/main.js", "static/js/supplier_archive.js",
+            "static/js/dish_consumption.js", "static/js/cost_report.js",
+            "static/js/departments.js", "static/js/inventory_board.js",
+            "static/js/archive_list.js",
+            # F5 S4-11 收口拆分的 8 个域文件（顺序＝index.html 加载链）
+            "static/js/common.js", "static/js/upload.js", "static/js/review_core.js",
+            "static/js/workbench_queue.js", "static/js/review_modal.js",
+            "static/js/version_conflict.js", "static/js/photo_sider.js",
+            "static/js/finance_ops.js"]
+    return {r: _read(r) for r in rels}
+
+
 def test_static_wiring_single_source_of_truth():
-    js = _read(os.path.join("static", "js", "main.js"))
-    # 日志阈值路线彻底下线
-    assert "ITEM_LOW_CONFIDENCE_THRESHOLD" not in js, "旧阈值常量必须移除"
-    assert "isLowConfidence" not in js, "不得残留按置信度触发复核的判定"
-    # 两处明细表共用同一份行级判据
-    assert js.count("itemFlags = itemReviewFlags(item);") == 2, \
-        "复核台与归档详情必须共用同一份行级判据"
+    sources = _frontend_js_sources()
+    union = "\n".join(sources.values())
+    # 日志阈值路线彻底下线（main.js 与全部域文件均不得残留）
+    for rel, js in sources.items():
+        assert "ITEM_LOW_CONFIDENCE_THRESHOLD" not in js, rel + ": 旧阈值常量必须移除"
+        assert "isLowConfidence" not in js, rel + ": 不得残留按置信度触发复核的判定"
+    # 两处明细表共用同一份行级判据（复核台自 F5 S4-11 起在 review_core.js；归档详情自 F4 S4-11 起在 archive_list.js）
+    assert union.count("itemFlags = itemReviewFlags(item);") == 2, \
+        "复核台与归档详情必须共用同一份行级判据（全前端并集恰有两处调用点）"
+    assert "itemFlags = itemReviewFlags(item);" in sources["static/js/review_core.js"], \
+        "复核台调用点应随复核核心域迁至 review_core.js"
+    assert "itemFlags = itemReviewFlags(item);" in sources["static/js/archive_list.js"], \
+        "归档详情调用点应随域迁至 archive_list.js"
     # 两处整单提示条共用同一份整单判据（1 处定义 + 2 处调用）
-    assert js.count("receiptReviewReasons(data)") == 3, \
+    assert union.count("receiptReviewReasons(data)") == 3, \
         "整单级判据必须在复核台与归档详情两处共用"
     # 列表整单级：手写单信号 + 待核对态白名单（判据与详情提示条同源，不抄第二份）
-    assert "isHandwrittenReceipt" in js, "列表未接入共用的手写单判据"
-    assert "isReceiptPendingHumanReview" in js, "列表黄底缺少「待人工核对」状态判据"
+    assert "isHandwrittenReceipt" in union, "列表未接入共用的手写单判据"
+    assert "isReceiptPendingHumanReview" in union, "列表黄底缺少「待人工核对」状态判据"
     # 「街市手写单」的字面量只能有一处定义（防止多份实现各自漂移）
-    assert js.count("'ncr_handwritten'") == 1, "手写单 doc_form 字面量必须收口为单一常量定义"
+    assert union.count("'ncr_handwritten'") == 1, "手写单 doc_form 字面量必须收口为单一常量定义"
     # 置信度保留为参考信息
-    assert "tr.dataset.confidence" in js, "置信度读数应仍随行回传（保存闭环）"
+    assert "tr.dataset.confidence" in union, "置信度读数应仍随行回传（保存闭环）"
 
 
 def test_receipt_level_signal_read_is_not_silently_swallowed():
@@ -122,7 +143,9 @@ def test_receipt_level_signal_read_is_not_silently_swallowed():
     每一行上静默消失且不留痕迹（本仓高发第三类缺陷）。现要求：异常可观测（console.warn）
     且 fail-visible（行标「待核验」）。
     """
-    js = _read(os.path.join("static", "js", "main.js"))
+    # F5 S4-11：appendTableRow 与读取器已随复核核心域迁至 review_core.js；
+    # 判据仍钉「唯一实现所在文件」，不放宽为只查存在性。
+    js = _read(os.path.join("static", "js", "review_core.js"))
     assert "function readReceiptLevelReviewSignals(" in js, "缺少整单级信号的可观测读取器"
     assert "console.warn('[review-flag]" in js, "读取失败必须留痕（console.warn）"
 

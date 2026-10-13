@@ -26,7 +26,13 @@ import pytest
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010")
+def _live_base_url():
+    """夹具自举之后的地址。15010 被常驻服务占用时不会打到那台服务。"""
+    import _playwright_server as _pw
+    explicit = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
+    return explicit or _pw.current_base_url()
+
+
 SAVE_PATH = "/api/save_edited"
 
 
@@ -51,7 +57,7 @@ def test_empty_items_review_form_can_save_after_adding_row():
                 ),
             )
 
-            page.goto(BASE_URL)
+            page.goto(_live_base_url())
             page.wait_for_selector(".app-wrapper", timeout=15000)
             page.evaluate("() => { if (typeof setRole === 'function') setRole('owner'); }")
             page.wait_for_timeout(300)
@@ -90,6 +96,9 @@ def test_empty_items_review_form_can_save_after_adding_row():
             page.fill("#inpSupplier", "E2E空明细回归供应商")
             page.fill("#inpDate", "2026-01-05")
             page.fill("#inpTotal", "100")
+            # 结算方式必填（PRD M3 / D4，review_core.requireSettlementMarked）：
+            # 未标记会被产品正确地阻断保存（toast 提示、不发请求）——2026-10-13 QA 三臂实验裁决
+            page.select_option("#inpSettlementType", "cash")
             page.locator("#itemTableBody .inp-name").first.fill("走地鸡")
             page.locator("#itemTableBody .inp-unit").first.fill("kg")
             page.locator("#itemTableBody .inp-qty").first.fill("2")

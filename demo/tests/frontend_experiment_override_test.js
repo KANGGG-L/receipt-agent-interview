@@ -6,7 +6,14 @@ const path = require('path');
 // 默认路径基于脚本自身位置解析，cwd 任意均可（原先的 cwd 相对默认值会让「跑齐 harness」假失败）
 const vm = require('vm');
 
-const src = fs.readFileSync(process.argv[2] || path.join(__dirname, '..', 'static', 'js', 'main.js'), 'utf8');
+// F5·S4-11：main.js 已按域拆分（applyRecognizedResult/settleUploadResult 在 upload.js、
+// uploadBatch/uploadSinglePhoto 在 photo_sider.js）。本 harness 的源码级判据改扫
+// 「main.js + 全部域文件」联合全文（与浏览器实际加载集合同构，判据不放宽）；
+// argv[2] 仍可覆盖 main.js 路径做突变体反证。
+const src = [fs.readFileSync(process.argv[2] || path.join(__dirname, '..', 'static', 'js', 'main.js'), 'utf8')]
+    .concat(require('./f4_load_domains.js').F4_DOMAIN_FILES.map(
+        name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8')))
+    .join('\n');
 const sandbox = { console, setTimeout, clearTimeout };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
@@ -22,6 +29,12 @@ sandbox.document = {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => console.log(m) });
+
 
 const toasts = [];
 sandbox.showToast = (msg, type, duration) => { toasts.push({ msg, type, duration }); };

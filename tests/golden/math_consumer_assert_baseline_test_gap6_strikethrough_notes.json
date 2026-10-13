@@ -1,0 +1,18 @@
+{
+ "_comment": "Message-format re-baseline: math gate messages were rewritten from technical text to plain Chinese templates (fix S2-12). Only message substrings changed; assert count and test names equal git HEAD.",
+ "_source_file": "tests/test_gap6_strikethrough_notes.py",
+ "tests": [
+  "test_strikethrough_and_notes_extraction",
+  "test_math_engine_with_void_strikethrough",
+  "test_math_engine_detects_mismatch_with_void"
+ ],
+ "asserts": [
+  "Assert(test=Compare(left=Name(id='clean_names', ctx=Load()), ops=[Eq()], comparators=[List(elts=[Constant(value='特级有机菜心'), Constant(value='鲜活草虾')], ctx=Load())]), msg=JoinedStr(values=[Constant(value='明细未正确剔除作废与注记: '), FormattedValue(value=Name(id='clean_names', ctx=Load()), conversion=-1)]))",
+  "Assert(test=Call(func=Name(id='any', ctx=Load()), args=[GeneratorExp(elt=Compare(left=Constant(value='黄花鱼'), ops=[In()], comparators=[Name(id='n', ctx=Load())]), generators=[comprehension(target=Name(id='n', ctx=Store()), iter=Name(id='adj_notes', ctx=Load()), ifs=[], is_async=0)])], keywords=[]), msg=Constant(value='未记录划线拒收黄花鱼'))",
+  "Assert(test=Call(func=Name(id='any', ctx=Load()), args=[GeneratorExp(elt=Compare(left=Constant(value='退回1箱番茄'), ops=[In()], comparators=[Name(id='n', ctx=Load())]), generators=[comprehension(target=Name(id='n', ctx=Store()), iter=Name(id='adj_notes', ctx=Load()), ifs=[], is_async=0)])], keywords=[]), msg=Constant(value='未记录退回番茄注记'))",
+  "Assert(test=Call(func=Name(id='any', ctx=Load()), args=[GeneratorExp(elt=Compare(left=Constant(value='拒收2条变质鱼'), ops=[In()], comparators=[Name(id='n', ctx=Load())]), generators=[comprehension(target=Name(id='n', ctx=Store()), iter=Name(id='adj_notes', ctx=Load()), ifs=[], is_async=0)])], keywords=[]), msg=Constant(value='未记录拒收注记'))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='problems', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=0)]), msg=JoinedStr(values=[Constant(value='算术门禁误报作废行差错: '), FormattedValue(value=Name(id='problems', ctx=Load()), conversion=-1)]))",
+  "Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Name(id='problems', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=1)]), msg=Constant(value='未成功检测出包含作废行时的总额不守恒'))",
+  "Assert(test=Compare(left=Constant(value='应付 265 元'), ops=[In()], comparators=[Subscript(value=Name(id='problems', ctx=Load()), slice=Constant(value=0), ctx=Load())]))"
+ ]
+}

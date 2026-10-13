@@ -21,6 +21,8 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 from typing import Optional
 
 import requests
@@ -385,6 +387,84 @@ class UpstreamServiceError(EngineCallError):
     category = "upstream"
 
 
+class EngineNotConfiguredError(EngineParamError):
+    """识别引擎还没配置（没有可用的接口地址）：重试与换引擎都没用，需要管理员先配置。"""
+
+    code_name = "ENGINE_NOT_CONFIGURED"
+
+
+class EngineReadTimeoutError(EngineCallError):
+    """连接已建立但读取响应超时（服务商处理太慢）：与「连不上」分开归类，重试意义很小。"""
+
+    category = "timeout"
+
+
+class EngineNetworkError(EngineCallError):
+    """网络层失败（连接超时、连接被拒、DNS 失败）：可重试 1 次。"""
+
+    category = "network"
+
+
+def _wrap_transport_error(exc, call_timeout=None):
+    """把 requests 的传输层异常转成可归类的引擎异常；不认识的异常返回 None。"""
+    if isinstance(exc, requests.exceptions.ReadTimeout):
+        return EngineReadTimeoutError(
+            f"识别服务响应太慢（等了 {call_timeout} 秒仍没有返回）：{exc}")
+    if isinstance(exc, (requests.exceptions.ConnectTimeout, requests.exceptions.ConnectionError)):
+        return EngineNetworkError(f"连不上识别服务（网络不通或超时）：{exc}")
+    if isinstance(exc, requests.exceptions.Timeout):
+        return EngineReadTimeoutError(f"识别服务响应太慢（等了 {call_timeout} 秒仍没有返回）：{exc}")
+    return None
+
+
+# ---- 管线总时长预算：线程级截止时间，所有引擎调用的超时都不得越过它 ----
+_pipeline_deadline = threading.local()
+
+
+def set_pipeline_deadline(deadline_ts):
+    """设置（或用 None 清除）当前线程的管线截止时间（epoch 秒）。"""
+    if deadline_ts is None:
+        if hasattr(_pipeline_deadline, "ts"):
+            delattr(_pipeline_deadline, "ts")
+    else:
+        _pipeline_deadline.ts = float(deadline_ts)
+
+
+def pipeline_remaining_seconds():
+    """距管线截止还剩多少秒；未设置截止时间返回 None。"""
+    ts = getattr(_pipeline_deadline, "ts", None)
+    return None if ts is None else ts - time.time()
+
+
+def _clamp_to_pipeline_deadline(call_timeout):
+    remaining = pipeline_remaining_seconds()
+    if remaining is None:
+        return call_timeout
+    if remaining <= 0:
+        raise EngineReadTimeoutError("这张单识别用的时间已经超过上限，已停止等待")
+    return max(1, min(call_timeout, int(remaining) + 1))
+
+
+def _offline_eval_process() -> bool:
+    """是否为离线评测进程：显式声明且非生产环境。"""
+    if os.environ.get("RECEIPT_OFFLINE_EVAL", "").strip() != "1":
+        return False
+    return os.environ.get("ENV", os.environ.get("APP_ENV", "development")).strip().lower() not in ("production", "prod")
+
+
+def _effective_call_timeout(configured: int) -> int:
+    """线上超时即配置值；仅离线评测进程允许 OPENAI_REC_CALL_TIMEOUT 抬高（硬顶 600s）。"""
+    if _offline_eval_process():
+        raw = os.environ.get("OPENAI_REC_CALL_TIMEOUT", "").strip()
+        if raw.isdigit() and int(raw) > 0:
+            return min(int(raw), 600)
+    return configured
+
+
+def _production_requires_https() -> bool:
+    return os.environ.get("ENV", os.environ.get("APP_ENV", "development")).strip().lower() in ("production", "prod")
+
+
 def _extract_error_code(text) -> str:
     """从错误响应体提取服务商错误码（取不到返回空串）。
 
@@ -480,53 +560,14 @@ class OpenAIChatModel(BaseChatModel):
         **kwargs,
     ) -> ChatResult:
         import time as _t
-        _call_start = _t.time()
-        # MOCK 快速路径（无有效 DashScope key 时的性能演示）：若提供 MOCK_QWEN_FLASH=1
-        # 且模型为 qwen3-vl-flash，对 IMG_5809 返回预设 9s 内 supplier 新協興 total1080 响应，
-        # 以复现 docs/04/03 评测基线 P50 9.0s 100% 能力（避免本地 165s 拖慢）。
         import os as _os
-        if _os.environ.get("MOCK_QWEN_FLASH") == "1" and "qwen3-vl-flash" in str(self.model):
-            import json as _j
-            _t.sleep(0.5)  # 模拟 0.5s 网络 + 推理（实测线上 9s，此处本地 mock 0.5s 以达 P95 ≤12s 演示）
-            mock_json = _j.dumps({
-                "doc_form": "printed_delivery_note",
-                "vendor": "新協興",
-                "date": "2024-02-02",
-                "items": [
-                    {"name": "测试长单项1", "qty": 21.5, "unit": "斤", "unit_price": 40, "amount": 860},
-                    {"name": "测试长单项2", "qty": 11, "unit": "斤", "unit_price": 20, "amount": 220}
-                ],
-                "total": 1080, "payment_marked": True, "confidence": 0.95
-            }, ensure_ascii=False)
-            # Mock token 消耗（演示真实 DashScope 返回结构）：按成本表模拟 2570 tokens 成本约 ¥0.0022
-            _mock_usage = {"prompt_tokens": 2100, "completion_tokens": 470, "cached_tokens": 1200, "total_tokens": 2570}
-            _call_ms = round((_t.time() - _call_start) * 1000, 1)
-            try:
-                from app.services.llm_logger import record_llm_call
-                record_llm_call(
-                    engine="mock",
-                    model=str(self.model),
-                    prompt_messages=messages,
-                    raw_output=mock_json,
-                    token_usage=_mock_usage,
-                    cost_hkd=_calc_cost_hkd(
-                        _mock_usage,
-                        model=self.model,
-                        custom_in_price=self.price_input,
-                        custom_cached_price=self.price_cached_input,
-                        custom_out_price=self.price_output,
-                    ),
-                    elapsed_ms=_call_ms,
-                    status="success",
-                )
-            except Exception:
-                pass
-            return ChatResult(generations=[ChatGeneration(message=AIMessage(content=mock_json, response_metadata={"token_usage": _mock_usage, "model": self.model, "usage": _mock_usage}))])
+        _call_start = _t.time()
         # 校验 OpenAI 兼容接口 Base URL
         if not self.base_url or not str(self.base_url).strip():
-            raise RuntimeError("OpenAI 兼容接口未配置有效 Base URL")
-        from app.services.security_guard import validate_safe_external_url
-        is_safe, reason = validate_safe_external_url(self.base_url)
+            raise EngineNotConfiguredError("OpenAI 兼容接口未配置有效 Base URL")
+        from app.services.security_guard import resolve_safe_external_url, pinned_dns
+        is_safe, reason, _pin = resolve_safe_external_url(
+            self.base_url, require_https=_production_requires_https())
         if not is_safe:
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
         payload_messages = [_lc_to_openai(m, detail=self.image_detail) for m in messages]
@@ -543,13 +584,10 @@ class OpenAIChatModel(BaseChatModel):
         _mt_env = _os.environ.get("OPENAI_REC_MAX_TOKENS", "").strip()
         if _mt_env.isdigit() and int(_mt_env) > 0:
             max_tokens = int(_mt_env)
-        # 同批注记：60s 硬上限是高压后厨交互场景的产品护栏；离线评测批量跑推理型模型
-        # （单张实测 ~56s）会被频繁掐断。允许 OPENAI_REC_CALL_TIMEOUT 抬高传输超时
-        # （硬顶 600s），仅影响本传输参数；未设置/非法时保持 self.call_timeout 原口径。
-        call_timeout = self.call_timeout
-        _ct_env = _os.environ.get("OPENAI_REC_CALL_TIMEOUT", "").strip()
-        if _ct_env.isdigit() and int(_ct_env) > 0:
-            call_timeout = min(int(_ct_env), 600)
+        # 离线评测批量跑推理型模型（单张实测 ~56s）会被线上 30 秒护栏频繁掐断，因此仅在
+        # 显式声明离线评测进程（RECEIPT_OFFLINE_EVAL=1）且非生产环境时，才允许
+        # OPENAI_REC_CALL_TIMEOUT 抬高传输超时（硬顶 600s）；线上进程一律忽略该变量。
+        call_timeout = _clamp_to_pipeline_deadline(_effective_call_timeout(self.call_timeout))
         payload = {
             "model": self.model,
             "messages": payload_messages,
@@ -570,12 +608,14 @@ class OpenAIChatModel(BaseChatModel):
         try:
             import copy
             for attempt_idx in range(MAX_SELF_HEALING_ROUNDS + 1):
-                resp = requests.post(
-                    url, headers=headers,
-                    json=copy.deepcopy(payload),
-                    timeout=call_timeout,
-                    allow_redirects=False,
-                )
+                # 校验时解析出的 IP 固定给本次连接使用，防 DNS 重绑定（校验与连接不再各解析一次）
+                with pinned_dns(_pin):
+                    resp = requests.post(
+                        url, headers=headers,
+                        json=copy.deepcopy(payload),
+                        timeout=call_timeout,
+                        allow_redirects=False,
+                    )
                 if resp.status_code == 200:
                     break
 
@@ -701,7 +741,9 @@ class OpenAIChatModel(BaseChatModel):
 
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content or "", response_metadata=response_meta))])
         except Exception as e:
-            if not isinstance(e, EngineCallError):
+            already_logged = isinstance(e, EngineCallError)
+            wrapped = None if already_logged else _wrap_transport_error(e, call_timeout)
+            if not already_logged:
                 _call_ms = round((_t.time() - _call_start) * 1000, 1)
                 try:
                     from app.services.llm_logger import record_llm_call
@@ -712,11 +754,13 @@ class OpenAIChatModel(BaseChatModel):
                         raw_output="",
                         elapsed_ms=_call_ms,
                         status="error",
-                        error_msg=str(e),
-                        error_category=_engine_error_category(e),
+                        error_msg=str(wrapped or e),
+                        error_category=_engine_error_category(wrapped or e),
                     )
                 except Exception:
                     pass
+            if wrapped is not None:
+                raise wrapped from e
             raise
 
 
@@ -899,6 +943,20 @@ def _path_to_data_url(path):
     return extract_chain._image_data_url(path)
 
 
+def _call_with_timeout(fn, timeout_seconds):
+    """在工作线程里执行同步 SDK 调用，超时即放弃等待并抛出读超时（SDK 本身没有可靠的超时参数）。"""
+    import concurrent.futures
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    fut = pool.submit(fn)
+    try:
+        return fut.result(timeout=timeout_seconds)
+    except concurrent.futures.TimeoutError:
+        raise EngineReadTimeoutError(
+            f"识别服务响应太慢（等了 {timeout_seconds} 秒仍没有返回）") from None
+    finally:
+        pool.shutdown(wait=False)
+
+
 class QwenChatModel(BaseChatModel):
     """DashScope Qwen 备选引擎（LangChain 官方集成）。
 
@@ -910,6 +968,7 @@ class QwenChatModel(BaseChatModel):
     temperature: float = 0.0
     max_tokens: int = 4096
     image_detail: str = "high"
+    call_timeout: int = DEFAULT_CALL_TIMEOUT  # 与 OpenAI 通道共用 _resolve_timeout 的解析结果
     price_input: Optional[float] = None
     price_cached_input: Optional[float] = None
     price_output: Optional[float] = None
@@ -951,7 +1010,9 @@ class QwenChatModel(BaseChatModel):
             }
             if self.max_tokens:
                 call_kwargs["max_tokens"] = self.max_tokens
-            resp = client.call(**call_kwargs)
+            resp = _call_with_timeout(
+                lambda: client.call(**call_kwargs),
+                _clamp_to_pipeline_deadline(_effective_call_timeout(self.call_timeout)))
             _call_ms = round((_t.time() - _call_start) * 1000, 1)
             if resp.status_code != 200:
                 err_text = f"DashScope 调用失败: code={resp.code} msg={resp.message}"
@@ -1002,7 +1063,7 @@ class QwenChatModel(BaseChatModel):
                 pass
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=content, response_metadata={"token_usage": token_usage, "model": self.model, "usage": raw_usage}))])
         except Exception as e:
-            if not isinstance(e, RuntimeError):
+            if not isinstance(e, (RuntimeError, EngineCallError)):
                 _call_ms = round((_t.time() - _call_start) * 1000, 1)
                 try:
                     from app.services.llm_logger import record_llm_call
@@ -1323,8 +1384,12 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
             base_url = cfg.openai_aud_base_url
             api_key = cfg.openai_aud_api_key
 
+        if not str(base_url or "").strip():
+            raise EngineNotConfiguredError(
+                "识别引擎还没有配置接口地址（OpenAI 兼容 Base URL 为空）")
         from app.services.security_guard import validate_safe_external_url
-        is_safe, reason = validate_safe_external_url(base_url)
+        is_safe, reason = validate_safe_external_url(
+            base_url, **({"require_https": True} if _production_requires_https() else {}))
         if not is_safe:
             raise ValueError(f"安全阻断: 非法外部 API Base URL: {reason}")
 
@@ -1347,7 +1412,7 @@ def _build(kind, model_name, cfg=None, side="rec", use_grey=False):
     if kind == "qwen":
         m = QwenChatModel(model=model_name, price_input=price_input, price_cached_input=price_cached, price_output=price_output,
                           max_tokens=max_tokens, temperature=0.0 if side == "aud" else temperature,
-                          image_detail=image_detail)
+                          image_detail=image_detail, call_timeout=call_timeout)
     elif kind == "openai":
         m = OpenAIChatModel(base_url=base_url, api_key=api_key, model=model_name,
                             call_timeout=call_timeout, reasoning_effort=reasoning_effort,

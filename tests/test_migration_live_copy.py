@@ -115,7 +115,20 @@ def _import_db(path):
 def _copy_live(dst_dir):
     os.makedirs(dst_dir, exist_ok=True)
     copy_path = os.path.join(dst_dir, f"live_copy_{uuid.uuid4().hex[:8]}.db")
-    shutil.copy2(_LIVE_DB, copy_path)
+    # 2026-10-13（qa-sync-wave）：live 库为 WAL 模式，`shutil.copy2` 只拷主文件——
+    # 当 WAL 里还有未全量 checkpoint 的帧时（实测 07:11 那次 checkpoint 后主文件
+    # 单独拷贝 integrity_check 报 freelist 页号非法），裸文件副本是撕裂库、
+    # 迁移直接 "database disk image is malformed"。改用 sqlite backup API
+    # （mode=ro 源连接）拿**一致快照**：不触 live 写入、断言口径不变。
+    src = sqlite3.connect(f"file:{_LIVE_DB}?mode=ro", uri=True)
+    try:
+        dst = sqlite3.connect(copy_path)
+        try:
+            src.backup(dst)
+        finally:
+            dst.close()
+    finally:
+        src.close()
     return copy_path
 
 

@@ -1,0 +1,185 @@
+/* 识别复核主流程与手机端（F1a）。与 style.css 分开放，避免同一文件多人同时改。 */
+
+/* ---------- 上传入口：桌面显示「选择收据图片」，手机显示「拍照」+「从相册选」 ---------- */
+.upload-btn-camera { display: none; }
+.upload-btn-gallery .lbl-mob { display: none; }
+
+@media (max-width: 640px), (pointer: coarse) and (max-width: 1024px) {
+    .upload-btn-camera { display: inline-flex; }
+    .upload-btn-gallery .lbl-desk { display: none; }
+    .upload-btn-gallery .lbl-mob { display: inline; }
+    .upload-actions .btn { min-height: 52px; font-size: 1.05rem; flex: 1 1 100%; justify-content: center; }
+}
+
+/* ---------- 识别中：按秒计时，逃生按钮在计时器旁边 ---------- */
+.loading-header { flex-wrap: wrap; gap: 10px; }
+.loading-escape-btn { min-height: 40px; padding: 8px 16px; font-weight: 600; margin-left: auto; }
+.loading-eta-text { margin: 0 0 10px; color: var(--text-muted); font-size: 0.92rem; }
+.loading-slow-hint {
+    margin: 0 0 12px; padding: 10px 12px; border-radius: 8px;
+    background: var(--warning-bg, #fff7e6); border: 1px solid rgba(180, 83, 9, 0.45); color: #7c2d12;
+    font-size: 0.92rem; line-height: 1.5;
+}
+.loading-steps-plain { grid-template-columns: repeat(3, 1fr); }
+.loading-steps-plain .loading-step-item { opacity: 1; background: var(--bg-hover); }
+.loading-timer-wrap { font-family: inherit; }
+
+/* ---------- 复核卡：标题只留一个来源徽章；放弃改成文字按钮；付款印章改开关 ---------- */
+.review-title-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.review-title-line .badge { white-space: nowrap; }
+.review-save-state { white-space: nowrap; flex: 0 0 auto; }
+.review-actions-left { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.btn-text-danger {
+    background: none; border: none; padding: 8px 6px; min-height: 40px; cursor: pointer;
+    color: var(--danger-strong, #b91c1c); font-size: 0.92rem; text-decoration: underline;
+}
+.btn-text-danger:hover { color: #7f1d1d; }
+.btn-text-danger:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; border-radius: 4px; }
+
+.payment-mark-toggle.payment-mark-paid,
+.payment-mark-toggle.payment-mark-unpaid {
+    background: none; color: var(--text-main, #1e2223); border: none; padding: 6px 0; min-width: 0;
+    font-weight: 600; letter-spacing: 0; gap: 10px; justify-content: flex-start; min-height: 44px;
+}
+.payment-mark-toggle .pm-switch-track {
+    position: relative; width: 48px; height: 28px; border-radius: 14px; background: #6b7280; flex: 0 0 auto;
+    transition: background-color 0.15s ease;
+}
+.payment-mark-toggle .pm-switch-knob {
+    position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff;
+    transition: left 0.15s ease;
+}
+.payment-mark-toggle.payment-mark-paid .pm-switch-track { background: #2f6b4f; }
+.payment-mark-toggle.payment-mark-paid .pm-switch-knob { left: 23px; }
+.payment-mark-toggle.payment-mark-paid:hover, .payment-mark-toggle.payment-mark-unpaid:hover { background: none; }
+
+.total-override-hint { margin-top: 6px; font-size: 0.85rem; color: #7c2d12; line-height: 1.5; }
+.link-btn { background: none; border: none; padding: 4px 2px; color: #1d4ed8; text-decoration: underline; cursor: pointer; font-size: inherit; min-height: 32px; }
+
+/* ---------- SKU 候选确认 ---------- */
+.sku-candidate-box {
+    margin-top: 6px; padding: 8px 10px; border-radius: 8px;
+    background: #eef6ff; border: 1px solid #93c5fd; font-size: 0.85rem; color: #1e3a8a; line-height: 1.5;
+}
+.sku-cand-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
+.sku-cand-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.sku-cand-actions .btn { min-height: 38px; padding: 6px 12px; }
+.sku-cand-warn { margin-top: 4px; color: #7c2d12; }
+.sku-cand-reason { margin-top: 4px; color: #475569; font-size: 0.8rem; }
+.sku-cand-done { color: #14532d; }
+
+/* ---------- 桌面隐藏手机导航 ---------- */
+.mobile-tabbar, .mobile-more-sheet { display: none; }
+
+/* ---------- 手机（<=640px） ---------- */
+@media (max-width: 640px) {
+    /* 底部固定元素占位预算：滚动容器是 .main-wrapper（height:100vh + overflow-y:auto），
+       预算必须落在它身上；挂在 body 上只会让 html 多出一段死滚动，内容仍被 tab bar 盖住。
+       固定元素清点：#mobileTabBar 一项（约 60px + 安全区），复核卡另自付保存条预算。 */
+    .main-wrapper { padding-bottom: 72px; }
+    .main-wrapper { width: 100%; max-width: 100vw; overflow-x: hidden; }
+
+    .mobile-tabbar {
+        display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 900;
+        background: #fff; border-top: 1px solid var(--border-color, #d6d3d1);
+        box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08); padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .mobile-tab {
+        position: relative; flex: 1 1 0; min-height: 60px; background: none; border: none; cursor: pointer;
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        color: #475569; font-size: 0.82rem; font-weight: 600; font-family: inherit;
+    }
+    .mobile-tab.active { color: var(--primary, #032425); box-shadow: inset 0 3px 0 var(--primary, #032425); background: #f3f6f5; }
+    .mobile-tab:focus-visible { outline: 2px solid #2563eb; outline-offset: -3px; }
+    .mobile-tab-dot {
+        position: absolute; top: 6px; left: calc(50% + 8px); min-width: 18px; height: 18px; padding: 0 4px;
+        border-radius: 9px; background: #b91c1c; color: #fff; font-size: 0.7rem; line-height: 18px; text-align: center;
+    }
+    .mobile-more-sheet {
+        position: fixed; inset: 0; z-index: 950; background: rgba(15, 23, 22, 0.5);
+        display: flex; align-items: flex-end;
+    }
+    .mobile-more-sheet.hide { display: none; }
+    .mobile-more-panel {
+        width: 100%; max-height: 80vh; overflow-y: auto; background: #fff; border-radius: 16px 16px 0 0;
+        padding: 14px 16px calc(16px + env(safe-area-inset-bottom, 0));
+    }
+    .mobile-more-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 1.05rem; }
+    .mobile-more-close { background: none; border: none; min-height: 44px; min-width: 56px; font-size: 0.95rem; color: #1d4ed8; cursor: pointer; }
+    .mobile-more-list { display: flex; flex-direction: column; }
+    .mobile-more-item {
+        display: flex; justify-content: space-between; align-items: center; text-align: left; width: 100%;
+        min-height: 52px; padding: 10px 4px; background: none; border: none; border-bottom: 1px solid #e7e5e4;
+        font-size: 1rem; font-family: inherit; color: var(--text-main, #1e2223); cursor: pointer;
+    }
+    .mobile-more-tag { font-size: 0.75rem; color: #b91c1c; border: 1px solid #b91c1c; border-radius: 4px; padding: 0 6px; }
+    .mobile-more-block { margin-top: 14px; }
+    .mobile-more-block label, .mobile-more-label { display: block; font-size: 0.85rem; color: #475569; margin-bottom: 6px; }
+    .mobile-more-langs { display: flex; gap: 8px; }
+    .mobile-more-langs .lang-switch-btn { min-height: 44px; }
+    #mobileRoleSelect { min-height: 44px; font-size: 1rem; }
+
+    /* toast 不超出屏幕，也不压在底部导航上 */
+    .toast-container { left: 12px !important; right: 12px !important; transform: none !important; width: auto !important; max-width: calc(100vw - 24px) !important; align-items: stretch; }
+    .app-toast { width: auto !important; max-width: 100% !important; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; }
+
+    /* 提示条限宽 */
+    .alert-banner, #alertBanner, #qualityWarningsBanner, #imageGuardBanner, .issue-summary-bar, #preConfirmQualityWarn {
+        max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word;
+    }
+    .issue-summary-bar, .issue-summary-main { flex-direction: column; align-items: stretch; gap: 8px; }
+    .issue-summary-actions { display: flex; gap: 8px; }
+    .issue-summary-actions .btn { flex: 1 1 0; }
+
+    .upload-card { padding: 20px 14px; }
+    .loading-header { align-items: flex-start; }
+    .loading-escape-btn { width: 100%; margin-left: 0; }
+    .loading-steps-plain { grid-template-columns: repeat(3, 1fr); }
+
+    /* 复核表单：一行明细一张卡；底部预算＝固定保存条带（52px 高 + bottom 68px = 120px）
+       + tab bar 一并计入，留 20px 余量，保证「+ 新增明细行」等末尾控件能滚出遮挡带 */
+    #prefillFormCard { padding-bottom: 140px; }
+    #prefillFormCard .form-grid { grid-template-columns: 1fr; }
+    #prefillFormCard .form-grid .form-group { grid-column: auto !important; }
+    #prefillFormCard .table-container { overflow: visible; border: none; }
+    table.data-table.receipt-item-table, .receipt-item-table tbody { display: block; width: 100%; min-width: 0; table-layout: auto; border-spacing: 0; }
+    .receipt-item-table colgroup, .receipt-item-table thead { display: none; }
+    .receipt-item-table tbody tr {
+        display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px 8px;
+        margin: 0 0 12px; padding: 12px; background: #fff; border: 1px solid var(--border-color, #d6d3d1); border-radius: 12px;
+    }
+    .receipt-item-table tbody tr.row-warning { background: #fffbeb; border-color: rgba(180, 83, 9, 0.5); }
+    .receipt-item-table tbody td { display: block; padding: 0; border: none; min-width: 0; text-align: left !important; }
+    .receipt-item-table tbody td[data-label]::before {
+        content: attr(data-label); display: block; font-size: 0.78rem; color: #475569; margin-bottom: 3px; font-weight: 600;
+    }
+    .receipt-item-table tbody td:not([data-label]) { grid-column: 1 / -1; }
+    .receipt-item-table td[data-label="品名"] { grid-column: 1 / -1; }
+    .receipt-item-table td[data-label="数量"] { grid-column: span 3; }
+    .receipt-item-table td[data-label="数量"] > div { flex-direction: row !important; gap: 6px !important; }
+    .receipt-item-table td[data-label="数量"] input { min-width: 0; flex: 1 1 0; }
+    .receipt-item-table td[data-label="单位"] { grid-column: span 3; }
+    .receipt-item-table td[data-label="单价"] { grid-column: span 3; }
+    .receipt-item-table td[data-label="金额"] { grid-column: span 3; }
+    .receipt-item-table td[data-label="部门"] { grid-column: 1 / -1; }
+    .receipt-item-table td[data-label="操作"] { grid-column: 1 / -1; }
+    .receipt-item-table .form-control, .receipt-item-table input, .receipt-item-table select { min-height: 44px; font-size: 16px; }
+    .receipt-item-table .row-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .receipt-item-table .btn-action-delete { min-height: 40px; padding: 6px 14px; }
+
+    /* 保存并提交审核：固定在底部导航上方，全宽 */
+    #reviewActionsBar { position: static !important; flex-direction: column; align-items: stretch !important; gap: 10px; }
+    #reviewActionsBar .review-actions-left, #reviewActionsBar .review-actions-right { width: 100%; }
+    #reviewActionsBar .review-actions-right { flex-wrap: wrap; }
+    #btnSaveReview {
+        position: fixed; left: 12px; right: 12px; bottom: calc(68px + env(safe-area-inset-bottom, 0)); z-index: 880;
+        width: auto; min-height: 52px; font-size: 1.05rem; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+    }
+    #btnSaveAndNext, #btnApproveReceipt { flex: 1 1 100%; min-height: 48px; }
+    #feedbackInline { display: none !important; }
+}
+
+.archive-no-image {
+    display: flex; align-items: center; justify-content: center; height: 100%; min-height: 200px;
+    color: #475569; font-size: 1rem; background: #f3f2f1; border-radius: 8px; text-align: center; padding: 16px;
+}

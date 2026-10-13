@@ -72,7 +72,7 @@ def _consume(_db, sku_id, qty, date="2026-08-02", tenant="default"):
         tenant_id=tenant)
 
 
-def _get(client, sku_id, role="staff", tenant=None):
+def _get(client, sku_id, role="owner", tenant=None):
     h = {"X-Role": role}
     if tenant:
         h["X-Tenant-Id"] = tenant

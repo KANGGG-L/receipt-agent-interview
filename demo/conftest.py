@@ -77,10 +77,32 @@ def pytest_addoption(parser):
     )
 
 
+# 收集开始前的 DB_PATH。之后测试文件 import 时写上的值，只对该文件自己生效。
+_DB_ENV_BEFORE_COLLECTION = os.environ.get("DB_PATH", "").strip()
+
+
 def pytest_configure(config):
+    global _DB_ENV_BEFORE_COLLECTION
+    _DB_ENV_BEFORE_COLLECTION = os.environ.get("DB_PATH", "").strip()
     config.addinivalue_line(
         "markers", "eval: 依赖 demo/evalsets/ 真实语料，需 --run-eval 且语料存在时才执行"
     )
+
+
+def _module_declares_env_db(module_key, env_db_path):
+    """本测试文件源码是否写了当前 DB_PATH 的文件名。
+
+    全量收集会依次 import 每个测试文件，后导入的顶层赋值留在进程环境里。
+    文件名对得上，才是这个文件自己的环境库；对不上就是别人的 init 库。
+    """
+    base = os.path.basename(env_db_path or "")
+    if not base or base == "receipt_demo.db":
+        return False
+    try:
+        with open(module_key, encoding="utf-8") as f:
+            return base in f.read()
+    except Exception:
+        return False
 
 
 def pytest_collection_modifyitems(config, items):
@@ -354,12 +376,23 @@ def _isolate_test_db(tmp_path, monkeypatch, request):
     entry_path = os.path.abspath(str(_db.DB_PATH))
     kind, source = _classify_db_path(
         entry_path, live_db_path, env_db_path, module_key, _MODULE_LOCAL_DB)
+    # 全量收集会 import 每一个测试文件。文件顶层的 DB_PATH 赋值会留在进程环境里，
+    # 后收集的文件盖住先收集的。若把这个值当成全体用例的环境库，没写该文件名的
+    # 用例会全部挤进最后一个 init 库，库存流水和列表条数就串在一起。
+    pre_collection = os.path.abspath(_DB_ENV_BEFORE_COLLECTION) if _DB_ENV_BEFORE_COLLECTION else ""
+    collection_polluted = bool(env_db_path) and env_db_path != pre_collection
+    if collection_polluted and not _module_declares_env_db(module_key, env_db_path):
+        if kind == "ambient":
+            kind, source = "leak", "collection-env"
+        env_db_path_for_sane = ""
+    else:
+        env_db_path_for_sane = env_db_path
 
     # 隔离落点：优先沿用 env 声明的环境库（它同时是 demo.app.db 等「另一个包路径」
     # 读取的库，用同一个库才不会出现同进程内两套 app 包读写分离）；只有 env 没声明、
     # 或 env 本身就是别的模块泄漏出来的库时，才落回本用例专属临时库。
-    env_is_sane = bool(raw_env) and bool(env_db_path) and env_db_path != live_db_path \
-        and _foreign_leak_owner(env_db_path, module_key, _MODULE_LOCAL_DB) is None
+    env_is_sane = bool(raw_env) and bool(env_db_path_for_sane) and env_db_path_for_sane != live_db_path \
+        and _foreign_leak_owner(env_db_path_for_sane, module_key, _MODULE_LOCAL_DB) is None
 
     # 别名模块（demo.app.db 等）：必须与主模块同库，否则同进程内读写分离/绕过隔离
     aliases = _alias_db_modules(_db)

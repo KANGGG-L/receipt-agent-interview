@@ -136,7 +136,8 @@ def test_anchored_candidate_points_to_existing_sku(tmp_path):
     db_path = _fresh_db("anchored.db")
     sku_id, err = db.create_sku("維他朱古奶", base_unit="瓶", tenant_id="default")
     assert err is None
-    _add_receipt("大同行", [_item("6包裝 維他朱古奶"), _item("維他朱古奶")])
+    # 写法与 SKU 名一致才算命中；带「6包裝」前缀的写法只是候选，不再自动命中（S1-P0-03）
+    _add_receipt("大同行", [_item("維他朱古奶"), _item("維他朱古奶")])
     out = str(tmp_path / "out3")
     assert _run_gen(db_path, out).returncode == 0
     rows = _read_csv(out)

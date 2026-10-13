@@ -350,10 +350,12 @@ def test_max_facts_truncates_with_count():
 
 def test_prompt_documents_every_allowed_kind():
     """prompt 少说一类 → 该类永远抽不出来（静默失效）。"""
+    from ai_registry.registry import load_prompt
+    registry_text = load_prompt(mx._PROMPT_SCENE, mx._PROMPT_VERSION)
     assert set(mx._KIND_HINTS) == ALLOWED_KINDS
     for kind in sorted(ALLOWED_KINDS):
-        assert kind in mx._SYSTEM_PROMPT, kind
-        assert mx._KIND_HINTS[kind] in mx._SYSTEM_PROMPT
+        assert kind in registry_text, kind
+        assert mx._KIND_HINTS[kind] in registry_text
 
 
 def test_diff_field_set_matches_review_diff_constant():

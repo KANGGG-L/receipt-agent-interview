@@ -23,13 +23,16 @@ from pydantic import BaseModel
 from sqlalchemy import or_
 
 import logging
+import math
 
-from app import db
+from app import db, dishes_store
 from app.auth import require_role, resolve_tenant
+from app.i18n_text import master_key, prefer_stored_label
 
 logger = logging.getLogger("dishes")
 from app.services.costing_service import CostingService, convert_unit_quantity, check_unit_compatibility
 from app.services.recipe_expand import expand_recipe
+from app.services.unit_factors import UnitConversionError
 
 router = APIRouter()
 
@@ -54,6 +57,9 @@ def _tenant_id(request: Request) -> str:
     return resolve_tenant(request)
 
 
+_DISH_STATUSES = ("active", "inactive")
+
+
 # -------------------------------------------------------------
 # Pydantic 模型
 # -------------------------------------------------------------
@@ -70,6 +76,7 @@ class DishIngredientItem(BaseModel):
 class DishCreate(BaseModel):
     name: str
     category: Optional[str] = "默认"
+    category_id: Optional[int] = None
     price: float = 0.0
     description: Optional[str] = ""
     status: Optional[str] = "active"
@@ -79,6 +86,7 @@ class DishCreate(BaseModel):
 class DishUpdate(BaseModel):
     name: Optional[str] = None
     category: Optional[str] = None
+    category_id: Optional[int] = None
     price: Optional[float] = None
     description: Optional[str] = None
     status: Optional[str] = None
@@ -100,6 +108,8 @@ class DailyConsumptionBatchCreate(BaseModel):
     date: Optional[str] = None
     notes: Optional[str] = ""
     items: List[DailyConsumptionItem]
+    # 前端每次点「提交」生成一个新的随机串；同一个串重复提交（双击、网络重发）只记一次
+    request_id: Optional[str] = None
 
 
 # -------------------------------------------------------------
@@ -124,11 +134,13 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None) -> Dict:
     cat_val = (dish_row.category or "").strip()
     if not cat_val or cat_val == "其他":
         cat_val = "默认"
+    cat_id = db.read_category_id_for_row("dishes", dish_row.id, session=session)
 
     return {
         "id": dish_row.id,
         "name": dish_row.name,
         "category": cat_val,
+        "category_id": cat_id,
         "price": price,
         "description": dish_row.description or "",
         "status": dish_row.status or "active",
@@ -207,7 +219,7 @@ def _validate_recipe_payload(session, tenant_id, ingredients, dish_id=None):
             if not sku:
                 return {"status": "error", "code": "TENANT_SKU_NOT_FOUND",
                         "msg": f"配方中的食材 SKU #{cid} 不存在或无权使用"}, 400, None
-            compat, _reason = check_unit_compatibility(unit, sku.base_unit)
+            compat, _reason = check_unit_compatibility(unit, sku.base_unit, tenant_id)
             if not compat:
                 return {"status": "error", "code": "UNIT_DIMENSION_MISMATCH",
                         "msg": f"食材「{sku.name}」的库存基准单位为「{sku.base_unit}」，"
@@ -245,41 +257,65 @@ def list_dishes(
     q: str = "",
     category: str = "",
     status: str = "all",
+    category_id: Optional[int] = None,
 ):
     """查询餐品列表（含关联的 SKU BOM 配方、基准理论成本、当前毛利率）。"""
     require_role("staff")(request)
     session = db.get_session()
     try:
-        query = db.scoped(session.query(db._DishRow), db._DishRow,
-                          _tenant_id(request))
+        tenant_id = _tenant_id(request)
+        schema_ready = db._category_schema_ready_session(session)
+        query = db.scoped(session.query(db._DishRow), db._DishRow, tenant_id)
         if status and status != "all":
             query = query.filter(db._DishRow.status == status)
-        if category:
-            if category == "默认":
-                query = query.filter(
-                    or_(
-                        db._DishRow.category == "默认",
-                        db._DishRow.category == "",
-                        db._DishRow.category == "其他",
-                        db._DishRow.category.is_(None),
-                    )
+        if category == "默认" and not schema_ready:
+            query = query.filter(
+                or_(
+                    db._DishRow.category == "默认",
+                    db._DishRow.category == "",
+                    db._DishRow.category == "其他",
+                    db._DishRow.category.is_(None),
                 )
-            else:
-                query = query.filter(db._DishRow.category == category)
+            )
 
         rows = query.order_by(db._DishRow.id.desc()).all()
         out = []
         q_clean = (q or "").strip().lower()
+        folded_q = master_key(q) if q_clean else ""
+        folded_category = master_key(category) if category and category != "默认" else ""
+        id_map = db.read_category_id_map(
+            "dishes", [r.id for r in rows], session=session) if schema_ready else {}
+        resolved_category = None
+        category_unresolved = False
+        if schema_ready and category:
+            norm = db._normalize_category_label("dish", category)
+            found = db._category_find_by_key(
+                session, tenant_id, "dish", db._category_master_key(norm))
+            if found is None:
+                category_unresolved = True
+            else:
+                resolved_category = int(found["id"])
 
         for r in rows:
+            stored_cat = (r.category or "").strip()
+            bound_category = id_map.get(r.id) if schema_ready else None
+            if schema_ready:
+                if category and (category_unresolved or bound_category != resolved_category):
+                    continue
+                if category_id is not None and bound_category != int(category_id):
+                    continue
+            elif folded_category and master_key(stored_cat) != folded_category:
+                continue
+            r_cat = stored_cat
+            if not r_cat or r_cat == "其他":
+                r_cat = "默认"
             if q_clean:
                 name_clean = (r.name or "").lower()
-                r_cat = (r.category or "").strip()
-                if not r_cat or r_cat == "其他":
-                    r_cat = "默认"
                 cat_clean = r_cat.lower()
                 desc_clean = (r.description or "").lower()
-                if q_clean not in name_clean and q_clean not in cat_clean and q_clean not in desc_clean:
+                folded_hit = bool(folded_q) and (
+                    folded_q in master_key(r.name or "") or folded_q in master_key(stored_cat))
+                if not folded_hit and q_clean not in name_clean and q_clean not in cat_clean and q_clean not in desc_clean:
                     continue
             out.append(_dish_to_dict(session, r, _tenant_id(request)))
 
@@ -294,8 +330,12 @@ def get_cost_analysis(
     days: int = 30,
     dish_id: Optional[int] = None,
 ):
-    """成本趋势分析（查看近 7/30 天各餐品由于食材价格波动引起的真实成本变化曲线、总售出份数、总毛利）。"""
-    require_role("staff")(request)
+    """成本趋势分析（查看近 7/30 天各餐品由于食材价格波动引起的真实成本变化曲线、总售出份数、总毛利）。
+
+    含成本与毛利，仅老板可看。收入按售出当时的售价算（提交消耗时留的快照），
+    后来改了售价不会改写历史；没有快照的老记录按当前售价。
+    """
+    require_role("owner")(request)
     session = db.get_session()
     try:
         now_dt = datetime.now()
@@ -349,7 +389,8 @@ def get_cost_analysis(
             }
 
         # 每日聚合记录
-        dish_daily_map = defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0})
+        dish_daily_map = defaultdict(lambda: {"quantity": 0.0, "total_cost": 0.0, "revenue": 0.0})
+        snap_prices = dishes_store.snapshot_prices(tenant_id)
 
         for c in consumptions:
             if c.dish_id not in dish_stats:
@@ -357,11 +398,12 @@ def get_cost_analysis(
             st = dish_stats[c.dish_id]
             st["total_sold_quantity"] = round(st["total_sold_quantity"] + c.quantity, 4)
             st["total_cost"] = round(st["total_cost"] + c.total_cost, 2)
-            dish_price = st["price"]
+            dish_price = snap_prices.get(c.id, st["price"])
             rev = round(c.quantity * dish_price, 2)
             st["total_revenue"] = round(st["total_revenue"] + rev, 2)
 
             key = (c.dish_id, c.date)
+            dish_daily_map[key]["revenue"] = round(dish_daily_map[key]["revenue"] + rev, 2)
             dish_daily_map[key]["quantity"] = round(dish_daily_map[key]["quantity"] + c.quantity, 4)
             dish_daily_map[key]["total_cost"] = round(dish_daily_map[key]["total_cost"] + c.total_cost, 2)
 
@@ -371,7 +413,7 @@ def get_cost_analysis(
             qty = vals["quantity"]
             cost = vals["total_cost"]
             unit_cost = round(cost / qty, 2) if qty > 0 else 0.0
-            rev = round(qty * st["price"], 2)
+            rev = round(vals["revenue"], 2)
             gp = round(rev - cost, 2)
             gm = round(gp / rev * 100, 2) if rev > 0 else 0.0
             st["history"].append({
@@ -696,9 +738,15 @@ def list_dish_categories(request: Request):
     require_role("staff")(request)
     session = db.get_session()
     try:
+        tenant_id = _tenant_id(request)
+        schema_ready = db._category_schema_ready_session(session)
+        sys_id = None
+        if schema_ready:
+            sys_id, _sys_label = db._category_ensure_system_default(session, tenant_id)
+            session.commit()
         rows = db.scoped(
             session.query(db._DishRow),
-            db._DishRow, _tenant_id(request)).all()
+            db._DishRow, tenant_id).all()
         counter = defaultdict(int)
         for r in rows:
             cat = (r.category or "").strip()
@@ -707,13 +755,80 @@ def list_dish_categories(request: Request):
             counter[cat] += 1
         if "默认" not in counter:
             counter["默认"] = 0
-        data = [
-            {"name": name, "count": count}
-            for name, count in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
-        ]
+        ordered = sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))
+        data = []
+        for name, count in ordered:
+            item = {"name": name, "count": count}
+            if schema_ready:
+                if name == "默认":
+                    item["category_id"] = int(sys_id)
+                else:
+                    found = db._category_find_by_key(
+                        session, tenant_id, "dish", master_key(name))
+                    item["category_id"] = None if found is None else int(found["id"])
+            data.append(item)
         return {"status": "success", "data": data}
     finally:
         session.close()
+
+
+def _delete_migrated_dish_category(session, request, cat, replace_with):
+    """已迁移库按注册行归并。系统键即使还没有行也不新建。"""
+    from sqlalchemy import text
+    tenant_id = _tenant_id(request)
+    norm = db._normalize_category_label("dish", cat)
+    if master_key(norm) == master_key("默认"):
+        if replace_with is not None and str(replace_with).strip():
+            return JSONResponse(status_code=400, content={
+                "status": "error", "msg": "系统默认分组无法修改"})
+        return JSONResponse(status_code=400, content={
+            "status": "error", "msg": "系统默认分组无法删除"})
+    source = db._category_find_by_key(
+        session, tenant_id, "dish", master_key(norm))
+    if source is None:
+        return JSONResponse(status_code=404, content={
+            "status": "error", "msg": "分类不存在"})
+    if replace_with is None or not str(replace_with).strip():
+        target_id, target_label = db._category_ensure_system_default(session, tenant_id)
+    else:
+        target_label, target_id = db.bind_category(
+            session, tenant_id, "dish",
+            label=replace_with, label_set=True,
+            category_id=None, category_id_set=False,
+        )
+    if int(target_id) == int(source["id"]):
+        return JSONResponse(status_code=400, content={
+            "status": "error", "msg": "请选择一个与被删除分类不同的替代分类"})
+    tenant = db._category_tenant(tenant_id)
+    affected = session.execute(text(
+        "SELECT COUNT(*) FROM dishes WHERE category_id = :c AND tenant_id = :t"
+    ), {"c": int(source["id"]), "t": tenant}).scalar()
+    session.execute(text(
+        "UPDATE dishes SET category = :label, category_id = :new, updated_at = :ts "
+        "WHERE category_id = :old AND tenant_id = :t"
+    ), {
+        "label": target_label,
+        "new": int(target_id),
+        "old": int(source["id"]),
+        "t": tenant,
+        "ts": db.now_iso(),
+    })
+    session.execute(text(
+        "DELETE FROM category_registry "
+        "WHERE id = :i AND tenant_id = :t AND domain = 'dish'"
+    ), {"i": int(source["id"]), "t": tenant})
+    session.commit()
+    affected = int(affected or 0)
+    msg = f"分类「{source['label']}」已删除，{affected} 道餐品的分类已改为「{target_label}」"
+    return {
+        "status": "success",
+        "data": {
+            "name": source["label"],
+            "replace_with": target_label,
+            "affected": affected,
+        },
+        "msg": msg,
+    }
 
 
 @router.delete("/api/dishes/categories/{name}")
@@ -725,6 +840,9 @@ def delete_dish_category(name: str, request: Request, replace_with: Optional[str
         cat = (name or "").strip()
         if not cat:
             return JSONResponse(status_code=400, content={"status": "error", "msg": "分类名称不能为空"})
+
+        if db._category_schema_ready_session(session):
+            return _delete_migrated_dish_category(session, request, cat, replace_with)
 
         # 禁止删除或修改内置「默认」分类
         if cat == "默认":
@@ -760,11 +878,15 @@ def delete_dish_category(name: str, request: Request, replace_with: Optional[str
             "data": {"name": cat, "replace_with": replace, "affected": affected},
             "msg": msg,
         }
+    except db.CategoryResolveError as exc:
+        session.rollback()
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": exc.code, "msg": exc.msg})
     except Exception as e:
         session.rollback()
         logger.exception("删除分类失败 name=%s", cat)
         return JSONResponse(status_code=500,
-                            content={"status": "error", "msg": f"删除分类失败: {str(e)}"})
+                            content={"status": "error", "msg": "分类没有删除成功，请稍后再试"})
     finally:
         session.close()
 
@@ -791,8 +913,12 @@ def create_dish(body: DishCreate, request: Request):
     if not name:
         return {"status": "error", "msg": "餐品名称不能为空"}
 
-    if body.price < 0:
-        return {"status": "error", "msg": "餐品售价不能为负数"}
+    if not math.isfinite(body.price) or body.price < 0:
+        return JSONResponse(status_code=400, content={
+            "status": "error", "msg": "餐品售价要填大于等于 0 的数字"})
+    if (body.status or "active") not in _DISH_STATUSES:
+        return JSONResponse(status_code=400, content={
+            "status": "error", "msg": "餐品状态只能是「在售」或「停用」"})
 
     session = db.get_session()
     try:
@@ -813,9 +939,36 @@ def create_dish(body: DishCreate, request: Request):
             return JSONResponse(status_code=err_status, content=err_body)
 
         now_str = db.now_iso()
-        cat_create = (body.category or "").strip()[:20] or "默认"
-        if cat_create == "其他":
-            cat_create = "默认"
+        bound_id = None
+        if db._category_schema_ready_session(session):
+            id_set = ("category_id" in body.model_fields_set
+                      and body.category_id is not None)
+            explicit_label = ("category" in body.model_fields_set
+                              and body.category is not None)
+            if id_set and not explicit_label:
+                cat_create, bound_id = db.bind_category(
+                    session, tenant_id, "dish",
+                    label=None, label_set=False,
+                    category_id=body.category_id, category_id_set=True,
+                )
+            else:
+                cat_create, bound_id = db.bind_category(
+                    session, tenant_id, "dish",
+                    label=body.category if body.category is not None else "默认",
+                    label_set=True,
+                    category_id=body.category_id,
+                    category_id_set=id_set,
+                )
+        else:
+            cat_create = (body.category or "").strip()[:20] or "默认"
+            if cat_create == "其他":
+                cat_create = "默认"
+            stored_cats = [
+                (row.category or "").strip()
+                for row in db.scoped(session.query(db._DishRow), db._DishRow, tenant_id).all()
+                if (row.category or "").strip()
+            ]
+            cat_create = prefer_stored_label(cat_create, stored_cats)[:20] or "默认"
         dish = db._DishRow(
             name=name,
             category=cat_create,
@@ -829,6 +982,8 @@ def create_dish(body: DishCreate, request: Request):
         )
         session.add(dish)
         session.flush()
+        if bound_id is not None or db._category_schema_ready_session(session):
+            db._assign_category_id(session, "dishes", dish.id, bound_id)
 
         for comp in normalized:
             ing_row = db._DishIngredientRow(
@@ -850,9 +1005,14 @@ def create_dish(body: DishCreate, request: Request):
         session.commit()
         session.refresh(dish)
         return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
+    except db.CategoryResolveError as exc:
+        session.rollback()
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": exc.code, "msg": exc.msg})
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"创建餐品失败: {str(e)}"}
+        logging.getLogger("api_dishes").exception("创建餐品失败: %s", e)
+        return {"status": "error", "msg": "餐品没有保存成功，请检查填写的内容后再试一次"}
     finally:
         session.close()
 
@@ -896,21 +1056,31 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
                 return {"status": "error", "msg": f"餐品「{new_name}」已存在"}
             dish.name = new_name
 
-        if body.category is not None:
+        category_intent = False
+        schema_ready = db._category_schema_ready_session(session)
+        label_sent = "category" in body.model_fields_set and body.category is not None
+        id_sent = "category_id" in body.model_fields_set and body.category_id is not None
+        if schema_ready and (label_sent or id_sent):
+            category_intent = True
+        elif body.category is not None:
             new_cat = body.category.strip()[:20] or "默认"
             if new_cat == "其他":
                 new_cat = "默认"
             dish.category = new_cat
 
         if body.price is not None:
-            if body.price < 0:
-                return {"status": "error", "msg": "餐品售价不能为负数"}
+            if not math.isfinite(body.price) or body.price < 0:
+                return JSONResponse(status_code=400, content={
+                    "status": "error", "msg": "餐品售价要填大于等于 0 的数字"})
             dish.price = round(float(body.price), 2)
 
         if body.description is not None:
             dish.description = body.description.strip()
 
         if body.status is not None:
+            if body.status not in _DISH_STATUSES:
+                return JSONResponse(status_code=400, content={
+                    "status": "error", "msg": "餐品状态只能是「在售」或「停用」"})
             dish.status = body.status
 
         # 更新配方（版本号自增 + 写快照，历史不可改写）
@@ -938,6 +1108,14 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
             # 版本自增（BOM 版本化 + 乐观锁基线）
             dish.version = int(dish.version or 1) + 1
 
+        if category_intent:
+            stored, bound = db.bind_category(
+                session, tenant_id, "dish",
+                label=body.category, label_set=label_sent,
+                category_id=body.category_id, category_id_set=id_sent,
+            )
+            dish.category = stored
+            db._assign_category_id(session, "dishes", dish.id, bound)
         dish.updated_at = db.now_iso()
         session.flush()
         if body.ingredients is not None:
@@ -946,9 +1124,14 @@ def update_dish(dish_id: int, body: DishUpdate, request: Request):
         session.commit()
         session.refresh(dish)
         return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
+    except db.CategoryResolveError as exc:
+        session.rollback()
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": exc.code, "msg": exc.msg})
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"更新餐品失败: {str(e)}"}
+        logging.getLogger("api_dishes").exception("更新餐品失败: %s", e)
+        return {"status": "error", "msg": "餐品没有保存成功，请检查填写的内容后再试一次"}
     finally:
         session.close()
 
@@ -964,6 +1147,21 @@ def delete_dish(dish_id: int, request: Request, hard: int = 0):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
 
         if hard == 1:
+            used_as_sub = session.query(db._DishIngredientRow).filter(
+                db._DishIngredientRow.component_type == "dish",
+                db._DishIngredientRow.component_id == dish.id).count()
+            if used_as_sub:
+                return JSONResponse(status_code=409, content={
+                    "status": "error", "code": "DISH_IN_USE",
+                    "msg": f"「{dish.name}」还被 {used_as_sub} 个餐品当作子配方用着，不能彻底删除。请先改掉那些餐品的配方，或者只「停用」"})
+            used_in_sales = session.query(db._DailyConsumptionRow).filter(
+                db._DailyConsumptionRow.dish_id == dish.id).count()
+            if used_in_sales:
+                return JSONResponse(status_code=409, content={
+                    "status": "error", "code": "DISH_HAS_HISTORY",
+                    "msg": f"「{dish.name}」已经有 {used_in_sales} 条售出消耗记录，彻底删除会让历史成本和毛利对不上。请改用「停用」"})
+            session.query(db._DishRecipeVersionRow).filter(
+                db._DishRecipeVersionRow.dish_id == dish.id).delete()
             session.query(db._DishIngredientRow).filter(db._DishIngredientRow.dish_id == dish.id).delete()
             session.delete(dish)
             session.commit()
@@ -1063,7 +1261,16 @@ def restore_dish_version(dish_id: int, version: int, request: Request,
             snap_cat = (snap_dish.get("category") or "").strip()[:20] or "默认"
             if snap_cat == "其他":
                 snap_cat = "默认"
-            dish.category = snap_cat
+            if db._category_schema_ready_session(session):
+                stored, bound = db.bind_category(
+                    session, tenant_id, "dish",
+                    label=snap_cat, label_set=True,
+                    category_id=None, category_id_set=False,
+                )
+                dish.category = stored
+                db._assign_category_id(session, "dishes", dish.id, bound)
+            else:
+                dish.category = snap_cat
         if snap_dish.get("price") is not None:
             dish.price = round(float(snap_dish.get("price") or 0.0), 2)
         if snap_dish.get("description") is not None:
@@ -1096,9 +1303,14 @@ def restore_dish_version(dish_id: int, version: int, request: Request,
         data["restored_from_version"] = int(version)
         return {"status": "success", "msg": f"已从 v{int(version)} 回滚并生成 v{dish.version}",
                 "data": data}
+    except db.CategoryResolveError as exc:
+        session.rollback()
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": exc.code, "msg": exc.msg})
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"回滚餐品配方失败: {str(e)}"}
+        logging.getLogger("api_dishes").exception("回滚餐品配方失败: %s", e)
+        return {"status": "error", "msg": "配方没有回滚成功，请稍后再试"}
     finally:
         session.close()
 
@@ -1122,11 +1334,39 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
 
     date_str = (body.date or "").strip() or db.now_iso()[:10]
     tenant_id = _tenant_id(request)
+    try:
+        _d = datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": "INVALID_CONSUMPTION_DATE",
+            "msg": "日期格式不对，请按「2026-10-05」这样填写"})
+    if _d > datetime.now().date():
+        return JSONResponse(status_code=400, content={
+            "status": "error", "code": "INVALID_CONSUMPTION_DATE",
+            "msg": "消耗日期不能是将来的日子，请改成今天或以前"})
+    req_id = (body.request_id or "").strip()[:80]
+    if req_id:
+        prev = dishes_store.get_request(tenant_id, req_id)
+        if prev is not None:
+            prev.setdefault("data", {})["replayed"] = True
+            prev["msg"] = "这一单刚才已经记过了，没有重复扣库存"
+            return prev
+    prior_snaps = dishes_store.snapshot_prices(tenant_id)
+    pending_snaps = []
     session = db.get_session()
     try:
         # 前置原子校验：所有餐品存在且份数必须大于 0
         for item in body.items:
             dish = session.get(db._DishRow, int(item.dish_id))
+            if dish and db._tenant_ok(dish, tenant_id) and (dish.status or "active") != "active":
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "status": "error",
+                        "code": "DISH_INACTIVE",
+                        "msg": f"餐品「{dish.name}」已经停用，不能再记消耗。请先到「餐品」里重新启用，或去掉这一行"
+                    }
+                )
             if not dish or not db._tenant_ok(dish, tenant_id):
                 return JSONResponse(
                     status_code=400,
@@ -1136,7 +1376,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                         "msg": f"找不到餐品 #{item.dish_id} 的信息，可能已被老板停用。请刷新页面重试。"
                     }
                 )
-            if item.quantity <= 0:
+            if not math.isfinite(item.quantity) or item.quantity <= 0:
                 return JSONResponse(
                     status_code=400,
                     content={
@@ -1223,7 +1463,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 dish_details.extend(details_list)
 
                 # 扣减 SKU 当前库存
-                qty_in_sku_unit = convert_unit_quantity(qty_needed, unit_needed, sku.base_unit)
+                qty_in_sku_unit = convert_unit_quantity(qty_needed, unit_needed, sku.base_unit, tenant_id=tenant_id)
                 sku.current_stock = round(sku.current_stock - qty_in_sku_unit, 4)
 
                 # 写入 inventory_log
@@ -1285,6 +1525,14 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 )
                 session.add(dt_row)
 
+            # 售价快照：收入按售出当时的售价算；合并时按份数加权
+            _prev_snap = prior_snaps.get(cons_row.id) if is_merge else None
+            if _prev_snap is not None and is_merge:
+                _old_q = float(cons_row.quantity or 0.0) - quantity
+                _blend = ((_prev_snap * _old_q) + (float(dish.price or 0.0) * quantity)) / max(float(cons_row.quantity), 1e-9)
+            else:
+                _blend = float(dish.price or 0.0)
+            pending_snaps.append((cons_row.id, round(_blend, 4), dish.version))
             created_records.append(cons_row.id)
             total_quantity = round(total_quantity + float(cons_row.quantity or 0.0), 4)
             result_items.append({
@@ -1296,7 +1544,9 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
             })
 
         session.commit()
-        return {
+        for _cid, _price, _ver in pending_snaps:
+            dishes_store.save_snapshot(tenant_id, _cid, _price, _ver)
+        resp = {
             "status": "success",
             "msg": f"成功记录 {len(created_records)} 项餐品消耗",
             "data": {
@@ -1307,34 +1557,39 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 "items": result_items,
             },
         }
+        if req_id:
+            dishes_store.save_request(tenant_id, req_id, resp)
+        return resp
+    except UnitConversionError as e:
+        session.rollback()
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": "error",
+                "code": "UNIT_CONVERSION_MISSING",
+                "msg": f"配方里的单位对不上：{e}。请老板到「设置」里添加换算，或把配方里这一行的单位改成库存单位",
+                "data": {"pairs": [{"from_unit": e.from_unit, "to_unit": e.to_unit, "item_name": ""}]},
+            }
+        )
     except ValueError as e:
         session.rollback()
-        err_msg = str(e)
-        if "跨量纲单位不可换算" in err_msg:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "status": "error",
-                    "code": "UNIT_CONVERSION_ERROR",
-                    "msg": f"食材单位对不上（比如不能拿“份”换“斤”）。请统一改用重量或联系老板检查。详细：{err_msg}"
-                }
-            )
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
                 "code": "CONSUMPTION_FAILED",
-                "msg": err_msg
+                "msg": str(e)
             }
         )
     except Exception as e:
         session.rollback()
+        logging.getLogger("api_dishes").exception("提交消耗失败: %s", e)
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
                 "code": "SERVER_ERROR",
-                "msg": f"提交消耗失败: {str(e)}"
+                "msg": "这次消耗没有记成功，库存没有被改动。请稍后再试，一直不行请联系管理员"
             }
         )
     finally:
@@ -1353,7 +1608,9 @@ def void_daily_consumption(consumption_id: int, request: Request):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "消耗记录不存在"})
 
         if cons.is_void == 1:
-            return {"status": "error", "msg": "该消耗记录此前已冲销作废，请勿重复操作"}
+            return JSONResponse(status_code=409, content={
+                "status": "error", "code": "ALREADY_VOIDED",
+                "msg": "该消耗记录此前已冲销作废，请勿重复操作"})
 
         details = (
             session.query(db._DailyConsumptionDetailRow)
@@ -1373,7 +1630,8 @@ def void_daily_consumption(consumption_id: int, request: Request):
         for dt in details:
             sku = session.get(db._SkuRow, dt.sku_id)
             if sku:
-                qty_in_sku_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, sku.base_unit)
+                qty_in_sku_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, sku.base_unit,
+                                                         tenant_id=getattr(cons, "tenant_id", None) or tenant_id)
                 stock_log = db._StockLogRow(
                     sku_id=sku.id,
                     name=sku.name,
@@ -1394,6 +1652,7 @@ def void_daily_consumption(consumption_id: int, request: Request):
         return {"status": "success", "msg": "已成功冲销作废该消耗记录并回滚批次与库存"}
     except Exception as e:
         session.rollback()
-        return {"status": "error", "msg": f"冲销失败: {str(e)}"}
+        logging.getLogger("api_dishes").exception("冲销消耗失败: %s", e)
+        return {"status": "error", "msg": "冲销没有成功，库存没有被改动。请稍后再试"}
     finally:
         session.close()

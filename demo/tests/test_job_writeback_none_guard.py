@@ -76,8 +76,7 @@ def test_result_writeback_survives_missing_row(isolated_db, monkeypatch):
     assert result.get("quality_warnings") == []
     # 返回结构不变：所有既有字段都在
     for key in ("status", "receipt_id", "data", "image_url", "version",
-                "quality_warnings", "fallback_triggered", "fallback_reason",
-                "fallback_from", "fallback_engine"):
+                "quality_warnings"):
         assert key in result, "缺少字段: %s" % key
 
 

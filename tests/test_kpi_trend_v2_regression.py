@@ -4,6 +4,7 @@ V2 Regression Test Suite:
 Observation Center KPI Trend Modal & Slice Drilldown UI Refactor (PRD-OBS-KPI-DRILLDOWN-V2-20260930)
 Validates all 15 Design Feedback items (AC-01 through AC-11).
 """
+import os
 import pytest
 from datetime import datetime, timedelta
 from bs4 import BeautifulSoup
@@ -24,8 +25,13 @@ def index_html_content():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        return f.read()
+    # F4 S4-11 起 KPI 趋势控制器随域迁至 kpi_trend.js（index.html 加载链中紧跟 main.js）。
+    # 守真不变量＝main.js + kpi_trend.js 联合全文（钉「函数在 KPI 域文件」，不再要求在 main.js）。
+    parts = []
+    for rel in ("demo/static/js/main.js", "demo/static/js/kpi_trend.js"):
+        with open(rel, "r", encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +65,7 @@ def test_ac_01_footer_and_bottom_close_completely_removed(kpi_modal_soup):
     # 验证右上角关闭按钮
     close_btns = kpi_modal_soup.find_all("button", class_="modal-close-btn")
     assert len(close_btns) == 1, "Exactly one modal-close-btn should exist"
-    assert "closeKpiTrendModal()" in close_btns[0].get("onclick", "")
+    assert '"f":"closeKpiTrendModal"' in (close_btns[0].get("data-csp-click") or "")
 
 
 # --------------------------------------------------------------------------
@@ -100,7 +106,7 @@ def test_ac_03_custom_date_inputs_and_api(kpi_modal_soup, main_js_content, clien
 
     assert s_input is not None and s_input.name == "input"
     assert e_input is not None and e_input.name == "input"
-    assert apply_btn is not None and "applyKpiTrendCustomDate()" in apply_btn.get("onclick", "")
+    assert apply_btn is not None and '"f":"applyKpiTrendCustomDate"' in (apply_btn.get("data-csp-click") or "")
 
     assert "function applyKpiTrendCustomDate" in main_js_content
 
@@ -120,12 +126,12 @@ def test_ac_03_custom_date_inputs_and_api(kpi_modal_soup, main_js_content, clien
     assert res_data["date_range"]["start_date"] == d_start
     assert res_data["date_range"]["end_date"] == d_end
 
-    # 路由别名 /api/obs/kpi-trend 同样生效
+    # 重复路由 /api/obs/kpi-trend 已删除，只保留 /api/analytics/kpi-trends
     resp_alias = client.get(
         f"/api/obs/kpi-trend?metric_key=total_parses&start_date={d_start}&end_date={d_end}",
         headers=headers,
     )
-    assert resp_alias.status_code == 200
+    assert resp_alias.status_code == 404
 
     # 边界校验：仅传单个日期
     resp_bad1 = client.get(
@@ -164,13 +170,30 @@ def test_ac_04_header_visual_clean(kpi_modal_soup):
     assert "统计单位:" not in text
     assert "当前周期:" not in text
 
-    # DOM 占位兼容
+    # DOM 占位兼容（F3 B1 起 inline style 迁为 csp-s-N 类，等效 style 含类规则体）
+    import re as _re
+    csp_css_path = os.path.join(os.path.dirname(__file__), "../demo/static/css/csp-html-styles.css")
+    with open(csp_css_path, encoding="utf-8") as f:
+        csp_css = f.read()
+
+    def _effective_style(el):
+        parts = [el.get("style", "") or ""]
+        classes = el.get("class", [])
+        if isinstance(classes, str):
+            classes = classes.split()
+        for cls in classes:
+            if cls.startswith("csp-s-"):
+                m = _re.search(r"\.%s\{([^}]*)\}" % _re.escape(cls), csp_css)
+                if m:
+                    parts.append(m.group(1))
+        return ";".join(parts).replace(" ", "")
+
     unit_el = kpi_modal_soup.find(id="kpiTrendModalUnit")
     span_el = kpi_modal_soup.find(id="kpiTrendModalPeriodSpan")
     assert unit_el is not None
-    assert "display:none" in unit_el.get("style", "").replace(" ", "")
+    assert "display:none" in _effective_style(unit_el)
     assert span_el is not None
-    assert "display:none" in span_el.get("style", "").replace(" ", "")
+    assert "display:none" in _effective_style(span_el)
 
 
 # --------------------------------------------------------------------------

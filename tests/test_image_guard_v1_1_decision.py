@@ -36,6 +36,17 @@ STAFF_HEADERS = {"X-Role": "staff"}
 OWNER_HEADERS = {"X-Role": "owner"}
 
 
+@pytest.fixture(autouse=True)
+def _recognition_engine_configured(monkeypatch):
+    """F2 契约（2026-10-13）：无密钥上传在守卫管线**之前**同步返回
+    ENGINE_NOT_CONFIGURED。本文件 subject 是守卫决策状态机（flagged/降级），
+    走 /api/upload 的用例须把引擎桩为已配置以抵达守卫；新契约已由
+    tests/adversarial/test_image_adversarial.py 的
+    test_no_key_upload_sync_fails_before_guard 钉住，此处不重复。"""
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
+
+
 def _make_client():
     app = FastAPI()
     app.include_router(api_receipts.router)

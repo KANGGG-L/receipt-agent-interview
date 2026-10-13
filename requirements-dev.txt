@@ -1,0 +1,6 @@
+# 根 tests/ 与 demo/tests/ 共用的可复现测试依赖。
+# 安装（使用任务指定的虚拟环境，不要装到全局解释器）：
+#   python -m pip install -r requirements-dev.txt
+# demo/requirements.txt 只有运行时依赖。beautifulsoup4 与 segno 只在本文件声明，
+# 漏装时 pytest 9 会在收集阶段以 exit 2 停住，二维码用例则在运行期 ImportError。
+-r demo/requirements-dev.txt

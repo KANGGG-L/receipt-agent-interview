@@ -51,7 +51,6 @@ import importlib
 import json
 import logging
 import os
-import shutil
 import sqlite3
 import sys
 import tempfile
@@ -421,6 +420,23 @@ def duplicate_savings(items):
     }
 
 
+def _snapshot_sqlite(src, dst):
+    """把 src 的已提交内容写成 dst。不写源库。
+
+    shutil.copy2 在 WAL 下只拷主文件，副本缺行，回放读数变成 0。
+    backup API 读到已提交快照。
+    """
+    src_con = sqlite3.connect(src)
+    try:
+        dst_con = sqlite3.connect(dst)
+        try:
+            src_con.backup(dst_con)
+        finally:
+            dst_con.close()
+    finally:
+        src_con.close()
+
+
 def _simulate_creations(groups, use_alias):
     """反事实对照：在**独立副本**上按入账路径复放这些重复组，数实际新建几个 SKU。
 
@@ -439,7 +455,7 @@ def _simulate_creations(groups, use_alias):
 
     tmpdir = tempfile.mkdtemp(prefix="sku_alias_cf_")
     path = os.path.join(tmpdir, "cf.db")
-    shutil.copy2(_SOURCE_DB_PATH, path)
+    _snapshot_sqlite(_SOURCE_DB_PATH, path)
     os.environ["DB_PATH"] = path
     importlib.reload(db)
 
@@ -526,7 +542,7 @@ def replay(holdout=False, exclude_residue=False):
     """
     tmpdir = tempfile.mkdtemp(prefix="sku_alias_replay_")
     copy_path = os.path.join(tmpdir, "replay.db")
-    shutil.copy2(_SOURCE_DB_PATH, copy_path)
+    _snapshot_sqlite(_SOURCE_DB_PATH, copy_path)
     os.environ["DB_PATH"] = copy_path
     importlib.reload(db)
 

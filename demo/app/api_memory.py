@@ -18,6 +18,7 @@
 """
 
 import json
+import threading
 import logging
 
 from fastapi import APIRouter, Request
@@ -31,6 +32,20 @@ from app.services.memory_store import MemoryVectorDeleteError
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# 审核（批准/拒绝）必须串行：两个超管同时点同一条待审记忆时，「检查状态 → 写入记忆 →
+# 改状态」若交错，会把同一条记忆写进记忆库两次。单一锁、无嵌套获取。
+_REVIEW_LOCK = threading.Lock()
+
+_REVIEW_STATUS_LABEL = {"pending": "待审核", "approved": "已通过", "rejected": "已拒绝"}
+
+
+def _already_reviewed(row):
+    label = _REVIEW_STATUS_LABEL.get(str(row.get("status")), "已处理")
+    return JSONResponse(
+        content={"status": "error", "code": "ALREADY_REVIEWED",
+                 "msg": f"这条记忆已经{label}了，不能重复操作。请刷新页面。"},
+        status_code=409)
 
 
 def _tenant_id(request: Request) -> str:
@@ -130,16 +145,19 @@ def approve_pending(pending_id: int, request: Request):
     批准写入的"。
     """
     require_admin(request)
+    with _REVIEW_LOCK:
+        return _approve_pending_locked(pending_id, request)
+
+
+def _approve_pending_locked(pending_id, request):
     tenant_id = _tenant_id(request)
     row = db.get_pending_memory(pending_id, tenant_id=tenant_id)
     if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到该待确认记忆"},
+        return JSONResponse(content={"status": "error", "code": "PENDING_NOT_FOUND",
+                                     "msg": "找不到这条待确认的记忆，可能已被处理。请刷新页面。"},
                             status_code=404)
     if row["status"] != "pending":
-        return JSONResponse(
-            content={"status": "error", "code": "ALREADY_REVIEWED",
-                     "msg": f"该记忆已审核（当前状态：{row['status']}），不可重复操作"},
-            status_code=409)
+        return _already_reviewed(row)
     who = _actor(request)
     # D8：provenance 载体解析失败不得静默清空。refs 会经 approve 落成
     # vendor_memory.source_ref —— 那是"这条记忆由哪几张单据得来"的唯一回溯载体，
@@ -184,11 +202,13 @@ def approve_pending(pending_id: int, request: Request):
     except Exception as e:
         logger.warning("[memory] approve ingest failed id=%s: %s", pending_id, e)
         return JSONResponse(
-            content={"status": "error", "msg": f"记忆落库失败：{e}"},
+            content={"status": "error", "code": "MEMORY_SAVE_FAILED",
+                     "msg": "这条记忆没有保存成功，什么都没有改动。请稍后再试，一直不行请联系管理员。"},
             status_code=500)
     ok = db.review_pending_memory(pending_id, "approved", who, tenant_id=tenant_id)
     if not ok:
-        return JSONResponse(content={"status": "error", "msg": "状态流转失败，请重试"},
+        return JSONResponse(content={"status": "error", "code": "REVIEW_STATE_CHANGED",
+                                     "msg": "这条记忆刚刚被别人处理了。请刷新页面再看。"},
                             status_code=409)
     _safe_audit(who, "pending_memory_approve", f"pending_memory:{pending_id}",
                 "pending", "approved")
@@ -201,19 +221,19 @@ def reject_pending(pending_id: int, request: Request):
     """拒绝待确认记忆：仅流转状态，不写任何记忆库。"""
     require_admin(request)
     tenant_id = _tenant_id(request)
-    row = db.get_pending_memory(pending_id, tenant_id=tenant_id)
-    if row is None:
-        return JSONResponse(content={"status": "error", "msg": "未找到该待确认记忆"},
-                            status_code=404)
-    if row["status"] != "pending":
-        return JSONResponse(
-            content={"status": "error", "code": "ALREADY_REVIEWED",
-                     "msg": f"该记忆已审核（当前状态：{row['status']}），不可重复操作"},
-            status_code=409)
     who = _actor(request)
-    ok = db.review_pending_memory(pending_id, "rejected", who, tenant_id=tenant_id)
+    with _REVIEW_LOCK:
+        row = db.get_pending_memory(pending_id, tenant_id=tenant_id)
+        if row is None:
+            return JSONResponse(content={"status": "error", "code": "PENDING_NOT_FOUND",
+                                         "msg": "找不到这条待确认的记忆，可能已被处理。请刷新页面。"},
+                                status_code=404)
+        if row["status"] != "pending":
+            return _already_reviewed(row)
+        ok = db.review_pending_memory(pending_id, "rejected", who, tenant_id=tenant_id)
     if not ok:
-        return JSONResponse(content={"status": "error", "msg": "状态流转失败，请重试"},
+        return JSONResponse(content={"status": "error", "code": "REVIEW_STATE_CHANGED",
+                                     "msg": "这条记忆刚刚被别人处理了。请刷新页面再看。"},
                             status_code=409)
     _safe_audit(who, "pending_memory_reject", f"pending_memory:{pending_id}",
                 "pending", "rejected")
@@ -248,13 +268,13 @@ def delete_memory_by_vendor(vendor_name: str, request: Request):
                     f"vendor_memory:vendor={vendor_name}", "", str(e)[:500])
         return JSONResponse(
             content={"status": "error", "code": "VECTOR_DELETE_FAILED",
-                     "msg": "向量级联删除失败，本次删除未生效，可重试"},
+                     "msg": "记忆库暂时没有响应，这次删除没有生效，什么都没改。请稍后再试。"},
             status_code=500)
     pending_deleted = db.delete_pending_memory(vendor=vendor_name,
                                                tenant_id=tenant_id)
     if result["affected"] == 0 and pending_deleted == 0:
         return JSONResponse(
-            content={"status": "error", "msg": "该供应商在当前租户下没有可删除的记忆"},
+            content={"status": "error", "code": "MEMORY_NOT_FOUND", "msg": "这个供应商没有可以删除的记忆。"},
             status_code=404)
     _safe_audit(who, "vendor_memory_delete_by_vendor",
                 f"vendor_memory:vendor={vendor_name}", "",
@@ -285,10 +305,10 @@ def delete_memory_by_id(memory_id: str, request: Request):
                     f"vendor_memory:{memory_id}", "", str(e)[:500])
         return JSONResponse(
             content={"status": "error", "code": "VECTOR_DELETE_FAILED",
-                     "msg": "向量级联删除失败，本次删除未生效，可重试"},
+                     "msg": "记忆库暂时没有响应，这次删除没有生效，什么都没改。请稍后再试。"},
             status_code=500)
     if result["affected"] == 0:
-        return JSONResponse(content={"status": "error", "msg": "未找到该记忆"},
+        return JSONResponse(content={"status": "error", "code": "MEMORY_NOT_FOUND", "msg": "找不到这条记忆，可能已被删除。请刷新页面。"},
                             status_code=404)
     _safe_audit(who, "vendor_memory_delete", f"vendor_memory:{memory_id}", "",
                 f"deleted:{result['affected']}")
@@ -312,14 +332,14 @@ def revive_memory(memory_id: str, request: Request):
     who = _actor(request)
     result = db.revive_vendor_memory(memory_id=memory_id, tenant_id=tenant_id)
     if not result.get("found"):
-        return JSONResponse(content={"status": "error", "msg": "未找到该记忆"},
+        return JSONResponse(content={"status": "error", "code": "MEMORY_NOT_FOUND", "msg": "找不到这条记忆，可能已被删除。请刷新页面。"},
                             status_code=404)
     if not result.get("revived"):
         # 本来就没归档：409 而不是 404 —— 目标明明可见，谎报"未找到"会让运维以为
         # memory_id 写错了而去查库（与 pending 端点 ALREADY_REVIEWED 同风格）。
         return JSONResponse(
             content={"status": "error", "code": "ALREADY_ACTIVE",
-                     "msg": f"该记忆当前状态为 {result.get('status') or 'active'}，无需恢复"},
+                     "msg": "这条记忆本来就是生效状态，不需要恢复。"},
             status_code=409)
     _safe_audit(who, "vendor_memory_revive", f"vendor_memory:{memory_id}",
                 "archived", "active")

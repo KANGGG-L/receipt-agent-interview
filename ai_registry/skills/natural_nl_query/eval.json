@@ -2,14 +2,14 @@
   "skill_name": "natural_nl_query",
   "version": "v1.0.0",
   "last_evaluated": "2026-08-18",
-  "benchmark_score": 97.2,
-  "pass_rate": 98.5,
+  "benchmark_score": null,
+  "pass_rate": null,
   "metrics": {
-    "intent_accuracy": 97.0,
+    "intent_accuracy": null,
     "sql_syntax_validity": null,
     "claim_unsupported": true,
     "claim_unsupported_note": "原登记 sql_syntax_validity=100.0 无任何评测集/脚本/报告支撑，判定为虚假指标并纠正（改为 null）。本技能无独立评测语料；可复现的 SQL 安全/SQL 语法口径在 query_sql_gen 工具侧（tests/test_query_sql_gen_guard.py）。",
     "reproduce_command": "~/.pyenv/versions/3.9.6/bin/python -m pytest tests/test_query_sql_gen_guard.py -q",
-    "cantonese_understanding_rate": 96.5
+    "cantonese_understanding_rate": null
   }
 }

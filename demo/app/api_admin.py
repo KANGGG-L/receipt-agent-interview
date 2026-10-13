@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
-"""admin 端点：引擎/模型配置 + 灰测范围 + AI 复盘。
+"""admin 端点：引擎/模型配置 + 灰测范围。
 
 - /api/admin/engine-config（GET/PUT）：换识别/审核模型、切灰测模式
 - /api/admin/grey-test：灰测状态可视化
-- /api/review：AI 复盘（价格异动/供应商洞察，owner 可用）
 - /api/vendor_price_hint：复核侧「供应商×SKU 历史价格区间」只读提示（不上生成侧）
 - /api/admin/vendor-memory（GET）与 /api/admin/vendor-memory/{memory_id}（GET）：
   已生效记忆的治理视图（D5 人可查看的记忆界面），取数一律复用 db.list_vendor_memory
@@ -879,7 +878,7 @@ def promote_grey_config(request: Request):
     db.set_engine_config(new_cfg, source="manual")
 
     # 把灰测组清空/重置回默认（关闭灰测，恢复默认识别/审核模型，关闭灰测审核/解析开关）
-    from app.models import GreyAssignMode, EngineKind, is_legacy_cli_engine
+    from app.models import GreyAssignMode, EngineKind
     grey_defaults = {
         "grey_enabled": False,
         "grey_percent": 0,
@@ -1297,7 +1296,7 @@ def get_engine_config(request: Request):
     require_admin(request)
     cfg = db.get_engine_config()
     from app.llm import get_timeout_advice, _resolve_timeout
-    from app.models import MAX_CALL_TIMEOUT_SECONDS, is_legacy_cli_engine
+    from app.models import MAX_CALL_TIMEOUT_SECONDS
     advice = get_timeout_advice(cfg)
     # 性能基线与当前达标判定
     engine_str = str(getattr(cfg, "recognition_engine", "") or "")
@@ -1324,9 +1323,9 @@ def get_engine_config(request: Request):
             "grey_parse": _resolve_timeout(cfg, side="parse", use_grey=True),
         },
         "call_timeout_seconds": int(getattr(cfg, "call_timeout_seconds", 60) or 60),
-        "timeout_policy": (f"实际生效超时硬上限 {MAX_CALL_TIMEOUT_SECONDS}s"
-                           "（llm._resolve_timeout 钳制 min(v, 硬上限)）；"
-                           "omni 实测 2.6-7.1s 结余充足，禁止长期空转"),
+        "timeout_policy": (f"单次引擎调用缺省 30s、最长 {MAX_CALL_TIMEOUT_SECONDS}s"
+                           "（超时只放弃这次等待，不会终止任何进程）；"
+                           "整张单识别另有约 45s 总时长预算，用完即停止并转手工录入，原图保留"),
     }
     data = mask_engine_config_dict(cfg.model_dump())
 
@@ -1335,10 +1334,6 @@ def get_engine_config(request: Request):
     if advice:
         resp["timeout_advice"] = advice
         resp["warning"] = advice
-    if is_legacy_cli_engine(engine_str):
-        resp["degradation_notice"] = (
-            "提示：历史本地 CLI 引擎已彻底下线，系统已自动转换为 OpenAI 兼容接口。"
-        )
     return resp
 
 
@@ -1873,7 +1868,9 @@ def save_unified_admin_config(payload: UnifiedAdminConfigPayload, request: Reque
         if row_eng is None:
             row_eng = db._AppSettingRow(key="engine_config")
             s.add(row_eng)
-        row_eng.value = json.dumps(new_cfg.model_dump(), ensure_ascii=False)
+        from app import secret_store
+        row_eng.value = json.dumps(secret_store.encrypt_config_dict(new_cfg.model_dump()),
+                                   ensure_ascii=False)
 
         # 批量写入系统设置各行
         for k, v in payload.settings.items():
@@ -2097,7 +2094,9 @@ def memory_consistency_report(request: Request, tenant: Optional[str] = None):
         report = mc.check_memory_consistency(tenant_id=tenant, db_path=db.DB_PATH)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆一致性巡检失败: %s", e)
-        return {"status": "error", "msg": "记忆一致性巡检失败: %s" % e, "report": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "report": None,
+            "msg": "记忆一致性巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "report": report}
 
 
@@ -2172,7 +2171,9 @@ def vendor_sku_alias_consistency(request: Request, tenant: Optional[str] = None)
             db_path=db.DB_PATH, tenant_id=tenant, simulate_backfill=False)
     except Exception as e:
         logging.getLogger("api_admin").error("别名一致性巡检失败: %s", e)
-        return {"status": "error", "msg": "别名一致性巡检失败: %s" % e, "report": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "report": None,
+            "msg": "别名一致性巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "report": report}
 
 
@@ -2205,8 +2206,9 @@ def parsing_stale_report(request: Request, tenant: Optional[str] = None):
         timeout_seconds = ru.parsing_timeout_seconds()
     except Exception as e:
         logging.getLogger("api_admin").error("超期 parsing 巡检失败: %s", e)
-        return {"status": "error", "msg": "超期 parsing 巡检失败: %s" % e,
-                "rows": None, "count": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "CHECK_FAILED", "rows": None, "count": None,
+            "msg": "超时单据巡检没有跑成功，请稍后再试；一直失败请看服务日志。"})
     return {"status": "success", "timeout_seconds": timeout_seconds,
             "count": len(rows), "rows": rows}
 
@@ -2282,9 +2284,13 @@ def memory_metrics_dashboard(request: Request):
         metrics = mod.collect()
     except Exception as e:
         logging.getLogger("api_admin").error("记忆度量取数失败: %s", e)
-        return {"status": "error", "msg": "记忆度量取数失败: %s" % e,
-                "memory_enabled": memory_on, "metrics": None,
-                "retrieve_failures": retrieve_failures}
+        # 取数失败是看板的错误态，不是服务故障：HTTP 仍为 200，body.status=error。
+        # 若返回 500，全局异常信封会盖掉 metrics=None，前端无法进入「无数据」态。
+        return {
+            "status": "error", "code": "METRICS_FAILED",
+            "msg": "记忆统计取数失败，请稍后再试。",
+            "memory_enabled": memory_on, "metrics": None,
+            "retrieve_failures": retrieve_failures}
     return {"status": "success", "memory_enabled": memory_on, "metrics": metrics,
             "retrieve_failures": retrieve_failures}
 
@@ -2355,8 +2361,9 @@ def list_vendor_memory_governance(request: Request, vendor: str = "",
                                      supplier_id=supplier_id)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆治理视图取数失败: %s", e)
-        return {"status": "error", "code": "MEMORY_LIST_FAILED",
-                "msg": "记忆列表取数失败: %s" % e, "data": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "MEMORY_LIST_FAILED", "data": None,
+            "msg": "记忆列表没有读出来，请稍后再试。"})
     if st:
         rows = [r for r in rows if (r.get("status") or "active") == st]
     total = len(rows)
@@ -2402,8 +2409,9 @@ def get_vendor_memory_governance(memory_id: str, request: Request):
         rows = db.list_vendor_memory(tenant_id=tenant_id, include_archived=True)
     except Exception as e:
         logging.getLogger("api_admin").error("记忆治理详情取数失败: %s", e)
-        return {"status": "error", "code": "MEMORY_READ_FAILED",
-                "msg": "记忆详情取数失败: %s" % e, "data": None}
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "MEMORY_READ_FAILED", "data": None,
+            "msg": "这条记忆没有读出来，请稍后再试。"})
     for r in rows:
         if str(r.get("memory_id") or "") == mid:
             return {"status": "success", "data": r}
@@ -2441,6 +2449,16 @@ def admin_metrics(request: Request):
         s = db.get_session()
         try:
             rows = s.query(db._DecisionLogRow).filter(db._DecisionLogRow.decision_type == "extract").all()
+            # 以数据库为准且分租户：只统计本租户单据的决策（没有单据号的离线记录归 default）
+            _my_tenant = _tenant_id(request)
+            _rids = {r.receipt_id for r in rows if r.receipt_id}
+            _tenant_of = {}
+            if _rids:
+                for _rr in s.query(db._ReceiptRow.id, db._ReceiptRow.tenant_id).filter(
+                        db._ReceiptRow.id.in_(_rids)).all():
+                    _tenant_of[_rr[0]] = (_rr[1] or "default")
+            rows = [r for r in rows
+                    if (_tenant_of.get(r.receipt_id, "default") if r.receipt_id else "default") == _my_tenant]
         finally:
             s.close()
     except Exception:
@@ -2535,14 +2553,20 @@ def admin_metrics(request: Request):
             f_elapsed = []
             f_success = 0
             f_count = 0
+            from collections import deque
+            _my_tenant = _tenant_id(request)
             with open(str(fpath), "r", encoding="utf-8") as fh:
-                for line in fh:
+                # 只读文件尾部最近 5000 行（文件会轮转，且这里只是排障用的补充读数）
+                for line in deque(fh, maxlen=5000):
                     line=line.strip()
                     if not line:
                         continue
                     try:
                         rec = _json.loads(line)
                     except Exception:
+                        continue
+                    # 早期记录没有 tenant_id，按 default 租户计；不同租户互不可见
+                    if str(rec.get("tenant_id") or "default") != _my_tenant:
                         continue
                     f_count += 1
                     try:
@@ -2607,7 +2631,7 @@ def grey_test_status(request: Request):
 
 
 def _normalize_audit_model_name(val: str, fallback: str = "deepseek/deepseek-v4.1-flash") -> str:
-    """平滑映射：如果历史审计记录存的是 engine kind (EngineKind.OPENAI / openai / opencode 等)，
+    """平滑映射：如果历史审计记录存的是 engine kind (EngineKind.OPENAI / openai 等)，
     转换为实际对应的模型名称。如果已是模型名称则保留。
     """
     if not val:
@@ -2616,8 +2640,6 @@ def _normalize_audit_model_name(val: str, fallback: str = "deepseek/deepseek-v4.
     s_lower = s.lower()
     if "enginekind.openai" in s_lower or s_lower == "openai":
         return fallback
-    if "enginekind.opencode" in s_lower or s_lower in ("opencode", "codebuddy", "enginekind.codebuddy"):
-        return "Qwen/Qwen3-VL-32B-Instruct"
     if "mock" in s_lower:
         return "mock-vlm-rec"
     if s_lower == "qwen" or "enginekind.qwen" in s_lower:
@@ -2655,7 +2677,7 @@ def canary_history(request: Request):
             promote_count += 1
             old_m = _normalize_audit_model_name(old_val, fallback=cur_prod_model)
             new_m = _normalize_audit_model_name(new_val, fallback=cur_grey_model)
-            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen")):
                 new_m = cur_grey_model
             history.append({
                 "ts": ts,
@@ -2671,7 +2693,7 @@ def canary_history(request: Request):
             rollback_count += 1
             old_m = _normalize_audit_model_name(old_val, fallback=cur_grey_model)
             new_m = _normalize_audit_model_name(new_val, fallback=cur_prod_model)
-            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen", "opencode", "codebuddy")):
+            if old_m == new_m and ("enginekind" in old_val.lower() or old_val.lower() in ("openai", "mock", "qwen")):
                 old_m = cur_grey_model
             history.append({
                 "ts": ts,
@@ -2717,47 +2739,6 @@ def canary_history(request: Request):
 
 
 
-@router.get("/api/admin/trash")
-def trash_list(request: Request):
-    """回收站：软删除单据列表。"""
-    require_admin(request)
-    rows = db.list_trash_receipts()
-    data = []
-    for r in rows:
-        data.append({
-            "id": r.id,
-            "supplier_name": r.supplier_name or "",
-            "receipt_date": r.receipt_date or "",
-            "total_amount": r.total_amount or 0.0,
-            "status": r.status,
-            "created_at": r.created_at or "",
-            "deleted_at": r.deleted_at or "",
-        })
-    return {"status": "success", "data": data}
-
-
-@router.post("/api/admin/trash/{receipt_id}/restore")
-def restore_trash(receipt_id: int, request: Request):
-    """从回收站恢复单据。"""
-    require_admin(request)
-    if not db.restore_receipt(receipt_id):
-        return JSONResponse(content={"status": "error", "msg": "单据不存在或不在回收站"},
-                            status_code=404)
-    return {"status": "success", "receipt_id": receipt_id,
-            "msg": f"单据 #{receipt_id} 已恢复"}
-
-
-@router.get("/api/review")
-def ai_review(request: Request):
-    require_role("owner")(request)
-    from app.services.inventory import cost_summary
-    from app.chains import review_chain
-    cost = cost_summary(tenant_id=_tenant_id(request))
-    cfg = db.get_engine_config()
-    result = review_chain.run_review(cost.get("items", {}), config=cfg)
-    return {"status": "success", "data": result}
-
-
 @router.get("/api/cost")
 def cost_summary(request: Request):
     require_role("owner")(request)
@@ -2793,7 +2774,9 @@ def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
     sku = db.get_sku(int(sku_id), tenant_id=tenant_id)
     if sku is None:
         # 跨租户同样落到这里（get_sku 对跨租户返回 None）—— 一律视为不存在
-        return {"status": "error", "msg": "SKU 不存在"}
+        return JSONResponse(status_code=404, content={
+            "status": "error", "code": "SKU_NOT_FOUND",
+            "msg": "找不到这个货品，可能已被删除。请刷新页面后再试。"})
 
     prices = []
     for row in db.price_history(int(sku_id), tenant_id=tenant_id):
@@ -2833,40 +2816,17 @@ def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
 # 阶段 1：AI 发现
 # -------------------------------------------------------------
 @router.get("/api/ai-insights")
-def ai_insights(request: Request):
+def ai_insights(request: Request, lang: str = ""):
     require_role("owner")(request)
+    from app.i18n_text import normalize_locale
     from app.services.inventory import cost_summary as get_cost
     from app.chains import review_chain
     cost = get_cost(tenant_id=_tenant_id(request))
     data = review_chain.weekly_insights(cost)
+    data = dict(data)
+    # 只记录界面语言，不在这里调用模型。复盘 prompt 由 build_review_prompt(..., locale=) 使用同一归一结果。
+    data["review_locale"] = normalize_locale(lang) or ""
     return {"status": "success", "data": data}
-
-
-# -------------------------------------------------------------
-# 阶段 4：对话式查询 & 生成式 UI 卡片
-# -------------------------------------------------------------
-class ChatQueryBody(BaseModel):
-    question: str = ""
-
-
-@router.post("/api/chat/query")
-def chat_query(body: ChatQueryBody, request: Request):
-    """对话式查询 Agent：自然语言查询库存、价格走势与未付账单。"""
-    require_role("staff")(request)
-    from app.chains.query_chain import run_query
-    res = run_query(body.question, tenant_id=_tenant_id(request))
-    return {"status": "success", "data": res}
-
-
-@router.get("/api/insight-cards")
-def get_insight_cards(request: Request):
-    """生成式 UI 卡片：多步推理输出异动预警卡、谈判策略卡与健康度卡片。"""
-    require_role("owner")(request)
-    from app.services.inventory import cost_summary as get_cost
-    from app.chains.review_chain import generate_insight_cards
-    cost = get_cost(tenant_id=_tenant_id(request))
-    cards = generate_insight_cards(cost)
-    return {"status": "success", "cards": cards}
 
 
 # -------------------------------------------------------------
@@ -2925,7 +2885,7 @@ def get_grey_test_samples(request: Request):
         request, request.query_params.get("tenant_id"))
 
     rows = db.list_receipt_rows(tenant_id=effective_tenant)
-    # 分流引擎标签读真实引擎配置（不再硬编码 opencode/mimo 文案）
+    # 分流引擎标签读真实引擎配置
     _cfg = db.get_engine_config()
 
     def _leg_label(engine, model, fallback_model):
@@ -3334,7 +3294,10 @@ def import_golden_samples(request: Request, limit: int = 10):
         ok = res.returncode == 0
         return {"status": "success" if ok else "error", "msg": out.strip()[:2000], "limit": limit}
     except Exception as e:
-        return {"status": "error", "msg": str(e), "limit": limit}
+        logging.getLogger("api_admin").error("维护脚本执行失败: %s", e)
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "SCRIPT_FAILED", "limit": limit,
+            "msg": "维护脚本没有跑成功，请看服务日志。"})
 
 
 @router.post("/api/admin/maintenance/deduplicate")
@@ -3343,7 +3306,9 @@ def maintenance_deduplicate(request: Request):
 
     幂等、无损历史流水（迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕）。
     权限：owner / admin 均可触发（店员 403）。
-    前端 inventory 页 “一键清理重复食材” 按钮调用此接口；启动时亦自动执行 demo/app/main.py:42
+    旧路径别名（下个版本删除）：老板级接口不应挂在 /api/admin 下，新路径是
+    POST /api/inventory/sku-duplicates/merge（先 GET /api/inventory/sku-duplicates 看清单）。
+    启动时不再自动合并，只做只读巡检。
     """
     require_role("owner")(request)
     account = getattr(request.state, "account", {})
@@ -3860,7 +3825,9 @@ def analytics_parsing_log_detail(
     try:
         detail = get_parsing_log_detail(s=s, record_id=record_id, job_id=job_id)
         if not detail:
-            return {"status": "error", "detail": "单据或链路未找到"}
+            return JSONResponse(status_code=404, content={
+                "status": "error", "code": "RECORD_NOT_FOUND",
+                "msg": "单据或链路未找到", "detail": "单据或链路未找到"})
         return {"status": "success", "data": detail}
     finally:
         s.close()

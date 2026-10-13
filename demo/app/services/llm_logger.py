@@ -33,7 +33,6 @@ _ctx_image_path: contextvars.ContextVar[str] = contextvars.ContextVar("llm_ctx_i
 # 脱敏正则预编译
 _RE_SK_KEY = re.compile(r"sk-[a-zA-Z0-9_\-]{16,}")
 _RE_BEARER = re.compile(r"Bearer\s+[a-zA-Z0-9_\-\.]{20,}", re.IGNORECASE)
-_RE_ID_CARD = re.compile(r"\b([1-9]\d{5})\d{8}(\d{3}[\dXx])\b")
 _RE_SENSITIVE_PRICE = re.compile(
     r"(敏感(?:毛利|加价率|价格|成本|商业数据)|毛利率|加价率|成本底价)[\s:：=]+([\$¥￥]?\s*\d+(?:\.\d+)?%?)",
     re.IGNORECASE,
@@ -116,6 +115,17 @@ def get_llm_context() -> Dict[str, Any]:
     }
 
 
+_PII_MASKER = None
+
+
+def _get_pii_masker():
+    global _PII_MASKER
+    if _PII_MASKER is None:
+        from ai_registry.registry import ai_registry
+        _PII_MASKER = ai_registry.get_tool("pii_masker")
+    return _PII_MASKER
+
+
 def sanitize_text(text: Any) -> str:
     """脱敏字符串（API Key、身份证等），超长截断保护。"""
     if not isinstance(text, str):
@@ -127,8 +137,8 @@ def sanitize_text(text: Any) -> str:
     s = _RE_SK_KEY.sub("sk-***", text)
     s = _RE_BEARER.sub("Bearer ***", s)
 
-    # 2. 身份证号脱敏 (前6后4，中间8位掩码)
-    s = _RE_ID_CARD.sub(r"\g<1>********\g<2>", s)
+    # 2. 个人信息脱敏：内地/香港身份证号、手机号、银行卡号，统一复用 registry 的 PIIMaskerTool
+    s = _get_pii_masker().execute(s)
 
     # 3. 商业敏感价格与毛利脱敏
     s = _RE_SENSITIVE_PRICE.sub(r"\g<1>: $***", s)

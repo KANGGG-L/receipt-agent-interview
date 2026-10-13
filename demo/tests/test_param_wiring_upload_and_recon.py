@@ -115,35 +115,39 @@ def test_upload_single_and_batch_share_same_grp_resolution(batch_env):
 # ------------------------------------------------------------------
 @pytest.fixture
 def recon_env(monkeypatch):
-    monkeypatch.setattr(api_finance, "RECON_TASKS", {
-        "t1": {"id": "t1", "supplier_id": 11, "period_start": "2026-08-01",
-               "period_end": "2026-08-31", "period_type": "month",
-               "status": "reconciling",
-               "lines": [{"match_status": "matched"}, {"match_status": "pending"}]},
-        "t2": {"id": "t2", "supplier_id": 22, "period_start": "2026-08-01",
-               "period_end": "2026-08-31", "period_type": "month",
-               "status": "reconciling", "lines": []},
-    })
+    from app import recon_store
+    ids = {}
+    for key, sid, lines in (("t1", 11, [{"id": 1, "side": "restaurant", "amount": 1.0, "match_status": "matched"},
+                                        {"id": 2, "side": "restaurant", "amount": 1.0, "match_status": "pending"}]),
+                            ("t2", 22, [])):
+        ids[key] = recon_store.create_task("default", sid, "month", "2026-08-01", "2026-08-31", lines)
+    monkeypatch.setattr(
+        api_finance.db, "list_suppliers",
+        lambda include_inactive=False, tenant_id=None: [
+            SimpleNamespace(id=11, name="供应商11"), SimpleNamespace(id=22, name="供应商22")])
     monkeypatch.setattr(
         api_finance.db, "get_supplier",
         lambda sid, tenant_id=None: SimpleNamespace(id=sid, name=f"供应商{sid}"))
+    return ids
 
 
 def test_reconciliation_filters_by_supplier(recon_env):
     client = _make_client(api_finance.router)
+    t1, t2 = recon_env["t1"], recon_env["t2"]
 
     all_rows = client.get("/api/reconciliation", headers=OWNER_HEADERS).json()["data"]
-    assert [r["id"] for r in all_rows] == ["t1", "t2"]
+    assert {t1, t2} <= {r["id"] for r in all_rows}
 
     one = client.get("/api/reconciliation?supplier_id=11",
                      headers=OWNER_HEADERS).json()["data"]
-    assert [r["id"] for r in one] == ["t1"], "选中供应商后必须只返回该供应商的任务"
+    assert [r["id"] for r in one] == [t1], "选中供应商后必须只返回该供应商的任务"
     assert one[0]["supplier_name"] == "供应商11"
-    assert one[0]["summary"] == {"total_lines": 2, "matched": 1, "open_issues": 1}
+    assert {k: one[0]["summary"][k] for k in ("total_lines", "matched", "open_issues")} == \
+        {"total_lines": 2, "matched": 1, "open_issues": 1}
 
     other = client.get("/api/reconciliation?supplier_id=22",
                        headers=OWNER_HEADERS).json()["data"]
-    assert [r["id"] for r in other] == ["t2"]
+    assert [r["id"] for r in other] == [t2]
 
     none = client.get("/api/reconciliation?supplier_id=99",
                       headers=OWNER_HEADERS).json()["data"]

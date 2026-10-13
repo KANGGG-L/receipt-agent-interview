@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app import db
-from app.auth import require_role, resolve_tenant
+from app.auth import ROLE_RANK, require_role, resolve_tenant
+from app.i18n_text import master_key, prefer_stored_label
 from app.services.costing_service import CostingService
 
 logger = logging.getLogger("api_inventory")
@@ -41,7 +42,7 @@ def _tenant_id(request: Request) -> str:
 from app.services import unit_factors
 
 
-def _standard_kg(current_stock, base_unit):
+def _standard_kg(current_stock, base_unit, tenant_id=None):
     """严格仅对重量单位折算 kg；计件 / 体积 / 空单位返回 None（绝不假装折算）。
 
     折算系数取自 unit_factors（与成本层同源）。「斤」按本表唯一定义 0.5 kg 折算；
@@ -50,7 +51,7 @@ def _standard_kg(current_stock, base_unit):
     u = (base_unit or "").strip()
     if not u:
         return None
-    factor = unit_factors.unit_to_kg_factor(u)
+    factor = unit_factors.unit_to_kg_factor(u, tenant_id)
     if factor is None:
         return None
     return round(float(current_stock or 0) * factor, 4)
@@ -101,12 +102,21 @@ def _serialize_active_batches(session, sku_id):
 @router.get("/api/inventory")
 def inventory_list(request: Request, q: str = "", category: str = "",
                    stock: str = "all", price: str = "all",
-                   include_inactive: int = 0):
+                   include_inactive: int = 0,
+                   category_id: Optional[int] = None):
     # 只读列表对店员开放（收据页 SKU/单位数据源需要）；入库/调整等写操作仍按各自权限
     require_role("staff")(request)
     tenant_id = _tenant_id(request)
     skus = db.list_skus(include_inactive=bool(include_inactive),
                         tenant_id=tenant_id)
+    schema_ready = db.category_schema_ready()
+    id_map = db.read_category_id_map("skus", [s.id for s in skus]) if schema_ready else {}
+    resolved_category = None
+    category_unresolved = False
+    if schema_ready and category:
+        resolved_category = db.resolve_category_filter("sku", tenant_id, category)
+        if resolved_category is None:
+            category_unresolved = True
     # WS5：本租户价格异动处置映射（{sku_id: {...}}），按行回带 ack_action 供前端
     # 渲染「已忽略 / 已采纳」，并在 meta 里给出整表映射供看板雷达同源判定。
     ack_map = db.list_price_anomaly_acks(tenant_id=tenant_id)
@@ -117,9 +127,20 @@ def inventory_list(request: Request, q: str = "", category: str = "",
         if q:
             q_clean = q.strip().lower()
             name_clean = (s.name or "").lower()
-            if q_clean not in name_clean and name_clean not in q_clean and not any(ch in name_clean for ch in q_clean if len(ch.strip()) > 0):
+            folded_q = master_key(q)
+            folded_hit = bool(folded_q) and (
+                folded_q in master_key(s.name or "") or folded_q in master_key(s.category or ""))
+            char_hit = q_clean in name_clean or name_clean in q_clean or any(
+                ch in name_clean for ch in q_clean if len(ch.strip()) > 0)
+            if not folded_hit and not char_hit:
                 continue
-        if category and category != s.category:
+        bound_category = id_map.get(s.id) if schema_ready else None
+        if schema_ready and category:
+            if category_unresolved or bound_category != resolved_category:
+                continue
+        elif category and master_key(category) != master_key(s.category or ""):
+            continue
+        if schema_ready and category_id is not None and bound_category != int(category_id):
             continue
         is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
         if stock == "low" and not is_low:
@@ -132,10 +153,11 @@ def inventory_list(request: Request, q: str = "", category: str = "",
             low_count += 1
         if price_anomaly:
             anomaly_count += 1
-        kg_val = _standard_kg(s.current_stock, s.base_unit)
+        kg_val = _standard_kg(s.current_stock, s.base_unit, tenant_id=tenant_id)
         ack = ack_map.get(int(s.id)) or {}
         out.append({
             "id": s.id, "name": s.name, "category": s.category or "",
+            "category_id": bound_category if schema_ready else None,
             "base_unit": s.base_unit or "", "current_stock": s.current_stock,
             "standard_kg": kg_val,
             "min_stock_alert": s.min_stock_alert, "last_unit_price": s.last_unit_price,
@@ -168,8 +190,21 @@ def _is_anomaly(sku, tenant_id=None):
 class SkuCreateBody(BaseModel):
     name: str
     category: str = ""
+    category_id: Optional[int] = None
     base_unit: str = ""
     min_stock_alert: float = 0.0
+
+
+def _category_error(err):
+    messages = {
+        "CATEGORY_NOT_FOUND": "分类不存在",
+        "CATEGORY_MISMATCH": "代码和分类名称不是同一条",
+    }
+    msg = messages.get(err)
+    if msg is None:
+        return None
+    return JSONResponse(status_code=400, content={
+        "status": "error", "code": err, "msg": msg})
 
 
 @router.post("/api/inventory/skus")
@@ -178,25 +213,45 @@ def create_sku(body: SkuCreateBody, request: Request):
     tenant_id = _tenant_id(request)
     # B-P0-1: 创建前强制归一，阻止 _\d{10} 流水号污染 SKU 库导致库存爆炸
     canonical = _canonical_name(body.name)
+    existing_cats = [
+        (row.category or "").strip()
+        for row in db.list_skus(include_inactive=True, tenant_id=tenant_id)
+        if (row.category or "").strip()
+    ]
     # 若归一后与存量 canonical 重名，视为冲突（幂等去重）
     existing = db.find_sku_by_name(canonical, tenant_id=tenant_id)
     if existing:
         # 若原始名与归一后不同，说明是流水号变体，直接返回已存在的主 SKU
         if canonical != body.name.strip():
             return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在（归一后冲突）", "canonical_name": canonical, "existing_id": existing.id}
-    sku_id, err = db.create_sku(canonical, body.category, body.base_unit,
-                                body.min_stock_alert, tenant_id=tenant_id)
+    if db.category_schema_ready():
+        sku_id, err = db.create_sku(
+            canonical, body.category, body.base_unit, body.min_stock_alert,
+            tenant_id=tenant_id,
+            category_id=body.category_id,
+            category_set=("category" in body.model_fields_set),
+            category_id_set=("category_id" in body.model_fields_set
+                             and body.category_id is not None),
+        )
+    else:
+        category = prefer_stored_label(body.category, existing_cats)
+        sku_id, err = db.create_sku(canonical, category, body.base_unit,
+                                    body.min_stock_alert, tenant_id=tenant_id)
+    category_resp = _category_error(err)
+    if category_resp is not None:
+        return category_resp
     if err:
         return {"status": "error", "code": err, "message": "同名 SKU 已存在"}
     return {"status": "success", "id": sku_id, "canonical_name": canonical}
 
 
 class SkuPatchBody(BaseModel):
-    name: str = None
-    category: str = None
-    base_unit: str = None
-    min_stock_alert: float = None
-    active: int = None
+    name: Optional[str] = None
+    category: Optional[str] = None
+    category_id: Optional[int] = None
+    base_unit: Optional[str] = None
+    min_stock_alert: Optional[float] = None
+    active: Optional[int] = None
 
 
 @router.patch("/api/inventory/skus/{sku_id}")
@@ -204,12 +259,30 @@ def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
     require_role("owner")(request)
     if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
         return {"status": "error", "msg": "SKU 不存在"}
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    sent = body.model_fields_set
+    fields = {}
+    for key in sent:
+        if key == "category_id":
+            continue
+        value = getattr(body, key)
+        if value is None:
+            continue
+        fields[key] = value
     if "name" in fields and fields["name"]:
         # B-P0-1: 重命名时同样归一，防止通过改名注入流水号
         fields["name"] = _canonical_name(fields["name"])
     # P2-1: 重命名重名检查按租户 scope（上方已校验 SKU 归属本租户，口径一致）
-    row, err = db.update_sku(sku_id, tenant_id=_tenant_id(request), **fields)
+    if db.category_schema_ready():
+        row, err = db.update_sku(
+            sku_id, tenant_id=_tenant_id(request),
+            category_id=body.category_id,
+            category_id_set=("category_id" in sent and body.category_id is not None),
+            **fields)
+    else:
+        row, err = db.update_sku(sku_id, tenant_id=_tenant_id(request), **fields)
+    category_resp = _category_error(err)
+    if category_resp is not None:
+        return category_resp
     if err == "SKU_NAME_CONFLICT":
         return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在"}
     if err == "UNIT_CHANGE_BLOCKED":
@@ -249,7 +322,8 @@ def get_inventory_sku(sku_id: int, request: Request):
     - `vs_avg_pct` / `avg_30d` / `is_anomaly` 复用 `_compute_vs_avg_and_anomaly`；
       `latest_price` 取价格历史中最新一笔有效单价（>0），无历史则 0.0。
     """
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     tenant_id = _tenant_id(request)
     sku = db.get_sku(sku_id, tenant_id=tenant_id)
     if sku is None:
@@ -262,7 +336,9 @@ def get_inventory_sku(sku_id: int, request: Request):
         sku.id, tenant_id=tenant_id)
     rows = db.price_history(sku.id, tenant_id=tenant_id)
     prices = [r.unit_price for r in rows if r.unit_price and r.unit_price > 0]
-    latest_price = round(prices[-1], 2) if prices else 0.0
+    latest_price = round(prices[-1], 2) if prices else None
+    if not prices or not avg_30d:
+        vs_avg_pct, avg_30d, is_anomaly = None, None, False
 
     session = db.get_session()
     try:
@@ -274,18 +350,26 @@ def get_inventory_sku(sku_id: int, request: Request):
         session.close()
 
     is_low = sku.min_stock_alert > 0 and sku.current_stock <= sku.min_stock_alert
+    last_unit_price = sku.last_unit_price
+    if not can_see_prices:
+        # 进价、均价、批次成本只给老板看；店员只看库存数量
+        last_unit_price, avg_cost, vs_avg_pct, avg_30d, latest_price = None, None, None, None, None
+        is_anomaly = False
+        batches = [dict(b, unit_cost=None) for b in batches]
     return {
         "status": "success",
         "data": {
+            "prices_visible": can_see_prices,
             "id": sku.id,
             "name": sku.name,
             "sku_code": sku.sku_code or "",
             "category": sku.category or "",
+            "category_id": db.read_category_id_for_row("skus", sku.id),
             "base_unit": sku.base_unit or "",
             "current_stock": sku.current_stock,
-            "standard_kg": _standard_kg(sku.current_stock, sku.base_unit),
+            "standard_kg": _standard_kg(sku.current_stock, sku.base_unit, tenant_id=tenant_id),
             "min_stock_alert": sku.min_stock_alert,
-            "last_unit_price": sku.last_unit_price,
+            "last_unit_price": last_unit_price,
             "active": sku.active,
             "is_low_stock": is_low,
             "avg_cost": avg_cost,
@@ -442,18 +526,31 @@ def stocktake(sku_id: int, body: StocktakeBody, request: Request):
 class ConsumeBody(BaseModel):
     quantity: float
     notes: str = ""
+    # 库存不够时，老板明确确认后才允许扣成负数，必须写原因
+    allow_negative: bool = False
+    override_reason: str = ""
 
 
-@router.post("/api/inventory/{sku_id}/consume")
-def consume(sku_id: int, body: ConsumeBody, request: Request):
-    require_role("owner")(request)
-    if body.quantity <= 0:
+def _fmt_qty(x):
+    return ("%.4f" % float(x)).rstrip("0").rstrip(".") or "0"
+
+
+def _deduct_stock(sku_id, body, request, kind):
+    """消耗/报损共用：校验库存、FIFO 扣减、写流水。
+
+    库存不够时返回 409 和人话提示；老板在界面上确认（allow_negative + 原因）后才允许扣成负数，
+    原因写进流水备注和系统审计。
+    """
+    label = "消耗" if kind == "consume" else "报损"
+    done = "已消耗" if kind == "consume" else "已损耗"
+    if body.quantity is None or not (body.quantity > 0) or body.quantity != body.quantity \
+            or body.quantity == float("inf"):
         return JSONResponse(
             status_code=400,
             content={
                 "status": "error",
                 "code": "INVALID_CONSUMPTION_QUANTITY",
-                "msg": "消耗数量必须大于 0，不可输入负数或零",
+                "msg": "%s数量必须大于 0，不可输入负数或零" % label,
             }
         )
     tenant_id = _tenant_id(request)
@@ -462,6 +559,25 @@ def consume(sku_id: int, body: ConsumeBody, request: Request):
         sku = session.get(db._SkuRow, int(sku_id))
         if not sku or not db._tenant_ok(sku, tenant_id):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "SKU 不存在"})
+
+        stock = float(sku.current_stock or 0.0)
+        unit = sku.base_unit or ""
+        overdraw = body.quantity > stock + 1e-6
+        reason = (body.override_reason or "").strip()
+        if overdraw:
+            if not (body.allow_negative and reason):
+                need_reason = body.allow_negative and not reason
+                msg = "库存只有 %s %s，不够扣 %s %s。" % (
+                    _fmt_qty(max(stock, 0.0)), unit, _fmt_qty(body.quantity), unit)
+                if need_reason:
+                    msg += "要继续扣的话，请写明原因。"
+                else:
+                    msg += "请先核对数量；如果确实要扣，请确认后写明原因。"
+                return JSONResponse(status_code=409, content={
+                    "status": "error", "code": "INSUFFICIENT_STOCK", "msg": msg,
+                    "data": {"current_stock": stock, "requested": body.quantity,
+                             "unit": unit, "can_override": True,
+                             "reason_required": True}})
 
         now_date = db.now_iso()[:10]
         cost, details = CostingService.deduct_consumption_fifo(
@@ -472,6 +588,9 @@ def consume(sku_id: int, body: ConsumeBody, request: Request):
             date=now_date,
         )
         sku.current_stock = round(sku.current_stock - body.quantity, 4)
+        note = body.notes or ("手动消耗" if kind == "consume" else "损耗")
+        if overdraw:
+            note = "%s（库存不足仍扣减，原因：%s）" % (note, reason)
         stock_log = db._StockLogRow(
             sku_id=sku.id,
             name=sku.name,
@@ -481,16 +600,26 @@ def consume(sku_id: int, body: ConsumeBody, request: Request):
             vendor="",
             date=now_date,
             receipt_id=None,
-            kind="consume",
-            note=body.notes or "手动消耗",
+            kind=kind,
+            note=note,
             created_at=db.now_iso(),
             tenant_id=tenant_id,
         )
         session.add(stock_log)
         session.commit()
+        if overdraw:
+            try:
+                account = getattr(request.state, "account", {})
+                who = account.get("email", "owner") if isinstance(account, dict) else "owner"
+                db.append_system_audit_log(
+                    who, "stock_overdraw_confirmed", "skus:%d" % sku.id,
+                    {"stock_before": stock}, {"quantity": body.quantity, "kind": kind,
+                                              "reason": reason})
+            except Exception:
+                pass
         return {
             "status": "success",
-            "msg": "已消耗",
+            "msg": done,
             "cost": round(cost, 2),
             "current_stock": sku.current_stock,
             "data": {"current_stock": sku.current_stock, "cost": round(cost, 2)},
@@ -499,57 +628,39 @@ def consume(sku_id: int, body: ConsumeBody, request: Request):
         session.close()
 
 
+@router.post("/api/inventory/{sku_id}/consume")
+def consume(sku_id: int, body: ConsumeBody, request: Request):
+    require_role("owner")(request)
+    return _deduct_stock(sku_id, body, request, "consume")
+
+
 @router.post("/api/inventory/{sku_id}/waste")
 def waste(sku_id: int, body: ConsumeBody, request: Request):
     require_role("owner")(request)
-    if body.quantity <= 0:
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "code": "INVALID_CONSUMPTION_QUANTITY",
-                "msg": "报损数量必须大于 0，不可输入负数或零",
-            }
-        )
+    return _deduct_stock(sku_id, body, request, "waste")
+
+
+@router.get("/api/inventory/negative_stock")
+def negative_stock_report(request: Request):
+    """库存巡检：当前库存为负的商品清单（历史上超量扣减留下的数据），附最近一次流水。"""
+    require_role("owner")(request)
     tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
-        sku = session.get(db._SkuRow, int(sku_id))
-        if not sku or not db._tenant_ok(sku, tenant_id):
-            return JSONResponse(status_code=404, content={"status": "error", "msg": "SKU 不存在"})
-
-        now_date = db.now_iso()[:10]
-        cost, details = CostingService.deduct_consumption_fifo(
-            session=session,
-            sku_id=sku.id,
-            qty_needed=body.quantity,
-            unit_needed=sku.base_unit,
-            date=now_date,
-        )
-        sku.current_stock = round(sku.current_stock - body.quantity, 4)
-        stock_log = db._StockLogRow(
-            sku_id=sku.id,
-            name=sku.name,
-            qty=body.quantity,
-            unit=sku.base_unit,
-            amount=round(cost, 2),
-            vendor="",
-            date=now_date,
-            receipt_id=None,
-            kind="waste",
-            note=body.notes or "损耗",
-            created_at=db.now_iso(),
-            tenant_id=tenant_id,
-        )
-        session.add(stock_log)
-        session.commit()
-        return {
-            "status": "success",
-            "msg": "已损耗",
-            "cost": round(cost, 2),
-            "current_stock": sku.current_stock,
-            "data": {"current_stock": sku.current_stock, "cost": round(cost, 2)},
-        }
+        skus = db.scoped(session.query(db._SkuRow), db._SkuRow, tenant_id).filter(
+            db._SkuRow.current_stock < 0).order_by(db._SkuRow.current_stock).all()
+        out = []
+        for s in skus:
+            last = db.scoped(session.query(db._StockLogRow), db._StockLogRow, tenant_id).filter(
+                db._StockLogRow.sku_id == s.id).order_by(db._StockLogRow.id.desc()).first()
+            out.append({
+                "sku_id": s.id, "name": s.name, "unit": s.base_unit or "",
+                "current_stock": s.current_stock, "active": s.active,
+                "last_movement": ({"kind": last.kind, "qty": last.qty, "date": last.date,
+                                   "note": last.note or ""} if last else None),
+                "advice": "库存是负数，说明扣得比入的多。请盘点后用「盘点」把库存改成实际数量",
+            })
+        return {"status": "success", "data": {"count": len(out), "items": out}}
     finally:
         session.close()
 
@@ -568,20 +679,20 @@ def price_history(sku_id: int, request: Request):
     prices = [d["unit_price"] for d in data if d["unit_price"] > 0]
     vs_avg_pct, is_anomaly, avg_30d = _compute_vs_avg_and_anomaly(
         sku_id, tenant_id=tenant_id)
-    # 兼容空序列：avg_30d 由 helper 已算出；但 vs=0 时不标红
-    if not prices:
-        vs_avg_pct = 0.0
+    # 近 30 天没有进货时，均价和涨幅返回 null，界面显示「近 30 天无进货」，不要显示成 0
+    if not prices or not avg_30d:
+        vs_avg_pct = None
         is_anomaly = False
-        avg_30d = 0.0
+        avg_30d = None
     # WS3：threshold_pct 与 is_anomaly 必须**同源同值** —— 都由本租户生效阈值派生，
     # 删除此前硬编码的 10.0。
     threshold_pct = _threshold_pct(tenant_id)
     summary = {
         "count": len(data),
-        "latest_price": prices[-1] if prices else 0.0,
-        "avg_30d": avg_30d if prices else 0.0,
-        "min_price": min(prices) if prices else 0.0,
-        "max_price": max(prices) if prices else 0.0,
+        "latest_price": prices[-1] if prices else None,
+        "avg_30d": avg_30d,
+        "min_price": min(prices) if prices else None,
+        "max_price": max(prices) if prices else None,
         "vs_avg_pct": vs_avg_pct, "is_anomaly": is_anomaly,
         "threshold_pct": threshold_pct,
     }

@@ -320,6 +320,8 @@ def test_cost_analysis_endpoint():
 
     # 调用成本分析端点
     analysis_resp = client.get("/api/dishes/cost_analysis?days=30", headers=_staff_headers())
+    assert analysis_resp.status_code == 403, "成本与毛利只给老板看"
+    analysis_resp = client.get("/api/dishes/cost_analysis?days=30", headers=_owner_headers())
     assert analysis_resp.status_code == 200
     analysis = analysis_resp.json()["data"]
     assert "summary" in analysis

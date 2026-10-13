@@ -14,6 +14,10 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app import db
+# F4 S4-11: main.js+域文件联合全文（共享助手位于 demo/tests/）
+import sys as _f4sys, os as _f4os
+_f4sys.path.insert(0, _f4os.path.join(_f4os.path.dirname(_f4os.path.abspath(__file__)), "..", "demo", "tests"))
+from f4_frontend_sources import frontend_union, frontend_union_with
 
 
 @pytest.fixture
@@ -35,7 +39,9 @@ def test_ac_1_1_fmt_datetime_js_runtime_edge_cases():
     """
     js_test_script = """
     const fs = require('fs');
-    const mainJs = fs.readFileSync('demo/static/js/main.js', 'utf-8');
+    // F4 S4-11: _fmtDateTime/_fmtDateOnly 已迁至 admin_observation.js，读联合全文
+    const mainJs = ['demo/static/js/main.js', 'demo/static/js/admin_observation.js']
+        .map(f => fs.readFileSync(f, 'utf-8')).join('');
     
     // 提取 _fmtDateTime 与 _fmtDateOnly 函数实现
     const evalEnv = {};
@@ -78,8 +84,7 @@ def test_ac_1_2_pl_meta_created_at_formatting():
     AC 1.2: 详情弹窗顶部元数据条的日期时间为 YYYY-MM-DD HH:mm:ss 或 '-'
     检查前端 main.js 中对 plMetaCreatedAt 的赋值是否调用 _fmtDateTime 并在界面上配置等宽字体。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "document.getElementById('plMetaCreatedAt')" in js
     assert "metaCreatedAt.textContent = _fmtDateTime(item.created_at);" in js, \
@@ -92,8 +97,7 @@ def test_ac_1_3_pl_timeline_body_events_timestamp_formatting():
     """
     AC 1.3: 弹窗 Tab 4 审计流水表格中每个事件的发生时间单元格经 _fmtDateTime(ev.ts) 格式化。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "tlBody" in js
     # 查找发生时间单元格渲染
@@ -105,8 +109,7 @@ def test_ac_1_4_event_dist_and_recent_events_formatting():
     """
     AC 1.4: 埋点事件分布与最近事件流中触发时间格式化为 _fmtDateTime(d.last_ts) / _fmtDateTime(ev.ts)。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "_fmtDateTime(d.last_ts)" in js, "事件分布表未调用 _fmtDateTime(d.last_ts)"
     assert "_fmtDateTime(ev.ts)" in js, "最近事件流未调用 _fmtDateTime(ev.ts)"
@@ -116,8 +119,7 @@ def test_ac_1_5_admin_canary_history_formatting():
     """
     AC 1.5: 历史灰测履历表格变更时间调用 _fmtDateTime(it.ts)。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "_fmtDateTime(it.ts)" in js, "历史灰测履历未调用 _fmtDateTime(it.ts)"
 
@@ -126,8 +128,7 @@ def test_ac_1_6_exp_meta_dossier_formatting():
     """
     AC 1.6: A/B 实验深度档案横幅中起止时间与结题时间调用 _fmtDateTime。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "_fmtDateTime(exp.start_ts)" in js, "实验起止时间未调用 _fmtDateTime(exp.start_ts)"
     assert "_fmtDateTime(exp.end_ts)" in js, "实验截止时间未调用 _fmtDateTime(exp.end_ts)"
@@ -138,8 +139,7 @@ def test_ac_1_7_exp_sample_table_assigned_at_formatting():
     """
     AC 1.7: A/B 实验样本明细流中分配时间调用 _fmtDateTime(s.assigned_at)。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "_fmtDateTime(s.assigned_at)" in js, "实验样本分配时间未调用 _fmtDateTime(s.assigned_at)"
 
@@ -148,15 +148,16 @@ def test_ac_1_8_golden_board_receipt_date_only_formatting():
     """
     AC 1.8: 黄金基准集看板开单日期调用 _fmtDateOnly(it.receipt_date)，严格为 10 位 YYYY-MM-DD。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     
     assert "_fmtDateOnly(it.receipt_date)" in js, "黄金看板开单日期未调用 _fmtDateOnly"
 
     # Node.js 运行时测试 _fmtDateOnly
     js_test_script = """
     const fs = require('fs');
-    const mainJs = fs.readFileSync('demo/static/js/main.js', 'utf-8');
+    // F4 S4-11: _fmtDateTime/_fmtDateOnly 已迁至 admin_observation.js，读联合全文
+    const mainJs = ['demo/static/js/main.js', 'demo/static/js/admin_observation.js']
+        .map(f => fs.readFileSync(f, 'utf-8')).join('');
     const fnStart = mainJs.indexOf('function _fmtDateOnly(val)');
     const fnEnd = mainJs.indexOf('// -------------------------------------------------------------', fnStart);
     eval(mainJs.substring(fnStart, fnEnd));
@@ -191,8 +192,7 @@ def test_ac_2_1_five_timeseries_tables_header_latest_first_annotation():
     """
     with open("demo/templates/index.html", "r", encoding="utf-8") as f:
         html = f.read()
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 1. parsingLogsTable (HTML)
     assert "日期时间 (最新在前)" in html, "#parsingLogsTable 表头缺少 '日期时间 (最新在前)'"
@@ -217,8 +217,7 @@ def test_ac_2_2_pl_timeline_body_header_and_descending_sort():
     """
     with open("demo/templates/index.html", "r", encoding="utf-8") as f:
         html = f.read()
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "发生时间 (最新在前)" in html, "Tab 4 审计流水表格表头缺少 '发生时间 (最新在前)'"
     assert "allEvents.sort((a, b) => String(b.ts || '').localeCompare(String(a.ts || '')))" in js, \
@@ -271,8 +270,7 @@ def test_ac_2_4_event_distribution_sorted_count_desc(client):
         counts = [d["count"] for d in dist]
         assert counts == sorted(counts, reverse=True), f"事件分布接口未按 count 降序: {counts}"
 
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     assert "rows.sort((a, b) => {" in js and "const cntDiff = Number(b.count || 0) - Number(a.count || 0)" in js, \
         "前端事件分布渲染缺少计数倒序排序逻辑"
 
@@ -322,9 +320,12 @@ def test_ac_3_1_zero_em_dash_in_obs_center():
 
     assert "—" not in obs_html, "观测中心 HTML 模板区域残留全角破折号 '—'"
 
-    # 检查 main.js 中观测中心相关函数是否存在渲染出来的 '—'
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    # 检查观测中心相关 JS 是否存在渲染出来的 '—'。
+    # F4 S4-11 前本判据的作用域＝main.js 自「观测中心」锚点至文件尾（观测中心/KPI/
+    # 配方/解析日志）；等价新口径＝admin_observation.js 锚点起 + kpi_trend/dish_bom/
+    # parsing_logs 联合全文。不含 engine_admin.js（原作用域中引擎域在锚点之前）。
+    js = frontend_union_with("static/js/admin_observation.js", "static/js/kpi_trend.js",
+                             "static/js/dish_bom.js", "static/js/parsing_logs.js")
 
     obs_js_start = js.find('// 观测中心数据展示与时间格式统一标准')
     assert obs_js_start != -1
@@ -350,8 +351,7 @@ def test_ac_3_2_grey_metrics_null_placeholders():
     """
     AC 3.2: 灰测样本无可比对数据时，mGreyAvgMatch 与行内采纳率展示为 '(-)' 或 '-'。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "res.avg_match_rate != null ? res.avg_match_rate + '%' : '-'" in js, \
         "mGreyAvgMatch 空值必须回退为 '-'"
@@ -363,8 +363,7 @@ def test_ac_3_3_ab_experiment_side_by_side_table_null_placeholders():
     """
     AC 3.3: A/B 实验组别对比表中 fmtPct、fmtDiff 空值与默认差异项一律为半角 '-'。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "const fmtPct = (val) => (val != null ? (Number(val) * 100).toFixed(2) + '%' : '-');" in js, \
         "fmtPct 空值必须返回 '-'"
@@ -376,8 +375,7 @@ def test_ac_3_4_golden_board_gt_null_placeholder():
     """
     AC 3.4: 黄金基准集看板未确权项在 GT 确权治理列显示为 '-'。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "let gtHtml = '<span style=\"color:var(--text-muted); font-size:0.75rem;\">-</span>';" in js, \
         "黄金看板 GT 确权缺省值必须为 '-'"
@@ -387,8 +385,7 @@ def test_ac_3_5_no_raw_null_undefined_in_table_cells():
     """
     AC 3.5: 确保界面不存在未经清洗的原生 'None', 'null', 'undefined'。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 验证 _fmtDateTime 与 _fmtDateOnly 防御了这些字符串
     assert "s === 'None' || s === 'null' || s === 'undefined'" in js, \
@@ -403,8 +400,7 @@ def test_ac_4_1_money_formatting_and_zero_display():
     """
     AC 4.1: 单据总额带 HK$ 并保留两位小数；0 元优雅显示为 HK$ 0.00。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "const isZero = !it.total_amount || Number(it.total_amount) === 0;" in js, \
         "黄金看板未进行 0 元判断"
@@ -415,8 +411,7 @@ def test_ac_4_2_ratios_and_percentages_formatting():
     """
     AC 4.2: 比率指标统一保留 1 位小数或 2 位小数并以 % 结尾。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 埋点占比
     assert "toFixed(1) + '%'" in js or "(Number(d.share || 0) * 100).toFixed(1) + '%'" in js, \
@@ -427,8 +422,7 @@ def test_ac_4_3_experiment_diff_delta_formatting():
     """
     AC 4.3: A/B 实验组别对比差异值标注符号并保留 2 位小数及 pp 单位 (如 +2.50 pp)。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "sign = diff > 0 ? '+' : ''" in js or "diff > 0 ? '+' : ''" in js
     assert "diff.toFixed(2)} pp" in js or "diff.toFixed(2) + ' pp'" in js or "diff.toFixed(2)} pp" in js, \
@@ -439,8 +433,7 @@ def test_ac_4_4_pvalue_and_zscore_formatting():
     """
     AC 4.4: p-value 格式化为 4 位小数，z 分数格式化为 3 位小数。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "pVal.toFixed(4)" in js or "toFixed(4)" in js, "p-value 必须保留 4 位小数"
     assert "zScore.toFixed(3)" in js or "toFixed(3)" in js, "z-score 必须保留 3 位小数"
@@ -485,8 +478,7 @@ def test_ac_5_1_zero_emoji_static_scan_obs_center():
         violations.append(("demo/templates/index.html (obs center)", 0, m, "Emoji in obs center"))
 
     # 扫描 main.js 观测中心区块 (L12800+)
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     lines_js = js.split("\n")
     for l_no, line in enumerate(lines_js, 1):
         if l_no >= 12800:
@@ -501,8 +493,7 @@ def test_ac_5_2_bracket_text_badges_standard():
     """
     AC 5.2: 状态展示一律使用纯文本方括号标准徽章：[成功], [失败], [完全采纳], [人工纠偏], [门禁拦截], [平算无门禁] 等。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     expected_badges = [
         "[成功]",
@@ -523,8 +514,7 @@ def test_ac_5_3_data_masking_applied():
     """
     AC 5.3: 脱敏规则完备生效，供应商名称别名化，总额掩码。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "s.masked_vendor" in js, "未引用 masked_vendor 进行脱敏呈现"
     assert "s.masked_total" in js, "未引用 masked_total 进行金额掩码"

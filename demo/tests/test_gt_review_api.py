@@ -21,6 +21,7 @@
 """
 
 import csv
+import html as html_lib
 import json
 import os
 import sys
@@ -263,14 +264,15 @@ def test_confirm_requires_admin(evalset_env, client):
     resp = client.post("/api/evalset/sample/%s/confirm" % sid, json={"gt": _CANDIDATE_GT})
     assert resp.status_code == 401, "匿名应判未认证 401，实际 %s" % resp.status_code
     detail = resp.json()["detail"]
-    assert "未认证" in detail and "X-Role" in detail, detail
+    assert "请先登录" in detail and "X-Role" not in detail and "Bearer" not in detail, detail
+    assert resp.json()["code"] == "UNAUTHENTICATED"
 
 
 def test_stats_requires_admin(evalset_env, client):
     assert client.get("/api/evalset/stats", headers={"X-Role": "owner"}).status_code == 403
     anonymous = client.get("/api/evalset/stats")
     assert anonymous.status_code == 401, "匿名应判未认证 401"
-    assert "未认证" in anonymous.json()["detail"]
+    assert "请先登录" in anonymous.json()["detail"]
 
 
 def test_sample_detail_requires_admin(evalset_env, client):
@@ -520,9 +522,14 @@ def test_explicit_paging_buttons_use_wrapper_functions():
     with open(os.path.join(demo_dir, "static", "js", "evalset.js"), encoding="utf-8") as f:
         js = f.read()
 
-    assert 'onclick="nextSample()"' in html, "下一张按钮必须调用 nextSample 包装函数"
-    assert 'onclick="prevSample()"' in html, "上一张按钮必须调用 prevSample 包装函数"
-    assert 'gotoSample(pos' not in html, "inline onclick 引用局部 pos 会 ReferenceError，禁止"
+    # F3 起 data-csp 计划 JSON 以 HTML 实体转义形态存于属性值（&quot;），
+    # 判据改为「反转义后计划里仍必须以包装函数为调用目标」——守卫意图不变：
+    # 翻页必须走 IIFE 内包装函数，而非绑定局部 pos。
+    decoded = html_lib.unescape(html)
+    assert '"f":"nextSample"' in decoded, "下一张按钮必须调用 nextSample 包装函数"
+    assert '"f":"prevSample"' in decoded, "上一张按钮必须调用 prevSample 包装函数"
+    assert "gotoSample(pos" not in decoded, "绑定引用局部 pos 会 ReferenceError，禁止"
+    assert "onclick=" not in decoded, "队列页不得残留内联事件属性"
     assert "window.nextSample = nextSample" in js and "window.prevSample = prevSample" in js
     # 快捷键逻辑保留（仅 J/K 导航；A 键确认已随队列表单移除，确认只在工作台发生）
     assert "e.key === 'j'" in js and "e.key === 'k'" in js
@@ -743,7 +750,7 @@ def test_workbench_route_reuses_review_dom(evalset_env, client):
     assert resp.status_code == 200
     html = resp.text
     # 注入了 eval 标志位与适配器
-    assert "__EVAL_WORKBENCH__" in html and "S005" in html
+    assert 'name="eval-workbench"' in html and "&quot;S005&quot;" in html
     assert "eval_workbench.js" in html
     # 与真实收据识别 Tab 同源的关键复核容器 id（同一套 DOM，禁止平行表单）
     for dom_id in ("splitViewArea", "prefillFormCard", "previewImg", "inpSupplier",
@@ -777,5 +784,7 @@ def test_workbench_embedding_does_not_duplicate_app_shell():
     assert "'.app-wrapper > .sidebar'" in adapter, "工作台须隐藏复用来的侧边栏"
     assert "'.breadcrumb-bar'" in adapter, "工作台须隐藏复用来的顶部面包屑"
 
-    main_js = _read_demo_file("static/js/main.js")
+    # F4 S4-11 起观测台 Modal 动态组装随域迁至 admin_observation.js；判据＝联合全文。
+    main_js = (_read_demo_file("static/js/main.js")
+               + _read_demo_file("static/js/admin_observation.js"))
     assert "mModalWorkbenchLink" in main_js, "Modal 打开时须动态组装单据工作台链接"

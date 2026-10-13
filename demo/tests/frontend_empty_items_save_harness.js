@@ -216,6 +216,11 @@ sandbox.document = {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { sandboxWarns.push('load note: ' + e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => sandboxWarns.push(m) });
 
 function inject(code) { return vm.runInContext(code, sandbox); }
 

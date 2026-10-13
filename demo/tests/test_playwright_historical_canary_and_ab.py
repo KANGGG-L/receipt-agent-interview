@@ -5,7 +5,13 @@ import os
 import pytest
 from playwright.sync_api import sync_playwright
 
-BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010"))
+def _live_base_url():
+    """夹具自举之后的地址。15010 被常驻服务占用时不会打到那台服务。"""
+    import _playwright_server as _pw
+    explicit = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
+    return explicit or _pw.current_base_url()
+
+
 SCREENSHOT_DIR = os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or os.path.abspath(os.path.join(os.path.dirname(__file__), "../gui-test-screenshots"))
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
@@ -18,7 +24,7 @@ def test_playwright_historical_canary_and_ab_observatory():
         page = context.new_page()
 
         # 1. 打开首页
-        page.goto(BASE_URL, wait_until="domcontentloaded")
+        page.goto(_live_base_url(), wait_until="domcontentloaded")
         page.wait_for_selector("#demoRoleSelect", timeout=10000)
 
         # 2. 切换至 admin 角色

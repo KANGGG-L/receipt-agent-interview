@@ -1,0 +1,164 @@
+/* Wave 1 付款提醒（02 章）：导航红点 + 顶部横幅；逾期/快到期行着色 */
+        .sidebar-btn { position: relative; }
+        .nav-red-dot {
+            position: absolute; top: 3px; right: 8px;
+            min-width: 16px; height: 16px; padding: 0 4px; box-sizing: border-box;
+            border-radius: 9px; background: var(--danger); color: #fff;
+            font-size: 0.62rem; font-weight: 700; line-height: 16px; text-align: center;
+            box-shadow: 0 0 0 2px var(--bg-sidebar);
+        }
+        .model-trait-hint-box {
+            padding: 6px 10px;
+            background: #f1f5f9;
+            border-left: 3px solid #0284c7;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            color: #334155;
+            line-height: 1.4;
+        }
+        .model-trait-hint {
+            font-size: 0.73rem;
+            color: #64748b;
+            margin-top: 4px;
+            line-height: 1.35;
+        }
+        .pay-reminder-banner {
+            margin: 10px 18px 0; padding: 10px 14px; cursor: pointer;
+            border: 1px solid var(--warning-bg); border-radius: 10px;
+            background: var(--warning-bg);
+            color: var(--warning); font-size: 0.88rem; font-weight: 500;
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        }
+        .pay-reminder-banner:hover { border-color: var(--warning); }
+        tr.payable-row-overdue td { background: var(--danger-bg); }
+        tr.payable-row-due-soon td { background: var(--warning-bg); }
+        /* demo：无密码 RBAC 角色切换 */
+        .demo-role-switch {
+            margin: 10px 16px 4px; padding: 8px 10px;
+            background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+        }
+        .demo-role-switch label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+        .demo-role-switch select {
+            width: 100%; padding: 5px 8px; border-radius: 6px;
+            background: var(--bg-input, #1e2936); color: #fff;
+            border: 1px solid rgba(255,255,255,0.2); font-size: 0.82rem;
+        }
+        /* FR-8 反馈飞轮：点赞/点踩 + textarea 反馈窗 */
+        .feedback-cell { display:flex; flex-direction:column; gap:6px; min-width:160px; }
+        .feedback-actions { display:flex; gap:6px; }
+        .btn-like, .btn-dislike {
+            flex:1; padding:4px 8px; font-size:0.78rem; border-radius:6px; cursor:pointer;
+            border:1px solid var(--border-color, #e2e8f0); background:#fff; color:var(--text-main);
+        }
+        .btn-like.active { background:#e8f5e9; border-color:#4caf50; color:#2e7d32; font-weight:600; }
+        .btn-dislike.active { background:#fce4ec; border-color:#ef5350; color:#c62828; font-weight:600; }
+        .feedback-comment {
+            width:100%; min-height:48px; padding:6px 8px; font-size:0.80rem;
+            border:1px solid var(--border-color, #e2e8f0); border-radius:6px;
+            resize:vertical; box-sizing:border-box;
+        }
+        .feedback-submit { padding:3px 8px; font-size:0.75rem; align-self:flex-end; }
+        /* 统一筛选控件规格类 (SPEC-ANALYTICS-PARSING-LOG-001) */
+        .parsing-log-filter-control {
+            height: 34px !important;
+            line-height: 20px !important;
+            font-size: 13px !important; /* 0.82rem */
+            padding: 6px 10px !important;
+            border-radius: 6px !important;
+            border: 1px solid var(--border-color, #cbd5e1) !important;
+            background-color: var(--bg-card, #ffffff) !important;
+            color: var(--text-primary, #1e293b) !important;
+            box-sizing: border-box !important;
+            vertical-align: middle !important;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
+        }
+        .parsing-log-filter-control:focus {
+            border-color: #2563eb !important;
+            outline: none !important;
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15) !important;
+        }
+        .parsing-log-filter-label {
+            font-size: 13px !important;
+            font-weight: 500 !important;
+            color: var(--text-muted, #64748b) !important;
+            white-space: nowrap !important;
+            margin-right: 6px !important;
+        }
+        .parsing-log-filter-btn {
+            height: 34px !important;
+            padding: 0 14px !important;
+            font-size: 13px !important;
+            font-weight: 600 !important;
+            border-radius: 6px !important;
+            box-sizing: border-box !important;
+            display: inline-flex !important;
+            align-items: center !important;
+        }
+        /* 时间跨度单行不换行布局规范 */
+        #filterTimeRange {
+            align-items: center;
+            gap: 8px;
+            flex-wrap: nowrap;
+            white-space: nowrap;
+        }
+        #filterTimeRange .btn-group {
+            display: inline-flex;
+            align-items: center;
+            height: 28px;
+            flex-shrink: 0;
+        }
+        #filterTimeRange .btn {
+            height: 28px !important;
+            min-height: 28px !important;
+            line-height: 24px !important;
+            padding: 2px 10px !important;
+            font-size: 0.78rem !important;
+            box-sizing: border-box !important;
+        }
+        /* 观测中心 8 大核心 KPI 卡片可交互态与下钻规范 (PRD-TELEMETRY-KPI-TREND-001) */
+        .kpi-trend-card {
+            cursor: pointer !important;
+            transition: all 0.2s ease-in-out !important;
+            position: relative !important;
+            outline: none !important;
+        }
+        .kpi-trend-card:hover {
+            transform: translateY(-2px) !important;
+            border-color: #2563eb !important;
+            box-shadow: 0 4px 14px rgba(37, 99, 235, 0.14) !important;
+        }
+        .kpi-trend-card:focus-visible {
+            outline: 2px solid #2563eb !important;
+            outline-offset: 2px !important;
+        }
+        /* 观测中心 KPI 下钻切片表格规范 */
+        .kpi-trend-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.8rem;
+        }
+        .kpi-trend-table th {
+            padding: 9px 12px;
+            font-weight: 600;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            color: var(--text-muted, #64748b);
+            white-space: nowrap;
+        }
+        .kpi-trend-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #f1f5f9;
+            vertical-align: middle;
+        }
+        .kpi-trend-table tbody tr.kpi-trend-row {
+            transition: background-color 0.15s ease;
+        }
+        .kpi-trend-table tbody tr.kpi-trend-row:hover {
+            background-color: #f8fafc;
+        }
+
+/* CSP 加固（F4）：i18n 繁体转换前的防简体闪现规则原由 i18n.js 运行时注入 <style>，
+   强制 CSP（style-src self）会拦截，故外置到两份 head 样式表；i18n.js 的注入保留为
+   非 CSP 环境的回退。 */
+html.i18n-pending body{visibility:hidden}

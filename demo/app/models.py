@@ -81,6 +81,7 @@ class ReceiptData(BaseModel):
     # 若不在契约内声明则触发 extra="forbid" 整单打回；可选、缺失合法。
     contains_huama: bool = Field(default=False, description="整单是否检测到街市花码（苏州码子）")
     math_warnings: list[str] = Field(default_factory=list, description="门禁数学/花码等复核警告（只增不改，供人工复核提示）")
+    field_warnings: list[str] = Field(default_factory=list, description="字段存疑提示（日期没读清、数量为负等）：明细照常保留，交人工核对")
 
 
 # -------------------------------------------------------------
@@ -174,10 +175,8 @@ class GreyAssignMode(str, Enum):
 class EngineKind(str, Enum):
     """引擎通道类型（现存只有一种：OpenAI 兼容通道）。
 
-    历史注记：本枚举原有 CODEBUDDY / OPENCODE 两个成员（本机 CLI 引擎），
-    已于 2026-09-02 随 CLI 引擎弃用一并删除。存量 DB 与回滚快照里可能仍存有
-    "opencode" / "codebuddy" 字符串，由 db._normalize_legacy_cli_leg 在构造
-    EngineConfig 之前改写为 openai，故删成员不会让旧配置加载失败。
+    本枚举原有的两个本机 CLI 引擎成员已删除；存量库里的遗留值由 db 迁移 v5
+    一次性改写为 openai，运行期代码不再保留兼容分支。
     """
     OPENAI = "openai"            # 自定义 OpenAI 兼容（base_url + api_key + model）
 
@@ -194,46 +193,8 @@ load_dotenv()
 DASHSCOPE_DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 DASHSCOPE_DEFAULT_REC_MODEL = "qwen3.5-omni-flash"
 
-# 已弃用 CLI 引擎（opencode / codebuddy）的模型名特征。用户决策（2026-09-02）：
-# opencode 已过期，不再作为默认或可选项；其模型名若留在配置里，会把请求打进错误的
-# provider —— 实测 `AUDIT_MODEL=opencode/mimo-v2.5-free` 时审核腿的 base 是
-# api.siliconflow.cn，却带着 opencode 的模型名，必然失败。
-# 单一事实源：db._normalize_legacy_cli_engines、db 的读写双闸门、本文件的
-# default_factory 全部引用这里，避免同一判定被抄 9 份、只改一份（修 A 漏 B）。
-LEGACY_CLI_MODEL_PREFIXES = ("opencode", "codebuddy")
-LEGACY_CLI_MODEL_NAMES = ("minimax-m3-pay",)
-# 已弃用 CLI 引擎的**引擎字段取值**（与模型名判定区分：一个是 engine 值，一个是 model 名）。
-LEGACY_CLI_ENGINE_VALUES = ("opencode", "codebuddy")
-
-
-def is_legacy_cli_engine(value) -> bool:
-    """引擎字段的取值是否属于已弃用 CLI 引擎（"opencode" / "codebuddy"）。
-
-    EngineKind 已删除这两个成员，但存量 DB、推全回滚快照、管理台旧 payload 里仍可能有，
-    任何构造 EngineConfig 的路径都必须先把它们改写为 openai。本函数是该判定的唯一实现
-    （原先在 EngineConfig 校验器 / db._normalize_legacy_cli_leg / api_admin 各写一份）。
-    """
-    return str(getattr(value, "value", value) or "").strip().lower() in LEGACY_CLI_ENGINE_VALUES
-
-
-def is_legacy_cli_model(name) -> bool:
-    """模型名是否属于已弃用的 CLI 引擎（opencode/*、codebuddy/*、minimax-m3-pay）。"""
-    m = str(name or "").strip().lower()
-    if not m:
-        return False
-    return m.startswith(LEGACY_CLI_MODEL_PREFIXES) or m in LEGACY_CLI_MODEL_NAMES
-
-
 def env_model_or_default(raw, fallback: str) -> str:
-    """.env 取到的模型名：若属已弃用 CLI 引擎则丢弃，回落内置默认。
-
-    缺这一步，「直构 EngineConfig」（empty DB 首次建配置 / 单测路径）与「hydrate 之后」
-    会给出**不同的审核模型**：hydrate 路径有 _normalize_legacy_cli_engines 兜底，
-    直构路径没有 —— 属「定义了没接线」。把判定接在 default_factory 上，两条路径同口径。
-    空串/空白视为未设置（保持「空 = 不覆盖」的既有语义），不做 strip 以外的新解释。
-    """
-    if is_legacy_cli_model(raw):
-        return fallback
+    """.env 取到的模型名：空串/空白视为未设置，回落内置默认。"""
     return (str(raw).strip() if raw is not None else "") or fallback
 
 
@@ -244,6 +205,15 @@ def env_model_or_default(raw, fallback: str) -> str:
 #   2. db.hydrate_engine_config_from_env —— 存量 DB 值归一（消除「显示 90 实际 60」的误导）
 #   3. api_admin PUT /api/admin/engine-config —— 保存时归一，使落库值恒等于生效值
 MAX_CALL_TIMEOUT_SECONDS = 60
+
+# 模型单价按人民币刊例价计。租户设置表（/api/settings/fx_rates）没有人民币汇率时的兜底：
+# 1 人民币折合多少港币。
+CNY_TO_HKD_FALLBACK_RATE = 1.08
+
+# 单张单据识别的总时长预算（秒）与看门狗宽限（秒）：预算内不再开新一轮，
+# 预算+宽限仍未返回则强制转人工，卡住的单据不会一直停在“识别中”。
+PIPELINE_BUDGET_SECONDS = 45
+PIPELINE_WATCHDOG_GRACE_SECONDS = 15
 VALID_REASONING_EFFORTS = frozenset({"", "low", "medium", "high", "xhigh", "max"})
 
 
@@ -395,41 +365,24 @@ def resolve_max_retry(config=None, leg: str = "rec", use_grey: bool = False) -> 
 class EngineConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # CLI 引擎弃用（2026-09-02）及 response_format 移除后删除的字段与枚举值。
-    _REMOVED_CLI_FIELDS: ClassVar[tuple] = (
-        "recognition_transport", "audit_transport", "parse_transport",
-        "grey_recognition_transport", "grey_audit_transport", "grey_parse_transport",
+    # response_format 移除后删除的字段：回滚快照等旧数据里可能还带着，校验前统一摘掉。
+    _REMOVED_FIELDS: ClassVar[tuple] = (
         "openai_rec_response_format", "openai_aud_response_format", "openai_parse_response_format",
         "grey_openai_rec_response_format", "grey_openai_aud_response_format", "grey_openai_parse_response_format",
-    )
-    # 已弃用 CLI 引擎的枚举字符串 -> 现行唯一通道 openai（判定走 is_legacy_cli_engine 单一实现）。
-    _LEGACY_CLI_ENGINE_VALUES: ClassVar[tuple] = LEGACY_CLI_ENGINE_VALUES
-    _ENGINE_FIELDS: ClassVar[tuple] = (
-        "recognition_engine", "audit_engine", "parse_llm_engine",
-        "grey_recognition_engine", "grey_audit_engine", "grey_parse_llm_engine",
     )
 
     @model_validator(mode="before")
     @classmethod
-    def _drop_removed_cli_fields(cls, data):
-        """校验前统一消化「CLI 引擎时代的遗留形状」，使全部构造点都能加载旧数据。
+    def _drop_removed_fields(cls, data):
+        """校验前摘掉已删除的字段（response_format 系），使旧快照也能加载。
 
-        1) 摘掉已删除的 transport 系 6 个键 —— extra="forbid" 否则直接 ValidationError。
-           这不是假想场景：guardian.perform_engine_rollback 会做
-           `{**cfg.model_dump(), **prev}`，而 prev 是推全前保存的旧快照，必然带这些键，
-           不摘掉就会「回滚配置重建失败」只留一行 warning，回滚静默失效。
-        2) 把 6 个引擎字段里的 "opencode" / "codebuddy" 改写为 openai —— EngineKind 已
-           删除这两个成员，存量 DB 与旧快照里却仍存有它们。
-
-        放在模型层是唯一能覆盖全部构造点的地方（get_engine_config / api_admin ×4 /
-        guardian 回滚 / 脚本裸构造），避免逐点去记得过滤（修 A 漏 B）。
+        extra="forbid" 下遇到这些键会直接 ValidationError；guardian 回滚会做
+        `{**cfg.model_dump(), **prev}`，prev 是推全前保存的旧快照，可能带着它们。
+        放在模型层是唯一能覆盖全部构造点的地方。
         """
         if not isinstance(data, dict):
             return data
-        out = {k: v for k, v in data.items() if k not in cls._REMOVED_CLI_FIELDS}
-        for field in cls._ENGINE_FIELDS:
-            if is_legacy_cli_engine(out.get(field)):
-                out[field] = "openai"
+        out = {k: v for k, v in data.items() if k not in cls._REMOVED_FIELDS}
 
         # API format 双向同步与缺省归一
         if "openai_rec_api_format" in out and "api_format" in out:
@@ -563,9 +516,7 @@ class EngineConfig(BaseModel):
     )
 
     # ---- 常规引擎配置 ----
-    # 识别引擎（优先从 .env 读取）。用户决策（2026-09-02）：两个本机 CLI 引擎
-    # （opencode / codebuddy）已弃用；2026-09-20 起连同 EngineKind 的枚举成员一并从
-    # 代码中删除，现存唯一通道是 OpenAI 兼容（见 EngineKind 的说明）。
+    # 识别引擎（优先从 .env 读取）。现存唯一通道是 OpenAI 兼容（见 EngineKind 的说明）。
     # 用户决策（2026-09-15）：默认识别 provider = 阿里云百炼 DashScope（见文件头常量）。
     recognition_engine: EngineKind = Field(
         default_factory=lambda: EngineKind(os.environ.get("RECOGNITION_ENGINE", "openai").lower())
@@ -898,9 +849,18 @@ def should_use_grey(cfg: "EngineConfig", supplier_name: str = "", supplier_id: O
     if cfg.grey_percent <= 0:
         return False
     pct = max(0, min(100, int(cfg.grey_percent)))
-    if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER and supplier_name:
+    if cfg.grey_assign_mode == GreyAssignMode.SUPPLIER:
+        # 按供应商灰测：同一家供应商永远落在同一组。没有供应商名时归常规组（不随机，
+        # 否则“同供应商一致命中”无从谈起）；名称先归一（繁简、空格、公司后缀）再 hash。
+        if not str(supplier_name or "").strip():
+            return False
         import hashlib
-        bucket = int(hashlib.md5(supplier_name.encode("utf-8")).hexdigest(), 16) % 100
+        try:
+            from app.services.rag import _norm_vendor_name, _vendor_core_token
+            norm_name = _vendor_core_token(_norm_vendor_name(supplier_name)) or str(supplier_name).strip()
+        except Exception:
+            norm_name = str(supplier_name).strip()
+        bucket = int(hashlib.md5(norm_name.encode("utf-8")).hexdigest(), 16) % 100
         return bucket < pct
     import random
     return random.random() * 100 < pct

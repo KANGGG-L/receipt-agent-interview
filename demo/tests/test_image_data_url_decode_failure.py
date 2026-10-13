@@ -276,7 +276,7 @@ def test_extract_receipt_returns_error_without_calling_engine(tmp_path, monkeypa
     assert "图片解码失败" in ret["error"]
     assert "已阻止向识别模型发送损坏数据" in ret["error"]
     # 不得被伪装成「引擎调用异常 → 已自动降级」
-    assert ret["fallback_triggered"] is False
+    assert "fallback_triggered" not in ret
     assert "VLM 调用失败" not in ret["error"]
     assert "降级" not in ret["error"]
     # 零 token / 零成本：本地失败不应产生任何计费口径
@@ -302,8 +302,6 @@ def test_decode_failure_result_shape_matches_engine_failure(tmp_path, monkeypatc
     # 关闭识别引擎的自动兜底，确保第二段走的确实是「首选引擎失败」返回分支。
     # 历史注记：兜底原为本机 CodeBuddy CLI（判据是模型 kind != "codebuddy"），
     # 已于 2026-09-02 弃用，现为 DashScope 官方通道兜底。
-    monkeypatch.setattr(extract_chain, "_dashscope_fallback_available",
-                        lambda *a, **kw: False)
 
     decode_ret = extract_chain.extract_receipt(
         _fake_heic(tmp_path), model=_CountingModel(), enable_canary=False)

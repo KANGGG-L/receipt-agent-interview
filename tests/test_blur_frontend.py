@@ -25,6 +25,20 @@ _db._make_engine()
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+from app import api_receipts as _api_receipts  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _recognition_engine_configured(monkeypatch):
+    """F2 契约（2026-10-13）：无密钥上传在模糊门**之前**同步返回
+    ENGINE_NOT_CONFIGURED。本文件 subject 是极模糊前置拦截（400 IMAGE_QUALITY_ERROR），
+    全文件统一把引擎桩为已配置以抵达模糊门；新契约本身由
+    test_no_key_upload_sync_fails_before_blur_gate 钉住。"""
+    monkeypatch.setattr(_api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
+
 
 BLUR_THRESHOLD = 30.0
 
@@ -70,6 +84,34 @@ def _make_blur_img_5895(out_path):
     var = _laplacian_variance(out_path)
     assert var < BLUR_THRESHOLD, f"合成模糊样本 Laplacian 方差 {var} 应 <{BLUR_THRESHOLD}"
     return var
+
+
+def test_no_key_upload_sync_fails_before_blur_gate(monkeypatch):
+    """F2 新契约：无密钥（真实缺省）时即使上传极模糊图，也同步返回
+    ENGINE_NOT_CONFIGURED（200 + error）而非 400 IMAGE_QUALITY_ERROR ——
+    引擎闸门先于模糊门（同步失败让店员立刻转手工，模糊门属于识别管线前置）。"""
+    monkeypatch.setattr(_api_receipts, "_recognition_engine_unconfigured",
+                        lambda: True)
+    import tempfile
+
+    tmp_dir = tempfile.mkdtemp(prefix="blur5895_nokey_")
+    blur_path = os.path.join(tmp_dir, "IMG_5895.jpg")
+    _make_blur_img_5895(blur_path)
+
+    client = TestClient(app)
+    with open(blur_path, "rb") as f:
+        resp = client.post(
+            "/api/upload",
+            files={"receipt": ("IMG_5895.jpg", f, "image/jpeg")},
+            headers={"X-Role": "staff"},
+            data={"treatment": "true", "async": "true"},
+        )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "error", body
+    assert body["code"] == "ENGINE_NOT_CONFIGURED", body
+    assert body["job_id"] is None, body
+    assert body.get("receipt_id") is not None, "同步失败路径必须落库单据行（原图保留）"
 
 
 def test_blur_img_5895_rejected_within_1s():

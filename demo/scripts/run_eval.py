@@ -637,6 +637,70 @@ def _real_predictor(engine, model, prompt_version):
     return _predict
 
 
+def _set_memory_enabled(enabled):
+    """评测进程内开关 VendorMemory 注入：关闭时识别链路的所有记忆检索一律返回空。
+
+    只改本进程内的模块属性，不碰数据库与设置表；返回还原函数。
+    """
+    from app.chains import extract_chain, supervisor
+    saved = (extract_chain.retrieve_context, supervisor.retrieve_context,
+             supervisor.first_round_inject_enabled)
+    if not enabled:
+        extract_chain.retrieve_context = lambda *a, **k: ""
+        supervisor.retrieve_context = lambda *a, **k: ""
+        supervisor.first_round_inject_enabled = lambda: False
+
+    def _restore():
+        (extract_chain.retrieve_context, supervisor.retrieve_context,
+         supervisor.first_round_inject_enabled) = saved
+    return _restore
+
+
+def _pipeline_predictor(engine, model, prompt_version, memory=True):
+    """完整流程模式：走线上同一条 supervisor.run_pipeline（门禁、记忆注入、部署配置的
+    max_tokens / temperature / image_detail、解析与修正腿、交叉审核），而不是只测单次抽取。
+
+    引擎配置读部署配置（db.get_engine_config，读不到才退回默认），再按 CLI 参数覆盖
+    识别引擎/模型；记忆开关见 _set_memory_enabled，用于 A/B 度量记忆的收益。
+    """
+    from app import db
+    from app.chains import extract_chain, supervisor
+    from app.models import EngineKind
+    from app.prompts import get_prompt
+
+    try:
+        cfg = db.get_engine_config()
+    except Exception as e:  # noqa: BLE001
+        print("!! 读取部署引擎配置失败，退回默认配置：%s" % e)
+        from app.models import EngineConfig
+        cfg = EngineConfig()
+    if engine:
+        try:
+            cfg.recognition_engine = EngineKind(str(engine).lower())
+        except ValueError:
+            raise SystemExit("未知引擎：%s" % engine)
+    if model:
+        cfg.recognition_model = model
+    extract_chain.SYSTEM_PROMPT = get_prompt("extract", prompt_version)
+    _set_memory_enabled(bool(memory))
+
+    def _predict(image_path, sample_id):
+        state = supervisor.run_pipeline(image_path, config=cfg)
+        data = state.get("data")
+        pred = data.model_dump() if data is not None else None
+        return pred, {
+            "latency_ms": float(state.get("total_ms") or 0.0),
+            "tokens": int(state.get("tokens_total", 0) or 0),
+            "error": state.get("user_error") or state.get("last_error") or None,
+            "pipeline_status": state.get("status"),
+            "gate_warnings": len(state.get("gate_warnings") or []),
+            "retry_count": state.get("retry_count", 0),
+            "cost_hkd": state.get("cost_hkd", 0.0),
+            "memory": "on" if memory else "off",
+        }
+    return _predict
+
+
 # ------------------------------------------------------------------
 # 主流程
 # ------------------------------------------------------------------
@@ -681,8 +745,14 @@ def _format_denominator_mismatches(mismatches):
 
 def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", model=None,
              limit=None, evalset_dir=None, report_dir=None, predictor=None,
-             require_confirmed=None, baseline=None, baseline_strict=False):
+             require_confirmed=None, baseline=None, baseline_strict=False,
+             pipeline=False, memory=True, backup_assets=False):
     """跑一个 split 的评测，返回 EvalReport（dict）。
+
+    pipeline（S2-27）：True 时走完整线上流程 supervisor.run_pipeline（含门禁、记忆注入、
+    部署配置的生成参数），默认 False 保持「单次抽取 + 后处理」的历史口径；memory 控制完整流程模式
+    下是否启用 VendorMemory 注入（A/B 度量记忆收益用）。backup_assets：出分前先把 GT 与
+    基线备份一份（见 eval_assets_backup.py），防语料被批量重写后无从恢复。
 
     predictor（可选）：自定义预测器 `(image_path, sample_id) -> (payload|None, meta)`，
     供测试注入故障或离线自检；不传则按 engine 构建真实识别链路。
@@ -735,9 +805,21 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
                    ", ".join("%s=%d" % kv for kv in sorted(by_status.items())),
                    ", ".join(r["sample_id"] for r in unconfirmed[:5])))
 
+    if backup_assets and engine != "stub":
+        try:
+            from eval_assets_backup import backup_eval_assets
+            info = backup_eval_assets(evalset_dir=evalset_dir)
+            print("评测资产已备份 → %s（%d 个文件）" % (info["dir"], info["files"]))
+        except Exception as e:  # noqa: BLE001 备份失败要大声说，但不挡评测
+            print("!! 评测资产备份失败：%s" % e)
+
     if predictor is None:
-        predictor = (_stub_predictor(evalset_dir) if engine == "stub"
-                     else _real_predictor(engine, model, prompt_version))
+        if engine == "stub":
+            predictor = _stub_predictor(evalset_dir)
+        elif pipeline:
+            predictor = _pipeline_predictor(engine, model, prompt_version, memory=memory)
+        else:
+            predictor = _real_predictor(engine, model, prompt_version)
 
     per_sample = []
     field_total = field_matched = 0
@@ -798,6 +880,11 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         record["latency_ms"] = elapsed_ms
         record["tokens"] = tokens
         record["error"] = error or ""
+        if pipeline and isinstance(locals().get("meta"), dict):
+            # 完整流程模式：把线上状态、警告数、重试数、成本一并记进样本，便于对比线上口径
+            for key in ("pipeline_status", "gate_warnings", "retry_count", "cost_hkd"):
+                if key in meta:
+                    record[key] = meta[key]
 
         if pred is None:
             error_count += 1
@@ -835,6 +922,8 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         "prompt_version": prompt_version,
         "engine": engine,
         "model": model or "",
+        "mode": "pipeline" if pipeline and engine != "stub" else "extract_only",
+        "memory": ("on" if memory else "off") if pipeline and engine != "stub" else "n/a",
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "n_samples": len(rows),
         "n_scored": scored,
@@ -953,6 +1042,29 @@ def _print_summary(report):
     print("=" * 68)
 
 
+def _run_memory_ab(common):
+    """记忆开/关各跑一遍同一批样本，打印并返回差值（记忆的收益由此度量）。"""
+    reports = {}
+    for flag in ("on", "off"):
+        reports[flag] = run_eval(pipeline=True, memory=(flag == "on"), **dict(common, backup_assets=(flag == "on" and common.get("backup_assets", True))))
+    on, off = reports["on"], reports["off"]
+    delta = {k: round(on[k] - off[k], 4) for k in ("accuracy", "cer", "edit_proxy", "avg_tokens")}
+    out = {"memory_on": {k: on[k] for k in ("accuracy", "cer", "edit_proxy", "avg_tokens", "n_scored")},
+           "memory_off": {k: off[k] for k in ("accuracy", "cer", "edit_proxy", "avg_tokens", "n_scored")},
+           "delta_on_minus_off": delta}
+    print("=" * 60)
+    print("记忆 A/B（同一批样本）：")
+    print(json.dumps(out, ensure_ascii=False, indent=2))
+    report_dir = os.path.abspath(common.get("report_dir") or DEFAULT_REPORT_DIR)
+    os.makedirs(report_dir, exist_ok=True)
+    path = os.path.join(report_dir, "memory_ab_%s_%s.json" % (
+        common["split"], datetime.now().strftime("%Y%m%d_%H%M%S")))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+    print("A/B 结果已写入 %s" % path)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="可复现评测 harness（train/val/test 三分法）")
     ap.add_argument("--split", required=True, choices=["train", "val", "test"], help="评测集分片")
@@ -977,13 +1089,28 @@ def main():
     ap.add_argument("--baseline-strict", action="store_true", default=False,
                     help="baseline_match=false 时直接 SystemExit（周报流水线门禁用）；"
                          "默认只警告（向后兼容）")
+    ap.add_argument("--pipeline", action="store_true", default=False,
+                    help="完整流程模式：走线上 supervisor.run_pipeline（门禁/记忆/部署配置），"
+                         "不加则只测单次抽取")
+    ap.add_argument("--memory", choices=["on", "off"], default="on",
+                    help="完整流程模式下是否启用 VendorMemory 注入（默认 on）")
+    ap.add_argument("--memory-ab", action="store_true", default=False,
+                    help="记忆 A/B：同一批样本各跑一次 memory=on 与 memory=off，输出差值（隐含 --pipeline）")
+    ap.add_argument("--no-backup", action="store_true", default=False,
+                    help="出分前不备份 GT 与基线（默认会备份）")
     args = ap.parse_args()
 
-    report = run_eval(split=args.split, prompt_version=args.prompt, engine=args.engine,
-                      model=args.model, limit=args.limit,
-                      evalset_dir=args.evalset_dir, report_dir=args.report_dir,
-                      require_confirmed=args.require_confirmed,
-                      baseline=args.baseline, baseline_strict=args.baseline_strict)
+    # 离线评测进程：允许 OPENAI_REC_CALL_TIMEOUT 抬高单次调用超时（线上进程会忽略它）
+    os.environ.setdefault("RECEIPT_OFFLINE_EVAL", "1")
+    common = dict(split=args.split, prompt_version=args.prompt, engine=args.engine,
+                  model=args.model, limit=args.limit,
+                  evalset_dir=args.evalset_dir, report_dir=args.report_dir,
+                  require_confirmed=args.require_confirmed,
+                  baseline=args.baseline, baseline_strict=args.baseline_strict,
+                  backup_assets=not args.no_backup)
+    if args.memory_ab:
+        return _run_memory_ab(common)
+    report = run_eval(pipeline=args.pipeline, memory=(args.memory == "on"), **common)
     if report.get("gt_status") == "partial":
         # L2 大字警告：test split 被显式关闭 GT 确认门禁，分数仅作调参参考
         print("!" * 68)

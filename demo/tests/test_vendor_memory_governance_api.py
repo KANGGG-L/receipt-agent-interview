@@ -408,9 +408,9 @@ def test_endpoint_rows_equal_db_single_implementation():
 
 
 # -------------------------------------------------------------
-# 7. 失败语义：不抛 500，给明确错误态
+# 7. 失败语义：取数故障返回 500 + 统一错误信封（人话，不带内部异常原文）
 # -------------------------------------------------------------
-def test_list_failure_returns_error_not_500(monkeypatch):
+def test_list_failure_returns_error_envelope(monkeypatch):
     _fresh_db()
     client = _client()
 
@@ -419,13 +419,14 @@ def test_list_failure_returns_error_not_500(monkeypatch):
 
     monkeypatch.setattr(db, "list_vendor_memory", _boom)
     ret = _get_list(client)
-    assert ret.status_code == 200, ret.text
+    assert ret.status_code == 500, ret.text
     err = ret.json()
     assert err["status"] == "error" and err["code"] == "MEMORY_LIST_FAILED", err
+    assert "模拟取数故障" not in ret.text, "不得把内部异常原文给用户"
     assert err["data"] is None, err
 
     ret = _get_detail(client, "mid-x")
-    assert ret.status_code == 200, ret.text
+    assert ret.status_code == 500, ret.text
     err = ret.json()
     assert err["status"] == "error" and err["code"] == "MEMORY_READ_FAILED", err
 

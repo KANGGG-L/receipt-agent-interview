@@ -40,7 +40,7 @@ client = TestClient(app)
 
 def test_u9_auto_save_semantics():
     """测试 source='auto' (AI自动落库) 状态与审计履历语义。"""
-    rid = _db.create_receipt(supplier_name="自动落库测试店", status="uploaded")
+    rid = _db.create_receipt(supplier_name="自动落库测试店", status="parsed")
     row = _db.get_receipt_row(rid)
     
     # 模拟后台自动保存
@@ -67,7 +67,7 @@ def test_u9_auto_save_semantics():
     logs = json.loads(updated_row.audit_logs_json or "[]")
     auto_save_logs = [l for l in logs if l.get("action") == "auto_save"]
     assert len(auto_save_logs) >= 1, f"未找到 action='auto_save' 的审计记录: {logs}"
-    assert auto_save_logs[0].get("details") == "AI自动识别落库"
+    assert auto_save_logs[0].get("details") == "识别结果同步保存（未经人工复核）"
     assert auto_save_logs[0].get("new") == "parsed"
     
     # 3. 验证 ai_decision_log 写入 decision_type='auto_save'
@@ -151,3 +151,20 @@ def test_u9_flag_receipt_all_valid_statuses():
         
         updated_row = _db.get_receipt_row(rid)
         assert updated_row.status == "flagged"
+
+
+def test_u9_external_source_auto_cannot_forge_parsed_status():
+    """S1-P1-05：对外 API 的 source=auto 只能在「服务端 Job 已写出 parsed」的单据上同步保存；
+    其余情况（新建、uploaded、edited 等）一律按人工保存处理，不能伪造 AI 落库状态。"""
+    rid = _db.create_receipt(supplier_name="伪造测试店", status="uploaded")
+    row = _db.get_receipt_row(rid)
+    resp = client.post("/api/save_edited", json={
+        "receipt_id": rid, "supplier_name": "伪造测试店", "date": "2026-08-24",
+        "total_amount": 180.0, "settlement_type": "cash", "version": row.version,
+        "source": "auto",
+        "items": [{"name": "生菜", "quantity": 10, "unit": "斤", "unit_price": 18.0,
+                   "amount": 180.0}]}, headers={"X-Role": "staff"})
+    assert resp.status_code == 200, resp.text
+    assert _db.get_receipt_row(rid).status == "edited"
+    logs = json.loads(_db.get_receipt_row(rid).audit_logs_json or "[]")
+    assert not any(l.get("action") == "auto_save" for l in logs)

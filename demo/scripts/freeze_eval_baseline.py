@@ -63,7 +63,7 @@ def count_gt_items(gt):
     return items_gt, unit_present_gt
 
 
-def freeze(evalset_dir, split, frozen_at=None):
+def freeze(evalset_dir, split, frozen_at=None, note=None):
     """统计 split 的分母并产出冻结 payload（dict）。确定性：同语料同日两次冻结相等。"""
     manifest_path = os.path.join(evalset_dir, "manifest.csv")
     if not os.path.exists(manifest_path):
@@ -104,7 +104,7 @@ def freeze(evalset_dir, split, frozen_at=None):
             "items_gt": items_gt,
             "unit_present_gt": unit_present_gt,
         },
-        "note": _NOTE,
+        "note": note or _NOTE,
     }
     payload["sha256"] = baseline_sha256(payload)
     if missing_gt:
@@ -119,10 +119,38 @@ def main():
     ap.add_argument("--evalset-dir", default=DEFAULT_EVALSET_DIR, help="评测集目录")
     ap.add_argument("--split", default="test", choices=["train", "val", "test"])
     ap.add_argument("--out", default=DEFAULT_OUT, help="落盘路径（JSON）")
+    ap.add_argument("--allow-shrink", default=None, metavar="原因",
+                    help="新语料的样本数 / GT 明细行数比旧基线少时，必须用本参数写明原因才允许重冻结"
+                         "（防止 GT 在不知情时丢失后被悄悄冻成新基线）")
+    ap.add_argument("--note", default=None, help="写进基线 note 的重冻结原因（重冻结时必填）")
     args = ap.parse_args()
 
-    payload = freeze(args.evalset_dir, args.split)
     out_path = os.path.abspath(args.out)
+    previous = None
+    if os.path.exists(out_path):
+        # 重冻结流程：先备份 GT 与现有基线，再比对新旧分母，GT 变少且没写原因就拒绝
+        with open(out_path, encoding="utf-8") as f:
+            previous = json.load(f)
+        if not args.note:
+            raise SystemExit("基线已存在，重冻结必须用 --note 写明原因（纪律：不许悄悄改写基线）")
+        from eval_assets_backup import backup_eval_assets
+        info = backup_eval_assets(evalset_dir=args.evalset_dir)
+        print("重冻结前已备份 GT 与基线 → %s（%d 个文件）" % (info["dir"], info["files"]))
+    payload = freeze(args.evalset_dir, args.split,
+                     note=(args.note + "（旧基线 frozen_at=%s）" % previous.get("frozen_at")) if previous else None)
+    if previous:
+        old_d = previous.get("denominators") or {}
+        new_d = payload["denominators"]
+        shrunk = [k for k in ("samples", "items_gt", "unit_present_gt")
+                  if new_d.get(k, 0) < old_d.get(k, 0)]
+        if shrunk and not args.allow_shrink:
+            raise SystemExit(
+                "拒绝重冻结：以下分母比旧基线少了 %s（旧 %s → 新 %s）。这通常意味着 GT 文件被改坏或丢失，"
+                "请先从备份恢复；确认是有意删减时加 --allow-shrink \"原因\"。"
+                % (", ".join(shrunk), {k: old_d.get(k) for k in shrunk}, {k: new_d.get(k) for k in shrunk}))
+        if shrunk:
+            payload["note"] += "；GT 分母有意减少（%s）：%s" % (", ".join(shrunk), args.allow_shrink)
+            payload["sha256"] = baseline_sha256({k: v for k, v in payload.items() if k != "sha256"})
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)

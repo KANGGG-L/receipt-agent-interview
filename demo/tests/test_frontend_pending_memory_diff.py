@@ -18,6 +18,7 @@ fact_value 的逐字段差异，只能整段接受/拒绝。
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -54,6 +55,27 @@ def test_pending_memory_field_diff_renders():
     assert result["pass"] >= 20, "脚手架用例数异常偏少: %s" % result["pass"]
 
 
+def _page_style_sources():
+    """evalset.html 声明的全部样式来源：内联 <style> 块 + 外链 stylesheet 文件内容。
+
+    F3·B1 后 <style> 块外移到 external css，diff 样式类的「有消费方」判据按
+    页面声明的样式来源联合判定，不再钉「样式必须写在 HTML 里」的旧机制。
+    """
+    with open(_EVALSET_HTML, "r", encoding="utf-8") as f:
+        html = f.read()
+    chunks = re.findall(r"<style[^>]*>([\s\S]*?)</style>", html)
+    for href in re.findall(r'<link[^>]+rel="stylesheet"[^>]*>', html):
+        m = re.search(r'href="([^"]+)"', href)
+        if not m:
+            continue
+        css_path = os.path.join(
+            _DEMO_DIR, "static", m.group(1).replace("/static/", "", 1)
+        )
+        with open(css_path, "r", encoding="utf-8") as f:
+            chunks.append(f.read())
+    return html, "\n".join(chunks)
+
+
 def test_static_wiring_header_colspan_and_styles():
     """接线：待审表头新增「字段级 diff」列、占位行 colspan=7、diff 样式类有定义。"""
     with open(_EVALSET_HTML, "r", encoding="utf-8") as f:
@@ -63,8 +85,10 @@ def test_static_wiring_header_colspan_and_styles():
     # 占位行 colspan 必须随列数（6→7）调整，否则表格会错列
     idx = html.index('id="pendingMemoryBody"')
     assert 'colspan="7"' in html[idx:idx + 200], "占位行 colspan 未随列数调整"
+    _, page_css = _page_style_sources()
+    assert page_css.strip(), "页面未声明任何样式来源（扫描面失效，判据会假绿）"
     for cls in (".fact-diff", ".fd-key", ".fd-old"):
-        assert cls in html, "diff 样式类缺定义: %s" % cls
+        assert cls in page_css, "diff 样式类在页面样式来源中缺定义: %s" % cls
 
 
 def test_counterexample_diff_cell_removed_is_red(tmp_path):

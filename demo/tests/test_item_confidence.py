@@ -220,9 +220,9 @@ def _read(rel_path):
 def test_extract_chain_whitelist_keeps_confidence():
     src = _read(os.path.join("app", "chains", "extract_chain.py"))
     # 归一化白名单必须含 confidence
-    m = re.search(r"_allowed_item = \{(.*?)\}", src, re.S)
-    assert m is not None, "未找到 _allowed_item 白名单"
-    assert '"confidence"' in m.group(1), "_allowed_item 必须放行 confidence"
+    m = re.search(r"_ALLOWED_ITEM_KEYS = \{(.*?)\}", src, re.S)
+    assert m is not None, "未找到 _ALLOWED_ITEM_KEYS 白名单"
+    assert '"confidence"' in m.group(1), "_ALLOWED_ITEM_KEYS 必须放行 confidence"
     # pop 清单不得再包含 confidence
     m_pop = re.search(r"for _ik in \[(.*?)\]:", src, re.S)
     assert m_pop is not None, "未找到 item 字段 pop 清单"
@@ -237,21 +237,25 @@ def test_frontend_marks_review_rows_by_deterministic_signal():
     新口径：行级 = unit_conversion_warning（huama_evaluator 确定的街市花码）；
             整单级 = 街市手写单 / 门禁警告（只标整单，不贴到每一行）。
     """
-    js = _read(os.path.join("static", "js", "main.js"))
-    assert "ITEM_LOW_CONFIDENCE_THRESHOLD" not in js, "阈值触发的旧常量应已下线"
-    assert "isLowConfidence" not in js, "不应再按置信度判定复核标记"
+    # F4 S4-11 起归档详情随域迁至 archive_list.js；F5 S4-11 起唯一实现随复核核心域
+    # 迁至 review_core.js。判据＝main.js + 域文件联合全文（与浏览器加载集合同构）。
+    js = _read(os.path.join("static", "js", "review_core.js"))
+    union = js + "\n" + _read(os.path.join("static", "js", "main.js")) \
+        + "\n" + _read(os.path.join("static", "js", "archive_list.js"))
+    assert "ITEM_LOW_CONFIDENCE_THRESHOLD" not in union, "阈值触发的旧常量应已下线"
+    assert "isLowConfidence" not in union, "不应再按置信度判定复核标记"
     assert "function itemReviewFlags(" in js, "缺少行级确定性判据的唯一实现"
     assert "function itemReviewBadgeHtml(" in js, "缺少行级角标渲染"
-    assert "item-conf-badge" in js, "前端未展示行级角标"
+    assert "item-conf-badge" in union, "前端未展示行级角标"
     assert "function receiptReviewReasons(" in js, "缺少整单级「需人工复核」判据"
-    assert "ncr_handwritten" in js, "整单级未接入街市手写单信号"
+    assert "ncr_handwritten" in union, "整单级未接入街市手写单信号"
     # 两处表格必须复用同一份判定，避免「同一根因多份实现」导致口径漂移
-    assert js.count("itemFlags = itemReviewFlags(item);") == 2, \
-        "复核台与归档详情应各调一次同一份行级判据"
-    assert js.count("receiptReviewReasons(data)") == 3, \
-        "整单级判据应为 1 处定义 + 复核台/归档详情各 1 处调用"
+    assert union.count("itemFlags = itemReviewFlags(item);") == 2, \
+        "复核台与归档详情应各调一次同一份行级判据（并集恰两处）"
+    assert union.count("receiptReviewReasons(data)") == 3, \
+        "整单级判据应为 1 处定义 + 复核台/归档详情各 1 处调用（并集恰三处）"
     # 置信度保留为参考信息（不再触发标记）
-    assert "tr.dataset.confidence" in js, "置信度读数应仍随行回传"
+    assert "tr.dataset.confidence" in union, "置信度读数应仍随行回传"
 
     css = _read(os.path.join("static", "css", "style.css"))
     assert ".item-conf-badge" in css, "缺少角标样式"

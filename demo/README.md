@@ -135,12 +135,31 @@ demo/
 
 ```bash
 cd demo
-cp .env.example .env        # 默认识别腿百炼 DashScope qwen3.5-omni-flash，零配置可跑
-pip install -r requirements.txt
+cp .env.example .env        # 复制配置模板；识别服务密钥默认是空的，需要自己填（见下）
+pip install -r requirements.txt   # 想完全复现验证环境：pip install -r requirements.lock
 ./demo.sh run               # 启动 http://127.0.0.1:15010（浏览器打开）
 ```
 
 关键链路冒烟：`./demo.sh smoke samples/20161001_711_thermal_receipt.jpg`
+
+### 没有识别服务密钥时（手工录入路径）
+
+不填 `.env` 里的识别服务密钥（`OPENAI_REC_API_KEY` 等）服务也能启动，但「上传照片自动识别」会失败，
+单据会提示「识别服务还没有开通」。这时的用法：
+
+1. 侧栏点「新建手工单」（或识别失败的单据上点「转手工录入」，原图会保留在左边对照）。
+2. 填供应商、开单日期、结算方式（现结或挂账）、明细和总额，点「保存」。
+3. 老板在单据列表里点「入账」，库存和成本随之更新。
+
+需要自动识别时，在 `.env` 填好密钥后重启，或由超管在「管理后台 → 引擎配置」里填写。
+
+### 启动安全默认值
+
+- 服务默认只监听 `127.0.0.1`。`python -m app.main` 不再开热重载（`APP_RELOAD=1` 才开）。
+- `AUTH_ENABLED=0`（免密演示）时，程序拒绝监听非本机地址；要给局域网/公网用，必须先设
+  `AUTH_ENABLED=1` 和 `DEMO_TOKEN_SECRET`，再用 `APP_HOST` 指定地址。
+- 识别服务密钥在数据库里是加密保存的，主密钥是环境变量 `APP_SECRET_KEY`；没设时第一次启动会自动生成并写入
+  `.env`（请备份）。数据库每 6 小时在线备份一次（`BACKUP_DIR`、`BACKUP_KEEP` 可调），健康检查如实报告备份情况。
 
 ## 五、与系统整体的关系
 

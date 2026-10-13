@@ -18,27 +18,35 @@ if _DEMO_DIR not in sys.path:
     sys.path.insert(0, _DEMO_DIR)
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from app.services.domain_errors import DomainError
 
 from app import db
 from app import auth
+from app import errors
+from app import maintenance
+from app import web_assets
 from app.auth import EarlyAuthMiddleware
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
 from app.api_dishes import router as dishes_router
 from app.api_evalset import router as evalset_router
 from app.api_export import router as export_router
+from app.api_settings import router as settings_router
 from app.api_finance import router as finance_router
 from app.api_inventory import router as inventory_router
 from app.api_memory import router as memory_router
 from app.api_phase2 import router as phase2_router
 from app.api_receipts import router as receipts_router
+from app.api_receipt_lifecycle import router as lifecycle_router
 from app.api_suppliers import router as suppliers_router
 
 app = FastAPI(title="LangChain 收据识别精简版")
+errors.install(app)
 app.include_router(auth_router)
 app.include_router(receipts_router)
+app.include_router(lifecycle_router)
 app.include_router(inventory_router)
 app.include_router(suppliers_router)
 app.include_router(finance_router)
@@ -48,6 +56,13 @@ app.include_router(phase2_router)
 app.include_router(evalset_router)
 app.include_router(memory_router)
 app.include_router(export_router)
+app.include_router(settings_router)
+
+
+@app.exception_handler(DomainError)
+async def _domain_error_handler(request, exc):
+    return JSONResponse(status_code=exc.status_code, content=exc.payload())
+
 
 # D23：/api/* 早鉴权中间件——在路由分发（参数校验）之前强制「必须先有身份」，
 # 消除匿名请求因请求体非法而返回 422（而非 401）所能暴露的端点探测面。白名单端点
@@ -55,25 +70,49 @@ app.include_router(export_router)
 # /api/payment/voucher/{name}）保持匿名可用；端点内的角色阈值不受影响。详见
 # app/auth.py 的 EarlyAuthMiddleware。
 app.add_middleware(EarlyAuthMiddleware)
+# 后加的中间件在外层：安全头在最外层覆盖所有响应（含 401/404），gzip 压缩 JSON 与静态文件。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(web_assets.SecurityHeadersMiddleware)
 
 
 @app.on_event("startup")
-def _auto_deduplicate_skus():
-    """B-P0-1/F-P1-2 启动自愈：幂等、无损历史流水，迁移 inventory_log 至主 SKU，停用副 SKU，日志 audit_logs 留痕 demo/app/db.py:803
+def _apply_schema_migrations():
+    """启动时确保库结构为最新（有序迁移 + schema_version）；失败直接中止启动。"""
+    db.ensure_schema_current()
+    auth.load_revoked_from_store()
 
-    租户口径：逐租户 scoped 去重，避免 None 路径全局分组导致跨租户误合并。
+
+@app.on_event("startup")
+def _encrypt_stored_api_keys():
+    """存量明文 API key 启动时迁移为密文（见 app/secret_store.py）。"""
+    from app import secret_store
+    secret_store.migrate_plaintext_keys()
+
+
+@app.on_event("startup")
+def _start_maintenance():
+    """定时任务：parsing 超时清扫、Job 淘汰、完整性检查、在线备份。"""
+    maintenance.start()
+
+
+@app.on_event("startup")
+def _audit_duplicate_skus():
+    """启动只读巡检：发现重复货品只记日志，不改任何业务数据。
+
+    合并必须由老板确认：GET /api/inventory/sku-duplicates 查看，
+    POST /api/inventory/sku-duplicates/merge 确认合并（owner 权限）。
     """
     try:
-        tenant_ids = db.list_sku_tenant_ids()
-        reports = []
-        for t in tenant_ids:
-            reports.extend(db.deduplicate_skus_by_canonical(tenant_id=t) or [])
-        if reports:
-            import logging
-            logging.getLogger("startup").info(f"[deduplicate] auto-healed {len(reports)} groups: {reports}")
+        import logging
+        total = 0
+        for t in db.list_sku_tenant_ids():
+            total += len(db.find_duplicate_sku_groups(tenant_id=t) or [])
+        if total:
+            logging.getLogger("startup").warning(
+                "[deduplicate] 发现 %d 组重复货品，未自动合并；请老板在库存页确认后合并", total)
     except Exception as e:
         import logging
-        logging.getLogger("startup").warning(f"[deduplicate] startup auto-heal failed: {e}")
+        logging.getLogger("startup").warning(f"[deduplicate] 启动巡检失败: {e}")
 
 
 @app.on_event("startup")
@@ -215,6 +254,13 @@ def _sweep_orphan_preview_caches():
 
 
 @app.on_event("startup")
+def _enforce_ai_startup_checks():
+    """AI 管线启动自检：生产环境检测到测试专用变量 MOCK_QWEN_FLASH 即拒绝启动。"""
+    from app.services.startup_guard import enforce_ai_startup_checks
+    enforce_ai_startup_checks()
+
+
+@app.on_event("startup")
 def _warn_weak_token_secret():
     """启动期密钥强度处置：鉴权开启则强制，否者仅告警。
 
@@ -255,28 +301,9 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 DEV_MODE = not auth.is_production_env()
 
 
-class NoStoreStaticFiles(StaticFiles):
-    """开发期给静态文件响应加 no-store，强制浏览器每次都回源取最新文件。"""
-
-    def __init__(self, *args, no_store: bool = True, **kwargs):
-        self._no_store = no_store
-        super().__init__(*args, **kwargs)
-
-    async def get_response(self, path: str, scope):
-        response = await super().get_response(path, scope)
-        if self._no_store:
-            response.headers.update(
-                {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
-            )
-        return response
-
-
 @app.get("/")
 def index():
-    resp = FileResponse(TEMPLATES_DIR / "index.html")
-    if DEV_MODE:
-        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
-    return resp
+    return web_assets.html_response(TEMPLATES_DIR / "index.html", STATIC_DIR, DEV_MODE)
 
 
 @app.get("/evalset")
@@ -287,10 +314,7 @@ def evalset_review_page():
     单张 GT 校正唯一编辑表面是 /evalset/workbench/<sid>（复用店员复核界面，
     含付款标记控件，控制变量）。
     """
-    resp = FileResponse(TEMPLATES_DIR / "evalset.html")
-    if DEV_MODE:
-        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
-    return resp
+    return web_assets.html_response(TEMPLATES_DIR / "evalset.html", STATIC_DIR, DEV_MODE)
 
 
 @app.get("/evalset/workbench/{sample_id}")
@@ -306,23 +330,23 @@ def evalset_workbench_page(sample_id: str):
     """
     import json as _json
 
-    html = (TEMPLATES_DIR / "index.html").read_text(encoding="utf-8")
-    inject = (
-        '<script>window.__EVAL_WORKBENCH__ = { sampleId: %s, autoNext: %s };</script>\n'
-        '<script src="/static/js/eval_workbench.js?v=20260829b"></script>\n</body>'
-        % (_json.dumps(sample_id), "true")
-    )
-    if "</body>" not in html:
-        resp = FileResponse(TEMPLATES_DIR / "index.html")
-    else:
-        from fastapi.responses import HTMLResponse
-        resp = HTMLResponse(content=html.replace("</body>", inject, 1))
-    if DEV_MODE:
-        resp.headers.update({"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"})
-    return resp
+    def _inject(html):
+        if "</body>" not in html:
+            return html
+        import html as _html
+        payload = _json.dumps({"sampleId": sample_id, "autoNext": True}, ensure_ascii=False)
+        inject = (
+            '<meta name="eval-workbench" content="%s">\n'
+            '<script src="/static/js/eval_workbench.js"></script>\n</body>'
+            % _html.escape(payload, quote=True)
+        )
+        return html.replace("</body>", inject, 1)
+
+    return web_assets.html_response(TEMPLATES_DIR / "index.html", STATIC_DIR, DEV_MODE,
+                                    transform=_inject)
 
 
-app.mount("/static", NoStoreStaticFiles(directory=str(STATIC_DIR), no_store=DEV_MODE), name="static")
+app.mount("/static", web_assets.AssetStaticFiles(directory=str(STATIC_DIR), dev_mode=DEV_MODE), name="static")
 # 刻意不挂载 /uploads：静态直挂零鉴权、零租户校验，任何知道文件名的人都能读取全部
 # 原图与付款凭证，属未授权文件面。原图与凭证分别改由签名端点
 # GET /api/receipt/{id}/image 与 GET /api/payment/voucher/{name} 提供，
@@ -330,10 +354,13 @@ app.mount("/static", NoStoreStaticFiles(directory=str(STATIC_DIR), no_store=DEV_
 
 
 @app.get("/api/health")
-def health():
-    """结构化健康状态：组件异常汇总 → status=degraded（200），绝不 500（对齐完整版）。"""
+def health(request: Request):
+    """健康状态。匿名只返回 ok/degraded；组件细节（库、备份、引擎、鉴权模式等）仅 admin 可见。
+
+    不再每次请求做全库 integrity_check：完整性检查与备份由后台定时任务执行，
+    这里只读它们缓存的结果；库本身用一条 SELECT 1 探活。
+    """
     import os
-    import shutil
     from datetime import datetime, timezone
     from sqlalchemy import text
 
@@ -341,14 +368,15 @@ def health():
         try:
             s = db.get_session()
             try:
-                result = s.execute(text("PRAGMA integrity_check")).scalar()
+                s.execute(text("SELECT 1")).scalar()
             finally:
                 s.close()
-            if result == "ok":
-                return True, None
-            return False, f"integrity_check 结果异常: {result}"
         except Exception as e:
             return False, str(e)
+        cached = maintenance.snapshot()["integrity"]
+        if cached["ok"] is False:
+            return False, cached["error"]
+        return True, None
 
     def _wal_health():
         try:
@@ -370,62 +398,86 @@ def health():
         except Exception:
             valid_qwen = False
         return {
-            # 历史注记：原有 "opencode" / "codebuddy" 两个本机 CLI 引擎的可用性探测，
-            # 随 CLI 引擎弃用（2026-09-02）一并删除；现存通道只有 OpenAI 兼容。
             "openai": bool(base and key),
-            "openai_valid_qwen": valid_qwen,
-            "perf_baseline": "qwen3.5-omni-flash 单张 2.6-7.1s（2026-09-15 实测，3 张 confirmed 样本）/ 本地硬上限60s 禁止240空转",
-            "timeout_policy": "高压禁止长期空转：缺省30s 硬上限60s 超即杀进程转手工",
-            "timeout_advice": llm.get_timeout_advice(cfg) if hasattr(llm, "get_timeout_advice") else "",
+            "openai_valid_qwen": bool(valid_qwen),
         }
 
     def _backup_health():
-        backup_dir = os.environ.get("BACKUP_DIR") or os.path.join(str(BASE_DIR), "backups")
-        try:
-            os.makedirs(backup_dir, exist_ok=True)
-            probe = os.path.join(backup_dir, f".health_write_probe_{os.getpid()}")
-            with open(probe, "w") as f:
-                f.write("ok")
-            os.remove(probe)
-            return True, None
-        except Exception as e:
-            return False, f"备份目录不可写（BACKUP_DIR={backup_dir}）: {e}"
+        snap = maintenance.snapshot()
+        b = snap["backup"]
+        if b["ok"] is False:
+            return False, b["error"], b
+        if b["ok"] is None and snap["scheduler_running"]:
+            return True, None, b
+        if b["ok"] and b["last_at"]:
+            try:
+                age = (datetime.now() - datetime.fromisoformat(b["last_at"])).total_seconds()
+            except ValueError:
+                age = 0
+            if age > 2 * maintenance.BACKUP_INTERVAL + 600:
+                return False, "最近一次备份已超过两个备份周期，定时备份可能没有在跑", b
+        return True, None, b
 
     db_ok, db_err = _db_health()
     wal_size, wal_ok, wal_err = _wal_health()
     engines = _engine_health()
-    backup_ok, backup_err = _backup_health()
-    # D21：签名密钥强度如实暴露给运维。AUTH_ENABLED=0（本地演示）下弱密钥不拒绝启动
-    # （保住演示取图），但「签名其实只防误撞、不防构造」这一事实必须可见，否则运维
-    # 会把预览/凭证的 HMAC 签名当成访问控制。口径与启动告警、auth.token_secret_is_weak
-    # 一致；判断只看环境变量，不触发任何 IO。
-    from app import auth as _auth
-    signature_secret_weak = _auth.token_secret_is_weak()
+    backup_ok, backup_err, backup_info = _backup_health()
 
     problems = []
     if not db_ok:
         problems.append(f"db: {db_err}")
     if not wal_ok:
         problems.append(f"wal: {wal_err}")
-    if not any(engines.values()):
+    if not any(v for v in engines.values() if isinstance(v, bool)):
         problems.append("engine: 无可用识别引擎")
     if not backup_ok:
         problems.append(f"backup: {backup_err}")
+    status = "degraded" if problems else "ok"
 
+    account = auth.resolve_account(request)
+    if account.get("role") != "admin":
+        return {"status": status}
+
+    from app import auth as _auth
     return {
-        "status": "degraded" if problems else "ok",
-        "db": {"ok": db_ok, "error": db_err},
+        "status": status,
+        "problems": problems,
+        "db": {"ok": db_ok, "error": db_err,
+               "integrity_checked_at": maintenance.snapshot()["integrity"]["checked_at"]},
         "wal": {"size_bytes": wal_size, "ok": wal_ok, "error": wal_err},
         "engine": engines,
-        "backup": {"dir_writable": backup_ok, "error": backup_err},
+        "backup": {"dir": str(maintenance.backup_dir()), "dir_writable": backup_ok,
+                   "last_at": backup_info["last_at"], "last_file": backup_info["last_file"],
+                   "count": backup_info["count"], "keep": maintenance.BACKUP_KEEP,
+                   "error": backup_err},
         "time": datetime.now(timezone.utc).isoformat(),
-        # W-ISO-1：鉴权与演示模式水印状态
         "auth_enabled": _auth.auth_enabled(),
         "demo_mode": not _auth.auth_enabled(),
-        # D21：签名密钥强度标志（true = 仍是仓库内置默认密钥）。为 true 时预览/凭证
-        # 的 HMAC 签名只防误撞、不防构造，不构成访问控制；请设置 DEMO_TOKEN_SECRET。
-        "signature_secret_weak": signature_secret_weak,
+        # true = 仍是仓库内置默认密钥：预览/凭证的 HMAC 签名只防误撞、不防构造，不构成访问控制；
+        # 请设置 DEMO_TOKEN_SECRET。
+        "signature_secret_weak": _auth.token_secret_is_weak(),
     }
+
+
+@app.post(web_assets.CSP_REPORT_PATH, include_in_schema=False)
+async def csp_report(request: Request):
+    """浏览器上报的内容安全策略违例（Report-Only 阶段只统计，不拦截）。匿名可达，体积受限。"""
+    import json as _json
+    raw = await request.body()
+    if len(raw) <= 8192:
+        try:
+            web_assets.record_csp_report(_json.loads(raw.decode("utf-8", "ignore") or "{}"))
+        except ValueError:
+            pass
+    from fastapi import Response
+    return Response(status_code=204)
+
+
+@app.get("/api/admin/csp-violations")
+def csp_violations(request: Request):
+    """admin：当前进程收到的 CSP 违例统计。"""
+    auth.require_admin(request)
+    return {"status": "success", "data": web_assets.csp_report_summary()}
 
 
 def _smoke(image_path: str):
@@ -455,11 +507,37 @@ def _smoke(image_path: str):
     return 0
 
 
+def resolve_bind_host(environ=None) -> str:
+    """服务绑定地址：缺省只绑本机回环。
+
+    AUTH_ENABLED=0（免密演示）时任何请求带角色头就是超管，绝不允许监听非回环地址；
+    要对局域网/公网开放必须先开启鉴权（AUTH_ENABLED=1）并显式设置 APP_HOST。
+    """
+    import ipaddress
+    env = os.environ if environ is None else environ
+    host = (env.get("APP_HOST") or "127.0.0.1").strip()
+    if host in ("localhost", ""):
+        return "127.0.0.1"
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+    auth_on = str(env.get("AUTH_ENABLED", "0")).strip().lower() in ("1", "true", "yes")
+    if not is_loopback and not auth_on:
+        raise SystemExit(
+            f"拒绝启动：当前是免密演示模式（AUTH_ENABLED=0），不能监听非本机地址 {host}。"
+            "请先设置 AUTH_ENABLED=1 并配置 DEMO_TOKEN_SECRET，或把 APP_HOST 改回 127.0.0.1。")
+    return host
+
+
 def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--smoke":
         sys.exit(_smoke(sys.argv[2]))
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=15010, reload=True)
+    host = resolve_bind_host()
+    reload_on = os.environ.get("APP_RELOAD", "0").strip().lower() in ("1", "true", "yes")
+    uvicorn.run("app.main:app", host=host, port=int(os.environ.get("APP_PORT", "15010")),
+                reload=reload_on)
 
 
 if __name__ == "__main__":

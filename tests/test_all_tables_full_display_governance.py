@@ -43,21 +43,40 @@ def test_css_table_data_table_governance():
 
 
 def test_html_templates_table_fixed_removed():
+    # F3 S4-07 强制 CSP 起 index.html 的 style 属性与内联 <style> 全部外移
+    #（元素挂 csp-s-N 类，规则在 static/css/csp-html-styles.css）。等效判据：
+    # 表格元素携带的 csp-s-N 类必须在外链样式中声明 table-layout: auto，
+    # 且模板 + 外链样式联合文本中不得出现 table-layout: fixed。
+    import re as _re
     tpl_path = ROOT / "demo" / "templates" / "index.html"
     content = tpl_path.read_text(encoding="utf-8")
+    css = (ROOT / "demo" / "static" / "css" / "csp-html-styles.css").read_text(encoding="utf-8")
+    css_flat = css.replace(" ", "")
 
-    # #archiveTable 和 #payablesTable 严禁含有 table-layout: fixed
-    assert 'id="archiveTable" style="table-layout: auto' in content, "#archiveTable 必须显式声明 table-layout: auto"
-    assert 'id="payablesTable" style="table-layout: auto' in content, "#payablesTable 必须显式声明 table-layout: auto"
-    assert 'table-layout: fixed' not in content, "index.html 中所有主要展示表格严禁使用 table-layout: fixed"
+    for tbl_id in ("archiveTable", "payablesTable"):
+        _i = content.find('id="%s"' % tbl_id)
+        assert _i != -1, "#%s 必须存在" % tbl_id
+        _tag = content[content.rfind("<table", 0, _i):content.find(">", _i)]
+        _m = _re.search(r'csp-s-(\d+)', _tag)
+        assert _m, "#%s 必须携带 csp-s-N 布局类" % tbl_id
+        assert ('.csp-s-%s{' % _m.group(1)) in css_flat, \
+            "#%s 的 csp-s-%s 规则必须在外链样式中" % (tbl_id, _m.group(1))
+        _rule = css_flat.split('.csp-s-%s{' % _m.group(1), 1)[1].split('}', 1)[0]
+        assert 'table-layout:auto' in _rule, \
+            "#%s 的外链规则必须显式声明 table-layout: auto" % tbl_id
 
-    # tab-analytics 容器宽度已放宽至 1440px
-    assert "max-width:1440px" in content, "tab-analytics 容器最大宽度必须放宽至 1440px 以容纳宽表"
+    assert 'table-layout: fixed' not in (content + css).replace(" ", ""), \
+        "index.html 与外链样式中所有主要展示表格严禁使用 table-layout: fixed"
+
+    # tab-analytics 容器宽度已放宽至 1440px（规则随 CSP 外移至 csp-html-styles.css）
+    assert "max-width:1440px" in css_flat, "tab-analytics 容器最大宽度必须放宽至 1440px 以容纳宽表"
 
 
 def test_js_dynamic_tables_governance():
-    js_path = ROOT / "demo" / "static" / "js" / "main.js"
-    content = js_path.read_text(encoding="utf-8")
+    # F4/F5 S4-11：观测台动态表格已随域拆分（事件流/分布表在 admin_observation.js、
+    # 实验列表在 kpi_trend.js）；联合全文口径（main.js + 观测 + KPI 域文件）。
+    content = "\n".join((ROOT / "demo" / "static" / "js" / f).read_text(encoding="utf-8")
+                        for f in ("main.js", "admin_observation.js", "kpi_trend.js"))
 
     # 1. 挽回与点踩指标：最近事件流表格
     assert 'id="analyticsRecentEventsTable"' in content, "必须生成专属 ID 的 analyticsRecentEventsTable"

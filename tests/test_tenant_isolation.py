@@ -284,6 +284,14 @@ def test_api_upload_receipts_isolated_via_header():
     from app.chains import supervisor as _supervisor
     _orig_run_pipeline = _supervisor.run_pipeline
 
+    # F2 契约（2026-10-13）：无密钥上传在管线之前同步返回 ENGINE_NOT_CONFIGURED；
+    # 本用例 subject 是「上传创建的单据落请求租户」，把引擎桩为已配置走 queued
+    # 路径，覆盖识别链路真实落库点（同步失败路径同样落身份租户，由
+    # test_tenant_identity_binding 侧覆盖）。
+    from app import api_receipts as _api_receipts
+    _orig_gate = _api_receipts._recognition_engine_unconfigured
+    _api_receipts._recognition_engine_unconfigured = lambda: False
+
     def _fake_run_pipeline(image_path, **kwargs):
         return {"data": None, "last_error": "mock: pipeline stubbed"}
 
@@ -326,6 +334,7 @@ def test_api_upload_receipts_isolated_via_header():
             "tenantB 列表不得可见 tenantA 上传的单据"
     finally:
         _supervisor.run_pipeline = _orig_run_pipeline
+        _api_receipts._recognition_engine_unconfigured = _orig_gate
 
 
 # -------------------------------------------------------------
@@ -597,30 +606,13 @@ def test_api_daily_consumption_isolated_and_void_guarded():
 # W-ISO-1：SQLite 数据库级纵深隔离兜底（防代码遗漏 tenant_id）
 # -------------------------------------------------------------
 def test_db_level_tenant_enforcement_omitted_filter():
-    """验证当应用层查询故意遗漏 tenant_id 时，DB 兜底层自动注入当前租户约束，防止跨租户越权。"""
+    """租户上下文内 scoped 即使不传 tenant_id 也自动补齐当前租户；维护上下文可 bypass。"""
     _db = _fresh_db()
     rid_a = _mk_receipt(_db, "Vendor_A", tenant_id=TENANT_A)
     rid_b = _mk_receipt(_db, "Vendor_B", tenant_id=TENANT_B)
 
-    # 1. 在 tenantA 严格上下文（strict=True）中：裸查询故意遗漏 tenant_id 必须抛错阻断
-    with _db.tenant_context(TENANT_A, strict=True):
-        s = _db.get_session()
-        try:
-            import pytest
-            with pytest.raises(_db.TenantBoundaryViolationError):
-                s.query(_db._ReceiptRow).filter(_db._ReceiptRow.id == rid_b).first()
-
-            with pytest.raises(_db.TenantBoundaryViolationError):
-                s.query(_db._ReceiptRow).all()
-
-            # 正确使用 db.scoped 带租户查询 -> 放行
-            row_a = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow, TENANT_A).filter(_db._ReceiptRow.id == rid_a).first()
-            assert row_a is not None and row_a.id == rid_a
-        finally:
-            s.close()
-
-    # 2. 在普通 tenantA 上下文（strict=False）中：scoped 即使不传 tenant_id 也自动补齐
-    with _db.tenant_context(TENANT_A, strict=False):
+    # 1. 在 tenantA 上下文中：scoped 即使不传 tenant_id 也自动补齐
+    with _db.tenant_context(TENANT_A):
         s = _db.get_session()
         try:
             scoped_rows = _db.scoped(s.query(_db._ReceiptRow), _db._ReceiptRow).all()

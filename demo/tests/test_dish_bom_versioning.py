@@ -42,6 +42,7 @@ def isolated_db(monkeypatch, tmp_path):
 
 
 def _owner_headers():
+    # 演示态不采信 X-Email。这里故意放伪造地址，changed_by 仍必须是 owner@demo.hk。
     return {"X-Role": "owner", "X-Email": "boss@demo.hk"}
 
 
@@ -70,7 +71,8 @@ def test_bom_versioning_snapshot_lifecycle():
     v1_detail = client.get(f"/api/dishes/{dish_id}/versions/1",
                            headers=_staff_headers()).json()["data"]
     assert v1_detail["version"] == 1
-    assert v1_detail["changed_by"] == "boss@demo.hk"
+    assert v1_detail["changed_by"] == "owner@demo.hk"
+    assert v1_detail["changed_by"] != "boss@demo.hk"
     assert v1_detail["snapshot"]["dish"]["name"] == "版本测试菜"
     assert v1_detail["snapshot"]["dish"]["price"] == 30.0
     assert len(v1_detail["snapshot"]["ingredients"]) == 1
@@ -90,6 +92,7 @@ def test_bom_versioning_snapshot_lifecycle():
     assert [v["version"] for v in vlist["versions"]] == [2, 1]
     v2_detail = client.get(f"/api/dishes/{dish_id}/versions/2",
                            headers=_staff_headers()).json()["data"]
+    assert v2_detail["changed_by"] == "owner@demo.hk"
     assert v2_detail["snapshot"]["ingredients"][0]["consumption_qty"] == 0.2
     v1_again = client.get(f"/api/dishes/{dish_id}/versions/1",
                           headers=_staff_headers()).json()["data"]
@@ -130,7 +133,7 @@ def test_bom_versioning_snapshot_lifecycle():
 
 
 def test_versions_endpoint_rejects_cross_tenant():
-    """跨租户不可见他人餐品版本历史。"""
+    """跨租户不可见他人餐品版本历史。租户键只看 X-Tenant-Id，操作人是角色邮箱。"""
     headers_a = {"X-Role": "owner", "X-Email": "a@a.hk", "X-Tenant-Id": "tenant_a"}
     headers_b = {"X-Role": "owner", "X-Email": "b@b.hk", "X-Tenant-Id": "tenant_b"}
 
@@ -140,6 +143,10 @@ def test_versions_endpoint_rejects_cross_tenant():
         "name": "版本租户A菜", "price": 10.0,
         "ingredients": [{"sku_id": sku_a, "consumption_qty": 0.1, "unit": "kg"}],
     }, headers=headers_a).json()["data"]["id"]
+
+    own = client.get(f"/api/dishes/{dish_a}/versions/1", headers=headers_a)
+    assert own.status_code == 200, own.text
+    assert own.json()["data"]["changed_by"] == "owner@demo.hk"
 
     resp = client.get(f"/api/dishes/{dish_a}/versions", headers=headers_b)
     assert resp.status_code == 404

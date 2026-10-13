@@ -158,6 +158,8 @@ class CostingService:
 
         unit_needed = (unit_needed or "").strip()
         date_str = (date or "").strip() or db.now_iso()[:10]
+        _sku0 = session.get(db._SkuRow, int(sku_id))
+        _tid = getattr(_sku0, "tenant_id", None)
 
         active_batches = CostingService.get_active_batches(session, sku_id)
         details: List[Dict] = []
@@ -169,7 +171,7 @@ class CostingService:
                 break
 
             # 将批次当前剩余量折算到需求单位
-            avail_in_needed = convert_unit_quantity(b.remaining_qty, b.unit, unit_needed)
+            avail_in_needed = convert_unit_quantity(b.remaining_qty, b.unit, unit_needed, tenant_id=_tid)
             if avail_in_needed <= 0:
                 b.is_closed = 1
                 continue
@@ -183,7 +185,7 @@ class CostingService:
             else:
                 # 批次部分扣减
                 take_in_needed = remaining_needed
-                take_in_batch_unit = convert_unit_quantity(take_in_needed, unit_needed, b.unit)
+                take_in_batch_unit = convert_unit_quantity(take_in_needed, unit_needed, b.unit, tenant_id=_tid)
                 b.remaining_qty = round(b.remaining_qty - take_in_batch_unit, 4)
                 if b.remaining_qty <= 0:
                     b.remaining_qty = 0.0
@@ -215,12 +217,12 @@ class CostingService:
                 .first()
             )
             if last_batch and last_batch.unit_cost > 0:
-                factor = convert_unit_quantity(1.0, unit_needed, last_batch.unit)
+                factor = convert_unit_quantity(1.0, unit_needed, last_batch.unit, tenant_id=_tid)
                 ref_unit_cost = round(last_batch.unit_cost * factor, 4)
             else:
                 sku_row = session.get(db._SkuRow, int(sku_id))
                 if sku_row and sku_row.last_unit_price > 0:
-                    factor = convert_unit_quantity(1.0, unit_needed, sku_row.base_unit)
+                    factor = convert_unit_quantity(1.0, unit_needed, sku_row.base_unit, tenant_id=_tid)
                     ref_unit_cost = round(sku_row.last_unit_price * factor, 4)
 
             est_cost = round(remaining_needed * ref_unit_cost, 2)
@@ -271,6 +273,7 @@ class CostingService:
             return False
 
         cons.is_void = 1
+        _tid = getattr(cons, "tenant_id", None)
 
         details = (
             session.query(db._DailyConsumptionDetailRow)
@@ -282,7 +285,7 @@ class CostingService:
             if dt.batch_id:
                 batch = session.get(db._InventoryBatchRow, dt.batch_id)
                 if batch and batch.is_estimated == 0:
-                    qty_in_batch_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, batch.unit)
+                    qty_in_batch_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, batch.unit, tenant_id=_tid)
                     batch.remaining_qty = round(batch.remaining_qty + qty_in_batch_unit, 4)
                     if batch.remaining_qty > 0:
                         batch.is_closed = 0
@@ -290,7 +293,7 @@ class CostingService:
             # 恢复 SKU 当前库存
             sku = session.get(db._SkuRow, dt.sku_id)
             if sku:
-                qty_in_sku_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, sku.base_unit)
+                qty_in_sku_unit = convert_unit_quantity(dt.qty_consumed, dt.unit, sku.base_unit, tenant_id=_tid)
                 sku.current_stock = round(sku.current_stock + qty_in_sku_unit, 4)
 
         return True

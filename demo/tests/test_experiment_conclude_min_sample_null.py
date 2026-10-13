@@ -89,7 +89,7 @@ def test_null_min_sample_does_not_500_and_falls_back_to_100():
     body = resp.json()
     assert body["status"] == "error"
     # 口径与 guardian / create_experiment 一致：NULL 视为默认 100
-    assert "min_sample=100" in body["msg"], body["msg"]
+    assert "至少需要 100 条" in body["msg"], body["msg"]
 
 
 def test_null_min_sample_passes_when_sample_size_reaches_default():

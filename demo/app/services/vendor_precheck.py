@@ -31,6 +31,7 @@ import concurrent.futures
 import logging
 import os
 import tempfile
+import threading
 
 logger = logging.getLogger("vendor_precheck")
 
@@ -43,13 +44,33 @@ SETTINGS_KEY = "vendor_precheck_enabled"
 _ENV_SWITCH = "VENDOR_PRECHECK_ENABLED"
 _TRUE_WORDS = ("1", "true", "yes", "on", "y", "t")
 
-# 只抽一个字段：限定模型自由度，减少输出体积与解析失败面
-_SYSTEM_PROMPT = (
-    "你是香港进货单据的抬头识别助手，只负责读出一个字段：供应商（卖方）名称。"
-    "只输出 JSON，形如 {\"vendor\": \"供应商名称\"}。"
-    "无法确定时必须输出 {\"vendor\": \"\"}；不要猜测、不要输出其它字段、不要解释。"
-)
-_HUMAN_TEXT = "这是收据的抬头区域，请只给出供应商名称（JSON，键名 vendor，只输出 JSON）。"
+def _load_prompts():
+    """从 ai_registry 读取预判提示词；读不到就显式失败（不留内联副本），由调用方告警并按未命中处理。"""
+    from ai_registry.registry import ai_registry
+    system_prompt = ai_registry.get_prompt("precheck")
+    import importlib
+    meta = ai_registry.get_prompt_metadata("precheck")
+    mod = importlib.import_module(f"ai_registry.prompts.precheck.{meta['active_version']}")
+    return system_prompt, getattr(mod, "HUMAN_TEXT")
+
+
+# 最近一次预判的用量，按图片路径暂存，供随后的识别任务把预判成本计入单张成本。
+_USAGE_BY_IMAGE: dict = {}
+_USAGE_LOCK = threading.Lock()
+_USAGE_MAX = 256
+
+
+def _stash_usage(image_path, usage: dict) -> None:
+    with _USAGE_LOCK:
+        if len(_USAGE_BY_IMAGE) >= _USAGE_MAX:
+            _USAGE_BY_IMAGE.pop(next(iter(_USAGE_BY_IMAGE)), None)
+        _USAGE_BY_IMAGE[str(image_path)] = usage
+
+
+def pop_precheck_usage(image_path) -> dict:
+    """取走并清除该图片的预判用量（{"token_usage","cost_cny","cost_estimated"}）；没有则返回空 dict。"""
+    with _USAGE_LOCK:
+        return _USAGE_BY_IMAGE.pop(str(image_path), {}) or {}
 
 
 def is_enabled() -> bool:
@@ -138,7 +159,7 @@ def _content_text(result) -> str:
     return str(result)
 
 
-def predict_vendor(image_path, cfg=None) -> str:
+def predict_vendor(image_path, cfg=None, usage_out=None) -> str:
     """预判单据供应商名；任何失败返回空串（绝不抛异常，供上传链路直接调用）。
 
     流程：开关关闭即返回空串（零开销）→ 裁抬头 ROI → 识别腿模型（只抽 vendor）
@@ -147,6 +168,8 @@ def predict_vendor(image_path, cfg=None) -> str:
     的解析口径完全一致）。
 
     cfg：EngineConfig；缺省 None 时**本函数自行解析管理台配置**（见下）。
+    usage_out：可选 dict，成功调用后写入本次预判的 token 用量与成本；无论是否传入，
+    用量都会按图片路径暂存，供 supervisor 计入同一张单的成本（pop_precheck_usage）。
     """
     if not is_enabled():
         # 缺省路径：开关关闭时零行为变化（不裁剪、不建模型、不发网络请求）
@@ -183,13 +206,14 @@ def predict_vendor(image_path, cfg=None) -> str:
         from app.chains import extract_chain
         from app.llm import build_recognition_model
 
+        system_prompt, human_text = _load_prompts()
         model = build_recognition_model(cfg=cfg)
         messages = [
-            SystemMessage(content=_SYSTEM_PROMPT),
+            SystemMessage(content=system_prompt),
             HumanMessage(content=[
                 {"type": "image_url",
                  "image_url": {"url": extract_chain._image_data_url(roi_path)}},
-                {"type": "text", "text": _HUMAN_TEXT},
+                {"type": "text", "text": human_text},
             ]),
         ]
         # 独立超时：见 DEFAULT_TIMEOUT_SECONDS 的 why。shutdown(wait=False)
@@ -198,6 +222,16 @@ def predict_vendor(image_path, cfg=None) -> str:
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         future = pool.submit(model.invoke, messages)
         result = future.result(timeout=DEFAULT_TIMEOUT_SECONDS)
+        try:
+            tu = extract_chain._extract_token_usage(result)
+            cost, est, _why = extract_chain._cost_from_tokens_ex(
+                tu, extract_chain._model_cost_tier_name(model))
+            usage = {"token_usage": tu, "cost_cny": float(cost or 0), "cost_estimated": bool(est)}
+            _stash_usage(image_path, usage)
+            if isinstance(usage_out, dict):
+                usage_out.update(usage)
+        except Exception as usage_err:
+            logger.warning("[vendor_precheck] 预判成本统计失败(不影响识别): %s", usage_err)
         vendor = extract_chain._extract_vendor_from_raw(_content_text(result))
         return str(vendor or "").strip()
     except concurrent.futures.TimeoutError:

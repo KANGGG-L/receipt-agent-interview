@@ -108,6 +108,11 @@ def common_stubs(monkeypatch, tmp_path):
     """三入口共用的重活替换：落盘/画质门/预处理/埋点/URL 签名。"""
     from app.services import preprocess
     img = _write_injected_image(tmp_path)
+    # F2 契约（2026-10-13）：无密钥单张上传在守卫之前同步返回
+    # ENGINE_NOT_CONFIGURED。本文件 subject 是「三入口必扫」，单张入口须把
+    # 引擎桩为已配置以抵达守卫（批量/换图/retry 入口无此闸门，桩不影响）。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
     monkeypatch.setattr(api_receipts, "_save_upload", lambda _f: img)
     monkeypatch.setattr(api_receipts, "_laplacian_variance", lambda _p: None)
     monkeypatch.setattr(api_receipts, "public_image_url", lambda *a, **k: "")

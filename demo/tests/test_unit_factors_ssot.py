@@ -3,7 +3,7 @@
 
 覆盖：
 1. costing_service 与 unit_factors 同源（同一对象 re-export，非拷贝漂移）；
-2. 折算系数唯一：重量单位（含「斤」= 0.5）显示层与成本层同值，计件/体积/空单位不折算；
+2. 折算系数唯一：重量单位（含「斤」= 0.6048 港斤）显示层与成本层同值，计件/体积/空单位不折算；
 3. 显式 市斤=0.5 / 司马斤=0.6048 折算正确（含显示层与成本层）。
 """
 
@@ -39,8 +39,8 @@ def test_standard_kg_weight_units_convert_and_count_units_none():
     """重量单位按 unit_factors 折算；计件/体积/空单位返回 None（不折算）。"""
     from app import api_inventory
 
-    assert api_inventory._standard_kg(10.0, "斤") == 5.0
-    assert api_inventory._standard_kg(10.0, " 斤 ") == 5.0
+    assert api_inventory._standard_kg(10.0, "斤") == 6.048
+    assert api_inventory._standard_kg(10.0, " 斤 ") == 6.048
     assert api_inventory._standard_kg(10.0, "市斤") == 5.0
     assert api_inventory._standard_kg(10.0, "司马斤") == 6.048
     assert api_inventory._standard_kg(10.0, "kg") == 10.0
@@ -53,8 +53,8 @@ def test_standard_kg_weight_units_convert_and_count_units_none():
 
 
 def test_convert_unit_quantity_unified_factor():
-    """成本层与显示层同系数：「斤」= 市斤 = 0.5；司马斤 = 0.6048。"""
-    assert unit_factors.convert_unit_quantity(1.0, "斤", "kg") == 0.5
+    """成本层与显示层同系数：「斤」= 司马斤 = 0.6048；市斤 = 0.5。"""
+    assert unit_factors.convert_unit_quantity(1.0, "斤", "kg") == 0.6048
     assert unit_factors.convert_unit_quantity(1.0, "市斤", "kg") == 0.5
     assert unit_factors.convert_unit_quantity(1.0, "司马斤", "kg") == 0.6048
     assert unit_factors.convert_unit_quantity(604.8, "g", "司马斤") == 1.0
@@ -65,8 +65,8 @@ def test_convert_unit_quantity_unified_factor():
 
 def test_unit_to_kg_factor_single_value():
     """unit_to_kg_factor：重量单位给唯一系数，非重量单位/空值返回 None。"""
-    assert unit_factors.unit_to_kg_factor("斤") == 0.5
-    assert unit_factors.unit_to_kg_factor(" 斤 ") == 0.5
+    assert unit_factors.unit_to_kg_factor("斤") == 0.6048
+    assert unit_factors.unit_to_kg_factor(" 斤 ") == 0.6048
     assert unit_factors.unit_to_kg_factor("市斤") == 0.5
     assert unit_factors.unit_to_kg_factor("司马斤") == 0.6048
     assert unit_factors.unit_to_kg_factor("份") is None

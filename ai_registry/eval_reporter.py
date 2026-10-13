@@ -43,7 +43,10 @@ def show_summary():
     for item in matrix.get("skills", []):
         name = item["skill_name"]
         ver = item["version"]
-        metric_str = f"Score: {item['benchmark_score']}/100 | Quality: {item['pass_rate']}%"
+        if item.get("benchmark_score") is None:
+            metric_str = "N/A（无支撑，claim_unsupported）"
+        else:
+            metric_str = f"Score: {item['benchmark_score']}/100 | Quality: {item['pass_rate']}%"
         print(f"{'Skill':<10} | {name:<20} | {ver:<16} | {metric_str:<25}")
 
     print("=" * 80)

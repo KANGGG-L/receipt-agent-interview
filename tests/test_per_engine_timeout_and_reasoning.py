@@ -17,6 +17,11 @@ from app.main import app
 
 client = TestClient(app, headers={"X-Role": "admin"})
 
+# F4/F5 S4-11：main.js 已拆为组装层 + 域文件；源码级守卫统一用联合全文
+if os.path.join(DEMO_DIR, "tests") not in sys.path:
+    sys.path.insert(0, os.path.join(DEMO_DIR, "tests"))
+from f4_frontend_sources import frontend_union  # noqa: E402
+
 
 def test_model_ac_mod_fields_and_defaults():
     """AC-MOD-01: EngineConfig 具备 6 个独立超时字段定义（初始缺省为 None）与 6 个思考强度字段定义（初始缺省为 ''）。"""
@@ -296,10 +301,8 @@ def test_frontend_controls_and_no_emoji_ac_fe():
     for effort in ("low", "medium", "high", "xhigh", "max"):
         assert f'value="{effort}"' in content
 
-    # 验证 main.js 中已绑定 load 与 save
-    js_path = os.path.join(DEMO_DIR, "static", "js", "main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js_content = f.read()
+    # 验证前端 JS（联合全文）中已绑定 load 与 save（adminRecTimeoutSeconds 等在 engine_admin.js）
+    js_content = frontend_union()
 
     for ctrl_id in expected_ids:
-        assert ctrl_id in js_content, f"Missing {ctrl_id} in main.js"
+        assert ctrl_id in js_content, f"Missing {ctrl_id} in frontend JS union"

@@ -109,8 +109,8 @@ def test_benchmark_matrix_active_versions_are_current():
     """benchmark_matrix.json 的 active_version 必须与各资产实际 active 对齐。"""
     matrix = _load(os.path.join(AI_REGISTRY, "benchmarks", "benchmark_matrix.json"))
     prompts = {p["scene"]: p["active_version"] for p in matrix["prompts"]}
-    assert prompts["extract"] == "v1_2_8_anti_injection", (
-        "extract 的 active_version 仍陈旧（应指向 v1_2_8_anti_injection）")
+    assert prompts["extract"] == "v1_2_0_sku_clean", (
+        "extract 的 active_version 仍陈旧（应指向有实测指标的准入版本 v1_2_0_sku_clean）")
     assert prompts["audit"] == "v2_1_0_overall_schema"
     # 与 prompts metadata 实际 active 对齐
     for scene, ver in prompts.items():

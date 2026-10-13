@@ -110,6 +110,11 @@ def _stub_pipeline(monkeypatch):
     monkeypatch.setattr(supervisor, "run_pipeline",
                         lambda image_path, **kw: {"data": None,
                                                   "last_error": "mock: pipeline stubbed"})
+    # F2 契约（2026-10-13）：无密钥上传在管线之前同步返回 ENGINE_NOT_CONFIGURED；
+    # 本用例 subject 是「落库租户」而非引擎配置，把引擎桩为已配置以走异步路径
+    # （queued），使租户绑定断言覆盖识别链路的真实落库点。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
 
 
 # -------------------------------------------------------------

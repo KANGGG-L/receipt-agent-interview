@@ -72,7 +72,13 @@ def apply_receipt_to_inventory(row, tenant_id=None):
     _alias_protected = 0      # 既有别名指向被保护、未改指的次数
 
     items = db.get_receipt_items(row.id)
-    for it in items:
+    # 预检必须在写任何流水之前完成：币种汇率、单位换算有一项不满足就整张单拒绝入账，
+    # 不会出现前几行已入库、后几行失败的部分入账。
+    planned = precheck_receipt_for_inventory(row, items, _tenant, _supplier_id)
+    from app import units_store
+    _cur = units_store.norm_currency(getattr(row, "currency", None))
+    _fx_rate = units_store.hkd_rate_for_receipt(_tenant, row.id, _cur) or 1.0
+    for _idx, it in enumerate(items):
         # 口径对齐门禁/总额：票面划线作废行（拒收/退货）不入库、不进成本
         if it.get("is_void"):
             continue
@@ -109,9 +115,13 @@ def apply_receipt_to_inventory(row, tenant_id=None):
             # 传副本并显式清空 sku_id/matched：解析期调用前这两个值恒为 None/0，
             # 而 `_match_sku` **未命中时不会清空**传入值 —— 不清就会读到残留旧值
             # （死指向、或被上面判为"无证据"的旧指向），把它当成匹配结果（实测踩到）。
-            _probe = dict(it, sku_id=None, matched=0)
-            _match_sku(_probe, tenant_id=_tenant, supplier_id=_supplier_id)
-            sku_id = _probe.get("sku_id")
+            if _idx in planned:
+                # 预检时已用同一个匹配实现算过一次，这里直接沿用，不重复匹配
+                sku_id = planned[_idx]
+            else:
+                _probe = dict(it, sku_id=None, matched=0)
+                _match_sku(_probe, tenant_id=_tenant, supplier_id=_supplier_id)
+                sku_id = _probe.get("sku_id")
 
         if not sku_id:
             # 仍未命中 → 核心词归一后建 SKU（避免流水号变体各建一个）
@@ -153,12 +163,27 @@ def apply_receipt_to_inventory(row, tenant_id=None):
                 _alias_ok += 1
             else:
                 _alias_skip[_alias_err] = _alias_skip.get(_alias_err, 0) + 1
+        _in_qty = it.get("quantity", 0)
+        _in_unit = it.get("unit") or ""
+        _sku_obj = db.get_sku(sku_id, tenant_id=_tenant) if sku_id else None
+        _base_unit = (getattr(_sku_obj, "base_unit", "") or "").strip()
+        if _base_unit and _in_unit and _base_unit.lower() != _in_unit.strip().lower():
+            from app.services.unit_factors import convert_unit_quantity
+            _in_qty = convert_unit_quantity(float(_in_qty or 0), _in_unit, _base_unit,
+                                            tenant_id=_tenant)
+            _in_unit = _base_unit
+        # 库存货值、进价、批次成本一律按港币记；外币单按入账时存的汇率折算，原币种金额留在备注里
+        _amount = it.get("amount", 0)
+        _note = ""
+        if _fx_rate != 1.0:
+            _note = "原币种 %s %.2f，汇率 %s" % (_cur, float(_amount or 0), _fx_rate)
+            _amount = round(float(_amount or 0) * _fx_rate, 2)
         db.apply_stock_log(
             sku_id=sku_id, name=canonical_sku_name(name),
-            qty=it.get("quantity", 0), unit=it.get("unit") or "",
-            amount=it.get("amount", 0), vendor=row.supplier_name,
+            qty=_in_qty, unit=_in_unit,
+            amount=_amount, vendor=row.supplier_name,
             date=row.receipt_date or "", receipt_id=row.id, kind="in",
-            tenant_id=_tenant,
+            note=_note, tenant_id=_tenant,
         )
     # P2-T2：别名登记结果汇总留痕。`NO_SUPPLIER` 是**正常**情形（该单据的供应商没有
     # 档案，别名表按供应商建键故无从登记）→ info；其余原因（INVALID_SKU / CONFLICT /
@@ -177,6 +202,56 @@ def apply_receipt_to_inventory(row, tenant_id=None):
             logger.info("[inventory] receipt %s 供应商别名登记 %d 条 / 跳过 %d 条"
                         "（供应商档案未锚定）", row.id, _alias_ok,
                         _alias_skip.get("NO_SUPPLIER", 0))
+
+
+def precheck_receipt_for_inventory(row, items, tenant_id, supplier_id=None):
+    """入账前的只读预检：汇率、单位换算。不满足则抛 DomainError，此时尚未写任何数据。
+
+    - 非港币单据必须有汇率（租户设置里的汇率表）；通过后把当时的汇率存快照，之后报表按它折算
+    - 每行明细单位与目标 SKU 的库存单位不同，必须换算得了；换算不了的行全部列出
+    """
+    from app import units_store
+    from app.services.domain_errors import FxRateMissing, UnitConversionMissing
+    from app.services.receipt_utils import _match_sku
+    from app.services.unit_factors import conversion_factor
+
+    cur = units_store.norm_currency(getattr(row, "currency", None))
+    if cur != units_store.BASE_CURRENCY:
+        rate = units_store.get_fx_rate(tenant_id, cur)
+        if not rate:
+            raise FxRateMissing(cur)
+    pairs, seen = [], set()
+    planned = {}
+    for _idx, it in enumerate(items):
+        if it.get("is_void"):
+            continue
+        sku = None
+        sid = it.get("sku_id")
+        if sid and it.get("matched"):
+            sku = db.get_sku(sid, tenant_id=tenant_id)
+        if sku is None:
+            probe = dict(it, sku_id=None, matched=0)
+            _match_sku(probe, tenant_id=tenant_id, supplier_id=supplier_id)
+            planned[_idx] = probe.get("sku_id")
+            if probe.get("sku_id"):
+                sku = db.get_sku(probe["sku_id"], tenant_id=tenant_id)
+        in_unit = (it.get("unit") or "").strip()
+        if not in_unit:
+            continue
+        base = (getattr(sku, "base_unit", "") or "").strip() if sku else ""
+        if not base:
+            continue
+        if conversion_factor(in_unit, base, tenant_id) is None:
+            key = (in_unit, base, it.get("name") or "")
+            if key not in seen:
+                seen.add(key)
+                pairs.append({"from_unit": in_unit, "to_unit": base,
+                              "item_name": it.get("name") or ""})
+    if pairs:
+        raise UnitConversionMissing(pairs)
+    if cur != units_store.BASE_CURRENCY:
+        units_store.save_receipt_fx(tenant_id, row.id, cur, rate)
+    return planned
 
 
 def cost_summary(tenant_id=None) -> dict:
@@ -222,3 +297,99 @@ def cost_summary(tenant_id=None) -> dict:
             "prices": prices,
         }
     return {"total_cost": round(weighted_total, 2), "items": items}
+
+
+class ReversalBlocked(Exception):
+    """入库的货已被消耗，不能干净地冲销；msg 是给老板看的人话。"""
+
+    def __init__(self, msg, details=None):
+        super().__init__(msg)
+        self.msg = msg
+        self.details = details or []
+
+
+def reverse_receipt_inventory(receipt_id, who, reason="", tenant_id=None):
+    """冲销一张已入账单据对库存的影响（必须在 db.atomic() 里调用）。
+
+    - 逐条找出该单的入库流水（kind='in'），写一条与原流水关联的反向流水
+      （kind='reversal'，数量与金额取负，note 写明冲销哪张单），原流水保持不动；
+    - 同步扣回 SKU 当前库存、把该单的入库批次冲减为 0 并关闭；
+    - 该单入库的货若已被消耗（批次剩余 < 入库量，或库存不够扣回），整体拒绝
+      （ReversalBlocked），一条都不改；
+    - 幂等：该单已存在 reversal 流水则直接返回空列表，不会重复冲减。
+    返回本次写入的反向流水描述列表。
+    """
+    from app import db
+    from app.money import qty as _q, unit_price as _up
+    tid = str(tenant_id or "default")
+    s = db.get_session()
+    logs = s.query(db._StockLogRow).filter(
+        db._StockLogRow.receipt_id == int(receipt_id),
+        db._StockLogRow.tenant_id == tid,
+    ).order_by(db._StockLogRow.id).all()
+    if any(l.kind == "reversal" for l in logs):
+        return []
+    in_logs = [l for l in logs if l.kind == "in" and l.sku_id]
+
+    per_sku = {}
+    for l in in_logs:
+        per_sku[int(l.sku_id)] = per_sku.get(int(l.sku_id), 0.0) + float(l.qty or 0)
+
+    blocked = []
+    batches_by_sku = {}
+    for sku_id, qty_in in per_sku.items():
+        sku = s.get(db._SkuRow, sku_id)
+        batches = s.query(db._InventoryBatchRow).filter(
+            db._InventoryBatchRow.receipt_id == int(receipt_id),
+            db._InventoryBatchRow.sku_id == sku_id).all()
+        batches_by_sku[sku_id] = batches
+        name = (sku.name if sku else "") or f"货品#{sku_id}"
+        unit = (sku.base_unit if sku else "") or ""
+        for b in batches:
+            used = _q((b.initial_qty or 0) - (b.remaining_qty or 0))
+            if used > 0:
+                blocked.append({"sku_id": sku_id, "name": name, "unit": unit,
+                                "used": used, "received": _q(b.initial_qty or 0)})
+        if sku is not None and _q(sku.current_stock or 0) + 1e-9 < _q(qty_in):
+            blocked.append({"sku_id": sku_id, "name": name, "unit": unit,
+                            "used": _q(qty_in - (sku.current_stock or 0)),
+                            "received": _q(qty_in)})
+    if blocked:
+        first = blocked[0]
+        raise ReversalBlocked(
+            f"这张单入库的「{first['name']}」已经用掉了一部分（入库 {first['received']}"
+            f"{first['unit']}，已用 {first['used']}{first['unit']}），不能直接冲销。"
+            "请先在库存页盘点，把库存调整准确后再冲销。", blocked)
+
+    written = []
+    for l in in_logs:
+        sku = s.get(db._SkuRow, int(l.sku_id))
+        if sku is not None:
+            sku.current_stock = _q((sku.current_stock or 0) - float(l.qty or 0))
+        s.add(db._StockLogRow(
+            sku_id=l.sku_id, name=l.name, qty=-float(l.qty or 0), unit=l.unit,
+            amount=-float(l.amount or 0), vendor=l.vendor, date=db.now_iso()[:10],
+            receipt_id=int(receipt_id), kind="reversal",
+            note=f"冲销单据 #{receipt_id}（原流水 #{l.id}）" + (f"：{reason}" if reason else ""),
+            created_at=db.now_iso(), tenant_id=tid))
+        written.append({"sku_id": l.sku_id, "name": l.name, "qty": -float(l.qty or 0),
+                        "unit": l.unit, "original_log_id": l.id})
+    for sku_id, batches in batches_by_sku.items():
+        for b in batches:
+            b.remaining_qty = 0.0
+            b.is_closed = 1
+        # 进价回到冲销后最近一次仍有效的入库价
+        sku = s.get(db._SkuRow, sku_id)
+        if sku is not None:
+            reversed_ids = {int(x.receipt_id) for x in s.query(db._StockLogRow).filter(
+                db._StockLogRow.kind == "reversal", db._StockLogRow.sku_id == sku_id,
+                db._StockLogRow.tenant_id == tid).all() if x.receipt_id is not None}
+            reversed_ids.add(int(receipt_id))
+            prev = [x for x in s.query(db._StockLogRow).filter(
+                db._StockLogRow.kind == "in", db._StockLogRow.sku_id == sku_id,
+                db._StockLogRow.tenant_id == tid).order_by(db._StockLogRow.id.desc()).all()
+                if x.receipt_id not in reversed_ids and (x.qty or 0) > 0]
+            if prev:
+                sku.last_unit_price = _up((prev[0].amount or 0) / prev[0].qty)
+    s.flush()
+    return written

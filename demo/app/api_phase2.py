@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 
 from app import db
 from app.api_admin import resolve_tenant_filter
-from app.auth import require_role, require_admin
+from app.auth import require_role, require_admin, resolve_tenant
 
 router = APIRouter()
 
@@ -100,53 +100,6 @@ def _compute_metrics(rows) -> dict:
 
 
 # -------------------------------------------------------------
-# 2.1 AI 指标
-# -------------------------------------------------------------
-@router.get("/api/admin/ai-metrics")
-def ai_metrics(request: Request):
-    require_role("owner")(request)
-    grp = request.query_params.get("group")
-    metric = request.query_params.get("metric") or "accuracy"
-    granularity = request.query_params.get("granularity") or "global"
-    s = db.get_session()
-    try:
-        q = s.query(db._DecisionLogRow)
-        if grp in ("control", "treatment"):
-            q = q.filter(db._DecisionLogRow.grp == grp)
-        rows = q.all()
-    finally:
-        s.close()
-    data = _compute_metrics(rows)
-    return {"status": "success", "data": data, "metric": metric, "granularity": granularity}
-
-
-# -------------------------------------------------------------
-# 2.2 灰测效果对比
-# -------------------------------------------------------------
-@router.get("/api/admin/grey-compare")
-def grey_compare(request: Request):
-    require_role("owner")(request)
-    s = db.get_session()
-    try:
-        ctrl = s.query(db._DecisionLogRow).filter(db._DecisionLogRow.grp == "control").all()
-        treat = s.query(db._DecisionLogRow).filter(db._DecisionLogRow.grp == "treatment").all()
-    finally:
-        s.close()
-    c = _compute_metrics(ctrl)
-    t = _compute_metrics(treat)
-
-    def diff(a, b):
-        if a is None or b is None:
-            return None
-        return round(b - a, 4)  # treatment - control
-
-    return {"status": "success", "data": {
-        "control": c, "treatment": t,
-        "diff": {k: diff(c.get(k), t.get(k)) for k in ("accuracy", "hallucination_rate", "edit_rate", "audit_adoption_rate", "trust_score")}
-    }}
-
-
-# -------------------------------------------------------------
 # 2.3 使用漏斗
 # -------------------------------------------------------------
 FUNNEL_DEFAULT = [
@@ -158,14 +111,16 @@ FUNNEL_DEFAULT = [
     ("inventory_in", ("inventory_in",)),
 ]
 
-@router.get("/api/admin/funnel")
+@router.get("/api/funnel")
+@router.get("/api/admin/funnel")  # 旧路径别名，下个版本删除：老板级接口不应挂在 admin 路径下
 def funnel(request: Request):
     require_role("owner")(request)
     period = request.query_params.get("period", "7d")
     steps = FUNNEL_DEFAULT
     s = db.get_session()
     try:
-        rows = s.query(db._UserEventRow).all()
+        rows = db.scoped(s.query(db._UserEventRow), db._UserEventRow,
+                         resolve_tenant(request)).all()
     finally:
         s.close()
     # 按 event_type 计数（先做全量；period 过滤在 event_type 维度暂不强制，数据少时全量即可）
@@ -379,7 +334,6 @@ def recovery_summary(
 # -------------------------------------------------------------
 # 2.6 埋点事件明细审计与分页下钻接口 (Drill-down Event Logs API)
 # -------------------------------------------------------------
-@router.get("/api/analytics/events")
 @router.get("/api/analytics/events/logs")
 def analytics_event_logs(
     request: Request,
@@ -491,7 +445,6 @@ def analytics_event_logs(
 # 2.7 8 大核心 KPI 时序趋势与多维下钻分析接口 (KPI Trends API)
 # -------------------------------------------------------------
 @router.get("/api/analytics/kpi-trends")
-@router.get("/api/obs/kpi-trend")
 def analytics_kpi_trends(
     request: Request,
     metric_key: str = "",
@@ -617,19 +570,22 @@ def analytics_kpi_trends(
 class ExpConcludeBody(BaseModel):
     conclusion: str  # promote|rollback|inconclusive
     conclusion_reason: str
-    concluded_by: str
+    # 兼容旧客户端的字段：结题人只取自登录身份，请求体里的值一律忽略
+    concluded_by: Optional[str] = None
 
 
 @router.post("/api/admin/experiments/{exp_id}/conclude")
 def conclude_experiment(exp_id: int, body: ExpConcludeBody, request: Request):
-    require_role("owner")(request)
+    # 实验是平台级对象（没有租户归属），创建/启动/停止都是超管操作，结题同级
+    require_admin(request)
+    who = (getattr(request.state, "account", None) or {}).get("email", "unknown")
     _s = db.get_session()
     try:
         exp = _s.query(db._ExperimentRow).get(exp_id)
         if not exp:
-            return JSONResponse(status_code=404, content={"status": "error", "msg": "实验不存在"})
+            return JSONResponse(status_code=404, content={"status": "error", "code": "EXPERIMENT_NOT_FOUND", "msg": "找不到这个实验，请刷新页面后再试。"})
         if exp.status == "concluded":
-            return JSONResponse(status_code=400, content={"status": "error", "msg": "实验已结题"})
+            return JSONResponse(status_code=409, content={"status": "error", "code": "EXPERIMENT_CONCLUDED", "msg": "这个实验已经结题了，不能重复结题。"})
         # 校验 min_sample
         logs = _s.query(db._DecisionLogRow).filter(
             db._DecisionLogRow.experiment_id == exp_id
@@ -641,10 +597,10 @@ def conclude_experiment(exp_id: int, body: ExpConcludeBody, request: Request):
         # 「不做样本量门槛」，不在此处自创语义。
         min_sample = db.coerce_int(exp.min_sample, 100)
         if n < min_sample:
-            return JSONResponse(status_code=400, content={"status": "error", "msg": f"样本量不足：treatment={n} < min_sample={min_sample}"})
+            return JSONResponse(status_code=400, content={"status": "error", "code": "SAMPLE_TOO_SMALL", "msg": f"样本还不够：目前只有 {n} 条，至少需要 {min_sample} 条才能结题。"})
         exp.conclusion = body.conclusion
         exp.conclusion_reason = body.conclusion_reason
-        exp.concluded_by = body.concluded_by
+        exp.concluded_by = who
         exp.concluded_at = db.now_iso()
         exp.status = "concluded"
         exp.end_ts = db.now_iso()

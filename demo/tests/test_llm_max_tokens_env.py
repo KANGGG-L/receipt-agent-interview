@@ -93,13 +93,28 @@ class TestMaxTokensEnv(unittest.TestCase):
 
     def test_call_timeout_env_raises_transport_cap(self):
         captured = []
-        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "300"}):
+        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "300", "RECEIPT_OFFLINE_EVAL": "1"}):
             self._invoke(captured)
         self.assertEqual(captured[0][1]["timeout"], 300)
 
+    def test_call_timeout_env_ignored_online(self):
+        # 线上进程（没有声明离线评测）不得被环境变量把超时抬到分钟级
+        captured = []
+        env = {"OPENAI_REC_CALL_TIMEOUT": "300"}
+        with mock.patch.dict(os.environ, env):
+            os.environ.pop("RECEIPT_OFFLINE_EVAL", None)
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["timeout"], 60)
+
+    def test_call_timeout_env_ignored_in_production_even_if_offline_flag(self):
+        captured = []
+        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "300", "RECEIPT_OFFLINE_EVAL": "1", "ENV": "production"}):
+            self._invoke(captured)
+        self.assertEqual(captured[0][1]["timeout"], 60)
+
     def test_call_timeout_env_clamped_to_600(self):
         captured = []
-        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "9999"}):
+        with mock.patch.dict(os.environ, {"OPENAI_REC_CALL_TIMEOUT": "9999", "RECEIPT_OFFLINE_EVAL": "1"}):
             self._invoke(captured)
         self.assertEqual(captured[0][1]["timeout"], 600)
 

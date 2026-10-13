@@ -8,6 +8,7 @@ Verifies:
 4. demo/static/js/main.js escapeHtml properly escapes quotes, brackets, ampersands, and handles null/undefined.
 """
 
+import glob
 import json
 import os
 import re
@@ -212,16 +213,29 @@ def test_system_audit_masks_secrets():
 
 
 def test_frontend_escape_html_present_and_safe():
-    """Verify demo/static/js/main.js escapeHtml escapes single and double quotes, tags, ampersands."""
-    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
-    assert os.path.isfile(js_path)
-    with open(js_path, "r", encoding="utf-8") as f:
+    """Verify escapeHtml（前端加载集合内恰一份）escapes single and double quotes, tags, ampersands.
+
+    F4 S4-11 起 main.js 按域拆分，escapeHtml 实现已随引擎管理域迁至 engine_admin.js
+    （本用例在 F4 末态即已过期，未随 F4 收口同步）；守真不变量改为「前端加载集合
+    （main.js + 全部域文件）中恰有一份 escapeHtml 定义，且其行为安全」。
+    """
+    js_dir = os.path.abspath(os.path.join(DEMO_DIR, "static", "js"))
+    candidates = [os.path.join(js_dir, "main.js")] + sorted(
+        p for p in glob.glob(os.path.join(js_dir, "*.js"))
+        if os.path.basename(p) != "main.js")
+    hits = []
+    for p in candidates:
+        with open(p, "r", encoding="utf-8") as f:
+            if re.search(r"^function escapeHtml\s*\(", f.read(), re.M):
+                hits.append(p)
+    assert len(hits) == 1, "escapeHtml 必须恰有一份实现（前端加载集合内）：%r" % hits
+    with open(hits[0], "r", encoding="utf-8") as f:
         content = f.read()
 
     # Verify implementation contains essential escape rules
     pattern = r"function escapeHtml\s*\([^)]*\)\s*\{([\s\S]*?)\}"
     match = re.search(pattern, content)
-    assert match is not None, "escapeHtml function not found in main.js"
+    assert match is not None, "escapeHtml function not found in %s" % hits[0]
 
     fn_body = match.group(0)
     # Check that null/undefined handling and single quote replacement are present

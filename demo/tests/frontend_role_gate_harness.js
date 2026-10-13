@@ -22,7 +22,11 @@ const vm = require('vm');
 
 const mainPath = process.argv[2] || path.join(__dirname, '..', 'static', 'js', 'main.js');
 const indexHtmlPath = process.argv[3] || path.join(__dirname, '..', 'templates', 'index.html');
+// F3 B6-1 起供应商/归档域在 supplier_archive.js（index.html 中紧跟 main.js 加载）；
+// 沙箱按同一契约追加载入（可用 argv[4] 指定突变体路径做反证）。
+const supplierArchivePath = process.argv[4] || path.join(__dirname, '..', 'static', 'js', 'supplier_archive.js');
 const src = fs.readFileSync(mainPath, 'utf8');
+const supplierArchiveSrc = fs.existsSync(supplierArchivePath) ? fs.readFileSync(supplierArchivePath, 'utf8') : '';
 const indexHtml = fs.readFileSync(indexHtmlPath, 'utf8');
 
 let pass = 0;
@@ -55,6 +59,7 @@ function mkEl(props) {
         setAttribute(k, v) { this[k] = v; },
         getAttribute(k) { return this[k] != null ? this[k] : null; },
         focus() {}, click() {}, scrollIntoView() {},
+        getBoundingClientRect() { return { top: 0, bottom: 24, left: 0, right: 80, width: 80, height: 24 }; },
         querySelector() { return null; },
         querySelectorAll() { return []; },
         closest() { return null; },
@@ -103,14 +108,36 @@ const sandbox = {
     },
     fetch: dispatcher,
     URLSearchParams,
+    // 浏览器里 i18n/i18n.js 先于 main.js 加载并暴露 window.I18N；
+    // 沙箱按同一契约提供最小桩（renderSupplierAdminRows 等路径调用 I18N.fmtMoney）。
+    I18N: {
+        fmtMoney(v) { return 'HK$' + (Math.round((Number(v) || 0) * 100) / 100).toFixed(2); },
+        t(s) { return s; },
+        currentLocale: 'zh-Hans',
+    },
 };
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 sandbox.location = { href: 'http://127.0.0.1/', reload() {}, assign() {} };
+function findMountedById(id) {
+    if (byId[id]) return byId[id];
+    const root = sandbox.document && sandbox.document.body;
+    const stack = root ? [root] : [];
+    while (stack.length) {
+        const n = stack.pop();
+        if (!n) continue;
+        if (n.id === id) return n;
+        if (n.children) {
+            for (let i = 0; i < n.children.length; i++) stack.push(n.children[i]);
+        }
+    }
+    return null;
+}
+
 sandbox.document = {
     addEventListener() {},
-    getElementById: (id) => byId[id] || null,
+    getElementById: (id) => findMountedById(id),
     querySelector() { return null; },
     querySelectorAll(sel) {
         if (sel === '.admin-only') return adminOnlyEls;
@@ -150,6 +177,18 @@ function dispatcher(url, init) {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { sandboxWarns.push('load note: ' + e.message); }
+if (supplierArchiveSrc) {
+    try { vm.runInContext(supplierArchiveSrc, sandbox, { filename: 'supplier_archive.js' }); }
+    catch (e) { sandboxWarns.push('supplier_archive load note: ' + e.message); }
+}
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加其余域文件
+// （supplier_archive 已单独载入，skip；overrides 可按文件名指定突变体路径做反证，
+//   inventory_board.js 走 argv[5] 槽位，common.js（applyRoleVisibility 所在域）走 argv[6] 槽位）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => sandboxWarns.push(m), skip: ['supplier_archive.js'],
+      overrides: { 'inventory_board.js': process.argv[5],
+                   'common.js': process.argv[6] } });
 
 const loadInventoryData = sandbox.loadInventoryData;
 const renderSupplierAdminRows = sandbox.renderSupplierAdminRows;
@@ -159,7 +198,10 @@ ok('B0 生产函数均已导出',
     && typeof applyRoleVisibility === 'function',
     [typeof loadInventoryData, typeof renderSupplierAdminRows, typeof applyRoleVisibility].join(','));
 
+// 行上不再常驻「价格走势 / 盘点 / 编辑」。这三项在老板的「更多」菜单里。
+// 店员行不得出现这四项。老板行必须有「详情」和「更多」，点开后菜单含前三项。
 const OWNER_ROW_ENTRIES = ['价格走势', '盘点', '编辑', '更多'];
+const OWNER_MENU_ENTRIES = ['价格走势', '盘点', '编辑'];
 const SUP_ROW_ENTRIES = ['查看单据', '编辑', '更多'];
 
 function setRole(role) { vm.runInContext("localStorage.setItem('demo_role', " + JSON.stringify(role) + ")", sandbox); }
@@ -181,6 +223,15 @@ setTimeout(() => {
         ok('F5L1-b staff 下不出现 owner-only 行内入口「' + t + '」',
             staffHtml.indexOf(t) === -1, staffHtml.slice(0, 260));
     });
+    ok('F5L1-b2 staff 行仍保留只读「详情」',
+        staffHtml.indexOf('详情') !== -1, staffHtml.slice(0, 260));
+    const toggleInventoryMoreMenu = sandbox.toggleInventoryMoreMenu;
+    const moreBtn = mkEl({ id: 'moreBtn' });
+    try { toggleInventoryMoreMenu(moreBtn, 1); }
+    catch (e) { sandboxWarns.push('staff menu: ' + e.message); }
+    ok('F5L1-d staff 直接调用更多菜单时不渲染价格走势/盘点/编辑',
+        !findMountedById('invMoreMenu'),
+        findMountedById('invMoreMenu') ? 'menu-created' : 'none');
 
     // 切 owner 重渲染
     setRole('owner');
@@ -189,9 +240,18 @@ setTimeout(() => {
 
     setTimeout(() => {
         const ownerHtml = invRenderedHtml();
-        OWNER_ROW_ENTRIES.forEach(t => {
-            ok('F5L1-c owner 下出现行内入口「' + t + '」',
-                ownerHtml.indexOf(t) !== -1, ownerHtml.slice(0, 260));
+        ok('F5L1-c owner 行内有「详情」和「更多」，价格走势不做成常驻按钮',
+            ownerHtml.indexOf('详情') !== -1 && ownerHtml.indexOf('更多') !== -1
+                && ownerHtml.indexOf('价格走势') === -1 && ownerHtml.indexOf('盘点') === -1
+                && ownerHtml.indexOf('编辑') === -1,
+            ownerHtml.slice(0, 400));
+        try { toggleInventoryMoreMenu(moreBtn, 1); }
+        catch (e) { sandboxWarns.push('owner menu: ' + e.message); }
+        const menu = findMountedById('invMoreMenu');
+        const menuHtml = menu ? String(menu.innerHTML || '') : '';
+        OWNER_MENU_ENTRIES.forEach(t => {
+            ok('F5L1-e owner 从「更多」进入「' + t + '」',
+                menuHtml.indexOf(t) !== -1, menuHtml.slice(0, 400));
         });
 
         // ---------------------------------------------------------------
@@ -267,10 +327,10 @@ setTimeout(() => {
             insideOwnerOnlyWrap('openSkuMergeModalFromInv'),
             '合并食材不在 dropdown-wrap owner-only 容器内');
         ok('接线-2 「一键清理重复食材」按钮位于 owner-only 容器内',
-            insideOwnerOnlyWrap('deduplicateSkus()'),
+            insideOwnerOnlyWrap('deduplicateSkus'),
             '一键清理重复食材不在 dropdown-wrap owner-only 容器内');
         {
-            const btnIdx = indexHtml.indexOf('openAddSkuModal()');
+            const btnIdx = indexHtml.indexOf('openAddSkuModal');
             const snippet = indexHtml.slice(btnIdx - 220, btnIdx + 20);
             ok('接线-3 「+ 新增食材」不得被误门禁（后端 require_role("staff")，店员可用）',
                 snippet.indexOf('owner-only') === -1, snippet);
@@ -286,7 +346,7 @@ setTimeout(() => {
             ok('接线-5 RAG 上下文调试卡声明 admin-only', snippet.indexOf('admin-only') !== -1, snippet);
         }
         {
-            const i = indexHtml.indexOf('openSupplierModal()');
+            const i = indexHtml.indexOf('openSupplierModal');
             const snippet = indexHtml.slice(Math.max(0, i - 200), i + 20);
             ok('接线-6 供应商工具条「+ 新增供应商」声明 owner-only',
                 i !== -1 && snippet.indexOf('owner-only') !== -1, snippet);

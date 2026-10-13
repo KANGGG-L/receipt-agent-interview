@@ -13,6 +13,12 @@ from app.main import app
 
 client = TestClient(app, headers={"X-Role": "admin"})
 
+# F4/F5 S4-11（2026-10-13）：main.js 已拆为 123 行组装层 + 19 个域文件；
+# 源码级守卫的守真不变量口径＝「main.js + 全部域文件」联合全文
+# （与浏览器实际加载的代码集合同构，见 demo/tests/f4_frontend_sources.py）。
+if os.path.join(DEMO_DIR, "tests") not in sys.path:
+    sys.path.insert(0, os.path.join(DEMO_DIR, "tests"))
+from f4_frontend_sources import frontend_union  # noqa: E402
 
 def test_put_engine_config_pure_openai_auto_syncs_legacy_fields():
     orig_cfg = db.get_engine_config()
@@ -218,9 +224,8 @@ def test_template_removes_legacy_dropdowns_and_presents_dual_columns():
 
 
 def test_main_js_no_longer_queries_removed_engine_controls():
-    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
-    with open(js_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    # F5 拆分后判据升级为联合全文：正/负断言都扫描浏览器实际加载的全部前端 JS
+    content = frontend_union()
 
     # 验证 saveAdminEngineConfig 与 bindAdminEngineEventsOnce 不再依赖已删除的旧控件
     for removed_id in [
@@ -261,9 +266,8 @@ def test_main_js_no_longer_queries_removed_engine_controls():
 
 
 def test_main_js_engine_drawer_and_pure_openai_interactions():
-    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
-    with open(js_path, "r", encoding="utf-8") as f:
-        content = f.read()
+    # F5 拆分后判据升级为联合全文（toggleEngineDrawer 等在 engine_admin.js）
+    content = frontend_union()
 
     # 抽屉折叠与无障碍逻辑
     assert "function toggleEngineDrawer" in content

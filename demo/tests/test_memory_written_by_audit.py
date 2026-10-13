@@ -80,9 +80,9 @@ def _client():
     return TestClient(fastapi_app)
 
 
-def _headers(operator):
-    """带显式操作者邮箱的 admin 身份（AUTH_ENABLED=0 的 demo 免密模式读 X-Email）。"""
-    return {"X-Role": "admin", "X-Email": operator}
+def _headers(forged_email):
+    """演示态 admin。X-Email 是伪造值，解析结果必须是 admin@demo.hk，不是这个头。"""
+    return {"X-Role": "admin", "X-Email": forged_email}
 
 
 def _raw_vendor_row(path, memory_id):
@@ -129,40 +129,60 @@ def test_approve_records_operator_for_structured_candidate():
         source_kind="extract", source_receipt_ids=[901], supplier_id=sid,
         fact_kind="alias", fact_key="alias:本吧", fact_value="本地牛腩")
 
-    operator = "auditor.a@demo.hk"
+    forged = "auditor.a@demo.hk"
     resp = _client().post(f"/api/memory/pending/{pid}/approve",
-                          headers=_headers(operator))
+                          headers=_headers(forged))
     assert resp.status_code == 200, resp.text
 
     raw = _only_row(_db, vendor)
-    assert raw["written_by"], "写入者为空：审计链断在 approve 落库这一步"
-    assert raw["written_by"] == operator, (
-        f"written_by 必须等于本次操作者 {operator!r}，实际 {raw['written_by']!r}"
-        "（只断言「有值」不够：落了兜底身份同样追溯不到是谁批的）")
+    assert raw["written_by"] == "admin@demo.hk", (
+        f"演示态批准者必须是 admin@demo.hk，实际 {raw['written_by']!r}"
+        "（只断言「有值」不够：落了别的常量同样追溯不到角色）")
+    assert raw["written_by"] != forged, "伪造的 X-Email 不得写入审计列"
 
 
 # -------------------------------------------------------------
 # 2. 两名操作者各批一条：各自的行记各自的写入者（排除"全局常量"假通过）
 # -------------------------------------------------------------
 def test_written_by_tracks_the_actual_operator():
+    """批准接口只允许 admin，演示态因此只有 admin@demo.hk 这一个身份。
+
+    两个伪造邮箱都必须被丢掉。列本身不是写死常量：直接调用落库函数并传入
+    不同 written_by 时，两行必须记下各自的参数。
+    """
     _db = _fresh_db()
     client = _client()
-    seen = {}
-    for operator in ("auditor.one@demo.hk", "auditor.two@demo.hk"):
-        vendor = f"審計鏈操作者商戶{operator.split('.')[1]}"
+    http_seen = {}
+    for forged in ("auditor.one@demo.hk", "auditor.two@demo.hk"):
+        vendor = f"審計鏈操作者商戶{forged.split('.')[1]}"
         sid = _seed_supplier(_db.DB_PATH, vendor)
         pid, _ = _db.enqueue_pending_memory(
             vendor, "unit：斤 → 公斤", tenant_id="default",
             source_kind="extract", supplier_id=sid,
             fact_kind="unit", fact_key="unit:斤", fact_value="公斤")
         resp = client.post(f"/api/memory/pending/{pid}/approve",
-                           headers=_headers(operator))
+                           headers=_headers(forged))
         assert resp.status_code == 200, resp.text
-        seen[operator] = _only_row(_db, vendor)["written_by"]
+        http_seen[forged] = _only_row(_db, vendor)["written_by"]
 
-    assert seen == {"auditor.one@demo.hk": "auditor.one@demo.hk",
-                    "auditor.two@demo.hk": "auditor.two@demo.hk"}, (
-        f"写入者必须随操作者变化（实得 {seen!r}）：若两行同值，说明落的是常量而非操作者")
+    assert http_seen == {
+        "auditor.one@demo.hk": "admin@demo.hk",
+        "auditor.two@demo.hk": "admin@demo.hk",
+    }, f"伪造邮箱不得成为写入者（实得 {http_seen!r}）"
+
+    direct = {}
+    for operator in ("audit.one@demo.hk", "audit.two@demo.hk"):
+        vendor = f"審計鏈直写商戶{operator.split('.')[1]}"
+        sid = _seed_supplier(_db.DB_PATH, vendor)
+        rag.approve_pending_to_memory(
+            vendor, "unit：斤 → 公斤", tenant_id="default", supplier_id=sid,
+            fact_kind="unit", fact_key="unit:斤", fact_value="公斤",
+            written_by=operator)
+        direct[operator] = _only_row(_db, vendor)["written_by"]
+    assert direct == {
+        "audit.one@demo.hk": "audit.one@demo.hk",
+        "audit.two@demo.hk": "audit.two@demo.hk",
+    }, f"显式写入者必须原样落库（实得 {direct!r}）：两行同值说明写路径丢了参数"
 
 
 # -------------------------------------------------------------
@@ -175,15 +195,16 @@ def test_free_text_fallback_also_records_operator():
     pid, _ = _db.enqueue_pending_memory(
         vendor, "供應商 反饋糾偏：品名認錯要糾正", tenant_id="default")
 
-    operator = "auditor.legacy@demo.hk"
+    forged = "auditor.legacy@demo.hk"
     resp = _client().post(f"/api/memory/pending/{pid}/approve",
-                          headers=_headers(operator))
+                          headers=_headers(forged))
     assert resp.status_code == 200, resp.text
 
     raw = _only_row(_db, vendor)
-    assert raw["written_by"] == operator, (
-        f"自由文本路径也必须记写入者（实际 {raw['written_by']!r}）："
+    assert raw["written_by"] == "admin@demo.hk", (
+        f"自由文本路径也必须记已解析的批准者（实际 {raw['written_by']!r}）："
         "两条 approve 落库路径只接一条，另一条的审计链仍是断的")
+    assert raw["written_by"] != forged, "自由文本路径同样不得采信 X-Email"
     for col in _FACT_PAYLOAD_COLUMNS:
         assert raw[col] is None, (
             f"自由文本路径不得写事实载荷列 {col}（实际 {raw[col]!r}）："

@@ -35,6 +35,16 @@ STAFF_HEADERS = {"X-Role": "staff"}
 FONT = cv2.FONT_HERSHEY_SIMPLEX
 
 
+@pytest.fixture(autouse=True)
+def _recognition_engine_configured(monkeypatch):
+    """F2 契约（2026-10-13）：无密钥上传在画质/守卫管线**之前**同步返回
+    ENGINE_NOT_CONFIGURED。本文件的 subject 是守卫决策管线（flagged/queued 流转），
+    全文件统一把引擎桩为已配置以进入该管线；新契约本身由
+    test_no_key_upload_sync_fails_before_guard 钉住。"""
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
+
+
 def _make_client():
     app = FastAPI()
     app.include_router(api_receipts.router)
@@ -137,6 +147,30 @@ def _to_png_bytes(arr: np.ndarray) -> bytes:
     buf = io.BytesIO()
     Image.fromarray(arr).save(buf, format="PNG")
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# 0. F2 新契约：无密钥上传在守卫管线之前同步失败（引擎闸门先于 image_guard）
+# ---------------------------------------------------------------------------
+def test_no_key_upload_sync_fails_before_guard(monkeypatch):
+    """无密钥（真实缺省）：即使上传的是双信号注入图，也同步返回
+    ENGINE_NOT_CONFIGURED（不进守卫管线、不置 flagged）——闸门顺序钉住。"""
+    # 显式桩回「未配置」（覆盖 autouse 夹具的已配置桩，与真实缺省一致）
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: True)
+    client = _make_client()
+    img = _multi_carrier_injection_image()
+    r = client.post("/api/upload?async=true",
+                    files={"receipt": ("nokey_attack.png", _to_png_bytes(img), "image/png")},
+                    headers=STAFF_HEADERS)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["status"] == "error", data
+    assert data["code"] == "ENGINE_NOT_CONFIGURED", data
+    assert data["job_id"] is None, data
+    assert data.get("receipt_id") is not None, "同步失败路径必须落库单据行（原图保留）"
+    assert "[SUSPICIOUS_IMAGE_INJECTION]" not in (data.get("quality_warnings") or []), \
+        "守卫管线在引擎闸门之后，无密钥时不得触达"
 
 
 # ---------------------------------------------------------------------------

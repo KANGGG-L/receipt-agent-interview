@@ -60,7 +60,7 @@ def test_preview_returns_all_rows_full_caliber():
     res = client.post(
         "/api/export/preview",
         json={"report_id": "inventory_stocktake", "params": {}},
-        headers=_staff_headers(),
+        headers=_owner_headers(),
     )
     assert res.status_code == 200
     data = res.json()["data"]
@@ -112,7 +112,7 @@ def test_dish_cost_margin_daily_granularity():
         json={"report_id": "dish_cost_margin",
               "params": {"start_date": "2026-03-01", "end_date": "2026-03-31",
                          "cost_granularity": "daily"}},
-        headers=_staff_headers(),
+        headers=_owner_headers(),
     )
     assert res.status_code == 200
     data = res.json()["data"]
@@ -132,7 +132,7 @@ def test_dish_cost_margin_period_granularity():
         json={"report_id": "dish_cost_margin",
               "params": {"start_date": "2026-03-01", "end_date": "2026-03-31",
                          "cost_granularity": "period"}},
-        headers=_staff_headers(),
+        headers=_owner_headers(),
     )
     assert res.status_code == 200
     data = res.json()["data"]
@@ -214,7 +214,7 @@ def test_removed_reports_are_rejected(report_id):
     res = client.post(
         "/api/export/preview",
         json={"report_id": report_id, "params": {}},
-        headers=_staff_headers(),
+        headers=_owner_headers(),
     )
     assert res.status_code == 400, f"被裁报表 {report_id} 应返回 400，实际 {res.status_code}"
 
@@ -238,7 +238,7 @@ def test_spend_summary_role_gate_on_both_endpoints():
 # B4: 消耗折算走 unit_factors SSOT
 # ---------------------------------------------------------------
 def test_ingredient_consumption_converts_weight_units_via_ssot():
-    """斤=0.5kg（unit_factors 唯一定义）；计件单位不假装折算（折算列为 -）。"""
+    """斤=0.6048kg（unit_factors 唯一定义，港斤）；计件单位不假装折算（折算列为 -）。"""
     from app.services.costing_service import CostingService
 
     sku_jin, _ = db.create_sku("折算食材斤", base_unit="kg")
@@ -249,7 +249,7 @@ def test_ingredient_consumption_converts_weight_units_via_ssot():
         s.commit()
     finally:
         s.close()
-    # 消耗 4 斤 = 2 kg，成本 40 元
+    # 消耗 4 斤 = 2.42 kg，成本 40 元
     db.apply_stock_log(sku_jin, "折算食材斤", 4.0, "斤", 40.0, "测试供应商",
                        "2026-03-05", None, "consume", tenant_id="default")
 
@@ -265,7 +265,7 @@ def test_ingredient_consumption_converts_weight_units_via_ssot():
     kg_idx = headers.index("折算消耗(kg)")
 
     rows = {r[0]: r for r in data["rows"]}
-    assert rows["折算食材斤"][kg_idx] == 2.0, f"4 斤应折算 2kg，实际 {rows['折算食材斤'][kg_idx]}"
+    assert rows["折算食材斤"][kg_idx] == 2.42, f"4 斤应折算 2.42kg（斤=0.6048kg），实际 {rows['折算食材斤'][kg_idx]}"
     assert rows["折算食材件"][kg_idx] == "-"
-    # 汇总 kg 只累计重量单位（2.0），计件不计入
-    assert data["summary"]["折算消耗合计(kg)"] == 2.0
+    # 汇总 kg 只累计重量单位（2.42），计件不计入
+    assert data["summary"]["折算消耗合计(kg)"] == 2.42

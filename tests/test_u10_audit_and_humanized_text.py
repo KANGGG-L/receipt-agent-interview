@@ -25,6 +25,9 @@ os.environ["RAG_DIR"] = os.path.join(_TMP, "rag_chroma")
 atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "demo"))
+# F4/F5 S4-11：main.js 已拆分，人话文案散布在 common/upload/review_core 等域文件；
+# 源码级守卫统一用联合全文
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "demo", "tests"))
 
 from fastapi.testclient import TestClient
 
@@ -130,10 +133,9 @@ def test_u10_log_audit_decision_with_receipt_id():
 
 
 def test_u10_humanized_validation_and_error_handling_in_main_js():
-    """AC-5: 前端 main.js 包含人话化校验文案与去技术化错误处理器。"""
-    js_path = os.path.join(os.path.dirname(__file__), "..", "demo", "static", "js", "main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js_content = f.read()
+    """AC-5: 前端 JS（main.js+域文件联合全文）包含人话化校验文案与去技术化错误处理器。"""
+    from f4_frontend_sources import frontend_union
+    js_content = frontend_union()
 
     # 必须包含的人话文案
     required_phrases = [

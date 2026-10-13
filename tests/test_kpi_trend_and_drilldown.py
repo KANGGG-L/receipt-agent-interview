@@ -95,9 +95,13 @@ def test_ac_01_02_card_affordance_and_modal_dom():
     with open("demo/templates/index.html", "r", encoding="utf-8") as f:
         html = f.read()
 
-    # 8 张卡片均包含 onclick="openKpiTrendModal(...)"
+    # 8 张卡片均绑定 openKpiTrendModal(metric)，事件在 data-csp-click JSON 中。
     for m_key in ALL_8_METRIC_KEYS:
-        assert f"openKpiTrendModal('{m_key}')" in html, f"卡片缺少对 {m_key} 的 openKpiTrendModal 绑定"
+        needle = (
+            '&quot;f&quot;:&quot;openKpiTrendModal&quot;,&quot;a&quot;:'
+            '[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;%s&quot;}]' % m_key
+        )
+        assert needle in html, "卡片缺少对 %s 的 openKpiTrendModal 绑定" % m_key
 
     # 8 张卡片均包含类名 kpi-trend-card
     assert html.count("kpi-trend-card") >= 8
@@ -132,10 +136,16 @@ def test_ac_01_02_card_affordance_and_modal_dom():
 
 def test_ac_06_to_11_js_functions_and_pure_native_svg():
     """
-    AC-06 到 AC-11: 检查 main.js 中函数定义、原生 SVG、下钻联动与无 Emoji 规范。
+    AC-06 到 AC-11: 检查 KPI 趋势控制器函数定义、原生 SVG、下钻联动与无 Emoji 规范。
+    F4 S4-11 起 KPI 趋势控制器随域迁至 kpi_trend.js（index.html 加载链中紧跟 main.js），
+    判据改为「main.js + kpi_trend.js 联合全文」（函数在 KPI 域文件即可，不再要求在 main.js）。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js_parts = []
+    for rel in ("demo/static/js/main.js", "demo/static/js/kpi_trend.js"):
+        with open(rel, "r", encoding="utf-8") as f:
+            js_parts.append(f.read())
+    js = "\n".join(js_parts)
+    kpi_js = js_parts[1]
 
     # 控制器函数
     for fn in (
@@ -149,7 +159,8 @@ def test_ac_06_to_11_js_functions_and_pure_native_svg():
         "showKpiTrendTooltip",
         "hideKpiTrendTooltip",
     ):
-        assert f"function {fn}" in js, f"main.js 缺少核心函数 {fn}"
+        assert f"function {fn}" in kpi_js, f"kpi_trend.js 缺少核心函数 {fn}"
+        assert f"function {fn}" in js, f"KPI 联合全文缺少核心函数 {fn}"
 
     # 原生 SVG 绘制
     assert "<svg" in js
@@ -162,12 +173,9 @@ def test_ac_06_to_11_js_functions_and_pure_native_svg():
     assert "查看详情" in js
     assert "drillDownKpiDate" in js
 
-    # 严禁任何 Emoji（禁止 unicode 表情范围）
+    # 严禁任何 Emoji（禁止 unicode 表情范围；F4 起覆盖整个 KPI 域文件）
     import re
     # 纯 ASCII / 常见中文测试，确保无表情符
     emoji_chars = [chr(c) for c in range(0x1F600, 0x1F64F)]
-    start_idx = js.find("// 8 大核心 KPI 时序趋势与多维下钻分析控制器")
-    assert start_idx != -1
-    trend_js_block = js[start_idx:start_idx + 15000]
     for em in emoji_chars:
-        assert em not in trend_js_block, "趋势控制器代码中违规残留 Emoji"
+        assert em not in kpi_js, "趋势控制器代码中违规残留 Emoji"

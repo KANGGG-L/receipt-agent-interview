@@ -134,10 +134,10 @@ def test_dev_mode_x_role_channel_regression():
     assert client.get("/api/admin/engine-config", headers={"X-Role": "staff"}).status_code == 403
     assert client.get("/api/admin/engine-config").status_code == 401
 
-    # 开发态 X-Email 仍被采信（演示用，保持既有行为逐字节不变）；
+    # 开发态邮箱固定为「角色@demo.hk」。X-Email 不进入身份。
     # tenant 在开发态取自 X-Tenant-Id（缺省 default），与既有 header 通道口径一致。
     acct = auth.resolve_account(_request({"X-Role": "admin", "X-Email": "boss@demo.hk"}))
-    assert acct == {"email": "boss@demo.hk", "role": "admin",
+    assert acct == {"email": "admin@demo.hk", "role": "admin",
                     "tenant": "default", "source": "header"}
 
 
@@ -178,12 +178,12 @@ def test_health_exposes_signature_secret_strength(monkeypatch):
     client = TestClient(app)
 
     monkeypatch.delenv("DEMO_TOKEN_SECRET", raising=False)
-    weak = client.get("/api/health")
+    weak = client.get("/api/health", headers={"X-Role": "admin"})
     assert weak.status_code == 200, weak.text
     assert weak.json()["signature_secret_weak"] is True
 
     monkeypatch.setenv("DEMO_TOKEN_SECRET", "a" * 64)
-    strong = client.get("/api/health")
+    strong = client.get("/api/health", headers={"X-Role": "admin"})
     assert strong.status_code == 200, strong.text
     assert strong.json()["signature_secret_weak"] is False
 
@@ -192,7 +192,7 @@ def test_health_flag_is_false_when_secret_configured(monkeypatch):
     """显式配置了非默认密钥 → 标志恒 False（与 token_secret_is_weak 同口径）。"""
     client = TestClient(app)
     monkeypatch.setenv("DEMO_TOKEN_SECRET", "s3cret-" + "x" * 40)
-    body = client.get("/api/health").json()
+    body = client.get("/api/health", headers={"X-Role": "admin"}).json()
     assert body["signature_secret_weak"] is False
     assert auth.token_secret_is_weak() is False
 

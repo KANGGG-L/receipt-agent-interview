@@ -201,8 +201,7 @@ def test_extract_reports_upstream_category_and_reason(tmp_path, monkeypatch):
     assert "50507" in ret["error"]
     # 不得被写成鉴权失败或模型能力问题
     assert "鉴权失败" not in ret["error"]
-    assert ret["fallback_triggered"] is False
-    assert ret["fallback_reason"] == ""
+    assert "fallback_triggered" not in ret
 
 
 def test_extract_auth_category_is_distinguishable(tmp_path, monkeypatch):
@@ -223,7 +222,7 @@ def test_extract_auth_category_is_distinguishable(tmp_path, monkeypatch):
     assert ret["error_category"] == "auth"
     assert "鉴权失败" in ret["error"]
     assert "上游服务故障" not in ret["error"]
-    assert ret["fallback_triggered"] is False
+    assert "fallback_triggered" not in ret
 
 
 def test_extract_unclassified_error_keeps_empty_category(tmp_path, monkeypatch):
@@ -240,13 +239,6 @@ def test_extract_unclassified_error_keeps_empty_category(tmp_path, monkeypatch):
     assert ret["error_category"] == ""
     assert "VLM 调用失败" in ret["error"]
     assert llm._engine_error_category(RuntimeError("plain")) == ""
-
-
-def test_describe_engine_failure_labels():
-    assert "上游服务故障" in extract_chain._describe_engine_failure("openai", RuntimeError("x"), "upstream")
-    assert "鉴权失败" in extract_chain._describe_engine_failure("openai", RuntimeError("x"), "auth")
-    assert "参数错误" in extract_chain._describe_engine_failure("openai", RuntimeError("x"), "param")
-    assert "调用异常" in extract_chain._describe_engine_failure("openai", RuntimeError("x"), "")
 
 
 # -------------------------------------------------------------

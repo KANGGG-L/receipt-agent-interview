@@ -43,9 +43,9 @@ def _request(headers=None):
                     "headers": raw, "query_string": b""})
 
 
-def _mint(email, role, exp, tenant="default"):
+def _mint(email, role, exp, tenant="default", jti="testjti0"):
     """按既定格式手工签发指定过期时间/租户的令牌（用于构造过期/不匹配场景）。"""
-    payload = f"{email}.{role}.{exp}.{tenant}"
+    payload = f"{email}.{role}.{exp}.{tenant}.{jti}"
     return f"{payload}.{auth._sign(payload)}"
 
 
@@ -63,20 +63,21 @@ def test_issue_then_parse_roundtrip_for_dotted_email(email, role):
 
 
 def test_token_generation_format_unchanged():
-    """生成格式：email.role.exp.tenant.signature，签名 64 位十六进制。
+    """生成格式：email.role.exp.tenant.jti.signature，签名 64 位十六进制。
 
-    注意 email 段自身含点，故按『从右切 4 段』还原（这也正是 parse_token 的做法：
-    最右段是签名，其左依次是不含点的 tenant / exp / role，剩下的整体即邮箱）。
+    注意 email 段自身含点，故按『从右切 5 段』还原（最右段是签名，其左依次是不含点
+    的 jti / tenant / exp / role，剩下的整体即邮箱）。
     """
     token = auth.issue_token("admin@demo.hk", "admin")
-    parts = token.rsplit(".", 4)
-    assert len(parts) == 5, "令牌必须仍是 email/role/exp/tenant/signature 五段式"
+    parts = token.rsplit(".", 5)
+    assert len(parts) == 6, "令牌必须是 email/role/exp/tenant/jti/signature 六段式"
     assert parts[0] == "admin@demo.hk"
     assert parts[1] == "admin"
     assert parts[2].isdigit()
     assert parts[3] == "default"
-    assert len(parts[4]) == 64
-    assert all(c in "0123456789abcdef" for c in parts[4])
+    assert len(parts[4]) == 16 and parts[4] != auth.issue_token("admin@demo.hk", "admin").rsplit(".", 2)[1]
+    assert len(parts[5]) == 64
+    assert all(c in "0123456789abcdef" for c in parts[5])
 
 
 def test_signature_still_covers_full_payload():
@@ -219,13 +220,13 @@ def test_old_split_parse_would_fail_on_dotted_email():
     """
     token = auth.issue_token("admin@demo.hk", "admin")
     payload = token.rsplit(".", 1)[0]
-    # admin@demo / hk / admin / <exp> / <tenant>
-    assert len(payload.split(".")) == 5
+    # admin@demo / hk / admin / <exp> / <tenant> / <jti>
+    assert len(payload.split(".")) == 6
     with pytest.raises(ValueError):
-        email, role, exp, tenant = payload.split(".")
+        email, role, exp, tenant, jti = payload.split(".")
     # 新逻辑从右侧切分，点被安全留在 email 段内
-    assert payload.rsplit(".", 3) == [
-        "admin@demo.hk", "admin", *payload.rsplit(".", 2)[1:]]
+    assert payload.rsplit(".", 4) == [
+        "admin@demo.hk", "admin", *payload.rsplit(".", 3)[1:]]
 
 
 @pytest.mark.parametrize("bad", [

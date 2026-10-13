@@ -423,10 +423,6 @@ def _image_decode_error_result(error, priors, rag_ms, model, config, use_grey) -
         "engine": getattr(model, "kind", "unknown"),
         "vendor_context": _merge_priors(priors),
         # 未发生降级：这是本地确定性失败，与"引擎调用异常后回退"是两类事实
-        "fallback_triggered": False,
-        "fallback_reason": "",
-        "fallback_from": "",
-        "fallback_engine": "",
         "parse_llm": {
             "enabled": _parse_enabled(config, use_grey),
             "model": "",
@@ -444,34 +440,6 @@ def _image_decode_error_result(error, priors, rag_ms, model, config, use_grey) -
     }
 
 
-# 引擎失败归因文案（P9）：按 llm 归类给出正确的人话说明。
-# why：上游 5xx / DashScope 50507 是服务商侧临时故障，鉴权/参数错误是配置问题，
-# 三者不能用同一句「调用异常」糊过去——否则用户会把上游故障当成"模型不行"，
-# 排查方向也跟着错（这正是 50507 误导性归因要修的现象）。
-_ENGINE_FAILURE_LABEL = {
-    "upstream": "上游服务故障（服务商侧临时故障，非模型能力问题，建议稍后重试或切换引擎）",
-    "auth": "鉴权失败（API 密钥无效或已过期，请到引擎配置填入该服务商的真实密钥）",
-    "param": "请求参数错误（模型名 / base_url 等配置不符合该服务商要求，重试同一引擎无效）",
-}
-
-
-def _describe_engine_failure(engine_name, exc, category: str) -> str:
-    """生成降级原因文案：按错误归类给出归因，未归类才回落「调用异常」。"""
-    label = _ENGINE_FAILURE_LABEL.get(category, "调用异常")
-    return (f"识别引擎 [{engine_name}] {label} ({str(exc)[:150]})，"
-            f"已自动降级回退至 DashScope 官方通道重试")
-
-
-# 历史静默回退已彻底移除；保留兼容存根仅供既有测试打桩（运行时绝不调用）
-def _dashscope_fallback_available(config=None, use_grey: bool = False) -> bool:
-    return False
-
-
-def _build_dashscope_fallback(config=None, use_grey: bool = False):
-    raise RuntimeError("DashScope fallback is permanently disabled")
-
-
-
 def extract_receipt(image_path: str, vendor_hint: str = "",
                     model=None, config=None, retry_feedback: str = "",
                     use_grey: bool = False, vendor_prior: str = "",
@@ -486,8 +454,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     缺省 "default" 仅为兼容直接调用本函数的测试/离线脚本；生产路径
     （receipt_utils.start_recognition_job → run_pipeline → 此处）一律传真实租户，
     否则写进非默认租户的记忆在识别时读不到（Gap H1）。
-    on_event（可选）：首选引擎失败触发降级回退时立即回调（在备用引擎尝试之前），
-    供上层第一时间把「已切换备用模型」提示透传给前端。
+    on_event（可选）：保留的事件回调形参（引擎降级回退已永久移除，当前不会触发）。
     返回：{"data": ReceiptData | None, "raw": str, "error": str | None,
            "elapsed_ms": int, "engine": str, "vendor_context": str}
     vendor_context 为三通道（hint/parse/retry）带来源标注的先验合并（去重 + 截断 4000），
@@ -600,10 +567,6 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         return str(obj)
 
     start = time.time()
-    fallback_triggered = False
-    fallback_reason = ""
-    fallback_from = ""
-    fallback_engine = ""
 
     # 解析识别腿与解析腿配置单价（根据 use_grey 选择常规或灰度）
     _rec_in = getattr(config, "price_input_grey_rec" if use_grey else "price_input_rec", None) if config else None
@@ -669,10 +632,6 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             "rag_ms": round(rag_ms, 1),
             "engine": engine,
             "vendor_context": _merge_priors(priors),
-            "fallback_triggered": False,
-            "fallback_reason": "",
-            "fallback_from": "",
-            "fallback_engine": "",
             "parse_llm": {
                 "enabled": _parse_enabled(config, use_grey),
                 "model": "",
@@ -730,7 +689,7 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
             parse_token = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
             parse_cost = 0.0
 
-    data, err = _parse_to_receipt(raw, expected_canary=canary if enable_canary else "")
+    data, err, salvage = _parse_to_receipt_ex(raw, expected_canary=canary if enable_canary else "")
     # 合计 token 与成本（VLM + 解析）
     total_token = {
         "prompt_tokens": int(vlm_token.get("prompt_tokens", 0) or 0) + int(parse_token.get("prompt_tokens", 0) or 0),
@@ -749,10 +708,6 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         "rag_ms": round(rag_ms, 1),
         "engine": engine,
         "vendor_context": _merge_priors(priors),
-        "fallback_triggered": fallback_triggered,
-        "fallback_reason": fallback_reason,
-        "fallback_from": fallback_from,
-        "fallback_engine": fallback_engine,
         "parse_llm": {
             "enabled": _parse_enabled(config, use_grey),
             "model": parse_model_name,
@@ -764,6 +719,8 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
         "parse_token_usage": parse_token,
         "cost_hkd": total_cost,
         "adapted_params": adapted_params,
+        # 契约致命失败时保留的已解析字段（供人工预填）；成功时为 None
+        "salvage": salvage,
         **_cost_meta(),
     }
 
@@ -775,17 +732,30 @@ def _parse_enabled(config, use_grey) -> bool:
     return bool(config.grey_parse_llm_enabled if use_grey else config.parse_llm_enabled)
 
 
+def wrap_data_channel(text: str, tag: str) -> str:
+    """结构化数据进数据沙箱：只中和标签逃逸，不转义、不改写正文；命中注入特征只标记并记安全事件。"""
+    from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import PromptInjectionGuardTool
+    xml, suspicious = PromptInjectionGuardTool().wrap_data_sandbox(text, tag=tag)
+    if suspicious:
+        logging.getLogger("extract_chain").warning("[SECURITY_ALERT] 数据通道(%s)内容疑似含提示词注入，已标记，正文保持原样", tag)
+        try:
+            from app.services.security_guard import log_security_event
+            log_security_event("PROMPT_INJECTION_DETECTED", "medium", "extract_chain.data_channel",
+                               {"channel": tag, "action": "marked_not_rewritten"})
+        except Exception:
+            pass
+    return xml
+
+
 def _build_parse_prompt(raw_vlm: str, prior_block: str = "") -> list:
     """组装解析 prompt：VLM 原始输出 → 规范化 JSON（先验与 VLM 原始输出一律进数据沙箱）。
 
     why（P1-2）：VLM 原始输出是可被上游/图面污染的非受信文本，此前只用 ``` 围栏
     包裹、未过沙箱——攻击者可在 VLM 输出里夹带指令，被 parse LLM 当成指令执行。
-    现统一经 PromptInjectionGuardTool.wrap_untrusted_input_sandbox 包裹（tag
+    现统一经 wrap_data_channel（数据沙箱，不改写正文）包裹（tag
     vlm_raw_output），保持「指令（System）+ 数据（沙箱）」结构清晰可分。
     """
-    from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import PromptInjectionGuardTool
-    sandboxed_vlm = PromptInjectionGuardTool().wrap_untrusted_input_sandbox(
-        raw_vlm, tag="vlm_raw_output")
+    sandboxed_vlm = wrap_data_channel(raw_vlm, "vlm_raw_output")
     human = ""
     if prior_block:
         human += prior_block + "\n\n"
@@ -804,18 +774,12 @@ def _build_correction_prompt(raw_vlm: str, feedback: str) -> list:
     """组装修正 prompt：门禁反馈 + 原始 JSON（两者均经数据沙箱；纯文本，不重读图）。
 
     why（P1-2）：门禁反馈此前已过沙箱，但同一 prompt 里的 raw_vlm（可被污染的非受信
-    文本）仍裸拼在 ``` 围栏内——攻击面没有收敛。现两段都经
-    wrap_untrusted_input_sandbox 包裹（feedback 用 untrusted_input，raw_vlm 用
-    vlm_raw_output），指令与数据仍结构可分。
+    文本）仍裸拼在 ``` 围栏内——攻击面没有收敛。现两段都经 wrap_data_channel
+    包裹（feedback 用 untrusted_input，raw_vlm 用 vlm_raw_output）：只中和标签
+    逃逸，不把正文换成占位符。指令与数据仍结构可分。
     """
-    from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import PromptInjectionGuardTool
-    guard = PromptInjectionGuardTool()
-    sandboxed_feedback = guard.wrap_untrusted_input_sandbox(
-        feedback, tag="untrusted_input"
-    )
-    sandboxed_vlm = guard.wrap_untrusted_input_sandbox(
-        raw_vlm, tag="vlm_raw_output"
-    )
+    sandboxed_feedback = wrap_data_channel(feedback, "untrusted_input")
+    sandboxed_vlm = wrap_data_channel(raw_vlm, "vlm_raw_output")
     human = (
         "【系统门禁校验反馈】\n" + sandboxed_feedback + "\n\n"
         "请针对以上反馈，对下方识别输出 JSON 做最小修正并重新输出完整合法 JSON"
@@ -829,16 +793,18 @@ def _build_correction_prompt(raw_vlm: str, feedback: str) -> list:
 
 
 def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey: bool = False,
-                                  enable_canary: bool = True) -> Optional[str]:
+                                  enable_canary: bool = True, usage_out: Optional[dict] = None) -> Optional[str]:
     """解析级修正（Layer 2.2）：把门禁反馈喂给一次纯文本 parse LLM，返回修正后的 JSON 文本。
 
     不重读原图（零 VLM 推理），显著低于整图重识别成本。未开启解析或异常时返回 None，
-    由调用方回退到整图重试。
+    由调用方保留原识别结果带警告交人工。
 
     Canary（T8，堵 P12）：本调用点是全仓 6 个 provider 调用点中此前既无注入也无校验的
     之一——被污染的 provider 可返回任意 JSON 直接骗过门禁进入审核。现与识别腿一致：
     每次调用动态生成 token 双重锚定注入，输出根节点缺失/不匹配即 fail-closed（返回
-    None），由调用方按"修正未通过"回退整图重试，不产生任何被污染的采纳结果。
+    None），由调用方按"修正未通过"处理（保留原识别结果带警告交人工），不产生任何被污染的采纳结果。
+    usage_out：可选 dict，调用了模型就写入 {"token_usage","cost_cny","cost_estimated",
+    "cost_estimated_reason"}（修正结果即使不被采纳，这次调用的钱也已经花了）。
     """
     if not _parse_enabled(config, use_grey) or not raw:
         return None
@@ -849,6 +815,21 @@ def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey
         if canary:
             msgs = inject_canary_instructions(msgs, canary)
         result = parse_model.invoke(msgs)
+        if usage_out is not None:
+            try:
+                _tu = _extract_token_usage(result) if not isinstance(result, str) else {
+                    "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                _suffix = "grey_" if use_grey else ""
+                _cost, _est, _why = _cost_from_tokens_ex(
+                    _tu, getattr(parse_model, "model", "") or "",
+                    custom_in_price=getattr(config, f"price_input_{_suffix}parse", None) if config else None,
+                    custom_cached_price=getattr(config, f"price_cached_input_{_suffix}parse", None) if config else None,
+                    custom_out_price=getattr(config, f"price_output_{_suffix}parse", None) if config else None,
+                )
+                usage_out.update({"token_usage": _tu, "cost_cny": float(_cost or 0),
+                                  "cost_estimated": bool(_est), "cost_estimated_reason": _why or ""})
+            except Exception as usage_err:
+                logging.getLogger("extract_chain").warning(f"修正腿成本统计失败: {usage_err}")
         corrected = result.content if not isinstance(result, str) else result
         corrected = corrected.strip() if corrected else None
         if not corrected:
@@ -865,16 +846,54 @@ def correct_receipt_with_feedback(raw: str, feedback: str, config=None, use_grey
         return None
 
 
+_BENIGN_TOP_KEYS = {"receipt_no", "payment_method", "supplier_name", "total_amount", "is_paid", CANARY_FIELD}
+_BENIGN_ITEM_KEYS = {"item_code", "quantity", "item_name"}
+_FEE_FIELD_KEYS = ["discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment"]
+_ALLOWED_ITEM_KEYS = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty", "evidence", "confidence", "contains_huama", "unit_conversion_warning"}
+_ALLOWED_TOP_KEYS = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "payment_evidence", "currency", "confidence", "contains_huama", "math_warnings"}
+
+
+def _clean_num(val):
+    """数值清洗：货币符号、千分位逗号、括号负数 (50.00) 一律转成 float；转不了原样返回。"""
+    if val is None or isinstance(val, (int, float)):
+        return val
+    s = str(val).strip()
+    m = re.search(r"[-+]?\s?\d[\d,]*(?:\.\d+)?", s)
+    if not m:
+        return val
+    token = m.group(0).replace(",", "").replace(" ", "")
+    try:
+        num = float(token)
+    except ValueError:
+        return val
+    if num > 0 and re.search(r"\(\s*[^)]*\d[^)]*\)", s) and "-" not in token:
+        num = -num
+    return num
+
+
+def _describe_dropped(key, value) -> str:
+    shown = str(value)
+    if len(shown) > 20:
+        shown = shown[:20] + "..."
+    return f"AI 读到「{key}」（{shown}）这一项，系统没有对应的栏位，没有计入，请对照原图确认"
+
+
 def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[ReceiptData], Optional[str]]:
-    """LLM 文本 → ReceiptData（配对截取 JSON + Pydantic 契约校验）。"""
+    """LLM 文本 → ReceiptData（配对截取 JSON + 分级契约校验）。"""
+    data, err, _salvage = _parse_to_receipt_ex(raw, expected_canary)
+    return data, err
+
+
+def _parse_to_receipt_ex(raw, expected_canary: str = ""):
+    """同 _parse_to_receipt，另返回 salvage：结构致命失败时尽量保留的已解析字段（供人工预填），否则 None。"""
     if not raw and not isinstance(raw, dict):
-        return None, "空输出"
+        return None, "空输出", None
     if isinstance(raw, dict):
         payload = dict(raw)
     else:
         text = str(raw).strip()
         if not text:
-            return None, "空输出"
+            return None, "空输出", None
         # 剥离可能的 markdown 围栏
         if text.startswith("```"):
             text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
@@ -885,11 +904,11 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
             start_i = text.find("{")
             end_i = text.rfind("}")
             if start_i == -1 or end_i == -1 or end_i <= start_i:
-                return None, "输出不是合法 JSON"
+                return None, "输出不是合法 JSON", None
             try:
                 payload = json.loads(text[start_i:end_i + 1])
             except json.JSONDecodeError:
-                return None, "JSON 解析失败"
+                return None, "JSON 解析失败", None
 
     if expected_canary:
         # 非破坏性校验：verify_canary_token 不再就地 pop，返回清洗副本；这里显式
@@ -898,11 +917,17 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
         ok, canary_err, payload = verify_canary_token(payload, expected_canary)
         if not ok:
             logging.getLogger("extract_chain").warning(f"[SECURITY_ALERT] Canary Token 握手失败: {canary_err}")
-            return None, f"安全阻断: {canary_err}"
+            return None, f"安全阻断: {canary_err}", None
     elif isinstance(payload, dict):
         # 向后兼容：未启用 Canary 但上游残留 __guard_token 时，进 Pydantic 前剥除
         # （非破坏性：构造新 dict，不改动 _parse_to_receipt 收到的原始对象结构）。
         payload = {_k: _v for _k, _v in payload.items() if _k != CANARY_FIELD}
+
+    if not isinstance(payload, dict):
+        return None, "AI 输出不是 JSON 对象", None
+
+    warnings: list = []
+    log = logging.getLogger("extract_chain")
 
     # 6. 兼容 ai_registry Gap1-8 聚合版 Prompt 的输出 Schema 映射至 demo 契约（supplier_name→vendor 等）
     # 必须先于清洗管道执行：清洗工具按 name/qty 契约字段识别明细，未映射的 item_name/quantity 会被整行丢弃
@@ -913,12 +938,12 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
             payload["total"] = payload.pop("total_amount")
         if "is_paid" in payload and "payment_marked" not in payload:
             payload["payment_marked"] = bool(payload.pop("is_paid"))
-        # contains_huama 已进契约（Gap 7），不再从此处丢弃；其余非契约键继续 pop。
         for _k in ["receipt_no", "payment_method", "supplier_name", "total_amount", "is_paid"]:
             payload.pop(_k, None)
         if "doc_form" not in payload or not payload.get("doc_form"):
             payload["doc_form"] = "printed_delivery_note"
-        for _it in payload.get("items", []):
+        _items_in = payload.get("items", [])
+        for _it in (_items_in if isinstance(_items_in, list) else []):
             if isinstance(_it, dict):
                 if "item_name" in _it and "name" not in _it:
                     _it["name"] = _it.pop("item_name")
@@ -930,10 +955,8 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
                         _it["raw_name"] = str(_code)
                 for _ik in ["item_code", "quantity"]:
                     _it.pop(_ik, None)
-                # P11：item 级置信度必须保留（原实现把它整体 pop 丢弃，导致落库永远是默认 0.5，
-                # 「哪一行不准」无法按行定位）。但 LLM 可能输出 "high"/"低" 这类非数值，
-                # 这里先归一为 [0,1] 浮点，非法/越界一律丢弃——否则 huama_evaluator 的
-                # float() 会抛异常，被外层 except 吞掉后整段后处理（Gap1-9）静默失效。
+                # P11：item 级置信度必须保留；非数值/越界的置信度丢弃，避免 huama_evaluator 的
+                # float() 抛异常使整段后处理失效。
                 if "confidence" in _it:
                     try:
                         _conf = float(_it.get("confidence"))
@@ -943,65 +966,100 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
                         _it.pop("confidence", None)
                     else:
                         _it["confidence"] = _conf
-                # Gap 7：contains_huama / unit_conversion_warning 由 huama_evaluator 写入，
-                # 必须在白名单与契约内，否则 extra="forbid" 会把整单打回。
-                _allowed_item = {"name", "qty", "unit", "unit_price", "amount", "raw_name", "is_void", "actual_qty", "evidence", "confidence", "contains_huama", "unit_conversion_warning"}
                 for _k in list(_it.keys()):
-                    if _k not in _allowed_item:
-                        _it.pop(_k, None)
-        # Gap 7：math_warnings 同理由 huama_evaluator 写入（整单警告），必须放行。
-        _allowed_top = {"doc_form", "vendor", "date", "items", "total", "discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment", "fees_detail", "adjustment_notes", "payment_marked", "currency", "confidence", "contains_huama", "math_warnings"}
+                    if _k not in _ALLOWED_ITEM_KEYS:
+                        _val = _it.pop(_k, None)
+                        if _k not in _BENIGN_ITEM_KEYS and _val not in (None, "", 0, 0.0):
+                            warnings.append(_describe_dropped(_k, _val))
         for _k in list(payload.keys()):
-            if _k not in _allowed_top:
-                payload.pop(_k, None)
+            if _k not in _ALLOWED_TOP_KEYS:
+                _val = payload.pop(_k, None)
+                if _k not in _BENIGN_TOP_KEYS and _val not in (None, "", 0, 0.0, [], {}):
+                    warnings.append(_describe_dropped(_k, _val))
     except Exception as _e:
-        logging.getLogger("extract_chain").warning(f"[WARN] Schema 归一化异常: {_e}")
+        log.warning(f"[WARN] Schema 归一化异常: {_e}")
+        warnings.append("识别结果的字段整理没有完全做完，请对照原图核对")
 
-    if isinstance(payload, dict) and "items" in payload and isinstance(payload["items"], list):
+    # 数值清洗先于其余后处理：千分位、货币符号、括号负数在这里统一成数字，
+    # 否则下游清洗工具遇到 "1,343.00" 会抛异常使整段后处理失效。
+    try:
+        if "total" in payload:
+            payload["total"] = _clean_num(payload["total"])
+        for fee_k in _FEE_FIELD_KEYS:
+            if fee_k in payload:
+                payload[fee_k] = _clean_num(payload[fee_k])
+        if isinstance(payload.get("items"), list):
+            for it in payload["items"]:
+                if isinstance(it, dict):
+                    for num_k in ["qty", "quantity", "unit_price", "amount", "actual_qty"]:
+                        if num_k in it:
+                            it[num_k] = _clean_num(it[num_k])
+    except Exception as e:
+        log.warning(f"[WARN] 数值清洗异常: {e}")
+        warnings.append("金额数字的整理没有完全做完，请对照原图核对")
+
+    if isinstance(payload.get("items"), list):
+        # 各步骤独立兜底：一步失败只记警告，其余步骤照常执行。
         try:
             from ai_registry.tools.item_sanitizer.v1_3_0_notes_clean import ItemSanitizerTool
-            from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool
-            _item_sanitizer = ItemSanitizerTool()
-            _sku_sanitizer = SmartSplitterTool()
-
-            # 1. 过滤印章、签名、免责声明、电话地址并自动解耦折让/押金/运费与验货划线/调整注记 (Gap 1, Gap 2, Gap 3, Gap 6)
-            clean_items, fees, adj_notes, _ = _item_sanitizer.filter_and_extract_all(payload["items"])
-            
-            # 回填费用字段 (Gap 3 & Gap 9)
-            if fees["discount_amount"] > 0 and not payload.get("discount_amount"):
-                payload["discount_amount"] = fees["discount_amount"]
-            if fees["deposit_amount"] > 0 and not payload.get("deposit_amount"):
-                payload["deposit_amount"] = fees["deposit_amount"]
-            if fees["delivery_fee"] > 0 and not payload.get("delivery_fee"):
-                payload["delivery_fee"] = fees["delivery_fee"]
-            if fees.get("service_fee", 0.0) > 0 and not payload.get("service_fee"):
-                payload["service_fee"] = fees["service_fee"]
-            if fees.get("tax_amount", 0.0) > 0 and not payload.get("tax_amount"):
-                payload["tax_amount"] = fees["tax_amount"]
-            if fees.get("rounding_adjustment", 0.0) > 0 and not payload.get("rounding_adjustment"):
-                payload["rounding_adjustment"] = fees["rounding_adjustment"]
-
-            # 回填验货调整注记 (Gap 6)
+            clean_items, fees, adj_notes, _ = ItemSanitizerTool().filter_and_extract_all(payload["items"])
+            for fee_k in _FEE_FIELD_KEYS:
+                if fees.get(fee_k, 0.0) > 0 and not payload.get(fee_k):
+                    payload[fee_k] = fees[fee_k]
             if adj_notes:
-                payload["adjustment_notes"] = list(set(payload.get("adjustment_notes", []) + adj_notes))
+                payload["adjustment_notes"] = list(dict.fromkeys(list(payload.get("adjustment_notes", [])) + adj_notes))
+            payload["items"] = clean_items
+        except Exception as e:
+            log.warning(f"[WARN] 后处理·费用与注记拆分异常: {e}")
+            warnings.append("折扣、运费等费用行没有自动拆分，请对照原图核对")
 
-            # 2. 确定性剥离流水号/条形码与复合包装规格乘数解耦 (Gap 4 & U-14)
-            for it in clean_items:
-                if isinstance(it, dict) and "name" in it and isinstance(it["name"], str):
+        try:
+            from ai_registry.tools.smart_splitter.v1_2_0_multi_pack import SmartSplitterTool
+            _sku_sanitizer = SmartSplitterTool()
+            for it in payload["items"]:
+                if isinstance(it, dict) and isinstance(it.get("name"), str):
                     clean_res = _sku_sanitizer.execute(it["name"])
                     if not it.get("raw_name"):
                         it["raw_name"] = clean_res.get("raw_name") or it["name"]
                     it["name"] = clean_res["item_name"]
-                    # 若品名中包含包装乘数（如 大豆油 5L*2樽），且原有数量为 1 或未填，自动同步拆分后的真实数量与单位
-                    if clean_res["quantity"] > 1.0 and (it.get("quantity") in [1.0, 1, None] or it.get("qty") in [1.0, 1, None]):
-                        if "quantity" in it:
-                            it["quantity"] = clean_res["quantity"]
-                        if "qty" in it:
-                            it["qty"] = clean_res["quantity"]
+                    # 包装个数只作人工核对提示，不写入 qty / quantity / actual_qty。
+                    # 数量 1、1.0 和 "1" 都是已提供的数量，不是未填哨兵。
+                    _pack_qty = clean_res.get("quantity")
+                    _pack_known = (
+                        isinstance(_pack_qty, (int, float))
+                        and not isinstance(_pack_qty, bool)
+                        and _pack_qty == _pack_qty
+                        and _pack_qty not in (float("inf"), float("-inf"))
+                        and _pack_qty > 1.0
+                    )
+                    if _pack_known:
+                        _cur_qty = it.get("qty") if "qty" in it else None
+                        _provided = (
+                            isinstance(_cur_qty, (int, float))
+                            and not isinstance(_cur_qty, bool)
+                            and _cur_qty == _cur_qty
+                            and _cur_qty not in (float("inf"), float("-inf"))
+                        )
+                        if not _provided or float(_cur_qty) != float(_pack_qty):
+                            _label = it.get("name") or it.get("raw_name") or "这一行"
+                            _pack_txt = str(int(_pack_qty)) if float(_pack_qty).is_integer() else str(_pack_qty)
+                            _unit_txt = str(clean_res.get("unit") or "")
+                            if _provided:
+                                _qty_txt = str(int(_cur_qty)) if float(_cur_qty).is_integer() else str(_cur_qty)
+                                warnings.append(
+                                    f"「{_label}」的品名里写着 {_pack_txt}{_unit_txt}，数量仍按识别到的 {_qty_txt}，没有自动改。请对照原图，要改请自己填写。"
+                                )
+                            else:
+                                warnings.append(
+                                    f"「{_label}」的品名里写着 {_pack_txt}{_unit_txt}，数量没有识别到，没有按包装个数填写。请对照原图自己填写数量。"
+                                )
                     if clean_res["unit"] and clean_res["unit"] not in ["个", "件"] and (not it.get("unit") or it.get("unit") in ["个", "件", "行"]):
                         it["unit"] = clean_res["unit"]
+        except Exception as e:
+            log.warning(f"[WARN] 后处理·品名与包装拆分异常: {e}")
+            warnings.append("品名里的包装规格没有自动拆分，请对照原图核对")
 
-            # 3. 港式本地化日期归一化 (Gap 5)
+        try:
             from ai_registry.tools.date_normalizer.v1_0_0 import DateNormalizerTool
             _date_normalizer = DateNormalizerTool()
             for date_key in ["date", "receipt_date", "invoice_date"]:
@@ -1009,45 +1067,20 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
                     norm_d = _date_normalizer.execute(str(payload[date_key]))
                     if norm_d:
                         payload[date_key] = norm_d
-            
-            # 4. 数值字段货币符号与文本清洗（确保逐字转录如 'HK$ 355.00' 进入确定性数值）
-            def _clean_num(val):
-                if val is None or isinstance(val, (int, float)):
-                    return val
-                s = str(val).strip()
-                m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
-                if m:
-                    try:
-                        return float(m.group(0))
-                    except ValueError:
-                        return val
-                return val
-
-            if "total" in payload:
-                payload["total"] = _clean_num(payload["total"])
-            for fee_k in ["discount_amount", "deposit_amount", "delivery_fee", "service_fee", "tax_amount", "rounding_adjustment"]:
-                if fee_k in payload:
-                    payload[fee_k] = _clean_num(payload[fee_k])
-
-            for it in clean_items:
-                if isinstance(it, dict):
-                    for num_k in ["qty", "quantity", "unit_price", "amount", "actual_qty"]:
-                        if num_k in it:
-                            it[num_k] = _clean_num(it[num_k])
-
-            payload["items"] = clean_items
-
-            # 5. 街市花码检测与置信度硬性校准压降 (Gap 7)
-            from ai_registry.tools.huama_evaluator.v1_0_0 import HuamaEvaluatorTool
-            _huama_evaluator = HuamaEvaluatorTool()
-            payload = _huama_evaluator.calibrate_confidence_and_flags(payload)
         except Exception as e:
-            logging.getLogger("extract_chain").warning(f"[WARN] 后处理管道异常: {e}")
+            log.warning(f"[WARN] 后处理·日期归一异常: {e}")
 
-    from app.services.contract import validate_contract, normalize_evidence
+        try:
+            from ai_registry.tools.huama_evaluator.v1_0_0 import HuamaEvaluatorTool
+            payload = HuamaEvaluatorTool().calibrate_confidence_and_flags(payload)
+        except Exception as e:
+            log.warning(f"[WARN] 后处理·花码校准异常: {e}")
+            warnings.append("花码（街市手写数字）没有自动检查，请留意手写数字是否读对")
+
+    from app.services.contract import validate_contract_tiered, normalize_evidence
     # T7（Gap E1）：字段级证据容错归一——bbox 非法/越界/非数字一律置 None，
     # 空壳证据整体丢弃；任何证据杂质不得阻断契约门禁与主链路。
-    if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+    if isinstance(payload.get("items"), list):
         for _it in payload["items"]:
             if isinstance(_it, dict) and "evidence" in _it:
                 _ev = normalize_evidence(_it.get("evidence"))
@@ -1055,5 +1088,7 @@ def _parse_to_receipt(raw: str, expected_canary: str = "") -> tuple[Optional[Rec
                     _it.pop("evidence", None)
                 else:
                     _it["evidence"] = _ev
-    data, err = validate_contract(payload)
-    return data, err
+    data, err, _warns = validate_contract_tiered(payload, extra_warnings=warnings)
+    if err:
+        return None, err, payload
+    return data, None, None

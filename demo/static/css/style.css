@@ -53,6 +53,31 @@
     --toast-top: 64px;
 }
 
+/* 按界面语言选择 CJK 字体：简体与繁体（香港）字形不同，混用会出现同页字形不一致。
+   拉丁字体保持在最前，中文回落到对应地区的字体。 */
+html:lang(zh-Hans) {
+    --font-display: "Familjen Grotesk", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    --font-ui: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif;
+}
+html:lang(zh-Hant-HK) {
+    --font-display: "Familjen Grotesk", "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", "Noto Sans CJK HK", "Noto Sans TC", system-ui, sans-serif;
+    --font-ui: Inter, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", "Noto Sans CJK HK", "Noto Sans TC", system-ui, sans-serif;
+}
+
+/* 语言切换器（与角色切换器同一容器样式 .demo-role-switch） */
+.lang-switch-label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px; }
+.lang-switch-group { display: flex; gap: 6px; }
+.lang-switch-btn {
+    flex: 1 1 0; min-height: 38px; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid #6b7280; background: #fff; color: var(--text-main, #1e2223);
+    font-family: var(--font-ui); font-size: 0.85rem; font-weight: 500; cursor: pointer; white-space: nowrap;
+}
+.lang-switch-btn:lang(zh-Hans) { font-family: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", system-ui, sans-serif; }
+.lang-switch-btn:lang(zh-Hant-HK) { font-family: Inter, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", "Noto Sans CJK HK", system-ui, sans-serif; }
+.lang-switch-btn:hover { border-color: var(--primary, #032425); }
+.lang-switch-btn.active { background: var(--primary, #032425); border-color: var(--primary, #032425); color: #fff; font-weight: 600; }
+.lang-switch-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -761,6 +786,10 @@ textarea.form-control {
 @media (max-width: 640px) {
     .sidebar {
         display: none !important;
+    }
+    .photo-sider-drawer,
+    .photo-sider-drawer.open {
+        left: 0;
     }
     .memory-budget-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2135,6 +2164,10 @@ table.data-table.receipt-item-table td {
     overflow: hidden;
 }
 
+.photo-sider-drawer:not(.open) {
+    visibility: hidden;
+    pointer-events: none;
+}
 .photo-sider-drawer.open {
     transform: translateX(0);          /* 滑入 */
 }
@@ -2989,8 +3022,8 @@ table.data-table tr.inv-row-low-stock td {
     line-height: 1.2;
     font-variant-numeric: tabular-nums;
 }
-.supplier-unpaid-amount.is-unpaid { color: #f59e0b; }
-.supplier-unpaid-amount.is-paid { color: #10b981; }
+.supplier-unpaid-amount.is-unpaid { color: #b45309; }
+.supplier-unpaid-amount.is-paid { color: #047857; }
 .supplier-unpaid-count {
     font-size: 0.75rem;
     color: var(--text-muted);
@@ -6123,4 +6156,125 @@ textarea:focus-visible {
 
 
 
+
+
+/* S4-21 / S3-15: long names stay in the cell; sampled controls keep a 38px hit area */
+#itemTableBody .inp-name,
+#arcTableBody .inp-name {
+    overflow-wrap: break-word;
+    word-break: normal;
+    max-width: 100%;
+}
+.upload-actions .btn,
+#btnStartRecognize,
+#archiveKpiRetry {
+    min-height: 38px;
+}
+.badge {
+    white-space: nowrap;
+}
+.preview-file-name {
+    font-size: 0.85rem;
+    margin: 4px 0 0;
+    word-break: break-all;
+}
+@media (min-width: 1280px) {
+    .main-container {
+        width: auto;
+        flex: 1 1 auto;
+        max-width: calc(100vw - 240px);
+    }
+    .receipt-item-table {
+        min-width: 0;
+        width: 100%;
+    }
+    .split-view-right .table-container {
+        overflow-x: hidden;
+    }
+}
+
+/* S3-12: at 1440 the line department and delete controls stay inside the viewport.
+   The action cell sits on the right edge. Padding on that pane pulls the
+   delete button's border box back inside 1440 without growing the pane. */
+@media (max-width: 1600px) {
+    .app-wrapper {
+        max-width: 100vw;
+    }
+    .main-container {
+        max-width: calc(100vw - 240px);
+        min-width: 0;
+        margin-left: 0;
+        margin-right: 0;
+        padding-right: 28px;
+    }
+    .split-view {
+        width: 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+    .split-view-left {
+        flex: 0 1 280px;
+        width: 280px;
+        max-width: 32%;
+        min-width: 0;
+    }
+    .split-view-right {
+        flex: 1 1 0;
+        width: 0;
+        min-width: 0;
+        max-width: 100%;
+        padding-right: 20px;
+    }
+    .split-view-right .table-container {
+        max-width: 100%;
+        min-width: 0;
+    }
+    .receipt-item-table {
+        width: calc(100% - 24px);
+        min-width: 0;
+        max-width: calc(100% - 24px);
+    }
+    #itemTableBody .inp-dept,
+    #itemTableBody .btn-action-delete {
+        max-width: 100%;
+        box-sizing: border-box;
+    }
+}
+
+/* ------------------------------------------------------------------
+   S3 移动端版式协调修复（2026-10-13）：
+   上面 @media (max-width:1600px) 的桌面收窄规则在源码顺序上晚于
+   @media (max-width:1024px) 的竖排塌缩规则，同权重选择器按后者覆盖，
+   导致手机/窄屏上：右栏 flex-basis 0 在 column 方向被压成 0 高、
+   左栏被压成 32% 宽 —— 复核表单与确认卡在手机上整体不可用。
+   此处在文件尾部按同断点重申竖排语义（后序覆盖，仅影响 <=1024px，
+   桌面 1280/1600 规则不受影响）。
+   ------------------------------------------------------------------ */
+@media (max-width: 1024px) {
+    .split-view-left {
+        flex: 1 1 100%;
+        width: 100%;
+        max-width: 100%;
+        height: auto;
+        max-height: none;
+    }
+    .split-view-right {
+        flex: 1 1 auto;
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        height: auto;
+        max-height: none;
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
+
+/* 手机宽度（<=640px）侧栏已隐藏，不能再按「有 240px 侧栏」扣减主容器宽度；
+   否则 main-container 被压成 calc(100vw - 240px)（390px 视口只剩 150px）。 */
+@media (max-width: 640px) {
+    .main-container {
+        max-width: 100vw;
+    }
+}
 

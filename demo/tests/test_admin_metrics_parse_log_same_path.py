@@ -193,8 +193,9 @@ def test_writer_still_uses_the_same_helper():
     """写侧（`supervisor._finalize`）必须仍走 `_memory_log_path()` —— 同源的另一半。"""
     from app.chains import supervisor
 
-    assert "_memory_log_path()" in inspect.getsource(supervisor._finalize), \
+    assert "_memory_log_path()" in inspect.getsource(supervisor.append_parse_log), \
         "写侧不再走 _memory_log_path()，读写同源失效"
+    assert "append_parse_log(" in inspect.getsource(supervisor._finalize)
 
 
 if __name__ == "__main__":

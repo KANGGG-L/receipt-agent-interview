@@ -189,7 +189,7 @@ def test_math_gate_flags_mismatch_with_user_values(client):
     data = _detail(client, rid)
     warnings = data["math_warnings"]
     assert warnings, "门禁必须用店员提交的 service_fee 重算并报不一致"
-    assert any("服务费=15" in w for w in warnings), warnings
+    assert any("加服务费 15 元" in w for w in warnings), warnings
 
 
 # -------------------------------------------------------------
@@ -203,10 +203,11 @@ def _index_html():
 
 
 def _main_js_src():
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                        "static", "js", "main.js")
-    with open(path, encoding="utf-8") as f:
-        return f.read()
+    # F4/F5 S4-11（2026-10-13）：main.js 已拆为 123 行组装层 + 域文件；
+    # 源码级守卫的守真不变量口径＝「main.js + 全部域文件」联合全文
+    # （与浏览器实际加载的代码集合同构）。域内函数仍在、行为未变。
+    from f4_frontend_sources import frontend_union
+    return frontend_union()
 
 
 def test_dynamic_fee_rows_ui_mode():
@@ -310,7 +311,12 @@ def test_payment_mark_badge_ui_mode():
     tag = html[tag_start:html.index('</button>', pos)]
     assert 'type="button"' in tag, "徽章必须是 button（不随表单提交）"
     assert 'data-marked="false"' in tag, "徽章初始必须为未付款"
-    assert 'togglePaymentMarkBadge()' in tag, "徽章必须绑定点击切换"
+    # F3 强制 CSP（2026-10-13）：内联 onclick 已迁 data-csp-click 委托，
+    # 绑定判据升级为等效形态（源码内为 &quot; 转义 JSON，unescape 后判 f=函数名）
+    import html as _html
+    tag_unescaped = _html.unescape(tag)
+    assert 'data-csp-click' in tag and '"f":"togglePaymentMarkBadge"' in tag_unescaped, \
+        "徽章必须经 data-csp-click 委托绑定点击切换（等效内联 onclick）"
     assert 'aria-pressed="false"' in tag, "徽章必须带 aria 状态（无障碍）"
     assert 'payment-mark-unpaid' in tag, "徽章初始必须带未付款（红）样式类"
     assert 'payment-mark-toggle' in tag, "徽章必须带切换徽章样式类"
@@ -453,9 +459,19 @@ def test_dynamic_note_rows_ui_mode():
     assert "无手写注记" in html, "占位提示必须是人话文案「无手写注记」"
     assert "+ 添加注记" in html
     # 添加按钮高度 >= 38px（与费用区按钮同款触控标准）
+    # F3 强制 CSP：内联 style min-height:38px 已迁 csp-s-49 类（样式体集中在
+    # csp-html-styles.css）——等效判据 = 按钮挂类 + 类定义保住 38px
     add_btn_pos = html.index('id="btnAddNoteRow"')
-    assert 'min-height:38px' in html[add_btn_pos:add_btn_pos + 200], \
-        "「+ 添加注记」按钮必须保持 38px 触控高度"
+    tag_start = html.rindex('<button', 0, add_btn_pos)
+    add_btn_tag = html[tag_start:html.index('>', add_btn_pos)]
+    assert 'csp-s-49' in add_btn_tag, \
+        "「+ 添加注记」按钮必须挂 csp-s-49 触控高度类（原内联 min-height:38px 的 CSP 迁移形态）"
+    csp_css_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "static", "css", "csp-html-styles.css")
+    with open(csp_css_path, encoding="utf-8") as f:
+        csp_css = f.read()
+    assert ".csp-s-49{min-height:38px" in csp_css.replace(" ", ""), \
+        "csp-s-49 类必须定义 min-height:38px（触控标准不得随 CSP 迁移丢失）"
     # 位置：注记抽屉仍在 Side-by-Side 复核表单卡内（供应商输入之后、明细表之前）
     anchor_supplier = html.index('id="inpSupplier"')
     anchor_table = html.index('id="itemTableBody"')

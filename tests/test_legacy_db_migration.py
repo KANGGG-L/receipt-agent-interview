@@ -22,6 +22,8 @@ import atexit
 import importlib
 import json
 import os
+
+import pytest
 import shutil
 import sqlite3
 import sys
@@ -442,12 +444,14 @@ def test_rebuild_copy_phase_failure_keeps_old_table(caplog, monkeypatch):
 
     monkeypatch.setattr(db, "_table_columns", _trapped_columns)
     with caplog.at_level(logging.WARNING, logger="app.db"):
-        # 失败路径不得向调用方抛出（「失败只告警不阻断启动」铁律）
-        db._rebuild_legacy_vendor_memory(engine)
-    hit_warnings = [r.getMessage() for r in caplog.records
-                    if "vendor_memory legacy rebuild skipped" in r.getMessage()
-                    and "模拟拷贝阶段故障" in r.getMessage()]
-    assert hit_warnings, "拷贝阶段失败必须 logger.warning 留痕且含原始异常信息"
+        # 迁移失败必须中止启动（MigrationError），不能只记 warning 然后带着半套 schema 继续跑
+        with pytest.raises(db.MigrationError) as exc:
+            db._rebuild_legacy_vendor_memory(engine)
+    assert "模拟拷贝阶段故障" in str(exc.value), "错误信息必须含原始异常"
+    hit_errors = [r.getMessage() for r in caplog.records
+                  if "vendor_memory legacy rebuild skipped" in r.getMessage()
+                  and "模拟拷贝阶段故障" in r.getMessage()]
+    assert hit_errors, "拷贝阶段失败必须留痕且含原始异常信息"
 
     conn = sqlite3.connect(path)
     c = conn.cursor()

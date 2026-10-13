@@ -21,6 +21,7 @@ gt_status / gt_source_model。
 
 import base64
 import csv
+import functools
 import hashlib
 import io
 import json
@@ -28,6 +29,7 @@ import logging
 import os
 import re
 import shutil
+import threading
 import time
 from datetime import datetime
 
@@ -95,13 +97,31 @@ def _load_manifest(evalset_dir):
         return list(csv.DictReader(f))
 
 
+# 评测集语料是共享文件：确权、回流都是「读 manifest → 改 → 写回」。两个超管同时操作会
+# 互相覆盖（丢更新）、同一候选被回流两次生成重复样本。写操作端点用本锁整体串行。
+_EVALSET_LOCK = threading.RLock()
+
+
+def _serialized(fn):
+    @functools.wraps(fn)
+    def _wrapper(*args, **kwargs):
+        with _EVALSET_LOCK:
+            return fn(*args, **kwargs)
+    return _wrapper
+
+
 def _save_manifest(evalset_dir, rows):
-    """按固定列序写回 manifest（未知列丢弃，与 build_evalset 列定义一致）。"""
+    """按固定列序写回 manifest（未知列丢弃，与 build_evalset 列定义一致）。
+
+    先写临时文件再原子替换：写到一半崩溃或断电，旧 manifest 仍然完好。
+    """
     path = _manifest_path(evalset_dir)
-    with open(path, "w", encoding="utf-8", newline="") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
         w = csv.DictWriter(f, fieldnames=MANIFEST_COLUMNS, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
+    os.replace(tmp, path)
 
 
 def _shared_corpus_write_refusal(evalset_dir):
@@ -323,6 +343,7 @@ def _fill_gt_v2_defaults(gt):
 
 
 @router.post("/api/evalset/sample/{sample_id}/confirm")
+@_serialized
 def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
     """人工确认：写回校正后的 GT（confirmed + reviewed_by/at），manifest 同步。仅 admin。
 
@@ -506,6 +527,7 @@ def list_candidates(request: Request, status: str = None, reason: str = None):
 
 
 @router.post("/api/evalset/candidates/{candidate_id}/promote")
+@_serialized
 def promote_candidate(candidate_id: int, request: Request, split: str = "val"):
     """候选晋升为评测样本：原图 + AI 候选 GT 复制进评测集，manifest 追加行。仅 admin。
 
@@ -618,6 +640,7 @@ def promote_candidate(candidate_id: int, request: Request, split: str = "val"):
 
 
 @router.post("/api/evalset/candidates/{candidate_id}/reject")
+@_serialized
 def reject_candidate(candidate_id: int, request: Request):
     """驳回候选（不进入评测集）。仅 admin。仅 pending 可驳回，重复处理返回 409。"""
     require_admin(request)
