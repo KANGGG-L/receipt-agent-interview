@@ -145,9 +145,18 @@ def test_stock_in_converts_to_base_unit(client):
 
 
 def test_jsstr_is_safe_inside_single_quoted_attribute():
+    # F5 S4-11：jsStr 实现已随公共工具域迁至 common.js。守真不变量＝「前端加载集合
+    # （main.js + 全部域文件）中恰有一份 jsStr 定义，且其行为安全」，实现位置变化不放宽。
+    import glob
+    frontend_files = [MAIN_JS] + sorted(
+        p for p in glob.glob(os.path.join(os.path.dirname(MAIN_JS), "*.js"))
+        if os.path.basename(p) != "main.js")
+    hits = [p for p in frontend_files
+            if re.search(r"^function jsStr\(v\) \{", open(p, encoding="utf-8").read(), re.M)]
+    assert len(hits) == 1, "jsStr 必须恰有一份实现（前端加载集合内）：%r" % hits
     js = ("const fs=require('fs');const s=fs.readFileSync(%r,'utf8');"
           "const m=s.match(/function jsStr\\(v\\) \\{[\\s\\S]*?\\n\\}/)[0];"
-          "eval(m);const o=jsStr('&quot;+alert(1)+&quot;');console.log(o);" % MAIN_JS)
+          "eval(m);const o=jsStr('&quot;+alert(1)+&quot;');console.log(o);" % hits[0])
     out = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=20).stdout.strip()
     assert "&" not in out and "<" not in out and "'" not in out
     assert re.fullmatch(r'"[^"]*"', out)

@@ -28,19 +28,32 @@ import pytest
 _DEMO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _TESTS_DIR = os.path.join(_DEMO_DIR, "tests")
 _MAIN_JS = os.path.join(_DEMO_DIR, "static", "js", "main.js")
+_INV_BOARD_JS = os.path.join(_DEMO_DIR, "static", "js", "inventory_board.js")
+_SUPPLIER_JS = os.path.join(_DEMO_DIR, "static", "js", "supplier_archive.js")
 _INDEX_HTML = os.path.join(_DEMO_DIR, "templates", "index.html")
 _HARNESS = os.path.join(_TESTS_DIR, "frontend_role_gate_harness.js")
 
 
-def _run_harness(harness_path, main_js=None, index_html=None):
+def _run_harness(harness_path, main_js=None, index_html=None, supplier_js=None,
+                 inv_board_js=None, common_js=None):
     node = shutil.which("node")
     if not node:
         pytest.skip("本机无 node，跳过前端真实产出校验")
     argv = [node, harness_path]
-    if main_js or index_html:
+    # 槽位链对齐：argv[2]=main argv[3]=index argv[4]=supplier_archive
+    # argv[5]=inventory_board argv[6]=common；
+    # 只要后面的槽位要用，前面的槽位必须显式补默认值。
+    if main_js or index_html or supplier_js or inv_board_js or common_js:
         argv.append(main_js or _MAIN_JS)
-    if index_html:
-        argv.append(index_html)
+    if index_html or supplier_js or inv_board_js or common_js:
+        argv.append(index_html or _INDEX_HTML)
+    # 槽位链：argv[4]=supplier_archive（用默认真文件补位）、argv[5]=inventory_board 突变体
+    if supplier_js or inv_board_js or common_js:
+        argv.append(supplier_js or _SUPPLIER_JS)
+    if inv_board_js or common_js:
+        argv.append(inv_board_js or _INV_BOARD_JS)
+    if common_js:
+        argv.append(common_js)
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=60)
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
     assert lines, "脚手架无 JSON 输出：stdout=%s stderr=%s" % (proc.stdout, proc.stderr)
@@ -71,13 +84,14 @@ def test_inventory_toolbar_and_rag_debug_static_wiring():
         w = html.rindex("dropdown-wrap owner-only", 0, i)
         return "</div>" not in html[w:i]
 
+    # F3 B1 起内联 onclick 迁为 data-csp-click JSON 计划，needle 去掉调用括号（计划里是函数名）。
     assert _inside_owner_only_wrap("openSkuMergeModalFromInv"), \
         "「合并食材」必须位于 owner-only 容器（管理库存下拉）内"
-    assert _inside_owner_only_wrap("deduplicateSkus()"), \
+    assert _inside_owner_only_wrap("deduplicateSkus"), \
         "「一键清理重复食材」必须位于 owner-only 容器（管理库存下拉）内"
-    assert "owner-only" in html[max(0, html.index("openSupplierModal()") - 200):html.index("openSupplierModal()")], \
+    assert "owner-only" in html[max(0, html.index("openSupplierModal") - 200):html.index("openSupplierModal")], \
         "「+ 新增供应商」必须声明 owner-only"
-    assert "owner-only" not in html[max(0, html.index("openAddSkuModal()") - 220):html.index("openAddSkuModal()")], \
+    assert "owner-only" not in html[max(0, html.index("openAddSkuModal") - 220):html.index("openAddSkuModal")], \
         "「+ 新增食材」后端为 require_role('staff')，店员可用，不得被误门禁"
     assert "admin-only" in html[max(0, html.index("arcDataOnlyToggle") - 400):html.index("arcDataOnlyToggle")], \
         "RAG data_only 调试开关容器必须声明 admin-only"
@@ -92,39 +106,49 @@ def _read(path):
 
 def test_counterexample_inventory_row_gate_mutant_is_red(tmp_path):
     """反证：去掉库存行 owner 门禁（恒显示）后脚手架必红。"""
-    src = _read(_MAIN_JS)
+    # F4 S4-11 起库存行门禁随域迁至 inventory_board.js，突变体对准该文件
+    #（/tmp 突变体，仓库文件全程只读），harness 以 argv[5] 加载突变版。
+    src = _read(_INV_BOARD_JS)
     mutant = src.replace("const skuActionsHtml = isOwnerRoleNow() ?",
                          "const skuActionsHtml = true ?")
     assert mutant != src, "突变体未生效（目标字面不存在？）"
-    mut = tmp_path / "main_mutant_inv_gate.js"
+    mut = tmp_path / "inventory_board_mutant_inv_gate.js"
     mut.write_text(mutant, encoding="utf-8")
-    result, code = _run_harness(_HARNESS, str(mut))
+    result, code = _run_harness(_HARNESS, inv_board_js=str(mut))
     assert code != 0, "库存行门禁被关掉后脚手架却报绿（判据恒真）"
     assert result["fail"] >= 1, result
 
 
 def test_counterexample_supplier_row_gate_mutant_is_red(tmp_path):
-    """反证：去掉供应商行 owner 门禁（恒显示）后脚手架必红。"""
-    src = _read(_MAIN_JS)
+    """反证：去掉供应商行 owner 门禁（恒显示）后脚手架必红。
+
+    F3 B6-1 起 renderSupplierAdminRows 在 supplier_archive.js，突变体对准该文件
+    （/tmp 突变体，仓库文件全程只读），harness 以 argv[4] 加载突变版。"""
+    src = _read(_SUPPLIER_JS)
     mutant = src.replace("const supplierActionsHtml = isOwnerRoleNow() ?",
                          "const supplierActionsHtml = true ?")
     assert mutant != src, "突变体未生效（目标字面不存在？）"
-    mut = tmp_path / "main_mutant_sup_gate.js"
+    mut = tmp_path / "supplier_archive_mutant_gate.js"
     mut.write_text(mutant, encoding="utf-8")
-    result, code = _run_harness(_HARNESS, str(mut))
+    result, code = _run_harness(_HARNESS, _MAIN_JS, None, str(mut))
     assert code != 0, "供应商行门禁被关掉后脚手架却报绿（判据恒真）"
     assert result["fail"] >= 1, result
 
 
 def test_counterexample_class_convergence_mutant_is_red(tmp_path):
-    """反证：让 .owner-only 永不停用（class 收敛失效，对应 F1/F5 工具栏）后脚手架必红。"""
-    src = _read(_MAIN_JS)
-    mutant = src.replace("el.style.display = (role === 'staff') ? 'none' : el.dataset.baseDisplay;",
-                         "el.style.display = el.dataset.baseDisplay;")
+    """反证：让 .owner-only 永不停用（class 收敛失效，对应 F1/F5 工具栏）后脚手架必红。
+
+    F5 拆分后 applyRoleVisibility 在 common.js，突变体对准该文件
+    （/tmp 突变体，仓库文件全程只读），harness 以 argv[6]（common.js override）加载突变版。"""
+    _COMMON_JS = os.path.join(_DEMO_DIR, "static", "js", "common.js")
+    src = _read(_COMMON_JS)
+    target = "el.style.display = (role === 'staff') ? 'none' : el.dataset.baseDisplay;"
+    assert src.count(target) >= 1, "突变目标字面不在 common.js（加载链又变了？）"
+    mutant = src.replace(target, "el.style.display = el.dataset.baseDisplay;")
     assert mutant != src, "突变体未生效（目标字面不存在？）"
-    mut = tmp_path / "main_mutant_class.js"
+    mut = tmp_path / "common_mutant_class.js"
     mut.write_text(mutant, encoding="utf-8")
-    result, code = _run_harness(_HARNESS, str(mut))
+    result, code = _run_harness(_HARNESS, common_js=str(mut))
     assert code != 0, "class 收敛被关掉后脚手架却报绿（判据恒真）"
     assert result["fail"] >= 1, result
 

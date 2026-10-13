@@ -98,13 +98,13 @@ def _mk_parsed_receipt(_db, vendor):
     return rid
 
 
-def _approve(_db, client, vendor, operator):
-    """走真实 approve 端点（带显式操作者身份），返回 (rid, resp)。"""
+def _approve(_db, client, vendor, role="owner", forged_email="forged.operator@demo.hk"):
+    """走真实 approve 端点。演示态身份只认角色，伪造的 X-Email 必须被忽略。"""
     rid = _mk_parsed_receipt(_db, vendor)
     row = _db.get_receipt_row(rid, tenant_id="default")
     resp = client.post(f"/api/receipt/{rid}/approve", json={"version": row.version},
-                       headers={"X-Role": "owner", "X-Tenant-Id": "default",
-                                "X-Email": operator})
+                       headers={"X-Role": role, "X-Tenant-Id": "default",
+                                "X-Email": forged_email})
     assert resp.status_code == 200, resp.text
     return rid, resp
 
@@ -113,40 +113,48 @@ def _approve(_db, client, vendor, operator):
 # 1. approve 自由文本回写行：written_by 非空且为本次操作者
 # -------------------------------------------------------------
 def test_approve_free_text_ingest_row_records_operator():
+    """演示态操作者是角色邮箱 owner@demo.hk。伪造 X-Email 不得进入 written_by。
+
+    旧契约把 X-Email: boss.a@demo.hk 当成操作者。phase1 spec 3.2 / 3.6 已锁定：
+    AUTH_ENABLED=0 时邮箱固定为 {role}@demo.hk，X-Email 不得进入审计。
+    """
     _db = _fresh_db()
     vendor = "審計鏈直批商號"
-    operator = "boss.a@demo.hk"
-    _approve(_db, _client(), vendor, operator)
+    forged = "boss.a@demo.hk"
+    _approve(_db, _client(), vendor, role="owner", forged_email=forged)
 
     rows = _raw_vendor_rows(_db.DB_PATH, vendor)
     assert len(rows) == 1, f"一次 approve 应恰好回写一条记忆，实得 {len(rows)} 条"
     row = rows[0]
     assert row["source_kind"] == "approve", (
         f"本用例钉的是 approve 直写路径，实际 source_kind={row['source_kind']!r}")
-    assert str(row["written_by"] or "").strip(), (
-        "写入者为空：approve 自由文本回写行的审计链仍断在落库这一步")
-    assert row["written_by"] == operator, (
-        f"written_by 必须等于本次操作者 {operator!r}，实际 {row['written_by']!r}"
-        "（只断言「有值」不够：落了兜底身份同样追溯不到是谁批的）")
+    assert row["written_by"] == "owner@demo.hk", (
+        f"written_by 必须是已解析的角色邮箱，实际 {row['written_by']!r}")
+    assert row["written_by"] != forged, "伪造的 X-Email 不得写入审计列"
 
 
 # -------------------------------------------------------------
 # 2. 两个操作者各批一张：各自的行记各自的写入者（排除"全局常量"假通过）
 # -------------------------------------------------------------
 def test_written_by_tracks_the_actual_operator():
+    """写入者随已解析角色变化，不随伪造邮箱变化。
+
+    owner 与 admin 都能入账（require_role('owner')）。两人的伪造邮箱不同，
+    落库邮箱必须分别是 owner@demo.hk 与 admin@demo.hk。两行若相同，说明写死了常量。
+    """
     _db = _fresh_db()
     client = _client()
     seen = {}
-    for operator in ("boss.one@demo.hk", "boss.two@demo.hk"):
-        vendor = f"審計鏈操作者商號{operator.split('.')[1]}"
-        _approve(_db, client, vendor, operator)
+    for role, forged in (("owner", "boss.one@demo.hk"), ("admin", "boss.two@demo.hk")):
+        vendor = f"審計鏈操作者商號{role}"
+        _approve(_db, client, vendor, role=role, forged_email=forged)
         rows = _raw_vendor_rows(_db.DB_PATH, vendor)
         assert len(rows) == 1
-        seen[operator] = rows[0]["written_by"]
+        seen[role] = rows[0]["written_by"]
+        assert forged not in (rows[0]["written_by"] or ""), (role, rows[0]["written_by"])
 
-    assert seen == {"boss.one@demo.hk": "boss.one@demo.hk",
-                    "boss.two@demo.hk": "boss.two@demo.hk"}, (
-        f"写入者必须随操作者变化（实得 {seen!r}）：若两行同值，说明落的是常量而非操作者")
+    assert seen == {"owner": "owner@demo.hk", "admin": "admin@demo.hk"}, (
+        f"写入者必须随已解析角色变化（实得 {seen!r}）：若两行同值，说明落的是常量而非操作者")
 
 
 # -------------------------------------------------------------

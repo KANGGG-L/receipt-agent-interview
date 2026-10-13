@@ -333,10 +333,12 @@ def evalset_workbench_page(sample_id: str):
     def _inject(html):
         if "</body>" not in html:
             return html
+        import html as _html
+        payload = _json.dumps({"sampleId": sample_id, "autoNext": True}, ensure_ascii=False)
         inject = (
-            '<script>window.__EVAL_WORKBENCH__ = { sampleId: %s, autoNext: %s };</script>\n'
+            '<meta name="eval-workbench" content="%s">\n'
             '<script src="/static/js/eval_workbench.js"></script>\n</body>'
-            % (_json.dumps(sample_id), "true")
+            % _html.escape(payload, quote=True)
         )
         return html.replace("</body>", inject, 1)
 

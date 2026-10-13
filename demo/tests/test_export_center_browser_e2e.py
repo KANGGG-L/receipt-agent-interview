@@ -240,8 +240,8 @@ def run_all_tests():
 
         dim_eval = page.evaluate("""() => {
             const results = {};
-            const btnRefresh = document.querySelector('.export-btn-action[onclick*="refreshExportPreview"]');
-            const btnPrint = document.querySelector('.export-btn-action[onclick*="printExportReport"]');
+            const btnRefresh = document.querySelector('.export-btn-action[data-csp-click*="refreshExportPreview"]');
+            const btnPrint = document.querySelector('.export-btn-action[data-csp-click*="printExportReport"]');
             const btnDownload = document.querySelector('.export-btn-download');
             results.btnRefresh = btnRefresh ? btnRefresh.getBoundingClientRect().height : 0;
             results.btnPrint = btnPrint ? btnPrint.getBoundingClientRect().height : 0;
@@ -418,14 +418,16 @@ def run_all_tests():
         wait_for_preview_ready(page)
 
         # 点击打印报表按钮
-        page.click(".export-btn-action[onclick*='printExportReport']")
+        page.click(".export-btn-action[data-csp-click*='printExportReport']")
         time.sleep(1)
 
         print_captures = page.evaluate("() => window.__printCaptures || []")
         has_print = len(print_captures) > 0
         print_html = print_captures[0] if has_print else ""
 
-        has_a4 = "A4 portrait" in print_html
+        has_sheet = "print-export.css" in print_html
+        css_text = page.evaluate("async () => (await fetch('/static/css/print-export.css')).text()")
+        has_a4 = has_sheet and "A4 portrait" in css_text
         has_handwrite_col = "实盘数量(现场手填)" in print_html or "盘盈/盘亏差异" in print_html
         has_sig1 = "经办人签字：_______________" in print_html
         has_sig2 = "主管审核签字：_______________" in print_html

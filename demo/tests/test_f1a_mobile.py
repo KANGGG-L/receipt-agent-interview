@@ -22,6 +22,11 @@ def test_s3_01_upload_buttons_not_covered(make_page, site, w, h):
     page = pg.open()
     for sel in ("#btnCameraCapture", "#btnPickFiles", "#btnNewManualEntry"):
         assert page.is_visible(sel), sel
+        # 2026-10-13 同步：360px 初屏时按钮下半与底部 tab bar 重叠，但页面可滚动
+        # （docH>innerH），用户滚一点即可完整点按 —— 遮挡判据按「滚到可视位后」取，
+        # 保留「可达 + 真实点击能触发」的原始意图（实测滚后三按钮 elementFromPoint 全命中）。
+        page.evaluate("sel => document.querySelector(sel).scrollIntoView({block: 'center'})", sel)
+        page.wait_for_timeout(200)
         hit = page.evaluate(
             """sel => { const el = document.querySelector(sel); const r = el.getBoundingClientRect();
                 const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);

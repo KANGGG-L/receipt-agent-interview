@@ -1,0 +1,10 @@
+@page { size: A4 portrait; margin: 12mm 10mm 15mm 10mm; }
+body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color:#000; background:#fff; padding:10px 15px; }
+h2 { text-align:center; margin:0 0 6px 0; font-size:16pt; letter-spacing:1px; }
+.meta-bar { text-align:center; font-size:9pt; color:#333; border-bottom:2px solid #000; padding-bottom:8px; margin-bottom:10px; }
+table { width:100%; border-collapse:collapse; font-size:8.5pt; }
+th, td { border:1px solid #000; padding:4px 6px; text-align:left; vertical-align:middle; white-space:nowrap; }
+th { background:#f2f2f2; font-weight:700; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+.col-right { text-align:right; }
+.col-center { text-align:center; }
+.print-footer { margin-top:30px; display:flex; justify-content:space-between; font-size:10pt; page-break-inside:avoid; }

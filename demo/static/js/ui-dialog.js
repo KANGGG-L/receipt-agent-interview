@@ -28,7 +28,12 @@
         + '@media (max-width:640px){.ui-dlg-actions{flex-direction:column-reverse}.ui-dlg-btn{width:100%}}';
 
     function ensureStyle() {
+        // CSP 加固（F4）：样式已外置为 /static/css/ui-dialog.css，由模板以
+        // <link id="uiDialogStyle"> 挂载；链接在位时跳过运行时注入——强制 CSP
+        // （style-src 'self'）会拦截运行时 <style> 注入并污染 console。
         if (document.getElementById(STYLE_ID)) return;
+        var link = document.querySelector && document.querySelector('link[id="' + STYLE_ID + '"]');
+        if (link) return;
         var s = document.createElement('style');
         s.id = STYLE_ID;
         s.textContent = CSS;

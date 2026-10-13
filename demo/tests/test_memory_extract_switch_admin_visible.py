@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import tempfile
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 # 红线：import app.* 会在 import 期执行 db._make_engine() 的迁移块、直接对 DB_PATH
 # 指向的库做 ALTER。必须在任何 app.* import 之前把 DB_PATH / RAG_DIR 指到 /tmp，
@@ -127,7 +128,7 @@ def test_checkbox_exists_in_admin_form():
 
 def test_main_js_wires_load_collect_reset():
     """load / collect / reset 三处接线一个都不能少（含自校准）。"""
-    js = _read(MAIN_JS)
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     assert _count_wiring(js, FIELD_ID, KEY) == 3, (
         "LLM 抽取开关的 load / collect / reset 接线不齐（命中 %d/3）："
         "缺 load = 显示了但不反映当前值；缺 collect = 点了保存也不生效；"

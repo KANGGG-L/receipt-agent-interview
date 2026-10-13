@@ -633,12 +633,8 @@
 
         if (currentLocale === HANT) {
             // 转换完成前短暂隐藏页面，避免简体闪现；最多 300ms 后无条件显示。
-            if (doc.head && !doc.getElementById('i18nPendingStyle')) {
-                var st = doc.createElement('style');
-                st.id = 'i18nPendingStyle';
-                st.textContent = 'html.i18n-pending body{visibility:hidden}';
-                doc.head.appendChild(st);
-            }
+            // 样式来源=外置 CSS（index-head.css / evalset-head.css 的 html.i18n-pending 规则）；
+            // 运行时 <style> 注入已被强制 CSP（style-src 'self'）拦截，属死代码（UAT 实测 console error 源）。
             html.classList.add('i18n-pending');
             var goLive = function () {
                 if (observerLive) return;

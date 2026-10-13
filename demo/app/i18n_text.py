@@ -71,6 +71,15 @@ def _pairs(s: str) -> dict:
     return {s[i]: s[i + 1] for i in range(0, len(s) - 1, 2)}
 
 
+def _invert_map(mapping: dict) -> dict:
+    """繁体或香港字形 -> 简体。一对多时保留先出现的简体，折叠键因此稳定。"""
+    inv = {}
+    for src, dst in mapping.items():
+        if dst and dst not in inv:
+            inv[dst] = src
+    return inv
+
+
 class Converter:
     def __init__(self, data: dict, glossary: list):
         self.chars = _pairs(data.get("chars", ""))
@@ -78,6 +87,11 @@ class Converter:
         self.hk_chars = _pairs(data.get("hkChars", ""))
         self.hk_phrases = _Index(dict(data.get("hkPhrases", {})))
         self.gloss = _Index({e["s"]: e["t"] for e in glossary if e.get("s") and e.get("t")})
+        self.inv_chars = _invert_map(self.chars)
+        self.inv_hk_chars = _invert_map(self.hk_chars)
+        self.inv_phrases = _Index(_invert_map(self.phrases.map))
+        self.inv_hk_phrases = _Index(_invert_map(self.hk_phrases.map))
+        self.inv_gloss = _Index(_invert_map(self.gloss.map))
 
     def _hk(self, s: str) -> str:
         out, i = [], 0
@@ -122,6 +136,26 @@ class Converter:
             out.append(self._opencc("".join(gap)))
         return "".join(out)
 
+    def fold_hans(self, text: str) -> str:
+        """把繁体、香港字形折回简体，供主数据比对。已经是简体的字符保持原样。"""
+        if not text:
+            return text
+        out, i, n = [], 0, len(text)
+        while i < n:
+            hit = self.inv_gloss.longest(text, i, 1)
+            if hit is None:
+                hit = self.inv_phrases.longest(text, i, 2)
+            if hit is None:
+                hit = self.inv_hk_phrases.longest(text, i, 1)
+            if hit:
+                out.append(hit[1])
+                i += hit[0]
+                continue
+            ch = self.inv_hk_chars.get(text[i], text[i])
+            out.append(self.inv_chars.get(ch, ch))
+            i += 1
+        return "".join(out)
+
 
 _lock = threading.Lock()
 _converter: Optional[Converter] = None
@@ -143,6 +177,32 @@ def _get_converter() -> Converter:
 @lru_cache(maxsize=4096)
 def to_hant_hk(text: str) -> str:
     return _get_converter().convert(text)
+
+
+def master_key(text: str) -> str:
+    """主数据比对键：NFKC、去空白、再把繁体折成简体。转换表不可用时退回折叠前的文本。"""
+    import unicodedata
+    raw = unicodedata.normalize("NFKC", str(text or "")).strip().casefold()
+    raw = "".join(raw.split())
+    if not raw:
+        return ""
+    try:
+        return _get_converter().fold_hans(raw)
+    except (OSError, ValueError, KeyError):
+        return raw
+
+
+def prefer_stored_label(candidate: str, existing) -> str:
+    """若候选与某条已有标签折成同一个键，沿用已有写法，避免简繁各存一条。"""
+    raw = str(candidate or "").strip()
+    if not raw:
+        return raw
+    key = master_key(raw)
+    for item in existing:
+        label = str(item or "").strip()
+        if label and master_key(label) == key:
+            return label
+    return raw
 
 
 def localize(text, locale: Optional[str]):

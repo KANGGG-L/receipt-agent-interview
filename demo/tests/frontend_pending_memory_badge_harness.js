@@ -112,6 +112,8 @@ const sandbox = {
     fetch: dispatcher,
 };
 sandbox.window = sandbox;
+sandbox.addEventListener = function () {};
+sandbox.removeEventListener = function () {};
 sandbox.globalThis = sandbox;
 sandbox.self = sandbox;
 sandbox.location = { href: 'http://127.0.0.1/', reload() {}, assign() {} };
@@ -132,6 +134,11 @@ sandbox.document = {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => console.log(m) });
 
 const { loadPendingMemoryBadge, openPendingMemoryQueue, submitArcFeedback } = sandbox;
 

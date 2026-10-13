@@ -24,6 +24,10 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app import db
+# F4 S4-11: main.js+域文件联合全文（共享助手位于 demo/tests/）
+import sys as _f4sys, os as _f4os
+_f4sys.path.insert(0, _f4os.path.join(_f4os.path.dirname(_f4os.path.abspath(__file__)), "..", "demo", "tests"))
+from f4_frontend_sources import frontend_union
 
 
 @pytest.fixture
@@ -75,8 +79,7 @@ def test_ac_kpi_03_no_race_dom_overwrite_in_render_recovery_metrics():
     验证 renderRecoveryMetrics 函数中已彻底移除对 telemetryKpiRecoveryEntry
     与 telemetryKpiRecoverySuccess 的跨组件直接 DOM 覆写。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 定位 renderRecoveryMetrics 函数块
     fn_start = js.find("function renderRecoveryMetrics(")
@@ -140,8 +143,7 @@ def test_ac_ux_01_static_table_removed_from_recovery_body():
     # index.html 中 analyticsRecoveryBody 内部无静态表格
     assert '<table class="data-table" id="analyticsRecentEventsTable"' not in html
 
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     fn_start = js.find("function renderRecoveryMetrics(")
     fn_end = js.find("function openEventDetailModal(", fn_start)
@@ -156,8 +158,7 @@ def test_ac_ux_02_and_03_drill_down_entry_and_modal():
     - #analyticsEventDistTable 包含操作列与可点击查看明细入口
     - index.html 存在 #analyticsEventModal 专属下钻审计模态框
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 包含 [查看明细] 交互按钮与 openEventDetailModal / openEventLogsModal 调用
     assert "openEventDetailModal" in js
@@ -185,8 +186,7 @@ def test_ac_ux_04_and_05_modal_table_governance():
     - 表头严格为 触发时间 (最新在前)
     - 保持测试套件兼容性
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     fn_start = js.find("function renderAnalyticsEventTable(")
     assert fn_start != -1
@@ -275,8 +275,7 @@ def test_ac_ux_06_open_parsing_log_detail_modal_binding():
     """
     AC-UX-06: 验证 openParsingLogDetailModal 全局挂载与兼容支持。
     """
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "window.openParsingLogDetailModal = openParsingLogModal;" in js, \
         "main.js 必须挂载 window.openParsingLogDetailModal 别名"

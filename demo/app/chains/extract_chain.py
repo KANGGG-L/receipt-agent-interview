@@ -774,9 +774,9 @@ def _build_correction_prompt(raw_vlm: str, feedback: str) -> list:
     """组装修正 prompt：门禁反馈 + 原始 JSON（两者均经数据沙箱；纯文本，不重读图）。
 
     why（P1-2）：门禁反馈此前已过沙箱，但同一 prompt 里的 raw_vlm（可被污染的非受信
-    文本）仍裸拼在 ``` 围栏内——攻击面没有收敛。现两段都经
-    wrap_untrusted_input_sandbox 包裹（feedback 用 untrusted_input，raw_vlm 用
-    vlm_raw_output），指令与数据仍结构可分。
+    文本）仍裸拼在 ``` 围栏内——攻击面没有收敛。现两段都经 wrap_data_channel
+    包裹（feedback 用 untrusted_input，raw_vlm 用 vlm_raw_output）：只中和标签
+    逃逸，不把正文换成占位符。指令与数据仍结构可分。
     """
     sandboxed_feedback = wrap_data_channel(feedback, "untrusted_input")
     sandboxed_vlm = wrap_data_channel(raw_vlm, "vlm_raw_output")
@@ -1022,17 +1022,37 @@ def _parse_to_receipt_ex(raw, expected_canary: str = ""):
                     if not it.get("raw_name"):
                         it["raw_name"] = clean_res.get("raw_name") or it["name"]
                     it["name"] = clean_res["item_name"]
-                    # 品名带包装乘数（如 5L*2樽）且数量为 1 或未填时，同步拆分后的数量；
-                    # AI 已给出其它数量（如 3）一律保持原值，不改 AI 的数。
-                    _cur_qty = it["qty"] if "qty" in it else it.get("quantity")
-                    if clean_res["quantity"] > 1.0 and _cur_qty in [1.0, 1, None]:
-                        if "quantity" in it:
-                            it["quantity"] = clean_res["quantity"]
-                        if "qty" in it:
-                            it["qty"] = clean_res["quantity"]
-                        if _cur_qty is not None:
-                            warnings.append(
-                                f"「{it['name']}」品名里带 ×{int(clean_res['quantity'])}，数量已按 {int(clean_res['quantity'])} 处理，请对照原图核对")
+                    # 包装个数只作人工核对提示，不写入 qty / quantity / actual_qty。
+                    # 数量 1、1.0 和 "1" 都是已提供的数量，不是未填哨兵。
+                    _pack_qty = clean_res.get("quantity")
+                    _pack_known = (
+                        isinstance(_pack_qty, (int, float))
+                        and not isinstance(_pack_qty, bool)
+                        and _pack_qty == _pack_qty
+                        and _pack_qty not in (float("inf"), float("-inf"))
+                        and _pack_qty > 1.0
+                    )
+                    if _pack_known:
+                        _cur_qty = it.get("qty") if "qty" in it else None
+                        _provided = (
+                            isinstance(_cur_qty, (int, float))
+                            and not isinstance(_cur_qty, bool)
+                            and _cur_qty == _cur_qty
+                            and _cur_qty not in (float("inf"), float("-inf"))
+                        )
+                        if not _provided or float(_cur_qty) != float(_pack_qty):
+                            _label = it.get("name") or it.get("raw_name") or "这一行"
+                            _pack_txt = str(int(_pack_qty)) if float(_pack_qty).is_integer() else str(_pack_qty)
+                            _unit_txt = str(clean_res.get("unit") or "")
+                            if _provided:
+                                _qty_txt = str(int(_cur_qty)) if float(_cur_qty).is_integer() else str(_cur_qty)
+                                warnings.append(
+                                    f"「{_label}」的品名里写着 {_pack_txt}{_unit_txt}，数量仍按识别到的 {_qty_txt}，没有自动改。请对照原图，要改请自己填写。"
+                                )
+                            else:
+                                warnings.append(
+                                    f"「{_label}」的品名里写着 {_pack_txt}{_unit_txt}，数量没有识别到，没有按包装个数填写。请对照原图自己填写数量。"
+                                )
                     if clean_res["unit"] and clean_res["unit"] not in ["个", "件"] and (not it.get("unit") or it.get("unit") in ["个", "件", "行"]):
                         it["unit"] = clean_res["unit"]
         except Exception as e:

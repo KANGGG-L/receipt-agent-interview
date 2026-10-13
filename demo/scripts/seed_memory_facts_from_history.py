@@ -260,6 +260,24 @@ def _connect(path):
     return sqlite3.connect(path)
 
 
+def _snapshot_sqlite(src, dst):
+    """把 src 的已提交内容写成 dst。不写源库。
+
+    shutil.copy2 只拷主文件。源库是 WAL 时，已提交的表和行还在 -wal 里，
+    副本会缺表（vendor_memory）或缺行，预演数字变成 0 且没有别的信号。
+    backup API 由 sqlite 读出一致快照。
+    """
+    src_con = sqlite3.connect(src)
+    try:
+        dst_con = sqlite3.connect(dst)
+        try:
+            src_con.backup(dst_con)
+        finally:
+            dst_con.close()
+    finally:
+        src_con.close()
+
+
 def _reason_code(reason):
     """把可读理由归一成一个**短码**用于计数（理由全文另存一份，不丢信息）。
 
@@ -1004,7 +1022,7 @@ def _simulate_eligible_after(path, gaining, memory_metrics_mod, before_eligible)
     tmp = tempfile.mkdtemp(prefix="seed_facts_sim_")
     copy = os.path.join(tmp, "sim.db")
     try:
-        shutil.copy2(path, copy)
+        _snapshot_sqlite(path, copy)
         c = sqlite3.connect(copy)
         try:
             c.executemany(

@@ -284,6 +284,14 @@ def test_api_upload_receipts_isolated_via_header():
     from app.chains import supervisor as _supervisor
     _orig_run_pipeline = _supervisor.run_pipeline
 
+    # F2 契约（2026-10-13）：无密钥上传在管线之前同步返回 ENGINE_NOT_CONFIGURED；
+    # 本用例 subject 是「上传创建的单据落请求租户」，把引擎桩为已配置走 queued
+    # 路径，覆盖识别链路真实落库点（同步失败路径同样落身份租户，由
+    # test_tenant_identity_binding 侧覆盖）。
+    from app import api_receipts as _api_receipts
+    _orig_gate = _api_receipts._recognition_engine_unconfigured
+    _api_receipts._recognition_engine_unconfigured = lambda: False
+
     def _fake_run_pipeline(image_path, **kwargs):
         return {"data": None, "last_error": "mock: pipeline stubbed"}
 
@@ -326,6 +334,7 @@ def test_api_upload_receipts_isolated_via_header():
             "tenantB 列表不得可见 tenantA 上传的单据"
     finally:
         _supervisor.run_pipeline = _orig_run_pipeline
+        _api_receipts._recognition_engine_unconfigured = _orig_gate
 
 
 # -------------------------------------------------------------

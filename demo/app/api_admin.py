@@ -2284,11 +2284,13 @@ def memory_metrics_dashboard(request: Request):
         metrics = mod.collect()
     except Exception as e:
         logging.getLogger("api_admin").error("记忆度量取数失败: %s", e)
-        return JSONResponse(status_code=500, content={
+        # 取数失败是看板的错误态，不是服务故障：HTTP 仍为 200，body.status=error。
+        # 若返回 500，全局异常信封会盖掉 metrics=None，前端无法进入「无数据」态。
+        return {
             "status": "error", "code": "METRICS_FAILED",
             "msg": "记忆统计取数失败，请稍后再试。",
             "memory_enabled": memory_on, "metrics": None,
-            "retrieve_failures": retrieve_failures})
+            "retrieve_failures": retrieve_failures}
     return {"status": "success", "memory_enabled": memory_on, "metrics": metrics,
             "retrieve_failures": retrieve_failures}
 
@@ -2814,12 +2816,16 @@ def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
 # 阶段 1：AI 发现
 # -------------------------------------------------------------
 @router.get("/api/ai-insights")
-def ai_insights(request: Request):
+def ai_insights(request: Request, lang: str = ""):
     require_role("owner")(request)
+    from app.i18n_text import normalize_locale
     from app.services.inventory import cost_summary as get_cost
     from app.chains import review_chain
     cost = get_cost(tenant_id=_tenant_id(request))
     data = review_chain.weekly_insights(cost)
+    data = dict(data)
+    # 只记录界面语言，不在这里调用模型。复盘 prompt 由 build_review_prompt(..., locale=) 使用同一归一结果。
+    data["review_locale"] = normalize_locale(lang) or ""
     return {"status": "success", "data": data}
 
 

@@ -324,6 +324,10 @@ def upload_env(monkeypatch, tmp_path):
     img = _write(_white_on_white(), tmp_path / "injected.png")
     captured = {}
 
+    # F2 契约（2026-10-13）：无密钥上传在守卫之前同步返回 ENGINE_NOT_CONFIGURED；
+    # 本夹具 subject 是「检测结果随 job 透传」，须把引擎桩为已配置以抵达守卫。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
     monkeypatch.setattr(api_receipts, "_save_upload", lambda _f: img)
     monkeypatch.setattr(api_receipts, "_laplacian_variance", lambda _p: None)
     monkeypatch.setattr(api_receipts, "public_image_url", lambda *a, **k: "")

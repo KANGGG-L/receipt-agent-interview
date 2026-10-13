@@ -71,23 +71,45 @@ def test_s3_04_admin_sees_where_to_check_but_staff_does_not(make_page, site):
     assert len(t) == 1 and "引擎配置" in t[0], t
 
 
+def _configure_stub_recognition_engine(site, enabled):
+    """把识别腿临时配置成「已配置」态，让上传走完 queued 异步路径（F2 契约）。
+
+    F2 之后，无密钥实例的 /api/upload 会在 Job 之前同步返回 ENGINE_NOT_CONFIGURED
+    （routeRecognitionFailure 自动转手工），「繁忙」分支经真实上传无法到达。
+    这里经 admin API 配一条 SSRF 校验可通过的识别腿（IANA 保留域 example.com +
+    假密钥），job 轮询仍由本文件的路由替身改写成指定失败文案；enabled=False 时
+    只清空 api_key（不带 base_url 字段，绕开「需提供 Base URL」校验）还原未配置态，
+    保证同一模块会话里后续用例仍走原有的同步契约路径。全程只写隔离临时库。
+    """
+    body = ({"openai_rec_base_url": "https://example.com/v1",
+             "openai_rec_api_key": "sk-f1a-stub-not-a-real-key",
+             "openai_rec_model": "f1a-stub-model"}
+            if enabled else {"openai_rec_api_key": ""})
+    code, ret = site.api("PUT", "/api/admin/engine-config", body, role="admin")
+    assert code == 200 and ret.get("status") == "success", (code, ret)
+
+
 def test_s3_04_busy_stays_on_error_card_with_retry_and_manual(make_page, site):
     pg = make_page("staff", 390, 844)
     page = pg.open()
-    _upload_and_fail(page, site, "AI 服务繁忙 429 rate limit timeout")
-    page.wait_for_selector("#errorCard:not(.hide)", timeout=10000)
-    text = page.inner_text("#errorCard")
-    assert "不是照片的问题" in text and "重试" in text and "转手工" in text
-    assert "管理后台" not in text and "密钥" not in text
-    assert page.is_visible("#btnConvertManual") and page.is_enabled("#btnConvertManual")
-    assert page.is_visible("#btnRetryNormal")
-    assert _toasts(page) == []
-    assert not page.is_visible("#qualityWarningsBanner")
-    page.click("#btnConvertManual")
-    page.wait_for_selector("#prefillFormCard:not(.hide)", timeout=10000)
-    assert page.get_attribute("#previewImg", "src")
-    assert len(_toasts(page)) == 1
-    pg.shot("F1a-S3-04-staff-390-busy-then-manual.png")
+    _configure_stub_recognition_engine(site, enabled=True)
+    try:
+        _upload_and_fail(page, site, "AI 服务繁忙 429 rate limit timeout")
+        page.wait_for_selector("#errorCard:not(.hide)", timeout=10000)
+        text = page.inner_text("#errorCard")
+        assert "不是照片的问题" in text and "重试" in text and "转手工" in text
+        assert "管理后台" not in text and "密钥" not in text
+        assert page.is_visible("#btnConvertManual") and page.is_enabled("#btnConvertManual")
+        assert page.is_visible("#btnRetryNormal")
+        assert _toasts(page) == []
+        assert not page.is_visible("#qualityWarningsBanner")
+        page.click("#btnConvertManual")
+        page.wait_for_selector("#prefillFormCard:not(.hide)", timeout=10000)
+        assert page.get_attribute("#previewImg", "src")
+        assert len(_toasts(page)) == 1
+        pg.shot("F1a-S3-04-staff-390-busy-then-manual.png")
+    finally:
+        _configure_stub_recognition_engine(site, enabled=False)
 
 
 def test_s3_04_not_configured_card_when_unknown_has_no_retry(make_page, site):
@@ -247,7 +269,11 @@ def test_s3_05_blocking_issue_really_blocks_save_and_jumps_to_field(make_page, s
     assert page.evaluate("document.activeElement.id") == "inpTotal"
     page.fill("#inpTotal", "20")
     page.click("#btnSaveReview")
-    page.wait_for_function("document.querySelector('#reviewSaveStatusBadge').textContent.includes('待老板审批')", timeout=8000)
+    # 强制 CSP（无 unsafe-eval）下 wait_for_function 必须用函数形式（Playwright 标准 API 用法），
+    # 裸表达式形态会以 eval 轮询被 script-src 'self' 拦成 EvalError
+    page.wait_for_function(
+        "() => document.querySelector('#reviewSaveStatusBadge').textContent.includes('待老板审批')",
+        timeout=8000)
     assert saves
 
 
@@ -358,7 +384,8 @@ def test_s1_unit_conversion_missing_dialog_owner_jumps_to_settings_prefilled(mak
     page.click(".ui-dlg button:has-text('去设置添加换算')")
     page.wait_for_selector("#tab-settings.active", timeout=4000)
     page.wait_for_selector("#stConvFrom", timeout=4000)
-    page.wait_for_function("document.getElementById('stConvFrom').value === '箱'", timeout=4000)
+    # 强制 CSP 下 wait_for_function 用函数形式（裸表达式形态撞 script-src 'self'）
+    page.wait_for_function("() => document.getElementById('stConvFrom').value === '箱'", timeout=4000)
     assert page.input_value("#stConvTo") == "斤"
 
 

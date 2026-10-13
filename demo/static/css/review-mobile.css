@@ -73,7 +73,10 @@
 
 /* ---------- 手机（<=640px） ---------- */
 @media (max-width: 640px) {
-    body { padding-bottom: 72px; }
+    /* 底部固定元素占位预算：滚动容器是 .main-wrapper（height:100vh + overflow-y:auto），
+       预算必须落在它身上；挂在 body 上只会让 html 多出一段死滚动，内容仍被 tab bar 盖住。
+       固定元素清点：#mobileTabBar 一项（约 60px + 安全区），复核卡另自付保存条预算。 */
+    .main-wrapper { padding-bottom: 72px; }
     .main-wrapper { width: 100%; max-width: 100vw; overflow-x: hidden; }
 
     .mobile-tabbar {
@@ -133,8 +136,9 @@
     .loading-escape-btn { width: 100%; margin-left: 0; }
     .loading-steps-plain { grid-template-columns: repeat(3, 1fr); }
 
-    /* 复核表单：一行明细一张卡 */
-    #prefillFormCard { padding-bottom: 120px; }
+    /* 复核表单：一行明细一张卡；底部预算＝固定保存条带（52px 高 + bottom 68px = 120px）
+       + tab bar 一并计入，留 20px 余量，保证「+ 新增明细行」等末尾控件能滚出遮挡带 */
+    #prefillFormCard { padding-bottom: 140px; }
     #prefillFormCard .form-grid { grid-template-columns: 1fr; }
     #prefillFormCard .form-grid .form-group { grid-column: auto !important; }
     #prefillFormCard .table-container { overflow: visible; border: none; }

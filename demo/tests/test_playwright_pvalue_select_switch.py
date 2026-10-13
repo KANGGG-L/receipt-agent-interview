@@ -18,7 +18,13 @@ import pytest
 from playwright.sync_api import sync_playwright
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
-BASE_URL = os.environ.get("TEST_BASE_URL", "http://127.0.0.1:15010")
+def _live_base_url():
+    """夹具自举之后的地址。15010 被常驻服务占用时不会打到那台服务。"""
+    import _playwright_server as _pw
+    explicit = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
+    return explicit or _pw.current_base_url()
+
+
 SCREENSHOT_DIR = "demo/gui-test-screenshots"
 
 
@@ -101,7 +107,7 @@ def test_pvalue_experiment_select_switch():
         page = context.new_page()
 
         # 1. 访问首页并以 admin 身份登录
-        page.goto(BASE_URL)
+        page.goto(_live_base_url())
         page.wait_for_selector(".app-wrapper", timeout=10000)
         page.evaluate("() => { if (typeof setRole === 'function') setRole('admin'); }")
         page.wait_for_timeout(500)

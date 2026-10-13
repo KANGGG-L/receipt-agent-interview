@@ -128,13 +128,19 @@ def test_unhandled_exception_returns_envelope_without_internals():
     def boom():
         raise RuntimeError("secret internal detail /etc/passwd")
 
+    before = list(app.router.routes)
     app.include_router(r)
-    c = TestClient(app, raise_server_exceptions=False)
-    resp = c.get("/api/_b1_boom", headers=OWNER)
-    assert resp.status_code == 500
-    body = resp.json()
-    assert body["code"] == "INTERNAL_ERROR"
-    assert "passwd" not in resp.text and "RuntimeError" not in resp.text
+    try:
+        c = TestClient(app, raise_server_exceptions=False)
+        resp = c.get("/api/_b1_boom", headers=OWNER)
+        assert resp.status_code == 500
+        body = resp.json()
+        assert body["code"] == "INTERNAL_ERROR"
+        assert "passwd" not in resp.text and "RuntimeError" not in resp.text
+    finally:
+        # 探测路由只活在本用例内。留在全局 app 上会让后续权限扫描看到未知端点。
+        app.router.routes[:] = before
+        app.openapi_schema = None
 
 
 # ---- S1-P3-01 / S4-08 登录、哈希、吊销、Cookie、CSRF -----------------------
@@ -399,9 +405,12 @@ def test_security_headers_on_every_response():
         assert h["x-content-type-options"] == "nosniff"
         assert h["referrer-policy"]
         assert "camera=(self)" in h["permissions-policy"]
-        csp = h["content-security-policy-report-only"]
+        csp = h["content-security-policy"]
+        report_only = h["content-security-policy-report-only"]
+        assert csp == report_only
+        assert "script-src 'self'" in csp
+        assert "unsafe-inline" not in csp and "unsafe-eval" not in csp
         assert "frame-ancestors 'none'" in csp and "/api/csp-report" in csp
-        assert "content-security-policy" not in {k.lower() for k in h}  # 先只上报，不拦截
 
 
 def test_csp_report_endpoint_collects_without_auth_and_admin_can_list():

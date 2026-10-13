@@ -12,6 +12,7 @@ from app import db
 from app.auth import require_role, resolve_tenant
 from app.services import memory_store
 from app.services.memory_store import MemoryVectorDeleteError
+from app.i18n_text import master_key
 from app.services.supplier_normalizer import canonical_supplier_key
 
 logger = logging.getLogger(__name__)
@@ -72,8 +73,11 @@ def list_suppliers(request: Request, q: str = "", include_inactive: int = 0):
     computed = recon_store.compute_payables(tenant_id)
     out = []
     for s in suppliers:
-        if q and q not in s.name and q not in (s.supplier_code or ""):
-            continue
+        if q:
+            folded_q = master_key(q)
+            name_hit = bool(folded_q) and folded_q in master_key(s.name or "")
+            if not name_hit and q not in s.name and q not in (s.supplier_code or ""):
+                continue
         out.append(_supplier_dict(s, tenant_id=tenant_id, computed=computed))
     return {"status": "success", "data": out}
 
@@ -92,8 +96,14 @@ def create_supplier(body: SupplierBody, request: Request):
     require_role("owner")(request)
     if not body.name:
         return {"status": "error", "msg": "供应商名称不能为空"}
+    tenant_id = _tenant_id(request)
+    wanted = master_key(body.name)
+    if wanted:
+        for row in db.list_suppliers(include_inactive=True, tenant_id=tenant_id):
+            if master_key(row.name or "") == wanted:
+                return {"status": "success", "id": row.id, "folded": True}
     fields = {k: v for k, v in body.model_dump().items() if k != "name" and v is not None}
-    sup_id, err = db.create_supplier(body.name, tenant_id=_tenant_id(request), **fields)
+    sup_id, err = db.create_supplier(body.name, tenant_id=tenant_id, **fields)
     if err:
         from fastapi.responses import JSONResponse
         return JSONResponse({"status": "error", "msg": err}, status_code=409)

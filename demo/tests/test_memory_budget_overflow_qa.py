@@ -18,13 +18,16 @@
 4. 全局工程红线核验：
    - 关键改动文件与测试套件 0 Emoji 违规检测；
    - 严守未授权 Git 写操作红线；
-   - 保持 15010 服务常驻。
+   - 浏览器用例一律自举 pinned 隔离实例（B3 整改后不依赖、不连接 15010 常驻服务）。
 """
 
 import json
 import os
 import re
+import shutil
+import socket
 import sys
+import tempfile
 from pathlib import Path
 from starlette.testclient import TestClient
 import pytest
@@ -33,14 +36,23 @@ TESTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TESTS_DIR.parent.parent
 DEMO_ROOT = REPO_ROOT / "demo"
 
+if str(TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(TESTS_DIR))
 sys.path.insert(0, str(DEMO_ROOT))
 
 from app.main import app
 from app.services import settings_service
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
+from _playwright_server import start_pinned_server  # B3 整改：唯一自举路径
 
 client = TestClient(app)
 
-BASE_URL = os.environ.get("PW_TEST_BASE_URL", "http://127.0.0.1:15010")
+# B3 整改（2026-10-13）：缺省值曾是 http://127.0.0.1:15010 —— 常驻演示服务的库是 live
+# 数据，而本文件的浏览器用例会真实写配置（PUT unified-config），曾在 live 的
+# engine_config_history 留下 +2 行。现在 BASE_URL 一律由模块级 autouse 夹具
+# `_isolated_demo_server` 指向自举的 pinned 隔离实例（空闲端口 + 临时空库），
+# 不再读 PW_TEST_BASE_URL，也绝不连接 15010。
+BASE_URL = None
 SCREENSHOT_DIR = Path(os.environ.get("GUI_SCREENSHOT_DIR") or os.environ.get("ARTIFACTS_DIR") or (DEMO_ROOT / "gui-test-screenshots"))
 SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -56,6 +68,38 @@ MEMORY_BUDGET_FIELD_IDS = [
 
 def _admin_headers():
     return {"X-Role": "admin", "X-Email": "admin@demo.hk"}
+
+
+def _free_port():
+    s = socket.socket()
+    try:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+    finally:
+        s.close()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _isolated_demo_server():
+    """B3 整改：为整个模块自举一个 pinned 隔离实例，绝不连常驻 15010。
+
+    与 demo/tests/_f1a_support.py 的 site 夹具同模式：空闲端口 + 临时目录里的
+    空库 + 临时 RAG 目录，服务经唯一启动器 _playwright_serve.py 拉起（带域名
+    DNS 锁定），结束时 SIGTERM 回收并清理临时目录。本文件的浏览器用例会真实
+    写配置，因此数据面必须是临时的，不能落在 live 库上。
+    """
+    global BASE_URL
+    workdir = tempfile.mkdtemp(prefix="memory_budget_qa_")
+    port = _free_port()
+    handle = start_pinned_server(
+        port, workdir, os.path.join(workdir, "qa.db"),
+        extra_env={"RAG_DIR": os.path.join(workdir, "rag")})
+    BASE_URL = "http://127.0.0.1:%d" % port
+    try:
+        yield BASE_URL
+    finally:
+        handle.stop()
+        shutil.rmtree(workdir, ignore_errors=True)
 
 
 # ==============================================================================
@@ -95,9 +139,7 @@ def test_contract_and_css_hardening_declarations():
         "[FAIL] @media (max-width: 420px) 缺少 1fr 规则"
 
     # 3. 验证 main.js 映射数组
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-    assert js_file.exists(), "[FAIL] main.js 不存在"
-    js_content = js_file.read_text(encoding="utf-8")
+    js_content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     for field_id in MEMORY_BUDGET_FIELD_IDS:
         assert field_id in js_content, f"[FAIL] main.js ADMIN_SETTINGS_FIELDS 缺少 {field_id}"
@@ -397,12 +439,13 @@ def test_playwright_ui_interaction_save_and_reload():
 
 def test_zero_emoji_redline_compliance():
     """扫描所有相关源代码、样式表、模板与测试文件，确保 0 Emoji 违规。"""
+    from f4_frontend_sources import F4_DOMAIN_FILES  # F4 S4-11: 域文件一并纳入 0 Emoji 扫描
     files_to_scan = [
         DEMO_ROOT / "static" / "css" / "style.css",
         DEMO_ROOT / "templates" / "index.html",
         DEMO_ROOT / "static" / "js" / "main.js",
         Path(__file__),
-    ]
+    ] + [DEMO_ROOT / rel for rel in F4_DOMAIN_FILES]
 
     emoji_pattern = re.compile(
         "["

@@ -94,8 +94,11 @@ def _run(monkeypatch, tmp_path, model, **kw):
 # ---------------------------------------------------------------- S2-01 / S2-21 / S2-13
 def test_s2_01_multipack_qty_one_is_split_and_warned():
     d = _data(items=[{"name": "大豆油 5L*2樽", "qty": 1, "unit": "樽", "unit_price": 100, "amount": 200}], total=200)
-    assert d.items[0].qty == 2.0
-    assert any("按 2 处理" in w for w in d.field_warnings)
+    assert d.items[0].qty == 1.0
+    assert d.items[0].amount == 200
+    joined = " ".join(d.field_warnings)
+    assert "按 2 处理" not in joined and "已按" not in joined
+    assert "「大豆油 5L」的品名里写着 2樽，数量仍按识别到的 1，没有自动改。请对照原图，要改请自己填写。" in d.field_warnings
 
 
 def test_s2_21_thousand_separator_and_parentheses_negative():

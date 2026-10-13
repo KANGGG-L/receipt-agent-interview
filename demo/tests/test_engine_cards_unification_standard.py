@@ -31,13 +31,33 @@ from starlette.testclient import TestClient
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEMO_ROOT = REPO_ROOT / "demo"
 
+# F3 B1 起模板 inline style 迁为 csp-s-N 类，规则体集中在这里
+with open(DEMO_ROOT / "static" / "css" / "csp-html-styles.css", encoding="utf-8") as _f:
+    _CSP_CSS = _f.read()
+
 if str(DEMO_ROOT) not in sys.path:
     sys.path.insert(0, str(DEMO_ROOT))
+
+# 本文件经 tests/ 符号链接采集时 pytest 注入的是 tests/，f4_frontend_sources 在
+# demo/tests/ 下不可达 —— 显式补路径（DEMO_ROOT 已 resolve，两种采集路径都成立）
+_F4_TESTS_DIR = str(DEMO_ROOT / "tests")
+if _F4_TESTS_DIR not in sys.path:
+    sys.path.insert(0, _F4_TESTS_DIR)
 
 from app.main import app
 from app import db
 from app.models import EngineConfig
 from app.llm import _resolve_temperature, build_audit_model
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
+
+
+
+def _assert_csp_call(el, event, fn, arg=None):
+    """Enforced CSP stores the former inline handler as data-csp-* JSON, not an on* attribute."""
+    raw = (el.get("data-csp-%s" % event) or "") if el is not None else ""
+    assert '"f":"%s"' % fn in raw, "missing %s on data-csp-%s: %s" % (fn, event, raw[:240])
+    if arg is not None:
+        assert '"v":"%s"' % arg in raw, "missing arg %s for %s: %s" % (arg, fn, raw[:240])
 
 client = TestClient(app)
 
@@ -76,10 +96,8 @@ def html_soup():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    """读取并缓存 demo/static/js/main.js 的文本。"""
-    js_path = DEMO_ROOT / "static" / "js" / "main.js"
-    assert js_path.exists(), f"未找到前端主脚本: {js_path}"
-    return js_path.read_text(encoding="utf-8")
+    """读取并缓存前端联合全文（F4 S4-11：main.js + 全部域文件）。"""
+    return frontend_union()
 
 
 def _get_card_for_leg(soup, leg):
@@ -128,7 +146,7 @@ def test_ac01_header_toolbar_components_and_probe_button_consolidation(html_soup
         probe_btn = toolbar.find(id=f"btnProbe_{leg}")
         assert probe_btn is not None, f"卡片 {leg} 工具栏未包含 btnProbe_{leg}"
         assert probe_btn.text.strip() == "测试此引擎"
-        assert f"probeSingleEngineLeg('{leg}')" in probe_btn.get("onclick", "")
+        _assert_csp_call(probe_btn, "click", "probeSingleEngineLeg", leg)
 
         status_tag = toolbar.find(id=f"probeStatus_{leg}")
         assert status_tag is not None, f"卡片 {leg} 工具栏未包含 probeStatus_{leg}"
@@ -518,7 +536,16 @@ def test_ac11_model_trait_hint_containers_integrity(html_soup):
 
         for hint in [tokens_hint, reasoning_hint, temp_hint]:
             assert "model-trait-hint" in hint.get("class", [])
-            style = hint.get("style", "")
+            # F3 B1 起 inline style 迁为 csp-s-N 类，等效 style = style 属性 + 类规则体
+            style = hint.get("style", "") or ""
+            classes = hint.get("class", [])
+            if isinstance(classes, str):
+                classes = classes.split()
+            for cls in classes:
+                if cls.startswith("csp-s-"):
+                    m = re.search(r"\.%s\{([^}]*)\}" % re.escape(cls), _CSP_CSS)
+                    if m:
+                        style += ";" + m.group(1)
             assert "display:none" in style.replace(" ", "")
 
 
@@ -559,18 +586,16 @@ def test_ac13_preset_combobox_component_bindings(html_soup, main_js_content):
 
         select_inp = card.find(id=f"admin{leg_camel}PresetSelect")
         assert select_inp is not None
-        onclick = select_inp.get("onclick", "")
-        oninput = select_inp.get("oninput", "")
-        assert f"openEnginePresetMenu('{leg}')" in onclick
-        assert f"onInputEnginePresetSearch('{leg}'" in oninput
+        _assert_csp_call(select_inp, "click", "openEnginePresetMenu", leg)
+        _assert_csp_call(select_inp, "input", "onInputEnginePresetSearch", leg)
 
         save_btn = card.find(id=f"admin{leg_camel}SavePresetBtn")
         assert save_btn is not None
-        assert f"saveCurrentConfigAsPreset('{leg}')" in save_btn.get("onclick", "")
+        _assert_csp_call(save_btn, "click", "saveCurrentConfigAsPreset", leg)
 
         del_btn = card.find(id=f"admin{leg_camel}DeletePresetBtn")
         assert del_btn is not None
-        assert f"deleteSelectedPreset('{leg}')" in del_btn.get("onclick", "")
+        _assert_csp_call(del_btn, "click", "deleteSelectedPreset", leg)
 
     # 校验 JS 函数声明
     assert "function openEnginePresetMenu(leg)" in main_js_content
@@ -589,7 +614,7 @@ def test_ac14_probe_button_bindings_and_status_tags(html_soup, main_js_content):
     for leg in ALL_6_LEGS:
         btn = html_soup.find(id=f"btnProbe_{leg}")
         assert btn is not None
-        assert f"probeSingleEngineLeg('{leg}')" in btn.get("onclick", "")
+        _assert_csp_call(btn, "click", "probeSingleEngineLeg", leg)
 
         status = html_soup.find(id=f"probeStatus_{leg}")
         assert status is not None
@@ -681,7 +706,7 @@ def test_ac17_core_engines_collapsible_capabilities(html_soup, main_js_content):
         # 检查工具栏专属折叠按钮
         toggle_btn = header.find(id=f"engineCardToggleBtn_{leg}")
         assert toggle_btn is not None, f"卡片 {card_ids[leg]} 工具栏缺少折叠按钮 engineCardToggleBtn_{leg}"
-        assert f"toggleEngineCard('{leg}')" in toggle_btn.get("onclick", ""), f"工具栏折叠按钮缺少 toggleEngineCard('{leg}') 绑定"
+        _assert_csp_call(toggle_btn, "click", "toggleEngineCard", leg)
         assert toggle_btn.text.strip() == "收起"
 
 

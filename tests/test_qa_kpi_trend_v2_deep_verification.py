@@ -26,8 +26,11 @@ def index_html_content():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
-        return f.read()
+    # F4 S4-11: main.js+域文件联合全文（KPI 域迁至 kpi_trend.js）
+    from f4_frontend_sources import frontend_union
+    import sys as _sys, os as _os
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..", "demo", "tests"))
+    return frontend_union()
 
 
 @pytest.fixture(scope="module")
@@ -242,13 +245,20 @@ class TestKpiTrendDomAndUiStructure:
         assert "当前周期:" not in h_text
 
         # 隐藏元素样式检查
+        # F3 B1 起内联 style 属性清退（csp-s-N 类 + csp-html-styles.css 规则体），
+        # 判据改按 F3 已固化的等效形态：元素挂 csp-s-N 类且规则体含 display:none。
+        csp_css = open("demo/static/css/csp-html-styles.css", encoding="utf-8").read()
         unit = kpi_modal_soup.find(id="kpiTrendModalUnit")
         assert unit is not None
-        assert "display:none" in unit.get("style", "").replace(" ", "")
+        unit_csp = [c for c in (unit.get("class") or []) if c.startswith("csp-s-")]
+        assert unit_csp and all((".%s{display:none}" % c) in csp_css.replace(" ", "") for c in unit_csp), \
+            "kpiTrendModalUnit 初始隐藏判据失效（csp-s-N 类与规则体必须同时成立）"
 
         span = kpi_modal_soup.find(id="kpiTrendModalPeriodSpan")
         assert span is not None
-        assert "display:none" in span.get("style", "").replace(" ", "")
+        span_csp = [c for c in (span.get("class") or []) if c.startswith("csp-s-")]
+        assert span_csp and all((".%s{display:none}" % c) in csp_css.replace(" ", "") for c in span_csp), \
+            "kpiTrendModalPeriodSpan 初始隐藏判据失效（csp-s-N 类与规则体必须同时成立）"
 
     def test_card_titles_and_instructional_text_removed(self, kpi_modal_soup):
         """AC-05 & AC-06: 验证卡片标题为 '切片明细'，且彻底无说教提示。"""

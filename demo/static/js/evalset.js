@@ -32,14 +32,7 @@
     }
 
     function headers(extra) {
-        var h = { 'X-Role': role() };
-        // 本页不经过 main.js 的 apiFetch 统一出口，需自行带上 Bearer 令牌：
-        // AUTH_ENABLED=1 时后端只认令牌，缺了它该页所有请求都会 401。
-        // 令牌键名与 main.js 的 AUTH_TOKEN_KEY 一致；无令牌时不注入（演示态照常放行）。
-        try {
-            var token = localStorage.getItem('receipt_auth_token');
-            if (token) { h['Authorization'] = 'Bearer ' + token; }
-        } catch (e) { /* localStorage 不可用时降级为不带令牌 */ }
+        var h = { 'X-Role': role(), 'X-Requested-With': 'fetch' };
         if (extra) { for (var k in extra) { h[k] = extra[k]; } }
         return h;
     }
@@ -55,6 +48,7 @@
 
     function api(url, options) {
         options = options || {};
+        if (!options.credentials) options.credentials = 'same-origin';
         options.headers = headers(options.body ? { 'Content-Type': 'application/json' } : null);
         return fetch(url, options).then(function (resp) {
             return resp.json().catch(function () { return {}; }).then(function (data) {
@@ -301,9 +295,10 @@
         var draftCount = samples.length;
         if (!draftCount) { toast('本批没有待抽检样本', true); return; }
         var ids = samples.map(function (s) { return s.sample_id; });
+        var idList = ids.join('、');
         ask({
             title: '批量确认待抽检样本',
-            message: '即将原样确认本批 ' + ids.length + ' 张待抽检样本。\n这些标准答案没有人工逐张核对过，确认后会直接参与评分。需要人工校正（含付款标记）的，请逐张进工作台核对。',
+            message: '即将原样确认本批 ' + ids.length + ' 张待抽检样本：' + idList + '。\n这些标准答案没有人工逐张核对过，确认后会直接参与评分。需要人工校正（含付款标记）的，请逐张进工作台核对。',
             details: ids.length > 12 ? ids.slice(0, 12).concat(['……一共 ' + ids.length + ' 张']) : ids,
             confirmText: '确定继续',
             danger: true
@@ -565,8 +560,8 @@
     document.getElementById('roleNote').textContent = '当前角色：' + ({ admin: '系统管理员', owner: '餐厅老板', staff: '餐厅店员' }[role()] || role());
     if (role() !== 'admin') {
         document.body.innerHTML = '<div style="max-width:560px; margin:80px auto; padding:24px; background:#fff; border-radius:16px; font-family:inherit; line-height:1.8;" role="alert">'
-            + '<h1 style="font-size:1.3rem; margin:0 0 12px;">这个页面只有系统管理员能用</h1>'
-            + '<p style="margin:0 0 16px;">你现在的角色没有权限。如果需要使用，请回到主界面，在左侧栏最上方的「当前角色」下拉里选「系统管理员」，再回来刷新本页。</p>'
+            + '<h1 style="font-size:1.3rem; margin:0 0 12px;">无权限</h1>'
+            + '<p style="margin:0 0 16px;">这个页面只有系统管理员能用。你现在的角色没有权限，工作台不会打开。如果需要使用，请回到主界面，在左侧栏最上方的「当前角色」下拉里选「系统管理员」，再回来刷新本页。</p>'
             + '<a href="/" style="display:inline-block; min-height:44px; line-height:44px; padding:0 22px; background:#032425; color:#fff; border-radius:10px; text-decoration:none; font-weight:600;">回到主界面</a>'
             + '</div>';
         return;

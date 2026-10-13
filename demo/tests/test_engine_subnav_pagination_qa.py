@@ -11,6 +11,7 @@ import os
 import re
 import pytest
 from bs4 import BeautifulSoup
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INDEX_HTML = os.path.join(DEMO_DIR, "templates", "index.html")
@@ -28,9 +29,7 @@ def html_soup():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    assert os.path.isfile(MAIN_JS), f"main.js missing: {MAIN_JS}"
-    with open(MAIN_JS, "r", encoding="utf-8") as f:
-        return f.read()
+    return frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
 
 @pytest.fixture(scope="module")
@@ -84,19 +83,31 @@ def test_engine_subviews_initial_state_isolation(html_soup):
         assert v.get("role") == "tabpanel", f"#engineSubView_{num} 缺少 role='tabpanel'"
         assert v.get("aria-labelledby") == f"engineSubNav_{num}", f"#engineSubView_{num} 缺少 aria-labelledby"
 
-    # 初始隔离性：01 无 d-none，02/03 带 d-none 且内联 style 含 display:none
+    # 初始隔离性：01 无 d-none，02/03 带 d-none 且初始隐藏。
+    # F3·B1 起 index.html 内联 style 属性清退（改为 csp-s-N 类 + csp-html-styles.css 规则体），
+    # 「内联 display:none」判据按 F3 已固化的等效判据重写：解析元素的 csp-s-N 类，
+    # 并断言 csp-html-styles.css 中该类规则体含 display:none（判别力不变：规则体缺失
+    # 或类被改挂到别的元素都会失败）。
+    csp_css = open(os.path.join(DEMO_DIR, "static", "css", "csp-html-styles.css"), encoding="utf-8").read()
+
+    def _hidden_by_csp_class(el, label):
+        classes = (el.get("class") or [])
+        csp = [c for c in classes if c.startswith("csp-s-")]
+        assert csp, "%s 未挂任何 csp-s-N 初始隐藏类" % label
+        for c in csp:
+            assert (".%s{display:none}" % c) in csp_css.replace(" ", ""), \
+                "%s 的 %s 规则体必须含 display:none" % (label, c)
+
     v01_classes = v01.get("class") or []
     assert "d-none" not in v01_classes, "#engineSubView_01 初始不得包含 d-none 类"
 
     v02_classes = v02.get("class") or []
     assert "d-none" in v02_classes, "#engineSubView_02 初始必须包含 d-none 类"
-    v02_style = (v02.get("style") or "").replace(" ", "").lower()
-    assert "display:none" in v02_style, "#engineSubView_02 初始必须内联包含 display:none"
+    _hidden_by_csp_class(v02, "#engineSubView_02")
 
     v03_classes = v03.get("class") or []
     assert "d-none" in v03_classes, "#engineSubView_03 初始必须包含 d-none 类"
-    v03_style = (v03.get("style") or "").replace(" ", "").lower()
-    assert "display:none" in v03_style, "#engineSubView_03 初始必须内联包含 display:none"
+    _hidden_by_csp_class(v03, "#engineSubView_03")
 
 
 def test_sticky_footer_and_error_badges_contract(html_soup):

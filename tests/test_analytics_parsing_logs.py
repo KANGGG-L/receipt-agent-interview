@@ -44,7 +44,7 @@ def test_ac1_1_tab_segmented_bar_button():
     # 2. 检验 01 按钮已升级为 [01 线上体验感知与链路审计]
     assert 'id="btnSubViewTelemetry"' in html_content
     assert 'data-view="sec-telemetry"' in html_content
-    assert 'onclick="switchAnalyticsSubView(\'sec-telemetry\')"' in html_content
+    assert 'data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;switchAnalyticsSubView&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;sec-telemetry&quot;}]}]"' in html_content
     assert '<span class="analytics-segment-num segment-num">01</span>' in html_content
     assert '<span class="analytics-segment-text">线上体验感知与链路审计</span>' in html_content
 
@@ -56,9 +56,12 @@ def test_ac1_1_tab_segmented_bar_button():
 
 def test_ac1_2_and_1_3_subview_switching_and_activation():
     """AC-1.2 & AC-1.3: 分段切换函数与激活触发逻辑（向后兼容重定向至 01 观测中枢）。"""
-    js_path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js_content = f.read()
+    # F4/F5 S4-11：观测台子视图切换实现已随域迁至 admin_observation.js；
+    # 守真不变量＝main.js + 观测/解析日志域联合全文（判据不放宽）。
+    js_content = "\n".join(
+        open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8").read()
+        for rel in ("../demo/static/js/main.js", "../demo/static/js/admin_observation.js",
+                    "../demo/static/js/parsing_logs.js"))
 
     # 1. validViews 收敛为 4 大功能区
     assert "const validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval'];" in js_content
@@ -886,26 +889,37 @@ def test_ac_ui_01_subtitle_removed():
 
 
 def test_ac_ui_02_filter_controls_uniformity():
-    """AC-UI-02: 校验筛选控件标准规范类 .parsing-log-filter-control, .parsing-log-filter-label, .parsing-log-filter-btn。"""
+    """AC-UI-02: 校验筛选控件标准规范类 .parsing-log-filter-control, .parsing-log-filter-label, .parsing-log-filter-btn。
+
+    F3 B1 起模板内联 style 块外移：规则定义在 demo/static/css/index-head.css，
+    index.html 侧只断言类的真实使用。
+    """
     html_path = os.path.join(os.path.dirname(__file__), "../demo/templates/index.html")
     with open(html_path, "r", encoding="utf-8") as f:
         html = f.read()
+    css_path = os.path.join(os.path.dirname(__file__), "../demo/static/css/index-head.css")
+    with open(css_path, "r", encoding="utf-8") as f:
+        head_css = f.read()
 
-    assert ".parsing-log-filter-control" in html
-    assert "height: 34px !important;" in html
-    assert "font-size: 13px !important;" in html
-    assert "border-radius: 6px !important;" in html
-    assert ".parsing-log-filter-label" in html
-    assert ".parsing-log-filter-btn" in html
+    assert ".parsing-log-filter-control" in head_css
+    assert "height: 34px !important;" in head_css
+    assert "font-size: 13px !important;" in head_css
+    assert "border-radius: 6px !important;" in head_css
+    assert ".parsing-log-filter-label" in head_css
+    assert ".parsing-log-filter-btn" in head_css
+    # 元素侧：类在页面上确有挂载（非死规则）
+    assert 'parsing-log-filter-control' in html
+    assert 'parsing-log-filter-label' in html
+    assert 'parsing-log-filter-btn' in html
 
-    # 校验各控件已使用该统一规格 class
-    assert 'id="analyticsTenantSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogStatusSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogGateSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogFeedbackSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogModifiedSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogDateRangeSelect" class="parsing-log-filter-control"' in html
-    assert 'id="parsingLogSearchInput" class="parsing-log-filter-control"' in html
+    # 校验各控件已使用该统一规格 class（F3 B1 起标签属性换行/重排，改按标签块判定，属性序无关）
+    for ctrl_id in ("analyticsTenantSelect", "parsingLogStatusSelect", "parsingLogGateSelect",
+                    "parsingLogFeedbackSelect", "parsingLogModifiedSelect",
+                    "parsingLogDateRangeSelect", "parsingLogSearchInput"):
+        m_tag = re.search(r'<[^>]*id="%s"[^>]*>' % re.escape(ctrl_id), html, re.S)
+        assert m_tag is not None, f"筛选控件 {ctrl_id} 必须存在"
+        assert 'parsing-log-filter-control' in m_tag.group(0), (
+            f"{ctrl_id} 必须挂 parsing-log-filter-control 统一规格类")
 
 
 def test_ac_ui_03_gate_select_options():
@@ -928,16 +942,33 @@ def test_ac_ui_04_and_05_table_gate_column_and_min_width():
     with open(html_path, "r", encoding="utf-8") as f:
         html = f.read()
 
-    # 宽度保障
-    assert 'id="parsingLogsTable" style="min-width:1680px;' in html
+    # 宽度保障（F3 B1 起 inline style 迁到 csp-s-N 类，规则体在 csp-html-styles.css）
+    csp_css_path = os.path.join(os.path.dirname(__file__), "../demo/static/css/csp-html-styles.css")
+    with open(csp_css_path, "r", encoding="utf-8") as f:
+        csp_css = f.read()
+    m_tbl = re.search(r'<table[^>]*id="parsingLogsTable"[^>]*>', html)
+    assert m_tbl is not None, "parsingLogsTable 表格必须存在"
+    tbl_tag = m_tbl.group(0)
+    tbl_classes = re.search(r'class="([^"]*)"', tbl_tag)
+    assert tbl_classes is not None, "parsingLogsTable 必须带 class"
+    width_rule = ""
+    for cls in tbl_classes.group(1).split():
+        if cls.startswith("csp-s-"):
+            m_rule = re.search(r"\.%s\{([^}]*)\}" % re.escape(cls), csp_css)
+            if m_rule:
+                width_rule += m_rule.group(1) + ";"
+    assert "min-width:1680px" in width_rule.replace(" ", ""), (
+        "parsingLogsTable 的 1680px 最小宽度必须经由其 csp-s-N 类规则保障，实得：%s" % width_rule)
 
     # 门禁列表头存在
     assert '门禁状态与原因' in html
 
     # JS 渲染包含门禁状态与原因列
-    js_path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
+    # F4/F5 S4-11：门禁列渲染已随域迁至 parsing_logs.js；联合全文口径（判据不放宽）。
+    js = "\n".join(
+        open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8").read()
+        for rel in ("../demo/static/js/main.js", "../demo/static/js/admin_observation.js",
+                    "../demo/static/js/parsing_logs.js"))
 
     assert "gateBadgeHtml" in js
     assert "gateDescHtml" in js

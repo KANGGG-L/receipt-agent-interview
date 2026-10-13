@@ -12,6 +12,7 @@ import re
 import unicodedata
 import pytest
 from bs4 import BeautifulSoup
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INDEX_HTML = os.path.join(DEMO_DIR, "templates", "index.html")
@@ -29,9 +30,7 @@ def html_soup():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    assert os.path.isfile(MAIN_JS), f"main.js missing: {MAIN_JS}"
-    with open(MAIN_JS, "r", encoding="utf-8") as f:
-        return f.read()
+    return frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
 
 @pytest.fixture(scope="module")

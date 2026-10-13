@@ -96,11 +96,15 @@ CSP_REPORT_ONLY = (
     f"report-uri {CSP_REPORT_PATH}"
 )
 
+# Enforced policy matches the report-only set: script-src 'self', no unsafe-inline, no unsafe-eval.
+CSP_ENFORCED = CSP_REPORT_ONLY
+
 SECURITY_HEADERS = (
     (b"x-frame-options", b"DENY"),
     (b"x-content-type-options", b"nosniff"),
     (b"referrer-policy", b"strict-origin-when-cross-origin"),
     (b"permissions-policy", b"camera=(self), microphone=(), geolocation=(), payment=()"),
+    (b"content-security-policy", CSP_ENFORCED.encode()),
     (b"content-security-policy-report-only", CSP_REPORT_ONLY.encode()),
 )
 

@@ -545,14 +545,15 @@ def test_metadata_metrics_match_measured(guard):
 def test_extract_chain_consumers_switched_to_v1_1_0():
     """消费者切换：extract_chain 各处导入必须指向 v1_1_0_normalize，且不得残留 v1_0_0 导入。
 
-    P1-2（全腿沙箱统一）起，parse 腿的 VLM 原始输出也进沙箱，导入点由 3 处增至 4 处：
-    _sandbox_prior / retry_feedback 注入 / _build_correction_prompt / _build_parse_prompt。
+    解析与修正共用 wrap_data_channel，因此 v1_1_0_normalize 导入是 3 处而不是 4 处：
+    _sandbox_prior、retry_feedback、wrap_data_channel。版本锁仍是 v1_1_0_normalize，
+    不得退回 v1_0_0，也不得为凑数再写一条无调用导入。
     """
     src_path = os.path.join(REPO_ROOT, "demo", "app", "chains", "extract_chain.py")
     with open(src_path, "r", encoding="utf-8") as f:
         src = f.read()
     assert "from ai_registry.tools.prompt_injection_guard.v1_0_0 import" not in src
-    assert src.count("from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import") == 4
+    assert src.count("from ai_registry.tools.prompt_injection_guard.v1_1_0_normalize import") == 3
 
 
 # W-SEC-1 调用点锁定：记忆写侧的 LLM 调用点此前裸拼不可信 payload（HumanMessage

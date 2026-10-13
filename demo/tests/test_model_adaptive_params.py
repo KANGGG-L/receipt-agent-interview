@@ -40,6 +40,7 @@ from app.llm import (
     EngineParamError,
 )
 from app.services import llm_logger
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 DEMO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -387,10 +388,8 @@ def test_ac12_adapted_params_recorded_in_db():
 def test_ac14_frontend_model_trait_hints_and_containers():
     """AC-14: 6 个引擎面板均具备 model trait hint 容器，main.js 具备模型识别与提示更新逻辑。"""
     html_file = DEMO_ROOT / "templates" / "index.html"
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-
     html_content = html_file.read_text(encoding="utf-8")
-    js_content = js_file.read_text(encoding="utf-8")
+    js_content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     # 1. 验证 6 个面板的提示容器存在
     legs = ["rec", "aud", "parse", "grey_rec", "grey_aud", "grey_parse"]
@@ -413,8 +412,7 @@ def test_ac14_frontend_model_trait_hints_and_containers():
 
 def test_ac15_frontend_badge_dynamic_formatting_with_effort():
     """AC-15: main.js 中 updateAdvBadge 支持思考强度展示与基线文本兼容。"""
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-    content = js_file.read_text(encoding="utf-8")
+    content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "function updateAdvBadge(legId)" in content
     # 统一四段式微缩 Badge 模板
@@ -645,10 +643,8 @@ def test_qa_frontend_dom_elements_and_badge_format_comprehensive():
     """QA-06: 严谨校验 index.html 中 6 个面板的提示容器及 main.js 标题栏 Badge 格式化各种形态。"""
     from bs4 import BeautifulSoup
     html_file = DEMO_ROOT / "templates" / "index.html"
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-
     html_content = html_file.read_text(encoding="utf-8")
-    js_content = js_file.read_text(encoding="utf-8")
+    js_content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     soup = BeautifulSoup(html_content, "html.parser")
 

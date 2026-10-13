@@ -18,12 +18,35 @@ import pytest
 DEMO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "demo"))
 
 
+def _frontend_js_union_text():
+    """main.js + 全部域文件联合全文（F4/F5 S4-11 起 main.js 按域拆分，
+    引擎管理域实现已迁至 engine_admin.js；判据按浏览器实际加载集合同构口径）。"""
+    import glob as _glob
+    js_dir = os.path.join(DEMO_DIR, "static", "js")
+    parts = [os.path.join(js_dir, "main.js")]
+    parts += sorted(p for p in _glob.glob(os.path.join(js_dir, "*.js"))
+                    if os.path.basename(p) != "main.js")
+    return "\n".join(open(p, encoding="utf-8").read() for p in parts)
+
+
+def _render_engine_overview_js_file():
+    """定位 renderEngineOverview 的实现文件（F5 S4-11 起在 engine_admin.js，随域拆分）。"""
+    import glob as _glob
+    js_dir = os.path.join(DEMO_DIR, "static", "js")
+    for p in [os.path.join(js_dir, "main.js")] + sorted(
+            p2 for p2 in _glob.glob(os.path.join(js_dir, "*.js"))
+            if os.path.basename(p2) != "main.js"):
+        if re.search(r"^function renderEngineOverview\(", open(p, encoding="utf-8").read(), re.M):
+            return p
+    raise AssertionError("renderEngineOverview 实现未在前端加载集合中找到")
+
+
 def _run_render_engine_overview_node(routing, experiments=None, settings=None, expanded=True, latest=None):
     """
-    通过 Node.js 执行 main.js 中的 renderEngineOverview 函数，返回渲染后的 HTML 字符串。
-    注入隔离的全局作用域与 DOM 节点 mock。
+    通过 Node.js 执行 renderEngineOverview 函数（F5 起在 engine_admin.js，随域拆分），
+    返回渲染后的 HTML 字符串。注入隔离的全局作用域与 DOM 节点 mock。
     """
-    js_file = os.path.join(DEMO_DIR, "static", "js", "main.js")
+    js_file = _render_engine_overview_js_file()
     node_script = f"""
     const fs = require('fs');
     const js = fs.readFileSync({json.dumps(js_file)}, 'utf8');
@@ -85,7 +108,16 @@ def test_engine_effective_bar_and_status_container_retained():
     assert 'id="btnToggleEngineTopology"' in html
     # 2026-10-10 契约对齐：按钮文案简化为「展开全景」（括号微标风格随纯文案化移除）
     assert "展开全景" in html
-    assert "toggleEngineTopologyInspector()" in html
+    # F3 S4-07 强制 CSP 起 index.html 内联 on* 清零，触发器改为 data-csp-click 委托计划
+    #（csp-bind parseHandler 在运行时 call toggleEngineTopologyInspector）。等效判据：
+    # 按钮标签块携带指向该处理器的委托计划（等价于旧 onclick 形态，不放宽）。
+    import html as _html
+    _i = html.find('id="btnToggleEngineTopology"')
+    _tag_start = html.rfind("<button", 0, _i)
+    _tag_end = html.find(">", _i)
+    _tag = _html.unescape(html[_tag_start:_tag_end])
+    assert 'data-csp-click' in _tag and 'toggleEngineTopologyInspector' in _tag, \
+        "展开全景按钮必须经 data-csp-click 委托 toggleEngineTopologyInspector"
 
 
 def test_style_css_defines_topology_and_semantic_badge_classes():
@@ -113,10 +145,8 @@ def test_style_css_defines_topology_and_semantic_badge_classes():
 
 
 def test_main_js_topology_state_and_functions():
-    """断言 main.js 实现了完整的状态维护、展开切换、深度跳转与动态计算渲染"""
-    js_path = os.path.join(DEMO_DIR, "static", "js", "main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
+    """断言引擎概览拓扑的状态维护、展开切换、深度跳转与动态计算渲染（联合全文口径）"""
+    js = _frontend_js_union_text()
 
     # 核心状态变量
     assert "_engineOverviewExpanded" in js
@@ -202,7 +232,7 @@ def test_boundary_1_dom_integrity_and_cleanup():
 
     # 断言全景展开切换按钮存在且参数正确
     assert 'id="btnToggleEngineTopology"' in html
-    assert 'onclick="toggleEngineTopologyInspector()"' in html
+    assert '&quot;f&quot;:&quot;toggleEngineTopologyInspector&quot;' in html
     # 2026-10-10 契约对齐：按钮文案简化为「展开全景」
     assert "展开全景" in html
 
@@ -483,9 +513,7 @@ def test_boundary_5_drilldown_signature_and_target_element_ids():
     2. 校验 main.js 中所有 jumpToEngineSection 调用的 targetElementId 在 index.html 中真实存在；
     3. 校验 viewId 均为有效的发动机子面板枚举 ('view01', 'view02', 'view03')。
     """
-    js_path = os.path.join(DEMO_DIR, "static", "js", "main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
+    js = _frontend_js_union_text()
 
     # 1. 函数声明断言
     assert "function jumpToEngineSection(viewId, targetElementId)" in js

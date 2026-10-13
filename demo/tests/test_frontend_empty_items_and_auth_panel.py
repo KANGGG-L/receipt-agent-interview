@@ -63,8 +63,11 @@ def test_login_panel_decision_uses_auth_me_payload():
 
 
 def _main_js():
-    with open(_MAIN_JS, "r", encoding="utf-8") as f:
-        return f.read()
+    # F5 S4-11：main.js 已按域拆分（复核保存路径在 review_core.js、鉴权探测与登录面板
+    # 在 common.js）。静态接线判据改为 main.js + 全部域文件联合全文
+    # （与浏览器实际加载集合同构，判据不放宽）。
+    import f4_frontend_sources
+    return f4_frontend_sources.frontend_union()
 
 
 def test_static_wiring_placeholder_single_source_of_truth():

@@ -97,9 +97,11 @@ def _seed_grey_leg(monkeypatch, *, enabled, base, model, key="sk-grey-key-123456
 
 def test_main_js_siliconflow_preset_uses_current_models():
     """main.js 的 siliconflow 预设必须与 db._SF_DEFAULT_* 常量一致，且不含已下架模型。"""
-    js = _read(DEMO_DIR, "static", "js", "main.js")
+    # F4 S4-11 起引擎配置域迁至 engine_admin.js；判据＝main.js + 域文件联合全文
+    # （预设块在 KPI/引擎域文件，不再钉「必须在 main.js」）。
+    js = _read(DEMO_DIR, "static", "js", "main.js") + _read(DEMO_DIR, "static", "js", "engine_admin.js")
     m = re.search(r"siliconflow:\s*\{(.*?)\}", js, re.S)
-    assert m, "未找到 main.js 的 siliconflow 预设块"
+    assert m, "未找到前端联合全文中的 siliconflow 预设块"
     block = m.group(1)
     assert db._SF_DEFAULT_REC_MODEL in block, f"识别模型应为 {db._SF_DEFAULT_REC_MODEL}"
     assert db._SF_DEFAULT_AUD_MODEL in block, f"审核模型应为 {db._SF_DEFAULT_AUD_MODEL}"

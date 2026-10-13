@@ -7,6 +7,7 @@
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import urllib.error
@@ -26,20 +27,49 @@ from _playwright_server import start_pinned_server  # noqa: E402
 
 PORT = int(os.environ.get("F1B_TEST_PORT", "15048"))
 BASE = "http://127.0.0.1:%d" % PORT
-SHOT_DIR = os.environ.get(
-    "F1B_SHOT_DIR",
-    "/home/user/.indent/01a12a4e-a627-78c0-a7f6-25a1147af3ec/artifacts/review/screens")
+def _default_shot_dir():
+    """同 _f1a_support：/home/user 不存在时不创建，避免 errno 45。"""
+    explicit = os.environ.get("F1B_SHOT_DIR", "").strip()
+    if explicit:
+        return explicit
+    legacy = "/home/user/.indent/01a12a4e-a627-78c0-a7f6-25a1147af3ec/artifacts/review/screens"
+    if os.path.isdir("/home/user"):
+        return legacy
+    art = os.environ.get("ARTIFACTS_DIR", "").strip() or tempfile.gettempdir()
+    return os.path.join(art, "f1b-screens")
+
+
+SHOT_DIR = _default_shot_dir()
 
 DESKTOP = {"width": 1440, "height": 900}
 MOBILE = {"width": 390, "height": 844}
 
 
+def _bindable_port(preferred):
+    """优先用指定端口；被占用时改绑一个空闲端口。探测套接字在返回前关闭。"""
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", preferred))
+        return preferred
+    except OSError:
+        sock.close()
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+    finally:
+        sock.close()
+
+
 def start_server():
+    global PORT, BASE
     data_dir = tempfile.mkdtemp(prefix="f1b_pw_")
     db_path = os.path.join(data_dir, "f1b.db")
     rag = os.path.join(data_dir, "rag")
     os.makedirs(rag, exist_ok=True)
-    handle = start_pinned_server(PORT, data_dir, db_path, extra_env={"RAG_DIR": rag})
+    port = _bindable_port(PORT)
+    PORT = port
+    BASE = "http://127.0.0.1:%d" % port
+    handle = start_pinned_server(port, data_dir, db_path, extra_env={"RAG_DIR": rag})
     return handle, data_dir
 
 

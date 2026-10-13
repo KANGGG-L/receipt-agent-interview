@@ -355,6 +355,37 @@ def _image_quality_reject(msg, warnings, **extra):
     return JSONResponse(status_code=400, content=body)
 
 
+def _recognition_engine_unconfigured() -> bool:
+    """识别腿没有可用地址或密钥。只读当前配置，不发网络请求。"""
+    try:
+        cfg = db.get_engine_config()
+    except Exception:
+        return False
+    kind = getattr(cfg, "recognition_engine", None)
+    kind_text = str(getattr(kind, "value", kind) or "").strip().lower()
+    if kind_text == "qwen":
+        return not (os.environ.get("DASHSCOPE_API_KEY") or "").strip()
+    base = str(getattr(cfg, "openai_rec_base_url", "") or "").strip()
+    key = str(getattr(cfg, "openai_rec_api_key", "") or "").strip()
+    return (not base) or (not key)
+
+
+def _unconfigured_recognition_response(image_path: str, request: Request):
+    """无密钥时同步失败并保留原图，店员可以立刻转手工，不必等异步任务。"""
+    from app.chains.supervisor import ENGINE_NOT_CONFIGURED_MSG
+    tenant = _tenant_id(request)
+    receipt_id = db.create_receipt(status="error", tenant_id=tenant)
+    db.update_receipt(receipt_id, image_path=image_path)
+    return {
+        "status": "error",
+        "code": "ENGINE_NOT_CONFIGURED",
+        "msg": ENGINE_NOT_CONFIGURED_MSG,
+        "receipt_id": receipt_id,
+        "image_url": public_image_url(receipt_id, image_path, tenant),
+        "job_id": None,
+    }
+
+
 def _assert_retryable(row, action, verb):
     """挽回动作状态门（/retry 与 /replace-image 共用）。
 
@@ -611,7 +642,12 @@ async def convert_image(
             return JSONResponse(status_code=400, content={
                 "status": "error", "code": "IMAGE_PIXELS_EXCEEDED", "msg": "这张照片的尺寸太大了，系统处理不了。请把照片缩小，或重新拍一张再上传。"})
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
-        return JSONResponse(status_code=500, content={"status": "error", "msg": "这张照片转换失败了，请换一张或重新拍照再试。"})
+        # 解码器缺失要让店员/排障看到稳定原因；不把异常尾部（可能含内部模拟信息）回传。
+        if "解码器不可用" in str(e):
+            msg = "HEIC/HEIF 解码器不可用（请确认已安装 pillow-heif 且版本兼容）"
+        else:
+            msg = "这张照片转换失败了，请换一张或重新拍照再试。"
+        return JSONResponse(status_code=500, content={"status": "error", "msg": msg})
     except Exception as e:
         logging.getLogger("api_receipts").warning(f"[WARN] /api/convert-image 图片转换失败: {e}")
         return JSONResponse(status_code=500, content={"status": "error", "msg": "这张照片转换失败了，请换一张或重新拍照再试。"})
@@ -793,6 +829,10 @@ def upload_receipt(
         return _image_quality_reject(
             "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
             ["image_empty_or_corrupted"])
+
+    # 无密钥时不要把图删掉再排队。同步告诉店员转手工，原图留在这张单上。
+    if _recognition_engine_unconfigured():
+        return _unconfigured_recognition_response(image_path, request)
 
     # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进识别管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断

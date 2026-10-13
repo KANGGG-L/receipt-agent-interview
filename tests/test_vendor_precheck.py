@@ -69,6 +69,12 @@ def env(monkeypatch, tmp_path):
     """
     state = {"vendor_hint": [], "models": [], "roi_tmp": []}
 
+    # F2 契约（2026-10-13）：无密钥上传现在在预判/识别之前同步返回
+    # ENGINE_NOT_CONFIGURED。本文件 subject 是闸门**之后**的预判接线，
+    # 故把引擎桩为已配置以进入异步管线（异步语义保留见各用例）；
+    # 新契约本身由 test_no_key_upload_sync_fails_before_precheck 钉住。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
     captured = _make_real_jpeg(tmp_path / "upload.jpg")
     monkeypatch.setattr(api_receipts, "_save_upload", lambda _f: captured)
     # 清晰度与图内隐藏文字检测打成轻量替身（本用例不关心，避免真实重计算）
@@ -119,6 +125,31 @@ def _upload(client, data=None):
     return client.post("/api/upload", headers=STAFF_HEADERS,
                        files={"receipt": ("up.jpg", b"\xff\xd8\xff\xe0fake", "image/jpeg")},
                        data=payload)
+
+
+# ------------------------------------------------------------------
+# 0. F2 新契约：无密钥上传在预判**之前**同步失败（不建 Job、不调预判）
+# ------------------------------------------------------------------
+def test_no_key_upload_sync_fails_before_precheck(env, monkeypatch):
+    """无密钥（真实缺省）：同步 200 + status=error + ENGINE_NOT_CONFIGURED，
+    不启动识别 Job（vendor_hint 记录为空 = start_recognition_job 未被调用）、
+    不调用预判模型 —— 引擎闸门先于预判管线。"""
+    monkeypatch.delenv(_ENV_SWITCH, raising=False)
+    model = env["install_model"](raw='{"vendor": "德利行"}')
+    # 还原真实闸门：env 夹具已把引擎桩为已配置，这里显式桩回「未配置」
+    # （与测试环境真实缺省一致：无 base_url/key）
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: True)
+
+    resp = _upload(_client())
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "error", body
+    assert body["code"] == "ENGINE_NOT_CONFIGURED", body
+    assert body["job_id"] is None, body
+    assert body.get("receipt_id") is not None, "同步失败路径必须落库单据行（原图保留给手工录入）"
+    assert env["vendor_hint"] == [], "同步失败路径不得启动识别 Job"
+    assert model.calls == 0, "同步失败路径发生在预判之前，不得调用预判模型"
 
 
 # ------------------------------------------------------------------

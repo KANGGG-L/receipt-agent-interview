@@ -104,12 +104,50 @@ class ServerHandle:
             return ""
 
 
-def is_healthy(timeout=2.0, base_url=BASE_URL):
+def current_base_url():
+    """当前自举服务根地址。ensure_server 可能改过端口，用例要在夹具之后读。"""
+    return BASE_URL
+
+
+def _explicit_base_url():
+    return os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
+
+
+def _free_port():
+    import socket
+    sock = socket.socket()
+    try:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+    finally:
+        sock.close()
+
+
+def _retarget_base(port):
+    """把模块级端口与 BASE_URL 改到空闲端口。不回收、不连接原来的监听者。"""
+    global BASE_PORT, BASE_URL
+    BASE_PORT = int(port)
+    BASE_URL = "http://127.0.0.1:%d" % BASE_PORT
+
+
+def _occupied_by_foreign(port):
+    """端口上有监听，且不是本启动器拉起的 pinned 服务。"""
+    if not _listener_pids(port):
+        return False
+    return not _listener_is_pinned(port)
+
+
+def is_healthy(timeout=2.0, base_url=None):
     """探测 `/api/health` 是否就绪（uvicorn 已开始服务请求）。
 
     该端点在鉴权白名单内、匿名可读，且按设计「组件异常也返回 200、绝不 500」，
     因此任何 < 500 的 HTTP 响应都说明服务已能处理请求（即已就绪）。
+
+    `base_url` 缺省时读模块全局 BASE_URL。不能把缺省值绑在函数定义时：
+    ensure_server 遇到非 pinned 占用会改端口，定义期绑定仍会去探原来的地址。
     """
+    if base_url is None:
+        base_url = BASE_URL
     try:
         with urllib.request.urlopen(base_url + "/api/health", timeout=timeout) as resp:
             return 200 <= resp.status < 300
@@ -309,6 +347,13 @@ def ensure_server():
         # 自己起的服务已不健康：回收后重新自举。
         cached.stop()
         _SESSION_HANDLE = None
+
+    # 默认端口被常驻演示服务占用时：不杀、不复用、不写它的库。
+    # 改到空闲端口自举 pinned 服务（临时库由 start_pinned_server 注入）。
+    # 调用方若显式给了 PW_TEST_BASE_URL / TEST_BASE_URL，仍按原端口失败关闭，
+    # 避免地址和实际进程各说各话。
+    if not _explicit_base_url() and _occupied_by_foreign(BASE_PORT):
+        _retarget_base(_free_port())
 
     # 2) 端口上已有服务：确认是 pinned 才复用，否则拒绝。
     if is_healthy():

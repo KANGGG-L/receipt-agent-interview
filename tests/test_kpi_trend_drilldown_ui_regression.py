@@ -4,6 +4,7 @@ QA Automated Regression Test Suite:
 Observation Center KPI Trend Modal & Time-Series Drilldown UI Refactor
 Validates PRD / Spec requirements (AC-01 through AC-07).
 """
+import os
 import re
 import pytest
 from bs4 import BeautifulSoup
@@ -16,9 +17,21 @@ def index_html_content():
 
 
 @pytest.fixture(scope="module")
-def main_js_content():
-    with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
+def head_css_content():
+    # F3 B1 起模板内联 style 块外移到独立样式表
+    with open("demo/static/css/index-head.css", "r", encoding="utf-8") as f:
         return f.read()
+
+
+@pytest.fixture(scope="module")
+def main_js_content():
+    # F4 S4-11 起 KPI 趋势控制器随域迁至 kpi_trend.js（index.html 加载链中紧跟 main.js）。
+    # 守真不变量＝main.js + kpi_trend.js 联合全文（钉「函数在 KPI 域文件」，不再要求在 main.js）。
+    parts = []
+    for rel in ("demo/static/js/main.js", "demo/static/js/kpi_trend.js"):
+        with open(rel, "r", encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +56,7 @@ def test_ac_01_header_close_button_uniqueness(kpi_modal_soup):
 
     close_btn = buttons[0]
     assert "modal-close-btn" in close_btn.get("class", []), "Header button must have class 'modal-close-btn'"
-    assert "closeKpiTrendModal()" in close_btn.get("onclick", ""), "Header button must call closeKpiTrendModal()"
+    assert '"f":"closeKpiTrendModal"' in (close_btn.get("data-csp-click") or ""), "Header button must call closeKpiTrendModal()"
     assert "[关闭]" not in header.get_text(), "Header must not contain redundant text '[关闭]'"
 
 
@@ -97,17 +110,34 @@ def test_ac_03_header_visual_clean_and_dom_compatibility(kpi_modal_soup):
         assert elem is not None, f"Required DOM element id '{cid}' must be present in kpiTrendModal"
 
     # 验证面向开发的字段与宽分类 Badge 在 DOM 中初始为隐藏状态 (display:none)
+    # F3 B1 起 inline style 迁为 csp-s-N 类（规则体在 demo/static/css/csp-html-styles.css），
+    # 等效 style = style 属性 + 元素所带 csp-s-N 类的规则体。
+    def _csp_css():
+        path = os.path.join(os.path.dirname(__file__), "../demo/static/css/csp-html-styles.css")
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def _effective_style(el, csp_css):
+        parts = [el.get("style", "") or ""]
+        classes = el.get("class", [])
+        if isinstance(classes, str):
+            classes = classes.split()
+        for cls in classes:
+            if cls.startswith("csp-s-"):
+                m = re.search(r"\.%s\{([^}]*)\}" % re.escape(cls), csp_css)
+                if m:
+                    parts.append(m.group(1))
+        return ";".join(parts).replace(" ", "")
+
+    csp_css = _csp_css()
     section_badge = kpi_modal_soup.find(id="kpiTrendModalSectionBadge")
-    style_sec = section_badge.get("style", "")
-    assert "display:none" in style_sec.replace(" ", ""), "kpiTrendModalSectionBadge must be hidden"
+    assert "display:none" in _effective_style(section_badge, csp_css), "kpiTrendModalSectionBadge must be hidden"
 
     metric_key = kpi_modal_soup.find(id="kpiTrendModalMetricKey")
-    style_key = metric_key.get("style", "")
-    assert "display:none" in style_key.replace(" ", ""), "kpiTrendModalMetricKey must be hidden"
+    assert "display:none" in _effective_style(metric_key, csp_css), "kpiTrendModalMetricKey must be hidden"
 
     tenant_badge = kpi_modal_soup.find(id="kpiTrendModalTenantBadge")
-    style_tenant = tenant_badge.get("style", "")
-    assert "display:none" in style_tenant.replace(" ", ""), "kpiTrendModalTenantBadge must default to hidden"
+    assert "display:none" in _effective_style(tenant_badge, csp_css), "kpiTrendModalTenantBadge must default to hidden"
 
 
 def test_ac_04_footer_structure_and_summary_container(kpi_modal_soup):
@@ -126,7 +156,7 @@ def test_ac_04_footer_structure_and_summary_container(kpi_modal_soup):
         )
 
 
-def test_ac_05_table_alignment_and_tabular_nums_styling(index_html_content, main_js_content):
+def test_ac_05_table_alignment_and_tabular_nums_styling(index_html_content, head_css_content, main_js_content):
     """
     AC-05: 表格对齐与排版规范。
     - 表头与数据单元格中，当日数值、构成样本、较前日环比列显式设置 text-align: right 与 tabular-nums。
@@ -134,9 +164,9 @@ def test_ac_05_table_alignment_and_tabular_nums_styling(index_html_content, main
     - 健康评估与操作列为 text-align: center。
     - 数据行具备 .kpi-trend-row 类名与 CSS hover 样式。
     """
-    # 1. 检查 CSS 中 .kpi-trend-table 及 hover 样式
-    assert ".kpi-trend-table" in index_html_content, "CSS must define .kpi-trend-table"
-    assert ".kpi-trend-row:hover" in index_html_content or "tr.kpi-trend-row:hover" in index_html_content, (
+    # 1. 检查 CSS 中 .kpi-trend-table 及 hover 样式（F3 B1 起规则在外置样式表 index-head.css）
+    assert ".kpi-trend-table" in head_css_content, "CSS must define .kpi-trend-table"
+    assert ".kpi-trend-row:hover" in head_css_content or "tr.kpi-trend-row:hover" in head_css_content, (
         "CSS must define hover style for .kpi-trend-row"
     )
 

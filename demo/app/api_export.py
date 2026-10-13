@@ -27,6 +27,52 @@ def _tenant_id(request: Request) -> str:
     return resolve_tenant(request)
 
 
+def _sku_category_filter(tenant_id, cat, skus):
+    """返回 (mode, category_id, id_map)。未迁移保持调用方的精确字符串比较。"""
+    if not cat:
+        return "all", None, {}
+    if not db.category_schema_ready():
+        return "legacy", None, {}
+    cid = db.resolve_category_filter("sku", tenant_id, cat)
+    if cid is None:
+        return "none", None, {}
+    return "id", cid, db.read_category_id_map("skus", [s.id for s in skus])
+
+
+def _sku_category_kept(mode, cid, id_map, sku, cat):
+    if mode == "all":
+        return True
+    if mode == "legacy":
+        return sku.category == cat
+    if mode == "none":
+        return False
+    return id_map.get(sku.id) == cid
+
+
+def _dish_category_filter(session, tenant_id, dish_cat, dish_ids):
+    if not dish_cat:
+        return "all", None, {}
+    if not db._category_schema_ready_session(session):
+        return "legacy", None, {}
+    norm = db._normalize_category_label("dish", dish_cat)
+    found = db._category_find_by_key(
+        session, tenant_id, "dish", db._category_master_key(norm))
+    if found is None:
+        return "none", None, {}
+    return "id", int(found["id"]), db.read_category_id_map(
+        "dishes", list(dish_ids), session=session)
+
+
+def _dish_category_kept(mode, cid, id_map, row_id, normalized_label, filter_text):
+    if not filter_text or mode == "all":
+        return True
+    if mode == "legacy":
+        return normalized_label == filter_text
+    if mode == "none":
+        return False
+    return id_map.get(row_id) == cid
+
+
 def _sanitize_csv_cell(val: Any) -> Any:
     """EC-3 / AC-3: 防 CSV 公式注入。首字符为 =, +, -, @, \\t, \\r 时前置单引号转义。"""
     if val is None:
@@ -282,6 +328,7 @@ class ExportDataProcessor:
     def _handle_inventory_stocktake(params, tenant_id, is_desens):
         skus = db.list_skus(include_inactive=False, tenant_id=tenant_id)
         cat = params.get("category", "")
+        cat_mode, cat_id, cat_map = _sku_category_filter(tenant_id, cat, skus)
         stock_flt = params.get("stock_filter", "all")
 
         headers = [
@@ -298,7 +345,7 @@ class ExportDataProcessor:
         ]
         rows = []
         for s in skus:
-            if cat and s.category != cat:
+            if not _sku_category_kept(cat_mode, cat_id, cat_map, s, cat):
                 continue
             is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
             if stock_flt == "low" and not is_low:
@@ -336,6 +383,7 @@ class ExportDataProcessor:
 
         skus = db.list_skus(include_inactive=False, tenant_id=tenant_id)
         cat = params.get("category", "")
+        cat_mode, cat_id, cat_map = _sku_category_filter(tenant_id, cat, skus)
         stock_flt = params.get("stock_filter", "all")
         # FILTERS-§7: 货值下限（行级过滤；summary 保持全量口径）
         try:
@@ -360,7 +408,7 @@ class ExportDataProcessor:
         total_kg = 0.0
 
         for s in skus:
-            if cat and s.category != cat:
+            if not _sku_category_kept(cat_mode, cat_id, cat_map, s, cat):
                 continue
             is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
             if stock_flt == "low" and not is_low:
@@ -410,6 +458,7 @@ class ExportDataProcessor:
 
         skus = db.list_skus(include_inactive=False, tenant_id=tenant_id)
         cat = params.get("category", "")
+        cat_mode, cat_id, cat_map = _sku_category_filter(tenant_id, cat, skus)
         # FILTERS-§4: 涨跌方向 / 阈值临时覆盖 / 均价窗口天数
         direction = params.get("direction", "all")
         if direction not in ("all", "up", "down"):
@@ -449,7 +498,7 @@ class ExportDataProcessor:
         rows = []
         anomaly_count = 0
         for s in skus:
-            if cat and s.category != cat:
+            if not _sku_category_kept(cat_mode, cat_id, cat_map, s, cat):
                 continue
             vs_pct, is_anomaly, avg_nd = _compute_vs_avg_and_anomaly(
                 s.id,
@@ -648,6 +697,8 @@ class ExportDataProcessor:
             consumes = q.order_by(
                 db._DailyConsumptionRow.date.desc(), db._DailyConsumptionRow.id.desc()
             ).all()
+            dish_mode, dish_cid, dish_map = _dish_category_filter(
+                session, tenant_id, dish_cat, tenant_dish_ids)
 
             headers = [
                 "核算周期",
@@ -698,7 +749,9 @@ class ExportDataProcessor:
                         row_status = (dish.status if dish else "") or ""
                         if row_status != dish_status:
                             continue
-                    if dish_cat and dish_cat_row != dish_cat:
+                    if not _dish_category_kept(
+                            dish_mode, dish_cid, dish_map, c.dish_id,
+                            dish_cat_row, dish_cat):
                         continue
 
                     sales = round(float(c.quantity * dish_p), 2)
@@ -757,7 +810,9 @@ class ExportDataProcessor:
                     d_cat_row = (d.category or "").strip() or "默认"
                     if d_cat_row == "其他":
                         d_cat_row = "默认"
-                    if dish_cat and d_cat_row != dish_cat:
+                    if not _dish_category_kept(
+                            dish_mode, dish_cid, dish_map, d.id,
+                            d_cat_row, dish_cat):
                         continue
                     cq = [
                         c

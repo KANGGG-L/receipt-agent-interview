@@ -65,6 +65,33 @@ if not _raw_db_path or _raw_db_path in ("./receipt_demo.db", "receipt_demo.db"):
 else:
     DB_PATH = _raw_db_path
 
+
+def _normalized_db_path(path=None):
+    """把库路径归一成 realpath。空串和默认相对名与第 61 行同一口径。"""
+    if path is None:
+        path = DB_PATH
+    raw = "" if path is None else str(path).strip()
+    if not raw or raw in ("./receipt_demo.db", "receipt_demo.db"):
+        return os.path.realpath(_default_db_path)
+    return os.path.realpath(raw)
+
+
+def _protected_category_db_realpaths():
+    repo_root = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    demo_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+    return frozenset({
+        os.path.realpath(_default_db_path),
+        os.path.realpath(os.path.join(repo_root, "app.db")),
+        os.path.realpath(os.path.join(repo_root, "receipts.db")),
+        os.path.realpath(os.path.join(demo_dir, "receipts.db")),
+    })
+
+
+def is_category_migration_protected(path=None):
+    """保护路径不得执行分类注册表迁移。符号链接按 realpath 目标判断。"""
+    return _normalized_db_path(path) in _protected_category_db_realpaths()
+
+
 _engine = None
 _SessionLocal = None
 
@@ -1449,6 +1476,10 @@ def _make_engine():
     _SecurityEventRow = SecurityEventRow
 
     _run_ordered_migrations(_engine)
+    if is_category_migration_protected(DB_PATH):
+        pass
+    else:
+        _apply_category_registry_migration(_engine)
     return Base
 
 
@@ -1550,7 +1581,13 @@ def _migrate_v3_revoked_tokens(engine):
 
 
 def _migrate_v4_receipt_list_indexes(engine):
+    # legacy 受控库的 receipts 只有 id / supplier_name / tenant_id。
+    # 索引引用 status、deleted_at；缺列时先补列，否则 CREATE INDEX 中止整次迁移。
+    # 列已存在（create_all 建的新库）由 _apply_migration_ddl 静默跳过。
     for ddl in (
+        "ALTER TABLE receipts ADD COLUMN status VARCHAR DEFAULT 'uploaded'",
+        "ALTER TABLE receipts ADD COLUMN deleted_at VARCHAR",
+        "ALTER TABLE receipts ADD COLUMN tenant_id VARCHAR(64) DEFAULT 'default'",
         "CREATE INDEX IF NOT EXISTS ix_receipts_tenant_status "
         "ON receipts (tenant_id, status, deleted_at)",
         "CREATE INDEX IF NOT EXISTS ix_receipt_items_receipt "
@@ -1714,6 +1751,10 @@ def ensure_schema_current():
     latest = SCHEMA_MIGRATIONS[-1][0]
     if schema_version() != latest:
         raise MigrationError(f"库结构版本 {schema_version()} 与程序要求的 {latest} 不一致，已中止启动")
+    if is_category_migration_protected(DB_PATH):
+        pass
+    else:
+        _apply_category_registry_migration(_engine)
 
 
 class MigrationError(RuntimeError):
@@ -2192,6 +2233,442 @@ def _backfill_receipt_supplier_ids(engine):
                         updates)
     except Exception as e:
         _migration_failed("[migrate] receipts.supplier_id backfill skipped: %s", e)
+
+
+class CategoryResolveError(Exception):
+    """分类解析失败。code 是机器码，msg 是给店员看的中文。"""
+
+    def __init__(self, code, msg):
+        super().__init__(msg)
+        self.code = code
+        self.msg = msg
+
+
+_CATEGORY_TABLES = ("skus", "dishes")
+_CATEGORY_DOMAINS = ("sku", "dish")
+_CATEGORY_NOT_FOUND_MSG = "分类不存在"
+_CATEGORY_MISMATCH_MSG = "代码和分类名称不是同一条"
+
+
+def _category_tenant(tenant_id):
+    text = "" if tenant_id is None else str(tenant_id).strip()
+    return text or "default"
+
+
+def _category_master_key(label):
+    from app.i18n_text import master_key
+    return master_key("" if label is None else str(label))
+
+
+def category_choose_label(pairs):
+    """同一折叠组里选定一种显示写法：行数、最小 id、Unicode 码点。"""
+    counts = {}
+    min_id = {}
+    for row_id, label in pairs or ():
+        spelling = "" if label is None else str(label)
+        counts[spelling] = counts.get(spelling, 0) + 1
+        try:
+            rid = int(row_id)
+        except (TypeError, ValueError):
+            rid = 0
+        if spelling not in min_id or rid < min_id[spelling]:
+            min_id[spelling] = rid
+    if not counts:
+        return ""
+    return sorted(
+        counts,
+        key=lambda spelling: (-counts[spelling], min_id[spelling], spelling),
+    )[0]
+
+
+def _category_tables(conn):
+    from sqlalchemy import text
+    return {row[0] for row in conn.execute(text(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"))}
+
+
+def _category_columns(conn, table):
+    from sqlalchemy import text
+    if table not in _CATEGORY_TABLES:
+        return []
+    return [row[1] for row in conn.execute(text(
+        "PRAGMA table_info(%s)" % table))]
+
+
+def category_schema_ready(engine=None):
+    """注册表和两列 category_id 都在才算已迁移。不缓存，换库后必须重探。"""
+    eng = _engine if engine is None else engine
+    if eng is None:
+        return False
+    try:
+        with eng.connect() as conn:
+            if "category_registry" not in _category_tables(conn):
+                return False
+            for table in _CATEGORY_TABLES:
+                if "category_id" not in _category_columns(conn, table):
+                    return False
+        return True
+    except Exception:
+        return False
+
+
+def _category_row_dict(row):
+    if row is None:
+        return None
+    return {
+        "id": int(row[0]),
+        "tenant_id": row[1],
+        "domain": row[2],
+        "label": row[3],
+        "match_key": row[4],
+        "system_default": int(row[5] or 0),
+    }
+
+
+def _category_find_by_key(session, tenant, domain, match_key):
+    from sqlalchemy import text
+    row = session.execute(text(
+        "SELECT id, tenant_id, domain, label, match_key, system_default "
+        "FROM category_registry "
+        "WHERE tenant_id = :t AND domain = :d AND match_key = :k"
+    ), {
+        "t": _category_tenant(tenant),
+        "d": domain,
+        "k": match_key,
+    }).fetchone()
+    return _category_row_dict(row)
+
+
+def _category_find_by_id(session, tenant, domain, category_id):
+    from sqlalchemy import text
+    try:
+        cid = int(category_id)
+    except (TypeError, ValueError):
+        return None
+    row = session.execute(text(
+        "SELECT id, tenant_id, domain, label, match_key, system_default "
+        "FROM category_registry "
+        "WHERE id = :i AND tenant_id = :t AND domain = :d"
+    ), {
+        "i": cid,
+        "t": _category_tenant(tenant),
+        "d": domain,
+    }).fetchone()
+    return _category_row_dict(row)
+
+
+def _category_insert_registry(session, tenant, domain, label, match_key, system_default):
+    """插入或复用一行。唯一约束冲突时重读已有 id 和已有 label。"""
+    tenant = _category_tenant(tenant)
+    found = _category_find_by_key(session, tenant, domain, match_key)
+    if found is not None:
+        return found["id"], found["label"]
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+    params = {
+        "t": tenant,
+        "d": domain,
+        "l": label,
+        "k": match_key,
+        "s": 1 if int(system_default or 0) else 0,
+    }
+    try:
+        with session.begin_nested():
+            inserted = session.execute(text(
+                "INSERT INTO category_registry "
+                "(tenant_id, domain, label, match_key, system_default) "
+                "VALUES (:t, :d, :l, :k, :s) RETURNING id"
+            ), params).fetchone()
+            new_id = int(inserted[0])
+        return new_id, label
+    except IntegrityError:
+        found = _category_find_by_key(session, tenant, domain, match_key)
+        if found is not None:
+            return found["id"], found["label"]
+        raise
+
+
+def _category_ensure_system_default(session, tenant):
+    """餐品域系统行：label 固定「默认」。已正确则不改写。"""
+    tenant = _category_tenant(tenant)
+    key = _category_master_key("默认")
+    found = _category_find_by_key(session, tenant, "dish", key)
+    if found is not None:
+        if found["label"] != "默认" or int(found["system_default"] or 0) != 1:
+            from sqlalchemy import text
+            session.execute(text(
+                "UPDATE category_registry "
+                "SET label = :l, system_default = 1 WHERE id = :i"
+            ), {"l": "默认", "i": found["id"]})
+        return found["id"], "默认"
+    return _category_insert_registry(session, tenant, "dish", "默认", key, 1)
+
+
+def _normalize_category_label(domain, raw):
+    text = "" if raw is None else str(raw).strip()
+    if domain == "dish":
+        text = text[:20]
+        if not text or text == "其他":
+            text = "默认"
+    return text
+
+
+def bind_category(session, tenant_id, domain, *, label=None, label_set=False,
+                  category_id=None, category_id_set=False):
+    """写路径解析。返回 (存储标签, category_id 或 None)。"""
+    if domain not in _CATEGORY_DOMAINS:
+        raise CategoryResolveError("CATEGORY_NOT_FOUND", _CATEGORY_NOT_FOUND_MSG)
+    tenant = _category_tenant(tenant_id)
+
+    def _by_id(cid):
+        found = _category_find_by_id(session, tenant, domain, cid)
+        if found is None:
+            raise CategoryResolveError("CATEGORY_NOT_FOUND", _CATEGORY_NOT_FOUND_MSG)
+        return found
+
+    if category_id_set and not label_set:
+        found = _by_id(category_id)
+        return found["label"], int(found["id"])
+
+    if label_set and category_id_set:
+        found = _by_id(category_id)
+        norm = _normalize_category_label(domain, label)
+        if domain == "sku" and not norm:
+            raise CategoryResolveError("CATEGORY_MISMATCH", _CATEGORY_MISMATCH_MSG)
+        if _category_master_key(norm) != found["match_key"]:
+            raise CategoryResolveError("CATEGORY_MISMATCH", _CATEGORY_MISMATCH_MSG)
+        return found["label"], int(found["id"])
+
+    if label_set:
+        norm = _normalize_category_label(domain, label)
+        if domain == "sku" and not norm:
+            return "", None
+        key = _category_master_key(norm)
+        if domain == "dish" and key == _category_master_key("默认"):
+            cid, stored = _category_ensure_system_default(session, tenant)
+            return stored, int(cid)
+        found = _category_find_by_key(session, tenant, domain, key)
+        if found is not None:
+            return found["label"], int(found["id"])
+        cid, stored = _category_insert_registry(
+            session, tenant, domain, norm, key, 0)
+        return stored, int(cid)
+
+    if domain == "dish":
+        cid, stored = _category_ensure_system_default(session, tenant)
+        return stored, int(cid)
+    return "", None
+
+
+def _category_schema_ready_session(session):
+    try:
+        if "category_registry" not in _category_tables(session):
+            return False
+        for table in _CATEGORY_TABLES:
+            if "category_id" not in _category_columns(session, table):
+                return False
+        return True
+    except Exception:
+        return False
+
+
+def _assign_category_id(session, table, row_id, category_id):
+    if table not in _CATEGORY_TABLES:
+        return
+    from sqlalchemy import text
+    if "category_id" not in _category_columns(session, table):
+        return
+    session.execute(text(
+        "UPDATE %s SET category_id = :c WHERE id = :i" % table
+    ), {"c": category_id, "i": int(row_id)})
+
+
+def _read_category_id_conn(conn, table, row_id):
+    from sqlalchemy import text
+    if table not in _CATEGORY_TABLES:
+        return None
+    if "category_id" not in _category_columns(conn, table):
+        return None
+    row = conn.execute(text(
+        "SELECT category_id FROM %s WHERE id = :i" % table
+    ), {"i": int(row_id)}).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def read_category_id_for_row(table, row_id, engine=None, session=None):
+    if table not in _CATEGORY_TABLES:
+        return None
+    if session is not None:
+        if not _category_schema_ready_session(session):
+            return None
+        return _read_category_id_conn(session, table, row_id)
+    if not category_schema_ready(engine):
+        return None
+    from sqlalchemy import text
+    eng = _engine if engine is None else engine
+    with eng.connect() as conn:
+        row = conn.execute(text(
+            "SELECT category_id FROM %s WHERE id = :i" % table
+        ), {"i": int(row_id)}).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
+def _read_category_id_map_conn(conn, table, ids):
+    from sqlalchemy import text
+    out = {rid: None for rid in ids}
+    if "category_id" not in _category_columns(conn, table):
+        return out
+    step = 500
+    for start in range(0, len(ids), step):
+        chunk = ids[start:start + step]
+        params = {("i%d" % n): value for n, value in enumerate(chunk)}
+        holders = ", ".join(":%s" % key for key in params)
+        rows = conn.execute(text(
+            "SELECT id, category_id FROM %s WHERE id IN (%s)" % (table, holders)
+        ), params).fetchall()
+        for rid, cid in rows:
+            out[int(rid)] = None if cid is None else int(cid)
+    return out
+
+
+def read_category_id_map(table, row_ids, engine=None, session=None):
+    ids = []
+    for raw in row_ids or ():
+        try:
+            ids.append(int(raw))
+        except (TypeError, ValueError):
+            continue
+    out = {rid: None for rid in ids}
+    if not ids or table not in _CATEGORY_TABLES:
+        return out
+    if session is not None:
+        if not _category_schema_ready_session(session):
+            return out
+        return _read_category_id_map_conn(session, table, ids)
+    if not category_schema_ready(engine):
+        return out
+    eng = _engine if engine is None else engine
+    with eng.connect() as conn:
+        return _read_category_id_map_conn(conn, table, ids)
+
+
+def resolve_category_filter(domain, tenant_id, filter_text, engine=None):
+    """把筛选标签解析成 category_id。解析不到返回 None，调用方排除全部。
+
+    不把纯数字标签转成整数。餐品筛选先走空值、「其他」和 20 字截断。
+    """
+    if domain not in _CATEGORY_DOMAINS or not category_schema_ready(engine):
+        return None
+    norm = _normalize_category_label(domain, filter_text)
+    if domain == "sku" and not norm:
+        return None
+    key = _category_master_key(norm)
+    session = get_session()
+    try:
+        found = _category_find_by_key(session, tenant_id, domain, key)
+        if found is None:
+            return None
+        return int(found["id"])
+    finally:
+        session.close()
+
+
+def _category_backfill(session, domain, table):
+    from sqlalchemy import text
+    rows = session.execute(text(
+        "SELECT id, tenant_id, category, category_id FROM %s" % table
+    )).fetchall()
+    if domain == "dish":
+        tenants = {_category_tenant(row[1]) for row in rows}
+        for tenant in tenants:
+            _category_ensure_system_default(session, tenant)
+    pending = {}
+    for rid, tenant_raw, category, category_id in rows:
+        tenant = _category_tenant(tenant_raw)
+        if category_id is not None:
+            existing = _category_find_by_id(session, tenant, domain, category_id)
+            if existing is not None:
+                continue
+        raw = "" if category is None else str(category)
+        stripped = raw.strip()
+        if domain == "sku":
+            if not stripped:
+                if category_id is not None or raw != "":
+                    session.execute(text(
+                        "UPDATE skus SET category = '', category_id = NULL WHERE id = :i"
+                    ), {"i": int(rid)})
+                continue
+            key = _category_master_key(stripped)
+            pending.setdefault((tenant, key), []).append((int(rid), stripped))
+            continue
+        if not stripped or stripped == "其他":
+            sys_id, sys_label = _category_ensure_system_default(session, tenant)
+            session.execute(text(
+                "UPDATE dishes SET category = :c, category_id = :cid WHERE id = :i"
+            ), {"c": sys_label, "cid": int(sys_id), "i": int(rid)})
+            continue
+        key = _category_master_key(stripped)
+        if key == _category_master_key("默认"):
+            sys_id, sys_label = _category_ensure_system_default(session, tenant)
+            session.execute(text(
+                "UPDATE dishes SET category = :c, category_id = :cid WHERE id = :i"
+            ), {"c": sys_label, "cid": int(sys_id), "i": int(rid)})
+            continue
+        pending.setdefault((tenant, key), []).append((int(rid), stripped))
+    for (tenant, key), items in pending.items():
+        chosen = category_choose_label(items)
+        cid, stored = _category_insert_registry(
+            session, tenant, domain, chosen, key, 0)
+        for rid, _spelling in items:
+            session.execute(text(
+                "UPDATE %s SET category = :c, category_id = :cid WHERE id = :i" % table
+            ), {"c": stored, "cid": int(cid), "i": int(rid)})
+
+
+def _apply_category_registry_migration(engine):
+    """非保护库上的分类注册表迁移。调用方必须先判断保护路径。"""
+    from sqlalchemy import text
+    from sqlalchemy.orm import sessionmaker
+    with engine.begin() as conn:
+        conn.execute(text(
+            "CREATE TABLE IF NOT EXISTS category_registry ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            " tenant_id VARCHAR,"
+            " domain VARCHAR NOT NULL,"
+            " label VARCHAR NOT NULL,"
+            " match_key VARCHAR NOT NULL,"
+            " system_default INTEGER NOT NULL DEFAULT 0,"
+            " UNIQUE (tenant_id, domain, match_key))"
+        ))
+        tables = _category_tables(conn)
+        for table in _CATEGORY_TABLES:
+            if table not in tables:
+                continue
+            if "category_id" not in _category_columns(conn, table):
+                conn.execute(text(
+                    "ALTER TABLE %s ADD COLUMN category_id INTEGER" % table))
+    maker = sessionmaker(bind=engine, expire_on_commit=False)
+    session = maker()
+    try:
+        if "skus" in _category_tables_of(engine):
+            _category_backfill(session, "sku", "skus")
+        if "dishes" in _category_tables_of(engine):
+            _category_backfill(session, "dish", "dishes")
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+
+def _category_tables_of(engine):
+    with engine.connect() as conn:
+        return _category_tables(conn)
 
 
 _make_engine()
@@ -2858,7 +3335,8 @@ def get_sku(sku_id, tenant_id=None):
 
 
 def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
-               tenant_id="default"):
+               tenant_id="default", *, category_id=None, category_set=False,
+               category_id_set=False):
     s = get_session()
     try:
         # P2-1: 重名检查按租户 scope（上游须传租户；tenant 为空时不过滤，向后兼容）
@@ -2866,11 +3344,31 @@ def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
                           tenant_id).filter(_SkuRow.name == name).first()
         if existing:
             return None, "SKU_NAME_CONFLICT"
-        row = _SkuRow(name=name, category=category, base_unit=base_unit,
+        stored_category = category
+        bound_id = None
+        write_id = False
+        if _category_schema_ready_session(s):
+            label_set = bool(category_set) or (
+                not category_id_set and bool(str(category or "").strip()))
+            try:
+                stored_category, bound_id = bind_category(
+                    s, tenant_id, "sku",
+                    label=category, label_set=label_set,
+                    category_id=category_id, category_id_set=category_id_set,
+                )
+            except CategoryResolveError as exc:
+                s.rollback()
+                return None, exc.code
+            write_id = True
+        row = _SkuRow(name=name, category=stored_category or "",
+                      base_unit=base_unit,
                       min_stock_alert=min_stock_alert,
                       tenant_id=str(tenant_id or "default"),
                       sku_code="SKU-" + new_id().upper())
         s.add(row)
+        s.flush()
+        if write_id:
+            _assign_category_id(s, "skus", row.id, bound_id)
         s.commit()
         s.refresh(row)
         return row.id, None
@@ -2878,7 +3376,8 @@ def create_sku(name, category="", base_unit="", min_stock_alert=0.0,
         s.close()
 
 
-def update_sku(sku_id, tenant_id=None, **fields):
+def update_sku(sku_id, tenant_id=None, *, category_id=None,
+               category_id_set=False, **fields):
     """更新 SKU。P2-1: 重命名重名检查按租户 scope；
     tenant_id 缺省 None 时不过滤（保持既有全局行为，向后兼容）。
     注意 tenant_id 为显式参数，不会落入 fields 覆盖行的租户归属。
@@ -2892,6 +3391,12 @@ def update_sku(sku_id, tenant_id=None, **fields):
     """
     s = get_session()
     try:
+        if "category_id" in fields:
+            if not category_id_set:
+                incoming = fields.get("category_id")
+                category_id = incoming
+                category_id_set = incoming is not None
+            fields.pop("category_id", None)
         row = s.get(_SkuRow, int(sku_id))
         if row is None:
             return None, "NOT_FOUND"
@@ -2904,9 +3409,28 @@ def update_sku(sku_id, tenant_id=None, **fields):
         if new_unit and str(new_unit) != str(row.base_unit or "") \
                 and (row.current_stock or 0) != 0:
             return None, "UNIT_CHANGE_BLOCKED"
-        for k, v in fields.items():
-            if v is not None and hasattr(row, k):
-                setattr(row, k, v)
+        if _category_schema_ready_session(s) and ("category" in fields or category_id_set):
+            try:
+                stored, bound = bind_category(
+                    s, row.tenant_id, "sku",
+                    label=fields.get("category"),
+                    label_set=("category" in fields),
+                    category_id=category_id,
+                    category_id_set=category_id_set,
+                )
+            except CategoryResolveError as exc:
+                s.rollback()
+                return None, exc.code
+            fields["category"] = stored
+            for k, v in fields.items():
+                if v is not None and hasattr(row, k):
+                    setattr(row, k, v)
+            s.flush()
+            _assign_category_id(s, "skus", row.id, bound)
+        else:
+            for k, v in fields.items():
+                if v is not None and hasattr(row, k):
+                    setattr(row, k, v)
         s.commit()
         return row, None
     finally:

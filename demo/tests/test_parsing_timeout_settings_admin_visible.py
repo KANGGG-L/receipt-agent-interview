@@ -44,6 +44,7 @@ import sys
 import tempfile
 
 import pytest
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 # 红线：import app.* 会在 import 期执行 db._make_engine() 的迁移块、直接对 DB_PATH
 # 指向的库做 ALTER。必须在任何 app.* import 之前把 DB_PATH / RAG_DIR 指到 /tmp，
@@ -185,7 +186,7 @@ def test_input_exists_in_admin_form():
 
 def test_table_entry_type_is_int():
     """表项三元组必须精确匹配，且类型为 int（float 会把秒数存成小数）。"""
-    entries = _parse_admin_settings_fields(_read(MAIN_JS))
+    entries = _parse_admin_settings_fields(frontend_union())  # F4 S4-11: main.js+域文件联合全文
     matches = [e for e in entries if e[0] == FIELD_ID]
     assert len(matches) == 1, \
         "ADMIN_SETTINGS_FIELDS 里 setParsingTimeoutSeconds 必须恰好登记一次（实际 %d 次）" % len(matches)
@@ -198,7 +199,7 @@ def test_table_entry_type_is_int():
 
 def test_main_js_wires_load_collect_reset():
     """load / collect / reset 三处接线一个都不能少（含自校准）。"""
-    js = _read(MAIN_JS)
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     steps = _wiring_steps(js, FIELD_ID, KEY, TYPE)
     assert all(steps), (
         "解析超时阈值控件的 load / collect / reset 接线不齐：%s（缺 load = 显示了但不反映"
@@ -247,7 +248,7 @@ def test_other_registered_int_float_keys_inventory():
     """
     from app.services import settings_service
 
-    js = _read(MAIN_JS)
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     html = _read(HTML)
     unwired = []
     for k, v in sorted(settings_service.SETTINGS_DEFAULTS.items()):

@@ -7,6 +7,7 @@
 import pytest
 from pathlib import Path
 from bs4 import BeautifulSoup
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 # demo/ 目录：本文件位于 demo/tests/ 下，取两级父目录
 _DEMO_DIR = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ def test_admin_experiment_drawer_exists_and_structured(soup):
     assert start_btn is not None, "#adminExpStartBtn should exist inside drawer"
     assert stop_btn is not None, "#adminExpStopBtn should exist inside drawer"
 
-    deep_link = drawer.find(lambda el: el.name == "a" and "gotoExperimentObservatory" in (el.get("onclick") or ""))
+    deep_link = drawer.find(lambda el: el.name == "a" and "gotoExperimentObservatory" in (el.get("data-csp-click") or ""))
     assert deep_link is not None, "deep link to gotoExperimentObservatory should exist inside drawer"
 
 
@@ -57,8 +58,7 @@ def test_admin_grey_drawer_intact(soup):
 
 
 def test_admin_experiments_js_bindings():
-    with open(_MAIN_JS, "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     for fn in [
         "loadAdminExperimentsList",
         "onAdminExpSelectChange",

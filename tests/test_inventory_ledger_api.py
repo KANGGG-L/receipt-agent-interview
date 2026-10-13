@@ -223,12 +223,18 @@ def test_kind_labels_match_export_report_and_ledger_ui():
     assert set(ui_map) == set(kind_map), (ui_map, kind_map)
 
     # 台账渲染用的 JS 译名表也必须同源（不得另起一套中文名）
-    js_path = os.path.join(_DEMO_DIR, "static", "js", "main.js")
-    js = open(js_path, encoding="utf-8").read()
+    # F5 拆分后 invLedgerKindLabel 在 inventory_board.js —— 用联合全文判据
+    if os.path.join(_DEMO_DIR, "tests") not in sys.path:
+        sys.path.insert(0, os.path.join(_DEMO_DIR, "tests"))
+    from f4_frontend_sources import frontend_union
+    js = frontend_union()
     fn = re.search(r"function invLedgerKindLabel\s*\(.*?\n\}", js, re.S)
     assert fn, "台账需有 invLedgerKindLabel 译名函数"
     js_map = dict(re.findall(r"'(\w+)'\s*:\s*'([^']+)'", fn.group(0)))
     assert js_map == kind_map, (js_map, kind_map)
+    # 守真补强：译名函数在联合全文中只允许出现一份（防域文件与组装层双份漂移）
+    assert len(re.findall(r"function invLedgerKindLabel\s*\(", js)) == 1, \
+        "invLedgerKindLabel 必须只有一份实现"
 
 
 if __name__ == "__main__":

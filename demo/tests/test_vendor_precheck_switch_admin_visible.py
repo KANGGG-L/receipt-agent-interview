@@ -50,7 +50,10 @@ def test_checkbox_exists_in_admin_form():
 
 
 def test_main_js_wires_load_collect_reset():
-    js = _read(MAIN_JS)
+    # F5 拆分后 load/collect/reset 接线在域文件（engine_admin/admin_observation 等）
+    # —— 守真不变量 = 联合全文（main.js+全部域文件，与浏览器加载集合同构）
+    from f4_frontend_sources import frontend_union
+    js = frontend_union()
     assert "getElementById('%s')" % FIELD_ID in js, "缺少 load 侧的读取"
     assert re.search(r"payload\.%s\s*=\s*!!vp\.checked" % KEY, js), "缺少保存侧的下发"
     assert re.search(r"payload\.%s\s*=\s*!!_adminSettingsDefaults\.%s" % (KEY, KEY), js), \

@@ -230,10 +230,17 @@ def test_ac9_print_template_requirements():
     with open(js_path, "r", encoding="utf-8") as f:
         js_code = f.read()
 
-    assert "经办人签字：_______________" in js_code
-    assert "主管审核签字：_______________" in js_code
-    assert "日期：_______________" in js_code
-    assert "A4 portrait" in js_code
+    # i18n 化（2026-10-13）：裸字符串拆为 uiText('…') + 回退字面；渲染结果不变
+    # —— 等效判据 = 模板串里保留「字面＋下划线」结构（uiText 包装两侧）
+    assert "uiText('经办人签字') : '经办人签字'}：_______________" in js_code
+    assert "uiText('主管审核签字') : '主管审核签字'}：_______________" in js_code
+    assert "uiText('日期') : '日期'}：_______________" in js_code
+    assert "print-export.css" in js_code
+    assert "<style>" not in js_code and "<script>" not in js_code
+    css_path = os.path.join(os.path.dirname(__file__), "../static/css/print-export.css")
+    with open(css_path, "r", encoding="utf-8") as f:
+        css_code = f.read()
+    assert "A4 portrait" in css_code
 
 
 def test_ac10_financial_precision_and_zero_division(client):

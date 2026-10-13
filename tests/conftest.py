@@ -38,6 +38,26 @@ import sys
 
 import pytest
 
+# 收集开始前的 DB_PATH。之后测试文件 import 时写上的值，只对该文件自己生效。
+_DB_ENV_BEFORE_COLLECTION = os.environ.get("DB_PATH", "").strip()
+
+
+def pytest_configure(config):
+    global _DB_ENV_BEFORE_COLLECTION
+    _DB_ENV_BEFORE_COLLECTION = os.environ.get("DB_PATH", "").strip()
+
+
+def _module_declares_env_db(module_key, env_db_path):
+    """本测试文件源码是否写了当前 DB_PATH 的文件名。见 demo/conftest.py 同名函数。"""
+    base = os.path.basename(env_db_path or "")
+    if not base or base == "receipt_demo.db":
+        return False
+    try:
+        with open(module_key, encoding="utf-8") as f:
+            return base in f.read()
+    except Exception:
+        return False
+
 # 鉴权关闭，必须在 import app.* 之前
 os.environ["AUTH_ENABLED"] = "0"
 
@@ -313,12 +333,22 @@ def _isolate_test_db(tmp_path, monkeypatch, request):
     entry_path = os.path.abspath(str(_db.DB_PATH))
     kind, source = _classify_db_path(
         entry_path, _LIVE_DB_PATH, env_db_path, module_key, _MODULE_LOCAL_DB)
+    # 与 demo/conftest.py 同一口径：别的测试文件在 import 时留下的 DB_PATH
+    # 不是本用例的环境库。沿用它会让库存流水和列表条数跨文件累加。
+    pre_collection = os.path.abspath(_DB_ENV_BEFORE_COLLECTION) if _DB_ENV_BEFORE_COLLECTION else ""
+    collection_polluted = bool(env_db_path) and env_db_path != pre_collection
+    if collection_polluted and not _module_declares_env_db(module_key, env_db_path):
+        if kind == "ambient":
+            kind, source = "leak", "collection-env"
+        env_db_path_for_sane = ""
+    else:
+        env_db_path_for_sane = env_db_path
 
     # 隔离落点：优先沿用 env 声明的环境库（它同时是 demo.app.db 等「另一个包路径」
     # 读取的库，用同一个库才不会出现同进程内两套 app 包读写分离）；只有 env 没声明、
     # 或 env 本身就是别的模块泄漏出来的库时，才落回本用例专属临时库。
-    env_is_sane = bool(raw_env) and bool(env_db_path) and env_db_path != _LIVE_DB_PATH \
-        and _foreign_leak_owner(env_db_path, module_key, _MODULE_LOCAL_DB) is None
+    env_is_sane = bool(raw_env) and bool(env_db_path_for_sane) and env_db_path_for_sane != _LIVE_DB_PATH \
+        and _foreign_leak_owner(env_db_path_for_sane, module_key, _MODULE_LOCAL_DB) is None
 
     # 别名模块（demo.app.db 等）：必须与主模块同库，否则同进程内读写分离/绕过隔离
     aliases = _alias_db_modules(_db)

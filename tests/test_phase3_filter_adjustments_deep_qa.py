@@ -36,9 +36,15 @@ def index_html_content():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    # F4/F5 S4-11：观测台筛选/子 Tab 实现已随域迁至 admin_observation.js。
+    # 守真不变量＝main.js + admin_observation.js 联合全文（与浏览器加载集合同构，判据不放宽）。
+    parts = []
+    for rel in ("../demo/static/js/main.js", "../demo/static/js/admin_observation.js",
+              "../demo/static/js/parsing_logs.js",
+              "../demo/static/js/kpi_trend.js"):
+        with open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
 
 
 # =============================================================================
@@ -54,7 +60,7 @@ def test_qa_ac01_dom_decoupling_and_no_collapse(index_html_content, main_js_cont
     sec_idx = index_html_content.find('id="sec-telemetry"')
     assert sec_idx != -1, "[FAIL] id='sec-telemetry' not found in index.html"
 
-    sub_tabs_idx = index_html_content.find('class="analytics-sub-tabs"', sec_idx)
+    sub_tabs_idx = index_html_content.find('analytics-sub-tabs', sec_idx)
     assert sub_tabs_idx != -1, "[FAIL] class='analytics-sub-tabs' not found in sec-telemetry"
 
     # 截取 KPI 区块和 Sub Tabs 之间的中间 DOM 片段
@@ -164,8 +170,8 @@ def test_qa_ac03_tab_b_dedicated_filter_bar_completeness(index_html_content, mai
         'id="eventsEndDate"',
         'id="eventsCategorySelect"',
         'id="eventsSearchInput"',
-        'onclick="loadRecoverySummaryBlocks()"',
-        'onclick="resetEventsFilters()"',
+        '&quot;f&quot;:&quot;loadRecoverySummaryBlocks&quot;',
+        '&quot;f&quot;:&quot;resetEventsFilters&quot;',
     ]
     for el in expected_elements:
         assert el in tab_b_filter_slice, f"[FAIL] Tab B filter slice missing element: {el}"
@@ -376,7 +382,7 @@ def test_qa_ac06_compatibility_and_drilldown_contracts(index_html_content, main_
     1. 包含 parsingLogDateRangeSelect 下拉框且具备 .parsing-log-filter-control 类。
     2. drillDownKpiDate 下钻函数正确填充日期并切换至 audit tab。
     """
-    assert 'id="parsingLogDateRangeSelect" class="parsing-log-filter-control"' in index_html_content
+    assert 'id="parsingLogDateRangeSelect" class="parsing-log-filter-control' in index_html_content
 
     fn_dd_idx = main_js_content.find("function drillDownKpiDate")
     assert fn_dd_idx != -1

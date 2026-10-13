@@ -239,7 +239,16 @@ def test_api_negative_price_returns_422():
         resp = client.put("/api/admin/engine-config", json=payload, headers=_admin_headers())
         assert resp.status_code == 422, f"负数参数 {payload} 未被拦截为 422: {resp.status_code} {resp.text}"
         detail = resp.json().get("detail", [])
-        assert any("greater than or equal to 0" in str(d) for d in detail), f"422 详情中未包含 ge=0 提示: {detail}"
+        # 旧契约要 pydantic 英文句 "greater than or equal to 0"。
+        # 现行错误信封（app.errors._validation_item_msg）把 greater_than_equal
+        # 写成「不能小于 {ge}」，类型字段仍保留，避免把校验器内部英文暴露给用户。
+        assert any(
+            isinstance(d, dict)
+            and d.get("type") == "greater_than_equal"
+            and "不能小于" in str(d.get("msg") or "")
+            and "0" in str(d.get("msg") or "")
+            for d in detail
+        ), f"422 详情必须说明不能小于 0，并保留 greater_than_equal 类型: {detail}"
 
 
 # ==============================================================================

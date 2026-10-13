@@ -91,8 +91,10 @@ function openPaymentModal() {
     body.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);">正在加载这家供应商的挂账单……</td></tr>';
     openAccessibleModal(_fin$('paymentModal'));
 
-    apiFetch('/api/receipts')
-        .then(res => res.json())
+    const loadPayList = (typeof fetchReceiptListShared === 'function')
+        ? fetchReceiptListShared(false)
+        : apiFetch('/api/receipts').then(res => res.json());
+    loadPayList
         .then(ret => {
             if (!ret || ret.status !== 'success') throw new Error('load');
             _payRows = (ret.data || []).filter(r =>
@@ -121,9 +123,9 @@ function renderPayRows() {
             <td><input type="checkbox" class="pay-receipt-check" value="${Number(r.id)}" aria-label="选择单据 #${Number(r.id)}" checked></td>
             <td>#${Number(r.id)}</td>
             <td>${renderDateCell(r.receipt_date)}</td>
-            <td>$${fmtMoney(r.total_amount)}</td>
-            <td>$${fmtMoney(payPaidAmount(r))}</td>
-            <td><strong>$${fmtMoney(out)}</strong></td>
+            <td>${I18N.fmtMoney(r.total_amount)}</td>
+            <td>${I18N.fmtMoney(payPaidAmount(r))}</td>
+            <td><strong>${I18N.fmtMoney(out)}</strong></td>
             <td><input type="number" class="form-control pay-amt-input" data-rid="${Number(r.id)}" data-max="${out}" step="0.01" min="0.01" max="${out}" value="${out.toFixed(2)}" aria-label="单据 #${Number(r.id)} 本次付款金额" style="min-height:40px; width:110px;"></td>
             <td>${w2Escape(payAllocStatusLabel(r))}</td>`;
         body.appendChild(tr);
@@ -155,7 +157,7 @@ function _collectPayAllocations() {
         if (!raw || !isFinite(amt) || amt <= 0) {
             problem = problem || ('单据 #' + rid + ' 的本次付款要填一个大于 0 的金额。');
         } else if (_round2(amt) > max + 0.0001) {
-            problem = problem || ('单据 #' + rid + ' 只剩 $' + fmtMoney(max) + ' 没付，本次付款不能超过这个数。');
+            problem = problem || ('单据 #' + rid + ' 只剩 ' + I18N.fmtMoney(max) + ' 没付，本次付款不能超过这个数。');
         }
         out.push({ receipt_id: rid, amount: _round2(amt) });
     });
@@ -198,7 +200,7 @@ function submitPayment() {
     if (btn) btn.disabled = true;
     finApi('/api/payments', { method: 'POST', body: fd })
         .then(() => {
-            showToast('已登记支付 $' + fmtMoney(amount) + '。', 'success');
+            showToast('已登记支付 ' + I18N.fmtMoney(amount) + '。', 'success');
             closeModalById('paymentModal');
             loadFinancePanel();
             loadReceiptsHistory();
@@ -287,7 +289,7 @@ function renderMergePreview() {
         <div class="merge-title">合并后会这样：</div>
         <ul>
             <li>「${w2Escape(drop.name)}」的 <strong>${Number(drop.receipt_count) || 0}</strong> 张单据，全部改归到「${w2Escape(keep.name)}」</li>
-            <li>「${w2Escape(drop.name)}」还没付的挂账单 <strong>$${fmtMoney(drop.unpaid_credit_total)}</strong>（${Number(drop.unpaid_credit_count) || 0} 张），付款记录、别名、对账记录也一起并过去</li>
+            <li>「${w2Escape(drop.name)}」还没付的挂账单 <strong>${I18N.fmtMoney(drop.unpaid_credit_total)}</strong>（${Number(drop.unpaid_credit_count) || 0} 张），付款记录、别名、对账记录也一起并过去</li>
             <li>合并后「${w2Escape(keep.name)}」共有约 <strong>${(Number(keep.receipt_count) || 0) + (Number(drop.receipt_count) || 0)}</strong> 张单据</li>
             <li class="merge-warn">「${w2Escape(drop.name)}」这个供应商会消失，合并后不能撤销</li>
         </ul>`;
@@ -302,7 +304,7 @@ async function submitMerge() {
     const ok = await uiConfirm({
         title: '确认合并供应商',
         message: '把「' + drop.name + '」并入「' + keep.name + '」？\n合并后「' + drop.name + '」会消失，不能撤销。',
-        details: ['迁移单据 ' + (Number(drop.receipt_count) || 0) + ' 张', '迁移未付挂账单 $' + fmtMoney(drop.unpaid_credit_total)],
+        details: ['迁移单据 ' + (Number(drop.receipt_count) || 0) + ' 张', '迁移未付挂账单 ' + I18N.fmtMoney(drop.unpaid_credit_total)],
         confirmText: '确认合并',
         danger: true,
     });
@@ -394,40 +396,81 @@ function initTrashCard() {
         </details>`;
     tab.appendChild(card);
     _fin$('trashDetails').addEventListener('toggle', e => { if (e.target.open) loadTrash(); });
+    bindTrashActions();
     if (typeof applyRoleVisibility === 'function') {
         try { applyRoleVisibility(localStorage.getItem('demo_role') || 'admin'); } catch (e) {}
     }
 }
 
+// 捕获阶段委托：按钮被一次刷新替换后，点击仍能打到当前 data-id。
+function bindTrashActions() {
+    if (window.__trashActionsBound) return;
+    window.__trashActionsBound = true;
+    document.addEventListener('click', function (e) {
+        const node = e.target;
+        if (!node || !node.closest) return;
+        const restoreBtn = node.closest('#trashBody .trash-restore');
+        if (restoreBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            restoreTrash(restoreBtn.getAttribute('data-id'));
+            return;
+        }
+        const purgeBtn = node.closest('#trashBody .trash-purge');
+        if (purgeBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            purgeTrash(purgeBtn.getAttribute('data-id'));
+        }
+    }, true);
+}
+
+let _trashLoad = null;
+
 async function loadTrash() {
+    bindTrashActions();
+    if (_trashLoad) return _trashLoad;
+    _trashLoad = renderTrash().finally(() => { _trashLoad = null; });
+    return _trashLoad;
+}
+
+async function renderTrash() {
     const box = _fin$('trashBody');
     if (!box) return;
-    box.innerHTML = '<div class="st-state st-state-loading">正在加载回收站……</div>';
+    const hadRows = !!box.querySelector('.trash-restore, .trash-purge');
+    if (!hadRows) {
+        box.innerHTML = '<div class="st-state st-state-loading">正在加载回收站……</div>';
+    }
     try {
         const ret = await finApi('/api/trash/receipts');
         const rows = (ret && ret.data) || [];
-        _fin$('trashCount').textContent = String(rows.length);
+        const count = _fin$('trashCount');
+        if (count) count.textContent = String(rows.length);
         if (!rows.length) { box.innerHTML = '<div class="st-state st-state-empty">回收站是空的。</div>'; return; }
         box.innerHTML = '<div class="table-container"><table class="data-table"><thead><tr><th>单据</th><th>供应商</th><th>金额</th><th>放弃时间</th><th>操作</th></tr></thead><tbody>'
             + rows.map(r => `<tr>
                 <td>#${Number(r.id)}</td>
                 <td>${w2Escape(r.supplier_name || '未识别')}</td>
-                <td>${r.total_amount != null ? '$' + fmtMoney(r.total_amount) : '—'}</td>
+                <td>${r.total_amount != null ? I18N.fmtMoney(r.total_amount) : '—'}</td>
                 <td>${w2Escape(String(r.deleted_at || '').slice(0, 16).replace('T', ' ')) || '—'}</td>
                 <td class="st-ops">
                     <button type="button" class="btn btn-primary st-btn trash-restore" data-id="${Number(r.id)}">恢复</button>
                     <button type="button" class="btn btn-secondary st-btn trash-purge" data-id="${Number(r.id)}">彻底删除</button>
                 </td></tr>`).join('')
             + '</tbody></table></div>';
-        box.querySelectorAll('.trash-restore').forEach(b => { b.onclick = () => restoreTrash(b.dataset.id); });
-        box.querySelectorAll('.trash-purge').forEach(b => { b.onclick = () => purgeTrash(b.dataset.id); });
     } catch (e) {
         box.innerHTML = '<div class="st-state st-state-error">' + w2Escape(e.message) + ' <button type="button" class="btn btn-secondary st-btn" id="trashRetry">重新加载</button></div>';
-        _fin$('trashRetry').onclick = loadTrash;
+        const retry = _fin$('trashRetry');
+        if (retry) retry.onclick = loadTrash;
     }
 }
 
+const _restoreInflight = new Set();
+
 async function restoreTrash(id) {
+    const key = String(id);
+    if (!key || _restoreInflight.has(key)) return;
+    _restoreInflight.add(key);
     try {
         await finApi('/api/trash/receipts/' + encodeURIComponent(id) + '/restore', { method: 'POST' });
         showToast('已恢复单据 #' + id + '，可以在单据列表里找到。', 'success');
@@ -436,6 +479,8 @@ async function restoreTrash(id) {
         if (typeof loadWorkbenchQueue === 'function') loadWorkbenchQueue();
     } catch (e) {
         await uiAlert({ title: '没有恢复成功', message: e.message });
+    } finally {
+        _restoreInflight.delete(key);
     }
 }
 
@@ -476,7 +521,7 @@ async function loadToday() {
     let receipts, skus;
     try {
         const [rc, inv] = await Promise.all([
-            finApi('/api/receipts'),
+            (typeof fetchReceiptListShared === 'function' ? fetchReceiptListShared(false) : finApi('/api/receipts')),
             finApi('/api/inventory?stock=low'),
         ]);
         receipts = (rc && rc.data) || [];
@@ -504,10 +549,10 @@ async function loadToday() {
         </section>`;
 
     const payList = li(overdue.concat(dueSoon).map(r =>
-        w2Escape(r.supplier_name || '未识别') + ' $' + fmtMoney(payOutstandingAmount(r)) + (isOver(r) ? '（已逾期）' : '（快到期）')));
+        w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(payOutstandingAmount(r)) + (isOver(r) ? '（已逾期）' : '（快到期）')));
     body.innerHTML =
         block('todayApprove', '待我审批', pending.length, ' 张',
-            li(pending.map(r => '#' + Number(r.id) + ' ' + w2Escape(r.supplier_name || '未识别') + ' $' + fmtMoney(r.total_amount))),
+            li(pending.map(r => '#' + Number(r.id) + ' ' + w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(r.total_amount))),
             '没有等你审批的单。', '去审批', 'approve')
         + block('todayPay', '挂账单：逾期 / 快到期', overdue.length + dueSoon.length, ' 张',
             payList, '没有逾期或快到期的挂账单。', '去应付清单', 'pay')

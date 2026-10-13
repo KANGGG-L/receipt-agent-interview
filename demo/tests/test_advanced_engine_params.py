@@ -62,6 +62,8 @@ from app.llm import (
     build_parse_model,
 )
 
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
+
 client = TestClient(app)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -476,9 +478,7 @@ def test_ac10_progressive_disclosure_dom_containers():
 
 def test_ac11_folding_interaction_logic():
     """AC-11: main.js 中包含 toggleAdvParams 并在 [展开] 与 [收起] 间切换。"""
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-    assert js_file.exists()
-    content = js_file.read_text(encoding="utf-8")
+    content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "function toggleAdvParams(legId)" in content
     assert "window.toggleAdvParams = toggleAdvParams" in content
@@ -488,8 +488,7 @@ def test_ac11_folding_interaction_logic():
 
 def test_ac12_dynamic_badge_text_formatting():
     """AC-12: main.js 中 updateAdvBadge 支持动态格式化识别腿与其他腿的微缩 Badge 文本，满足统一前缀与顺序（思考强度、最大Token、视觉切片、采样温度）。"""
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-    content = js_file.read_text(encoding="utf-8")
+    content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "function updateAdvBadge(legId)" in content
     assert "window.updateAdvBadge = updateAdvBadge" in content
@@ -499,8 +498,7 @@ def test_ac12_dynamic_badge_text_formatting():
 
 def test_ac13_hallucination_warning_logic():
     """AC-13: checkTempWarn 在温度 > 0.2 时展示 warning，<= 0.2 时隐藏。"""
-    js_file = DEMO_ROOT / "static" / "js" / "main.js"
-    content = js_file.read_text(encoding="utf-8")
+    content = frontend_union()  # F4 S4-11: main.js+域文件联合全文
 
     assert "function checkTempWarn(legId)" in content
     assert "window.checkTempWarn = checkTempWarn" in content

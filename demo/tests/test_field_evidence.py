@@ -490,7 +490,11 @@ def test_main_js_evidence_highlight_wiring():
 
 def test_main_js_evidence_survives_save_roundtrip():
     """证据随保存链路透传：采集（collect）与 payload 构造（build）均不丢证据。"""
-    src = _read_static("js/main.js")
+    # F5 S4-11：复核保存链路已随域迁至 review_core.js；联合全文口径（判据不放宽）。
+    src = "\n".join(_read_static("js/" + f) for f in
+                    ("main.js", "common.js", "upload.js", "review_core.js",
+                     "workbench_queue.js", "review_modal.js", "version_conflict.js",
+                     "photo_sider.js", "finance_ops.js"))
     collect_start = src.index("function collectReviewFormData")
     collect_end = src.index("function buildSavePayloadFromData")
     assert "evidence" in src[collect_start:collect_end], \

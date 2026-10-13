@@ -126,6 +126,12 @@ def success_path_stubs(monkeypatch):
         return ("job-stub-1", receipt_id)
 
     monkeypatch.setattr(api_receipts, "_laplacian_variance", lambda _p: None)
+    # F2 契约（2026-10-13）：无密钥上传在画质/守卫/Job 之前同步返回
+    # ENGINE_NOT_CONFIGURED。「合法上传仍须通过」用例把引擎桩为已配置以走
+    # 完整成功路径；新契约（同步失败但消毒照做）由
+    # test_no_key_upload_sync_error_still_sanitizes 钉住。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
     monkeypatch.setattr(api_receipts, "_run_image_guard", lambda _p: {"flagged": False})
     monkeypatch.setattr(preprocess, "apply_pipeline", lambda p: (p, {"applied": False}))
     monkeypatch.setattr(api_receipts, "start_recognition_job", _stub_job)
@@ -254,16 +260,47 @@ def test_convert_image_too_large_rejected(client):
 
 
 def test_convert_image_empty_rejected(client):
+    """空文件必须 400 + EMPTY_FILE，且不落盘。
+
+    旧契约文案是「上传文件为空」。现行接口对店员说人话，
+    正文改为「没有收到照片，请重新选择照片再上传。」，拒绝码不变。
+    """
     r = client.post("/api/convert-image",
                     files={"file": ("empty.jpg", b"", "image/jpeg")},
                     headers=STAFF_HEADERS)
     assert r.status_code == 400, r.text
-    assert "上传文件为空" in r.json()["msg"], r.json()
+    body = r.json()
+    assert body["code"] == "EMPTY_FILE", body
+    assert body["msg"] == "没有收到照片，请重新选择照片再上传。", body
 
 
 # -------------------------------------------------------------
 # 4. 合法上传照常通过，且落盘的是重编码消毒后的干净容器
 # -------------------------------------------------------------
+def test_no_key_upload_sync_error_still_sanitizes(client, monkeypatch):
+    """F2 新契约：无密钥（真实缺省）上传 → 同步 200 + error
+    ENGINE_NOT_CONFIGURED（不建 Job），但**消毒发生在闸门之前**——落盘文件
+    仍须是重编码后的干净容器（polyglot 附加载荷剥离、图像内容不变）。"""
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: True)
+    payload = _jpeg_bytes() + b"EVIL_PAYLOAD_POLYGLOT_TAIL" * 16
+    r = client.post("/api/upload",
+                    files=[("receipt", ("ok.jpg", payload, "image/jpeg"))],
+                    headers=STAFF_HEADERS)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "error", body
+    assert body["code"] == "ENGINE_NOT_CONFIGURED", body
+    assert body["job_id"] is None, body
+    files = _saved_files()
+    assert len(files) == 1 and files[0].endswith(".jpg"), files
+    saved = (api_receipts.UPLOAD_DIR / files[0]).read_bytes()
+    assert b"EVIL_PAYLOAD_POLYGLOT_TAIL" not in saved, "同步失败路径同样必须剥离 polyglot 载荷"
+    with Image.open(io.BytesIO(saved)) as img:
+        assert img.format == "JPEG"
+        assert img.size == (48, 32), "消毒不得改变图像内容"
+
+
 def test_valid_jpeg_sanitized_on_disk(client, success_path_stubs):
     """JPEG + 附加载荷（polyglot）→ 200，且落盘文件不含附加载荷（重编码剥离）。"""
     payload = _jpeg_bytes() + b"EVIL_PAYLOAD_POLYGLOT_TAIL" * 16

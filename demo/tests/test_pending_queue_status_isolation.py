@@ -203,6 +203,9 @@ def test_badge_count_equals_pending_rows_only(client):
     # 角标真正的请求 URL 必须显式带 status=pending（与缺省视图同口径，双保险）
     with open(_MAIN_JS, encoding="utf-8") as f:
         main_js = f.read()
+    # F4 S4-11 起角标刷新随域迁至 admin_observation.js；判据＝联合全文含显式 status=pending。
+    with open(os.path.join(_DEMO_DIR, "static", "js", "admin_observation.js"), "r", encoding="utf-8") as f:
+        main_js += f.read()
     assert _BADGE_URL in main_js, \
         "角标取数必须显式带 ?status=pending（缺省视图已隔离，此处防止改成无参取数）"
 

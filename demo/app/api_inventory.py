@@ -11,6 +11,7 @@ from typing import Optional
 
 from app import db
 from app.auth import ROLE_RANK, require_role, resolve_tenant
+from app.i18n_text import master_key, prefer_stored_label
 from app.services.costing_service import CostingService
 
 logger = logging.getLogger("api_inventory")
@@ -101,12 +102,21 @@ def _serialize_active_batches(session, sku_id):
 @router.get("/api/inventory")
 def inventory_list(request: Request, q: str = "", category: str = "",
                    stock: str = "all", price: str = "all",
-                   include_inactive: int = 0):
+                   include_inactive: int = 0,
+                   category_id: Optional[int] = None):
     # 只读列表对店员开放（收据页 SKU/单位数据源需要）；入库/调整等写操作仍按各自权限
     require_role("staff")(request)
     tenant_id = _tenant_id(request)
     skus = db.list_skus(include_inactive=bool(include_inactive),
                         tenant_id=tenant_id)
+    schema_ready = db.category_schema_ready()
+    id_map = db.read_category_id_map("skus", [s.id for s in skus]) if schema_ready else {}
+    resolved_category = None
+    category_unresolved = False
+    if schema_ready and category:
+        resolved_category = db.resolve_category_filter("sku", tenant_id, category)
+        if resolved_category is None:
+            category_unresolved = True
     # WS5：本租户价格异动处置映射（{sku_id: {...}}），按行回带 ack_action 供前端
     # 渲染「已忽略 / 已采纳」，并在 meta 里给出整表映射供看板雷达同源判定。
     ack_map = db.list_price_anomaly_acks(tenant_id=tenant_id)
@@ -117,9 +127,20 @@ def inventory_list(request: Request, q: str = "", category: str = "",
         if q:
             q_clean = q.strip().lower()
             name_clean = (s.name or "").lower()
-            if q_clean not in name_clean and name_clean not in q_clean and not any(ch in name_clean for ch in q_clean if len(ch.strip()) > 0):
+            folded_q = master_key(q)
+            folded_hit = bool(folded_q) and (
+                folded_q in master_key(s.name or "") or folded_q in master_key(s.category or ""))
+            char_hit = q_clean in name_clean or name_clean in q_clean or any(
+                ch in name_clean for ch in q_clean if len(ch.strip()) > 0)
+            if not folded_hit and not char_hit:
                 continue
-        if category and category != s.category:
+        bound_category = id_map.get(s.id) if schema_ready else None
+        if schema_ready and category:
+            if category_unresolved or bound_category != resolved_category:
+                continue
+        elif category and master_key(category) != master_key(s.category or ""):
+            continue
+        if schema_ready and category_id is not None and bound_category != int(category_id):
             continue
         is_low = s.min_stock_alert > 0 and s.current_stock <= s.min_stock_alert
         if stock == "low" and not is_low:
@@ -136,6 +157,7 @@ def inventory_list(request: Request, q: str = "", category: str = "",
         ack = ack_map.get(int(s.id)) or {}
         out.append({
             "id": s.id, "name": s.name, "category": s.category or "",
+            "category_id": bound_category if schema_ready else None,
             "base_unit": s.base_unit or "", "current_stock": s.current_stock,
             "standard_kg": kg_val,
             "min_stock_alert": s.min_stock_alert, "last_unit_price": s.last_unit_price,
@@ -168,8 +190,21 @@ def _is_anomaly(sku, tenant_id=None):
 class SkuCreateBody(BaseModel):
     name: str
     category: str = ""
+    category_id: Optional[int] = None
     base_unit: str = ""
     min_stock_alert: float = 0.0
+
+
+def _category_error(err):
+    messages = {
+        "CATEGORY_NOT_FOUND": "分类不存在",
+        "CATEGORY_MISMATCH": "代码和分类名称不是同一条",
+    }
+    msg = messages.get(err)
+    if msg is None:
+        return None
+    return JSONResponse(status_code=400, content={
+        "status": "error", "code": err, "msg": msg})
 
 
 @router.post("/api/inventory/skus")
@@ -178,25 +213,45 @@ def create_sku(body: SkuCreateBody, request: Request):
     tenant_id = _tenant_id(request)
     # B-P0-1: 创建前强制归一，阻止 _\d{10} 流水号污染 SKU 库导致库存爆炸
     canonical = _canonical_name(body.name)
+    existing_cats = [
+        (row.category or "").strip()
+        for row in db.list_skus(include_inactive=True, tenant_id=tenant_id)
+        if (row.category or "").strip()
+    ]
     # 若归一后与存量 canonical 重名，视为冲突（幂等去重）
     existing = db.find_sku_by_name(canonical, tenant_id=tenant_id)
     if existing:
         # 若原始名与归一后不同，说明是流水号变体，直接返回已存在的主 SKU
         if canonical != body.name.strip():
             return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在（归一后冲突）", "canonical_name": canonical, "existing_id": existing.id}
-    sku_id, err = db.create_sku(canonical, body.category, body.base_unit,
-                                body.min_stock_alert, tenant_id=tenant_id)
+    if db.category_schema_ready():
+        sku_id, err = db.create_sku(
+            canonical, body.category, body.base_unit, body.min_stock_alert,
+            tenant_id=tenant_id,
+            category_id=body.category_id,
+            category_set=("category" in body.model_fields_set),
+            category_id_set=("category_id" in body.model_fields_set
+                             and body.category_id is not None),
+        )
+    else:
+        category = prefer_stored_label(body.category, existing_cats)
+        sku_id, err = db.create_sku(canonical, category, body.base_unit,
+                                    body.min_stock_alert, tenant_id=tenant_id)
+    category_resp = _category_error(err)
+    if category_resp is not None:
+        return category_resp
     if err:
         return {"status": "error", "code": err, "message": "同名 SKU 已存在"}
     return {"status": "success", "id": sku_id, "canonical_name": canonical}
 
 
 class SkuPatchBody(BaseModel):
-    name: str = None
-    category: str = None
-    base_unit: str = None
-    min_stock_alert: float = None
-    active: int = None
+    name: Optional[str] = None
+    category: Optional[str] = None
+    category_id: Optional[int] = None
+    base_unit: Optional[str] = None
+    min_stock_alert: Optional[float] = None
+    active: Optional[int] = None
 
 
 @router.patch("/api/inventory/skus/{sku_id}")
@@ -204,12 +259,30 @@ def patch_sku(sku_id: int, body: SkuPatchBody, request: Request):
     require_role("owner")(request)
     if db.get_sku(sku_id, tenant_id=_tenant_id(request)) is None:
         return {"status": "error", "msg": "SKU 不存在"}
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    sent = body.model_fields_set
+    fields = {}
+    for key in sent:
+        if key == "category_id":
+            continue
+        value = getattr(body, key)
+        if value is None:
+            continue
+        fields[key] = value
     if "name" in fields and fields["name"]:
         # B-P0-1: 重命名时同样归一，防止通过改名注入流水号
         fields["name"] = _canonical_name(fields["name"])
     # P2-1: 重命名重名检查按租户 scope（上方已校验 SKU 归属本租户，口径一致）
-    row, err = db.update_sku(sku_id, tenant_id=_tenant_id(request), **fields)
+    if db.category_schema_ready():
+        row, err = db.update_sku(
+            sku_id, tenant_id=_tenant_id(request),
+            category_id=body.category_id,
+            category_id_set=("category_id" in sent and body.category_id is not None),
+            **fields)
+    else:
+        row, err = db.update_sku(sku_id, tenant_id=_tenant_id(request), **fields)
+    category_resp = _category_error(err)
+    if category_resp is not None:
+        return category_resp
     if err == "SKU_NAME_CONFLICT":
         return {"status": "error", "code": "SKU_NAME_CONFLICT", "message": "同名 SKU 已存在"}
     if err == "UNIT_CHANGE_BLOCKED":
@@ -291,6 +364,7 @@ def get_inventory_sku(sku_id: int, request: Request):
             "name": sku.name,
             "sku_code": sku.sku_code or "",
             "category": sku.category or "",
+            "category_id": db.read_category_id_for_row("skus", sku.id),
             "base_unit": sku.base_unit or "",
             "current_stock": sku.current_stock,
             "standard_kg": _standard_kg(sku.current_stock, sku.base_unit, tenant_id=tenant_id),

@@ -28,7 +28,13 @@ const GENERATION_SIDE_FILES = [
     path.join(demoDir, 'app', 'chains', 'extract_chain.py'),
     path.join(demoDir, 'app', 'chains', 'supervisor.py'),
 ];
-const src = fs.readFileSync(mainPath, 'utf8');
+// F5·S4-11：appendTableRow/selectSupplierItem/selectSkuItem/renderEditForm/
+// currentSupplierForHint 已随复核核心域移入 review_core.js。源码级判据改扫
+// 「main.js + 全部域文件」联合全文（与浏览器实际加载集合同构，判据不放宽）。
+const src = [fs.readFileSync(mainPath, 'utf8')].concat(
+    require('./f4_load_domains.js').F4_DOMAIN_FILES.map(
+        name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8'))
+).join('\n');
 
 let pass = 0, fail = 0;
 function ok(name, cond, detail) {
@@ -124,6 +130,12 @@ function dispatcher(url) {
 
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => console.log(m) });
+
 
 const { vendorPriceHintHtml, refreshVendorPriceHint, refreshAllVendorPriceHints } = sandbox;
 

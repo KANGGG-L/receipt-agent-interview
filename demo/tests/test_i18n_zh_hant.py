@@ -208,7 +208,12 @@ def test_review_form_inputs_not_rewritten(page, receipt_id):
     assert vals["supplier"] == SIMPLIFIED_DATA["supplier"]
     assert vals["name"] == SIMPLIFIED_DATA["item"]
     assert vals["unit"] == SIMPLIFIED_DATA["unit"]
-    assert "供應商" in vals["label"] and "單據內容覆核與修改" in vals["label"]
+    # 复核区重设计（2026-10-13 同步）：标题已由「单据内容复核与修改」改为
+    # 「步骤 2/2：核对单据内容」（index.html:350 / upload.js:1622）。
+    # 判别力不降：既断言页面出现**繁体转换后**标题（转换生效），也断言简体源文案
+    # 不残留（转换不是「没跑」）。
+    assert "供應商" in vals["label"] and "核對單據內容" in vals["label"], vals["label"][:200]
+    assert "核对单据内容" not in vals["label"], "页面文案应以繁体呈现，简体源文案不得残留"
     # 供应商下拉里的原始数据（data-i18n-skip）也原样显示
     page.click("#inpSupplier")
     page.wait_for_timeout(300)

@@ -1,131 +1,37 @@
 <!DOCTYPE html>
 <html lang="zh-Hans">
 <head>
+    <link rel="stylesheet" href="/static/css/evalset-head.css">
+    <link rel="stylesheet" href="/static/css/csp-html-styles.css">
+    <link rel="stylesheet" href="/static/css/ui-dialog.css" id="uiDialogStyle">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GT 抽检确权台</title>
+    <script src="/static/js/csp-bind.js"></script>
 <script src="/static/js/i18n/zh-hant-data.js?v=20261011_i18n"></script>
 <script src="/static/js/i18n/zh-hant-hk-glossary.js?v=20261011_i18n"></script>
 <script src="/static/js/i18n/locales/zh-Hans.js?v=20261011_i18n"></script>
 <script src="/static/js/i18n/locales/zh-Hant-HK.js?v=20261011_i18n"></script>
 <script src="/static/js/i18n/i18n.js?v=20261011_i18n"></script>
-<style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-           background: #f1f5f9; color: #1e293b; font-size: 14px; }
-    html:lang(zh-Hant-HK) body { font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", "Noto Sans TC", sans-serif; }
-    .lang-switch { display: flex; align-items: center; gap: 8px; }
-    .lang-switch-label { font-size: 0.78rem; color: #64748b; }
-    .lang-switch-group { display: flex; gap: 6px; }
-    .lang-switch-btn { min-height: 38px; padding: 6px 12px; border-radius: 6px; border: 1px solid #6b7280;
-                       background: #fff; color: #1e293b; font-size: 0.85rem; cursor: pointer; white-space: nowrap; }
-    .lang-switch-btn:lang(zh-Hans) { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif; }
-    .lang-switch-btn:lang(zh-Hant-HK) { font-family: -apple-system, "PingFang HK", "Microsoft JhengHei", "Noto Sans HK", sans-serif; }
-    .lang-switch-btn.active { background: #1e293b; border-color: #1e293b; color: #fff; font-weight: 600; }
-    .lang-switch-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-    .topbar { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 12px 20px;
-              display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-    .topbar h1 { font-size: 1.05rem; font-weight: 700; }
-    .badge-admin { color: #b91c1c; font-size: 0.68rem; border: 1px solid #b91c1c;
-                   border-radius: 4px; padding: 1px 5px; }
-    .controls { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
-    select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px;
-             font-size: 0.88rem; background: #fff; min-height: 38px; }
-    button { border: none; border-radius: 6px; padding: 9px 16px; font-size: 0.88rem;
-             cursor: pointer; min-height: 38px; font-weight: 600; }
-    .btn-primary { background: #1d4ed8; color: #fff; }
-    .btn-primary:hover { background: #1e40af; }
-    .btn-secondary { background: #fff; color: #334155; border: 1px solid #cbd5e1; }
-    .btn-secondary:hover { background: #f8fafc; }
-    .btn-success { background: #15803d; color: #fff; }
-    .btn-success:hover { background: #166534; }
-    .btn-danger { background: #fff; color: #b91c1c; border: 1px solid #fca5a5; }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .progress-wrap { padding: 10px 20px 0 20px; }
-    .progress-line { display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
-                     font-size: 0.85rem; color: #475569; }
-    .progress-bar { height: 8px; background: #e2e8f0; border-radius: 4px; overflow: hidden; flex: 1; }
-    .progress-fill { height: 100%; background: #15803d; border-radius: 4px; transition: width 0.3s; }
-    .main { display: grid; grid-template-columns: minmax(320px, 46%) 1fr; gap: 14px;
-            padding: 14px 20px 20px 20px; }
-    .pane { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
-    .pane-title { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; color: #334155;
-                  display: flex; justify-content: space-between; align-items: center; }
-    .img-box { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px;
-               display: flex; align-items: center; justify-content: center;
-               overflow: auto; height: calc(100vh - 190px); padding: 8px; }
-    .img-box img { max-width: 100%; max-height: 100%; object-fit: contain; }
-    .img-missing { color: #b91c1c; font-size: 0.9rem; }
-    .sample-list { max-height: 30vh; overflow: auto; border: 1px solid #e2e8f0;
-                   border-radius: 8px; }
-    .sample-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px;
-                  border-bottom: 1px solid #f1f5f9; cursor: pointer; font-size: 0.84rem; }
-    .sample-row:hover { background: #f8fafc; }
-    .sample-row.selected { background: #dbeafe; box-shadow: inset 3px 0 0 #1d4ed8; }
-    .sample-id { font-weight: 700; min-width: 52px; }
-    .sample-form { color: #64748b; flex: 1; }
-    .sample-status { font-weight: 700; font-size: 0.78rem; }
-    .sample-status.st-confirmed { color: #15803d; }
-    .sample-status.st-draft { color: #b45309; }
-    .sample-status.st-missing { color: #64748b; }
-    .row-workbench { min-height: 30px; padding: 4px 10px; font-size: 0.76rem; }
-    .info-card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px;
-                 margin-bottom: 10px; background: #f8fafc; }
-    .info-row { display: flex; gap: 10px; padding: 4px 0; font-size: 0.86rem;
-                border-bottom: 1px dashed #e2e8f0; }
-    .info-row:last-child { border-bottom: none; }
-    .info-label { color: #64748b; min-width: 96px; }
-    .info-value { font-weight: 600; }
-    .actions { display: flex; gap: 10px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
-    .kbd-hint { color: #94a3b8; font-size: 0.78rem; }
-    kbd { background: #e2e8f0; border-radius: 4px; padding: 1px 6px;
-          font-family: monospace; font-size: 0.78rem; }
-    .status-ok { color: #15803d; font-weight: 700; }
-    .status-draft { color: #b45309; font-weight: 700; }
-    .status-missing { color: #64748b; font-weight: 700; }
-    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-             background: #1e293b; color: #fff; border-radius: 8px; padding: 10px 18px;
-             font-size: 0.88rem; display: none; z-index: 99; max-width: 80vw; }
-    .toast.err { background: #b91c1c; }
-    .loading-note { color: #64748b; padding: 24px; text-align: center; }
-    .reflow-wrap { padding: 0 20px 24px 20px; }
-    .reflow-pane { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px; }
-    table.reflow { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
-    table.reflow th { background: #f1f5f9; text-align: left; padding: 6px 8px;
-                      border-bottom: 1px solid #e2e8f0; font-weight: 600; }
-    table.reflow td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
-    .reflow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .fact-diff { display: flex; flex-direction: column; gap: 2px; }
-    .fd-line { display: flex; gap: 6px; align-items: baseline; }
-    .fd-label { color: #64748b; min-width: 44px; font-size: 0.76rem; }
-    .fd-kind { display: inline-block; background: #e0e7ff; color: #3730a3; border-radius: 4px;
-               padding: 0 6px; font-size: 0.74rem; font-weight: 600; }
-    .fd-key { font-family: monospace; font-size: 0.78rem; color: #334155;
-              word-break: break-all; }
-    .fd-old { color: #b45309; text-decoration: line-through; word-break: break-all; }
-    .fd-new { color: #15803d; font-weight: 600; word-break: break-all; }
-    .single-surface-note { font-size: 0.78rem; color: #64748b; margin-bottom: 8px; }
-    @media (max-width: 900px) { .main { grid-template-columns: 1fr; }
-        .img-box { height: 46vh; } }
-</style>
+
 </head>
 <body>
     <div class="topbar">
         <h1>GT 抽检确权台 <span class="badge-admin">admin</span></h1>
-        <span id="roleNote" style="font-size:0.8rem; color:#64748b;"></span>
+        <span id="roleNote" class="csp-s-746"></span>
         <div class="controls">
-            <select id="splitSelect" onchange="onFilterChange()">
+            <select id="splitSelect" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onFilterChange&quot;,&quot;a&quot;:[]}]">
                 <option value="test" selected>test（出分必确认）</option>
                 <option value="val">val</option>
                 <option value="train">train</option>
             </select>
-            <select id="statusSelect" onchange="onFilterChange()">
+            <select id="statusSelect" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onFilterChange&quot;,&quot;a&quot;:[]}]">
                 <option value="draft" selected>待抽检（draft）</option>
                 <option value="confirmed">已确认</option>
                 <option value="">全部状态</option>
             </select>
-            <button class="btn-secondary" onclick="reloadAll()">刷新</button>
-            <button class="btn-secondary" id="batchBtn" onclick="batchConfirmUntouched()">批量原样确认本批（未经逐张核对）</button>
+            <button class="btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;reloadAll&quot;,&quot;a&quot;:[]}]">刷新</button>
+            <button class="btn-secondary" id="batchBtn" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;batchConfirmUntouched&quot;,&quot;a&quot;:[]}]">批量原样确认本批（未经逐张核对）</button>
         </div>
         <div id="langSwitch" data-i18n-switcher></div>
     </div>
@@ -133,7 +39,7 @@
     <div class="progress-wrap">
         <div class="progress-line">
             <span id="progressText">加载中…</span>
-            <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+            <div class="progress-bar"><div class="progress-fill csp-s-14" id="progressFill"></div></div>
             <span id="posText" class="kbd-hint"></span>
         </div>
     </div>
@@ -156,7 +62,7 @@
             <div id="sampleList" class="sample-list">
                 <div class="loading-note">加载中…</div>
             </div>
-            <div class="pane-title" style="margin-top:10px;">
+            <div class="pane-title csp-s-273">
                 <span>样本信息（只读）</span>
                 <span id="gtStatusBadge" class="status-draft"></span>
             </div>
@@ -176,11 +82,11 @@
                         <span class="info-value" id="infoGtStatus">-</span></div>
                 </div>
                 <div class="actions">
-                    <button class="btn-primary" id="workbenchBtn" onclick="openWorkbench()"
+                    <button class="btn-primary" id="workbenchBtn" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;openWorkbench&quot;,&quot;a&quot;:[]}]"
                             title="跳转到与店员复核界面同源的工作台（同一套 Side-by-Side DOM/字段/付款标记流程）">
                         在工作台核对（店员同款复核界面）</button>
-                    <button class="btn-secondary" onclick="nextSample()">下一张（J）</button>
-                    <button class="btn-secondary" onclick="prevSample()">上一张（K）</button>
+                    <button class="btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;nextSample&quot;,&quot;a&quot;:[]}]">下一张（J）</button>
+                    <button class="btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;prevSample&quot;,&quot;a&quot;:[]}]">上一张（K）</button>
                     <span class="kbd-hint">快捷键：<kbd>J</kbd> 下一张　<kbd>K</kbd> 上一张　（确认请进工作台）</span>
                 </div>
             </div>
@@ -194,10 +100,10 @@
                 <span>回流候选（线上识别失败/低置信样本，确认后进入评测集）</span>
                 <span class="kbd-hint">晋升后 GT 为 AI 候选（draft），仍需进工作台逐张核对确认</span>
             </div>
-            <div style="overflow:auto; max-height: 40vh;">
+            <div class="csp-s-747">
                 <table class="reflow">
                     <thead><tr><th>候选</th><th>单据</th><th>触发原因</th><th>置信度</th>
-                        <th>说明</th><th style="width:230px;">操作</th></tr></thead>
+                        <th>说明</th><th class="csp-s-748">操作</th></tr></thead>
                     <tbody id="reflowBody">
                         <tr><td colspan="6" class="loading-note">加载中…</td></tr>
                     </tbody>
@@ -213,10 +119,10 @@
                 <span>待确认记忆（连续纠偏蒸馏产物，人工批准后才注入识别）</span>
                 <span class="kbd-hint">Gap D1 记忆写入人工闸：未批准不参与检索</span>
             </div>
-            <div style="overflow:auto; max-height: 40vh;">
+            <div class="csp-s-747">
                 <table class="reflow">
                     <thead><tr><th>ID</th><th>供应商</th><th>记忆内容</th><th>字段级 diff</th><th>触发单据</th>
-                        <th>状态</th><th style="width:230px;">操作</th></tr></thead>
+                        <th>状态</th><th class="csp-s-748">操作</th></tr></thead>
                     <tbody id="pendingMemoryBody">
                         <tr><td colspan="7" class="loading-note">加载中…</td></tr>
                     </tbody>

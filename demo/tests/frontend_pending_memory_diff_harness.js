@@ -26,6 +26,11 @@ const vm = require('vm');
 const demoDir = path.join(__dirname, '..');
 const jsPath = process.argv[2] || path.join(demoDir, 'static', 'js', 'evalset.js');
 const src = fs.readFileSync(jsPath, 'utf8');
+// 浏览器加载链（evalset.html）：ui-dialog.js 先于 evalset.js 加载。F1 后 evalset.js 的
+// ask() 走 window.uiConfirm（应用内对话框），沙箱必须按同一契约载入真实 ui-dialog.js，
+// 否则点击批准/拒绝时抛「window.uiConfirm is not a function」。
+const uiDialogPath = process.argv[3] || path.join(demoDir, 'static', 'js', 'ui-dialog.js');
+const uiDialogSrc = fs.readFileSync(uiDialogPath, 'utf8');
 const htmlPath = path.join(demoDir, 'templates', 'evalset.html');
 const evalHtml = fs.readFileSync(htmlPath, 'utf8');
 
@@ -54,7 +59,13 @@ function mkEl(props) {
             contains(c) { return this._s.has(c); },
         },
         addEventListener(t, fn) { (this.listeners[t] = this.listeners[t] || []).push(fn); },
-        appendChild(c) { this.children.push(c); return c; },
+        appendChild(c) { this.children.push(c); c.parentNode = this; return c; },
+        removeChild(c) {
+            const i = this.children.indexOf(c);
+            if (i !== -1) this.children.splice(i, 1);
+            if (c) c.parentNode = null;
+            return c;
+        },
         remove() {}, focus() {}, setAttribute(k, v) { this[k] = v; },
         getAttribute() { return null; }, closest() { return null; },
         querySelector() { return null; },
@@ -142,14 +153,18 @@ sandbox.self = sandbox;
 sandbox.location = { href: 'http://127.0.0.1/evalset', reload() {}, assign() {} };
 sandbox.document = {
     addEventListener() {},
+    removeEventListener() {},
     getElementById: getEl,
     querySelector() { return null; },
     querySelectorAll() { return []; },
-    createElement() { return mkEl(); },
+    createElement(tag) { return mkEl({ tagName: String(tag || 'div').toUpperCase() }); },
     documentElement: { style: { setProperty() {} } },
+    head: mkEl({ tagName: 'HEAD' }),
     body: mkEl({ tagName: 'BODY' }), readyState: 'loading',
 };
 
+try { vm.runInNewContext(uiDialogSrc, sandbox, { filename: 'ui-dialog.js' }); }
+catch (e) { console.log('ui-dialog load note:', e.message); }
 try { vm.runInNewContext(src, sandbox, { filename: 'evalset.js' }); }
 catch (e) { console.log('load note:', e.message); }
 
@@ -238,18 +253,35 @@ async function main() {
         'row=' + htmlOf(3));
 
     // ---- 4. 点击真接线到既有端点 ----
+    // F1 后批准/拒绝会弹真实 ui-dialog（window.uiConfirm，返回 Promise）。沙箱里没有
+    // 真人点击，这里驱动生产对话框本身：找到最新挂载的 mask，点它的确认按钮（okBtn
+    // 是 actions 里最后一个 button），让生产链路 ask → uiConfirm → doReviewMemory 走完。
+    async function clickRowButtonAndConfirm(btn) {
+        btn.onclick();
+        const mask = [...sandbox.document.body.children].reverse()
+            .find(c => c.className === 'ui-dlg-mask');
+        if (!mask) throw new Error('ui-dialog 未挂载 mask（uiConfirm 未被调用）');
+        const dlgBtns = [];
+        (function walk(n) {
+            (n.children || []).forEach(walk);
+            if (n.tagName === 'BUTTON' && n.listeners && n.listeners.click) dlgBtns.push(n);
+        })(mask);
+        if (!dlgBtns.length) throw new Error('对话框内无可点的确认按钮');
+        const evt = { key: 'Enter', preventDefault() {}, stopPropagation() {} };
+        dlgBtns[dlgBtns.length - 1].listeners.click.forEach(fn => fn(evt));
+        await new Promise(r => setTimeout(r, 10));
+    }
+
     calls.length = 0;
     const row0Btns = body.children[0].querySelectorAll('button');
-    row0Btns[0].onclick();
-    await new Promise(r => setTimeout(r, 10));
+    await clickRowButtonAndConfirm(row0Btns[0]);
     ok('点「批准并生效」→ POST /api/memory/pending/12/approve',
         calls.some(u => u === '/api/memory/pending/12/approve'),
         'calls=' + JSON.stringify(calls));
 
     calls.length = 0;
     const row1Btns = body.children[1].querySelectorAll('button');
-    row1Btns[1].onclick();
-    await new Promise(r => setTimeout(r, 10));
+    await clickRowButtonAndConfirm(row1Btns[1]);
     ok('点「拒绝」→ POST /api/memory/pending/13/reject',
         calls.some(u => u === '/api/memory/pending/13/reject'),
         'calls=' + JSON.stringify(calls));
@@ -259,9 +291,25 @@ async function main() {
         '未找到表头');
     ok('接线: 待审占位行 colspan 已随列数调整为 7',
         /id="pendingMemoryBody"[\s\S]*?colspan="7"/.test(evalHtml), '未找到匹配的 colspan');
+    // F3·B1 后 <style> 块外移到 external css：diff 样式类的「有消费方」判据改为
+    // 守真不变量——页面声明的全部样式来源（内联 style 块 + 外链 stylesheet）联合
+    // 起来必须定义这三个类；且样式来源本身不得为空（防扫描面失效后的假绿）。
+    const cssSources = [];
+    const inlineStyles = [...evalHtml.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)]
+        .map(m => m[1]).join('\n');
+    if (inlineStyles.trim()) cssSources.push({ from: 'inline <style>', css: inlineStyles });
+    [...evalHtml.matchAll(/<link[^>]+rel="stylesheet"[^>]*>/g)].forEach(tag => {
+        const href = (tag[0].match(/href="([^"]+)"/) || [])[1];
+        if (!href) return;
+        const file = path.join(demoDir, 'static', href.replace(/^\/static\//, ''));
+        cssSources.push({ from: href, css: fs.readFileSync(file, 'utf8') });
+    });
+    const allCss = cssSources.map(s => s.from + '\n' + s.css).join('\n');
+    ok('接线: 页面样式来源非空（外链 stylesheet 至少 1 个）', cssSources.length >= 1,
+        'sources=' + JSON.stringify(cssSources.map(s => s.from)));
     ok('接线: 页面定义了 diff 样式类（.fact-diff / .fd-key / .fd-old）',
-        evalHtml.indexOf('.fact-diff') !== -1 && evalHtml.indexOf('.fd-key') !== -1
-        && evalHtml.indexOf('.fd-old') !== -1, '样式缺定义');
+        ['.fact-diff', '.fd-key', '.fd-old'].every(sel => allCss.indexOf(sel) !== -1),
+        '样式缺定义；已扫描样式来源=' + JSON.stringify(cssSources.map(s => s.from)));
 
     ok('红线: 全程 console.error 为 0', consoleErrors.length === 0,
         'errors=' + JSON.stringify(consoleErrors.slice(0, 3)));

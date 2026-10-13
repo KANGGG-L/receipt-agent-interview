@@ -33,9 +33,14 @@ def index_html_content():
 
 @pytest.fixture(scope="module")
 def main_js_content():
-    path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    # F4/F5 S4-11：观测台筛选/子 Tab 实现已随域迁至 admin_observation.js。
+    # 守真不变量＝main.js + admin_observation.js 联合全文（与浏览器加载集合同构，判据不放宽）。
+    parts = []
+    for rel in ("../demo/static/js/main.js", "../demo/static/js/admin_observation.js",
+              "../demo/static/js/parsing_logs.js"):
+        with open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
 
 
 # -----------------------------------------------------------------------------
@@ -50,7 +55,7 @@ def test_ac_filter_01_no_external_filter_card_in_telemetry(index_html_content):
     sec_start = index_html_content.find('id="sec-telemetry"')
     assert sec_start != -1, "sec-telemetry must exist in index.html"
 
-    tab_bar = index_html_content.find('class="analytics-sub-tabs"', sec_start)
+    tab_bar = index_html_content.find('analytics-sub-tabs', sec_start)
     assert tab_bar != -1, "analytics-sub-tabs must exist in sec-telemetry"
 
     # 在 sec-telemetry 头部和子 Tab 切换器之间，不应出现 parsing-log-filter-control
@@ -73,12 +78,12 @@ def test_ac_filter_02_tab_a_dedicated_filter_controls(index_html_content):
     tab_a_slice = index_html_content[tab_a_start:tab_b_start]
 
     # 1. 租户与基础筛选
-    assert 'id="analyticsTenantSelect" class="parsing-log-filter-control"' in tab_a_slice
-    assert 'id="parsingLogStatusSelect" class="parsing-log-filter-control"' in tab_a_slice
-    assert 'id="parsingLogGateSelect" class="parsing-log-filter-control"' in tab_a_slice
-    assert 'id="parsingLogFeedbackSelect" class="parsing-log-filter-control"' in tab_a_slice
-    assert 'id="parsingLogModifiedSelect" class="parsing-log-filter-control"' in tab_a_slice
-    assert 'id="parsingLogSearchInput" class="parsing-log-filter-control"' in tab_a_slice
+    assert 'id="analyticsTenantSelect" class="parsing-log-filter-control' in tab_a_slice
+    assert 'id="parsingLogStatusSelect" class="parsing-log-filter-control' in tab_a_slice
+    assert 'id="parsingLogGateSelect" class="parsing-log-filter-control' in tab_a_slice
+    assert 'id="parsingLogFeedbackSelect" class="parsing-log-filter-control' in tab_a_slice
+    assert 'id="parsingLogModifiedSelect" class="parsing-log-filter-control' in tab_a_slice
+    assert 'id="parsingLogSearchInput" class="parsing-log-filter-control' in tab_a_slice
 
     # 2. 时间跨度控制（按钮组 + 自定义起止 + 下拉兼容控件）
     assert 'id="btnLogRangeAll"' in tab_a_slice
@@ -88,7 +93,7 @@ def test_ac_filter_02_tab_a_dedicated_filter_controls(index_html_content):
     assert 'id="btnLogRange30d"' in tab_a_slice
     assert 'id="parsingLogStartDate"' in tab_a_slice
     assert 'id="parsingLogEndDate"' in tab_a_slice
-    assert 'id="parsingLogDateRangeSelect" class="parsing-log-filter-control"' in tab_a_slice
+    assert 'id="parsingLogDateRangeSelect" class="parsing-log-filter-control' in tab_a_slice
 
 
 def test_ac_filter_03_tab_b_dedicated_filter_controls(index_html_content):
@@ -104,7 +109,7 @@ def test_ac_filter_03_tab_b_dedicated_filter_controls(index_html_content):
     tab_b_slice = index_html_content[tab_b_start:tab_b_end]
 
     # 1. 租户输入
-    assert 'id="eventsFilterTenant" class="parsing-log-filter-control"' in tab_b_slice
+    assert 'id="eventsFilterTenant" class="parsing-log-filter-control' in tab_b_slice
 
     # 2. 时间跨度按钮组与自定义起止
     assert 'id="btnEventsRangeAll"' in tab_b_slice
@@ -116,11 +121,11 @@ def test_ac_filter_03_tab_b_dedicated_filter_controls(index_html_content):
     assert 'id="eventsEndDate"' in tab_b_slice
 
     # 3. 事件分类下拉框与事件搜索框
-    assert 'id="eventsCategorySelect" class="parsing-log-filter-control"' in tab_b_slice
+    assert 'id="eventsCategorySelect" class="parsing-log-filter-control' in tab_b_slice
     assert 'value="lifecycle"' in tab_b_slice
     assert 'value="recovery"' in tab_b_slice
     assert 'value="governance"' in tab_b_slice
-    assert 'id="eventsSearchInput" class="parsing-log-filter-control"' in tab_b_slice
+    assert 'id="eventsSearchInput" class="parsing-log-filter-control' in tab_b_slice
 
 
 # -----------------------------------------------------------------------------

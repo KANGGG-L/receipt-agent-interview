@@ -67,3 +67,6 @@ demo/ocr_out*.txt
 .env.bak*
 gui-test-screenshots/
 .playwright-cli/
+
+# 2026-10-13: 本地数据库备份目录（8.2MB，不入库；真备份在 /tmp）
+demo/backups/

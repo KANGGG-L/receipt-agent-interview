@@ -1193,117 +1193,48 @@ function printExportReport() {
         <head>
             <title>${esc(title)}</title>
             <meta charset="utf-8">
-            <style>
-                @page {
-                    size: A4 portrait;
-                    margin: 12mm 10mm 15mm 10mm;
-                }
-                * { box-sizing: border-box; }
-                body {
-                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-                    padding: 10px 15px;
-                    color: #000;
-                    background: #fff;
-                    font-size: 10.5pt;
-                }
-                .print-header {
-                    text-align: center;
-                    margin-bottom: 12px;
-                    border-bottom: 2px solid #000;
-                    padding-bottom: 8px;
-                }
-                h2 {
-                    margin: 0 0 6px 0;
-                    font-size: 16pt;
-                    letter-spacing: 1px;
-                }
-                .meta-bar {
-                    display: flex;
-                    justify-content: space-between;
-                    font-size: 9pt;
-                    color: #333;
-                    margin-top: 4px;
-                }
-                table {
-                    width: 100%;
-                    table-layout: auto;
-                    border-collapse: collapse;
-                    margin-top: 10px;
-                    font-size: 8.5pt;
-                    page-break-inside: auto;
-                }
-                tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                }
-                th, td {
-                    border: 1px solid #000;
-                    padding: 4px 6px;
-                    text-align: left;
-                    vertical-align: middle;
-                    font-size: 8.5pt;
-                    white-space: nowrap;
-                }
-                th {
-                    background: #f2f2f2 !important;
-                    font-weight: 700;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                }
-                .col-right {
-                    text-align: right;
-                }
-                .col-center {
-                    text-align: center;
-                }
-                /* 实地盘点留白手填列保障 */
-                td:empty {
-                    min-height: 28px;
-                    background: #fff;
-                }
-                .print-footer {
-                    margin-top: 30px;
-                    display: flex;
-                    justify-content: space-between;
-                    font-size: 10pt;
-                    padding: 0 10px;
-                    page-break-inside: avoid;
-                }
-                @media print {
-                    body { padding: 0; }
-                    .no-print { display: none; }
-                }
-            </style>
+            <link id="printSheet" rel="stylesheet" href="${location.origin}/static/css/print-export.css">
         </head>
         <body>
             <div class="print-header">
                 <h2>${esc(title)}</h2>
                 <div class="meta-bar">
                     <span>${esc(summary)}</span>
-                    <span>打印时间: ${new Date().toLocaleString('zh-HK', { hour12: false })}</span>
+                    <span>${typeof uiText === 'function' ? uiText('打印时间') : '打印时间'}: ${new Date().toLocaleString(typeof printLocaleTag === 'function' ? printLocaleTag() : 'zh-Hans', { hour12: false })}</span>
                 </div>
             </div>
             <table>
-                <thead>${thead}</thead>
-                <tbody>${tbody}</tbody>
+                <thead>${window.CSPBind ? window.CSPBind.rewriteHtml(thead) : thead}</thead>
+                <tbody>${window.CSPBind ? window.CSPBind.rewriteHtml(tbody) : tbody}</tbody>
             </table>
             <div class="print-footer">
-                <div>经办人签字：_______________</div>
-                <div>主管审核签字：_______________</div>
-                <div>日期：_______________</div>
+                <div>${typeof uiText === 'function' ? uiText('经办人签字') : '经办人签字'}：_______________</div>
+                <div>${typeof uiText === 'function' ? uiText('主管审核签字') : '主管审核签字'}：_______________</div>
+                <div>${typeof uiText === 'function' ? uiText('日期') : '日期'}：_______________</div>
             </div>
-            <script>
-                window.onload = function() {
-                    window.print();
-                    setTimeout(function() { window.close(); }, 500);
-                };
-            </script>
+
         </body>
         </html>
     `);
     // 打印窗口是独立文档，不在主页面 DOM 翻译器的观察范围内。
     if (window.I18N) window.I18N.translateDocument(printWin.document);
     printWin.document.close();
+    if (window.CSPBind && printWin.document && printWin.document.body) {
+        try { window.CSPBind.applyStyles(printWin.document.body); } catch (e) { /* print fragment */ }
+    }
+    var printSheet = (printWin.document && typeof printWin.document.getElementById === 'function')
+        ? printWin.document.getElementById('printSheet') : null;
+    var firePrint = function () {
+        if (typeof printWin.focus === 'function') printWin.focus();
+        if (typeof printWin.print === 'function') printWin.print();
+        setTimeout(function () { try { printWin.close(); } catch (err) { /* popup already gone */ } }, 500);
+    };
+    if (printSheet && !printSheet.sheet && typeof printSheet.addEventListener === 'function') {
+        printSheet.addEventListener('load', firePrint);
+        printSheet.addEventListener('error', firePrint);
+    } else {
+        firePrint();
+    }
 }
 
 // 跨模块快捷导航至导出中心

@@ -391,13 +391,17 @@ def test_scenario_4_xss_payload_ingestion_and_dom_immunity():
     assert data.items[1].raw_name == xss_quote_attr
 
     # 2. Verify frontend escapeHtml neutralizes all tags, quotes, and brackets
-    js_path = os.path.abspath(os.path.join(DEMO_DIR, "static", "js", "main.js"))
-    assert os.path.isfile(js_path)
-    with open(js_path, "r", encoding="utf-8") as f:
-        js_content = f.read()
+    # F5 拆分后 escapeHtml 在 engine_admin.js —— 从联合全文提取（与浏览器加载
+    # 的代码集合同构；正则仍要求全文只有这一处定义，见下方 count 校验）
+    if os.path.join(DEMO_DIR, "tests") not in sys.path:
+        sys.path.insert(0, os.path.join(DEMO_DIR, "tests"))
+    from f4_frontend_sources import frontend_union
+    js_content = frontend_union()
 
+    defs = re.findall(r"function escapeHtml\s*\([^)]*\)\s*\{", js_content)
+    assert len(defs) == 1, f"escapeHtml 必须只有一份定义，实测 {len(defs)} 处"
     match = re.search(r"function escapeHtml\s*\([^)]*\)\s*\{([\s\S]*?)\}", js_content)
-    assert match is not None, "escapeHtml function must be defined in main.js"
+    assert match is not None, "escapeHtml function must be defined in frontend JS union"
     fn_body = match.group(0)
 
     test_cases_json = json.dumps([

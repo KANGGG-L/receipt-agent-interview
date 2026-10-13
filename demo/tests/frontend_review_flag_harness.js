@@ -14,6 +14,11 @@ const vm = require('vm');
 const mainPath = process.argv[2] || path.join(__dirname, '..', 'static', 'js', 'main.js');
 const liveJsonPath = process.argv[3] || '';
 const src = fs.readFileSync(mainPath, 'utf8');
+// 浏览器加载链（index.html）：terms.js 先于 main.js 加载，humanizeGateMsg 等文案
+// 统一走 TERMS（S2-12 后 humanize 实现收敛到 terms.js）。沙箱必须按同一契约先载
+// terms.js，否则 main.js 落到 GENERIC_GATE 兜底文案，E3「相差」判据会假失败。
+const termsPath = process.argv[4] || path.join(__dirname, '..', 'static', 'js', 'terms.js');
+const termsSrc = fs.readFileSync(termsPath, 'utf8');
 
 function mkEl(props) {
     const el = Object.assign({
@@ -60,8 +65,15 @@ sandbox.document = {
 // 沙箱内禁用网络：任何误发的请求都会抛出，保证本脚手架零副作用
 sandbox.fetch = () => { throw new Error('harness 沙箱禁止网络请求'); };
 
+try { vm.runInNewContext(termsSrc, sandbox, { filename: 'terms.js' }); }
+catch (e) { console.log('terms load note:', e.message); }
 try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
+// F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
+// （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
+require('./f4_load_domains.js').loadF4Domains(
+    (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
+    { warn: m => console.log(m) });
 
 // 主脚本执行完后 sandbox 已被 contextify；用同一 realm 的后续脚本注入 currentReceiptData
 // （顶层 `let` 落在该 realm 的全局词法环境，跨 runInContext 可见）。
@@ -212,9 +224,13 @@ ok('H0 readReceiptLevelReviewSignals 已导出',
     typeof sandbox.readReceiptLevelReviewSignals === 'function', typeof sandbox.readReceiptLevelReviewSignals);
 // H0b 静态接线：appendTableRow 内部不得再有空 catch，且必须走新的 fail-visible 读取器。
 // （main.js 其他位置还有历史空 catch，属既有观测性问题，不在本次改动范围内，故按函数体定位。）
-var _atrStart = src.indexOf('function appendTableRow(');
-var _atrEnd = src.indexOf('function addEmptyRow(');
-var _atrBody = (_atrStart >= 0 && _atrEnd > _atrStart) ? src.slice(_atrStart, _atrEnd) : '';
+// F5·S4-11：appendTableRow/addEmptyRow 已随复核核心域移入 review_core.js；
+// 源码级判据改扫「main.js + 全部域文件」联合全文（与浏览器实际加载集合同构，判据不放宽）。
+var _srcAll = [src].concat(require('./f4_load_domains.js').F4_DOMAIN_FILES.map(
+    name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8'))).join('\n');
+var _atrStart = _srcAll.indexOf('function appendTableRow(');
+var _atrEnd = _srcAll.indexOf('function addEmptyRow(');
+var _atrBody = (_atrStart >= 0 && _atrEnd > _atrStart) ? _srcAll.slice(_atrStart, _atrEnd) : '';
 ok('H0b appendTableRow 内已无空 catch 块',
     _atrBody.length > 0 && _atrBody.indexOf('catch (e) {}') === -1, '仍残留空 catch');
 ok('H0b2 appendTableRow 已改用 readReceiptLevelReviewSignals',

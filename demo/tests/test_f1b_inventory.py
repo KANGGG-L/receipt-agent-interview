@@ -125,7 +125,9 @@ def test_overdraw_requires_owner_reason_and_cancel_keeps_stock(server, pw, seede
     try:
         h.open_app(page, "tab-inventory")
         page.wait_for_selector("#inventoryTableBody tr")
-        page.locator("#inventoryTableBody tr", has_text="库存测试鸡").locator("button", has_text="变动录入").click()
+        row = page.locator("#inventoryTableBody tr", has_text="库存测试鸡")
+        row.locator("button", has_text="更多").click()
+        page.locator("#invMoreMenu .unit-dropdown-item", has_text="变动录入").click()
         page.wait_for_selector("#modalStockMovementDialog:not(.hide)")
         page.select_option("#stockMovementKind", "consume")
         page.fill("#stockMovementQty", "1000")
@@ -162,7 +164,9 @@ def test_normal_consume_does_not_ask(server, pw, seeded):
     try:
         h.open_app(page, "tab-inventory")
         page.wait_for_selector("#inventoryTableBody tr")
-        page.locator("#inventoryTableBody tr", has_text="正常消耗菜").locator("button", has_text="变动录入").click()
+        row = page.locator("#inventoryTableBody tr", has_text="正常消耗菜")
+        row.locator("button", has_text="更多").click()
+        page.locator("#invMoreMenu .unit-dropdown-item", has_text="变动录入").click()
         page.wait_for_selector("#modalStockMovementDialog:not(.hide)")
         page.select_option("#stockMovementKind", "consume")
         page.fill("#stockMovementQty", "4")

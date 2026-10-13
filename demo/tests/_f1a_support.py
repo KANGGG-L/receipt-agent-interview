@@ -17,9 +17,22 @@ if _TESTS_DIR not in sys.path:
 
 from _playwright_server import start_pinned_server  # noqa: E402
 
-SHOT_DIR = os.environ.get(
-    "F1A_SHOT_DIR",
-    "/home/user/.indent/01a12a4e-a627-78c0-a7f6-25a1147af3ec/artifacts/review/screens/")
+def _default_shot_dir(env_key, leaf):
+    """截图目录。沙箱机器上的 /home/user 保留；本机没有该目录时不在 /home 下创建。
+
+    macOS 的 /home 是 firmlink，makedirs 会抛 errno 45（Operation not supported）。
+    """
+    explicit = os.environ.get(env_key, "").strip()
+    if explicit:
+        return explicit
+    legacy = "/home/user/.indent/01a12a4e-a627-78c0-a7f6-25a1147af3ec/artifacts/review/screens"
+    if os.path.isdir("/home/user"):
+        return legacy
+    art = os.environ.get("ARTIFACTS_DIR", "").strip() or tempfile.gettempdir()
+    return os.path.join(art, leaf)
+
+
+SHOT_DIR = _default_shot_dir("F1A_SHOT_DIR", "f1a-screens")
 
 
 def _free_port():

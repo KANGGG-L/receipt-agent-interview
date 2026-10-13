@@ -7,6 +7,7 @@
 import pytest
 from pathlib import Path
 from bs4 import BeautifulSoup
+from f4_frontend_sources import frontend_union  # F4 S4-11: main.js+域文件联合全文
 
 # demo/ 目录：本文件位于 demo/tests/ 下，取两级父目录
 _DEMO_DIR = Path(__file__).resolve().parents[1]
@@ -40,8 +41,7 @@ def test_analytics_four_subviews_structure():
 
 
 def test_js_switch_analytics_subview_supports_experiment():
-    with open(_MAIN_JS, "r", encoding="utf-8") as f:
-        js = f.read()
+    js = frontend_union()  # F4 S4-11: main.js+域文件联合全文
     assert "'sec-experiment'" in js
     assert "validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval']" in js or \
            "validViews = ['sec-telemetry', 'sec-canary', 'sec-experiment', 'sec-eval']" in js.replace('"', "'")

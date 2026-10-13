@@ -174,38 +174,63 @@
         sheet.addEventListener('click', function (e) { if (e.target === sheet) closeMore(); });
     }
 
+    function visibleTabBar() {
+        return TAB_BAR.filter(function (t) {
+            var btn = doc.querySelector('.sidebar-nav .sidebar-btn[data-target="' + t.target + '"]');
+            return isShown(btn);
+        });
+    }
+
+    function tabButtonHtml(t) {
+        return '<button type="button" class="mobile-tab" data-tab="' + t.target + '">'
+            + ICONS[t.target] + '<span>' + t.label + '</span>'
+            + (t.target === 'tab-archive' ? '<span id="mobileTabArchiveDot" class="mobile-tab-dot hide">0</span>' : '')
+            + '</button>';
+    }
+
+    function renderTabBarButtons(bar, sheet) {
+        var html = '';
+        visibleTabBar().forEach(function (t) { html += tabButtonHtml(t); });
+        html += '<button type="button" class="mobile-tab" data-more aria-haspopup="dialog" aria-expanded="false">'
+            + ICONS.more + '<span>更多</span></button>';
+        bar.innerHTML = html;
+        Array.prototype.forEach.call(bar.querySelectorAll('[data-tab]'), function (b) {
+            b.addEventListener('click', function () { goTab(b.getAttribute('data-tab')); });
+        });
+        var more = bar.querySelector('[data-more]');
+        if (more) {
+            more.addEventListener('click', function () {
+                var open = !sheet.classList.contains('hide');
+                if (open) { closeMore(); return; }
+                buildMoreSheet();
+                sheet.classList.remove('hide');
+                this.setAttribute('aria-expanded', 'true');
+            });
+        }
+    }
+
+    root.refreshMobileNav = function () {
+        var bar = $('mobileTabBar');
+        var sheet = $('mobileMoreSheet');
+        if (!bar || !sheet) return;
+        renderTabBarButtons(bar, sheet);
+        syncTabBar();
+    };
+
     function initMobileNav() {
         if ($('mobileTabBar')) return;
         var bar = doc.createElement('nav');
         bar.id = 'mobileTabBar';
         bar.className = 'mobile-tabbar';
         bar.setAttribute('aria-label', '主菜单');
-        var html = '';
-        TAB_BAR.forEach(function (t) {
-            html += '<button type="button" class="mobile-tab" data-tab="' + t.target + '">'
-                + ICONS[t.target] + '<span>' + t.label + '</span>'
-                + (t.target === 'tab-archive' ? '<span id="mobileTabArchiveDot" class="mobile-tab-dot hide">0</span>' : '')
-                + '</button>';
-        });
-        html += '<button type="button" class="mobile-tab" data-more aria-haspopup="dialog" aria-expanded="false">'
-            + ICONS.more + '<span>更多</span></button>';
-        bar.innerHTML = html;
         doc.body.appendChild(bar);
         var sheet = doc.createElement('div');
         sheet.id = 'mobileMoreSheet';
         sheet.className = 'mobile-more-sheet hide';
         doc.body.appendChild(sheet);
 
-        Array.prototype.forEach.call(bar.querySelectorAll('[data-tab]'), function (b) {
-            b.addEventListener('click', function () { goTab(b.getAttribute('data-tab')); });
-        });
-        bar.querySelector('[data-more]').addEventListener('click', function () {
-            var open = !sheet.classList.contains('hide');
-            if (open) { closeMore(); return; }
-            buildMoreSheet();
-            sheet.classList.remove('hide');
-            this.setAttribute('aria-expanded', 'true');
-        });
+        var sheetRef = sheet;
+        renderTabBarButtons(bar, sheetRef);
         doc.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeMore(); });
         var observer = new root.MutationObserver(syncTabBar);
         Array.prototype.forEach.call(doc.querySelectorAll('.tab-content'), function (el) {
@@ -686,8 +711,24 @@
         }, 80);
     };
 
+    function bindStartRecognize() {
+        var btn = $('btnStartRecognize');
+        if (!btn || btn.getAttribute('data-bound') === '1') return;
+        btn.setAttribute('data-bound', '1');
+        btn.addEventListener('click', function () {
+            var photos = (root.BatchUploader && root.BatchUploader.photos) || [];
+            if (photos.length && typeof root.triggerBatchAnalysis === 'function') {
+                root.triggerBatchAnalysis(false);
+            } else {
+                var file = $('receiptFile');
+                if (file) file.click();
+            }
+        });
+    }
+
     function boot() {
         initMobileNav();
+        bindStartRecognize();
         var sup = $('inpSupplier');
         if (sup) {
             sup.addEventListener('change', root.applySupplierSettlementPref);

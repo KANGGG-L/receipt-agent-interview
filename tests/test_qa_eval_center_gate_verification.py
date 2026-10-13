@@ -342,9 +342,13 @@ def test_qa_ui_02_filter_controls_uniformity():
     - border-radius: 6px !important
     - 租户、解析状态、门禁状态、用户反馈、人工改动、时间跨度、搜索框等 7 大控件均使用统一样式
     """
-    html_path = os.path.join(os.path.dirname(__file__), "../demo/templates/index.html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
+    # F3 S4-07 强制 CSP 起 index.html 内联 <style> 外移至 index-head.css /
+    # csp-html-styles.css。等效判据＝模板 + 外链样式表联合文本（判据不放宽）。
+    base = os.path.join(os.path.dirname(__file__), "../demo")
+    html = "\n".join(
+        open(os.path.join(base, rel), "r", encoding="utf-8").read()
+        for rel in ("templates/index.html", "static/css/index-head.css",
+                    "static/css/csp-html-styles.css"))
 
     # CSS 规范定义
     assert ".parsing-log-filter-control {" in html
@@ -411,9 +415,19 @@ def test_qa_ui_04_and_05_table_columns_and_safe_width():
     html_path = os.path.join(os.path.dirname(__file__), "../demo/templates/index.html")
     with open(html_path, "r", encoding="utf-8") as f:
         html = f.read()
+    css = "\n".join(
+        open(os.path.join(os.path.dirname(__file__), "../demo", rel), "r", encoding="utf-8").read()
+        for rel in ("static/css/index-head.css", "static/css/csp-html-styles.css"))
 
-    # 1. 最小安全宽度
-    assert 'id="parsingLogsTable" style="min-width:1680px;' in html
+    # 1. 最小安全宽度（F3 CSP 起 style 属性改为 csp-s-N 类 + 外链规则，等效判据）
+    _i = html.find('id="parsingLogsTable"')
+    assert _i != -1, "parsingLogsTable 必须存在"
+    _tag = html[html.rfind("<table", 0, _i):html.find(">", _i)]
+    import re as _re
+    _m = _re.search(r'csp-s-(\d+)', _tag)
+    assert _m, "parsingLogsTable 必须携带 csp-s-N 宽度类"
+    assert ('.csp-s-%s{min-width:1680px' % _m.group(1)) in css.replace(" ", ""), \
+        "parsingLogsTable 的宽度类必须在外链样式中声明 min-width:1680px"
 
     # 2. 表头必须包含 13 个 th，且第 7 个为“门禁状态与原因”
     table_match = re.search(r'<table[^>]*id="parsingLogsTable"[^>]*>(.*?)</table>', html, re.DOTALL)
@@ -425,9 +439,10 @@ def test_qa_ui_04_and_05_table_columns_and_safe_width():
     assert "门禁状态与原因" in th_list[6], f"第 7 列必须为门禁状态与原因，当前为: {th_list[6]}"
 
     # 3. 前端 JS 渲染逻辑覆盖 13 列与门禁列
-    js_path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
+    # F4/F5 S4-11：解析日志渲染实现已随域迁至 parsing_logs.js；联合全文口径。
+    js = "\n".join(
+        open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8").read()
+        for rel in ("../demo/static/js/main.js", "../demo/static/js/parsing_logs.js"))
     assert "colspan=\"13\"" in js, "表格加载/空状态必须占满 13 列"
     assert "it.gate_info" in js, "JS 必须消费 it.gate_info"
     assert "gateBadgeHtml" in js, "JS 必须构造 gateBadgeHtml"
@@ -462,9 +477,10 @@ def test_qa_ui_06_detail_modal_gate_elements():
     assert 'id="plImageGuardBody"' in html
 
     # JS 渲染联动
-    js_path = os.path.join(os.path.dirname(__file__), "../demo/static/js/main.js")
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
+    # F4/F5 S4-11：解析日志渲染实现已随域迁至 parsing_logs.js；联合全文口径。
+    js = "\n".join(
+        open(os.path.join(os.path.dirname(__file__), rel), "r", encoding="utf-8").read()
+        for rel in ("../demo/static/js/main.js", "../demo/static/js/parsing_logs.js"))
 
     assert "document.getElementById('plMetaGateBadge')" in js
     assert "document.getElementById('plGateDecisionBody')" in js

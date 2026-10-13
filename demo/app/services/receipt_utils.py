@@ -1442,6 +1442,13 @@ def build_row(row):
 _DIFF_FIELDS = ("name", "quantity", "unit", "unit_price", "amount")
 
 
+def _diff_field(item, field):
+    """读行字段。识别结果历史用 qty，复核保存用 quantity；只在没有 quantity 时才回退 qty。"""
+    if field == "quantity" and "quantity" not in item and "qty" in item:
+        return item.get("qty")
+    return item.get(field)
+
+
 def compute_review_diff(ai_items, final_items):
     """行级三类 diff + SKU 更改计数（纯函数，无 DB 依赖）。
 
@@ -1458,7 +1465,7 @@ def compute_review_diff(ai_items, final_items):
         fin_it = fin_it if isinstance(fin_it, dict) else {}
         changed = False
         for f in _DIFF_FIELDS:
-            av, fv = ai_it.get(f), fin_it.get(f)
+            av, fv = _diff_field(ai_it, f), _diff_field(fin_it, f)
             if f in ("quantity", "unit_price", "amount"):
                 av = float(av or 0)
                 fv = float(fv or 0)

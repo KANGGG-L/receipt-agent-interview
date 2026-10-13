@@ -278,6 +278,12 @@ def _make_upload_client(monkeypatch, tmp_path, predicted_vendor):
     """只挂 api_receipts 路由；识别 Job 派发与预判模型全部打桩，记录入参。"""
     calls = []
 
+    # F2 契约（2026-10-13）：无密钥上传在预判/Job 之前同步返回
+    # ENGINE_NOT_CONFIGURED。本组用例 subject 是「upload 端点的 origin 判定」，
+    # 须把引擎桩为已配置以走完整预判→Job 路径。
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured",
+                        lambda: False)
+
     # 桩签名必须跟齐 start_recognition_job 的现行参数：_safe_start_recognition_job
     # 兼容链会在 TypeError 时逐级降级到老签名，桩若缺 quality_warnings/raw_image_path
     # 会静默丢掉 vendor_hint_origin（2026-10-10 修复）。

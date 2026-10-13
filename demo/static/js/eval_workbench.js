@@ -12,12 +12,19 @@
 // 并剥掉复用来的应用外壳（侧边栏/面包屑）——工作台是内嵌视图，不重复画一套导航。
 //
 // 页面路由：GET /evalset/workbench/<sample_id>（demo/app/main.py 注入
-// window.__EVAL_WORKBENCH__.sampleId 与本脚本）。
+// <meta name="eval-workbench">，避免内联脚本违反 script-src 'self'）。
 
 (function () {
     'use strict';
 
     var flag = window.__EVAL_WORKBENCH__;
+    if (!flag) {
+        var meta = document.querySelector('meta[name="eval-workbench"]');
+        if (meta && meta.content) {
+            try { flag = JSON.parse(meta.content); } catch (e) { flag = null; }
+            if (flag) window.__EVAL_WORKBENCH__ = flag;
+        }
+    }
     if (!flag || !flag.sampleId) { return; }
     var sampleId = String(flag.sampleId);
     var split = 'test';          // 样本所属 split（详情接口回填，用于确认后取下一张 draft）
@@ -28,14 +35,7 @@
     }
 
     function headers(extra) {
-        var h = { 'X-Role': role() };
-        // 本页不经过 main.js 的 apiFetch 统一出口，需自行带上 Bearer 令牌：
-        // AUTH_ENABLED=1 时后端只认令牌，缺了它工作台所有请求都会 401。
-        // 令牌键名与 main.js 的 AUTH_TOKEN_KEY 一致；无令牌时不注入（演示态照常放行）。
-        try {
-            var token = localStorage.getItem('receipt_auth_token');
-            if (token) { h['Authorization'] = 'Bearer ' + token; }
-        } catch (e) { /* localStorage 不可用时降级为不带令牌 */ }
+        var h = { 'X-Role': role(), 'X-Requested-With': 'fetch' };
         if (extra) { for (var k in extra) { h[k] = extra[k]; } }
         return h;
     }
@@ -124,7 +124,7 @@
 
     // ---------------- 加载样本并灌入复核界面 ----------------
     function loadSample() {
-        fetch('/api/evalset/sample/' + encodeURIComponent(sampleId), { headers: headers() })
+        fetch('/api/evalset/sample/' + encodeURIComponent(sampleId), { headers: headers(), credentials: 'same-origin' })
             .then(function (resp) {
                 return resp.json().then(function (data) {
                     if (!resp.ok) {
@@ -262,7 +262,7 @@
     function goNextDraft() {
         // A 确认跳下一张的流式体验：取同 split 的下一张 draft 直达其工作台
         var qs = 'split=' + encodeURIComponent(split) + '&gt_status=draft';
-        fetch('/api/evalset/samples?' + qs, { headers: headers() })
+        fetch('/api/evalset/samples?' + qs, { headers: headers(), credentials: 'same-origin' })
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 var list = (data.data && data.data.samples) || [];
@@ -304,6 +304,7 @@
         if (btn) { btn.disabled = true; }
         fetch('/api/evalset/sample/' + encodeURIComponent(sampleId) + '/confirm', {
             method: 'POST',
+            credentials: 'same-origin',
             headers: headers({ 'Content-Type': 'application/json' }),
             body: JSON.stringify(payload)
         })

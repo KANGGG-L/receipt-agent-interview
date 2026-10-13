@@ -30,6 +30,17 @@ def _read(p):
         return f.read()
 
 
+def _main_js_src():
+    """F5 S4-11：main.js 已拆为组装层 + 域文件；源码级守卫用联合全文
+    （main.js+全部域文件，与浏览器实际加载的代码集合同构）。"""
+    import sys as _sys
+    _tests_dir = str(_DEMO_DIR / "tests")
+    if _tests_dir not in _sys.path:
+        _sys.path.insert(0, _tests_dir)
+    from f4_frontend_sources import frontend_union
+    return frontend_union()
+
+
 # ------------------------------------------------------------------
 # 1. 上传卡片里有供应商下拉，默认空选项
 # ------------------------------------------------------------------
@@ -51,7 +62,7 @@ def test_vendor_hint_select_exists_in_upload_card():
 # 2. 单张上传真的把 vendor_hint 放进 FormData
 # ------------------------------------------------------------------
 def test_single_upload_formdata_carries_vendor_hint():
-    js = _read(_MAIN_JS)
+    js = _main_js_src()
     assert re.search(r"formData\.append\(\s*'vendor_hint'\s*,\s*getVendorHintValue\(\)\s*\)", js), \
         "单张上传的 FormData 必须 append('vendor_hint', getVendorHintValue())"
 
@@ -66,7 +77,7 @@ def test_single_upload_formdata_carries_vendor_hint():
 # 3. 下拉的取值 / 填充 / 记忆三条接线都在
 # ------------------------------------------------------------------
 def test_vendor_hint_helpers_defined():
-    js = _read(_MAIN_JS)
+    js = _main_js_src()
     for fn_name in ("getVendorHintValue", "populateVendorHintOptions", "initVendorHintSelect"):
         assert re.search(r"function\s+%s\s*\(" % fn_name, js), \
             "缺少函数定义：%s" % fn_name
@@ -75,7 +86,7 @@ def test_vendor_hint_helpers_defined():
 
 
 def test_vendor_hint_options_wired_to_existing_supplier_source():
-    js = _read(_MAIN_JS)
+    js = _main_js_src()
     # 选项数据源必须复用既有 loadSuppliersData（不额外发请求、随既有刷新点一起更新）
     body = js.split("function loadSuppliersData()", 1)[1].split("\n}\n", 1)[0]
     assert "populateVendorHintOptions(suppliers);" in body, \
