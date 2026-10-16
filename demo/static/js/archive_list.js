@@ -597,11 +597,23 @@ function toggleRagDataOnly() {
 }
 function loadReceiptDetail(receiptId) {
     const qs = isRagDataOnlyEnabled() ? '?data_only=true' : '';
-    apiFetch(`/api/receipt/${receiptId}${qs}`)
-    .then(res => res.json())
-    .then(ret => {
-        if (ret.status !== 'success') {
-            showToast('无法加载单据详情：' + (ret.msg || '请稍后重试'), 'error');
+    if (typeof closeRowFeedbackModal === 'function') {
+        closeRowFeedbackModal();
+    }
+    const receiptReq = apiFetch(`/api/receipt/${receiptId}${qs}`).then(res => res.json());
+    const feedbackReq = (typeof apiFetch === 'function')
+        ? apiFetch(`/api/receipt/${receiptId}/feedback`)
+            .then(res => res.json().catch(() => null))
+            .catch(err => {
+                console.warn('[WARN] 加载单据反馈失败:', err);
+                return null;
+            })
+        : Promise.resolve(null);
+
+    Promise.all([receiptReq, feedbackReq])
+    .then(([ret, fbRet]) => {
+        if (!ret || ret.status !== 'success') {
+            showToast('无法加载单据详情：' + ((ret && ret.msg) || '请稍后重试'), 'error');
             return;
         }
 
@@ -613,26 +625,90 @@ function loadReceiptDetail(receiptId) {
         document.getElementById('archiveModalTitle').innerText = ` 历史收据明细校对 - 单据 #${ret.receipt_id}`;
         // 空 image_url（image_path 为空的历史单据）不得直接赋值：写空串会让浏览器
         // 回落到向当前页面发请求，且「查看大图」会指向空 URL。URL 为空时清空属性并隐藏入口。
-        const archiveImageUrl = ret.image_url || '';
+        const archiveImageUrl = ret.image_url || (ret.data && ret.data.image_url) || '';
         const archivePreviewImg = document.getElementById('archivePreviewImg');
         const archiveOpenRawBtn = document.getElementById('btnArchiveOpenRaw');
         const archiveNoImage = document.getElementById('archiveNoImage');
         if (archiveImageUrl) {
             archivePreviewImg.src = archiveImageUrl;
             archivePreviewImg.style.display = '';
-            if (archiveNoImage) archiveNoImage.classList.add('hide');
+            if (archiveNoImage) {
+                archiveNoImage.classList.add('hide');
+                archiveNoImage.textContent = '无原图（手工录入）';
+            }
             archiveOpenRawBtn.href = archiveImageUrl;
             archiveOpenRawBtn.classList.remove('hide');
         } else {
             archivePreviewImg.removeAttribute('src');
             archivePreviewImg.style.display = 'none';
-            if (archiveNoImage) archiveNoImage.classList.remove('hide');
+            if (archiveNoImage) {
+                const hasImg = !!(ret.has_original_image || (ret.data && ret.data.has_original_image) || (data && data.doc_form && data.doc_form !== 'manual_entry'));
+                archiveNoImage.textContent = hasImg ? '原图加载失败' : '无原图（手工录入）';
+                archiveNoImage.classList.remove('hide');
+            }
             archiveOpenRawBtn.removeAttribute('href');
             archiveOpenRawBtn.classList.add('hide');
+        }
+        if (archivePreviewImg && !archivePreviewImg.__uat001Bound) {
+            archivePreviewImg.__uat001Bound = true;
+            archivePreviewImg.addEventListener('error', function () {
+                const curId = currentArchiveReceiptId;
+                if (!curId) return;
+                if (!archivePreviewImg.__refreshing) {
+                    archivePreviewImg.__refreshing = true;
+                    if (typeof apiFetch === 'function') {
+                        apiFetch(`/api/receipt/${curId}`)
+                            .then(res => res.json())
+                            .then(freshRet => {
+                                archivePreviewImg.__refreshing = false;
+                                const freshUrl = (freshRet && (freshRet.image_url || (freshRet.data && freshRet.data.image_url))) || '';
+                                if (freshUrl && freshUrl !== archivePreviewImg.src) {
+                                    archivePreviewImg.src = freshUrl;
+                                    archivePreviewImg.style.display = '';
+                                    if (archiveNoImage) archiveNoImage.classList.add('hide');
+                                    if (archiveOpenRawBtn) archiveOpenRawBtn.href = freshUrl;
+                                    return;
+                                }
+                                archivePreviewImg.style.display = 'none';
+                                if (archiveNoImage) {
+                                    archiveNoImage.textContent = '原图加载失败';
+                                    archiveNoImage.classList.remove('hide');
+                                }
+                                if (typeof showToast === 'function') {
+                                    showToast('原图加载失败：链接失效或网络异常，请重新打开刷新', 'error');
+                                }
+                            })
+                            .catch(() => {
+                                archivePreviewImg.__refreshing = false;
+                                archivePreviewImg.style.display = 'none';
+                                if (archiveNoImage) {
+                                    archiveNoImage.textContent = '原图加载失败';
+                                    archiveNoImage.classList.remove('hide');
+                                }
+                                if (typeof showToast === 'function') {
+                                    showToast('原图加载失败：网络异常，请稍后重试', 'error');
+                                }
+                            });
+                    }
+                } else {
+                    archivePreviewImg.style.display = 'none';
+                    if (archiveNoImage) {
+                        archiveNoImage.textContent = '原图加载失败';
+                        archiveNoImage.classList.remove('hide');
+                    }
+                }
+            });
         }
         resetArchiveImgTransform();
 
         renderArchiveForm(data);
+
+        // UAT-034: 回填明细行反馈（点赞/点踩与原因文本）
+        const feedbacks = (fbRet && fbRet.status === 'success' && Array.isArray(fbRet.feedbacks))
+            ? fbRet.feedbacks : [];
+        if (typeof rehydrateArchiveFeedbacks === 'function') {
+            rehydrateArchiveFeedbacks(feedbacks);
+        }
 
         // 绑定输入监听器，检测未保存修改（结算方式下拉变更同样算未保存修改）
         document.querySelectorAll('#arcSupplier, #arcDate, #arcSheet, #arcTotal').forEach(inp => {
@@ -667,6 +743,9 @@ async function closeArchiveModal(force = false) {
             })
             : false;
         if (!confirmExit) return;
+    }
+    if (typeof closeRowFeedbackModal === 'function') {
+        closeRowFeedbackModal();
     }
     const archiveModalEl = document.getElementById('archiveDetailModal');
     if (archiveModalEl && typeof closeAccessibleModal === 'function') closeAccessibleModal(archiveModalEl);
@@ -902,12 +981,13 @@ function appendArcTableRow(item = {}) {
     const tbody = document.getElementById('arcTableBody');
     const tr = document.createElement('tr');
 
-    const rawName = item.raw_name || item.name || '';
+    const rawName = item.name || item.raw_name || '';
     const qty = Number(item.quantity || 1.0);
     const unit = item.raw_unit || item.unit || 'kg';
     const price = Number(item.unit_price || 0.00);
     const amount = Number(item.amount || (qty * price));
     const skuId = item.sku_id || '';
+    const splitRes = (typeof smartSplitItemName === 'function') ? smartSplitItemName(rawName) : null;
 
     if (unit && !availableUnits.includes(unit)) {
         availableUnits.push(unit);
@@ -932,7 +1012,7 @@ function appendArcTableRow(item = {}) {
             ${skuId ? `<span class="badge badge-success">已关联</span>` : ''}
             ${isVoid ? `<span class="badge badge-secondary" title="划线作废，不计入总额">作废</span>` : ''}
         </td>
-        <td><div style="display:flex; flex-direction:column; gap:4px;"><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)" title="数量" placeholder="数量" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}><input type="number" step="0.01" class="inp-actual-qty" value="${w2Escape(actualQtyArc)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="padding:4px; font-size:0.78rem;" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}></div></td>
+        <td><div style="display:flex; flex-direction:column; gap:4px;"><input type="number" step="0.01" class="inp-qty" value="${qty}" oninput="markArcDirty(); recalcArcRow(this)" title="数量" placeholder="数量" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}>${splitRes && splitRes.quantity > 1 && qty !== splitRes.quantity ? `<span class="packaging-hint badge badge-light text-muted" style="font-size:0.72rem;" title="品名含包装规格：${splitRes.quantity}${splitRes.unit || ''}（未自动覆盖）">包装: ${splitRes.quantity}${splitRes.unit || ''}</span>` : ''}<input type="number" step="0.01" class="inp-actual-qty" value="${w2Escape(actualQtyArc)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="padding:4px; font-size:0.78rem;" oninput="markArcDirty(); recalcArcRow(this)" ${isVoid ? 'disabled style="text-decoration:line-through;"' : ''}></div></td>
         <td>
             <div class="unit-combobox-wrap">
                 <input type="text" class="inp-unit form-control" value="${w2Escape(unit)}" placeholder="单位" style="padding:4px; font-size:0.8rem; ${isVoid ? 'text-decoration:line-through; color:#6c757d;' : ''}" onfocus="this.select(); openUnitMenu(this)" onclick="openUnitMenu(this)" oninput="markArcDirty(); renderUnitMenuItems(this, this.nextElementSibling)" onblur="closeUnitMenuDelay(this)" ${isVoid ? 'disabled' : ''}>

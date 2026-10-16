@@ -413,27 +413,9 @@ def confirm_sample(sample_id: str, body: ConfirmBody, request: Request):
         row["gt_source_model"] = saved["gt_source_model"]
     _save_manifest(evalset_dir, rows)
 
-    # 确权联动：确保关联单据并置位黄金基准集标记
-    rid = saved.get("source_receipt_id")
-    if not rid:
-        try:
-            from app.services.evalset_linkage import link_or_create_receipt_for_sample
-            rid = link_or_create_receipt_for_sample(evalset_dir, sample_id, row, saved)
-            if rid:
-                saved["source_receipt_id"] = rid
-                with open(exp_path, "w", encoding="utf-8") as f:
-                    json.dump(saved, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning("[evalset] auto-link receipt for %s failed: %s", sample_id, e)
-
-    if rid:
-        try:
-            rid_int = int(rid)
-            receipt = db.get_receipt_row(rid_int)
-            tenant = getattr(receipt, "tenant_id", "default") if receipt else "default"
-            db.set_golden_sample(rid_int, 1, tenant_id=tenant)
-        except Exception as e:
-            logger.warning("[evalset] auto-promote receipt %s to golden failed: %s", rid, e)
+    # GT 确权只写评测语料（expected JSON 与 manifest）。
+    # 不调用 link_or_create、不晋升黄金样本、不写 receipts/items/inventory/payments。
+    # 业务单据仍由离开评测后的普通复核保存负责。
 
     return {"status": "success", "data": {
         "sample_id": sample_id,

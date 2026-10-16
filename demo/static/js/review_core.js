@@ -721,6 +721,106 @@ function renderEditForm(data) {
     if (typeof syncFlaggedLock === 'function') syncFlaggedLock(data);
     syncFeedbackVisibility(data);
     syncRecoveryVisibility(data);
+
+    // UAT-001：复核工作台原图预览与无原图占位状态同步。
+    // 有原图时必须展示图片且 naturalWidth > 0，仅确实无原图时才显示手工无原图占位。
+    const previewImg = document.getElementById('previewImg');
+    const noImg = document.getElementById('manualEntryNoImage');
+    const imgUrl = (data && (data.image_url || data.imageUrl)) || '';
+    const hasOriginal = !!(imgUrl || (data && (data.has_original_image || (data.doc_form && data.doc_form !== 'manual_entry'))));
+
+    if (imgUrl) {
+        if ((!data || data.doc_form !== 'manual_entry') && typeof resetManualEntryMode === 'function' && typeof isManualEntry !== 'undefined' && isManualEntry) {
+            resetManualEntryMode();
+        }
+        const imgContainer = document.getElementById('imgViewerContainer');
+        if (imgContainer) imgContainer.classList.remove('manual-entry-active');
+        const imgToolbar = document.getElementById('imgToolbar');
+        if (imgToolbar) imgToolbar.classList.remove('hide');
+        const leftActions = document.getElementById('leftCardTitleActions');
+        if (leftActions) leftActions.classList.remove('hide');
+
+        if (previewImg) {
+            if (previewImg.src !== imgUrl) previewImg.src = imgUrl;
+            previewImg.style.display = '';
+        }
+        if (noImg) {
+            noImg.classList.add('hide');
+            const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+            if (noTitle) noTitle.textContent = '无原图（手工录入）';
+        }
+        if (typeof syncReviewSourceBadge === 'function') syncReviewSourceBadge(data);
+    } else if (isManualReceiptData(data)) {
+        if (previewImg) previewImg.style.display = 'none';
+        if (noImg) {
+            const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+            if (noTitle) noTitle.textContent = '无原图（手工录入）';
+            noImg.classList.remove('hide');
+        }
+    } else if (hasOriginal) {
+        if (previewImg) previewImg.style.display = 'none';
+        if (noImg) {
+            const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+            if (noTitle) noTitle.textContent = '原图加载中或待刷新';
+            noImg.classList.remove('hide');
+        }
+    }
+
+    if (previewImg && !previewImg.__uat001Bound) {
+        previewImg.__uat001Bound = true;
+        previewImg.addEventListener('error', function () {
+            const targetId = (typeof currentReceiptId !== 'undefined' && currentReceiptId) ? currentReceiptId : (data && (data.id || data.receipt_id));
+            if (!targetId) return;
+            const isManualWithoutImg = isManualReceiptData(data) && !hasOriginal;
+            if (isManualWithoutImg) return;
+
+            if (!previewImg.__refreshing) {
+                previewImg.__refreshing = true;
+                if (typeof apiFetch === 'function') {
+                    apiFetch(`/api/receipt/${targetId}`)
+                        .then(res => res.json())
+                        .then(freshRet => {
+                            previewImg.__refreshing = false;
+                            const freshUrl = (freshRet && (freshRet.image_url || (freshRet.data && freshRet.data.image_url))) || '';
+                            if (freshUrl && freshUrl !== previewImg.src) {
+                                previewImg.src = freshUrl;
+                                previewImg.style.display = '';
+                                if (noImg) noImg.classList.add('hide');
+                                return;
+                            }
+                            previewImg.style.display = 'none';
+                            if (noImg) {
+                                const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+                                if (noTitle) noTitle.textContent = '原图加载失败';
+                                noImg.classList.remove('hide');
+                            }
+                            if (typeof showToast === 'function') {
+                                showToast('原图加载失败：链接失效或网络异常，请刷新重试', 'error');
+                            }
+                        })
+                        .catch(() => {
+                            previewImg.__refreshing = false;
+                            previewImg.style.display = 'none';
+                            if (noImg) {
+                                const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+                                if (noTitle) noTitle.textContent = '原图加载失败';
+                                noImg.classList.remove('hide');
+                            }
+                            if (typeof showToast === 'function') {
+                                showToast('原图加载失败：网络异常，请稍后重试', 'error');
+                            }
+                        });
+                }
+            } else {
+                previewImg.style.display = 'none';
+                if (noImg) {
+                    const noTitle = noImg.querySelector('.preview-nonweb-hint-title');
+                    if (noTitle) noTitle.textContent = '原图加载失败';
+                    noImg.classList.remove('hide');
+                }
+            }
+        });
+    }
     document.getElementById('inpSupplier').value = data.supplier_name || '';
     // WS2：供应商变化 → 整表重取「供应商历史报价」提示（单据级维度）。
     const _hintSupplierInput = document.getElementById('inpSupplier');
@@ -849,7 +949,6 @@ function renderEditForm(data) {
     // AC-05-01: 自动诊断问题并刷新问题诊断摘要栏
     refreshReceiptIssueSummary(data);
 
-    // 绑定字段变化事件，实现实时动态重算与计数递减（AC-05-03: 3->2->1->0）
     ['inpSupplier', 'inpDate', 'inpTotal'].forEach(id => {
         const inp = document.getElementById(id);
         if (inp && !inp.__issueListenerBound) {
@@ -860,6 +959,15 @@ function renderEditForm(data) {
             });
         }
     });
+
+    if (docFormElem && !docFormElem.__docFormListenerBound) {
+        docFormElem.__docFormListenerBound = true;
+        docFormElem.addEventListener('change', () => {
+            recalcTotalSum();
+            refreshReceiptIssueSummary();
+            if (typeof markReviewDirty === 'function') markReviewDirty();
+        });
+    }
 
     // 记录复核表单初始快照并重置脏状态 (QA-P0-01)
     try {
@@ -1190,6 +1298,15 @@ function updateFeesSummaryBadge() {
 }
 window.updateFeesSummaryBadge = updateFeesSummaryBadge;
 
+// UAT-009: 清理复核表单附加费用与手写注记（新建手工单 / 重置表单时恢复默认 0 与折叠状态）
+function clearReviewFees() {
+    renderFeeRowsFromData({});
+    updateFeesSummaryBadge();
+    renderNoteRowsFromData({});
+    if (typeof updateNotesSummaryBadge === 'function') updateNotesSummaryBadge();
+}
+window.clearReviewFees = clearReviewFees;
+
 // -------------------------------------------------------------
 // 手写注记动态行（与附加费用动态行同款交互）：
 // 契约字段不变：adjustment_notes: list[str]——仅换视图，落库链路零改动。
@@ -1463,7 +1580,27 @@ function itemReviewFlags(item) {
             reason: ucw,
         });
     }
+    // UAT-030 / S2-01: 包装待核验确定性提示（品名含规格*数量，仅作人工核验提示，绝不覆盖品名与数量）
+    const itemName = String((item && (item.name || item.raw_name)) || '').trim();
+    if (itemName && typeof smartSplitItemName === 'function') {
+        const splitRes = smartSplitItemName(itemName);
+        if (splitRes && splitRes.quantity && splitRes.quantity > 1) {
+            const rawQ = (item.quantity != null && item.quantity !== '') ? item.quantity : item.qty;
+            const itemQty = (rawQ != null && rawQ !== '') ? Number(rawQ) : null;
+            if (itemQty == null || itemQty !== splitRes.quantity) {
+                flags.push({
+                    key: 'package_qty_mismatch',
+                    label: '包装待核验',
+                    reason: `品名含包装规格（${splitRes.quantity}${splitRes.unit || ''}），当前数量为 ${itemQty != null ? itemQty : '未识别'}，请对照原图核验`,
+                });
+            }
+        }
+    }
     return flags;
+}
+if (typeof window !== 'undefined') {
+    window.itemReviewFlags = itemReviewFlags;
+    window.smartSplitItemName = smartSplitItemName;
 }
 
 // 行级待核验角标 HTML（无标记时返回空串）：样式 class 与 P11 抽出的共用实现保持一致，
@@ -1521,6 +1658,13 @@ const STATUS_GROUP_MAP = Object.keys(RECEIPT_STATUSES).reduce((acc, key) => {
     (acc[g] || (acc[g] = [])).push(key);
     return acc;
 }, {});
+
+// UAT-029 / S2-09: 贷项单与更正单（合法负金额/负数量单据形态）
+function isNegativeDocForm(docForm) {
+    const f = String(docForm || '').trim();
+    return f === 'credit_note' || f === 'correction_note';
+}
+window.isNegativeDocForm = isNegativeDocForm;
 
 // 手工录入单：doc_form=manual_entry，或正处于「新建手工单」态
 function isManualReceiptData(data) {
@@ -1789,15 +1933,8 @@ function appendTableRow(item = {}) {
     let finalQty = qty;
     let finalUnit = unit;
     let finalPrice = price;
-    const splitRes = smartSplitItemName(rawName);
-    if (splitRes && (qty === 1 || !item.quantity)) {
-        finalRawName = splitRes.cleanName;
-        finalQty = splitRes.quantity;
-        finalUnit = splitRes.unit || unit;
-        if (amount > 0 && finalQty > 0) {
-            finalPrice = parseFloat((amount / finalQty).toFixed(2));
-        }
-    }
+    // UAT-030 / S2-01: 包装规格只作核对提示，绝不自动覆盖品名与数量（数量1是合法数量，不可改写为包装个数）
+    const splitRes = (typeof smartSplitItemName === 'function') ? smartSplitItemName(rawName) : null;
 
     const isVoidMain = !!(item.is_void);
     if (isVoidMain) {
@@ -1836,6 +1973,7 @@ function appendTableRow(item = {}) {
         <td data-label="数量">
             <div style="display:flex; flex-direction:column; gap:4px;">
                 <input type="number" step="0.01" class="inp-qty form-control text-right" value="${finalQty}" oninput="recalcRow(this)" title="数量" placeholder="数量" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
+                ${splitRes && splitRes.quantity > 1 && qty !== splitRes.quantity ? `<span class="packaging-hint badge badge-light text-muted" style="font-size:0.72rem; text-align:right;" title="品名含包装规格：${splitRes.quantity}${splitRes.unit || ''}（未自动覆盖）">包装: ${splitRes.quantity}${splitRes.unit || ''}</span>` : ''}
                 <input type="number" step="0.01" class="inp-actual-qty form-control text-right" value="${w2Escape(actualQtyVal)}" placeholder="实收" title="实际数量（手写改量，留空则按数量计）" style="font-size:0.78rem; padding:4px 6px;" oninput="recalcRow(this)" ${isVoidMain ? 'disabled style="text-decoration:line-through;"' : ''}>
             </div>
         </td>
@@ -1923,13 +2061,12 @@ function recalcRow(inputElem) {
     const tr = inputElem.closest('tr');
     const qty = parseFloat(tr.querySelector('.inp-qty').value) || 0;
     const price = parseFloat(tr.querySelector('.inp-price').value) || 0;
-    // 与算术门禁同口径：实收>0 时按实收计金额（math_engine effective_qty）
-    const actualInput = tr.querySelector('.inp-actual-qty');
-    const actual = actualInput ? parseFloat(actualInput.value) : NaN;
-    const effQty = !isNaN(actual) && actual > 0 ? actual : qty;
-
     const amtInput = tr.querySelector('.inp-amount');
-    amtInput.value = (effQty * price).toFixed(2);
+
+    // 只有修改数量或单价时才自动推算票面行金额；修改实收数量绝不覆盖票面行金额
+    if (inputElem && (inputElem.classList.contains('inp-qty') || inputElem.classList.contains('inp-price'))) {
+        amtInput.value = (qty * price).toFixed(2);
+    }
 
     recalcTotalSum();
 }
@@ -1940,16 +2077,37 @@ function recalcTotalSum() {
     let itemsSum = 0.0;
     rows.forEach(tr => {
         if (tr.dataset && tr.dataset.isVoid === '1') return;
+        const actualInput = tr.querySelector('.inp-actual-qty');
+        const actualRaw = actualInput ? actualInput.value.trim() : '';
+        const price = parseFloat(tr.querySelector('.inp-price')?.value) || 0;
         const amt = parseFloat(tr.querySelector('.inp-amount')?.value) || 0;
-        itemsSum += amt;
+
+        let lineEffective = amt;
+        // 显式区分 null 与有效 0：实际填写了实收（含 0）按实收计有效金额，留空则按票面金额
+        if (actualRaw !== '' && !isNaN(parseFloat(actualRaw))) {
+            const actual = parseFloat(actualRaw);
+            lineEffective = Math.round(actual * price * 100) / 100;
+            if (amt < 0 && lineEffective > 0) lineEffective = -lineEffective;
+        }
+        itemsSum += lineEffective;
     });
 
     // 附加费用：从动态费用行收集（与后端算术门禁 expected_total 同口径：
     // +delivery+deposit+serviceFee+tax-discount-rounding）
     const fees = collectFeeMap();
 
-    const netTotal = Math.max(0, itemsSum - fees.discount_amount - fees.rounding_adjustment
-        + fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount);
+    const docFormVal = (
+        (typeof document !== 'undefined' && document.getElementById && document.getElementById('inpDocForm') ? document.getElementById('inpDocForm').value : '') ||
+        (currentReceiptData && currentReceiptData.doc_form) ||
+        ''
+    ).trim();
+    const isNegDoc = (typeof isNegativeDocForm === 'function')
+        ? isNegativeDocForm(docFormVal)
+        : (docFormVal === 'credit_note' || docFormVal === 'correction_note');
+
+    const calculatedTotal = itemsSum - fees.discount_amount - fees.rounding_adjustment
+        + fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount;
+    const netTotal = isNegDoc ? calculatedTotal : Math.max(0, calculatedTotal);
     // S3-19：店员手改过总额就不再被明细合计覆盖，只提示差额
     if (typeof isTotalOverridden === 'function' && isTotalOverridden()) {
         if (typeof updateTotalOverrideHint === 'function') updateTotalOverrideHint(netTotal);
@@ -2049,9 +2207,85 @@ function _syncFeedbackBadge(cell) {
         badge.style.background = '#fdecea';
         badge.style.color = '#c62828';
     } else {
-        badge.textContent = '';
-        badge.style.display = 'none';
+        const comment = cell.querySelector('.feedback-comment')?.value?.trim();
+        if (comment) {
+            badge.textContent = '已反馈';
+            badge.style.display = '';
+            badge.style.background = '#f1f5f9';
+            badge.style.color = '#475569';
+        } else {
+            badge.textContent = '';
+            badge.style.display = 'none';
+        }
     }
+}
+
+// UAT-034：根据反馈数据回填单元格内点赞/点踩选中态与原因文本
+function applyFeedbackToCell(cell, likeVal, comment) {
+    if (!cell) return;
+    const likeBtn = cell.querySelector('.btn-like');
+    const dislikeBtn = cell.querySelector('.btn-dislike');
+    const statusEl = cell.querySelector('.feedback-status');
+    const textarea = cell.querySelector('.feedback-comment');
+    const charEl = cell.querySelector('.feedback-charcount');
+
+    const safeComment = String(comment || '').trim();
+    if (textarea) textarea.value = safeComment;
+
+    if (charEl) {
+        const len = safeComment.length;
+        const remain = FEEDBACK_COMMENT_MAXLEN_FRONTEND - len;
+        if (len > 0) {
+            charEl.textContent = remain <= 100 ? `仅剩 ${remain} 字` : `${len}/${FEEDBACK_COMMENT_MAXLEN_FRONTEND}`;
+            charEl.style.color = remain <= 100 ? '#c62828' : '';
+        } else {
+            charEl.textContent = '';
+            charEl.style.color = '';
+        }
+    }
+
+    const numLike = (likeVal !== null && likeVal !== undefined && likeVal !== '') ? Number(likeVal) : null;
+    cell.dataset.like = (numLike === 1 || numLike === -1) ? String(numLike) : '';
+    if (numLike === 1) {
+        if (likeBtn) likeBtn.classList.add('active');
+        if (dislikeBtn) dislikeBtn.classList.remove('active');
+        if (statusEl) statusEl.textContent = '已点赞';
+    } else if (numLike === -1) {
+        if (dislikeBtn) dislikeBtn.classList.add('active');
+        if (likeBtn) likeBtn.classList.remove('active');
+        if (statusEl) statusEl.textContent = '已点踩';
+    } else {
+        if (likeBtn) likeBtn.classList.remove('active');
+        if (dislikeBtn) dislikeBtn.classList.remove('active');
+        if (statusEl) statusEl.textContent = safeComment ? '已反馈' : '';
+    }
+    _syncFeedbackBadge(cell);
+}
+
+// UAT-034：重开单据时将接口返回的反馈集合灌入表格行
+function rehydrateArchiveFeedbacks(feedbacks) {
+    if (!Array.isArray(feedbacks) || feedbacks.length === 0) return;
+    const tbody = document.getElementById('arcTableBody');
+    if (!tbody) return;
+    const cells = tbody.querySelectorAll('.feedback-cell');
+
+    const fbMap = {};
+    feedbacks.forEach(fb => {
+        if (fb && fb.item_index != null) {
+            fbMap[Number(fb.item_index)] = fb;
+        }
+    });
+
+    cells.forEach(cell => {
+        const rawIdx = (cell.dataset.rowIndex !== undefined && cell.dataset.rowIndex !== '') 
+            ? cell.dataset.rowIndex 
+            : cell.dataset.itemIndex;
+        const rowIdx = (rawIdx !== undefined && rawIdx !== null && rawIdx !== '') ? Number(rawIdx) : null;
+        if (rowIdx != null && fbMap[rowIdx]) {
+            const fb = fbMap[rowIdx];
+            applyFeedbackToCell(cell, fb.like, fb.comment);
+        }
+    });
 }
 
 // U-08：反馈弹层——点击行内「反馈」按钮，把该行 feedback-cell 移入 modal；关闭时移回
@@ -2181,6 +2415,7 @@ function submitArcFeedback(btn) {
         if (status >= 200 && status < 300 && body && body.status === 'success') {
             if (statusEl) statusEl.textContent = likeVal === 1 ? '已点赞' : (likeVal === -1 ? '已点踩' : '已提交');
             showToast('归档反馈已提交', 'success');
+            _syncFeedbackBadge(cell);
             _qualityWarningsLink(comment, likeVal);
             if (body.distilled) {
                 // P1-T5 发现性：此前只报「已记入队列」却不给入口，用户收到提示后无处可去
@@ -2342,7 +2577,7 @@ function collectReviewFormData() {
 function buildSavePayloadFromData(data, receiptId) {
     const d = data || {};
     const payload = {
-        receipt_id: receiptId,
+        receipt_id: (receiptId != null && receiptId !== '') ? Number(receiptId) : null,
         source: d.source || 'manual',
         supplier_name: d.supplier_name || '通用供应商',
         date: d.date || '',
@@ -2507,6 +2742,7 @@ async function discardCurrentReceipt() {
                 currentReceiptData = null;
                 clearManifest();
                 resetManualEntryMode();   // D12：放弃手工单草稿 → 恢复左栏/标题
+                clearReviewFees();        // UAT-009：放弃单据时重置附加费用与注记
                 syncFeedbackVisibility();
                 syncRecoveryVisibility();
             } else {
@@ -2528,6 +2764,7 @@ async function discardCurrentReceipt() {
             currentReceiptData = null;
             clearManifest();
             resetManualEntryMode();   // D12：放弃手工单草稿 → 恢复左栏/标题
+            clearReviewFees();        // UAT-009：放弃单据时重置附加费用与注记
             syncFeedbackVisibility();
             syncRecoveryVisibility();
         }
@@ -2622,13 +2859,22 @@ function calculateReceiptIssues(data) {
     }
 
     const totalAmt = Number(data.total_amount || 0);
-    if (isNaN(totalAmt) || totalAmt <= 0) {
+    const docFormVal = String(
+        data.doc_form ||
+        (typeof document !== 'undefined' && document.getElementById && document.getElementById('inpDocForm') ? document.getElementById('inpDocForm').value : '') ||
+        ''
+    ).trim();
+    const isNegDoc = (typeof isNegativeDocForm === 'function')
+        ? isNegativeDocForm(docFormVal)
+        : (docFormVal === 'credit_note' || docFormVal === 'correction_note');
+
+    if (isNaN(totalAmt) || totalAmt === 0 || (!isNegDoc && totalAmt < 0)) {
         issues.push({
             id: 'err_total',
             field: 'inpTotal',
             type: 'blocker',
-            title: '总金额必须大于 0',
-            guide: '请填写整单总金额，不能为 0 或负数。'
+            title: isNegDoc ? '总金额不能为 0' : '总金额必须大于 0',
+            guide: isNegDoc ? '请填写整单总金额，不能为 0。' : '请填写整单总金额，不能为 0 或负数。'
         });
     }
 
@@ -2663,18 +2909,27 @@ function calculateReceiptIssues(data) {
         const price = Number(it.unit_price);
         const amount = Number(it.amount);
 
-        if (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) {
+        const isQtyPriceInvalid = isNegDoc
+            ? (isNaN(qty) || isNaN(price) || isNaN(amount) || qty === 0 || (qty < 0 && price < 0))
+            : (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0);
+
+        if (isQtyPriceInvalid) {
             issues.push({
                 id: `err_item_num_${idx}`,
                 field: `item_row_${idx}_qty`,
                 type: 'blocker',
                 rowIndex: idx,
                 title: `第 ${rowNum} 行单价或数量不是有效数字`,
-                guide: `第 ${rowNum} 行「${name || '明细'}」单价或数量不正确，请重新输入。`
+                guide: (isNegDoc && qty < 0 && price < 0)
+                    ? `第 ${rowNum} 行「${name || '明细'}」不能同时出现负数量与负单价。`
+                    : `第 ${rowNum} 行「${name || '明细'}」单价或数量不正确，请重新输入。`
             });
         } else {
             // 行内算术一致性检查
-            const calcAmt = Math.round(qty * price * 100) / 100;
+            let calcAmt = Math.round(qty * price * 100) / 100;
+            if (isNegDoc && amount < 0 && calcAmt > 0) {
+                calcAmt = -calcAmt;
+            }
             const diff = Math.abs(calcAmt - amount);
             if (diff > 0.05) {
                 issues.push({
@@ -2699,7 +2954,19 @@ function calculateReceiptIssues(data) {
             });
         }
 
-        if (!isNaN(amount)) itemsSum += amount;
+        // 与后端 math_engine v2_1_0 保持严格一致的算术守恒：
+        // 显式区分 actual_qty 为 null/未填 vs 有效 0：
+        // actual_qty 为 null/未填时按票面 amount，填写了实收（含有效 0）时按 actual_qty * price 计入有效小计
+        let lineEffective = amount;
+        const actualRaw = it.actual_qty;
+        if (actualRaw !== null && actualRaw !== undefined && actualRaw !== '' && !isNaN(Number(actualRaw))) {
+            const actualNum = Number(actualRaw);
+            lineEffective = Math.round(actualNum * price * 100) / 100;
+            if (amount < 0 && lineEffective > 0) {
+                lineEffective = -lineEffective;
+            }
+        }
+        if (!isNaN(lineEffective)) itemsSum += lineEffective;
     });
 
     // 附加费用计入总额比对
@@ -2713,7 +2980,7 @@ function calculateReceiptIssues(data) {
     itemsSum = Math.round(itemsSum * 100) / 100;
 
     // 3. 整单算术守恒与差额指引 (AC-05-01, AC-05-04)
-    if (totalAmt > 0 && items.length > 0) {
+    if (totalAmt !== 0 && items.length > 0) {
         const totalDiff = Math.abs(itemsSum - totalAmt);
         if (totalDiff > 0.05) {
             issues.push({
@@ -2850,7 +3117,16 @@ function toggleIssueOnlyRows() {
 window.toggleIssueOnlyRows = toggleIssueOnlyRows;
 
 // AC-06-01 至 AC-06-05: 保存复核表单（支持保存并下一张，多错内联聚合与乐观锁）
+function isEvalWorkbenchContext() {
+    if (window.__EVAL_WORKBENCH__ && window.__EVAL_WORKBENCH__.sampleId) return true;
+    const meta = document.querySelector('meta[name="eval-workbench"]');
+    return !!(meta && String(meta.content || '').trim());
+}
+
 function submitSaveEdited(openNext = false) {
+    // 评测工作台的保存按钮只提交 GT。这里拒绝回落到普通业务保存，
+    // 避免同一次点击写出 receipt_id 为空的待审单。离开本页后该标志不存在，手工保存仍走下面的原路径。
+    if (isEvalWorkbenchContext()) return;
     if (isSavingReview) return; // AC-06-05: 严格互斥，防止连击重复提交
 
     // AC-08-05: 记录本次保存的触发元素，供 409 冲突弹窗关闭后归还焦点。
@@ -2912,8 +3188,17 @@ function submitSaveEdited(openNext = false) {
         }
 
         const totalAmt = Number((data && data.total_amount) || 0);
-        if (isNaN(totalAmt) || totalAmt <= 0) {
-            recordFieldError('inpTotal', '整单总金额必须大于 0');
+        const docFormVal = String(
+            (data && data.doc_form) ||
+            (typeof document !== 'undefined' && document.getElementById && document.getElementById('inpDocForm') ? document.getElementById('inpDocForm').value : '') ||
+            ''
+        ).trim();
+        const isNegDoc = (typeof isNegativeDocForm === 'function')
+            ? isNegativeDocForm(docFormVal)
+            : (docFormVal === 'credit_note' || docFormVal === 'correction_note');
+
+        if (isNaN(totalAmt) || totalAmt === 0 || (!isNegDoc && totalAmt < 0)) {
+            recordFieldError('inpTotal', isNegDoc ? '整单总金额不能为 0' : '整单总金额必须大于 0');
         }
 
         if (!data.items || data.items.length === 0) {
@@ -2936,7 +3221,11 @@ function submitSaveEdited(openNext = false) {
             }
             const qty = Number(it && it.quantity);
             const price = Number(it && it.unit_price);
-            if ((isNaN(qty) || qty <= 0 || isNaN(price) || price < 0) && rowEl) {
+            const amount = Number(it && it.amount);
+            const isQtyPriceInvalid = isNegDoc
+                ? (isNaN(qty) || isNaN(price) || isNaN(amount) || qty === 0 || (qty < 0 && price < 0))
+                : (isNaN(qty) || qty <= 0 || isNaN(price) || price < 0);
+            if (isQtyPriceInvalid && rowEl) {
                 const qtyInp = rowEl.querySelector('.inp-qty') || rowEl.querySelector('.inp-price');
                 if (qtyInp) {
                     qtyInp.classList.add('is-invalid');
@@ -3160,4 +3449,15 @@ function refreshReviewFormFromServer(receiptId, _retryCount) {
         showToast('重新加载失败，请检查网络后点「重新加载」重试', 'error', 8000);
     });
 }
+
+if (typeof window !== 'undefined') {
+    window.applyFeedbackToCell = applyFeedbackToCell;
+    window.rehydrateArchiveFeedbacks = rehydrateArchiveFeedbacks;
+    window.openRowFeedbackModal = openRowFeedbackModal;
+    window.closeRowFeedbackModal = closeRowFeedbackModal;
+    window.handleArcFeedback = handleArcFeedback;
+    window.submitArcFeedback = submitArcFeedback;
+    window._syncFeedbackBadge = _syncFeedbackBadge;
+}
+
 

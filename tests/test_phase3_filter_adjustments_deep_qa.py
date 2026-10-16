@@ -12,9 +12,11 @@ Covers AC-FILTER-01 through AC-FILTER-07 with deep boundary, edge-case, and cont
 """
 import os
 import re
+import urllib.error
 import urllib.request
 import json
 from datetime import datetime, timedelta
+from urllib.parse import urlsplit, urlunsplit
 import pytest
 from fastapi.testclient import TestClient
 
@@ -437,24 +439,124 @@ def test_qa_ac07_zero_emoji_scan():
 
 
 # =============================================================================
-# 常驻服务在线链路健康与实时接口验证 (Port 15010)
+# 在线链路健康探测。目标地址、端口、timeout 均可注入；禁止回落或写入 15010。
 # =============================================================================
+
+_LIVE_PORT_FORBIDDEN = 15010
+
+
+def _fail_probe(message):
+    pytest.fail(message + " 此结果是失败，不是 skip，也不是对产品 health 的判定。")
+
+
+def _reject_forbidden_port(port):
+    if int(port) == _LIVE_PORT_FORBIDDEN:
+        _fail_probe(
+            "探测目标解析到 %s。拒绝连接，拒绝写入。" % _LIVE_PORT_FORBIDDEN
+        )
+
+
+def _probe_origin_and_timeout():
+    """读取 PW_TEST_BASE_URL/TEST_BASE_URL、PW_TEST_PORT/TEST_PORT、timeout。未配置则失败，不回落 15010。"""
+    base = os.environ.get("PW_TEST_BASE_URL", "").strip() or os.environ.get("TEST_BASE_URL", "").strip()
+    port_raw = os.environ.get("PW_TEST_PORT", "").strip() or os.environ.get("TEST_PORT", "").strip()
+    timeout_raw = (
+        os.environ.get("PW_TEST_HEALTH_TIMEOUT", "").strip()
+        or os.environ.get("TEST_HEALTH_TIMEOUT", "").strip()
+        or "5"
+    )
+    try:
+        timeout = float(timeout_raw)
+    except ValueError:
+        _fail_probe("探测 timeout 不是数字: %s" % timeout_raw)
+    if not (timeout > 0):
+        _fail_probe("探测 timeout 必须为正数，收到 %s" % timeout_raw)
+
+    port_override = None
+    if port_raw:
+        if not port_raw.isdigit() or not (1 <= int(port_raw) <= 65535):
+            _fail_probe("探测端口非法: %s" % port_raw)
+        port_override = int(port_raw)
+        _reject_forbidden_port(port_override)
+
+    if not base:
+        if port_override is None:
+            _fail_probe(
+                "未配置 PW_TEST_BASE_URL 或 TEST_BASE_URL，且未注入端口。拒绝回落硬编码 %s。"
+                % _LIVE_PORT_FORBIDDEN
+            )
+        base = "http://127.0.0.1:%d" % port_override
+
+    parts = urlsplit(base)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        _fail_probe("探测 base URL 非法: %s" % base)
+    if parts.username or parts.password:
+        _fail_probe("探测 base URL 不得携带用户信息。")
+    final_port = port_override if port_override is not None else parts.port
+    if final_port is None:
+        final_port = 443 if parts.scheme == "https" else 80
+    _reject_forbidden_port(final_port)
+
+    host = parts.hostname
+    if ":" in host:
+        host = "[%s]" % host
+    origin = urlunsplit((parts.scheme, "%s:%d" % (host, final_port), "", "", ""))
+    return origin, timeout
+
+
+def _probe_get_json(url, timeout, headers=None):
+    """只发 GET。超时与非 200 失败，不 skip，不把单次探测失败说成产品 health 损坏。"""
+    print("[PROBE] GET %s timeout=%s" % (url, timeout))
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = resp.status
+            raw = resp.read()
+    except TimeoutError:
+        _fail_probe(
+            "探测超时 %s。不得据此判定产品 health 损坏或开发服务未启动。" % url
+        )
+    except urllib.error.HTTPError as exc:
+        _fail_probe("探测非 200: %s HTTP %s。" % (url, exc.code))
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        timed_out = isinstance(reason, TimeoutError) or "timed out" in str(reason).lower()
+        if timed_out:
+            _fail_probe(
+                "探测超时 %s。不得据此判定产品 health 损坏或开发服务未启动。" % url
+            )
+        _fail_probe("探测未完成 %s (%s)。" % (url, reason))
+    if status != 200:
+        _fail_probe("探测非 200: %s HTTP %s。" % (url, status))
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        _fail_probe("探测响应不是 JSON: %s (%s)。" % (url, exc))
+
 
 def test_qa_live_service_port_15010_healthy():
     """
-    验证 15010 常驻后台服务处于运行状态且 /api/analytics/recovery-summary 正常响应。
+    复用原失败节点 test_qa_live_service_port_15010_healthy。
+    隔离 base URL、端口、timeout 可注入。只 GET /api/health 与 recovery-summary。
+    非 200 或超时必须失败，不能 skip。不得连接或写入 15010。
     """
-    url_health = "http://127.0.0.1:15010/api/health"
-    req = urllib.request.Request(url_health)
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        assert resp.status == 200
-        body = json.loads(resp.read().decode("utf-8"))
-        assert body.get("status") == "ok"
+    origin, timeout = _probe_origin_and_timeout()
+    health = _probe_get_json(origin + "/api/health", timeout)
+    assert health.get("status") == "ok", (
+        "隔离探测 /api/health 的 status 不是 ok。"
+        "这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。"
+    )
 
-    url_api = "http://127.0.0.1:15010/api/analytics/recovery-summary?tenant_id=all&date_range=24h"
-    req_api = urllib.request.Request(url_api, headers={"X-Role": "admin"})
-    with urllib.request.urlopen(req_api, timeout=5) as resp:
-        assert resp.status == 200
-        body = json.loads(resp.read().decode("utf-8"))
-        assert body.get("status") == "success"
-        assert "event_distribution" in body.get("data", {})
+    summary = _probe_get_json(
+        origin + "/api/analytics/recovery-summary?tenant_id=all&date_range=24h",
+        timeout,
+        headers={"X-Role": "admin"},
+    )
+    assert summary.get("status") == "success", (
+        "隔离探测 recovery-summary 的 status 不是 success。"
+        "这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。"
+    )
+    assert "event_distribution" in summary.get("data", {}), (
+        "隔离探测 recovery-summary 缺少 event_distribution。"
+        "这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。"
+    )

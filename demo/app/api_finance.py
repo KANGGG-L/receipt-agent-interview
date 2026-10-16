@@ -247,15 +247,44 @@ def get_payables(request: Request, supplier_id: int = None):
     tenant_id = _tenant_id(request)
     c = recon_store.compute_payables(tenant_id)
     rows = c["payables"]
+
+    from app import units_store
+    snap = units_store.receipt_fx_map(tenant_id)
+    for r in rows:
+        rid = r.get("receipt_id")
+        r["id"] = rid
+        cur = r.get("currency") or "HKD"
+        if cur != "HKD":
+            has_snap = (rid in snap)
+            r["has_fx_snapshot"] = has_snap
+            if has_snap:
+                rate = snap[rid]
+                r["fx_snapshot_rate"] = rate
+                r["total_hkd"] = round(float(r.get("total_amount") or 0.0) * rate, 2)
+                r["fx_missing"] = False
+                paid = float(r.get("paid_amount") or 0.0)
+                r["outstanding_amount"] = round(max(r["total_hkd"] - paid, 0.0), 2)
+                r["payment_status"] = "paid" if r["outstanding_amount"] <= 0 else ("partial" if paid > 0 else "unpaid")
+            else:
+                # 缺 snapshot legacy 提示未知不硬标 HKD
+                r["fx_missing"] = True
+                r["total_hkd"] = None
+                r["outstanding_amount"] = 0.0
+                r["payment_status"] = "unpaid"
+        else:
+            r["has_fx_snapshot"] = True
+            r["fx_missing"] = False
+            r["total_hkd"] = float(r.get("total_amount") or 0.0)
+
     if supplier_id:
         rows = [r for r in rows if r["supplier_id"] == supplier_id]
-    open_rows = [r for r in rows if r["outstanding_amount"] > 0]
+    open_rows = [r for r in rows if (r.get("outstanding_amount") or 0.0) > 0]
     return {"status": "success", "data": {
         "rows": rows,
         "total_outstanding": round(sum(r["outstanding_amount"] for r in open_rows), 2),
         "outstanding_count": len(open_rows),
-        "overdue_amount": round(sum(r["outstanding_amount"] for r in open_rows if r["is_overdue"]), 2),
-        "overdue_count": sum(1 for r in open_rows if r["is_overdue"]),
+        "overdue_amount": round(sum(r["outstanding_amount"] for r in open_rows if r.get("is_overdue")), 2),
+        "overdue_count": sum(1 for r in open_rows if r.get("is_overdue")),
         "currency": "HKD",
         "basis": "只算已入账的赊单，已付的金额已扣除；外币单据按入账时的汇率折成港币",
     }}
@@ -322,6 +351,27 @@ def create_payment(
 
     with recon_store.write_lock:
         payables = {p["receipt_id"]: p for p in recon_store.compute_payables(tenant_id)["payables"]}
+        from app import units_store
+        snap = units_store.receipt_fx_map(tenant_id)
+        for rid_key, pr in payables.items():
+            cur = pr.get("currency") or "HKD"
+            if cur != "HKD":
+                if rid_key not in snap:
+                    pr["fx_missing"] = True
+                    pr["total_hkd"] = None
+                    pr["outstanding_amount"] = 0.0
+                    pr["has_fx_snapshot"] = False
+                else:
+                    rate = snap[rid_key]
+                    pr["has_fx_snapshot"] = True
+                    pr["total_hkd"] = round(float(pr.get("total_amount") or 0.0) * rate, 2)
+                    pr["fx_missing"] = False
+                    paid = float(pr.get("paid_amount") or 0.0)
+                    pr["outstanding_amount"] = round(max(pr["total_hkd"] - paid, 0.0), 2)
+            else:
+                pr["has_fx_snapshot"] = True
+                pr["fx_missing"] = False
+                pr["total_hkd"] = float(pr.get("total_amount") or 0.0)
         chosen = []
         for rid in receipt_ids:
             row = db.get_receipt_row(rid, tenant_id=tenant_id)

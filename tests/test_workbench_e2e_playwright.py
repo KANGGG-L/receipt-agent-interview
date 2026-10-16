@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 End-to-End Playwright Automation & Hong Kong Restaurant Staff (阿叔/阿姨) UX Audit.
-Tests the actual running Web Workbench (http://127.0.0.1:15010) across:
-- AC-01: AI Prefill clarity & human-review indicators
+目标地址只来自 PW_TEST_BASE_URL 或 TEST_BASE_URL。未配置时跳过，禁止默认访问 15010。
+- AC-01: 手工录入不显示 AI 预填徽章；非手工来源的预填徽章仍显示
 - AC-02: Separation of save vs approve, confirmation modal, manual escape
 - AC-03: Persistent workbench queue, role tabs, save-and-next routing
 - AC-04: Split view draggable divider, clamp bounds, mobile viewport switch
@@ -14,9 +14,39 @@ Tests the actual running Web Workbench (http://127.0.0.1:15010) across:
 import os
 import sys
 import pytest
+from urllib.parse import urlparse
 from playwright.sync_api import sync_playwright
 
 BASE_URL = os.environ.get("PW_TEST_BASE_URL", os.environ.get("TEST_BASE_URL", "")).strip()
+
+
+def _login_if_required(page):
+    """隔离环境 AUTH_ENABLED=1 时出现登录遮罩。凭据只从环境变量读，不写进仓库。"""
+    overlay = page.locator("#authLoginOverlay")
+    try:
+        overlay.wait_for(state="visible", timeout=3000)
+    except Exception:
+        return
+    email = os.environ.get("PW_TEST_LOGIN_EMAIL", "").strip()
+    password = os.environ.get("PW_TEST_LOGIN_PASSWORD", "")
+    if not email or not password:
+        raise AssertionError(
+            "鉴权登录面板已出现，但未设置 PW_TEST_LOGIN_EMAIL / PW_TEST_LOGIN_PASSWORD"
+        )
+    page.locator("#authLoginEmail").fill(email)
+    page.locator("#authLoginPassword").fill(password)
+    page.locator("#authLoginSubmit").click()
+    overlay.wait_for(state="hidden", timeout=10000)
+
+
+def _fill_manual_line(page, qty, price):
+    row = page.locator("#itemTableBody tr").first
+    row.locator(".inp-name").fill("优质测试食材")
+    row.locator(".inp-qty").fill(str(qty))
+    row.locator(".inp-qty").dispatch_event("input")
+    row.locator(".inp-unit").fill("斤")
+    row.locator(".inp-price").fill(str(price))
+    row.locator(".inp-price").dispatch_event("input")
 
 
 def test_workbench_playwright_e2e_audit():
@@ -24,15 +54,22 @@ def test_workbench_playwright_e2e_audit():
         pytest.skip("未配置 PW_TEST_BASE_URL 或 TEST_BASE_URL，安全保护：禁止默认访问 15010 真实开发服务")
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        # 隔离服务是自签 HTTPS。只放行 Playwright 自己的上下文。
+        # 界面证书走 orca cert-proceed，不是 agent-browser --ignore-https-errors。
+        context = browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            ignore_https_errors=urlparse(BASE_URL).scheme == "https",
+        )
         page = context.new_page()
 
         page_errors = []
         page.on("pageerror", lambda err: page_errors.append(str(err)))
 
         print(f"[TEST] Navigating to {BASE_URL}...")
-        page.goto(BASE_URL)
+        with page.expect_response(lambda r: "/api/auth/me" in r.url, timeout=15000):
+            page.goto(BASE_URL)
         page.wait_for_selector(".app-wrapper", timeout=15000)
+        _login_if_required(page)
 
         # -------------------------------------------------------------
         # 1. 验证工作台队列与角色标签 (AC-03-01, AC-03-02)
@@ -55,20 +92,38 @@ def test_workbench_playwright_e2e_audit():
         page.wait_for_timeout(200)
 
         # -------------------------------------------------------------
-        # 2. 验证进入复核模式与 AI 预填显式提示 (AC-01-01, AC-01-02)
+        # 2. S3-11：新建手工单没有 AI 预填徽章。
+        # 非手工来源仍要显示徽章。这里只调用页面上已有的 syncReviewSourceBadge，
+        # 不写库、不伪造识别结果。没有真实模型时，实机识别预填不在本用例里跑。
         # -------------------------------------------------------------
-        print("[TEST] 2. Entering manual entry and checking AI Prefill status badges...")
+        print("[TEST] 2. Manual entry must hide the AI prefill badge (S3-11)...")
         page.locator("#btnNewManualEntry").click()
-        page.wait_for_timeout(400)
+        page.wait_for_selector("#prefillFormCard:not(.hide)", timeout=8000)
 
         prefill_card = page.locator("#prefillFormCard")
         assert prefill_card.is_visible(), "Prefill form card should be open"
 
+        manual_badge = page.locator("#manualEntryFormBadge")
+        assert manual_badge.is_visible(), "Manual entry badge should be visible"
+        assert manual_badge.inner_text().strip() == "手工录入"
+        assert page.locator("#manualEntryNoImage").is_visible()
+        assert "无原图（手工录入）" in page.locator("#manualEntryNoImage").inner_text()
+
         ai_badge = page.locator("#aiPrefillNoticeBadge")
-        assert ai_badge.is_visible(), "AI Prefill notice badge should be visible"
+        assert not ai_badge.is_visible(), "Manual mode must hide #aiPrefillNoticeBadge"
+        assert "AI 预填" not in page.locator("#prefillFormCard .card-title").inner_text()
+
+        print("[TEST] 2b. Non-manual source still shows the AI prefill badge...")
+        page.evaluate(
+            "() => syncReviewSourceBadge({ id: 1, doc_form: 'printed_delivery_note' })"
+        )
+        assert ai_badge.is_visible(), "Non-manual review must keep #aiPrefillNoticeBadge visible"
         badge_text = ai_badge.inner_text()
         print(f"  AI notice badge text: '{badge_text}'")
-        assert "AI 预填" in badge_text or "待人工复核" in badge_text
+        assert "AI 预填" in badge_text
+        page.evaluate("() => setManualEntryFormBadge(true)")
+        assert not ai_badge.is_visible(), "Restoring manual mode must hide the AI badge again"
+        assert manual_badge.is_visible()
 
         # -------------------------------------------------------------
         # 3. 验证阿叔/阿姨触摸靶区：高频按钮高度 >= 38px (AC-08-01)
@@ -94,20 +149,14 @@ def test_workbench_playwright_e2e_audit():
         print("[TEST] 4. Testing arithmetic discrepancy and plain-language guidance...")
         issue_bar = page.locator("#issueSummaryBar")
 
-        # 填入完整表头基本信息，消除其他阻断，只留算术差额：总金额 100，明细 80
+        # 真实填写：数量 4 x 单价 20 = 80，手改总额 100，只留整单差额
         page.locator("#inpSupplier").fill("Vendor_A")
         page.locator("#inpDate").fill("2026-10-08")
         page.locator("#inpTotal").fill("100.00")
-
-        # 填入首行明细品名与小计
-        item_names = page.locator(".inp-name")
-        item_amounts = page.locator(".inp-amount")
-        if item_names.count() > 0:
-            item_names.first.fill("优质测试食材")
-            item_amounts.first.fill("80.00")
-            item_amounts.first.dispatch_event("input")
-            page.locator("#inpTotal").dispatch_event("input")
-            page.wait_for_timeout(400)
+        page.locator("#inpTotal").dispatch_event("input")
+        _fill_manual_line(page, 4, 20)
+        page.wait_for_timeout(400)
+        assert page.locator("#itemTableBody tr").first.locator(".inp-amount").input_value() == "80.00"
 
         # 此时算术不平衡（100 vs 80），issueSummaryBar 必须由 hide 变为可见
         assert issue_bar.is_visible(), "Issue summary bar should become visible when discrepancy exists"
@@ -160,17 +209,13 @@ def test_workbench_playwright_e2e_audit():
         # 7. 验证保存表单并平账 (AC-03-03, AC-06-01)
         # -------------------------------------------------------------
         print("[TEST] 7. Balancing total and testing save review...")
-        # 重新填入 Vendor_A 和 日期，并将总金额修正为 80.00，消除算术差异
         page.locator("#inpSupplier").fill("Vendor_A")
         page.locator("#inpDate").fill("2026-10-08")
-        item_names = page.locator(".inp-name")
-        item_amounts = page.locator(".inp-amount")
-        if item_names.count() > 0:
-            item_names.first.fill("优质测试食材")
-            item_amounts.first.fill("80.00")
-            item_amounts.first.dispatch_event("input")
+        _fill_manual_line(page, 4, 20)
         page.locator("#inpTotal").fill("80.00")
         page.locator("#inpTotal").dispatch_event("input")
+        page.locator("#inpSettlementType").select_option("cash")
+        page.locator("#inpDocForm").select_option("manual_entry")
         page.wait_for_timeout(400)
 
         # 此时阻断问题应归零
@@ -185,10 +230,43 @@ def test_workbench_playwright_e2e_audit():
         # AC-01-03 未保存修改安全阻断：审批入口要求先保存（手工单保存后才有单据 id，
         # 且 isReviewFormDirty() 为真时 onWorkbenchApproveClick 直接 toast 拒绝）。
         # 旧流程「不保存直接点审批」在守卫加入后必然弹不出确认框 —— 先保存再审批。
-        page.locator("#btnSaveReview").click()
-        page.wait_for_function(
-            "() => (document.getElementById('reviewSaveStatusBadge')||{}).textContent?.includes('已保存')",
-            timeout=10000)
+        with page.expect_response(
+            lambda r: r.request.method == "POST" and "/api/save_edited" in r.url,
+            timeout=15000,
+        ) as save_info:
+            page.locator("#btnSaveReview").click()
+        save_resp = save_info.value
+        save_body = save_resp.json()
+        print(f"  save_edited status={save_resp.status} body_status={save_body.get('status')}")
+        assert save_resp.status == 200, save_body
+        assert save_body.get("status") == "success", save_body
+        receipt_id = save_body.get("receipt_id") or save_body.get("id")
+        assert receipt_id, save_body
+        page.locator("#reviewSaveStatusBadge").filter(has_text="待老板审批").wait_for(timeout=10000)
+        assert not page.locator("#aiPrefillNoticeBadge").is_visible(), \
+            "Saving a manual entry must not reveal the AI prefill badge"
+        saved = page.evaluate(
+            """async (id) => {
+                const res = await apiFetch('/api/receipt/' + id);
+                const body = await res.json();
+                const data = body.data || {};
+                return {
+                    http: res.status,
+                    status: body.status,
+                    doc_form: data.doc_form || '',
+                    supplier: data.supplier_name || '',
+                    total: data.total_amount,
+                    receipt_status: data.status || ''
+                };
+            }""",
+            receipt_id,
+        )
+        print(f"  saved receipt: {saved}")
+        assert saved["http"] == 200 and saved["status"] == "success", saved
+        assert saved["doc_form"] == "manual_entry", saved
+        assert saved["supplier"] == "Vendor_A", saved
+        assert float(saved["total"]) == 80.0, saved
+        assert saved["receipt_status"] == "edited", saved
         page.wait_for_timeout(300)
 
         # -------------------------------------------------------------
@@ -211,7 +289,7 @@ def test_workbench_playwright_e2e_audit():
 
         approve_desc = page.locator("#approveConfirmDesc").inner_text()
         print(f"  Approval confirmation dialog text: '{approve_desc}'")
-        assert "审核通过后将正式计入支出并增加食材库存" in approve_desc
+        assert "审核入账后，这张单会正式计入支出，库存也会增加" in approve_desc
 
         # 测试 Esc 键安全关闭弹窗 (AC-08-04, AC-08-05)
         page.keyboard.press("Escape")

@@ -328,8 +328,18 @@ def _save_upload(file: UploadFile) -> str:
     在重编码时被剥离。校验失败抛 UploadRejected，由调用方转 400。
     """
     data = _read_upload_bounded(file)
+    if len(data) == 0:
+        raise UploadRejected(
+            "EMPTY_FILE",
+            "上传的文件是空的，请重新选择有内容的照片再上传。")
     family = _detect_image_family(data[:12])
     if family is None:
+        filename = (getattr(file, "filename", "") or "").lower()
+        ext = os.path.splitext(filename)[1]
+        if ext in {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff"}:
+            raise UploadRejected(
+                "INVALID_IMAGE",
+                "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。")
         raise UploadRejected(
             "UNSUPPORTED_IMAGE_FORMAT",
             "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。")
@@ -1301,15 +1311,16 @@ def get_receipt(receipt_id: int, request: Request):
         # data_only 显式开启时补充未持久化字段的提示
         if not data.get("rag_context"):
             data["rag_context"] = getattr(row, "rag_context_json", None) or ""
-    # Y1 详情侧死链兜底：live 库 928 条历史 pytest 污染单据「DB 有行、磁盘无文件」，
-    # 详情仍会产出签名取图端点 URL，归档弹窗打开时 404 破图/死链（前端只有空值守卫，
-    # 挡不住非空死链）。判据与 X1 列表侧同源
-    # （_blank_unreachable_image_url → _image_url_target_exists，只 os.stat 不解码）。
-    # 单条查询，一次 stat 开销可忽略；文件存在时 URL 不变。
-    image_url = _blank_unreachable_image_url(
-        public_image_url(row.id, row.image_path, _tenant_id(request)), row.image_path)
+    # UAT-001：复核工作台与归档详情统一基于 public_image_url 签发端点 URL；
+    # 并在 data 内部同步透出 image_url 与 has_original_image，防止详情读取后丢失图链。
+    # 严禁把 URL 失效/未命中本地文件伪作为「无原图」（负边界约束）。
+    has_image = bool(row.image_path)
+    image_url = public_image_url(row.id, row.image_path, _tenant_id(request)) if has_image else ""
+    data["image_url"] = image_url
+    data["has_original_image"] = has_image
     return {"status": "success", "receipt_id": row.id,
             "image_url": image_url,
+            "has_original_image": has_image,
             "data": data}
 
 
@@ -2726,17 +2737,23 @@ def convert_manual(receipt_id: int, request: Request):
                          "msg": "该单据已放弃并进入回收站，不能转手工录入。"},
                 status_code=409)
         old_status = row.status
-        if old_status not in ("uploaded", "parsed", "parsed_with_warnings", "error"):
+        if old_status not in ("uploaded", "parsing", "parsed", "parsed_with_warnings", "error"):
             return JSONResponse(
                 content={"status": "error",
                          "msg": "这张单现在的状态不能转手工录入。只有识别中断、识别失败或还没保存的单据才能转。"},
                 status_code=409)
         db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
         row = db.get_receipt_row(receipt_id)
+        has_image = bool(row.image_path)
+        img_url = public_image_url(row.id, row.image_path, _tenant_id(request)) if has_image else ""
+        detail = build_detail(row)
+        detail["image_url"] = img_url
+        detail["has_original_image"] = has_image
         return {"status": "success", "receipt_id": receipt_id,
-                "image_url": public_image_url(row.id, row.image_path, _tenant_id(request)),
+                "image_url": img_url,
+                "has_original_image": has_image,
                 "version": row.version,
-                "data": build_detail(row),
+                "data": detail,
                 "msg": f"单据 #{receipt_id} 已转为手工录入，请补全明细后保存"}
 
 

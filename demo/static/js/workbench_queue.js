@@ -72,6 +72,13 @@ function updateWorkbenchQueueCounters() {
     if (qCountApprove) qCountApprove.textContent = approveList.length;
     if (qCountIssues) qCountIssues.textContent = issueList.length;
     if (qTotalBadge) qTotalBadge.textContent = `${todoList.length} 张待办`;
+
+    // UAT-002: 明确今日待我审批口径（仅 status=edited，人工已核对完成、仅差老板审批入账，共1种状态）
+    const tabApprove = document.getElementById('queueTabApprove');
+    if (tabApprove) {
+        tabApprove.title = '统计口径：仅待老板审批单据（店员已人工核对完成并提交、仅差老板审批入账，status=edited，共1种状态）';
+        tabApprove.setAttribute('aria-label', '待我审批队列：仅统计店员已核对并提交等待审批入账的单据（status=edited），共' + approveList.length + '张');
+    }
 }
 
 function renderWorkbenchQueueTable() {
@@ -109,7 +116,7 @@ function renderWorkbenchQueueTable() {
             const count = (row.math_warnings ? row.math_warnings.length : 0) + (row.quality_warnings ? row.quality_warnings.length : 0);
             statusBadge = `<span class="badge badge-warning">发现 ${count} 处提醒</span>`;
         } else if (row.status === 'edited') {
-            statusBadge = '<span class="badge badge-primary">' + _termStatus('edited', 'label') + '</span>';
+            statusBadge = '<span class="badge badge-primary">' + ((typeof _termStatus === 'function' && _termStatus('edited', 'label')) || '待老板审批') + '</span>';
         } else if (row.status === 'approved') {
             statusBadge = '<span class="badge badge-success">已入账</span>';
         } else if (row.status === 'flagged' || row.status === 'error') {

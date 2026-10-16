@@ -62,7 +62,7 @@ function renderSupplierAdminRows(suppliers) {
         if (!active) tr.className = 'sup-row-inactive';
         tr.innerHTML = `
             <td>
-                <div style="font-weight:600;">${w2Escape(s.name)}</div>
+                <div style="font-weight:600;">${w2Escape(s.name || '（未命名供应商）')}</div>
                 <div class="sup-code-weak">${w2Escape(s.supplier_code || '-')}${prefText ? ' · ' + w2Escape(prefText) : ''}</div>
             </td>
             <td class="col-center">${w2Escape(termsText)}</td>
@@ -153,7 +153,7 @@ function saveSupplier() {
         terms = n;
     }
 
-    const payload = { name, contact_phone: phone || null, notes: notes || null,
+    const payload = { name, contact_phone: phone, notes: notes,
                        settlement_pref: pref || null, payment_terms_days: terms };
 
     const isEdit = _editSupplierId != null;
@@ -296,7 +296,7 @@ function viewSupplierReceipts(id) {
     if (name) showToast(`已筛选「${name}」的单据`, 'info');
 }
 
-// ---- 待办条（D-SUP-10 / M7） ----
+// ---- 待办条（D-SUP-10 / M7 / UAT-002） ----
 function updateTodoBar() {
     const recs = allArchiveReceipts || [];
     let pending = 0, failed = 0, overdue = 0;
@@ -309,6 +309,20 @@ function updateTodoBar() {
     setText('todoPendingNum', pending);
     setText('todoFailedNum', failed);
     setText('todoOverdueNum', overdue);
+
+    // UAT-002: 明确统计口径可见性与术语统一（注明5态口径：已上传、识别中、待核对、待核对（有疑问）、待老板审批）
+    const pendingEl = document.getElementById('todoPendingNum');
+    if (pendingEl) {
+        const card = pendingEl.closest('.metric-card');
+        if (card) {
+            const labelEl = card.querySelector('.csp-s-74') || card.querySelector('.metric-label') || card.firstElementChild;
+            if (labelEl && labelEl.textContent.trim() === '待审核') {
+                labelEl.textContent = '待处理（待办全量）';
+            }
+            card.title = '统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）';
+            card.setAttribute('aria-label', '归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共' + pending + '张');
+        }
+    }
 }
 
 function todoFilter(type) {

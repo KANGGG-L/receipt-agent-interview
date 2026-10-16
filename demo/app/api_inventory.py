@@ -105,7 +105,8 @@ def inventory_list(request: Request, q: str = "", category: str = "",
                    include_inactive: int = 0,
                    category_id: Optional[int] = None):
     # 只读列表对店员开放（收据页 SKU/单位数据源需要）；入库/调整等写操作仍按各自权限
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     tenant_id = _tenant_id(request)
     skus = db.list_skus(include_inactive=bool(include_inactive),
                         tenant_id=tenant_id)
@@ -119,7 +120,7 @@ def inventory_list(request: Request, q: str = "", category: str = "",
             category_unresolved = True
     # WS5：本租户价格异动处置映射（{sku_id: {...}}），按行回带 ack_action 供前端
     # 渲染「已忽略 / 已采纳」，并在 meta 里给出整表映射供看板雷达同源判定。
-    ack_map = db.list_price_anomaly_acks(tenant_id=tenant_id)
+    ack_map = db.list_price_anomaly_acks(tenant_id=tenant_id) if can_see_prices else {}
     out = []
     low_count = 0
     anomaly_count = 0
@@ -147,11 +148,11 @@ def inventory_list(request: Request, q: str = "", category: str = "",
             continue
         vs_avg_pct, price_anomaly, _ = _compute_vs_avg_and_anomaly(
             s.id, tenant_id=tenant_id)
-        if price == "anomaly" and not price_anomaly:
+        if price == "anomaly" and (not can_see_prices or not price_anomaly):
             continue
         if is_low:
             low_count += 1
-        if price_anomaly:
+        if price_anomaly and can_see_prices:
             anomaly_count += 1
         kg_val = _standard_kg(s.current_stock, s.base_unit, tenant_id=tenant_id)
         ack = ack_map.get(int(s.id)) or {}
@@ -160,21 +161,23 @@ def inventory_list(request: Request, q: str = "", category: str = "",
             "category_id": bound_category if schema_ready else None,
             "base_unit": s.base_unit or "", "current_stock": s.current_stock,
             "standard_kg": kg_val,
-            "min_stock_alert": s.min_stock_alert, "last_unit_price": s.last_unit_price,
-            "price_anomaly": price_anomaly, "vs_avg_pct": vs_avg_pct,
+            "min_stock_alert": s.min_stock_alert,
+            "last_unit_price": s.last_unit_price if can_see_prices else None,
+            "price_anomaly": price_anomaly if can_see_prices else False,
+            "vs_avg_pct": vs_avg_pct if can_see_prices else None,
             "is_low_stock": is_low, "active": s.active, "sku_code": s.sku_code or "",
             # WS5：处置状态（None = 未处置；"ignore" / "adopt"）
-            "ack_action": ack.get("action") or None,
+            "ack_action": (ack.get("action") or None) if can_see_prices else None,
         })
     return {
         "status": "success",
         "data": out,
         "meta": {"total_active": len(out), "low_stock_count": low_count,
-                 "price_anomaly_count": anomaly_count,
+                 "price_anomaly_count": anomaly_count if can_see_prices else 0,
                  # WS3：本租户生效阈值（百分数），供前端展示与走势图例/阈值线同源
-                 "price_anomaly_threshold_pct": _threshold_pct(tenant_id),
+                 "price_anomaly_threshold_pct": _threshold_pct(tenant_id) if can_see_prices else None,
                  # WS5：整表处置映射（键为 sku_id 字符串），供看板雷达同源判定忽略/采纳
-                 "price_anomaly_ack_map": {str(k): v for k, v in ack_map.items()}},
+                 "price_anomaly_ack_map": ({str(k): v for k, v in ack_map.items()} if can_see_prices else {})},
     }
 
 
@@ -377,7 +380,7 @@ def get_inventory_sku(sku_id: int, request: Request):
             "avg_30d": avg_30d,
             "is_anomaly": is_anomaly,
             "latest_price": latest_price,
-            "threshold_pct": _threshold_pct(tenant_id),
+            "threshold_pct": _threshold_pct(tenant_id) if can_see_prices else None,
             "batches": batches,
         },
     }
@@ -427,15 +430,44 @@ def merge_skus_endpoint(body: SkuMergeBody, request: Request):
         if db.get_sku(sid, tenant_id=tenant_id) is None:
             return {"status": "error", "code": "SECONDARY_NOT_FOUND",
                     "msg": f"副 SKU #{sid} 不存在"}
-    result, err = db.merge_skus(body.primary_sku_id, body.secondary_sku_ids,
-                                tenant_id=tenant_id)
+    try:
+        result, err = db.merge_skus(body.primary_sku_id, body.secondary_sku_ids,
+                                    tenant_id=tenant_id)
+    except Exception as e:
+        logger.exception("[api_inventory] SKU merge failed: %s", e)
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "MERGE_FAILED", "msg": f"合并事务异常已回滚：{e}"
+        })
     if err:
         return {"status": "error", "code": err, "msg": f"合并失败：{err}"}
 
     # 别名沉淀无需在此处补写：db.merge_skus 已通过 _repoint_vendor_sku_alias 把
     # 指向副 SKU 的别名改指到主 SKU（见 db.py:2305，别名表的唯一写入实现）。
     return {"status": "success", "data": result,
-            "msg": "SKU 合并成功（历史流水与供应商别名已归集到主 SKU）"}
+            "msg": "SKU 合并成功（历史流水、库存批次与供应商别名已归集到主 SKU）"}
+
+
+class OrphanBatchMigrateBody(BaseModel):
+    dry_run: bool = True
+    approved: bool = False
+
+
+@router.get("/api/inventory/batches/orphan")
+def list_orphan_batches(request: Request):
+    """只读巡检历史 SKU 合并遗留的孤儿批次。"""
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    data = db.find_orphan_inventory_batches(tenant_id=tenant_id)
+    return {"status": "success", "data": data, "count": len(data)}
+
+
+@router.post("/api/inventory/batches/orphan/migrate")
+def migrate_orphan_batches_endpoint(body: OrphanBatchMigrateBody, request: Request):
+    """存量孤儿批次修复（默认 dry-run，必须单独授权批准）。"""
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    res = db.migrate_orphan_inventory_batches(tenant_id=tenant_id, dry_run=body.dry_run, approved=body.approved)
+    return {"status": "success", "data": res}
 
 
 class StocktakeBody(BaseModel):
@@ -721,7 +753,8 @@ def inventory_logs(request: Request, sku_id: Optional[int] = None, kind: str = "
       与 api_export 的 inventory_stock_logs 报表口径一致。
     返回 `{"status":"success","data":[...],"meta":{"count":N}}`。
     """
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     tenant_id = _tenant_id(request)
 
     kind = (kind or "").strip()
@@ -764,7 +797,7 @@ def inventory_logs(request: Request, sku_id: Optional[int] = None, kind: str = "
             continue
         data.append({
             "id": r.id, "sku_id": r.sku_id, "name": r.name,
-            "qty": r.qty, "unit": r.unit, "amount": r.amount,
+            "qty": r.qty, "unit": r.unit, "amount": r.amount if can_see_prices else None,
             "vendor": r.vendor, "date": d, "kind": r.kind,
             "note": r.note, "receipt_id": r.receipt_id,
             "created_at": r.created_at,

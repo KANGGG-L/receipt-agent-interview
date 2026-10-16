@@ -514,18 +514,24 @@ function groupDishesByCategory(dishes) {
         const count = g.dishes.length;
         let sumPrice = 0;
         let sumCost = 0;
+        let priceCount = 0;
 
         g.dishes.forEach(d => {
-            sumPrice += Number(d.price) || 0;
-            sumCost += Number(d.theoretical_cost) || 0;
+            if (d.price != null && Number.isFinite(Number(d.price))) {
+                sumPrice += Number(d.price);
+                priceCount++;
+            }
+            if (d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost))) {
+                sumCost += Number(d.theoretical_cost);
+            }
         });
 
         g.count = count;
-        g.avgPrice = count > 0 ? (sumPrice / count) : 0;
-        g.avgTheoreticalCost = count > 0 ? (sumCost / count) : 0;
-        g.avgMarginRate = (g.avgPrice > 0)
+        g.avgPrice = priceCount > 0 ? (sumPrice / priceCount) : null;
+        g.avgTheoreticalCost = priceCount > 0 ? (sumCost / priceCount) : null;
+        g.avgMarginRate = (g.avgPrice != null && g.avgPrice > 0 && g.avgTheoreticalCost != null)
             ? ((g.avgPrice - g.avgTheoreticalCost) / g.avgPrice) * 100
-            : 0;
+            : null;
     });
 
     return sortedGroups;
@@ -536,6 +542,7 @@ function groupDishesByCategory(dishes) {
  */
 function renderDishCardHtml(d) {
     const isActive = d.status === 'active';
+    const isOwner = isOwnerRoleNow();
     const statusBadge = isActive
         ? '<span class="badge badge-success" style="font-size:0.72rem;">在售</span>'
         : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">已停用</span>';
@@ -544,16 +551,32 @@ function renderDishCardHtml(d) {
         ? '<span class="badge badge-info" style="font-size:0.72rem; background: rgba(37,99,235,0.1); color:#2563eb; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;" title="' + w2Escape(d.category) + '">' + w2Escape(d.category) + '</span>'
         : '';
 
-    const marginRate = Number(d.gross_margin_rate || 0);
-    const marginBadgeClass = marginClass(marginRate);
+    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
+    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
+    const marginBadgeClass = hasMargin ? marginClass(marginRate) : 'badge-neutral';
+    const marginBadgeHtml = hasMargin
+        ? '<span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span>'
+        : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>';
+
+    const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
+    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+
+    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
+    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
+
+    const hasProfit = isOwner && d.gross_profit != null && Number.isFinite(Number(d.gross_profit));
+    const profitDisplay = hasProfit ? I18N.fmtMoney(d.gross_profit) : '—';
 
     let ingredientsHtml = '';
     if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
         ingredientsHtml = d.ingredients.map(ing => {
+            const costText = (isOwner && ing.ingredient_cost != null && Number.isFinite(Number(ing.ingredient_cost)))
+                ? ' <span style="color:var(--text-muted); font-size:0.7rem;">(' + I18N.fmtMoney(ing.ingredient_cost) + ')</span>'
+                : '';
             return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
                 + w2Escape(ing.sku_name || ('食材#' + ing.sku_id)) + ': '
                 + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
-                + ' <span style="color:var(--text-muted); font-size:0.7rem;">(' + I18N.fmtMoney(ing.ingredient_cost) + ')</span>'
+                + costText
                 + '</span>';
         }).join('');
     } else {
@@ -571,7 +594,7 @@ function renderDishCardHtml(d) {
         + '      <h4 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-main);">' + w2Escape(d.name) + '</h4>'
         + '    </div>'
         + '    <div style="text-align:right;">'
-        + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + I18N.fmtMoney(d.price) + '</div>'
+        + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + priceDisplay + '</div>'
         + '      <div style="font-size:0.72rem; color:var(--text-muted);">建议售价</div>'
         + '    </div>'
         + '  </div>'
@@ -579,15 +602,15 @@ function renderDishCardHtml(d) {
         + '  <div class="dish-metrics-box" style="background:var(--bg-subtle, #f8fafc); border-radius:6px; padding:8px 10px; margin-bottom:12px; display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; text-align:center;">'
         + '    <div>'
         + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论单份成本</div>'
-        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">' + I18N.fmtMoney(d.theoretical_cost) + '</div>'
+        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--text-main);">' + costDisplay + '</div>'
         + '    </div>'
         + '    <div>'
         + '      <div style="font-size:0.72rem; color:var(--text-muted);">单份理论毛利</div>'
-        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">' + I18N.fmtMoney(d.gross_profit) + '</div>'
+        + '      <div style="font-size:0.88rem; font-weight:600; color:var(--success, #16a34a);">' + profitDisplay + '</div>'
         + '    </div>'
         + '    <div>'
         + '      <div style="font-size:0.72rem; color:var(--text-muted);">理论毛利率</div>'
-        + '      <div><span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span></div>'
+        + '      <div>' + marginBadgeHtml + '</div>'
         + '    </div>'
         + '  </div>'
         + '  <div style="margin-bottom:12px;">'
@@ -596,7 +619,7 @@ function renderDishCardHtml(d) {
         + '  </div>'
         + '</div>'
         + '<div style="display:flex; justify-content:flex-end; gap:8px; border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">'
-        + (isOwnerRoleNow()
+        + (isOwner
             ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">编辑配方</button>'
                + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
             : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
@@ -609,20 +632,31 @@ function renderDishCardHtml(d) {
  */
 function renderDishTableRowHtml(d) {
     const isActive = d.status === 'active';
-    const marginRate = Number(d.gross_margin_rate || 0);
-    const marginBadgeClass = marginClass(marginRate);
+    const isOwner = isOwnerRoleNow();
+    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
+    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
+    const marginBadgeClass = hasMargin ? marginClass(marginRate) : 'badge-neutral';
+    const marginBadgeHtml = hasMargin
+        ? '<span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span>'
+        : '<span class="badge badge-neutral" style="color:var(--text-muted);">—</span>';
+
+    const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
+    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+
+    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
+    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
 
     const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('食材#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
 
     return '<tr>'
         + '<td><strong>' + w2Escape(d.name) + '</strong>' + (!isActive ? ' <span class="badge badge-neutral" style="font-size:0.7rem;">已停用</span>' : '') + '</td>'
         + '<td>' + (d.category ? ('<span class="badge badge-info">' + w2Escape(d.category) + '</span>') : '-') + '</td>'
-        + '<td class="col-right" style="font-weight:600;">' + I18N.fmtMoney(d.price) + '</td>'
+        + '<td class="col-right" style="font-weight:600;">' + priceDisplay + '</td>'
         + '<td style="font-size:0.82rem; color:var(--text-secondary); max-width:240px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + w2Escape(ingSummary) + '">' + w2Escape(ingSummary) + '</td>'
-        + '<td class="col-right">' + I18N.fmtMoney(d.theoretical_cost) + '</td>'
-        + '<td class="col-right"><span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span></td>'
+        + '<td class="col-right">' + costDisplay + '</td>'
+        + '<td class="col-right">' + marginBadgeHtml + '</td>'
         + '<td class="col-center">'
-        + (isOwnerRoleNow()
+        + (isOwner
             ? ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px; margin-right:4px;" onclick="openDishModal(' + d.id + ')">编辑</button>'
                + '  <button type="button" class="btn btn-danger" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick=\'deleteDish(' + d.id + ', ' + jsStr(d.name) + ', ' + jsStr(d.status) + ')\'>' + (isActive ? '停用' : '删除') + '</button>')
             : ('  <button type="button" class="btn btn-secondary" style="padding:4px 12px; font-size:0.85rem; min-height:38px; height:38px;" onclick="openDishModal(' + d.id + ')">查看配方</button>'))
@@ -635,6 +669,11 @@ function renderDishTableRowHtml(d) {
  */
 function renderDishCategoryHeaderHtml(group, isCollapsed) {
     const badgeClass = group.isDefault ? 'badge-neutral' : 'badge-info';
+    const isOwner = isOwnerRoleNow();
+    let kpiHtml = '';
+    if (isOwner && group.avgPrice != null && group.avgMarginRate != null) {
+        kpiHtml = '<span class="dish-category-summary-kpi">均价 ' + I18N.fmtMoney(group.avgPrice) + ' · 平均理论毛利 ' + group.avgMarginRate.toFixed(1) + '%</span>';
+    }
     return '<div class="dish-category-header" onclick=\'toggleDishCategoryAccordion(' + jsStr(group.category) + ')\'>'
         + '  <div class="dish-category-header-left">'
         + '    <span class="dish-category-chevron">'
@@ -646,7 +685,7 @@ function renderDishCategoryHeaderHtml(group, isCollapsed) {
         + '    <span class="badge ' + badgeClass + ' dish-category-count-badge">' + group.count + ' 道餐品</span>'
         + '  </div>'
         + '  <div class="dish-category-header-right">'
-        + '    <span class="dish-category-summary-kpi">均价 ' + I18N.fmtMoney(group.avgPrice) + ' · 平均理论毛利 ' + group.avgMarginRate.toFixed(1) + '%</span>'
+        + kpiHtml
         + '    <span class="dish-category-status-indicator">' + (isCollapsed ? '[已折叠]' : '[已展开]') + '</span>'
         + '  </div>'
         + '</div>';
@@ -1038,9 +1077,23 @@ function openDishModal(dishId) {
 
             if (nameInput) nameInput.disabled = true;
             if (catInput) catInput.disabled = true;
-            if (priceInput) priceInput.disabled = true;
+            if (priceInput) {
+                priceInput.value = '';
+                priceInput.placeholder = '—';
+                priceInput.disabled = true;
+            }
             if (descInput) descInput.disabled = true;
             if (statusInput) statusInput.disabled = true;
+
+            const costEl = document.getElementById('dishModalTheoryCost');
+            const profitEl = document.getElementById('dishModalTheoryProfit');
+            const marginEl = document.getElementById('dishModalTheoryMargin');
+            if (costEl) costEl.innerText = '—';
+            if (profitEl) profitEl.innerText = '—';
+            if (marginEl) {
+                marginEl.innerText = '—';
+                marginEl.className = 'badge badge-neutral';
+            }
 
             if (btnAddIngElem) btnAddIngElem.classList.add('hide');
             if (btnSaveElem) btnSaveElem.classList.add('hide');
@@ -1053,13 +1106,18 @@ function openDishModal(dishId) {
             if (rowsBody) {
                 rowsBody.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
                 rowsBody.querySelectorAll('button').forEach(btn => { btn.classList.add('hide'); });
+                rowsBody.querySelectorAll('.ing-item-cost').forEach(el => { el.innerText = '—'; });
+                rowsBody.querySelectorAll('.ing-ref-price').forEach(el => { el.innerText = '—'; });
             }
         } else {
             if (staffNotice) staffNotice.classList.add('hide');
 
             if (nameInput) nameInput.disabled = false;
             if (catInput) catInput.disabled = false;
-            if (priceInput) priceInput.disabled = false;
+            if (priceInput) {
+                priceInput.placeholder = '';
+                priceInput.disabled = false;
+            }
             if (descInput) descInput.disabled = false;
             if (statusInput) statusInput.disabled = false;
 
@@ -1091,7 +1149,7 @@ function openDishModal(dishId) {
                 if (idInput) idInput.value = dish.id;
                 if (nameInput) nameInput.value = dish.name || '';
                 if (catInput) catInput.value = (dish.category || '').trim() || '默认';
-                if (priceInput) priceInput.value = dish.price != null ? dish.price : '';
+                if (priceInput) priceInput.value = (isOwnerRoleNow() && dish.price != null) ? dish.price : '';
                 if (descInput) descInput.value = dish.description || '';
                 if (statusInput) statusInput.value = dish.status || 'active';
 
@@ -1117,7 +1175,7 @@ function openDishModal(dishId) {
                         if (idInput) idInput.value = d.id;
                         if (nameInput) nameInput.value = d.name || '';
                         if (catInput) catInput.value = (d.category || '').trim() || '默认';
-                        if (priceInput) priceInput.value = d.price != null ? d.price : '';
+                        if (priceInput) priceInput.value = (isOwnerRoleNow() && d.price != null) ? d.price : '';
                         if (descInput) descInput.value = d.description || '';
                         if (statusInput) statusInput.value = d.status || 'active';
 

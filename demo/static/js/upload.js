@@ -196,7 +196,7 @@ async function ensureWebDisplayableImageFile(file, gen) {
         return file;
     }
     const currentGen = (typeof gen === 'number') ? gen : fileSelectionGen;
-    showToast(`检测到 ${escapeHtml(file.name)} 为 HEIC/非标准格式，正在自动转为 JPEG...`, 'info');
+    showToast(`检测到 ${file.name} 为 HEIC/非标准格式，正在自动转为 JPEG...`, 'info');
     try {
         const formData = new FormData();
         formData.append('file', file);
@@ -225,7 +225,7 @@ async function ensureWebDisplayableImageFile(file, gen) {
         if (currentGen !== fileSelectionGen) {
             return null;
         }
-        showToast(`${escapeHtml(file.name)} 已自动转为 JPEG，可直接预览、旋转与裁剪`, 'success');
+        showToast(`${file.name} 已自动转为 JPEG，可直接预览、旋转与裁剪`, 'success');
         return convertedFile;
     } catch (err) {
         if (currentGen !== fileSelectionGen) {
@@ -1072,6 +1072,11 @@ function routeRecognitionFailure(ret, receiptId) {
     const isQuality = (code === 'IMAGE_QUALITY_ERROR') || /模糊|画质|曝光|分辨率|image_blur|quality/i.test(msg);
     if (isQuality) return false;
 
+    // UAT-005: 文件输入格式/损坏/空文件错误，绝不能误转入手工录入或误判为引擎故障
+    const isFileIssue = (code === 'EMPTY_FILE' || code === 'INVALID_IMAGE' || code === 'UNSUPPORTED_IMAGE_FORMAT' || code === 'FILE_TOO_LARGE') ||
+        /上传的文件是空的|照片打不开|文件已损坏|格式不支持|文件大小不能超过/.test(msg);
+    if (isFileIssue) return false;
+
     lastErrorReceiptId = receiptId || (ret && ret.receipt_id) || null;
 
     const isGate = /算术门禁|契约校验|门禁|明细为空|总额不能|供应商为空|日期格式非法|数量非法|单价非法/.test(msg);
@@ -1164,10 +1169,14 @@ function showErrorCard(msg, receiptId, code, opts) {
     // U-3: msg 为 undefined/null/'' 时安全兜底为空串，归入 engine
     const rawMsg = (msg == null) ? '' : String(msg);
 
-    // 归因优先级：quality(画质，用户可自救) > gate(数字/契约门禁，需人工核对) > engine(引擎繁忙/异常兜底)
-    const isQualityIssue = (code === 'IMAGE_QUALITY_ERROR') ||
-        /模糊|画质|曝光|分辨率|image_blur|quality/i.test(rawMsg);
-    const isGateIssue = !isQualityIssue &&
+    // UAT-005: 明确识别输入文件层面的异常（空文件、损坏图、格式不支持、超大）
+    const isFileIssue = (code === 'EMPTY_FILE' || code === 'INVALID_IMAGE' || code === 'UNSUPPORTED_IMAGE_FORMAT' || code === 'FILE_TOO_LARGE') ||
+        /上传的文件是空的|照片打不开|文件已损坏|格式不支持|文件大小不能超过/.test(rawMsg);
+
+    // 归因优先级：file(文件损坏/格式不支持) > quality(画质，用户可自救) > gate(数字/契约门禁，需人工核对) > engine(引擎繁忙/异常兜底)
+    const isQualityIssue = !isFileIssue && ((code === 'IMAGE_QUALITY_ERROR') ||
+        /模糊|画质|曝光|分辨率|image_blur|quality/i.test(rawMsg));
+    const isGateIssue = !isFileIssue && !isQualityIssue &&
         /算术门禁|契约校验|门禁|明细为空|总额不能|供应商为空|日期格式非法|数量非法|单价非法/.test(rawMsg);
 
     const titleElem = document.getElementById('errorCardTitle');
@@ -1188,7 +1197,53 @@ function showErrorCard(msg, receiptId, code, opts) {
         }
     }
 
-    if (isQualityIssue) {
+    if (isFileIssue) {
+        resetConvertBtnStyle();
+        if (code === 'EMPTY_FILE' || /上传的文件是空的/.test(rawMsg)) {
+            if (titleElem) titleElem.innerText = '文件内容为空';
+            if (badgeElem) {
+                badgeElem.innerText = '文件无效';
+                badgeElem.className = 'badge badge-danger';
+            }
+            if (headingElem) headingElem.innerText = '上传的文件是空的，无法识别';
+            if (msgElem) msgElem.innerText = rawMsg || '上传的文件大小为 0 字节，请重新选择有内容的照片再上传。';
+        } else if (code === 'INVALID_IMAGE' || /照片打不开|文件已损坏|不是真正的图片/.test(rawMsg)) {
+            if (titleElem) titleElem.innerText = '图片文件已损坏';
+            if (badgeElem) {
+                badgeElem.innerText = '图片损坏';
+                badgeElem.className = 'badge badge-danger';
+            }
+            if (headingElem) headingElem.innerText = '这张照片打不开，可能文件已损坏';
+            if (msgElem) msgElem.innerText = rawMsg || '文件格式或数据损坏，无法作为图片解析。请重新拍一张再上传。';
+        } else if (code === 'FILE_TOO_LARGE' || /大小不能超过|过大/.test(rawMsg)) {
+            if (titleElem) titleElem.innerText = '文件过大';
+            if (badgeElem) {
+                badgeElem.innerText = '超出大小限制';
+                badgeElem.className = 'badge badge-danger';
+            }
+            if (headingElem) headingElem.innerText = '文件大小超过限制，无法上传';
+            if (msgElem) msgElem.innerText = rawMsg || '照片大小不能超过 15MB，请压缩后重新上传。';
+        } else {
+            if (titleElem) titleElem.innerText = '文件格式不支持';
+            if (badgeElem) {
+                badgeElem.innerText = '格式不支持';
+                badgeElem.className = 'badge badge-danger';
+            }
+            if (headingElem) headingElem.innerText = '这种文件格式不支持';
+            if (msgElem) msgElem.innerText = rawMsg || '请上传手机拍的照片（JPG、PNG、HEIC 等）。';
+        }
+        if (btnForce) {
+            btnForce.style.display = 'none';
+            btnForce.title = '重新提交给 AI 解析';
+        }
+        if (btnRetry) {
+            btnRetry.style.display = 'none';
+            btnRetry.title = '重新发起识别';
+        }
+        if (convertBtn) {
+            convertBtn.style.display = 'none';
+        }
+    } else if (isQualityIssue) {
         // U-8: 连续画质/识别失败递进引导
         const count = incrementQualityFailCount();
 
@@ -1315,8 +1370,8 @@ function showErrorCard(msg, receiptId, code, opts) {
     }
 
     // 转手工录入需要已有单据行；没有时只允许重新上传/重试（画质 400 无 receiptId 场景仍隐藏）
-    // 转手工录入逃生通道随时可用，保留原图
-    if (convertBtn) convertBtn.style.display = '';
+    // 转手工录入逃生通道随时可用，保留原图；但文件本身非法/损坏时无有效单据与原图，予以隐藏
+    if (convertBtn) convertBtn.style.display = isFileIssue ? 'none' : '';
 
     document.getElementById('errorCard').classList.remove('hide');
     lastFeedbackForCurrent = null;
@@ -1369,6 +1424,9 @@ function reuploadFromErrorCard() {
     currentReceiptId = null;
     currentReceiptData = null;
     isManualEntry = false;
+    if (typeof clearReviewFees === 'function') {
+        clearReviewFees();
+    }
     ['errorCard', 'loadingCard', 'prefillFormCard', 'preConfirmCard'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.classList.add('hide');
@@ -1681,6 +1739,16 @@ function startManualEntry() {
     if (typeof resetTotalOverride === 'function') resetTotalOverride();
     addEmptyRow({ silent: true });
 
+    // UAT-009: 新建手工单清除上一张单继承的六项附加费用与注记状态
+    if (typeof clearReviewFees === 'function') {
+        clearReviewFees();
+    } else {
+        if (typeof renderFeeRowsFromData === 'function') renderFeeRowsFromData({});
+        if (typeof updateFeesSummaryBadge === 'function') updateFeesSummaryBadge();
+        if (typeof renderNoteRowsFromData === 'function') renderNoteRowsFromData({});
+        if (typeof updateNotesSummaryBadge === 'function') updateNotesSummaryBadge();
+    }
+
     // 卡片切换：显示复核表单空态
     document.getElementById('preConfirmCard').classList.add('hide');
     document.getElementById('loadingCard').classList.add('hide');
@@ -1761,6 +1829,9 @@ function abortLoadingAndSwitchToManual() {
     // 6. 表单标题与徽章设置
     if (!currentReceiptId) {
         isManualEntry = true;
+        if (typeof clearReviewFees === 'function') {
+            clearReviewFees();
+        }
     }
     const title = document.getElementById('manualEntryFormTitle');
     if (title) title.textContent = '步骤 2/2：填写单据内容';

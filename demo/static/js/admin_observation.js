@@ -508,7 +508,7 @@ function loadGoldenBoard(scope) {
                 if (it.status === 'approved') {
                     statusBadge = '<span class="badge badge-success" style="font-size:0.72rem; padding:2px 6px;">已入库</span>';
                 } else if (it.status === 'edited') {
-                    statusBadge = '<span class="badge badge-warning" style="font-size:0.72rem; padding:2px 6px;">待审核</span>';
+                    statusBadge = '<span class="badge badge-warning" style="font-size:0.72rem; padding:2px 6px;">' + ((typeof _termStatus === 'function' && _termStatus('edited', 'label')) || '待老板审批') + '</span>';
                 }
 
                 // 2. GT 确权治理列（唯一入口，直达确权台，消除操作列重复按钮）

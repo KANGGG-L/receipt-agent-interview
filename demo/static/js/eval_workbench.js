@@ -280,23 +280,50 @@
             .catch(function () { window.location.href = '/evalset'; });
     }
 
+    // 同一页只允许一次 GT confirm 在途。连点、双击不再发出第二次 confirm，
+    // 也不借此回到 save_edited。失败后放开，成功后保持锁定直到离开本页。
+    var gtConfirmLock = false;
+
     function submitEvalConfirm() {
+        if (gtConfirmLock) { return; }
         var built = buildGtFromForm();
         if (!built) { return; }
         var payload = { gt: built.gt };
         if (built.blankTotal) {
+            gtConfirmLock = true;
             uiConfirm({
                 title: '总额是空的',
                 message: '总额没有填。如果单上确实没有总额（例如月结单）可以留空；否则请对照原图填上金额。确定留空吗？',
                 confirmText: '确定留空'
             }).then(function (ok) {
-                if (!ok) { return; }
+                if (!ok) { gtConfirmLock = false; return; }
                 payload.confirm_blank_total = true;
                 sendEvalConfirm(payload, built);
             });
             return;
         }
+        gtConfirmLock = true;
         sendEvalConfirm(payload, built);
+    }
+
+    function onGtConfirmClick(ev) {
+        if (ev) {
+            if (ev.preventDefault) { ev.preventDefault(); }
+            if (ev.stopPropagation) { ev.stopPropagation(); }
+            if (ev.stopImmediatePropagation) { ev.stopImmediatePropagation(); }
+        }
+        submitEvalConfirm();
+    }
+
+    // 换掉节点以丢掉直接绑在旧按钮上的 addEventListener，并去掉 data-csp-click
+    // 里的 submitSaveEdited。GT 按钮此后只有这一个 click 处理器。
+    function replaceWithoutBusinessSave(btn) {
+        if (!btn || !btn.parentNode) { return null; }
+        var fresh = btn.cloneNode(true);
+        fresh.removeAttribute('data-csp-click');
+        fresh.onclick = null;
+        btn.parentNode.replaceChild(fresh, btn);
+        return fresh;
     }
 
     function sendEvalConfirm(payload, built) {
@@ -324,25 +351,47 @@
             })
             .catch(function (e) {
                 toastMsg('确认失败：' + (e && e.message ? e.message : '未知错误'), true);
+                gtConfirmLock = false;
                 if (btn) { btn.disabled = false; }
             });
     }
 
     // ---------------- 启动（main.js DOMContentLoaded 初始化之后执行） ----------------
+    var sampleLoadStarted = false;
+
     function enter() {
         adaptDomForEval();
-        // 提交按钮改道：复用同一按钮（店员点「确认上传单据」的同一位），仅换请求终点
+        var nextBtn = document.getElementById('btnSaveAndNext');
+        if (nextBtn) {
+            nextBtn = replaceWithoutBusinessSave(nextBtn);
+            if (nextBtn) {
+                nextBtn.disabled = true;
+                nextBtn.setAttribute('aria-disabled', 'true');
+            }
+        }
+        // 提交按钮只保留 GT confirm。不保留 inline / CSP / 旧监听器上的 save_edited。
         var btn = document.getElementById('btnSaveReview');
         if (btn) {
-            btn.textContent = ' 确认本张 GT（进入下一张）';
-            btn.onclick = submitEvalConfirm;   // 覆盖 inline onclick 的 save_edited 路径
+            btn = replaceWithoutBusinessSave(btn);
+            if (btn) {
+                btn.textContent = ' 确认本张 GT（进入下一张）';
+                btn.addEventListener('click', onGtConfirmClick, true);
+            }
         }
-        loadSample();
+        if (!sampleLoadStarted) {
+            sampleLoadStarted = true;
+            loadSample();
+        }
+    }
+
+    function scheduleEnter() {
+        setTimeout(enter, 0);
     }
 
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', enter);
+        document.addEventListener('DOMContentLoaded', scheduleEnter);
     } else {
-        enter();
+        scheduleEnter();
     }
+    window.addEventListener('load', scheduleEnter);
 })();

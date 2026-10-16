@@ -574,7 +574,9 @@ function viewInventoryDetail(skuId) {
     const unit = sku.base_unit || '未知单位';
     const kg = (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg)))
         ? Number(sku.standard_kg).toFixed(3) + ' kg' : '未知（无换算依据）';
-    const lastPrice = sku.last_unit_price ? `$${Number(sku.last_unit_price).toFixed(2)}` : '未知';
+    const lastPrice = (isOwnerRoleNow() && sku.last_unit_price != null && Number.isFinite(Number(sku.last_unit_price)))
+        ? `$${Number(sku.last_unit_price).toFixed(2)}`
+        : (isOwnerRoleNow() ? '未知' : '—');
     const rows = [
         ['品名', sku.name || ''],
         ['分类', sku.category || '其他'],
@@ -583,7 +585,7 @@ function viewInventoryDetail(skuId) {
         ['警戒线', `${Number(sku.min_stock_alert || 0)} ${unit}`],
         ['最新进货单价', lastPrice],
         ['低库存', sku.is_low_stock ? '是' : '否'],
-        ['价格异动', sku.price_anomaly ? '是' : '否'],
+        ['价格异动', isOwnerRoleNow() ? (sku.price_anomaly ? '是' : '否') : '—'],
     ];
     const rowsHtml = rows.map(([k, v]) =>
         `<tr><th style="text-align:left; padding:6px 10px; color:var(--text-muted); font-weight:600;">${w2Escape(k)}</th>`
@@ -1155,6 +1157,12 @@ function renderPriceAnomalyRadar(skus) {
     const list = document.getElementById('priceAnomalyRadarList');
     if (!list) return;   // 容器不在当前 DOM（非库存页 / 测试沙箱）：零动作
     const sub = document.getElementById('priceAnomalyRadarSub');
+    if (!isOwnerRoleNow()) {
+        list.innerHTML = '<div style="padding:6px 2px; color:var(--text-muted, #6b7280); font-size:0.85rem;">'
+            + '仅老板可见价格异动雷达。</div>';
+        if (sub) sub.textContent = '';
+        return;
+    }
     const anomalies = (skus || []).filter(s => s && s.price_anomaly).slice().sort((a, b) => {
         const av = _radarPctValue(a);
         const bv = _radarPctValue(b);

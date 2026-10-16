@@ -195,14 +195,39 @@ function computePayStats(receipts) {
 function loadFinancePanel() {
     // 店员不发财务域请求（payments/reconciliation 为 owner 域），红点/横幅提醒属老板视角
     if (isStaffRoleNow()) return;
-    // 全局视图：供应商 + 全量单据并拉（契约①③）
+    // 全局视图：供应商 + 应付清单 + 全量单据并拉（契约①③）
     Promise.all([
         apiFetch('/api/suppliers').then(res => res.json()),
+        apiFetch('/api/payables').then(res => res.json()),
         fetchReceiptListShared(false),
     ])
-        .then(([supRet, rcRet]) => {
+        .then(([supRet, payRet, rcRet]) => {
             if (supRet && supRet.status === 'success') finState.suppliers = supRet.data || [];
             if (rcRet && rcRet.status === 'success') finState.receipts = rcRet.data || [];
+            if (payRet && payRet.status === 'success' && payRet.data) {
+                finState.payables = payRet.data.rows || [];
+            } else {
+                finState.payables = [];
+            }
+            // 用权威 /api/payables 数据丰富 finState.receipts 中的应付字段
+            const payMap = {};
+            (finState.payables || []).forEach(p => {
+                const rid = Number(p.receipt_id || p.id);
+                if (rid) payMap[rid] = p;
+            });
+            (finState.receipts || []).forEach(r => {
+                const p = payMap[Number(r.id)];
+                if (p) {
+                    r.total_hkd = p.total_hkd;
+                    r.paid_amount = p.paid_amount;
+                    r.outstanding_amount = p.outstanding_amount;
+                    r.payment_status = p.payment_status;
+                    r.is_overdue = p.is_overdue;
+                    r.fx_missing = p.fx_missing;
+                    r.has_fx_snapshot = p.has_fx_snapshot;
+                    if (p.due_date) r.due_date = p.due_date;
+                }
+            });
 
             const sel = document.getElementById('finSupplier');
             if (!sel) return;
@@ -362,17 +387,47 @@ function renderPayablesTable(rows) {
         // 操作：未付挂账单可登记支付（沿用既有护栏：现结单/账单不可挂）
         let actionHtml;
         if (r.settlement_type === 'credit' && payOutstandingAmount(r) > 0) {
-            actionHtml = '<button class="btn btn-primary" style="min-height:40px; padding:4px 12px; font-size:0.85rem;" ' +
-                'onclick="openPaymentModalForReceipt(' + rid + ')"> 登记支付</button>';
+            if (r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+                actionHtml = '<button class="btn btn-secondary" style="min-height:40px; padding:4px 12px; font-size:0.85rem;" disabled title="汇率未知，无法登记支付"> 汇率未知</button>';
+            } else {
+                actionHtml = '<button class="btn btn-primary" style="min-height:40px; padding:4px 12px; font-size:0.85rem;" ' +
+                    'onclick="openPaymentModalForReceipt(' + rid + ')"> 登记支付</button>';
+            }
         } else {
             actionHtml = '<span style="color:var(--text-muted); font-size:0.78rem;">—</span>';
+        }
+
+        let amountHtml = '';
+        const isForeign = r.currency && r.currency !== 'HKD';
+        const outAmt = payOutstandingAmount(r);
+        const paidAmt = payPaidAmount(r);
+
+        if (isForeign) {
+            const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+            if (r.fx_missing || r.total_hkd == null) {
+                // 缺 snapshot legacy 提示未知，不硬标 HKD
+                amountHtml = `<strong style="color:var(--text-muted);">未知</strong> <span class="badge badge-warning" style="font-size:0.72rem;">汇率未知</span>` +
+                    `<div style="font-size:0.78rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+            } else {
+                // 外币已折算港币：主金额显示折算后的港币，并显式展示原币
+                amountHtml = `<strong>${I18N.fmtMoney(r.total_hkd)}</strong>` +
+                    `<div style="font-size:0.78rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+                if (paidAmt > 0 && outAmt > 0) {
+                    amountHtml += `<div style="font-size:0.78rem; color:var(--text-muted);">已付 ${I18N.fmtMoney(paidAmt)}，待付 ${I18N.fmtMoney(outAmt)}</div>`;
+                }
+            }
+        } else {
+            amountHtml = `<strong>${I18N.fmtMoney(r.total_amount)}</strong>`;
+            if (paidAmt > 0 && outAmt > 0) {
+                amountHtml += `<div style="font-size:0.78rem; color:var(--text-muted);">已付 ${I18N.fmtMoney(paidAmt)}，待付 ${I18N.fmtMoney(outAmt)}</div>`;
+            }
         }
 
         tr.innerHTML = `
             <td style="vertical-align:middle; word-break:break-all; white-space:normal; text-align:center;">#${rid}<br>
                 <strong>${w2Escape(r.supplier_name || '-')}</strong>${supCode}</td>
             <td style="vertical-align:middle;">${renderDateCell(r.receipt_date)}</td>
-            <td style="vertical-align:middle;"><strong>${I18N.fmtMoney(r.total_amount)}</strong>${payPaidAmount(r) > 0 && payOutstandingAmount(r) > 0 ? '<div style="font-size:0.78rem; color:var(--text-muted);">已付 ' + I18N.fmtMoney(payPaidAmount(r)) + '，待付 ' + I18N.fmtMoney(payOutstandingAmount(r)) + '</div>' : ''}</td>
+            <td style="vertical-align:middle;">${amountHtml}</td>
             <td style="vertical-align:middle;">${payStatusBadgeHtml(r)}</td>
             <td style="vertical-align:middle;">${dateCell}</td>
             <td style="vertical-align:middle;">${methodCell}</td>

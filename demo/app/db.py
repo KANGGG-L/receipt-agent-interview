@@ -272,6 +272,7 @@ def _make_engine():
         unit_price = Column(Float, default=0.0)
         amount = Column(Float, default=0.0)
         sku_id = Column(Integer, nullable=True)
+        source_sku_id = Column(Integer, nullable=True)     # UAT-031: 合并前源 SKU 溯源
         cost_center_id = Column(Integer, nullable=True)     # 部门
         # P11：可空——NULL 表示「模型未给出该行置信度」这一事实本身，与「给了 0.5」区分。
         # 不能留 default=0.0：Python 侧默认值会把显式传入的 None 变成 0.0，
@@ -314,6 +315,7 @@ def _make_engine():
         __tablename__ = "inventory_log"
         id = Column(Integer, primary_key=True, autoincrement=True)
         sku_id = Column(Integer, index=True, nullable=True)
+        source_sku_id = Column(Integer, index=True, nullable=True)  # UAT-031: 合并前源 SKU 溯源
         name = Column(String, default="")
         qty = Column(Float, default=0.0)
         unit = Column(String, default="")
@@ -822,6 +824,7 @@ def _make_engine():
         __tablename__ = "inventory_batches"
         id = Column(Integer, primary_key=True, autoincrement=True)
         sku_id = Column(Integer, index=True, nullable=False)
+        source_sku_id = Column(Integer, index=True, nullable=True)  # UAT-031: 合并前源 SKU 溯源
         receipt_id = Column(Integer, nullable=True)
         inbound_date = Column(String, default="")
         unit_cost = Column(Float, default=0.0)
@@ -1399,6 +1402,17 @@ def _make_engine():
     ):
         _apply_migration_ddl(_engine, _ddl)
 
+    # UAT-031: 批次与流水合并溯源列（幂等 ADD COLUMN 与索引）
+    for _ddl in (
+        "ALTER TABLE receipt_items ADD COLUMN source_sku_id INTEGER",
+        "ALTER TABLE inventory_log ADD COLUMN source_sku_id INTEGER",
+        "ALTER TABLE inventory_batches ADD COLUMN source_sku_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_batches_source_sku_id ON inventory_batches (source_sku_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_log_source_sku_id ON inventory_log (source_sku_id)",
+        "CREATE INDEX IF NOT EXISTS idx_receipt_items_source_sku_id ON receipt_items (source_sku_id)",
+    ):
+        _apply_migration_ddl(_engine, _ddl)
+
     # WS4：一次性幂等回填 —— 存量消耗行按关联 dish 补 tenant_id。
     # 判据（关键修正）：ADD COLUMN ... DEFAULT 'default' 会把存量行填成占位值
     # 'default'（而非 NULL），故待回填集合必须含 NULL / '' / 占位 'default' 三种；
@@ -1706,12 +1720,25 @@ def _migrate_v5_drop_legacy_cli_engines(engine):
                                      {"v": json.dumps(logs, ensure_ascii=False)})
 
 
+def _migrate_v6_sku_merge_source_provenance(engine):
+    for ddl in (
+        "ALTER TABLE receipt_items ADD COLUMN source_sku_id INTEGER",
+        "ALTER TABLE inventory_log ADD COLUMN source_sku_id INTEGER",
+        "ALTER TABLE inventory_batches ADD COLUMN source_sku_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_batches_source_sku_id ON inventory_batches (source_sku_id)",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_log_source_sku_id ON inventory_log (source_sku_id)",
+        "CREATE INDEX IF NOT EXISTS idx_receipt_items_source_sku_id ON receipt_items (source_sku_id)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
 SCHEMA_MIGRATIONS = [
     (1, "baseline_inline_schema", None),
     (2, "receipt_lifecycle_columns", _migrate_v2_receipt_lifecycle_columns),
     (3, "revoked_tokens", _migrate_v3_revoked_tokens),
     (4, "receipt_list_indexes", _migrate_v4_receipt_list_indexes),
     (5, "drop_legacy_cli_engines", _migrate_v5_drop_legacy_cli_engines),
+    (6, "sku_merge_source_provenance", _migrate_v6_sku_merge_source_provenance),
 ]
 
 
@@ -3620,14 +3647,16 @@ def _repoint_vendor_sku_alias(session, secondary_ids, primary_id):
 
 def merge_skus(primary_sku_id, secondary_sku_ids, tenant_id=None):
     """合并 SKU：
-    - 将 secondary_sku_ids 关联的所有 _StockLogRow / _ItemRow 迁移到 primary_sku_id
+    - 将 secondary_sku_ids 关联的所有 _StockLogRow / _ItemRow / _InventoryBatchRow 迁移到 primary_sku_id
+    - 保留 source_sku_id 溯源与 note 记录
     - 将 secondary SKU 的名称及现有库存按规则合并至 primary
     - 将 secondary SKU 标记停用 (active=0)
+    - 失败整体事务回滚，不出现半合并状态
     - 返回合并受影响的记录数
-    - 租户防御（Wave A F2）：tenant_id 非空时对 primary 与每个 secondary
+    - 租户防御（Wave A F2 / UAT-031）：tenant_id 非空时对 primary 与每个 secondary
       校验归属，跨租户分别返回 (None, 'PRIMARY_NOT_FOUND') /
-      (None, 'SECONDARY_NOT_FOUND')，与既有错误形态一致；None=不过滤
-      （向后兼容内部脚本与既有测试路径）。
+      (None, 'SECONDARY_NOT_FOUND')；tenant_id 为 None 时同样强制要求 primary 与
+      所有 secondary 属同一租户，严禁跨租户串扰。
     """
     s = get_session()
     try:
@@ -3639,30 +3668,63 @@ def merge_skus(primary_sku_id, secondary_sku_ids, tenant_id=None):
             return None, "NO_SECONDARY_SKUS"
 
         secondary_skus = s.query(_SkuRow).filter(_SkuRow.id.in_(sec_ids)).all()
+        if len(secondary_skus) != len(set(sec_ids)):
+            return None, "SECONDARY_NOT_FOUND"
         for sku in secondary_skus:
             if not _tenant_ok(sku, tenant_id):
                 return None, "SECONDARY_NOT_FOUND"
+            if tenant_id is None and getattr(sku, "tenant_id", None) != getattr(primary, "tenant_id", None):
+                return None, "SECONDARY_NOT_FOUND"
         secondary_names = [sku.name for sku in secondary_skus]
+        sec_names_map = {sku.id: sku.name for sku in secondary_skus}
 
-        # 迁移 stock logs
-        s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).update(
-            {_StockLogRow.sku_id: primary.id}, synchronize_session=False
-        )
-        # 迁移 items
-        s.query(_ItemRow).filter(_ItemRow.sku_id.in_(sec_ids)).update(
-            {_ItemRow.sku_id: primary.id}, synchronize_session=False
-        )
+        # 1. 迁移 inventory_batches (批次归集 + 溯源留痕)
+        batches = s.query(_InventoryBatchRow).filter(_InventoryBatchRow.sku_id.in_(sec_ids)).all()
+        for b in batches:
+            if getattr(b, "source_sku_id", None) is None:
+                b.source_sku_id = b.sku_id
+            b.sku_id = primary.id
 
-        # 合并库存
-        total_sec_stock = sum(sku.current_stock for sku in secondary_skus)
-        primary.current_stock += total_sec_stock
+        # 2. 迁移 stock logs (流水归集 + 溯源留痕)
+        logs = s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).all()
+        for l in logs:
+            if getattr(l, "source_sku_id", None) is None:
+                l.source_sku_id = l.sku_id
+            orig_sku_id = l.source_sku_id or l.sku_id
+            sec_name = sec_names_map.get(orig_sku_id, "")
+            merge_tag = f"[sku_merged: from_sku_id={orig_sku_id}" + (f", from_name={sec_name}" if sec_name else "") + "]"
+            if merge_tag not in (l.note or ""):
+                l.note = f"{l.note} {merge_tag}".strip() if l.note else merge_tag
+            l.sku_id = primary.id
 
-        # 停用副 SKU 并清零迁移后的库存（避免重复合并翻倍）
+        # 3. 迁移 items (单据明细归集 + 溯源留痕)
+        items = s.query(_ItemRow).filter(_ItemRow.sku_id.in_(sec_ids)).all()
+        for it in items:
+            if getattr(it, "source_sku_id", None) is None:
+                it.source_sku_id = it.sku_id
+            it.sku_id = primary.id
+
+        # 4. 合并库存（考虑单位换算）
+        from app.services.unit_factors import convert_unit_quantity
+        total_sec_stock = 0.0
+        for sec in secondary_skus:
+            sec_qty = float(sec.current_stock or 0.0)
+            if sec_qty > 0 and sec.base_unit and primary.base_unit and sec.base_unit.strip().lower() != primary.base_unit.strip().lower():
+                try:
+                    converted = convert_unit_quantity(sec_qty, sec.base_unit, primary.base_unit, tenant_id=primary.tenant_id)
+                    total_sec_stock += converted
+                except Exception:
+                    total_sec_stock += sec_qty
+            else:
+                total_sec_stock += sec_qty
+        primary.current_stock = round((primary.current_stock or 0.0) + total_sec_stock, 4)
+
+        # 5. 停用副 SKU 并清零迁移后的库存（避免重复合并翻倍）
         for sec in secondary_skus:
             sec.active = 0
             sec.current_stock = 0.0
 
-        # P2-T2 钩子 C：别名改指到主 SKU（必须在停用副 SKU 之前/同时完成，
+        # 6. P2-T2 钩子 C：别名改指到主 SKU（必须在停用副 SKU 之前/同时完成，
         # 否则别名指向 active=0 的副 SKU，读取侧判为死链直接不命中）
         alias_moved = _repoint_vendor_sku_alias(s, sec_ids, primary.id)
 
@@ -3674,7 +3736,113 @@ def merge_skus(primary_sku_id, secondary_sku_ids, tenant_id=None):
             "merged_names": secondary_names,
             "new_stock": primary.current_stock,
             "alias_repointed": alias_moved,
+            "batches_migrated": len(batches),
+            "logs_migrated": len(logs),
+            "items_migrated": len(items),
         }, None
+    except Exception as e:
+        s.rollback()
+        logger.exception("[merge_skus] transaction rolled back due to error: %s", e)
+        raise
+    finally:
+        s.close()
+
+
+def find_orphan_inventory_batches(tenant_id=None):
+    """只读巡检：发现由于历史 SKU 合并未迁移批次而遗留在停用 SKU (active=0) 下的孤儿批次。
+
+    返回孤儿批次列表，每项包含 batch_id, sku_id, sku_name, inbound_date,
+    remaining_qty, is_closed, 以及推荐合并的主 SKU (若可推断)。
+    只读查询，绝不改写任何数据库数据。
+    """
+    s = get_session()
+    try:
+        q = s.query(_InventoryBatchRow, _SkuRow).join(
+            _SkuRow, _InventoryBatchRow.sku_id == _SkuRow.id
+        ).filter(_SkuRow.active == 0)
+        if tenant_id:
+            q = q.filter(_SkuRow.tenant_id == tenant_id)
+        rows = q.order_by(_InventoryBatchRow.id.asc()).all()
+        orphans = []
+        for batch, sku in rows:
+            suggested_primary_id = None
+            alias_row = s.query(_VendorSkuAliasRow).filter(
+                _VendorSkuAliasRow.raw_name == sku.name,
+                _VendorSkuAliasRow.sku_id != sku.id,
+            ).first()
+            if alias_row:
+                suggested_primary_id = alias_row.sku_id
+            if not suggested_primary_id:
+                migrated_log = s.query(_StockLogRow).filter(
+                    _StockLogRow.source_sku_id == sku.id,
+                    _StockLogRow.sku_id != sku.id,
+                ).first()
+                if migrated_log:
+                    suggested_primary_id = migrated_log.sku_id
+            orphans.append({
+                "id": batch.id,
+                "sku_id": batch.sku_id,
+                "sku_name": sku.name,
+                "tenant_id": sku.tenant_id,
+                "inbound_date": batch.inbound_date,
+                "unit_cost": batch.unit_cost,
+                "initial_qty": batch.initial_qty,
+                "remaining_qty": batch.remaining_qty,
+                "unit": batch.unit,
+                "is_closed": batch.is_closed,
+                "is_estimated": batch.is_estimated,
+                "source_sku_id": getattr(batch, "source_sku_id", None),
+                "suggested_primary_id": suggested_primary_id,
+            })
+        return orphans
+    finally:
+        s.close()
+
+
+def migrate_orphan_inventory_batches(tenant_id=None, dry_run=True, approved=False):
+    """存量孤儿批次迁移修复（硬约束：默认 dry-run + 必须单独批准）。
+
+    - 默认 dry_run=True, approved=False：仅输出修复预检清单，不产生任何写操作；
+    - 只有在 approved=True 且 dry_run=False 时方可执行真实修复（当前开发阶段保持未批准状态）；
+    - 修复动作保持幂等并记录系统审计留痕。
+    """
+    orphans = find_orphan_inventory_batches(tenant_id=tenant_id)
+    if dry_run or not approved:
+        return {
+            "status": "PENDING_APPROVAL",
+            "dry_run": True,
+            "approved": bool(approved),
+            "msg": "存量批次迁移需要单独批准，当前为只读 dry-run 预览模式",
+            "orphan_count": len(orphans),
+            "candidates": orphans,
+        }
+
+    # 执行批准后的真实修复（此分支在未经批准时不可达）
+    s = get_session()
+    migrated_count = 0
+    try:
+        for item in orphans:
+            target_sku_id = item.get("suggested_primary_id")
+            if not target_sku_id:
+                continue
+            batch = s.get(_InventoryBatchRow, item["id"])
+            if batch and batch.sku_id != target_sku_id:
+                if getattr(batch, "source_sku_id", None) is None:
+                    batch.source_sku_id = batch.sku_id
+                batch.sku_id = target_sku_id
+                migrated_count += 1
+        s.commit()
+        return {
+            "status": "APPLIED",
+            "dry_run": False,
+            "approved": True,
+            "orphan_count": len(orphans),
+            "migrated_count": migrated_count,
+        }
+    except Exception as e:
+        s.rollback()
+        logger.exception("[migrate_orphan_inventory_batches] error: %s", e)
+        raise
     finally:
         s.close()
 
@@ -3997,13 +4165,31 @@ def deduplicate_skus_by_canonical(tenant_id=None, dry_run=False):
                 else:
                     # 活跃冲突且不在同组（异常），保留原名
                     pass
-            # 迁移流水（inventory_log + receipt_items）至主 SKU
-            s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).update(
-                {_StockLogRow.sku_id: primary.id}, synchronize_session=False
-            )
-            s.query(_ItemRow).filter(_ItemRow.sku_id.in_(sec_ids)).update(
-                {_ItemRow.sku_id: primary.id}, synchronize_session=False
-            )
+            # 迁移批次至主 SKU
+            batches = s.query(_InventoryBatchRow).filter(_InventoryBatchRow.sku_id.in_(sec_ids)).all()
+            for b in batches:
+                if getattr(b, "source_sku_id", None) is None:
+                    b.source_sku_id = b.sku_id
+                b.sku_id = primary.id
+
+            # 迁移流水（inventory_log + receipt_items）至主 SKU（保留溯源）
+            logs = s.query(_StockLogRow).filter(_StockLogRow.sku_id.in_(sec_ids)).all()
+            sec_names_map = {m.id: m.name for m in secondaries}
+            for l in logs:
+                if getattr(l, "source_sku_id", None) is None:
+                    l.source_sku_id = l.sku_id
+                orig_sku_id = l.source_sku_id or l.sku_id
+                sec_name = sec_names_map.get(orig_sku_id, "")
+                merge_tag = f"[sku_merged: from_sku_id={orig_sku_id}" + (f", from_name={sec_name}" if sec_name else "") + "]"
+                if merge_tag not in (l.note or ""):
+                    l.note = f"{l.note} {merge_tag}".strip() if l.note else merge_tag
+                l.sku_id = primary.id
+
+            items = s.query(_ItemRow).filter(_ItemRow.sku_id.in_(sec_ids)).all()
+            for it in items:
+                if getattr(it, "source_sku_id", None) is None:
+                    it.source_sku_id = it.sku_id
+                it.sku_id = primary.id
             total_sec_stock = sum(m.current_stock for m in secondaries)
             primary.current_stock += total_sec_stock
             for sec in secondaries:

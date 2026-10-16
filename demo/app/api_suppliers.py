@@ -5,7 +5,7 @@ import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 
 from app import db
@@ -76,36 +76,70 @@ def list_suppliers(request: Request, q: str = "", include_inactive: int = 0):
         if q:
             folded_q = master_key(q)
             name_hit = bool(folded_q) and folded_q in master_key(s.name or "")
-            if not name_hit and q not in s.name and q not in (s.supplier_code or ""):
+            if not name_hit and q not in (s.name or "") and q not in (s.supplier_code or ""):
                 continue
         out.append(_supplier_dict(s, tenant_id=tenant_id, computed=computed))
     return {"status": "success", "data": out}
 
 
 class SupplierBody(BaseModel):
-    name: str = ""
-    contact_phone: str = None
-    notes: str = None
-    settlement_pref: str = None
-    payment_terms_days: int = None
-    active: int = None
+    name: Optional[str] = None
+    contact_phone: Optional[str] = None
+    notes: Optional[str] = None
+    settlement_pref: Optional[str] = None
+    payment_terms_days: Optional[int] = None
+    active: Optional[int] = None
+
+    @field_validator("settlement_pref")
+    @classmethod
+    def _reject_explicit_empty_settlement(cls, value):
+        # 只拒绝显式空串。null 与缺省是「不设置」，不能再当成电话/备注的 string_type。
+        if value is not None and str(value).strip() == "":
+            raise ValueError("结算方式不能为空")
+        return value
+
+
+def _optional_text(body: SupplierBody, key: str, *, create: bool):
+    """create 把缺省、null、空串都写成空串。patch 缺省不改；null 与空串写成空串。"""
+    if key not in body.model_fields_set:
+        return "" if create else None
+    raw = getattr(body, key)
+    return "" if raw is None else raw
+
+
+def _supplier_fields(body: SupplierBody, *, create: bool) -> dict:
+    fields = {}
+    for key in ("contact_phone", "notes"):
+        value = _optional_text(body, key, create=create)
+        if value is not None:
+            fields[key] = value
+    if "settlement_pref" in body.model_fields_set:
+        fields["settlement_pref"] = "" if body.settlement_pref is None else body.settlement_pref
+    elif create:
+        fields["settlement_pref"] = ""
+    for key in ("payment_terms_days", "active"):
+        if key in body.model_fields_set and getattr(body, key) is not None:
+            fields[key] = getattr(body, key)
+    if not create and "name" in body.model_fields_set and body.name is not None and str(body.name).strip():
+        fields["name"] = str(body.name).strip()
+    return fields
 
 
 @router.post("/api/suppliers")
 def create_supplier(body: SupplierBody, request: Request):
     require_role("owner")(request)
-    if not body.name:
-        return {"status": "error", "msg": "供应商名称不能为空"}
+    if not body.name or not str(body.name).strip():
+        return JSONResponse(status_code=400, content={"status": "error", "msg": "供应商名称不能为空"})
+    clean_name = str(body.name).strip()
     tenant_id = _tenant_id(request)
-    wanted = master_key(body.name)
+    wanted = master_key(clean_name)
     if wanted:
         for row in db.list_suppliers(include_inactive=True, tenant_id=tenant_id):
             if master_key(row.name or "") == wanted:
                 return {"status": "success", "id": row.id, "folded": True}
-    fields = {k: v for k, v in body.model_dump().items() if k != "name" and v is not None}
-    sup_id, err = db.create_supplier(body.name, tenant_id=tenant_id, **fields)
+    fields = _supplier_fields(body, create=True)
+    sup_id, err = db.create_supplier(clean_name, tenant_id=tenant_id, **fields)
     if err:
-        from fastapi.responses import JSONResponse
         return JSONResponse({"status": "error", "msg": err}, status_code=409)
     return {"status": "success", "id": sup_id}
 
@@ -113,12 +147,16 @@ def create_supplier(body: SupplierBody, request: Request):
 @router.patch("/api/suppliers/{supplier_id}")
 def patch_supplier(supplier_id: int, body: SupplierBody, request: Request):
     require_role("owner")(request)
-    if db.get_supplier(supplier_id, tenant_id=_tenant_id(request)) is None:
-        return {"status": "error", "msg": "供应商不存在"}
-    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    tenant_id = _tenant_id(request)
+    if db.get_supplier(supplier_id, tenant_id=tenant_id) is None:
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
+    if "name" in body.model_fields_set:
+        if body.name is None or not str(body.name).strip():
+            return JSONResponse(status_code=400, content={"status": "error", "msg": "供应商名称不能为空"})
+    fields = _supplier_fields(body, create=False)
     row, err = db.update_supplier(supplier_id, **fields)
     if row is None:
-        return {"status": "error", "msg": "供应商不存在"}
+        return JSONResponse(status_code=404, content={"status": "error", "msg": "供应商不存在"})
     return {"status": "success"}
 
 

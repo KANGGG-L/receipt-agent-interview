@@ -26,7 +26,7 @@ import logging
 import math
 
 from app import db, dishes_store
-from app.auth import require_role, resolve_tenant
+from app.auth import ROLE_RANK, require_role, resolve_tenant
 from app.i18n_text import master_key, prefer_stored_label
 
 logger = logging.getLogger("dishes")
@@ -115,7 +115,8 @@ class DailyConsumptionBatchCreate(BaseModel):
 # -------------------------------------------------------------
 # 辅助函数
 # -------------------------------------------------------------
-def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None) -> Dict:
+def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None,
+                  can_see_prices: bool = True) -> Dict:
     """序列化餐品对象并计算理论成本与毛利率。
 
     成本口径走 `services.recipe_cost.compute_recipe_theory` 唯一实现
@@ -135,6 +136,24 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None) -> Dict:
     if not cat_val or cat_val == "其他":
         cat_val = "默认"
     cat_id = db.read_category_id_for_row("dishes", dish_row.id, session=session)
+
+    if not can_see_prices:
+        price = None
+        theoretical_cost = None
+        gross_profit = None
+        gross_margin_rate = None
+        desensitized_ingredients = []
+        for ing in ingredients:
+            ing_copy = dict(ing)
+            ing_copy["sku_last_unit_price"] = None
+            ing_copy["ingredient_cost"] = None
+            if "expanded" in ing_copy and isinstance(ing_copy["expanded"], list):
+                ing_copy["expanded"] = [
+                    dict(exp, unit_price=None, ingredient_cost=None)
+                    for exp in ing_copy["expanded"]
+                ]
+            desensitized_ingredients.append(ing_copy)
+        ingredients = desensitized_ingredients
 
     return {
         "id": dish_row.id,
@@ -260,7 +279,8 @@ def list_dishes(
     category_id: Optional[int] = None,
 ):
     """查询餐品列表（含关联的 SKU BOM 配方、基准理论成本、当前毛利率）。"""
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     session = db.get_session()
     try:
         tenant_id = _tenant_id(request)
@@ -317,7 +337,7 @@ def list_dishes(
                     folded_q in master_key(r.name or "") or folded_q in master_key(stored_cat))
                 if not folded_hit and q_clean not in name_clean and q_clean not in cat_clean and q_clean not in desc_clean:
                     continue
-            out.append(_dish_to_dict(session, r, _tenant_id(request)))
+            out.append(_dish_to_dict(session, r, _tenant_id(request), can_see_prices=can_see_prices))
 
         return {"status": "success", "data": out}
     finally:
@@ -604,7 +624,8 @@ def get_daily_consumption(
     date: Optional[str] = None,
 ):
     """查询指定日期的餐品消耗记录、扣减详情与当日成本汇总。"""
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     target_date = (date or "").strip() or db.now_iso()[:10]
     tenant_id = _tenant_id(request)
     session = db.get_session()
@@ -658,8 +679,8 @@ def get_daily_consumption(
                     "sku_name": sku.name if sku else f"SKU#{dt.sku_id}",
                     "qty_consumed": dt.qty_consumed,
                     "unit": dt.unit,
-                    "unit_cost": dt.unit_cost,
-                    "total_cost": dt.total_cost,
+                    "unit_cost": dt.unit_cost if can_see_prices else None,
+                    "total_cost": dt.total_cost if can_see_prices else None,
                     "batch_id": dt.batch_id,
                     "batch_date": dt.batch_date,
                     "is_estimated": is_estimated,
@@ -676,13 +697,13 @@ def get_daily_consumption(
                 "dish_id": r.dish_id,
                 "dish_name": dish_name,
                 "dish_category": dish_category,
-                "dish_price": dish_price,
+                "dish_price": dish_price if can_see_prices else None,
                 "quantity": r.quantity,
-                "unit_cost": r.unit_cost,
-                "total_cost": r.total_cost,
-                "revenue": item_rev,
-                "gross_profit": item_gp,
-                "gross_margin_rate": item_gm,
+                "unit_cost": r.unit_cost if can_see_prices else None,
+                "total_cost": r.total_cost if can_see_prices else None,
+                "revenue": item_rev if can_see_prices else None,
+                "gross_profit": item_gp if can_see_prices else None,
+                "gross_margin_rate": item_gm if can_see_prices else None,
                 "notes": r.notes or "",
                 "is_void": r.is_void,
                 "created_at": r.created_at,
@@ -708,10 +729,10 @@ def get_daily_consumption(
 
         summary = {
             "total_quantity": total_quantity,
-            "total_cost": total_cost,
-            "total_revenue": total_revenue,
-            "gross_profit": gross_profit,
-            "gross_margin_rate": gross_margin_rate,
+            "total_cost": total_cost if can_see_prices else None,
+            "total_revenue": total_revenue if can_see_prices else None,
+            "gross_profit": gross_profit if can_see_prices else None,
+            "gross_margin_rate": gross_margin_rate if can_see_prices else None,
             "records_count": len(rows),
             "void_count": sum(1 for r in rows if r.is_void == 1),
             "has_zero_cost_batch": has_zero_cost_batch,
@@ -894,13 +915,14 @@ def delete_dish_category(name: str, request: Request, replace_with: Optional[str
 @router.get("/api/dishes/{dish_id}")
 def get_dish(dish_id: int, request: Request):
     """查询单个餐品详情（含配方食材列表与关联 SKU 实时库存）。"""
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     session = db.get_session()
     try:
         dish = session.get(db._DishRow, int(dish_id))
         if not dish or not db._tenant_ok(dish, _tenant_id(request)):
             return JSONResponse(status_code=404, content={"status": "error", "msg": "餐品不存在"})
-        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request))}
+        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request), can_see_prices=can_see_prices)}
     finally:
         session.close()
 
@@ -1321,7 +1343,8 @@ def restore_dish_version(dish_id: int, version: int, request: Request,
 @router.post("/api/dishes/daily_consumption/batch")
 def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: Request):
     """批量提交当日餐品消耗（原子 FIFO 批次扣减、生成流水、扣减库存）。"""
-    require_role("staff")(request)
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     if not body.items:
         return JSONResponse(
             status_code=400,
@@ -1539,7 +1562,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 "dish_id": dish.id,
                 "consumption_id": cons_row.id,
                 "quantity": round(float(cons_row.quantity or 0.0), 4),
-                "total_cost": round(float(cons_row.total_cost or 0.0), 2),
+                "total_cost": round(float(cons_row.total_cost or 0.0), 2) if can_see_prices else None,
                 "merged": is_merge,
             })
 

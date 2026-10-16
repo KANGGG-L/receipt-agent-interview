@@ -16,7 +16,8 @@ except Exception:  # pragma: no cover
     _PIL_OK = False
 
 # 环境守卫（离线干净 skip）：
-# 本用例依赖 127.0.0.1:15010 活体服务（页面壳）+ playwright 浏览器（API 均已 route mock）。
+# 本用例依赖 PW_TEST_BASE_URL 或 TEST_BASE_URL 指向的隔离活体服务（页面壳）
+# + playwright 浏览器（识别 API 由 route mock）。未配置基址时跳过，禁止回落 15010。
 # 两种不满足情况分别给出 skip 理由，任一不满足即用例级 skip：
 #   1) 服务不可达（socket 探测，超时约 1s）；
 #   2) 服务可达但浏览器不可用（playwright 未安装或 chromium 启动失败）。
@@ -99,7 +100,7 @@ def _browser_available():
         return False
 
 
-def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
+def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True, blur_radius=8.0):
     path = os.path.join(_screenshot_dir(), filename)
     img = Image.new("RGB", (600, 800), color=(250, 248, 245))
     draw = ImageDraw.Draw(img)
@@ -140,8 +141,10 @@ def create_test_receipt_image(filename="test_blurry_receipt.jpg", blur=True):
     draw.line([(40, 330), (560, 330)], fill=(100, 100, 100), width=1)
     draw.text((400, 350), "合計金額: $1080.00", fill=(10, 10, 10))
 
+    # 半径 1.8 的拉普拉斯方差仍高于客户端阈值 20，会被当成正常画质直接识别。
+    # 异常路径必须用明显低于阈值的模糊（默认 8），正常路径传 blur=False。
     if blur:
-        img = img.filter(ImageFilter.GaussianBlur(radius=1.8))
+        img = img.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
     img.save(path, "JPEG", quality=80)
     return path
@@ -234,12 +237,32 @@ MOCK_PARSED_RESULT = {
 }
 
 
+def _login_if_required(page):
+    """隔离环境 AUTH_ENABLED=1 时出现登录遮罩。凭据只从环境变量读，不写进仓库。"""
+    overlay = page.locator("#authLoginOverlay")
+    try:
+        overlay.wait_for(state="visible", timeout=3000)
+    except Exception:
+        return
+    email = os.environ.get("PW_TEST_LOGIN_EMAIL", "").strip()
+    password = os.environ.get("PW_TEST_LOGIN_PASSWORD", "")
+    if not email or not password:
+        raise AssertionError(
+            "鉴权登录面板已出现，但未设置 PW_TEST_LOGIN_EMAIL / PW_TEST_LOGIN_PASSWORD"
+        )
+    page.locator("#authLoginEmail").fill(email)
+    page.locator("#authLoginPassword").fill(password)
+    page.locator("#authLoginSubmit").click()
+    expect(overlay).to_be_hidden(timeout=10000)
+
+
 @_E2E_SKIP
 def test_e2e_clerk_flow_all_scenarios():
     # AH1：先给仓库 artifacts/e2e-refactor 拍指纹快照，用例全程不得改动它
     repo_fp_before = _dir_fingerprint(_REPO_E2E_DIR)
 
-    test_img_path = create_test_receipt_image()
+    sharp_img_path = create_test_receipt_image("test_sharp_receipt.jpg", blur=False)
+    blurry_img_path = create_test_receipt_image("test_blurry_receipt.jpg", blur=True, blur_radius=8.0)
     screenshot_dir = _screenshot_dir()
 
     # 落盘必须落在 ARTIFACTS_DIR 重定向后的目录（确定性判据，不依赖截图内容是否逐字节相同）
@@ -250,15 +273,31 @@ def test_e2e_clerk_flow_all_scenarios():
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": 1440, "height": 900})
+        # 隔离服务是自签 HTTPS。这里只放行 Playwright 自己的上下文，
+        # 不是 agent-browser --ignore-https-errors；界面证书走 orca cert-proceed。
+        context = browser.new_context(
+            viewport={"width": 1440, "height": 900},
+            ignore_https_errors=urlparse(BASE_URL).scheme == "https",
+        )
         page = context.new_page()
 
         job_poll_count = 0
+        upload_mode = {"value": "direct"}
+        upload_log = []
 
         def handle_upload_route(route):
             url = route.request.url
-            if "force=true" in url:
-                time.sleep(0.3)
+            parsed = urlparse(url)
+            upload_log.append({
+                "method": route.request.method,
+                "path": parsed.path,
+                "query": parsed.query,
+            })
+            force = "force=true" in url
+            # 正常画质：不带 force 也进入识别。异常画质：未 force 仍返回画质错误。
+            if upload_mode["value"] == "direct" or force:
+                if force:
+                    time.sleep(0.3)
                 route.fulfill(
                     status=200,
                     content_type="application/json",
@@ -339,24 +378,49 @@ def test_e2e_clerk_flow_all_scenarios():
         page.route("**/api/inventory*", handle_inventory_route)
 
         # -------------------------------------------------------------
-        # Scenario 1: Upload & Gentle Quality Warning
+        # S3-19：正常画质不找已删除的 #chkAutoAnalyze，选图后直接识别
         # -------------------------------------------------------------
-        page.goto(BASE_URL)
+        with page.expect_response(lambda r: "/api/auth/me" in r.url, timeout=15000):
+            page.goto(BASE_URL)
         page.wait_for_load_state("domcontentloaded")
-        page.wait_for_timeout(600)
+        _login_if_required(page)
 
-        # Uncheck auto-analyze to verify Step 1/2 preview card with gentle warning
-        auto_chk = page.locator("#chkAutoAnalyze")
-        if auto_chk.is_checked():
-            auto_chk.uncheck()
+        expect(page.locator("#chkAutoAnalyze")).to_have_count(0)
+        expect(page.locator("#receiptFile")).to_be_attached()
 
-        # Upload the blurry test receipt
-        file_input = page.locator("#receiptFile")
-        file_input.set_input_files(test_img_path)
+        upload_mode["value"] = "direct"
+        with page.expect_request(
+            lambda r: r.method == "POST" and "/api/upload" in r.url, timeout=15000
+        ) as direct_upload:
+            page.locator("#receiptFile").set_input_files(sharp_img_path)
+        direct_req = direct_upload.value
+        direct_parsed = urlparse(direct_req.url)
+        assert direct_req.method == "POST"
+        assert direct_parsed.path.endswith("/api/upload")
+        assert "force=true" not in direct_parsed.query
+        expect(page.locator("#preConfirmCard")).to_be_hidden()
+        page.wait_for_selector("#prefillFormCard:not(.hide)", timeout=15000)
+        expect(page.locator("#inpSupplier")).to_have_value("祥興食品有限公司")
+        expect(page.locator("#inpDate")).to_have_value("2026-08-22")
+        expect(page.locator("#inpTotal")).to_have_value("1080.00")
+        expect(page.locator("#itemTableBody tr")).to_have_count(3)
+        s0_path = os.path.join(screenshot_dir, "00_scenario0_direct_recognize.png")
+        page.screenshot(path=s0_path)
+        print(f"Scenario 0 screenshot saved to {s0_path}")
+        print("DIRECT_UPLOAD %s %s?%s" % (direct_req.method, direct_parsed.path, direct_parsed.query))
 
-        # Verify Split View and Preview Area is visible
+        # -------------------------------------------------------------
+        # Scenario 1: 异常画质仍停在确认卡，再显式开始，未 force 返回画质错误
+        # -------------------------------------------------------------
+        upload_mode["value"] = "quality"
+        job_poll_count = 0
+        uploads_before_bad = len(upload_log)
+        page.locator("#receiptFile").set_input_files(blurry_img_path)
         expect(page.locator("#splitViewArea")).to_be_visible()
         expect(page.locator("#preConfirmCard")).to_be_visible()
+        expect(page.locator("#preConfirmQualityWarn")).to_be_visible()
+        page.wait_for_timeout(400)
+        assert len(upload_log) == uploads_before_bad, upload_log
 
         # Screenshot Scenario 1: Step 1/2 Preview & Gentle Warning Banner
         s1_path = os.path.join(screenshot_dir, "01_scenario1_upload_gentle_warning.png")
@@ -389,12 +453,12 @@ def test_e2e_clerk_flow_all_scenarios():
         loading_card = page.locator("#loadingCard")
         expect(loading_card).to_be_visible()
 
-        # Verify 4-stage components
-        expect(page.locator("#loadingProgressBar")).to_be_visible()
+        # 页面已去掉假进度条和第 4 步。不把这两个节点断言回可见，也不恢复它们。
+        expect(page.locator("#loadingProgressBar")).to_have_count(0)
+        expect(page.locator("#loadingStep4")).to_have_count(0)
         expect(page.locator("#loadingStep1")).to_be_visible()
         expect(page.locator("#loadingStep2")).to_be_visible()
         expect(page.locator("#loadingStep3")).to_be_visible()
-        expect(page.locator("#loadingStep4")).to_be_visible()
         expect(page.locator("#ocrTimer")).to_be_visible()
 
         s2_path = os.path.join(screenshot_dir, "02_scenario2_loading_4stages.png")

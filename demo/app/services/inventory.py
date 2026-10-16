@@ -163,7 +163,14 @@ def apply_receipt_to_inventory(row, tenant_id=None):
                 _alias_ok += 1
             else:
                 _alias_skip[_alias_err] = _alias_skip.get(_alias_err, 0) + 1
-        _in_qty = it.get("quantity", 0)
+        _actual = it.get("actual_qty")
+        if _actual is not None and str(_actual).strip() != "":
+            _in_qty = float(_actual)
+            _unit_price = float(it.get("unit_price", 0) or 0)
+            _amount = round(_in_qty * _unit_price, 2)
+        else:
+            _in_qty = float(it.get("quantity", 0) or 0)
+            _amount = float(it.get("amount", 0) or 0)
         _in_unit = it.get("unit") or ""
         _sku_obj = db.get_sku(sku_id, tenant_id=_tenant) if sku_id else None
         _base_unit = (getattr(_sku_obj, "base_unit", "") or "").strip()
@@ -173,7 +180,6 @@ def apply_receipt_to_inventory(row, tenant_id=None):
                                             tenant_id=_tenant)
             _in_unit = _base_unit
         # 库存货值、进价、批次成本一律按港币记；外币单按入账时存的汇率折算，原币种金额留在备注里
-        _amount = it.get("amount", 0)
         _note = ""
         if _fx_rate != 1.0:
             _note = "原币种 %s %.2f，汇率 %s" % (_cur, float(_amount or 0), _fx_rate)
@@ -341,7 +347,7 @@ def reverse_receipt_inventory(receipt_id, who, reason="", tenant_id=None):
         sku = s.get(db._SkuRow, sku_id)
         batches = s.query(db._InventoryBatchRow).filter(
             db._InventoryBatchRow.receipt_id == int(receipt_id),
-            db._InventoryBatchRow.sku_id == sku_id).all()
+            (db._InventoryBatchRow.sku_id == sku_id) | (db._InventoryBatchRow.source_sku_id == sku_id)).all()
         batches_by_sku[sku_id] = batches
         name = (sku.name if sku else "") or f"货品#{sku_id}"
         unit = (sku.base_unit if sku else "") or ""

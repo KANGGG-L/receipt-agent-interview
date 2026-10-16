@@ -38,14 +38,35 @@ async function finApi(url, opts) {
 // ---------------------------------------------------------------------------
 // 付款口径：已入账（approved）的挂账单才算应付；已付金额以后端 paid_amount 为准
 // ---------------------------------------------------------------------------
+function payTotalAmountHkd(r) {
+    if (!r) return 0;
+    if (r.currency && r.currency !== 'HKD') {
+        if (r.total_hkd != null) return _round2(r.total_hkd);
+        return null;
+    }
+    return _round2(r.total_hkd != null ? r.total_hkd : r.total_amount);
+}
+
 function payPaidAmount(r) {
     if (r && r.paid_amount != null && r.paid_amount !== '') return _round2(r.paid_amount);
-    return r && r.payment_id ? _round2(r.total_amount) : 0;
+    const tot = payTotalAmountHkd(r);
+    return (r && r.payment_id && tot != null) ? tot : 0;
 }
+
 function payOutstandingAmount(r) {
-    return Math.max(0, _round2(_round2(r && r.total_amount) - payPaidAmount(r)));
+    if (!r) return 0;
+    if (r.outstanding_amount != null && r.outstanding_amount !== '') {
+        return _round2(r.outstanding_amount);
+    }
+    const tot = payTotalAmountHkd(r);
+    if (tot === null) return 0;
+    return Math.max(0, _round2(tot - payPaidAmount(r)));
 }
+
 function payAllocStatusLabel(r) {
+    if (r && r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+        return '汇率未知';
+    }
     const paid = payPaidAmount(r);
     const out = payOutstandingAmount(r);
     if (out <= 0 && paid > 0) return '已付清';
@@ -91,20 +112,46 @@ function openPaymentModal() {
     body.innerHTML = '<tr><td colspan="8" style="color:var(--text-muted);">正在加载这家供应商的挂账单……</td></tr>';
     openAccessibleModal(_fin$('paymentModal'));
 
-    const loadPayList = (typeof fetchReceiptListShared === 'function')
-        ? fetchReceiptListShared(false)
-        : apiFetch('/api/receipts').then(res => res.json());
-    loadPayList
-        .then(ret => {
-            if (!ret || ret.status !== 'success') throw new Error('load');
-            _payRows = (ret.data || []).filter(r =>
-                (r.supplier_id != null ? Number(r.supplier_id) === Number(sup.id) : r.supplier_name === sup.name)
-                && r.settlement_type === 'credit' && r.status === 'approved'
-                && !r.deleted_at && payOutstandingAmount(r) > 0);
+    apiFetch(`/api/payables?supplier_id=${encodeURIComponent(sup.id)}`)
+        .then(res => res.json())
+        .then(payRet => {
+            if (!payRet || payRet.status !== 'success' || !payRet.data) throw new Error('load payables failed');
+            const rows = payRet.data.rows || [];
+            _payRows = rows.map(p => ({
+                id: Number(p.receipt_id || p.id),
+                receipt_id: Number(p.receipt_id || p.id),
+                supplier_id: p.supplier_id,
+                supplier_name: p.supplier_name,
+                receipt_date: p.receipt_date,
+                settlement_type: 'credit',
+                status: 'approved',
+                currency: p.currency || 'HKD',
+                total_amount: p.total_amount,
+                total_hkd: p.total_hkd,
+                paid_amount: p.paid_amount,
+                outstanding_amount: p.outstanding_amount,
+                payment_status: p.payment_status,
+                fx_missing: Boolean(p.fx_missing),
+                has_fx_snapshot: p.has_fx_snapshot,
+            })).filter(r => r.payment_status !== 'paid' && (r.outstanding_amount > 0 || r.fx_missing));
             renderPayRows();
         })
         .catch(() => {
-            body.innerHTML = '<tr><td colspan="8" style="color:var(--danger-strong);">挂账单没有加载出来，请关掉窗口再点一次「登记支付」。</td></tr>';
+            const loadPayList = (typeof fetchReceiptListShared === 'function')
+                ? fetchReceiptListShared(false)
+                : apiFetch('/api/receipts').then(res => res.json());
+            loadPayList
+                .then(ret => {
+                    if (!ret || ret.status !== 'success') throw new Error('load');
+                    _payRows = (ret.data || []).filter(r =>
+                        (r.supplier_id != null ? Number(r.supplier_id) === Number(sup.id) : r.supplier_name === sup.name)
+                        && r.settlement_type === 'credit' && r.status === 'approved'
+                        && !r.deleted_at && payOutstandingAmount(r) > 0);
+                    renderPayRows();
+                })
+                .catch(() => {
+                    body.innerHTML = '<tr><td colspan="8" style="color:var(--danger-strong);">挂账单没有加载出来，请关掉窗口再点一次「登记支付」。</td></tr>';
+                });
         });
 }
 
@@ -117,29 +164,62 @@ function renderPayRows() {
         return;
     }
     _payRows.forEach(r => {
-        const out = payOutstandingAmount(r);
+        const isForeign = r.currency && r.currency !== 'HKD';
+        const isMissingFx = isForeign && (r.fx_missing || r.total_hkd == null);
+        const out = isMissingFx ? 0 : payOutstandingAmount(r);
+        const paid = isMissingFx ? 0 : payPaidAmount(r);
         const tr = document.createElement('tr');
+
+        let amountCell = '';
+        let paidCell = '';
+        let outCell = '';
+        let inputCell = '';
+        let checkCell = '';
+
+        const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+
+        if (isMissingFx) {
+            checkCell = `<input type="checkbox" class="pay-receipt-check" value="${Number(r.id)}" disabled aria-label="单据 #${Number(r.id)} 汇率未知不可选">`;
+            amountCell = `<span class="badge badge-warning" style="font-size:0.75rem;">汇率未知</span> <div style="font-size:0.72rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+            paidCell = '<span style="color:var(--text-muted);">—</span>';
+            outCell = '<span style="color:var(--text-muted);">—</span>';
+            inputCell = `<input type="text" class="form-control" disabled value="需先设置汇率" aria-label="单据 #${Number(r.id)} 需先设置汇率" style="min-height:40px; width:110px; font-size:0.75rem;">`;
+        } else if (isForeign) {
+            checkCell = `<input type="checkbox" class="pay-receipt-check" value="${Number(r.id)}" aria-label="选择单据 #${Number(r.id)}" checked>`;
+            amountCell = `${I18N.fmtMoney(r.total_hkd)} <div style="font-size:0.72rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+            paidCell = `${I18N.fmtMoney(paid)}`;
+            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+            inputCell = `<input type="number" class="form-control pay-amt-input" data-rid="${Number(r.id)}" data-max="${out}" step="0.01" min="0.01" max="${out}" value="${out.toFixed(2)}" aria-label="单据 #${Number(r.id)} 本次付款金额" style="min-height:40px; width:110px;">`;
+        } else {
+            checkCell = `<input type="checkbox" class="pay-receipt-check" value="${Number(r.id)}" aria-label="选择单据 #${Number(r.id)}" checked>`;
+            amountCell = `${I18N.fmtMoney(r.total_amount)}`;
+            paidCell = `${I18N.fmtMoney(paid)}`;
+            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+            inputCell = `<input type="number" class="form-control pay-amt-input" data-rid="${Number(r.id)}" data-max="${out}" step="0.01" min="0.01" max="${out}" value="${out.toFixed(2)}" aria-label="单据 #${Number(r.id)} 本次付款金额" style="min-height:40px; width:110px;">`;
+        }
+
         tr.innerHTML = `
-            <td><input type="checkbox" class="pay-receipt-check" value="${Number(r.id)}" aria-label="选择单据 #${Number(r.id)}" checked></td>
+            <td>${checkCell}</td>
             <td>#${Number(r.id)}</td>
             <td>${renderDateCell(r.receipt_date)}</td>
-            <td>${I18N.fmtMoney(r.total_amount)}</td>
-            <td>${I18N.fmtMoney(payPaidAmount(r))}</td>
-            <td><strong>${I18N.fmtMoney(out)}</strong></td>
-            <td><input type="number" class="form-control pay-amt-input" data-rid="${Number(r.id)}" data-max="${out}" step="0.01" min="0.01" max="${out}" value="${out.toFixed(2)}" aria-label="单据 #${Number(r.id)} 本次付款金额" style="min-height:40px; width:110px;"></td>
+            <td>${amountCell}</td>
+            <td>${paidCell}</td>
+            <td>${outCell}</td>
+            <td>${inputCell}</td>
             <td>${w2Escape(payAllocStatusLabel(r))}</td>`;
         body.appendChild(tr);
     });
-    body.querySelectorAll('.pay-receipt-check, .pay-amt-input').forEach(el => {
+    body.querySelectorAll('.pay-receipt-check:not([disabled]), .pay-amt-input').forEach(el => {
         el.addEventListener('input', recalcPayTotal);
         el.addEventListener('change', recalcPayTotal);
     });
-    _fin$('payCheckAll').checked = true;
+    const enabledChecks = body.querySelectorAll('.pay-receipt-check:not([disabled])');
+    _fin$('payCheckAll').checked = enabledChecks.length > 0;
     recalcPayTotal();
 }
 
 function togglePayCheckAll(cb) {
-    document.querySelectorAll('.pay-receipt-check').forEach(c => { c.checked = cb.checked; });
+    document.querySelectorAll('.pay-receipt-check:not([disabled])').forEach(c => { c.checked = cb.checked; });
     recalcPayTotal();
 }
 
