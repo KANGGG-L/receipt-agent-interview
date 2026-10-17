@@ -1,0 +1,2 @@
+FAILED tests/test_uat_028_supplier_deactivate_name_retention.py::test_uat028_empty_name_create_and_invalid_patch_rejected
+3 failed, 1 passed, 26 warnings in 1.29s

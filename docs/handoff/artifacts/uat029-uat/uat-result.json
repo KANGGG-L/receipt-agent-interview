@@ -1,0 +1,69 @@
+{
+  "ticket": "UAT-029",
+  "title": "选择贷项单仍被正数总额校验阻止保存",
+  "stage": "UAT (independent user-perspective acceptance)",
+  "head": "7271d40",
+  "verification_mode": "MANUAL_UI",
+  "conclusion": "PASS",
+  "environment": {
+    "port": 15903,
+    "db": "/tmp/uat029-uat/uat-live.db, /tmp/uat029-uat/uat-ui2.db (independent files, not shared with DEV/QA fixtures)",
+    "auth": "AUTH_ENABLED=1, DEMO_TOKEN_SECRET 48-byte random hex via env only",
+    "browser": "Playwright + /usr/bin/google-chrome (1440x900), real login boss@demo.hk"
+  },
+  "checks": {
+    "security_preflight": [
+      {"step": "S1 no-credential GET /api/receipts -> 401 UNAUTHENTICATED (empty Authorization != anonymous exemption; identity in HttpOnly cookie)", "pass": true},
+      {"step": "S2 owner login 200, Set-Cookie receipt_session HttpOnly SameSite=lax", "pass": true},
+      {"step": "S3 /api/auth/me identity_source=cookie demo_identity=false", "pass": true},
+      {"step": "S4 cookie-session write without X-Requested-With -> 403 CSRF_REJECTED", "pass": true},
+      {"step": "S5 forged bearer token -> 401", "pass": true},
+      {"step": "S6 owner cookie + forged X-Tenant-Id: tenant_b -> tenant_b data not visible (D19 tenant from token payload only)", "pass": true},
+      {"step": "S7/S8 staff login ok; tenant_b baseline rows before=after=0", "pass": true}
+    ],
+    "core_ac_api": [
+      {"step": "AC1 credit_note negative-amount variant: save_edited 200 math_blockers=[]; readback total=-10 doc_form=credit_note; approve 200; DB approved total=-10", "pass": true},
+      {"step": "AC2 credit_note negative-qty variant: save 200 math_blockers=[]; DB qty=-2 amount=-20; approve 200", "pass": true},
+      {"step": "AC3 fee arithmetic: item -10 + delivery_fee -5 = total -15 -> 200 math_blockers=[]", "pass": true},
+      {"step": "AC4 plain purchase negative total: save 200 but math_blockers raised ('单据写 -10 元，按数量单价应是 10 元，相差 20 元'); approve -> 422 APPROVAL_BLOCKED", "pass": true},
+      {"step": "AC5 reversal: approve positive receipt -> reverse 200 库存已扣回; second reverse -> 200 already_reversed=true 库存没有再变动 (idempotent protection, no double deduction)", "pass": true}
+    ],
+    "core_ac_ui_manual": [
+      {"step": "U1 real login via Playwright/Chrome, identity_source=cookie", "pass": true},
+      {"step": "U2 reopen credit_note #1 in review UI from queue: total -10.00, docForm credit_note, zero blockers (defect 'credit note blocked by positive-total validation' does not reproduce)", "pass": true},
+      {"step": "U3 real #btnSaveReview click -> real POST /api/save_edited 200 with total_amount=-10 and X-Requested-With header; toast 已保存复核修改并提交审核", "pass": true},
+      {"step": "U4 reopen -> real #btnApproveReceipt click + confirm dialog -> POST approve 200; DB status=approved total=-10 version=3 — full UI chain save->reopen->approve PASS", "pass": true},
+      {"step": "U5 printed (plain purchase) negative total: err_total blocker + toast 单据总金额必须大于 0, zero network writes", "pass": true},
+      {"step": "U6 credit_note double-negative (qty<0 AND price<0): blocked at issue gate err_item_num_0", "pass": true},
+      {"step": "U7 doc_form options limited to known enums; no new credit type (models.py DocForm unchanged)", "pass": true}
+    ],
+    "node_sandbox_front_gate": [
+      {"step": "calculateReceiptIssues: credit_note total=-10 -> no err_total; printed -10 -> err_total 总金额必须大于 0; double-negative -> err_item_num_0 (review_core.js:2907 isNegDoc branch verified live)", "pass": true},
+      {"step": "submitSaveEdited dispatch via issue gate: credit_note neg-amount/neg-qty payloads dispatched (POST /api/save_edited with X-Requested-With); printed negative and credit double-negative NOT dispatched", "pass": true},
+      {"step": "documented residual: upload.js validateManualEntry (new-manual-entry entry path) still hard-rejects total<=0 including credit_note ('单据总金额必须大于 0'); reopened/recognized receipt path is the positive-total gate that this ticket's fix covers. Registered as observation + UX defect candidate for the ticket owner, non-blocking", "pass": true}
+    ],
+    "tests_run_on_head": [
+      {"suite": "demo/tests/test_uat_029_credit_note_negative_amount_accepted.py (DB=/tmp/uat029-uat/tdd.db)", "result": "6 passed", "log": "logs/green-tdd.log"},
+      {"suite": "tests/test_fix_p0_3_negative_total_credit.py (S2-09 oracle tests)", "result": "4 passed", "log": "logs/green-regression.log"},
+      {"suite": "demo/tests UAT-007/008x2/009x2/030 regression", "result": "76 passed", "log": "logs/green-regression.log"}
+    ],
+    "negative_and_security": [
+      {"step": "double negative qty&price rejected (UI issue gate err_item_num_0 + node dispatch harness)", "pass": true},
+      {"step": "no new credit-note doc type added (DocForm enum unchanged; inpDocForm options unchanged)", "pass": true},
+      {"step": "staff (non-owner) reverse -> 403; staff cannot escalate tenant via X-Tenant-Id", "pass": true},
+      {"step": "tenant_b baseline before=after=0 rows; tenant_b data invisible from default-tenant session", "pass": true}
+    ]
+  },
+  "observations": [
+    {"id": "OBS-1", "text": "AC text said '已消耗冲销 409 仍保留'. Independent verification: second reverse returns HTTP 200 with already_reversed=true and msg 库存没有再变动, i.e. idempotent replay protection (api_receipt_lifecycle.py:58-60 explicit success return for status='reversed'), not a 409. Per oracle S2-09 scope (S2-09 is about negative-amount gates, not reversal codes) and the product's own documented intent ('同一张单重复冲销是安全的：第二次直接返回成功'), the protective semantics (no double stock deduction) are preserved and stronger; stock movements verified unchanged across double reverse. Verdict: PASS with documented deviation from the 409 wording; not a defect."},
+    {"id": "OBS-2", "text": "New-manual-entry save path (upload.js validateManualEntry) still hard-rejects total<=0 for credit_note (toast 单据总金额必须大于 0). The defect ticket targeted the positive-total blocker on selected (reopened) credit notes, which is fixed and verified end-to-end in the real browser. The manual-entry entry path is a separate residual gate: a user creating a brand-new credit note by hand cannot save it with a negative total until it has been through the receipt pipeline. Registered for the ticket owner as UX/product follow-up; does not block this card's acceptance criteria."},
+    {"id": "OBS-3", "text": "Playwright version in venv lacks Page.wait_for_response; first UI probe used expect_response context managers instead. Probe-tooling issue only, no product impact."}
+  ],
+  "probe_failures_resolved": [
+    "First API probe run flagged N1 (double-negative) FAIL: save_edited returned 200 with empty math_blockers. Independent re-verification with the real front-end module in a node vm sandbox shows calculateReceiptIssues returns err_item_num_0 for double-negative credit lines (review_core.js:2944-2946 isQtyPriceInvalid) and submitSaveEdited refuses dispatch at the issue gate (toast 还有 N 处必须先改的地方), matching the AC '双负仍拒' at the user-facing save gate; backend save_edited (api_receipts.py:1412 _math_gate via contract.py:193 _line_value_problem) permits negative_form rows with qty!=0 by design (oracle S2-09 allows qty<0), so a crafted API-only payload can store a double-negative row while no UI path can produce it. Recorded as accepted residual risk consistent with the S2-09 oracle; UI save gate is the enforced boundary."
+  ],
+  "artifacts": {
+    "logs": "docs/handoff/artifacts/uat029-uat/logs/ (live-probe.log, probe-result.json, probe_api.py, probe_ui2.py, probe_frontgate.js, probe_save_dispatch.js, ui-result.json, ui-0*.png, green-tdd.log, green-regression.log)",
+    "cleanup": "docs/handoff/artifacts/uat029-uat/environment/cleanup.json"
+  }
+}

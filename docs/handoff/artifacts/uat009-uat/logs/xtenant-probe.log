@@ -1,0 +1,10 @@
+PASS A seed old receipt {"s": 200, "rid": 1}
+PASS B baseline receipt created {"rid": 2}
+PASS B reads A receipt -> 404 {"s": 404}
+PASS A reads B receipt -> 404 {"s": 404}
+PASS B writes over A receipt -> 404 {"s": 404, "code": "RECEIPT_NOT_FOUND"}
+PASS no credentials at all -> 401 {"s": 401}
+PASS A old receipt fees intact after new-manual save {"delivery_fee": 5.0, "deposit_amount": 4.0, "service_fee": 3.0, "tax_amount": 2.0, "discount_amount": 1.0, "rounding_adjustment": 0.5}
+PASS A new receipt all defaults null
+PASS Tenant B baseline zero-pollution (count + rows identical) {"before": [[2, "edited", 10.0, 1], [2, "Item_B", 1.0, 10.0]], "after": [[2, "edited", 10.0, 1], [2, "Item_B", 1.0, 10.0]]}
+XT_PROBE_DONE 9 / 9

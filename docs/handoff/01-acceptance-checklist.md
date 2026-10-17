@@ -226,7 +226,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-028] 停用供应商会清空名称导致无法按原名回看
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 三阶段闭环：uat028-dev（修复已在 HEAD 364b407，TDD 红 3f/1p -> 绿 4p、回归 21p、15951 AUTH=1 探针 19/19）-> uat028-qa（隔离 15944，探针 28/28）-> uat028-uat（隔离 15930，探针 25/25：停用保留名称/省略 vs 显式清空/空 name 400/401/403 CSRF/角色边界/SQL 读回））
+- 闭环证据：`artifacts/uat028-dev-report.md`、`artifacts/uat028-qa-report.md`、`artifacts/uat028-uat-report.md`；cleanup 均已执行
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`AUTO_API`
 - 前置依赖：`["UAT-004"]`
 - 涉及源码文件：`["demo/app/api_suppliers.py", "demo/static/js/supplier_archive.js"]`
@@ -320,7 +321,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-009] 新建手工单继承前单六项附加费用
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 云端三阶段闭环：uat009-dev（TDD RED 5f/8p -> GREEN 13p，修复在 HEAD 7271d40）-> uat009-qa（隔离 15971/15972，UI walk 13/13、跨租户 9/9、回归 14p）-> uat009-uat（隔离 15961/15962，AUTH=1 真实登录，UI walk 13/13、跨租户 9/9））
+- 闭环证据：`artifacts/uat009-dev/dev-report.md`、`artifacts/uat009-qa-report.md`、`artifacts/uat009-uat-report.md`；cleanup 均已执行（端口释放、无孤儿）
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/review_core.js", "demo/static/js/upload.js"]`
@@ -338,7 +340,9 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-029] 选择贷项单仍被正数总额校验阻止保存
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-18 三阶段闭环：uat029-dev（修复已在 HEAD 364b407，TDD 红 1f/5p -> 绿 6p、回归 76p）-> uat029-qa（隔离 15919 AUTH=1 实登录补空证，双变体全链路/负向/安全）-> uat029-uat（隔离 15903 AUTH=1，API 探针 26 步 + Playwright 真实登录 UI 8 步全过 + 回归 86p））
+- 闭环证据：`artifacts/uat029-dev-report.md`、`artifacts/uat029-qa-report.md`、`artifacts/uat029-uat-report.md`；cleanup 均已执行
+- 观察项留档：OBS-1 重复冲销为幂等 200+already_reversed=true（api_receipt_lifecycle.py:58-60 显式分支），防重复扣库存语义保留，按 S2-09 判 PASS；OBS-2 新建手工单路径（upload.js validateManualEntry）对 total<=0 仍硬拒含 credit_note，属独立入口残留门禁，本卡验收面（重开复核路径）已修复，待卡主裁决
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-008", "UAT-009"]`
 - 涉及源码文件：`["demo/static/js/review_core.js", "demo/app/api_receipt_lifecycle.py"]`
@@ -831,7 +835,7 @@
 ## 2.7 波次 G2：外部系统与物理依赖门禁 (2 项，模型与真实 hidden 依赖)
 
 ### [DEP-HIDDEN] 真实hidden后台轮询分支1项BLOCKED
-- 当前状态：`[BLOCKED] UNVERIFIED (2026-10-17 Dev：本机 X11/VNC 下 9 次真实 tab-hide/minimize/CDP 均无法使 document.hidden=true；未改产品；证据 docs/handoff/artifacts/dep-hidden-dev-report.md；USER blocked-then-close139 2026-10-17：保持 BLOCKED 并进入 CLOSE-139)`
+- 当前状态：`[DONE] PASS`（2026-10-18 云端真实验证解除 BLOCK：CDP Target.activateTarget/Page.bringToFront 可真实双向翻转 document.hidden；隔离 15891 AUTH=1 真实浏览器 E2E + PerformanceObserver 网络捕获：P1 hidden 12.1s 窗口 0 poll / P2 visible 间隔 806-813ms / P3 恢复后 801ms 首查并继续、loadingCard settle——三命题全 PASS，产品零改动；报告 artifacts/dep-hidden-verify-report.md）
 - 优先级：`P1` | 任务分类：`DEPENDENCY_GATE` | 验证模式：`DEPENDENCY`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/upload.js"]`
@@ -870,7 +874,7 @@
 ## 2.8 波次 G3：全矩阵 139 项终审裁决门禁 (1 项，CLOSE-139 逐项裁决)
 
 ### [CLOSE-139] 原139 canonical逐ID行为裁决门禁
-- 当前状态：`[DONE] ADJUDICATED_WITH_DOCUMENTED_BLOCKERS (2026-10-17 Asia/Shanghai；139/139 矩阵已落盘；**Amended 2026-10-17**：UAT-031/UAT-032 本地三阶段 PASS，已从活跃 blocker 移除 UAT-032；产品目标仍未全部完成；DEP-HIDDEN/S4-19 BLOCKED_UNVERIFIED；PARTIAL 与 ledger-only/unmapped 已独立呈现；证据 docs/handoff/artifacts/close139-report.md + close139/close139-matrix.md + close139-amendment-uat031-032.md；禁止宣称 N 项修复等于原目标全部完成)`
+- 当前状态：`[DONE] ADJUDICATED_NO_ACTIVE_BLOCKERS (2026-10-17 矩阵裁决；**Amended 2026-10-18**：DEP-HIDDEN/S4-19 经新云端 CDP 真实 visibility 翻转三命题全 PASS，活跃 blocker 清零，见 close139-amendment-dep-hidden.md；仍按原口径：不等于原 139 条逐条全部实现，58 unmapped / feedback item_index / UAT-030 错引留档 / OBS-2 等继续独立呈现；证据 close139-report.md + close139-matrix.md + 三个 amendment)`
 - 终审证据：`docs/handoff/artifacts/close139-report.md`、`docs/handoff/artifacts/close139/close139-matrix.md`、`docs/handoff/artifacts/close139/close139-matrix.json`、`docs/handoff/artifacts/close139-amendment-uat031-032.md`
 - 明确非完成项：DEP-HIDDEN/S4-19；PARTIAL 已清（UAT-016/ENG-02/ENG-03/UAT-014 均于 2026-10-17 转 PASS）；58 unmapped；ledger-only 无本地包（UAT-031 已有本地包，已移出该缺口列表）；feedback item_index 架构局限；UAT-030 错引已用 `04-open-defect-citation-fix-spec.md` 留档
 - 优先级：`P2` | 任务分类：`ORIGINAL_SCOPE_GATE` | 验证模式：`MANUAL_UI`

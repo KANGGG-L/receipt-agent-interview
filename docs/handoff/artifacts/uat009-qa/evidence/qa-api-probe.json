@@ -1,0 +1,108 @@
+[
+ {
+  "name": "login ok, role owner, HttpOnly cookie issued",
+  "pass": true,
+  "detail": {
+   "s": 200,
+   "acct": {
+    "email": "boss@demo.hk",
+    "role": "owner",
+    "tenant": "default"
+   },
+   "cookie": true
+  }
+ },
+ {
+  "name": "wrong password -> 401",
+  "pass": true,
+  "detail": {
+   "s": 401,
+   "code": "INVALID_CREDENTIALS"
+  }
+ },
+ {
+  "name": "empty Authorization header but valid cookie session works (empty Authorization != unauthenticated)",
+  "pass": true,
+  "detail": {
+   "s": 200
+  }
+ },
+ {
+  "name": "seed old receipt 200, six fees",
+  "pass": true,
+  "detail": {
+   "s": 200,
+   "rid": 1
+  }
+ },
+ {
+  "name": "old receipt detail: six fees + doc_form/currency/evidence persist",
+  "pass": true,
+  "detail": {
+   "delivery_fee": 5.0,
+   "deposit_amount": 4.0,
+   "service_fee": 3.0,
+   "tax_amount": 2.0,
+   "discount_amount": 1.0,
+   "rounding_adjustment": 0.5
+  }
+ },
+ {
+  "name": "new manual default payload save 200, new id distinct",
+  "pass": true,
+  "detail": {
+   "s": 200,
+   "rid": 2
+  }
+ },
+ {
+  "name": "new receipt DB read-back: six fees all 0, evidence '', currency HKD, notes []",
+  "pass": true,
+  "detail": {
+   "delivery_fee": 0.0,
+   "deposit_amount": 0.0,
+   "service_fee": 0.0,
+   "tax_amount": 0.0,
+   "discount_amount": 0.0,
+   "rounding_adjustment": 0.0
+  }
+ },
+ {
+  "name": "raw DB row confirms zeros/defaults + tenant A ownership",
+  "pass": false,
+  "detail": [
+   [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    "",
+    "printed_delivery_note",
+    "HKD",
+    "default"
+   ]
+  ]
+ },
+ {
+  "name": "old receipt six fees unchanged after new-manual flow",
+  "pass": true,
+  "detail": {
+   "delivery_fee": 5.0,
+   "deposit_amount": 4.0,
+   "service_fee": 3.0,
+   "tax_amount": 2.0,
+   "discount_amount": 1.0,
+   "rounding_adjustment": 0.5
+  }
+ },
+ {
+  "name": "B-session (tenant=default token) reading A receipt -> 404 not found",
+  "pass": true,
+  "detail": {
+   "note": "deferred to header-mode probe",
+   "detail": null
+  }
+ }
+]

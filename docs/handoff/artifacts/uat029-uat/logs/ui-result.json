@@ -1,0 +1,136 @@
+{
+ "steps": [
+  {
+   "name": "U1 real login, identity_source=cookie",
+   "pass": true,
+   "detail": "{'status': 'success', 'auth_enabled': True, 'account': {'email': 'boss@demo.hk', 'role': 'owner'}, 'identity_source': 'cookie', 'demo_identity': False}"
+  },
+  {
+   "name": "U1b seeded two credit_note receipts via signed-in session (200/200)",
+   "pass": true,
+   "detail": "[200, 200]"
+  },
+  {
+   "name": "U2 reopen credit_note #1 in review UI: total -10.00, docForm credit_note, no err_total (defect core)",
+   "pass": true,
+   "detail": "{'total': '-10.00', 'docForm': 'credit_note', 'blockers': []}"
+  },
+  {
+   "name": "U3 UI save click -> real POST /api/save_edited 200 (total_amount -10, X-Requested-With present)",
+   "pass": true,
+   "detail": "status=200 toast=已保存复核修改并提交审核（未入账）\n× csrf=fetch"
+  },
+  {
+   "name": "U4 UI approve -> POST approve 200; DB approved total=-10 (full UI chain)",
+   "pass": true,
+   "detail": "status=200 db=[('approved', -10.0, 3)] toast=单据 #1 已审核入账，库存已增加\n×"
+  },
+  {
+   "name": "U5 printed negative total blocked in UI (err_total + no network write)",
+   "pass": true,
+   "detail": "blockers=['err_total'] toast=单据总金额必须大于 0\n× net_delta=0"
+  },
+  {
+   "name": "U6 credit_note double-negative (qty<0 & price<0) blocked at issue gate (err_item_num_0)",
+   "pass": true,
+   "detail": "blockers=['err_item_num_0']"
+  },
+  {
+   "name": "U7 doc_form options limited to known enums (no new credit type)",
+   "pass": true,
+   "detail": "['printed_delivery_note', 'ncr_handwritten', 'thermal', 'weigh_slip', 'correction_note', 'credit_note', 'monthly_statement', 'manual_entry']"
+  }
+ ],
+ "net": [
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"total_amount\":-10,\"doc_form\":\"credit_note\",\"settlement_type\":\"cash\",\"currency\":\"HKD\",\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-10}]}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"total_amount\":-20,\"doc_form\":\"credit_note\",\"settlement_type\":\"cash\",\"currency\":\"HKD\",\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":-2,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-20}]}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":1,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"sheet_name\":\"2026-10\",\"total_amount\":-10,\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"credit_note\",\"currency\":\"HKD\",\"discount_amount\":0,\"delivery_fee\":0,\"deposit_amount\":0,\"rounding_adjustment\":0,\"service_fee\":0,\"tax_amount\":0,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\",\"layout_type\":\"\",\"version\":1}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/receipt/1/approve",
+   "m": "POST",
+   "body": "{\"version\":2}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/receipt/1/approve",
+   "status": 200
+  }
+ ],
+ "hashes": {
+  "ui-01-after-login.png": "a7bb3f734970c078fcf30283816be1d6",
+  "ui-02-credit-reopened.png": "b533ccc634f25cc0b084a893c719c97d",
+  "ui-03-saved.png": "55b76a759d7937d2eda2190b25e5c5fa",
+  "ui-04-approved.png": "c5d158ee45009095bc3343a3e96264a5",
+  "ui-05-neg-purchase-blocked.png": "5fbbd434fb8648d20f222f2003652218",
+  "ui-06-double-neg-blocked.png": "9c0f772a665febebef07fe65fdf36163"
+ },
+ "net_log": [
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"total_amount\":-10,\"doc_form\":\"credit_note\",\"settlement_type\":\"cash\",\"currency\":\"HKD\",\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-10}]}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"total_amount\":-20,\"doc_form\":\"credit_note\",\"settlement_type\":\"cash\",\"currency\":\"HKD\",\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":-2,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-20}]}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":1,\"source\":\"manual\",\"supplier_name\":\"UAT029_UI_Credit\",\"date\":\"2026-10-18\",\"sheet_name\":\"2026-10\",\"total_amount\":-10,\"items\":[{\"name\":\"Credit_UI_Item\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":-10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"credit_note\",\"currency\":\"HKD\",\"discount_amount\":0,\"delivery_fee\":0,\"deposit_amount\":0,\"rounding_adjustment\":0,\"service_fee\":0,\"tax_amount\":0,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\",\"layout_type\":\"\",\"version\":1}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15903/api/receipt/1/approve",
+   "m": "POST",
+   "body": "{\"version\":2}",
+   "csrf": "fetch"
+  },
+  {
+   "resp": "http://127.0.0.1:15903/api/receipt/1/approve",
+   "status": 200
+  }
+ ]
+}

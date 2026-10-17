@@ -1,0 +1,249 @@
+{
+ "steps": [
+  {
+   "name": "auth gate: login overlay shown on first load",
+   "pass": true,
+   "detail": null
+  },
+  {
+   "name": "login via UI form succeeds (HttpOnly cookie session)",
+   "pass": true,
+   "detail": null
+  },
+  {
+   "name": "UI: create old receipt with six nonzero fees -> save 200",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "rid": 37,
+    "fees": {
+     "delivery_fee": 5,
+     "deposit_amount": 4,
+     "service_fee": 3,
+     "tax_amount": 2,
+     "discount_amount": 1,
+     "rounding_adjustment": 0.5
+    }
+   }
+  },
+  {
+   "name": "reopen old: six fee rows rendered with saved values",
+   "pass": true,
+   "detail": {
+    "rows": 6,
+    "fees": {
+     "discount_amount": 1,
+     "delivery_fee": 5,
+     "service_fee": 3,
+     "tax_amount": 2,
+     "deposit_amount": 4,
+     "rounding_adjustment": 0.5
+    },
+    "docForm": "printed_delivery_note",
+    "currency": "HKD"
+   }
+  },
+  {
+   "name": "new manual: receipt_id null, six fees all 0, doc_form/currency/evidence reset, banner hidden, drawer/badge reset",
+   "pass": true,
+   "detail": {
+    "rid": null,
+    "fees": {
+     "discount_amount": 0,
+     "delivery_fee": 0,
+     "service_fee": 0,
+     "tax_amount": 0,
+     "deposit_amount": 0,
+     "rounding_adjustment": 0
+    },
+    "docForm": "printed_delivery_note",
+    "currency": "HKD",
+    "evidence": "",
+    "bannerHidden": true,
+    "drawerHidden": true,
+    "badgeHidden": true,
+    "notes": [],
+    "total": "10.00"
+   }
+  },
+  {
+   "name": "UI save new manual: payload six fees all 0, receipt_id null, doc_form/currency/evidence defaults",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "rid": 38,
+    "payload": {
+     "delivery_fee": 0,
+     "deposit_amount": 0,
+     "service_fee": 0,
+     "tax_amount": 0,
+     "discount_amount": 0,
+     "rounding_adjustment": 0,
+     "receipt_id": null,
+     "doc_form": "printed_delivery_note",
+     "currency": "HKD",
+     "payment_evidence": ""
+    }
+   }
+  },
+  {
+   "name": "DB read-back of UI-created new manual: zeros/defaults",
+   "pass": true,
+   "detail": [
+    [
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     "",
+     "printed_delivery_note",
+     "HKD"
+    ]
+   ]
+  },
+  {
+   "name": "reopen old after flow: six fees still intact (cleanup only touches new)",
+   "pass": true,
+   "detail": {
+    "rows": 6,
+    "fees": {
+     "discount_amount": 1,
+     "delivery_fee": 5,
+     "service_fee": 3,
+     "tax_amount": 2,
+     "deposit_amount": 4,
+     "rounding_adjustment": 0.5
+    },
+    "docForm": "printed_delivery_note"
+   }
+  },
+  {
+   "name": "old receipt untouched re-save still 200 success (response echoes receipt_id, fees untouched on server)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "resp_keys": [
+     "status",
+     "id",
+     "receipt_id",
+     "version",
+     "math_blockers",
+     "status_after"
+    ]
+   }
+  },
+  {
+   "name": "user-entered fee on new manual submitted verbatim (delivery_fee 8)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "rid": 39,
+    "delivery_fee": 8
+   }
+  },
+  {
+   "name": "race: open then immediate new manual -> receipt_id stays null, fees stay 0",
+   "pass": true,
+   "detail": {
+    "rid": null,
+    "fees": {
+     "discount_amount": 0,
+     "delivery_fee": 0,
+     "service_fee": 0,
+     "tax_amount": 0,
+     "deposit_amount": 0,
+     "rounding_adjustment": 0
+    },
+    "docForm": "printed_delivery_note",
+    "currency": "HKD",
+    "evidence": "",
+    "bannerHidden": true,
+    "drawerHidden": true,
+    "badgeHidden": true,
+    "notes": [],
+    "total": "0.00"
+   }
+  },
+  {
+   "name": "reload: session persists via HttpOnly cookie (no re-login)",
+   "pass": true,
+   "detail": {
+    "overlays": 0
+   }
+  },
+  {
+   "name": "post-reload new manual: all defaults (no cross-session leak)",
+   "pass": true,
+   "detail": {
+    "rid": null,
+    "fees": {
+     "discount_amount": 0,
+     "delivery_fee": 0,
+     "service_fee": 0,
+     "tax_amount": 0,
+     "deposit_amount": 0,
+     "rounding_adjustment": 0
+    },
+    "docForm": "printed_delivery_note",
+    "currency": "HKD",
+    "evidence": "",
+    "bannerHidden": true,
+    "drawerHidden": true,
+    "badgeHidden": true,
+    "notes": [],
+    "total": "10.00"
+   }
+  }
+ ],
+ "net": [
+  {
+   "req": "http://127.0.0.1:15971/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_UI_new\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":22.5,\"items\":[{\"name\":\"Item_UI\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":1,\"delivery_fee\":5,\"deposit_amount\":4,\"rounding_adjustment\":0.5,\"service_fee\":3,\"tax_amount\":2,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}"
+  },
+  {
+   "resp": "http://127.0.0.1:15971/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15971/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_UI_new\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":10,\"items\":[{\"name\":\"Item_UI\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":0,\"delivery_fee\":0,\"deposit_amount\":0,\"rounding_adjustment\":0,\"service_fee\":0,\"tax_amount\":0,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}"
+  },
+  {
+   "resp": "http://127.0.0.1:15971/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15971/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":37,\"source\":\"manual\",\"supplier_name\":\"Vendor_UI_new\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":22.5,\"items\":[{\"name\":\"Item_UI\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":1,\"delivery_fee\":5,\"deposit_amount\":4,\"rounding_adjustment\":0.5,\"service_fee\":3,\"tax_amount\":2,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\",\"layout_type\":\"\",\"version\":1}"
+  },
+  {
+   "resp": "http://127.0.0.1:15971/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15971/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_UI_new\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":18,\"items\":[{\"name\":\"Item_UI\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":0,\"delivery_fee\":8,\"deposit_amount\":0,\"rounding_adjustment\":0,\"service_fee\":0,\"tax_amount\":0,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}"
+  },
+  {
+   "resp": "http://127.0.0.1:15971/api/save_edited",
+   "status": 200
+  }
+ ],
+ "hashes": {
+  "01_login_overlay.png": "5528357114f9b4ed08fcaca23c622b88",
+  "02_old_receipt_saved.png": "0c167447210b0c9e57b9fcb653b63f44",
+  "03_old_reopen_six_fees.png": "401073c16c8cea7140bde2c6a1351781",
+  "04_new_manual_cleared.png": "90e1f788e627ad24109e0cee6bd980ab",
+  "05_new_saved_zero_fees.png": "6dea39f68a92ffc6e5db1c0aac233c4f",
+  "06_old_reopen_intact.png": "cff6784a1fb0f3f9209cd9b5f2e717a5",
+  "07_race_new_manual_clean.png": "673e865bee8853e8416fb6e0170bc6b6",
+  "08_post_reload_clean.png": "e6f0d86c8e420c11bb226d6ab00561d3"
+ },
+ "toasts": []
+}

@@ -1,0 +1,174 @@
+{
+ "results": [
+  {
+   "step": "S1 no-credential GET /api/receipts -> 401",
+   "pass": true,
+   "detail": "401 {'status': 'error', 'code': 'UNAUTHENTICATED', 'msg': '请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。', 'detail': '请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。'}"
+  },
+  {
+   "step": "S2 owner login 200, HttpOnly cookie receipt_session",
+   "pass": true,
+   "detail": "receipt_session=\"boss@demo.hk.owner.1792297815.default.6476d945973e7d62.3450b7220fe5ae85e1a5802f9d28bf16ca7d3759e919290046562edbefbac933\"; H"
+  },
+  {
+   "step": "S3 /api/auth/me via cookie",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"auth_enabled\": true, \"account\": {\"email\": \"boss@demo.hk\", \"role\": \"owner\"}, \"identity_source\": \"cookie\", \"demo_identity\": false}"
+  },
+  {
+   "step": "S4 cookie write without CSRF header -> 403 CSRF_REJECTED",
+   "pass": true,
+   "detail": "403 {'status': 'error', 'code': 'CSRF_REJECTED', 'msg': '这次操作来源不明，已被拦下。请回到本系统页面重新操作；如果一直这样，请重新登录。', 'detail': '这次操作来源不明，已被拦下。请回到本系统页面重新操作；如果一直这样，请重新登录。'}"
+  },
+  {
+   "step": "S5 forged bearer token -> 401",
+   "pass": true,
+   "detail": "401"
+  },
+  {
+   "step": "S6 owner cookie + X-Tenant-Id: tenant_b -> tenant_b data NOT visible",
+   "pass": true,
+   "detail": "200 rows=0"
+  },
+  {
+   "step": "S7 tenant_b baseline rows before",
+   "pass": true,
+   "detail": "count=0"
+  },
+  {
+   "step": "S8 staff login 200",
+   "pass": true,
+   "detail": "200"
+  },
+  {
+   "step": "AC1a credit_note neg-amount save 200, math_blockers empty",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"id\": 1, \"receipt_id\": 1, \"version\": 1, \"math_blockers\": [], \"status_after\": \"edited\"}"
+  },
+  {
+   "step": "AC1b readback total=-10 doc_form=credit_note status=edited",
+   "pass": true,
+   "detail": "200 {\"id\": 1, \"receipt_id\": 1, \"supplier_name\": \"UAT029_Vendor\", \"date\": \"2026-10-18\", \"sheet_name\": \"2026-10\", \"total_amount\": -10.0, \"status\": \"edited\", \"settlement_type\": \"cash\", \"payment_mark\": \"\", \"payment_mark_state\": \"uncertain\", \"department_id\": "
+  },
+  {
+   "step": "AC1c approve 200",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"version\": 2, \"needs_review\": false}"
+  },
+  {
+   "step": "AC1d DB approved total=-10",
+   "pass": true,
+   "detail": "[('approved', -10.0, 'credit_note', 2)]"
+  },
+  {
+   "step": "AC2 credit_note neg-qty save 200, DB qty=-2 amount=-20",
+   "pass": true,
+   "detail": "200 db=[(-2.0, -20.0)]"
+  },
+  {
+   "step": "AC2b neg-qty variant approve 200",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"version\": 2, \"needs_review\": false}"
+  },
+  {
+   "step": "AC3 fee arithmetic item -10 + delivery -5 = total -15 -> 200 no blockers",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"id\": 3, \"receipt_id\": 3, \"version\": 1, \"math_blockers\": [], \"status_after\": \"edited\"}"
+  },
+  {
+   "step": "AC4a purchase negative total -> math_blockers raised",
+   "pass": true,
+   "detail": "200 blockers=['第 1 行 P_Item：单据写 -10 元，按数量单价应是 10 元，相差 20 元']"
+  },
+  {
+   "step": "AC4b purchase negative total approve -> 422 APPROVAL_BLOCKED",
+   "pass": true,
+   "detail": "422 {\"status\": \"error\", \"code\": \"APPROVAL_BLOCKED\", \"msg\": \"\\u5355\\u636e\\u4e0a\\u7684\\u6570\\u5b57\\u5bf9\\u4e0d\\u4e0a\\uff0c\\u4e0d\\u80fd\\u5165\\u8d26\\uff1a\\u7b2c 1 \\u884c P_Item\\uff1a\\u5355\\u636e\\u5199 -10 \\u5"
+  },
+  {
+   "step": "N1 double-negative qty&price rejected (422 or blockers)",
+   "pass": false,
+   "detail": "200 {\"status\": \"success\", \"id\": 5, \"receipt_id\": 5, \"version\": 1, \"math_blockers\": [], \"status_after\": \"edited\"}"
+  },
+  {
+   "step": "N2 doc forms in DB limited to known enums (no new credit type)",
+   "pass": true,
+   "detail": "[('credit_note',), ('',)]"
+  },
+  {
+   "step": "AC5a positive receipt approve 200",
+   "pass": true,
+   "detail": "200"
+  },
+  {
+   "step": "AC5b reverse approved receipt -> 200 stock deducted back",
+   "pass": true,
+   "detail": "200 {\"status\": \"success\", \"already_reversed\": false, \"version\": 3, \"reversed_lines\": 1, \"msg\": \"\\u5355\\u636e #6 \\u5df2\\u51b2\\u9500\\uff0c\\u5e93\\u5b58\\u5df2\\u6263\\u56de\\u3002\"}"
+  },
+  {
+   "step": "AC5c second reverse: idempotent 200 already_reversed=true (no double deduction)",
+   "pass": true,
+   "detail": "200 already_reversed=True {\"status\": \"success\", \"already_reversed\": true, \"version\": 3, \"msg\": \"\\u5355\\u636e #6 \\u4e4b\\u524d\\u5df2\\u7ecf\\u51b2\\u9500\\u8fc7\\u4e86\\uff0c\\u5e93\\u5b58\\u6ca1\\u6709\\u518d\\u53d8\\u52a8\\u3002\"}"
+  },
+  {
+   "step": "AC5d inventory zero net change across double reverse",
+   "pass": true,
+   "detail": "mid=None after=None"
+  },
+  {
+   "step": "N3a staff (non-owner) reverse -> 403",
+   "pass": true,
+   "detail": "403"
+  },
+  {
+   "step": "N3b staff cannot escalate tenant via header",
+   "pass": true,
+   "detail": "None"
+  },
+  {
+   "step": "N3c tenant_b baseline unchanged after all probes",
+   "pass": true,
+   "detail": "count=0"
+  }
+ ],
+ "tenant_b_before": 0,
+ "tenant_b_after": 0,
+ "default_rows_final": [
+  [
+   1,
+   "UAT029_Vendor",
+   -10.0,
+   "approved"
+  ],
+  [
+   2,
+   "UAT029_Vendor",
+   -20.0,
+   "approved"
+  ],
+  [
+   3,
+   "UAT029_Vendor",
+   -15.0,
+   "edited"
+  ],
+  [
+   4,
+   "UAT029_NegPurchase",
+   -10.0,
+   "edited"
+  ],
+  [
+   5,
+   "UAT029_DoubleNeg",
+   10.0,
+   "edited"
+  ],
+  [
+   6,
+   "UAT029_PosVendor",
+   30.0,
+   "reversed"
+  ]
+ ]
+}

@@ -1,0 +1,97 @@
+[
+ {
+  "name": "A seed old receipt",
+  "pass": true,
+  "detail": {
+   "s": 200,
+   "rid": 1
+  }
+ },
+ {
+  "name": "B baseline receipt created",
+  "pass": true,
+  "detail": {
+   "rid": 2
+  }
+ },
+ {
+  "name": "B reads A receipt -> 404",
+  "pass": true,
+  "detail": {
+   "s": 404
+  }
+ },
+ {
+  "name": "A reads B receipt -> 404",
+  "pass": true,
+  "detail": {
+   "s": 404
+  }
+ },
+ {
+  "name": "B writes over A receipt -> 404",
+  "pass": true,
+  "detail": {
+   "s": 404,
+   "code": "RECEIPT_NOT_FOUND"
+  }
+ },
+ {
+  "name": "no credentials at all -> 401",
+  "pass": true,
+  "detail": {
+   "s": 401
+  }
+ },
+ {
+  "name": "A old receipt fees intact after new-manual save",
+  "pass": true,
+  "detail": {
+   "delivery_fee": 5.0,
+   "deposit_amount": 4.0,
+   "service_fee": 3.0,
+   "tax_amount": 2.0,
+   "discount_amount": 1.0,
+   "rounding_adjustment": 0.5
+  }
+ },
+ {
+  "name": "A new receipt all defaults",
+  "pass": true,
+  "detail": null
+ },
+ {
+  "name": "Tenant B baseline zero-pollution (count + rows identical)",
+  "pass": true,
+  "detail": {
+   "before": [
+    [
+     2,
+     "edited",
+     10.0,
+     1
+    ],
+    [
+     2,
+     "Item_B",
+     1.0,
+     10.0
+    ]
+   ],
+   "after": [
+    [
+     2,
+     "edited",
+     10.0,
+     1
+    ],
+    [
+     2,
+     "Item_B",
+     1.0,
+     10.0
+    ]
+   ]
+  }
+ }
+]

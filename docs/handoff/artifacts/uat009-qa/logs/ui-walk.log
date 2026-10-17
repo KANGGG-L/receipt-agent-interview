@@ -1,0 +1,16 @@
+PASS auth gate: login overlay shown on first load null
+PASS login via UI form succeeds (HttpOnly cookie session) null
+toasts before save: 已进入新建手工单：请填写供应商、开单日期与明细后保存
+×
+PASS UI: create old receipt with six nonzero fees -> save 200 {"status": 200, "rid": 37, "fees": {"delivery_fee": 5, "deposit_amount": 4, "service_fee": 3, "tax_amount": 2, "discount_amount": 1, "rounding_adjustment": 0.5}}
+PASS reopen old: six fee rows rendered with saved values {"rows": 6, "fees": {"discount_amount": 1, "delivery_fee": 5, "service_fee": 3, "tax_amount": 2, "deposit_amount": 4, "rounding_adjustment": 0.5}, "docForm": "printed_delivery_note", "currency": "HKD"}
+PASS new manual: receipt_id null, six fees all 0, doc_form/currency/evidence reset, banner hidden, drawer/badge reset {"rid": null, "fees": {"discount_amount": 0, "delivery_fee": 0, "service_fee": 0, "tax_amount": 0, "deposit_amount": 0, "rounding_adjustment": 0}, "docForm": "printed_delivery_note", "currency": "HKD", "evidence": "", "bannerHidden": true, "drawerHidden": true, "badgeHidden": true, "notes": [], "total": "10.00"}
+PASS UI save new manual: payload six fees all 0, receipt_id null, doc_form/currency/evidence defaults {"status": 200, "rid": 38, "payload": {"delivery_fee": 0, "deposit_amount": 0, "service_fee": 0, "tax_amount": 0, "discount_amount": 0, "rounding_adjustment": 0, "receipt_id": null, "doc_form": "printed_delivery_note", "currency": "HKD", "payment_evidence": ""}}
+PASS DB read-back of UI-created new manual: zeros/defaults [[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "", "printed_delivery_note", "HKD"]]
+PASS reopen old after flow: six fees still intact (cleanup only touches new) {"rows": 6, "fees": {"discount_amount": 1, "delivery_fee": 5, "service_fee": 3, "tax_amount": 2, "deposit_amount": 4, "rounding_adjustment": 0.5}, "docForm": "printed_delivery_note"}
+PASS old receipt untouched re-save still 200 success (response echoes receipt_id, fees untouched on server) {"status": 200, "resp_keys": ["status", "id", "receipt_id", "version", "math_blockers", "status_after"]}
+PASS user-entered fee on new manual submitted verbatim (delivery_fee 8) {"status": 200, "rid": 39, "delivery_fee": 8}
+PASS race: open then immediate new manual -> receipt_id stays null, fees stay 0 {"rid": null, "fees": {"discount_amount": 0, "delivery_fee": 0, "service_fee": 0, "tax_amount": 0, "deposit_amount": 0, "rounding_adjustment": 0}, "docForm": "printed_delivery_note", "currency": "HKD", "evidence": "", "bannerHidden": true, "drawerHidden": true, "badgeHidden": true, "notes": [], "total": "0.00"}
+PASS reload: session persists via HttpOnly cookie (no re-login) {"overlays": 0}
+PASS post-reload new manual: all defaults (no cross-session leak) {"rid": null, "fees": {"discount_amount": 0, "delivery_fee": 0, "service_fee": 0, "tax_amount": 0, "deposit_amount": 0, "rounding_adjustment": 0}, "docForm": "printed_delivery_note", "currency": "HKD", "evidence": "", "bannerHidden": true, "drawerHidden": true, "badgeHidden": true, "notes": [], "total": "10.00"}
+UI_WALK_DONE 13 / 13

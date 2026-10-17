@@ -1,0 +1,45 @@
+{
+  "card": "UAT-028",
+  "title": "停用供应商会清空名称导致无法按原名回看",
+  "conclusion": "PASS",
+  "date": "2026-10-17 (Asia/Shanghai)",
+  "head": "7271d40",
+  "mode": "AUTO_API",
+  "role": "independent QA (no product code modified)",
+  "environment": {
+    "port": 15944,
+    "db": "/tmp/uat028-qa/qa-live.db",
+    "auth_enabled": 1,
+    "demo_token_secret": "96-hex random (48 bytes), env-injected only",
+    "python": ".venv-uat009/bin/python",
+    "fixture": "fresh isolated DB, not reused from DEV"
+  },
+  "checks_total": 28,
+  "checks_failed": 0,
+  "source_self_check": [
+    "demo/app/api_suppliers.py:86 `name: Optional[str] = None`（原文自核）",
+    "demo/app/api_suppliers.py:102-107 _optional_text：patch 缺省返回 None 不进 fields（原文自核）",
+    "demo/app/api_suppliers.py:123-124 name 仅显式提供且非空/非空白才写（原文自核）",
+    "demo/app/api_suppliers.py:153-155 显式空/空白/null name 一律 400（原文自核）",
+    "demo/app/api_suppliers.py:131-132 创建路径空/空白 name 400（原文自核）",
+    "demo/static/js/supplier_archive.js:227 `body: JSON.stringify({ active })` 仅发送 active（原文自核）",
+    "demo/static/js/supplier_archive.js:72 停用行空名兜底 `（未命名供应商）`（原文自核）"
+  ],
+  "key_evidence": [
+    "create Vendor_A_qa 200 -> rename Vendor_B_qa 200 -> PATCH {active:0} 200",
+    "GET include_inactive=1&q=Vendor_B_qa: name=Vendor_B_qa, active=0, contact_phone=12345678 保留",
+    "GET 默认列表不含停用行；旧名 Vendor_A_qa 不再命中（行已改名，id 引用稳定）",
+    "PATCH {notes:...} 省略 name/phone：name 与 phone 不变（省略语义）",
+    "PATCH {notes:\"\",contact_phone:\"\"}：显式清空生效、name 不变（显式清空语义）",
+    "PATCH name=''/'   '/null 均 400，读回 name 仍 Vendor_B_qa",
+    "create name=''/'   ' 均 400",
+    "无 Cookie + 空 Authorization GET -> 401（身份在 HttpOnly Cookie receipt_session，非未认证豁免）",
+    "staff 登录后 PATCH owner 域供应商 -> 403，staff 租户视图前后一致；owner 基线其他供应商零漂移",
+    "SQL 读回 suppliers 行: (1,'Vendor_B_qa',0,'','')"
+  ],
+  "discipline_notes": [
+    "启动重试机制就位（本机一次健康通过，1s，未构成缺陷）",
+    "探针结束 ss 复核 1594x 零监听、无 uvicorn 残留",
+    "首轮 2 处 FAIL 均为探针自身断言写法（元组/列表比较、旧名搜索预期写反），修正探针后复跑 28/28 PASS；产品行为两轮一致"
+  ]
+}

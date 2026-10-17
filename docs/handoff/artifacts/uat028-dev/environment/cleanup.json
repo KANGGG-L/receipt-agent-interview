@@ -1,0 +1,47 @@
+{
+  "recorded_at": "2026-10-17T23:41:35",
+  "ports": {
+    "15950": {
+      "purpose": "first live probe run (aborted: CSRF header missing on writes)",
+      "status": "released"
+    },
+    "15951": {
+      "purpose": "final live API probe (AUTH_ENABLED=1)",
+      "status": "released",
+      "verified": "ss -ltnp shows no 1595x listener after probe"
+    }
+  },
+  "forbidden_ports_touched": [],
+  "processes": {
+    "uvicorn_instances_started": 2,
+    "uvicorn_instances_running": 0
+  },
+  "databases": [
+    {
+      "path": "/tmp/uat028-dev/live.db",
+      "purpose": "live probe DB (AUTH=1)",
+      "action": "left in /tmp (outside repo); no repo DB touched"
+    },
+    {
+      "path": "/tmp/uat028-red/red_base.db",
+      "purpose": "RED baseline pytest DB (pre-fix snapshot)",
+      "action": "left in /tmp"
+    },
+    {
+      "path": "/tmp/uat028-red/red_base2.db",
+      "purpose": "RED baseline re-run with clean env",
+      "action": "left in /tmp"
+    }
+  ],
+  "repo_files_touched": {
+    "product_code": [],
+    "test_code": [],
+    "docs": [
+      "docs/handoff/artifacts/uat028-dev/*"
+    ],
+    "note": "No product or test code modified: the fix is already present at HEAD 7271d40 (commit 364b407); this DEV stage reproduced RED on the pre-fix snapshot and verified GREEN on HEAD."
+  },
+  "live_demo_db_15010": "not touched; 15010 not listening before or after (business DB untouched)",
+  "demo_token_secret": "96-char random hex (48 bytes), generated per-run via env only, never written to disk or repo",
+  "environment_debt_note": "Inherited DB_PATH=/tmp/uat009-qa/qa-green.db in shell env was unset before all recorded runs; conftest.py treats env DB_PATH as the shared env DB, which caused one transient false failure."
+}

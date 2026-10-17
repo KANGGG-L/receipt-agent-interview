@@ -1,0 +1,48 @@
+const JOB_POLL_INTERVAL_MS = 800;
+const JOB_POLL_TIMEOUT_MS = 5 * 60 * 1000;   // 5 分钟总超时
+
+// 纯函数：本轮轮询判定——cancelled（令牌作废）/ timeout（超总时长）/ poll（继续）
+function jobPollVerdict(token, startTs, nowMs, timeoutMs) {
+    if (token && token.cancelled) return 'cancelled';
+    if (timeoutMs > 0 && (nowMs - startTs) >= timeoutMs) return 'timeout';
+    return 'poll';
+}
+
+// opts（可选）：{ token, timeoutMs, intervalMs }
+//   token = {cancelled:false} 取消令牌（照片移除/被新上传替换时置 cancelled）
+function pollReceiptJob(jobId, onSettled, opts) {
+    const token = opts && opts.token;
+    const timeoutMs = (opts && opts.timeoutMs != null) ? opts.timeoutMs : JOB_POLL_TIMEOUT_MS;
+    const intervalMs = (opts && opts.intervalMs != null) ? opts.intervalMs : JOB_POLL_INTERVAL_MS;
+    const startTs = Date.now();
+    let netFails = 0;
+    const fetchJob = () => {
+        const fn = (typeof window !== 'undefined' && typeof window.apiFetch === 'function')
+            ? window.apiFetch : apiFetch;
+        return fn(`/api/job/${jobId}`);
+    };
+    const pauseWhileHidden = () => {
+        const resume = () => {
+            if (typeof document !== 'undefined' && document.hidden) return;
+            document.removeEventListener('visibilitychange', resume);
+            setTimeout(tick, intervalMs);
+        };
+        document.addEventListener('visibilitychange', resume);
+    };
+
+    function tick() {
+        const verdict = jobPollVerdict(token, startTs, Date.now(), timeoutMs);
+        if (verdict === 'cancelled') {
+            onSettled({ status: 'cancelled', msg: '轮询已取消' });
+            return;
+        }
+        if (verdict === 'timeout') {
+            onSettled({ status: 'error',
+                msg: '等了太久还没读完，已经停止等待。请点「转手工录入」自己填，原图会保留。', code: 'ENGINE_TIMEOUT' });
+            return;
+        }
+        if (typeof document !== 'undefined' && document.hidden) {
+            pauseWhileHidden();
+            return;
+        }
+        fetchJob()

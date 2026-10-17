@@ -1,0 +1,1 @@
+["V1 credit neg-amount save: | 200 | {\"status\": \"success\", \"id\": 1, \"receipt_id\": 1, \"version\": 1, \"math_blockers\": [], \"status_after\": \"edited\"}", "V2 credit neg-qty save: | 200 | {\"status\": \"success\", \"id\": 2, \"receipt_id\": 2, \"version\": 1, \"math_blockers\": [], \"status_after\": \"edited\"}", "rid1 | 1 | rid2 | 2"]

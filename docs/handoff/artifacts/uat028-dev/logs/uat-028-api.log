@@ -1,0 +1,21 @@
+PASS startup_health :: {"port": 15951, "auth_enabled_mode": "1"}
+PASS login_owner :: {"http": 200, "has_token": true, "cookie_set": true}
+BASELINE_BEFORE []
+PASS create_Vendor_A :: {"http": 200, "body": {"status": "success", "id": 1}}
+PASS rename_Vendor_B :: {"http": 200, "body": {"status": "success"}}
+PASS deactivate_active0 :: {"http": 200, "body": {"status": "success"}}
+PASS active_list_excludes :: {"http": 200, "sid": 1, "active_ids": []}
+PASS showInactive_name_retained :: {"http": 200, "row": [{"id": 1, "name": "Vendor_B_live", "supplier_code": "SUP-947BC4A1", "active": 0, "payment_terms_days": null, "settlement_pref": "cash", "contact_phone": "12345678", "notes": "live notes", "receipt_count": 0, "unpaid_credit_total": 0.0, "unpaid_credit_count": 0, "is_overdue": false, "overdue_amount": 0.0, "overdue_count": 0, "pending_credit_total": 0.0, "pending_credit_count":
+PASS search_by_Vendor_B :: {"http": 200}
+PASS patch_notes_omitted_keeps_name_phone :: {"http": 200, "row": {"id": 1, "name": "Vendor_B_live", "supplier_code": "SUP-947BC4A1", "active": 0, "payment_terms_days": null, "settlement_pref": "cash", "contact_phone": "12345678", "notes": "live notes v2", "receipt_count": 0, "unpaid_credit_total": 0.0, "unpaid_credit_count": 0, "is_overdue": false, "overdue_amount": 0.0, "overdue_count": 0, "pending_credit_total": 0.0, "pending_credit_count
+PASS patch_explicit_clear_applies :: {"http": 200, "row": {"id": 1, "name": "Vendor_B_live", "supplier_code": "SUP-947BC4A1", "active": 0, "payment_terms_days": null, "settlement_pref": "cash", "contact_phone": "", "notes": "", "receipt_count": 0, "unpaid_credit_total": 0.0, "unpaid_credit_count": 0, "is_overdue": false, "overdue_amount": 0.0, "overdue_count": 0, "pending_credit_total": 0.0, "pending_credit_count": 0, "unpaid_basis":
+PASS create_empty_name_rejected :: {"http": 400, "body": {"status": "error", "msg": "供应商名称不能为空"}}
+PASS create_blank_name_rejected :: {"http": 400, "body": {"status": "error", "msg": "供应商名称不能为空"}}
+PASS patch_invalid_name_empty_rejected :: {"http": 400, "body": {"status": "error", "msg": "供应商名称不能为空"}}
+PASS patch_invalid_name_blank_rejected :: {"http": 400, "body": {"status": "error", "msg": "供应商名称不能为空"}}
+PASS patch_invalid_name_null_rejected :: {"http": 400, "body": {"status": "error", "msg": "供应商名称不能为空"}}
+PASS name_unchanged_after_invalid_patches :: {"row": {"id": 1, "name": "Vendor_B_live", "supplier_code": "SUP-947BC4A1", "active": 0, "payment_terms_days": null, "settlement_pref": "cash", "contact_phone": "", "notes": "", "receipt_count": 0, "unpaid_credit_total": 0.0, "unpaid_credit_count": 0, "is_overdue": false, "overdue_amount": 0.0, "overdue_count": 0, "pending_credit_total": 0.0, "pending_credit_count": 0, "unpaid_basis": "只算已入账的赊单，已付
+PASS unauthenticated_401 :: {"http_no_cookie": 401}
+PASS tenant_default_baseline_unpolluted :: {"before": [], "after_excl_sid": []}
+PASS sql_readback_name_Vendor_B_active0 :: {"row": [1, "Vendor_B_live", 0, "", ""]}
+SUMMARY [["startup_health", true], ["login_owner", true], ["create_Vendor_A", true], ["rename_Vendor_B", true], ["deactivate_active0", true], ["active_list_excludes", true], ["showInactive_name_retained", true], ["search_by_Vendor_B", true], ["patch_notes_omitted_keeps_name_phone", true], ["patch_explicit_clear_applies", true], ["create_empty_name_rejected", true], ["create_blank_name_rejected", true], ["patch_invalid_name_empty_rejected", true], ["patch_invalid_name_blank_rejected", true], ["patch_invalid_name_null_rejected", true], ["name_unchanged_after_invalid_patches", true], ["unauthenticated_401", true], ["tenant_default_baseline_unpolluted", true], ["sql_readback_name_Vendor_B_active0", true]]

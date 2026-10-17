@@ -1,0 +1,21 @@
+{
+  "card": "UAT-028",
+  "role": "QA",
+  "date": "2026-10-17 (Asia/Shanghai)",
+  "ports_used": [15944],
+  "ports_avoided": [15010, "15100-15200", 15950, 15951, 15961, 15962, 15971, 15972],
+  "runtime_dirs": ["/tmp/uat028-qa"],
+  "processes": {
+    "uvicorn_15944": "terminated by probe (proc.terminate + wait), confirmed no uvicorn processes remain",
+    "ss_check": "no listeners in 1594x after run (evidence: probe step21 PASS; operator ss -ltn grep 1594 returned NO_1594x_LISTENERS)"
+  },
+  "repo_artifacts_written": [
+    "docs/handoff/artifacts/uat028-qa-report.md",
+    "docs/handoff/artifacts/uat028-qa/qa-result.json",
+    "docs/handoff/artifacts/uat028-qa/logs/live-probe.log",
+    "docs/handoff/artifacts/uat028-qa/logs/probe-result.json",
+    "docs/handoff/artifacts/uat028-qa/environment/cleanup.json"
+  ],
+  "product_code_modified": false,
+  "leftover_state": "none (isolated DB in /tmp/uat028-qa, ports released)"
+}

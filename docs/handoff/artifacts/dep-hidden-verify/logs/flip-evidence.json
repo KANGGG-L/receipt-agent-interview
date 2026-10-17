@@ -1,0 +1,12 @@
+{
+ "method": "CDP Target.activateTarget(newtab) -> hidden; Page.bringToFront(app) -> visible",
+ "document.hidden": {
+  "after_newtab_activate": true,
+  "after_bringToFront": false
+ },
+ "visibilitychange_events_wallclock": [
+  "1792259867059:hidden",
+  "1792259868070:visible"
+ ],
+ "note": "Real browser flip; no Object.defineProperty / no synthetic dispatch / no mock."
+}

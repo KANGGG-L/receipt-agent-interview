@@ -1,0 +1,374 @@
+FFF..FF.                                                                 [100%]
+=================================== FAILURES ===================================
+_ test_new_manual_payload_has_no_inherited_document_state[ncr_handwritten-CNY] _
+
+doc_form = 'ncr_handwritten', currency = 'CNY'
+
+    @pytest.mark.parametrize("doc_form,currency", [
+        ("ncr_handwritten", "CNY"),
+        ("credit_note", "USD"),
+        ("monthly_statement", "EUR"),
+    ])
+    def test_new_manual_payload_has_no_inherited_document_state(doc_form, currency):
+        old = _old_receipt(doc_form, currency)
+>       out = _run(f"""
+        const old = {json.dumps(old, ensure_ascii=False)};
+        sandbox.renderEditForm(old);
+        G('currentReceiptId = 901; currentReceiptData = ' + JSON.stringify(old));
+        if (elements['inpDocForm'].value !== old.doc_form) fail(10, 'old doc_form not rendered');
+        if (elements['inpCurrency'].value !== old.currency) fail(11, 'old currency not rendered');
+        if (G('getAutoPaymentEvidence()') !== old.payment_evidence) fail(12, 'old evidence not loaded');
+        if (elements['feesRowsContainer'].children.length !== 6) fail(13, 'old fees not rendered');
+    
+        sandbox.startManualEntry();
+        fillOneRow();
+        const p = newPayload();
+        const errs = [];   // 汇总全部泄漏项，一次报出（不在第一项失败处短路）
+        const chk = (ok, msg) => {{ if (!ok) errs.push(msg); }};
+        chk(G('currentReceiptId') === null, 'currentReceiptId=' + G('currentReceiptId'));
+        chk(p.receipt_id === null, 'payload.receipt_id=' + p.receipt_id);
+        FEE_KEYS.forEach(k => chk(p[k] === 0, k + '=' + p[k]));
+        chk(FEE_KEYS.every(k => Object.prototype.hasOwnProperty.call(p, k)), 'fee key stripped');
+        chk(p.payment_evidence === '', 'payment_evidence leaked=' + JSON.stringify(p.payment_evidence));
+        chk(p.doc_form === 'printed_delivery_note', 'doc_form leaked=' + p.doc_form);
+        chk(p.currency === 'HKD', 'currency leaked=' + p.currency);
+        chk(JSON.stringify(p.adjustment_notes) === '[]', 'notes leaked=' + JSON.stringify(p.adjustment_notes));
+        chk(!('version' in p), 'version leaked=' + p.version);
+        chk(p.settlement_type === 'cash', 'settlement=' + p.settlement_type);
+        chk(G('document.getElementById("alertBanner").classList.contains("hide")'), 'old alert banner still visible');
+        if (errs.length) fail(20, errs.join(' | '));
+        console.log('PAYLOAD ' + JSON.stringify(p));
+        """)
+
+tests/test_uat_009_new_manual_inherited_state.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '\n    const old = {"id": 901, "receipt_id": 901, "version": 3, "status": "edited", "supplier_name": "Vendor_A", "date...ible\');\n    if (errs.length) fail(20, errs.join(\' | \'));\n    console.log(\'PAYLOAD \' + JSON.stringify(p));\n    '
+
+    def _run(body):
+        js = PRELUDE % json.dumps(FEE_KEYS) + body
+        code, out, err = run_node_js_harness(js)
+>       assert code == 0, f"exit={code}\nstdout={out}\nstderr={err}"
+E       AssertionError: exit=20
+E         stdout=
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=ncr_handwritten | currency leaked=CNY | old alert banner still visible
+E         
+E       assert 20 == 0
+
+tests/test_uat_009_new_manual_inherited_state.py:73: AssertionError
+___ test_new_manual_payload_has_no_inherited_document_state[credit_note-USD] ___
+
+doc_form = 'credit_note', currency = 'USD'
+
+    @pytest.mark.parametrize("doc_form,currency", [
+        ("ncr_handwritten", "CNY"),
+        ("credit_note", "USD"),
+        ("monthly_statement", "EUR"),
+    ])
+    def test_new_manual_payload_has_no_inherited_document_state(doc_form, currency):
+        old = _old_receipt(doc_form, currency)
+>       out = _run(f"""
+        const old = {json.dumps(old, ensure_ascii=False)};
+        sandbox.renderEditForm(old);
+        G('currentReceiptId = 901; currentReceiptData = ' + JSON.stringify(old));
+        if (elements['inpDocForm'].value !== old.doc_form) fail(10, 'old doc_form not rendered');
+        if (elements['inpCurrency'].value !== old.currency) fail(11, 'old currency not rendered');
+        if (G('getAutoPaymentEvidence()') !== old.payment_evidence) fail(12, 'old evidence not loaded');
+        if (elements['feesRowsContainer'].children.length !== 6) fail(13, 'old fees not rendered');
+    
+        sandbox.startManualEntry();
+        fillOneRow();
+        const p = newPayload();
+        const errs = [];   // 汇总全部泄漏项，一次报出（不在第一项失败处短路）
+        const chk = (ok, msg) => {{ if (!ok) errs.push(msg); }};
+        chk(G('currentReceiptId') === null, 'currentReceiptId=' + G('currentReceiptId'));
+        chk(p.receipt_id === null, 'payload.receipt_id=' + p.receipt_id);
+        FEE_KEYS.forEach(k => chk(p[k] === 0, k + '=' + p[k]));
+        chk(FEE_KEYS.every(k => Object.prototype.hasOwnProperty.call(p, k)), 'fee key stripped');
+        chk(p.payment_evidence === '', 'payment_evidence leaked=' + JSON.stringify(p.payment_evidence));
+        chk(p.doc_form === 'printed_delivery_note', 'doc_form leaked=' + p.doc_form);
+        chk(p.currency === 'HKD', 'currency leaked=' + p.currency);
+        chk(JSON.stringify(p.adjustment_notes) === '[]', 'notes leaked=' + JSON.stringify(p.adjustment_notes));
+        chk(!('version' in p), 'version leaked=' + p.version);
+        chk(p.settlement_type === 'cash', 'settlement=' + p.settlement_type);
+        chk(G('document.getElementById("alertBanner").classList.contains("hide")'), 'old alert banner still visible');
+        if (errs.length) fail(20, errs.join(' | '));
+        console.log('PAYLOAD ' + JSON.stringify(p));
+        """)
+
+tests/test_uat_009_new_manual_inherited_state.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '\n    const old = {"id": 901, "receipt_id": 901, "version": 3, "status": "edited", "supplier_name": "Vendor_A", "date...ible\');\n    if (errs.length) fail(20, errs.join(\' | \'));\n    console.log(\'PAYLOAD \' + JSON.stringify(p));\n    '
+
+    def _run(body):
+        js = PRELUDE % json.dumps(FEE_KEYS) + body
+        code, out, err = run_node_js_harness(js)
+>       assert code == 0, f"exit={code}\nstdout={out}\nstderr={err}"
+E       AssertionError: exit=20
+E         stdout=
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=credit_note | currency leaked=USD | old alert banner still visible
+E         
+E       assert 20 == 0
+
+tests/test_uat_009_new_manual_inherited_state.py:73: AssertionError
+_ test_new_manual_payload_has_no_inherited_document_state[monthly_statement-EUR] _
+
+doc_form = 'monthly_statement', currency = 'EUR'
+
+    @pytest.mark.parametrize("doc_form,currency", [
+        ("ncr_handwritten", "CNY"),
+        ("credit_note", "USD"),
+        ("monthly_statement", "EUR"),
+    ])
+    def test_new_manual_payload_has_no_inherited_document_state(doc_form, currency):
+        old = _old_receipt(doc_form, currency)
+>       out = _run(f"""
+        const old = {json.dumps(old, ensure_ascii=False)};
+        sandbox.renderEditForm(old);
+        G('currentReceiptId = 901; currentReceiptData = ' + JSON.stringify(old));
+        if (elements['inpDocForm'].value !== old.doc_form) fail(10, 'old doc_form not rendered');
+        if (elements['inpCurrency'].value !== old.currency) fail(11, 'old currency not rendered');
+        if (G('getAutoPaymentEvidence()') !== old.payment_evidence) fail(12, 'old evidence not loaded');
+        if (elements['feesRowsContainer'].children.length !== 6) fail(13, 'old fees not rendered');
+    
+        sandbox.startManualEntry();
+        fillOneRow();
+        const p = newPayload();
+        const errs = [];   // 汇总全部泄漏项，一次报出（不在第一项失败处短路）
+        const chk = (ok, msg) => {{ if (!ok) errs.push(msg); }};
+        chk(G('currentReceiptId') === null, 'currentReceiptId=' + G('currentReceiptId'));
+        chk(p.receipt_id === null, 'payload.receipt_id=' + p.receipt_id);
+        FEE_KEYS.forEach(k => chk(p[k] === 0, k + '=' + p[k]));
+        chk(FEE_KEYS.every(k => Object.prototype.hasOwnProperty.call(p, k)), 'fee key stripped');
+        chk(p.payment_evidence === '', 'payment_evidence leaked=' + JSON.stringify(p.payment_evidence));
+        chk(p.doc_form === 'printed_delivery_note', 'doc_form leaked=' + p.doc_form);
+        chk(p.currency === 'HKD', 'currency leaked=' + p.currency);
+        chk(JSON.stringify(p.adjustment_notes) === '[]', 'notes leaked=' + JSON.stringify(p.adjustment_notes));
+        chk(!('version' in p), 'version leaked=' + p.version);
+        chk(p.settlement_type === 'cash', 'settlement=' + p.settlement_type);
+        chk(G('document.getElementById("alertBanner").classList.contains("hide")'), 'old alert banner still visible');
+        if (errs.length) fail(20, errs.join(' | '));
+        console.log('PAYLOAD ' + JSON.stringify(p));
+        """)
+
+tests/test_uat_009_new_manual_inherited_state.py:84: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '\n    const old = {"id": 901, "receipt_id": 901, "version": 3, "status": "edited", "supplier_name": "Vendor_A", "date...ible\');\n    if (errs.length) fail(20, errs.join(\' | \'));\n    console.log(\'PAYLOAD \' + JSON.stringify(p));\n    '
+
+    def _run(body):
+        js = PRELUDE % json.dumps(FEE_KEYS) + body
+        code, out, err = run_node_js_harness(js)
+>       assert code == 0, f"exit={code}\nstdout={out}\nstderr={err}"
+E       AssertionError: exit=20
+E         stdout=
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=monthly_statement | currency leaked=EUR | old alert banner still visible
+E         
+E       assert 20 == 0
+
+tests/test_uat_009_new_manual_inherited_state.py:73: AssertionError
+___________ test_late_open_receipt_response_cannot_refill_new_manual ___________
+
+    def test_late_open_receipt_response_cannot_refill_new_manual():
+        old = _old_receipt(rid=902)
+>       _run(f"""
+        const old = {json.dumps(old, ensure_ascii=False)};
+        const pending = [];
+        // common.js 在无原生 fetch 的沙箱里让 apiFetch 回落到 window.fetch：用可控的延迟回包替换
+        // 只延迟「打开单据」详情请求；埋点等其它请求立即回空
+        sandbox.fetch = (url) => String(url).startsWith('/api/receipt/')
+            ? new Promise(res => pending.push({{url, res}}))
+            : Promise.resolve({{ status: 200, ok: true, json: () => Promise.resolve({{}}) }});
+        (async () => {{
+            sandbox.openReceiptInWorkbench(902, true, true);
+            if (pending.length !== 1) fail(60, 'open request not issued: ' + pending.length);
+            sandbox.startManualEntry();
+            pending[0].res({{ json: () => Promise.resolve({{ status: 'success', data: old }}) }});
+            await new Promise(r => setTimeout(r, 30));
+            if (G('currentReceiptId') !== null) fail(61, 'late response rebound currentReceiptId=' + G('currentReceiptId'));
+            if (elements['feesRowsContainer'].children.length !== 0) fail(62, 'late response refilled fees');
+            fillOneRow();
+            const p = newPayload();
+            if (p.receipt_id !== null) fail(63, 'rid=' + p.receipt_id);
+            FEE_KEYS.forEach(k => {{ if (p[k] !== 0) fail(64, k + '=' + p[k]); }});
+            // 控制组：之后正常再打开旧单仍然生效（未把打开流程整个禁掉）
+            sandbox.openReceiptInWorkbench(902, true, true);
+            pending[1].res({{ json: () => Promise.resolve({{ status: 'success', data: old }}) }});
+            await new Promise(r => setTimeout(r, 30));
+            if (G('currentReceiptId') !== 902) fail(65, 'normal reopen broken: ' + G('currentReceiptId') + ' urls=' + JSON.stringify(pending.map(x => x.url)));
+            if (elements['feesRowsContainer'].children.length !== 6) fail(66, 'normal reopen fees missing');
+            console.log('RACE_OK');
+        }})().catch(e => fail(69, String(e && e.stack || e)));
+        """)
+
+tests/test_uat_009_new_manual_inherited_state.py:152: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = '\n    const old = {"id": 902, "receipt_id": 902, "version": 3, "status": "edited", "supplier_name": "Vendor_A", "date...n fees missing\');\n        console.log(\'RACE_OK\');\n    })().catch(e => fail(69, String(e && e.stack || e)));\n    '
+
+    def _run(body):
+        js = PRELUDE % json.dumps(FEE_KEYS) + body
+        code, out, err = run_node_js_harness(js)
+>       assert code == 0, f"exit={code}\nstdout={out}\nstderr={err}"
+E       AssertionError: exit=61
+E         stdout=
+E         stderr=FAIL late response rebound currentReceiptId=902
+E         
+E       assert 61 == 0
+
+tests/test_uat_009_new_manual_inherited_state.py:73: AssertionError
+__________ test_in_flight_single_upload_is_invalidated_by_new_manual ___________
+
+    def test_in_flight_single_upload_is_invalidated_by_new_manual():
+>       _run("""
+        G('singlePollToken = { cancelled: false }');
+        const genBefore = G('singleUploadGen');
+        const tok = G('singlePollToken');
+        sandbox.startManualEntry();
+        if (!(G('singleUploadGen') > genBefore)) fail(70, 'singleUploadGen not bumped');
+        if (tok.cancelled !== true) fail(71, 'poll token not cancelled');
+        """)
+
+tests/test_uat_009_new_manual_inherited_state.py:184: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = "\n    G('singlePollToken = { cancelled: false }');\n    const genBefore = G('singleUploadGen');\n    const tok = G('s...) fail(70, 'singleUploadGen not bumped');\n    if (tok.cancelled !== true) fail(71, 'poll token not cancelled');\n    "
+
+    def _run(body):
+        js = PRELUDE % json.dumps(FEE_KEYS) + body
+        code, out, err = run_node_js_harness(js)
+>       assert code == 0, f"exit={code}\nstdout={out}\nstderr={err}"
+E       AssertionError: exit=70
+E         stdout=
+E         stderr=FAIL singleUploadGen not bumped
+E         
+E       assert 70 == 0
+
+tests/test_uat_009_new_manual_inherited_state.py:73: AssertionError
+=============================== warnings summary ===============================
+app/main.py:78
+  /tmp/uat009-qa/red/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+../../../../home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: 12 warnings
+  /home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+app/main.py:85
+  /tmp/uat009-qa/red/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:92
+  /tmp/uat009-qa/red/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:98
+  /tmp/uat009-qa/red/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:118
+  /tmp/uat009-qa/red/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:124
+  /tmp/uat009-qa/red/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:140
+  /tmp/uat009-qa/red/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:166
+  /tmp/uat009-qa/red/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:201
+  /tmp/uat009-qa/red/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:231
+  /tmp/uat009-qa/red/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:256
+  /tmp/uat009-qa/red/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:263
+  /tmp/uat009-qa/red/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[ncr_handwritten-CNY]
+FAILED tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[credit_note-USD]
+FAILED tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[monthly_statement-EUR]
+FAILED tests/test_uat_009_new_manual_inherited_state.py::test_late_open_receipt_response_cannot_refill_new_manual
+FAILED tests/test_uat_009_new_manual_inherited_state.py::test_in_flight_single_upload_is_invalidated_by_new_manual
+5 failed, 3 passed, 24 warnings in 15.74s

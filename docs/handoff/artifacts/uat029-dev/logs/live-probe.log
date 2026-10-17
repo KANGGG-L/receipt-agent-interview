@@ -1,0 +1,5 @@
+== live probe 15929 (AUTH=0), 2026-10-17T16:05:10Z ==
+POST save_edited credit_note neg-qty -> 200 success, math_blockers=[]
+GET /api/receipt/1 -> total_amount=-10.0
+POST approve -> 200 success
+printed_delivery_note negative total -> backend no independent gate (frontend err_total + contract enforce rejection)

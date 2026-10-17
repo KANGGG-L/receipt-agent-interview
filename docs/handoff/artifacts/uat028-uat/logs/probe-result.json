@@ -1,0 +1,132 @@
+{
+  "results": [
+    {
+      "step": "owner login 200",
+      "pass": true,
+      "detail": "200 {'status': 'success', 'token': 'boss@demo.hk.owner.1792295293.default.73afb972bf55e822.02ffa2772f6c706c4bef99038f709984699e6a19fd55fcae0cd8666f055d71e3', 'refresh_token': None, 'account': {'email': 'boss@demo.hk', 'role': 'owner', 'tenant': 'default'}}"
+    },
+    {
+      "step": "cookie is HttpOnly session",
+      "pass": true,
+      "detail": "receipt_session=\"boss@demo.hk.owner.1792295293.default.73afb972bf55e822.02ffa2772f6c706c4bef99038f709984699e6a19fd55fcae"
+    },
+    {
+      "step": "baseline list ok",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "step": "create Vendor_A_uat",
+      "pass": true,
+      "detail": "200 {'status': 'success', 'id': 1}"
+    },
+    {
+      "step": "rename to Vendor_B_uat",
+      "pass": true,
+      "detail": "200 {'status': 'success'}"
+    },
+    {
+      "step": "deactivate via PATCH active=0",
+      "pass": true,
+      "detail": "200 {'status': 'success'}"
+    },
+    {
+      "step": "showInactive: name still Vendor_B_uat, active=0, phone kept",
+      "pass": true,
+      "detail": "200 [{'id': 1, 'name': 'Vendor_B_uat', 'supplier_code': 'SUP-0C2D65FD', 'active': 0, 'payment_terms_days': None, 'settlement_pref': '', 'contact_phone': '12345678', 'notes': '', 'receipt_count': 0, 'unpaid_credit_total': 0.0, 'unpaid_credit_count': 0, 'is_overdue': False, 'overdue_amount': 0.0, 'overdue_count': 0, 'pending_credit_total': 0.0, 'pending_credit_count': 0, 'unpaid_basis': '\u53ea\u7b97\u5df2\u5165\u8d26\u7684\u8d4a\u5355\uff0c\u5df2\u4ed8"
+    },
+    {
+      "step": "default list excludes deactivated",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "step": "patch notes (omit name/phone) 200",
+      "pass": true,
+      "detail": "200 {'status': 'success'}"
+    },
+    {
+      "step": "omit semantics: name/phone unchanged, notes set",
+      "pass": true,
+      "detail": "{'id': 1, 'name': 'Vendor_B_uat', 'supplier_code': 'SUP-0C2D65FD', 'active': 0, 'payment_terms_days': None, 'settlement_pref': '', 'contact_phone': '12345678', 'notes': 'uat-note-1', 'receipt_count': 0, 'unpaid_credit_total': 0.0, 'unpaid_credit_count': 0, 'is_overdue': False, 'overdue_amount': 0.0, 'overdue_count': 0, 'pending_credit_total': 0.0, 'pending_credit_count': 0, 'unpaid_basis': '\u53ea\u7b97\u5df2\u5165\u8d26\u7684"
+    },
+    {
+      "step": "explicit clear: notes/phone cleared, name kept",
+      "pass": true,
+      "detail": "{'id': 1, 'name': 'Vendor_B_uat', 'supplier_code': 'SUP-0C2D65FD', 'active': 0, 'payment_terms_days': None, 'settlement_pref': '', 'contact_phone': '', 'notes': '', 'receipt_count': 0, 'unpaid_credit_total': 0.0, 'unpaid_credit_count': 0, 'is_overdue': False, 'overdue_amount': 0.0, 'overdue_count': 0, 'pending_credit_total': 0.0, 'pending_credit_count': 0, 'unpaid_basis': '\u53ea\u7b97\u5df2\u5165\u8d26\u7684\u8d4a\u5355\uff0c\u5df2\u4ed8\u7684\u91d1\u989d\u5df2\u6263\u9664\uff1b\u5916\u5e01\u6309\u5165\u8d26\u65f6"
+    },
+    {
+      "step": "PATCH name='' -> 400",
+      "pass": true,
+      "detail": "400 {'status': 'error', 'msg': '\u4f9b\u5e94\u5546\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a'}"
+    },
+    {
+      "step": "PATCH name='   ' -> 400",
+      "pass": true,
+      "detail": "400 {'status': 'error', 'msg': '\u4f9b\u5e94\u5546\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a'}"
+    },
+    {
+      "step": "PATCH name=None -> 400",
+      "pass": true,
+      "detail": "400 {'status': 'error', 'msg': '\u4f9b\u5e94\u5546\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a'}"
+    },
+    {
+      "step": "after rejected updates name intact",
+      "pass": true,
+      "detail": "Vendor_B_uat"
+    },
+    {
+      "step": "create name='' -> 400",
+      "pass": true,
+      "detail": "400 {'status': 'error', 'msg': '\u4f9b\u5e94\u5546\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a'}"
+    },
+    {
+      "step": "create name='   ' -> 400",
+      "pass": true,
+      "detail": "400 {'status': 'error', 'msg': '\u4f9b\u5e94\u5546\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a'}"
+    },
+    {
+      "step": "no cookie + empty Authorization -> 401",
+      "pass": true,
+      "detail": "401 {'status': 'error', 'code': 'UNAUTHENTICATED', 'msg': '\u8bf7\u5148\u767b\u5f55\u3002\u4f60\u8fd8\u6ca1\u6709\u767b\u5f55\uff0c\u6216\u767b\u5f55\u5df2\u7ecf\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u540e\u518d\u64cd\u4f5c\u3002', 'detail': '\u8bf7\u5148\u767b\u5f55\u3002\u4f60\u8fd8\u6ca1\u6709\u767b\u5f55\uff0c\u6216\u767b\u5f55\u5df2\u7ecf\u8fc7\u671f\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u540e\u518d\u64cd\u4f5c\u3002'}"
+    },
+    {
+      "step": "write without CSRF header -> 403",
+      "pass": true,
+      "detail": "403 {'status': 'error', 'code': 'CSRF_REJECTED', 'msg': '\u8fd9\u6b21\u64cd\u4f5c\u6765\u6e90\u4e0d\u660e\uff0c\u5df2\u88ab\u62e6\u4e0b\u3002\u8bf7\u56de\u5230\u672c\u7cfb\u7edf\u9875\u9762\u91cd\u65b0\u64cd\u4f5c\uff1b\u5982\u679c\u4e00\u76f4\u8fd9\u6837\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002', 'detail': '\u8fd9\u6b21\u64cd\u4f5c\u6765\u6e90\u4e0d\u660e\uff0c\u5df2\u88ab\u62e6\u4e0b\u3002\u8bf7\u56de\u5230\u672c\u7cfb\u7edf\u9875\u9762\u91cd\u65b0\u64cd\u4f5c\uff1b\u5982\u679c\u4e00\u76f4\u8fd9\u6837\uff0c\u8bf7\u91cd\u65b0\u767b\u5f55\u3002'}"
+    },
+    {
+      "step": "staff login",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "step": "staff PATCH -> 403 (role boundary)",
+      "pass": true,
+      "detail": "403 {'status': 'error', 'code': 'FORBIDDEN', 'msg': '\u6743\u9650\u4e0d\u8db3\uff1a\u8fd9\u4e2a\u64cd\u4f5c\u9700\u8981\u8001\u677f\u6216\u66f4\u9ad8\u6743\u9650\uff0c\u4f60\u73b0\u5728\u662f\u5e97\u5458\u3002\u8bf7\u8054\u7cfb\u8001\u677f\u6765\u64cd\u4f5c\u3002', 'detail': '\u6743\u9650\u4e0d\u8db3\uff1a\u8fd9\u4e2a\u64cd\u4f5c\u9700\u8981\u8001\u677f\u6216\u66f4\u9ad8\u6743\u9650\uff0c\u4f60\u73b0\u5728\u662f\u5e97\u5458\u3002\u8bf7\u8054\u7cfb\u8001\u677f\u6765\u64cd\u4f5c\u3002'}"
+    },
+    {
+      "step": "staff list ok",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "step": "owner baseline drift check (only probe row added)",
+      "pass": true,
+      "detail": "added=[1]"
+    },
+    {
+      "step": "SQL: name retained in DB",
+      "pass": true,
+      "detail": "(1, 'Vendor_B_uat', 0, '', '')"
+    },
+    {
+      "step": "port 1593x released",
+      "pass": true,
+      "detail": "[]"
+    }
+  ],
+  "summary": "25/25 PASS",
+  "port": 15930,
+  "db": "/tmp/uat028-uat/uat-live.db"
+}

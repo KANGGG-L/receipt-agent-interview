@@ -1,0 +1,112 @@
+{
+  "task": "UAT-029",
+  "title": "选择贷项单仍被正数总额校验阻止保存",
+  "stage": "QA",
+  "head": "7271d401965dc971fc6eb9b5cf861a748d28c1ad",
+  "verified_at": "2026-10-18 (UTC+8)",
+  "mode": "MANUAL_UI",
+  "conclusion": "PASS",
+  "environment": {
+    "port": 15919,
+    "auth_enabled": 1,
+    "db": "/tmp/uat029-qa/qa-live.db",
+    "demo_token_secret_bytes": 48,
+    "python": ".venv-uat009"
+  },
+  "checks": [
+    {
+      "id": "C1",
+      "name": "credit_note neg-amount save->reopen->approve full chain (API)",
+      "result": "PASS",
+      "evidence": "save 200 math_blockers=[]; GET total=-10.0 credit_note; approve 200; DB status=approved"
+    },
+    {
+      "id": "C2",
+      "name": "credit_note neg-qty variant",
+      "result": "PASS",
+      "evidence": "save 200 math_blockers=[]; DB qty=-2 amount=-20"
+    },
+    {
+      "id": "C3",
+      "name": "fees arithmetic match",
+      "result": "PASS",
+      "evidence": "total=-15 = item -10 + delivery_fee -5, math_blockers=[]"
+    },
+    {
+      "id": "C4",
+      "name": "ordinary purchase negative total still rejected",
+      "result": "PASS",
+      "evidence": "math_blockers mismatch; approve 422 APPROVAL_BLOCKED; UI toast 单据总金额必须大于 0"
+    },
+    {
+      "id": "C5",
+      "name": "UI walk: real login, open #2, save via btnSaveReview",
+      "result": "PASS",
+      "evidence": "POST /api/save_edited 200 total:-20; toast 已保存复核修改并提交审核"
+    },
+    {
+      "id": "C6",
+      "name": "UI walk: reopen + approve via btnApproveReceipt",
+      "result": "PASS",
+      "evidence": "POST approve 200; GET /api/receipt/2 status=approved total=-20 version=3"
+    },
+    {
+      "id": "C7",
+      "name": "double-negative qty & price still blocked",
+      "result": "PASS",
+      "evidence": "review_core.js:2944-2946 predicate blocks qty<0&&price<0"
+    },
+    {
+      "id": "C8",
+      "name": "no new credit doc types",
+      "result": "PASS",
+      "evidence": "models.py:15-22 enum unchanged"
+    },
+    {
+      "id": "C9",
+      "name": "S2-09 oracle compliance",
+      "result": "PASS",
+      "evidence": "docs/review-2026-10/S2-ai-pipeline.md:60 direction matches"
+    },
+    {
+      "id": "C10",
+      "name": "consumed-reversal protection",
+      "result": "PASS_WITH_NOTE",
+      "evidence": "second reverse returns 200 already_reversed=true, stock unchanged (idempotent, no 409 code but protection preserved)"
+    },
+    {
+      "id": "C11",
+      "name": "unauthenticated 401 / cookie+CSRF constraint (fills DEV empty-evidence)",
+      "result": "PASS",
+      "evidence": "no-cred 401; login Set-Cookie HttpOnly; cookie write w/o X-Requested-With 403 CSRF_REJECTED"
+    },
+    {
+      "id": "C12",
+      "name": "cross-tenant rejection",
+      "result": "PASS",
+      "evidence": "forged X-Tenant-Id ignored (auth.py:392-422); forged tenant token parse None; staff approve/reverse 403"
+    },
+    {
+      "id": "C13",
+      "name": "tenant B baseline unchanged",
+      "result": "PASS",
+      "evidence": "no B accounts/data exist; A data before==after rows identical"
+    },
+    {
+      "id": "C14",
+      "name": "dedicated TDD suite",
+      "result": "PASS",
+      "evidence": "6 passed (green-tdd.log)"
+    },
+    {
+      "id": "C15",
+      "name": "regression suites",
+      "result": "PASS",
+      "evidence": "26 passed (green-regression.log)"
+    }
+  ],
+  "notes": [
+    "C10: idempotent 200 instead of 409 — protection semantics preserved; observation, not FAIL",
+    "first-round probe mismatches (SETTLEMENT_REQUIRED / VERSION_REQUIRED) were probe parameter issues, clarified in report §5"
+  ]
+}

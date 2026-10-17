@@ -1,0 +1,35 @@
+{
+  "recorded_at": "2026-10-18T00:00:00+08:00",
+  "stage": "UAT (independent user-perspective acceptance)",
+  "head": "7271d40",
+  "ports": {
+    "15903": {
+      "purpose": "UAT live probes: AUTH_ENABLED=1 API probe (DB /tmp/uat029-uat/uat-live.db) + real-browser MANUAL_UI walk (DB /tmp/uat029-uat/uat-ui2.db), two sequential uvicorn instances",
+      "status": "released",
+      "verified": "ss -ltn shows zero listeners on 15903 after each run; no uvicorn processes remain"
+    }
+  },
+  "forbidden_ports_touched": [],
+  "processes": {
+    "uvicorn_instances_started": 2,
+    "uvicorn_instances_running": 0
+  },
+  "databases": [
+    {"path": "/tmp/uat029-uat/uat-live.db", "purpose": "UAT API probe DB (fresh file, not shared with DEV/QA fixtures)", "action": "left in /tmp outside repo; no repo DB touched"},
+    {"path": "/tmp/uat029-uat/uat-ui2.db", "purpose": "UAT MANUAL_UI browser-walk DB (fresh file)", "action": "left in /tmp outside repo"},
+    {"path": "/tmp/uat029-uat/tdd.db, tdd2.db, tdd3.db", "purpose": "pytest run DBs for UAT-029专项 + S2-09 + regression suites", "action": "left in /tmp outside repo"}
+  ],
+  "repo_files_touched": {
+    "product_code": [],
+    "test_code": [],
+    "docs": [
+      "docs/handoff/artifacts/uat029-uat-report.md",
+      "docs/handoff/artifacts/uat029-uat/* (uat-result.json, logs/, environment/cleanup.json)"
+    ],
+    "note": "No product or test code modified; UAT ran against HEAD 7271d40 as-is."
+  },
+  "demo_token_secret": "random 48-byte hex generated per process via env only (secrets.token_hex(48)), never written to disk or repo",
+  "browser": "Playwright (venv .venv-uat009) + /usr/bin/google-chrome headless 1440x900",
+  "live_demo_db_15010": "not touched; 15010 not listening before or after",
+  "environment_debt_note": "Inherited DB_PATH/RAG_DIR env vars explicitly unset before server start; no DEV/QA fixture reused."
+}

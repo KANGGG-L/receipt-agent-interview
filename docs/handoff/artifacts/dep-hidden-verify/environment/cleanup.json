@@ -1,0 +1,44 @@
+{
+ "verification": {
+  "server": "uvicorn app.main:app @ 127.0.0.1:15891 (AUTH_ENABLED=1, 48-byte random DEMO_TOKEN_SECRET, DB_PATH=/tmp/dep-hidden/environment/receipt_demo.db)"
+ },
+ "reserved_ports_untouched": [
+  "15010",
+  "15100-15200",
+  "15903",
+  "15919",
+  "15929",
+  "15930",
+  "15944",
+  "15950",
+  "15951",
+  "15961",
+  "15962",
+  "15971",
+  "15972"
+ ],
+ "cleanup_actions": {
+  "server_15891": "stopped (curl returns 000, connection refused)",
+  "probe_chromium_15991-15999": "all terminated (pgrep empty)",
+  "xvfb_probe_displays_30-37": "terminated; pre-existing system Xvfb :1/:99-:101 untouched",
+  "harness_tabs": [
+   {
+    "url": "chrome://newtab/",
+    "closed": true
+   },
+   {
+    "url": "about:blank",
+    "closed": true
+   },
+   {
+    "url": "http://127.0.0.1:15891/",
+    "closed": true
+   }
+  ],
+  "remaining_pages": [
+   "about:blank (harness default)"
+  ],
+  "tmp": "/tmp/dep-hidden (env .env has secret; delete dir to purge)"
+ },
+ "verified_at": "2026-10-18T02:00+08:00"
+}

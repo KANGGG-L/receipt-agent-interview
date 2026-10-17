@@ -1,0 +1,12 @@
+{
+ "stopped": true,
+ "uvicorn_orphans": "NO_UVICORN",
+ "ports_15961_15962": "PORTS_FREE",
+ "port_15010": "15010_NOT_LISTENING",
+ "dbs": [
+  "/tmp/uat009-uat/uat-live.db",
+  "/tmp/uat009-uat/uat-xt.db"
+ ],
+ "repo_db_writes": 0,
+ "checked_at_utc": "2026-10-17T15:14:28Z"
+}

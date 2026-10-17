@@ -1,0 +1,147 @@
+{
+  "results": [
+    {
+      "step": 0,
+      "pass": true,
+      "detail": "server health on 15944 after 1s"
+    },
+    {
+      "step": 0.1,
+      "pass": true,
+      "detail": "owner login status=200"
+    },
+    {
+      "step": 0.2,
+      "pass": true,
+      "detail": "cookies set: ['receipt_session']"
+    },
+    {
+      "step": 0.3,
+      "pass": true,
+      "detail": "baseline suppliers=0"
+    },
+    {
+      "step": 1,
+      "pass": true,
+      "detail": "create Vendor_A_qa -> 200 {'status': 'success', 'id': 1}"
+    },
+    {
+      "step": 2,
+      "pass": true,
+      "detail": "rename to Vendor_B_qa -> 200 {'status': 'success'}"
+    },
+    {
+      "step": 3,
+      "pass": true,
+      "detail": "deactivate -> 200 {'status': 'success'}"
+    },
+    {
+      "step": 4,
+      "pass": true,
+      "detail": "showInactive+q: name=Vendor_B_qa active=0"
+    },
+    {
+      "step": 5,
+      "pass": true,
+      "detail": "phone preserved: 12345678"
+    },
+    {
+      "step": 6,
+      "pass": true,
+      "detail": "inactive not in active list"
+    },
+    {
+      "step": 7,
+      "pass": true,
+      "detail": "old name no longer matches (renamed), id reference stable via step4: []"
+    },
+    {
+      "step": 8,
+      "pass": true,
+      "detail": "patch notes only -> 200"
+    },
+    {
+      "step": 9,
+      "pass": true,
+      "detail": "omit patch: name=Vendor_B_qa phone=12345678"
+    },
+    {
+      "step": 10,
+      "pass": true,
+      "detail": "explicit clear notes/phone -> 200"
+    },
+    {
+      "step": 11,
+      "pass": true,
+      "detail": "explicit clear: name=Vendor_B_qa phone='' notes=''"
+    },
+    {
+      "step": 12,
+      "pass": true,
+      "detail": "PATCH name='' -> 400"
+    },
+    {
+      "step": 12,
+      "pass": true,
+      "detail": "PATCH name='   ' -> 400"
+    },
+    {
+      "step": 12,
+      "pass": true,
+      "detail": "PATCH name=None -> 400"
+    },
+    {
+      "step": 13,
+      "pass": true,
+      "detail": "name intact after 400s: Vendor_B_qa"
+    },
+    {
+      "step": 14,
+      "pass": true,
+      "detail": "create name='' -> 400"
+    },
+    {
+      "step": 14,
+      "pass": true,
+      "detail": "create name='   ' -> 400"
+    },
+    {
+      "step": 15,
+      "pass": true,
+      "detail": "no-cookie GET with empty Authorization -> 401"
+    },
+    {
+      "step": 16,
+      "pass": true,
+      "detail": "staff login -> 200"
+    },
+    {
+      "step": 17,
+      "pass": true,
+      "detail": "staff patch owner-domain supplier -> 403 (rejected)"
+    },
+    {
+      "step": 18,
+      "pass": true,
+      "detail": "staff tenant view unchanged by denied write"
+    },
+    {
+      "step": 19,
+      "pass": true,
+      "detail": "baseline drift for other suppliers: {}"
+    },
+    {
+      "step": 20,
+      "pass": true,
+      "detail": "SQL row: (1, 'Vendor_B_qa', 0, '', '')"
+    },
+    {
+      "step": 21,
+      "pass": true,
+      "detail": "port 15944 released"
+    }
+  ],
+  "port": 15944,
+  "db": "/tmp/uat028-qa/qa-live.db",
+  "conclusion": "PASS"
+}

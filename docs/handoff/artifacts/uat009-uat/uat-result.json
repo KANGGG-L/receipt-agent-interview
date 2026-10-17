@@ -1,0 +1,46 @@
+{
+ "card": "UAT-009",
+ "stage": "UAT (independent, user-perspective acceptance)",
+ "head": "7271d401965dc971fc6eb9b5cf861a748d28c1ad",
+ "conclusion": "PASS",
+ "environment": {
+  "port_auth1": "15961 (AUTH_ENABLED=1, 48-byte random DEMO_TOKEN_SECRET via env)",
+  "port_dev0": "15962 (AUTH_ENABLED=0, dev header mode, cross-tenant probe only)",
+  "db_live": "/tmp/uat009-uat/uat-live.db",
+  "db_xt": "/tmp/uat009-uat/uat-xt.db",
+  "product_code_modified": false,
+  "browser": "playwright + /usr/bin/google-chrome (executable_path)"
+ },
+ "ui_walk": [
+  "auth gate: login overlay shown on first load",
+  "login via UI form succeeds (HttpOnly cookie session)",
+  "UI: create old receipt with six nonzero fees -> save 200",
+  "reopen old: six fee rows rendered with saved values",
+  "new manual: receipt_id null, six fees all 0, doc_form/currency/evidence reset, banner hidden, drawer/badge reset",
+  "UI save new manual: payload six fees all 0, receipt_id null, doc_form/currency/evidence defaults",
+  "DB read-back of UI-created new manual: zeros/defaults",
+  "reopen old after flow: six fees still intact (cleanup only touches new)",
+  "old receipt untouched re-save still 200 success (response echoes receipt_id, fees untouched on server)",
+  "user-entered fee on new manual submitted verbatim (delivery_fee 8)",
+  "race: open then immediate new manual -> receipt_id stays null, fees stay 0",
+  "reload: session persists via HttpOnly cookie (no re-login)",
+  "post-reload new manual: all defaults (no cross-session leak)"
+ ],
+ "ui_walk_pass": "13/13",
+ "xtenant_pass": "9/9",
+ "screenshots": [
+  "01_login_overlay.png",
+  "02_old_receipt_saved.png",
+  "03_old_reopen_six_fees.png",
+  "04_new_manual_cleared.png",
+  "05_new_saved_zero_fees.png",
+  "06_old_reopen_intact.png",
+  "07_race_new_manual_clean.png",
+  "08_post_reload_clean.png"
+ ],
+ "notes": [
+  "AUTH=1 实例：登录遮罩真实表单登录（HttpOnly Cookie）；无凭据 /api/receipts 401；错口令 401",
+  "startup 无 timeout 重试；/api/health degraded 为缺 AI 引擎配置常态",
+  "跨租户通道限制与 QA 相同：dev 头模式实例验证（预置账号全 tenant=default）"
+ ]
+}

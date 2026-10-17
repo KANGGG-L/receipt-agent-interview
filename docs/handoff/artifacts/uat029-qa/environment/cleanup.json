@@ -1,0 +1,16 @@
+{
+  "task": "UAT-029 QA",
+  "timestamp": "2026-10-18 (UTC+8)",
+  "server": {
+    "port": 15919,
+    "pid": 2215749,
+    "action": "SIGTERM",
+    "verified": "ss -ltn shows no :15919 or :15010 listeners; no uvicorn/pytest processes remain"
+  },
+  "forbidden_ports_touched": [],
+  "temp_files": {
+    "/tmp/uat029-qa": "left in place per isolation policy (outside repo); includes qa-live.db, tdd.db, tdd2.db, secret.txt, ui probe scripts"
+  },
+  "product_code_changes": "none (git status --porcelain -- demo ai_registry tests clean at HEAD 7271d40)",
+  "artifacts": "docs/handoff/artifacts/uat029-qa-report.md + docs/handoff/artifacts/uat029-qa/"
+}

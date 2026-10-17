@@ -1,0 +1,61 @@
+{
+  "task": "UAT-028 停用供应商会清空名称导致无法按原名回看",
+  "stage": "DEV",
+  "verification_mode": "AUTO_API",
+  "head": "7271d40",
+  "python": "/home/agentuser/receipt-agent-interview/.venv-uat009/bin/python",
+  "tdd": {
+    "red_baseline": {
+      "method": "git archive 4e29834 (pre-fix snapshot) extracted to /tmp/uat028-red; UAT-028 test file + _b2_helpers copied in",
+      "result": "3 failed, 1 passed",
+      "key_failure": "tests/test_uat_028_supplier_deactivate_name_retention.py:80 AssertionError: Expected Vendor_B_Lifecycle, got: '' (name cleared to empty by pre-fix PATCH {active:0})",
+      "log": "logs/red-baseline-pytest.log"
+    },
+    "green": {
+      "method": "HEAD 7271d40, clean env (unset inherited DB_PATH=/tmp/uat009-qa/qa-green.db from prior session)",
+      "result": "4 passed",
+      "log": "logs/green-full-suite.log"
+    }
+  },
+  "live_api_probe": {
+    "port": 15951,
+    "auth": "AUTH_ENABLED=1, DEMO_TOKEN_SECRET=96-char random hex (48 bytes), owner login boss@demo.hk via /api/auth/login, identity via HttpOnly Cookie; unsafe writes carry X-Requested-With CSRF header",
+    "steps_passed": 19,
+    "steps_failed": 0,
+    "key_evidence": {
+      "deactivate_then_showInactive": "name=Vendor_B_live, active=0, contact_phone=12345678 retained",
+      "notes_only_patch": "name/phone unchanged (omitted fields)",
+      "explicit_clear": "notes='' and contact_phone='' applied; name untouched",
+      "invalid_name_patches": "empty/blank/null name PATCH all 400, name unchanged after",
+      "unauthenticated": "401 (no cookie)",
+      "sql_readback": "[1, 'Vendor_B_live', 0, '', ''] from suppliers table",
+      "baseline": "default-tenant supplier ids identical before/after (excluding the row created by this probe)"
+    },
+    "log": "logs/uat-028-api.log"
+  },
+  "regression": {
+    "files": [
+      "tests/test_supplier_master_delete.py",
+      "tests/test_normalize_supplier_names.py"
+    ],
+    "result": "21 passed",
+    "log": "logs/green-regression.log"
+  },
+  "root_cause_note": "Defect existed in pre-fix snapshot 4e29834: PATCH /api/suppliers/{id} built fields from body.model_dump() filtering v is not None, so PATCH {active:0} sent name='' which overwrote the name (update_supplier skipped None but wrote ''). Fix (already in HEAD via commit 364b407): name is Optional[str]=None; omitted/None name never enters fields (api_suppliers.py:123-125); explicit invalid name rejected 400 (api_suppliers.py:153-155); omitted phone/notes preserved via _optional_text (api_suppliers.py:102-107); explicit null/empty clears applied (api_suppliers.py:112-115); frontend patchSupplierActive sends only {active} (supplier_archive.js:223-225).",
+  "isolation_violation_note": "First GREEN attempt failed because the shell environment inherited DB_PATH=/tmp/uat009-qa/qa-green.db from a previous UAT-009 QA session; test 2's next(...) selector resolved a stale row. Fixed by unsetting DB_PATH/RAG_DIR (conftest.py env-DB semantics). Not a product defect; recorded for transparency.",
+  "cleanup": {
+    "ports_used": [
+      15950,
+      15951
+    ],
+    "ports_free": true,
+    "15010_touched": false,
+    "dbs": [
+      "/tmp/uat028-dev/live.db",
+      "/tmp/uat028-red/red_base.db",
+      "/tmp/uat028-red/red_base2.db"
+    ]
+  },
+  "conclusion": "DEV_DONE",
+  "generated_at": "2026-10-17T23:41:20"
+}

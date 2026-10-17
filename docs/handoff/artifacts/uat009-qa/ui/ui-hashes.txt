@@ -1,0 +1,8 @@
+5528357114f9b4ed08fcaca23c622b88  01_login_overlay.png
+0c167447210b0c9e57b9fcb653b63f44  02_old_receipt_saved.png
+401073c16c8cea7140bde2c6a1351781  03_old_reopen_six_fees.png
+90e1f788e627ad24109e0cee6bd980ab  04_new_manual_cleared.png
+6dea39f68a92ffc6e5db1c0aac233c4f  05_new_saved_zero_fees.png
+cff6784a1fb0f3f9209cd9b5f2e717a5  06_old_reopen_intact.png
+673e865bee8853e8416fb6e0170bc6b6  07_race_new_manual_clean.png
+e6f0d86c8e420c11bb226d6ab00561d3  08_post_reload_clean.png

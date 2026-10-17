@@ -1,0 +1,25 @@
+{
+  "card": "UAT-009",
+  "stage": "QA",
+  "head": "7271d401965dc971fc6eb9b5cf861a748d28c1ad",
+  "conclusion": "PASS",
+  "ports": [15971, 15972],
+  "dbs": ["/tmp/uat009-qa/live.db", "/tmp/uat009-qa/xtenant.db", "/tmp/uat009-qa/qa-green.db", "/tmp/uat009-qa/qa-red.db", "/tmp/uat009-qa/qa-reg.db"],
+  "results": {
+    "tdd_red": {"ran": true, "summary": "5 failed, 8 passed", "log": "logs/red-run.log"},
+    "tdd_green": {"ran": true, "summary": "13 passed", "log": "logs/green-run.log"},
+    "api_probe_auth": {"ran": true, "summary": "9/10 PASS (1 script-side expectation artifact, superseded by xtenant probe)", "log": "evidence/qa-api-probe.json"},
+    "xtenant_probe": {"ran": true, "summary": "9/9 PASS incl. 401 no-credentials and Tenant B baseline zero-pollution", "log": "evidence/qa-xtenant-probe.json"},
+    "ui_walk": {"ran": true, "summary": "13/13 PASS, real login via UI form, HttpOnly cookie session", "log": "evidence/qa-ui-walk.json"},
+    "regression_s2_01_uat030": {"ran": true, "summary": "14 passed", "log": "logs/reg-s2-01-uat030.log"}
+  },
+  "hard_constraints": {
+    "empty_authorization_not_unauthenticated": "verified: cookie session without Authorization header -> /api/receipts 200; no credentials at all -> 401",
+    "demo_token_secret": "48-byte random hex via env, never in repo",
+    "port_isolation": "15971/15972 only; 15010 and 15100-15200 untouched; 15010 not listening before/after",
+    "db_isolation": "all DBs under /tmp/uat009-qa, no repo writes, 15010 business DB untouched",
+    "no_product_code_modified": true
+  },
+  "defects": [],
+  "notes": "AUTH=1 cross-tenant simulation channel limitation documented in report section 2.5; negative isolation evidence executed on dev header-mode instance (15972), consistent with server-side D19 tenant resolution which is stricter in AUTH=1."
+}

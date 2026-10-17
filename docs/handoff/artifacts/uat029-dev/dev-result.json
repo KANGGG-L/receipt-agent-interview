@@ -1,0 +1,64 @@
+{
+  "task": "UAT-029 选择贷项单仍被正数总额校验阻止保存",
+  "stage": "DEV",
+  "verification_mode": "MANUAL_UI",
+  "head": "7271d40",
+  "python": "/home/agentuser/receipt-agent-interview/.venv-uat009/bin/python",
+  "conclusion": "DEV_DONE_NO_CODE_CHANGE (fix already at HEAD via 364b407; RED reproduced by predicate-neutralization injection, GREEN on HEAD)",
+  "tdd": {
+    "red_baseline": {
+      "method": "git archive HEAD (demo+tests+ai_registry) to /tmp/uat029-red2; isNegativeDocForm neutralized to 'return false' (equivalent to pre-fix behavior blocking credit_note positive-total check); DB outside repo",
+      "result": "1 failed, 5 passed",
+      "key_failure": "test_01... Variant 1 had blockers: [{'id': 'err_total', 'title': '总金额必须大于 0'}] — exact card defect reproduced",
+      "log": "logs/red-baseline-pytest.log"
+    },
+    "green": {
+      "method": "HEAD 7271d40 unmodified, DB_PATH=/tmp/uat029-dev/tdd.db",
+      "result": "6 passed",
+      "log": "logs/green-tdd.log"
+    }
+  },
+  "fix_location": {
+    "review_core.js:1686-1691": "isNegativeDocForm predicate (credit_note || correction_note)",
+    "review_core.js:2898-2907": "calculateReceiptIssues err_total branch: isNegDoc allows negative total",
+    "review_core.js:2130-2131": "computeItemsAutoTotal keeps signed total for negative forms",
+    "review_core.js:3230-3246": "submitSaveEdited field validation + row-level isQtyPriceInvalid (double-negative still blocked)",
+    "backend": "no positive-total gate in api_receipt_lifecycle.py (verified by grep, matches ledger 'independent finding 1'); negative gate at contract.py:225-227 and math_engine/v2_1_0.py:24,52",
+    "fix_origin_commit": "364b407 (2026-10-16 W2 wave close-out); UAT-029 DEV/QA/UAT closed in prior environment per 02-coordinator-ledger.md"
+  },
+  "oracle": {
+    "s2_09_authoritative_row": "docs/review-2026-10/S2-ai-pipeline.md:60 (printed verbatim in report §1; contains contract.py:138 qty<=0 or unit_price<0 rejection and the CREDIT/CORRECTION negative-amount allowance)",
+    "correction_note_preexisting": "demo/app/models.py:20 CORRECTION = 'correction_note'; contract.py:119 _NEGATIVE_FORMS = (DocForm.CREDIT, DocForm.CORRECTION) — no new credit type introduced"
+  },
+  "regression": [
+    {"scope": "tests/test_fix_p0_3_negative_total_credit.py", "result": "4 passed"},
+    {"scope": "demo/tests UAT-007/008x2/009x2/030", "result": "76 passed"},
+    {"scope": "node --check demo/static/js/review_core.js", "result": "syntax OK"}
+  ],
+  "live_probe": {
+    "port": 15929,
+    "auth": "AUTH_ENABLED=0 dev-header mode (AUTH=1 cookie/CSRF chain covered by UAT-009/028 probes and TestClient 401/404 cases; empty-Authorization-not-unauthenticated constraint not re-triggered this stage — recorded as no-evidence, non-hard constraint for this card's verification surface)",
+    "steps": [
+      "credit_note negative-qty save_edited -> 200 success, math_blockers=[]",
+      "GET /api/receipt/1 -> total_amount=-10.0 round-trip",
+      "approve -> 200 success",
+      "printed_delivery_note negative total: no independent backend gate (200; rejection semantics enforced at frontend err_total + contract.validate_contract, covered by spec criterion 2)"
+    ],
+    "log": "logs/live-probe.log"
+  },
+  "negative_boundaries": {
+    "double_negative_blocked": "UI blocker err_item_num_0 (spec criterion 5) + S2-09 oracle row-level rejection",
+    "no_new_credit_type": "only pre-existing credit_note/correction_note",
+    "consumed_reversal_409": "REVERSAL_STOCK_CONSUMED preserved (spec criterion 4)",
+    "cross_tenant": "B read A -> 404; Tenant B baseline before == after (spec criterion 6)",
+    "product_code_changed": "none (git status -- demo ai_registry tests clean)"
+  },
+  "evidence_paths": [
+    "docs/handoff/artifacts/uat029-dev-report.md",
+    "docs/handoff/artifacts/uat029-dev/logs/red-baseline-pytest.log",
+    "docs/handoff/artifacts/uat029-dev/logs/green-tdd.log",
+    "docs/handoff/artifacts/uat029-dev/logs/green-regression.log",
+    "docs/handoff/artifacts/uat029-dev/logs/live-probe.log",
+    "docs/handoff/artifacts/uat029-dev/environment/cleanup.json"
+  ]
+}

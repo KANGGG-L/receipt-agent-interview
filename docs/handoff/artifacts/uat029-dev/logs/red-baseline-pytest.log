@@ -1,0 +1,210 @@
+F.....                                                                   [100%]
+=================================== FAILURES ===================================
+____________ test_01_credit_note_two_valid_variants_ui_and_backend _____________
+
+    def test_01_credit_note_two_valid_variants_ui_and_backend():
+        # 1.1 前端校验与保存逻辑验证 (Node 沙箱)
+        js_test = """
+        const results = [];
+    
+        // 变体 1: 负 amount (quantity=1, price=10, amount=-10, total=-10)
+        const var1Data = {
+            supplier_name: 'Tak Lee',
+            date: '2026-10-16',
+            total_amount: -10,
+            doc_form: 'credit_note',
+            settlement_type: 'cash',
+            items: [{
+                name: '退货死虾',
+                quantity: 1,
+                unit: '斤',
+                unit_price: 10,
+                amount: -10,
+                actual_qty: 1
+            }]
+        };
+        const issues1 = calculateReceiptIssues(var1Data);
+        const blockers1 = issues1.filter(i => i.type === 'blocker');
+        results.push({ variant: 1, blockerCount: blockers1.length, blockers: blockers1 });
+    
+        // 变体 2: 负 qty (quantity=-1, price=10, amount=-10, total=-10)
+        const var2Data = {
+            supplier_name: 'Tak Lee',
+            date: '2026-10-16',
+            total_amount: -10,
+            doc_form: 'credit_note',
+            settlement_type: 'cash',
+            items: [{
+                name: '退回多送菜心',
+                quantity: -1,
+                unit: '斤',
+                unit_price: 10,
+                amount: -10,
+                actual_qty: -1
+            }]
+        };
+        const issues2 = calculateReceiptIssues(var2Data);
+        const blockers2 = issues2.filter(i => i.type === 'blocker');
+        results.push({ variant: 2, blockerCount: blockers2.length, blockers: blockers2 });
+    
+        // 测试 saveReviewData 真实提交：构建 DOM 树并执行保存
+        document.getElementById('inpDocForm').value = 'credit_note';
+        document.getElementById('inpSupplier').value = 'Tak Lee';
+        document.getElementById('inpDate').value = '2026-10-16';
+        document.getElementById('inpTotal').value = '-10.00';
+        document.getElementById('inpSettlementType').value = 'cash';
+    
+        const tbody = document.getElementById('itemTableBody');
+        tbody.innerHTML = '';
+        const tr = document.createElement('TR');
+        const n = document.createElement('INPUT'); n.className = 'inp-name'; n.value = '退货死虾'; tr.appendChild(n);
+        const q = document.createElement('INPUT'); q.className = 'inp-qty'; q.value = '1'; tr.appendChild(q);
+        const u = document.createElement('INPUT'); u.className = 'inp-unit'; u.value = '斤'; tr.appendChild(u);
+        const p = document.createElement('INPUT'); p.className = 'inp-price'; p.value = '10'; tr.appendChild(p);
+        const a = document.createElement('INPUT'); a.className = 'inp-amount'; a.value = '-10.00'; tr.appendChild(a);
+        const aq = document.createElement('INPUT'); aq.className = 'inp-actual-qty'; aq.value = '1'; tr.appendChild(aq);
+        tbody.appendChild(tr);
+    
+        submitSaveEdited(false);
+        const payload = getSavedPayload();
+    
+        console.log(JSON.stringify({ results, payload }));
+        """
+        code, stdout, stderr = run_node_harness(js_test)
+        assert code == 0, f"Node execution failed: {stderr}"
+        data = json.loads(stdout.strip())
+>       assert data["results"][0]["blockerCount"] == 0, f"Variant 1 had blockers: {data['results'][0]['blockers']}"
+E       AssertionError: Variant 1 had blockers: [{'id': 'err_total', 'field': 'inpTotal', 'type': 'blocker', 'title': '总金额必须大于 0', 'guide': '请填写整单总金额，不能为 0 或负数。'}]
+E       assert 1 == 0
+
+tests/test_uat_029_credit_note_negative_amount_accepted.py:297: AssertionError
+=============================== warnings summary ===============================
+app/main.py:78
+  /tmp/uat029-red2/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+../../../home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: 12 warnings
+  /home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+app/main.py:85
+  /tmp/uat029-red2/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:92
+  /tmp/uat029-red2/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:98
+  /tmp/uat029-red2/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:118
+  /tmp/uat029-red2/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:124
+  /tmp/uat029-red2/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:140
+  /tmp/uat029-red2/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:166
+  /tmp/uat029-red2/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:201
+  /tmp/uat029-red2/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:231
+  /tmp/uat029-red2/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:256
+  /tmp/uat029-red2/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+app/main.py:263
+  /tmp/uat029-red2/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_029_credit_note_negative_amount_accepted.py::test_04_consumed_reversal_still_returns_409
+  /tmp/uat029-red2/demo/app/services/rag.py:24: DeprecationWarning: `langchain-community` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-community/issues/674 for details and migration guidance toward standalone integration packages.
+    from langchain_community.vectorstores import Chroma
+
+tests/test_uat_029_credit_note_negative_amount_accepted.py::test_04_consumed_reversal_still_returns_409
+  /tmp/uat029-red2/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs_tenant[tid] = Chroma(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_uat_029_credit_note_negative_amount_accepted.py::test_01_credit_note_two_valid_variants_ui_and_backend
+1 failed, 5 passed, 26 warnings in 11.88s

@@ -1,0 +1,36 @@
+{
+ "card": "DEP-HIDDEN (S4-19)",
+ "head": "7271d40",
+ "server": "127.0.0.1:15891",
+ "browser": "Hermes browser_exec CDP (Page.bringToFront / Target.activateTarget) — real visibility flip",
+ "job2": {
+  "poll_count": 16,
+  "visible_intervals_ms_before_hidden": [
+   813,
+   808,
+   806,
+   808
+  ],
+  "polls_during_hidden": [],
+  "hidden_window_ms": 12107,
+  "resume_first_poll_delay_ms": 801,
+  "resume_intervals_ms": [
+   809,
+   806,
+   806,
+   807,
+   806,
+   805,
+   806,
+   807,
+   808,
+   807
+  ]
+ },
+ "verdicts": {
+  "P1_hidden_pause": "PASS — zero /api/job polls while document.hidden=true over ~12.1s hidden window",
+  "P2_visible_interval_800ms": "PASS — visible intervals 806-813ms (target ~800ms)",
+  "P3_resume_continues_and_settles": "PASS — first poll 801ms after visibilitychange->visible; polling resumed at ~806ms cadence; loadingCard settled (hidden)"
+ },
+ "overall": "PASS"
+}

@@ -1,0 +1,1404 @@
+INFO:     Started server process [2215749]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=1、缺向量行=0、交集=0（记忆库=/tmp/uat029-qa/qa-live.db，向量库=/home/agentuser/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15919 (Press CTRL+C to quit)
+INFO:     127.0.0.1:45516 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45530 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45536 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38756 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49316 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49328 - "POST /api/receipts/manual HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:60112 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60116 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60130 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33584 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33598 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41602 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41614 - "POST /api/save_edited HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:51870 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51878 - "POST /api/save_edited HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:51880 - "POST /api/save_edited HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:51886 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34488 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34494 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34504 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40302 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40306 - "GET /api/receipt/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40316 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40324 - "POST /api/receipt/1/approve HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:40338 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40352 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40366 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40368 - "GET /openapi.json HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56930 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56946 - "GET /api/receipt/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53142 - "POST /api/auth/login HTTP/1.1" 200 OK
+/home/agentuser/receipt-agent-interview/demo/app/services/rag.py:222: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+  _vs = Chroma(
+INFO:     127.0.0.1:53158 - "POST /api/receipt/1/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53166 - "GET /api/receipt/5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53168 - "POST /api/receipt/4/approve HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:52424 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52434 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52446 - "POST /api/receipt/6/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42678 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42694 - "POST /api/receipt/6/reverse HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:42706 - "POST /api/receipt/6/reverse HTTP/1.1" 422 Unprocessable Entity
+INFO:     127.0.0.1:55832 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35950 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35962 - "POST /api/receipt/6/reverse HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:35974 - "POST /api/receipt/6/reverse HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:41006 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41010 - "POST /api/receipt/6/reverse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41018 - "POST /api/receipt/6/reverse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53132 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59768 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59782 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38578 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38594 - "GET /api/receipt/1 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:38610 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:38622 - "POST /api/save_edited HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36610 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36616 - "POST /api/receipt/1/approve HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:36626 - "POST /api/receipt/1/reverse HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:36642 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37846 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37850 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37846 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37850 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37850 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37846 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37846 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37850 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37850 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37846 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37822 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37846 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37822 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37856 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37846 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37822 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37822 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37846 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37856 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37850 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37830 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37822 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37846 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37856 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37822 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37846 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37856 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:37856 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37856 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37846 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37856 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37822 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37866 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37850 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37830 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37846 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37856 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37856 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37846 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:37856 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:35358 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35386 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35380 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35386 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35380 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35380 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35386 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35380 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35386 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35380 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35386 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35366 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35366 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35386 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35366 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35358 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35398 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35366 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35386 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35358 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35398 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35358 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35366 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35386 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35398 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35360 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35380 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35358 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35366 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35386 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35398 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35380 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35398 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35386 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35366 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35358 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35360 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35398 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:35398 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35360 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:35360 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:35360 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58598 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58588 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58588 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58588 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58592 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58592 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58588 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58592 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58598 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58588 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58580 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58590 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58598 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58604 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58580 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58588 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58590 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58598 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58592 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58580 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58588 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58590 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58590 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58588 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58588 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58588 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58604 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58588 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58590 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58580 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58592 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44254 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44254 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44254 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44254 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44208 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44254 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44208 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44214 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44208 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44254 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44214 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44208 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44214 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44254 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44230 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44254 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44208 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44254 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44214 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44230 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44208 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44238 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44208 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44230 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44214 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44254 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44200 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44238 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44208 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44214 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44254 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44200 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44230 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44238 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44214 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:44214 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:44214 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44214 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44200 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44238 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44230 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51956 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51956 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51956 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51956 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51940 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51940 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51940 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51940 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51956 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51940 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51928 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51948 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:51944 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51948 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51944 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51928 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51932 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51940 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51944 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51928 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51948 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51948 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51928 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:51944 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:51944 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51944 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51928 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51948 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51940 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45090 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45090 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45058 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45090 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45090 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45080 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45042 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45058 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45080 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45042 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45080 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45058 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45042 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45080 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45042 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45080 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45072 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45058 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45090 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45042 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45080 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45072 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45058 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45090 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45042 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45080 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45072 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45058 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:45102 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45072 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45080 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:45080 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45042 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45102 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45080 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45072 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33932 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33884 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33884 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33916 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33884 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33932 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33900 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33916 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33870 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33878 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33932 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33884 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33870 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33916 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33900 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33916 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33916 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:33916 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33916 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33900 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33870 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33884 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58678 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58638 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58678 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58638 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58652 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58632 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58632 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58652 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58638 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58678 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58632 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58652 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58678 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58638 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58652 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58688 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58666 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58678 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58638 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58632 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58652 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58688 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58632 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58638 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58678 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58666 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58652 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:58652 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58652 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:58652 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:58652 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58652 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58638 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58666 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58678 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33222 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33222 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33222 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33222 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33222 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33222 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33210 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33210 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33212 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33210 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33198 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33228 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33212 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33234 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33210 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33210 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33210 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33234 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33212 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33222 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33228 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33198 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33210 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33234 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33234 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33210 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33210 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:33210 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33210 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33228 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33234 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33198 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36220 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36216 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36218 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36216 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36216 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36218 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36218 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36216 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36222 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36218 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36216 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36238 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36218 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36226 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36220 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:36216 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36238 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36226 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36218 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36220 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36216 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36238 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36226 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36218 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36222 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36222 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:36222 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:36222 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36226 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36222 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36238 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36252 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36246 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36246 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36252 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36218 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34850 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34850 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34850 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34850 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34850 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34894 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34840 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34850 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34840 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34850 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34880 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34840 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34894 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34906 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34840 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34850 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:34866 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34906 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34894 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34840 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34850 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34866 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34880 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34840 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34906 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34906 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34840 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:34894 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:34894 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34894 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34906 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34880 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34840 - "POST /api/track HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55660 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55644 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55634 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55644 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55634 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55660 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55634 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55644 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55660 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55634 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55680 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55644 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55656 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55634 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55660 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55676 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55644 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55680 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55634 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55660 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55676 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55644 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55680 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55656 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55634 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55634 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55656 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55656 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:55656 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55680 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55656 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55644 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55634 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42524 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42524 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42524 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42542 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42524 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42500 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42500 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42524 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42500 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42536 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42500 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42536 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42550 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42524 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42542 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42524 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42536 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42550 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42508 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42500 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:42550 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42508 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42508 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:42508 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42500 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42508 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42542 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42550 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/js/review_core.js?v=6baff02c07 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/js/upload.js?v=7748b5e2b1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /static/js/workbench_queue.js?v=5f216dc369 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /static/js/dish_consumption.js?v=95001bdee2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "GET /static/js/review_ux.js?v=8d55593443 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33560 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33550 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33600 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33560 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33600 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33600 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33560 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33578 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33600 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33560 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33600 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33578 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33550 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33578 - "GET /api/inventory HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33594 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33560 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33572 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33550 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33594 - "GET /api/departments HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33600 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33560 - "GET /api/payables HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33578 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33572 - "GET /api/dishes/daily_consumption?date=2026-10-18 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33550 - "GET /api/dishes?status=active HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33594 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33572 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33578 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:33578 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33572 - "GET /api/inventory?stock=low HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:33572 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:33572 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33550 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33572 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33578 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "POST /api/receipt/2/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34064 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34064 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34078 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33594 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2215749]

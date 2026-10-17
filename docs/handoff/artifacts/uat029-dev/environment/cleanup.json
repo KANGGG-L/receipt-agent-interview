@@ -1,0 +1,37 @@
+{
+  "recorded_at": "2026-10-18T00:20:00+08:00",
+  "ports": {
+    "15929": {
+      "purpose": "live API probe (AUTH_ENABLED=0 dev-header mode)",
+      "status": "released",
+      "verified": "ss -ltn shows no 15929 listener after SIGTERM; 15010 not listening before or after"
+    }
+  },
+  "forbidden_ports_touched": ["none: 15010 / 15100-15200 / 15930 / 15944 / 15950 / 15951 / 15961 / 15962 / 15971 / 15972 all untouched"],
+  "processes": {
+    "uvicorn_instances_started": 1,
+    "uvicorn_instances_running": 0,
+    "shutdown": "SIGTERM to recorded pid; port-free re-verified via ss -ltn"
+  },
+  "databases": [
+    {"path": "/tmp/uat029-dev/tdd.db", "purpose": "GREEN pytest DB", "action": "left in /tmp (outside repo)"},
+    {"path": "/tmp/uat029-dev/live.db", "purpose": "live probe DB", "action": "left in /tmp (outside repo)"},
+    {"path": "/tmp/uat029-dev/reg.db .. reg4.db", "purpose": "regression pytest DBs", "action": "left in /tmp"},
+    {"path": "/tmp/uat029-red/red.db", "purpose": "b0e6b1e historical-baseline run DB", "action": "left in /tmp"},
+    {"path": "/tmp/uat029-red2/red.db", "purpose": "RED baseline (predicate-neutralized HEAD snapshot) DB", "action": "left in /tmp; extracted snapshot tree also under /tmp/uat029-red2"}
+  ],
+  "repo_files_touched": {
+    "product_code": [],
+    "test_code": [],
+    "docs": [
+      "docs/handoff/artifacts/uat029-dev-report.md",
+      "docs/handoff/artifacts/uat029-dev/dev-result.json",
+      "docs/handoff/artifacts/uat029-dev/logs/*",
+      "docs/handoff/artifacts/uat029-dev/environment/cleanup.json"
+    ],
+    "note": "Zero product or test code modification: fix already present at HEAD 7271d40 (originating commit 364b407). DEV stage reproduced RED via neutralizing isNegativeDocForm in an out-of-repo snapshot and verified GREEN on HEAD plus live probe."
+  },
+  "live_demo_db_15010": "not touched; 15010 not listening before or after (business DB untouched)",
+  "demo_token_secret": "not required (AUTH_ENABLED=0 probe); no secret written to disk or repo",
+  "tenant_b_data": "no tenant B (or any live business) data touched; cross-tenant checks ran in isolated test DB via TestClient"
+}

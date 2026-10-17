@@ -1,0 +1,32 @@
+INFO:     Started server process [2206410]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15930 (Press CTRL+C to quit)
+INFO:     127.0.0.1:54698 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54700 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54706 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54720 - "POST /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54730 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54744 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54748 - "GET /api/suppliers?include_inactive=1&q=Vendor_B_uat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54758 - "GET /api/suppliers?q=Vendor_B_uat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54764 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54774 - "GET /api/suppliers?include_inactive=1&q=Vendor_B_uat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54782 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54798 - "GET /api/suppliers?include_inactive=1&q=Vendor_B_uat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54800 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54814 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54816 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54818 - "GET /api/suppliers?include_inactive=1&q=Vendor_B_uat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54834 - "POST /api/suppliers HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54846 - "POST /api/suppliers HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54852 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:54858 - "PATCH /api/suppliers/1 HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:54864 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54878 - "PATCH /api/suppliers/1 HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:54888 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54892 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2206410]

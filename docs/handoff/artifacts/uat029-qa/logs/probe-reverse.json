@@ -1,0 +1,1 @@
+["reverse w/ reason v2: | 200 | {\"status\": \"success\", \"already_reversed\": false, \"version\": 3, \"reversed_lines\": 1, \"msg\": \"单据 #6 已冲销，库存已扣回。\"}", "reverse again (expect 409): | 200 | {\"status\": \"success\", \"already_reversed\": true, \"version\": 3, \"msg\": \"单据 #6 之前已经冲销过了，库存没有再变动。\"}"]

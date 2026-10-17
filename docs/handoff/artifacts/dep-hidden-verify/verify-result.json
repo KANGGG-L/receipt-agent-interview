@@ -1,0 +1,12 @@
+{
+ "card": "DEP-HIDDEN (S4-19)",
+ "head": "7271d40",
+ "conclusion": "PASS",
+ "tests_run": "Real-browser E2E on isolated uvicorn 127.0.0.1:15891 (AUTH_ENABLED=1, fresh DB in /tmp/dep-hidden): UI upload via #receiptFile change event -> pollReceiptJob; real visibility flip via CDP Target.activateTarget(newtab)/Page.bringToFront; /api/job polls captured via PerformanceObserver.",
+ "propositions": {
+  "P1 hidden pause": "PASS — 0 polls during 12.1s real hidden window (document.hidden=true, real visibilitychange)",
+  "P2 visible ~800ms": "PASS — visible intervals 806-813ms",
+  "P3 resume + settle": "PASS — first poll 801ms after visible; resumed ~806ms cadence; loadingCard settled"
+ },
+ "product_change": "None"
+}

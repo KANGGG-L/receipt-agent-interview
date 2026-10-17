@@ -1,0 +1,61 @@
+INFO:     Started server process [2205452]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15944 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51582 - "GET /api/health HTTP/1.1" 200 OK
+[PASS] step0 server health on 15944 after 1s
+INFO:     127.0.0.1:51588 - "POST /api/auth/login HTTP/1.1" 200 OK
+[PASS] step0.1 owner login status=200
+[PASS] step0.2 cookies set: ['receipt_session']
+INFO:     127.0.0.1:51592 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step0.3 baseline suppliers=0
+INFO:     127.0.0.1:51604 - "POST /api/suppliers HTTP/1.1" 200 OK
+[PASS] step1 create Vendor_A_qa -> 200 {'status': 'success', 'id': 1}
+INFO:     127.0.0.1:51606 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+[PASS] step2 rename to Vendor_B_qa -> 200 {'status': 'success'}
+INFO:     127.0.0.1:51614 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+[PASS] step3 deactivate -> 200 {'status': 'success'}
+INFO:     127.0.0.1:51630 - "GET /api/suppliers?include_inactive=1&q=Vendor_B_qa HTTP/1.1" 200 OK
+[PASS] step4 showInactive+q: name=Vendor_B_qa active=0
+[PASS] step5 phone preserved: 12345678
+INFO:     127.0.0.1:51640 - "GET /api/suppliers HTTP/1.1" 200 OK
+[PASS] step6 inactive not in active list
+INFO:     127.0.0.1:51646 - "GET /api/suppliers?include_inactive=1&q=Vendor_A_qa HTTP/1.1" 200 OK
+[PASS] step7 old name no longer matches (renamed), id reference stable via step4: []
+INFO:     127.0.0.1:51648 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+[PASS] step8 patch notes only -> 200
+INFO:     127.0.0.1:51660 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step9 omit patch: name=Vendor_B_qa phone=12345678
+INFO:     127.0.0.1:51664 - "PATCH /api/suppliers/1 HTTP/1.1" 200 OK
+[PASS] step10 explicit clear notes/phone -> 200
+INFO:     127.0.0.1:51676 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step11 explicit clear: name=Vendor_B_qa phone='' notes=''
+INFO:     127.0.0.1:51684 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+[PASS] step12 PATCH name='' -> 400
+INFO:     127.0.0.1:51686 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+[PASS] step12 PATCH name='   ' -> 400
+INFO:     127.0.0.1:51692 - "PATCH /api/suppliers/1 HTTP/1.1" 400 Bad Request
+[PASS] step12 PATCH name=None -> 400
+INFO:     127.0.0.1:51696 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step13 name intact after 400s: Vendor_B_qa
+INFO:     127.0.0.1:51698 - "POST /api/suppliers HTTP/1.1" 400 Bad Request
+[PASS] step14 create name='' -> 400
+INFO:     127.0.0.1:51714 - "POST /api/suppliers HTTP/1.1" 400 Bad Request
+[PASS] step14 create name='   ' -> 400
+INFO:     127.0.0.1:51716 - "GET /api/suppliers HTTP/1.1" 401 Unauthorized
+[PASS] step15 no-cookie GET with empty Authorization -> 401
+INFO:     127.0.0.1:51732 - "POST /api/auth/login HTTP/1.1" 200 OK
+[PASS] step16 staff login -> 200
+INFO:     127.0.0.1:51742 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51744 - "PATCH /api/suppliers/1 HTTP/1.1" 403 Forbidden
+[PASS] step17 staff patch owner-domain supplier -> 403 (rejected)
+INFO:     127.0.0.1:51752 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step18 staff tenant view unchanged by denied write
+INFO:     127.0.0.1:51758 - "GET /api/suppliers?include_inactive=1 HTTP/1.1" 200 OK
+[PASS] step19 baseline drift for other suppliers: {}
+[PASS] step20 SQL row: (1, 'Vendor_B_qa', 0, '', '')
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [2205452]
+[PASS] step21 port 15944 released

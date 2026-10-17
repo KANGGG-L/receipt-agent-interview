@@ -1,0 +1,54 @@
+{
+  "card": "UAT-028",
+  "stage": "UAT",
+  "conclusion": "PASS",
+  "date": "2026-10-17",
+  "head": "7271d40",
+  "mode": "AUTO_API",
+  "python": "/home/agentuser/receipt-agent-interview/.venv-uat009/bin/python",
+  "environment": {
+    "port": 15930,
+    "db": "/tmp/uat028-uat/uat-live.db",
+    "auth_enabled": true,
+    "demo_token_secret": "48-byte random hex via env only"
+  },
+  "probe_summary": "25/25 PASS",
+  "checks": [
+    {"step": "owner login 200 (HttpOnly receipt_session cookie)", "pass": true},
+    {"step": "baseline supplier list ok (fresh DB, 0 suppliers)", "pass": true},
+    {"step": "create Vendor_A_uat 200", "pass": true},
+    {"step": "rename to Vendor_B_uat 200", "pass": true},
+    {"step": "deactivate via PATCH active=0 200", "pass": true},
+    {"step": "showInactive (include_inactive=1&q=Vendor_B_uat): name=Vendor_B_uat, active=0, contact_phone=12345678 retained, same id", "pass": true},
+    {"step": "default list excludes deactivated row", "pass": true},
+    {"step": "PATCH {notes} omitting name/phone: name/phone unchanged, notes set (omit semantics)", "pass": true},
+    {"step": "PATCH {notes:'', contact_phone:''}: explicit clear honored, name kept (explicit-clear semantics)", "pass": true},
+    {"step": "PATCH name='' / '   ' / null -> 400 each, name intact afterwards", "pass": true},
+    {"step": "create name='' / '   ' -> 400 (creation strictness not loosened)", "pass": true},
+    {"step": "no cookie + empty Authorization GET -> 401 (empty Authorization is not unauthenticated exemption)", "pass": true},
+    {"step": "cookie write without X-Requested-With -> 403 CSRF_REJECTED", "pass": true},
+    {"step": "staff login, staff PATCH -> 403 role boundary", "pass": true},
+    {"step": "owner baseline drift: only the probe row added (tenant isolation / no cross-tenant mutation)", "pass": true},
+    {"step": "SQL direct read: (1, 'Vendor_B_uat', 0, '', '') name retained in DB", "pass": true},
+    {"step": "port 1593x released after probe", "pass": true}
+  ],
+  "source_self_check": {
+    "note": "file:line originals printed and verified against HEAD before probing",
+    "items": [
+      "demo/app/api_suppliers.py:86 name: Optional[str] = None",
+      "demo/app/api_suppliers.py:102-106 _optional_text: patch-omitted returns None (not into fields); null/empty written as empty string",
+      "demo/app/api_suppliers.py:124 name enters fields only when explicitly provided, non-null, non-blank",
+      "demo/app/api_suppliers.py:131-132 create path rejects empty/blank name with 400",
+      "demo/app/api_suppliers.py:154-155 patch path rejects explicit empty/blank/null name with 400",
+      "demo/static/js/supplier_archive.js:224 body: JSON.stringify({ active }) - deactivate request carries only active",
+      "demo/static/js/supplier_archive.js:72 deactivated row renders fallback (unnamed supplier) for empty name"
+    ]
+  },
+  "artifacts": {
+    "logs": "docs/handoff/artifacts/uat028-uat/logs/",
+    "probe_script": "docs/handoff/artifacts/uat028-uat/logs/probe.py",
+    "probe_result": "docs/handoff/artifacts/uat028-uat/logs/probe-result.json",
+    "server_log": "docs/handoff/artifacts/uat028-uat/logs/live-probe.log"
+  },
+  "verdict": "PASS: all core acceptance criteria met; negative boundaries not loosened; tenant/role isolation effective."
+}

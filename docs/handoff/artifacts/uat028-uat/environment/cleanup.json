@@ -1,0 +1,36 @@
+{
+  "recorded_at": "2026-10-17T23:50:00",
+  "stage": "UAT (independent user-perspective acceptance)",
+  "head": "7271d40",
+  "ports": {
+    "15930": {
+      "purpose": "UAT live API probe (AUTH_ENABLED=1, isolated /tmp/uat028-uat/uat-live.db)",
+      "status": "released",
+      "verified": "ss -ltn shows no 1593x listener after probe; zero uvicorn processes remain"
+    }
+  },
+  "forbidden_ports_touched": [],
+  "processes": {
+    "uvicorn_instances_started": 1,
+    "uvicorn_instances_running": 0
+  },
+  "databases": [
+    {
+      "path": "/tmp/uat028-uat/uat-live.db",
+      "purpose": "UAT live probe DB (fresh file, not shared with DEV/QA fixtures)",
+      "action": "left in /tmp (outside repo); no repo DB touched"
+    }
+  ],
+  "repo_files_touched": {
+    "product_code": [],
+    "test_code": [],
+    "docs": [
+      "docs/handoff/artifacts/uat028-uat-report.md",
+      "docs/handoff/artifacts/uat028-uat/*"
+    ],
+    "note": "No product or test code modified; UAT ran against HEAD 7271d40 as-is."
+  },
+  "live_demo_db_15010": "not touched; 15010 not listening before or after",
+  "demo_token_secret": "random 48-byte hex generated per-run via env only, never written to disk or repo",
+  "environment_debt_note": "Inherited DB_PATH/RAG_DIR env vars were explicitly unset before server start; no DEV/QA fixture reused."
+}

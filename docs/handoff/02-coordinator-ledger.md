@@ -1327,3 +1327,20 @@ QA 自行补了两项提权验证：未认证访问 401、伪造租户头 404，
 - 遗留另卡：O1 实收 0 toast 文案；E1 `demo/.rag_chroma` 测试夹具；N1 前端 `currentRole` 未定义；N2 归 UAT-029；N3 QA 时间戳疑误标。
 - **下一原子任务：UAT-009 DEV（续）**，其后 UAT-028 -> UAT-029；DEP-HIDDEN 仍 BLOCKED。
 - 密钥位置不变：`/home/box/.config/receipt-agent/model.env`（未入库）。
+
+## 2026-10-17 23:1x UTC+8 云端接手（本机）
+- 已拉取 origin/main 7271d40 并清理全部本地未跟踪产物（git clean -fdx，含 40-52 编号目录/venv/db/.env）。
+- 用户提供临时模型 key（discovery-api.intern-ai.org.cn/v1, deepseek-v4-flash-vision），已写入 /home/agentuser/.config/receipt-agent/model.env（600，勿入库）。
+- UAT-009 DEV 闭环复核：TDD RED（b0e6b1e 前端，5 failed/8 passed）-> GREEN（HEAD 前端，13 passed），证据 artifacts/uat009-dev/dev-report.md；checklist 更新为 [DEV_DONE_PENDING_QA]。
+- 下一步：派 UAT-009 QA -> UAT（全新隔离端口/DB/fixture），然后 UAT-028、UAT-029。
+- UAT-009 独立 QA PASS（2026-10-17 23:4x，subagent 2464s）：隔离端口 15971/15972、独立 DB；AUTH=1 真实登录 + HttpOnly Cookie；UI walk 13/13、跨租户探针 9/9（AUTH=1 预置账号限制已在报告 2.5 留档）、回归 S2-01+UAT-030 14 passed、行号引用逐条自核。报告 artifacts/uat009-qa-report.md。下一门禁：UAT-009 UAT。
+- UAT-009 独立 UAT PASS（2026-10-17 23:1x，隔离 15961/15962、AUTH=1 真实登录、独立 DB/fixture；UI walk 13/13、跨租户 9/9、行号自核、cleanup.json 已写）。UAT-009 三阶段闭环 [DONE] PASS。下一卡：UAT-028。
+- UAT-028 DEV DONE：修复已在 HEAD（364b407 api_suppliers.py _optional_text），无改码；TDD 红 3f/1p -> 绿 4p、回归 21p、15951 AUTH=1 探针 19/19；报告 artifacts/uat028-dev-report.md。下一门禁：UAT-028 QA。
+- UAT-028 独立 QA PASS（2026-10-17 23:4x，隔离 15944、独立 DB、AUTH=1；活体探针 28/28：正向生命周期/省略 vs 显式清空/无效 name 400/401/403 跨租户/租户基线零漂移/SQL 读回；行号自核与 DEV 一致；探针自身首轮 2 处断言写错已修正复跑，产品行为两轮一致）。下一门禁：UAT-028 UAT。
+- UAT-028 独立 UAT PASS（2026-10-17 23:5x，隔离 15930、AUTH=1、独立 DB；探针 25/25，行号自核，cleanup 已写）。UAT-028 三阶段闭环 [DONE] PASS。下一卡：UAT-029（前置 008/009 均已闭环）。
+- UAT-029 DEV DONE：修复已在 HEAD 364b407（isNegativeDocForm + err_total 放行），无改码；TDD 红 1f/5p -> 绿 6p、回归 76p、15929 活体探针；AUTH=1 约束未触发登记空证。下一门禁：UAT-029 QA（建议 AUTH=1 补触发 cookie/CSRF 约束）。
+- UAT-029 独立 QA PASS（2026-10-18 00:2x，隔离 15919 AUTH=1 实登录补齐 DEV 空证：401/HttpOnly/CSRF 403；UI 真实保存+approve 全链路、双变体、purchase 负额拒、双负拒、冲销防重；观察项：二次 reverse 幂等 200 而非 409，非 FAIL 已留档；回归 26p）。下一门禁：UAT-029 UAT。
+- UAT-029 独立 UAT PASS（2026-10-18 00:5x，隔离 15903 AUTH=1；API 26 步 + UI 8 步 + Node vm 前端门禁双证 + 回归 86p；OBS-1 幂等 200 判 PASS 留档，OBS-2 手工单入口残留门禁待裁决）。UAT-029 三阶段闭环 [DONE] PASS。
+- 阶段小结（2026-10-18 00:5x）：本云端接手累计闭环 UAT-009/028/029 三张卡，45 卡 44 闭环（43 PASS + CLOSE-139 裁决 + DEP-HIDDEN BLOCKED）；待用户确认后 commit+push 本轮产物。
+- DEP-HIDDEN 真实验证 PASS（2026-10-18 02:0x，隔离 15891 AUTH=1：真实 CDP visibility 翻转，P1/P2/P3 三命题全过，无 mock 无改码，报告 artifacts/dep-hidden-verify-report.md）。BLOCK 解除，45/45 全闭环；CLOSE-139 最后 blocker 消除，amendment 待补。待用户确认 commit+push。
+- CLOSE-139 amendment 补写（2026-10-18 02:1x）：DEP-HIDDEN 从活跃 blocker 移除，裁决更新为 ADJUDICATED_NO_ACTIVE_BLOCKERS，文档 artifacts/close139-amendment-dep-hidden.md；checklist 同步。待 commit+push。
