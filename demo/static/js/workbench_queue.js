@@ -281,6 +281,15 @@ function renderWorkbenchQueueTable(opts) {
 let _workbenchOpenSeq = 0;
 let _pendingWorkbenchSwitchTarget = null;  // AC-06-04: 保存后待切换的目标单据
 
+// UAT-009（2026-10-17 复验）：作废尚未返回的「打开单据」请求。新建手工单时调用，
+// 防止点「继续复核」后立刻点「新建手工单」，旧单详情迟到回包把旧单六项费用与
+// receipt_id 重新灌进新单（随后保存会改写旧单）。
+function invalidatePendingWorkbenchOpen() {
+    _workbenchOpenSeq++;
+    _pendingWorkbenchSwitchTarget = null;
+}
+window.invalidatePendingWorkbenchOpen = invalidatePendingWorkbenchOpen;
+
 // AC-03-02: 两次点击继续——直接从首页打开任一未完成任务至工作台
 function openReceiptInWorkbench(receiptId, silent = false, _guarded = false) {
     if (!receiptId) return;

@@ -1,0 +1,13 @@
+phase=uat008-dev port=15180 ts_utc=2026-10-17T12:38:48Z db=/workspace/.uat008-dev-env/uat008-dev.db
+15010: FREE_RESERVED (not listening)
+15180: free
+git_head=b0e6b1e
+ M demo/app/api_receipts.py
+ M demo/app/db.py
+ M demo/app/money.py
+ M demo/app/services/inventory.py
+ M demo/app/services/receipt_utils.py
+ M demo/static/js/review_core.js
+ M demo/static/js/review_ux.js
+?? demo/tests/test_uat_008_actual_qty_normalization.py
+uvicorn_pid=29002 listen_pid=29002

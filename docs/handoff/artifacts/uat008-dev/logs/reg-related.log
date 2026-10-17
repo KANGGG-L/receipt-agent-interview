@@ -1,0 +1,6 @@
+$ pytest demo/tests/test_uat_029_credit_note_negative_amount_accepted.py demo/tests/test_uat_007_ledger_qty_sign.py demo/tests/test_uat_009_new_manual_receipt_clears_fees.py demo/tests/test_b1_platform.py demo/tests/test_p_ai_pipeline_fixes.py tests/test_gap6_strikethrough_notes.py tests/test_gap3_discount_deposit_math.py tests/test_fix_p0_3_negative_total_credit.py
+........................................................................ [ 44%]
+........................................................................ [ 89%]
+.................                                                        [100%]
+161 passed in 70.54s (0:01:10)
+pytest_exit=0

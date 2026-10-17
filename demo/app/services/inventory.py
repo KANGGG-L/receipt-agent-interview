@@ -163,9 +163,11 @@ def apply_receipt_to_inventory(row, tenant_id=None):
                 _alias_ok += 1
             else:
                 _alias_skip[_alias_err] = _alias_skip.get(_alias_err, 0) + 1
-        _actual = it.get("actual_qty")
-        if _actual is not None and str(_actual).strip() != "":
-            _in_qty = float(_actual)
+        # UAT-008：与保存门禁/落库同一归一口径（None/空白 = 按票面数量；有效 0 = 入 0）
+        from app import money as _money
+        _actual = _money.optional_qty(it.get("actual_qty"), strict=False)
+        if _actual is not None:
+            _in_qty = _actual
             _unit_price = float(it.get("unit_price", 0) or 0)
             _amount = round(_in_qty * _unit_price, 2)
         else:

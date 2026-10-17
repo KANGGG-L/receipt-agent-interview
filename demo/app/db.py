@@ -3011,9 +3011,9 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
             raw_name = row.pop("raw_name", None)
             raw_unit = row.pop("raw_unit", None)
             is_void = 1 if row.pop("is_void", 0) else 0
-            actual_qty = row.pop("actual_qty", None)
-            if actual_qty is not None:
-                actual_qty = _money.qty(actual_qty)
+            # UAT-008：""/空白 = 未填（None），不再经 _to_decimal 伪造成有效 0；
+            # 有效 0 保留为 0.0；非法值兜底 None（API 入口已先行 422 拒绝）。
+            actual_qty = _money.optional_qty(row.pop("actual_qty", None), strict=False)
             if row.get("amount") is not None:
                 row["amount"] = _money.money(row["amount"])
             if row.get("unit_price") is not None:

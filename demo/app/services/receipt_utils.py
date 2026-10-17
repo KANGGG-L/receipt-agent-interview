@@ -1088,9 +1088,11 @@ def compute_gate_issues(row, items):
             doc = DocForm(row.doc_form) if row.doc_form else DocForm.PRINTED
         except ValueError:
             doc = DocForm.PRINTED
+        from app import money as _money
         parsed = []
         for it in items or []:
-            actual_qty = it.get("actual_qty")
+            # UAT-008：与保存/入账同一归一口径
+            actual_qty = _money.optional_qty(it.get("actual_qty"), strict=False)
             parsed.append(ReceiptItem(
                 name=str(it.get("name", "") or ""),
                 qty=float(it.get("quantity", 0) or 0),
@@ -1098,7 +1100,7 @@ def compute_gate_issues(row, items):
                 unit_price=float(it.get("unit_price", 0) or 0),
                 amount=float(it.get("amount", 0) or 0),
                 is_void=bool(it.get("is_void", 0) or 0),
-                actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None)))
+                actual_qty=actual_qty))
         if not parsed:
             return []
         data = ReceiptData(

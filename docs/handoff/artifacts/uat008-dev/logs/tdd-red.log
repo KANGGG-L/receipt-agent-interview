@@ -1,0 +1,136 @@
+# product files reverted to HEAD b0e6b1e via git stash (demo/app, demo/static); new test file kept
+?? demo/tests/test_uat_008_actual_qty_normalization.py
+?? docs/handoff/artifacts/uat008-dev/
+?? docs/handoff/artifacts/uat008-shared/probe_actual_qty_normalization_api.py
+?? docs/handoff/artifacts/uat008-shared/probe_actual_qty_ui.py
+$ pytest demo/tests/test_uat_008_actual_qty_normalization.py
+FFFFFFFFFFFFFFFFFFFFFFFFFF............FFF...FF                           [100%]
+=================================== FAILURES ===================================
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:87: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AttributeError: module 'app.money' has no attribute 'optional_qty'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:98: AttributeError: module 'app.money' has no attribute 'optional_qty'
+E   AssertionError: 空白实收 = 未填，落库必须是 None，不能伪造成有效 0
+    assert 0.0 is None
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:115: AssertionError: 空白实收 = 未填，落库必须是 None，不能伪造成有效 0
+E   AssertionError: 空白实收 = 未填，落库必须是 None，不能伪造成有效 0
+    assert 0.0 is None
+------------------------------ Captured log call -------------------------------
+WARNING  api_receipts:api_receipts.py:1424 [WARN] save_edited 算术门禁重算失败: could not convert string to float: '   '
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:115: AssertionError: 空白实收 = 未填，落库必须是 None，不能伪造成有效 0
+E   AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+    assert 200 == 422
+     +  where 200 = <Response [200 OK]>.status_code
+------------------------------ Captured log call -------------------------------
+WARNING  api_receipts:api_receipts.py:1424 [WARN] save_edited 算术门禁重算失败: could not convert string to float: 'abc'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:129: AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+E   AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+    assert 200 == 422
+     +  where 200 = <Response [200 OK]>.status_code
+------------------------------ Captured log call -------------------------------
+WARNING  api_receipts:api_receipts.py:1424 [WARN] save_edited 算术门禁重算失败: [<class 'decimal.InvalidOperation'>]
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:129: AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+E   AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+    assert 200 == 422
+     +  where 200 = <Response [200 OK]>.status_code
+------------------------------ Captured log call -------------------------------
+WARNING  api_receipts:api_receipts.py:1424 [WARN] save_edited 算术门禁重算失败: [<class 'decimal.InvalidOperation'>]
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:129: AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+E   AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+    assert 200 == 422
+     +  where 200 = <Response [200 OK]>.status_code
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:129: AssertionError: {"status":"success","id":1,"receipt_id":1,"version":1,"math_blockers":[],"status_after":"edited"}
+E   AssertionError: 保存门禁与入账门禁结论不一致: actual='' total=22.5 save=200 approve=422 {"status":"error","code":"APPROVAL_BLOCKED","msg":"单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。","blockers":["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"]}
+    assert True == False
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:211: AssertionError: 保存门禁与入账门禁结论不一致: actual='' total=22.5 save=200 approve=422 {"status":"error","code":"APPROVAL_BLOCKED","msg":"单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。","blockers":["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"]}
+E   AssertionError: 保存门禁与入账门禁结论不一致: actual='' total=12.5 save=422 approve=200 {"status":"success","version":2,"needs_review":false}
+    assert False == True
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:211: AssertionError: 保存门禁与入账门禁结论不一致: actual='' total=12.5 save=422 approve=200 {"status":"success","version":2,"needs_review":false}
+E   AssertionError: 保存门禁与入账门禁结论不一致: actual='  ' total=22.5 save=200 approve=422 {"status":"error","code":"APPROVAL_BLOCKED","msg":"单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。","blockers":["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"]}
+    assert True == False
+------------------------------ Captured log call -------------------------------
+WARNING  api_receipts:api_receipts.py:1424 [WARN] save_edited 算术门禁重算失败: could not convert string to float: '  '
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:211: AssertionError: 保存门禁与入账门禁结论不一致: actual='  ' total=22.5 save=200 approve=422 {"status":"error","code":"APPROVAL_BLOCKED","msg":"单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。","blockers":["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"]}
+E   AssertionError: stdout=[{"actual":null,"total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"undefined","total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"","total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"   ","total":22.5,"expectIssue":false,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":false},{"actual":0,"total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":"0","total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":" 0 ","total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":0,"total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":0,"total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"0","total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":" 0 ","total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"   ","total":12.5,"expectIssue":true,"guide":null,"ok":false},{"actual":null,"total":12.5,"expectIssue":true,"guide":"明细各项金额加总 ($22.50) 与整单总金额 ($12.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true}]
+       stderr=
+    assert 2 == 0
+     +  where 2 = CompletedProcess(args=['node', '-e', "\n    const fs = require('fs');\n    const src = fs.readFileSync('demo/static/js...ctIssue":true,"guide":"明细各项金额加总 ($22.50) 与整单总金额 ($12.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true}]\n', stderr='').returncode
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:267: AssertionError: stdout=[{"actual":null,"total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"undefined","total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"","total":22.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"   ","total":22.5,"expectIssue":false,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":false},{"actual":0,"total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":"0","total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":" 0 ","total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":0,"total":22.5,"expectIssue":true,"guide":"明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true},{"actual":0,"total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"0","total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":" 0 ","total":12.5,"expectIssue":false,"guide":null,"ok":true},{"actual":"   ","total":12.5,"expectIssue":true,"guide":null,"ok":false},{"actual":null,"total":12.5,"expectIssue":true,"guide":"明细各项金额加总 ($22.50) 与整单总金额 ($12.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。","ok":true}]
+E   AssertionError: assert 'function computeItemsAutoTotal()' in '// demo/static/js/review_core.js\n// 复核核心：单位滑动、供应商 Combobox、SKU 内联指定、Prefill 渲染与动态表格编辑、\n// 附加费用/手写注记动态行、结算与付款标记、复核旗标...back;\n    window.submitArcFeedback = submitArcFeedback;\n    window._syncFeedbackBadge = _syncFeedbackBadge;\n}\n\n\n'
+/workspace/receipt-agent-interview/demo/tests/test_uat_008_actual_qty_normalization.py:279: AssertionError: assert 'function computeItemsAutoTotal()' in '// demo/static/js/review_core.js\n// 复核核心：单位滑动、供应商 Combobox、SKU 内联指定、Prefill 渲染与动态表格编辑、\n// 附加费用/手写注记动态行、结算与付款标记、复核旗标...back;\n    window.submitArcFeedback = submitArcFeedback;\n    window._syncFeedbackBadge = _syncFeedbackBadge;\n}\n\n\n'
+=============================== warnings summary ===============================
+demo/tests/test_uat_008_actual_qty_normalization.py::test_effective_zero_matched_save_approve_agree_and_zero_stock_delta[0_0]
+  /workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs_tenant[tid] = Chroma(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[None-None]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[-None]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[  -None]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[\t-None]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[0-0.0_0]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[0.0-0.0_0]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[0-0.0_1]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[ 0 -0.0]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[0.0-0.0_1]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[1-1.0]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[2.5-2.5]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_contract[1.23456-1.2346]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[abc]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[nan]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[inf]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[-inf]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[True]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[False]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[raw6]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_optional_qty_rejects_invalid_strict_and_lax_is_none[raw7]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_blank_actual_qty_save_and_approve_agree_and_stock_uses_quantity[]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_blank_actual_qty_save_and_approve_agree_and_stock_uses_quantity[   ]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_invalid_actual_qty_rejected_without_db_write[abc]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_invalid_actual_qty_rejected_without_db_write[nan]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_invalid_actual_qty_rejected_without_db_write[inf]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_invalid_actual_qty_rejected_without_db_write[True]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_save_gate_and_approve_gate_reach_same_conclusion[-22.5]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_save_gate_and_approve_gate_reach_same_conclusion[-12.5]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_save_gate_and_approve_gate_reach_same_conclusion[  -22.5]
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_frontend_calculate_receipt_issues_blank_vs_zero_contract
+FAILED demo/tests/test_uat_008_actual_qty_normalization.py::test_frontend_auto_total_is_actual_aware_and_shared_with_override_hint
+31 failed, 15 passed, 1 warning in 12.36s
+pytest_exit=1

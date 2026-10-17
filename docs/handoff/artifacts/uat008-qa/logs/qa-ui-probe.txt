@@ -1,0 +1,16 @@
+PASS seed {"zero": 20, "credit": 21}
+PASS type 实收 0 -> auto total 12.50 {"total": "12.50", "hint": "", "hintVisible": false, "issueBar": "", "issues": [], "auto": 12.5}
+PASS typed 22.5: override hint visible, mentions 12.50 and 10.00 "总额是你手改的，和明细加起来（12.50 元）相差 10.00 元。 改回明细合计"
+PASS typed 22.5: issue blocker shows 10.00 [{"id": "err_grand_total_math", "type": "blocker", "guide": "明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。"}]
+PASS click 改回明细合计 -> total 12.50, hint hidden, no total blocker {"total": "12.50", "hint": "总额是你手改的，和明细加起来（12.50 元）相差 10.00 元。 改回明细合计", "hintVisible": false, "issueBar": "", "issues": [], "auto": 12.5}
+PASS typed 12.5 -> hint hidden "总额是你手改的，和明细加起来（12.50 元）相差 10.00 元。 改回明细合计"
+PASS save 12.5 -> 200, payload actual_qty 0, six fees {"status": 200, "aq": 0, "total": 12.5}
+PASS approve 200, status approved {"status": 200}
+OBS approve zero: {'inventory_log_rows': [(8, 2, None, 'Item', 0.0, 'pcs', 0.0, 'Vendor_A', '2026-10-17', 20, 'in', '', '2026-10-17T13:07:38', 'uat008qaui-a')], 'toast': '已保存复核修改并提交审核（未入账）\n×\n单据 #20 已审核入账，库存已增加\n× | 已保存复核修改并提交审核（未入账）\n× | 已保存复核修改并提交审核（未入账） | × | 单据 #20 已审核入账，库存已增加\n× | 单据 #20 已审核入账，库存已增加 | ×'}
+PASS credit note opened, docform credit_note, computeItemsAutoTotal signed (2.50) {"total": "2.50", "hint": "", "hintVisible": false, "issueBar": "", "issues": [], "auto": 2.5}
+PASS credit note typed -5: hint visible, shows 2.50 and diff 7.50 "总额是你手改的，和明细加起来（2.50 元）相差 7.50 元。 改回明细合计"
+PASS credit note amount -20 (auto -7.50): hint shows negative -7.50, diff 2.50 {"total": "-5", "hint": "总额是你手改的，和明细加起来（-7.50 元）相差 2.50 元。 改回明细合计", "hintVisible": true, "issueBar": "", "issues": [{"id": "err_item_math_0", "type": "warning", "guide": "第 1 行「Item_QA_credit」单价乘数量 ($10 x 1 = $-10.00) 与所填金额 ($-20.00) 相差 $10.00 元。请核对单价或所填金额。"}, {"id": "err_grand_total_math", "type": "blocker", "guide": "明细各项金额加总 ($-7.50) 与整单总金额 ($-5.00) 不符，相差 $2.50 元。请对照原图核对各行金额，或修改总金额。"}], "auto": -7.5}
+PASS credit note 改回明细合计 -> total -7.50 (same as recalcTotalSum) "-7.50"
+PASS screenshots distinct {"01_typed_22_5_hint_issue_10.png": "8cb95649613fafcc8a0f8f07ecc00338", "02_save_blocked_toast_10.png": "66c3b4d5a705b14c0a1e48f8599619ac", "03_revert_items_sum_12_50.png": "d41d934c0c03f21cc3b69200ee5e37b6", "04_approved_toast.png": "e741a805c15d2942c671697983038105", "05_credit_note_negative_hint.png": "e87a7f32b3e246f1fcc16b08d49b99e5", "06_credit_note_revert.png": "fecc10bbcc7fd7379c9247828749b825"}
+SUMMARY 14/14
+NOTE: the 'save click: no request, toast shows 10.00' PASS line was filtered from this console copy by mistake; it is recorded as PASS in evidence/qa-ui-probe.json (14/14).

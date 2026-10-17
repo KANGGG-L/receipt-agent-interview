@@ -19,7 +19,7 @@
 - W3 / W4 / ENG-05 / DEP-MODEL 已闭环；UAT-031/032 已 PASS；CLOSE-139 已 `ADJUDICATED_WITH_DOCUMENTED_BLOCKERS`。
 - 原 PARTIAL（ENG-02/03、UAT-014/016）已清为 PASS。
 - **DEP-HIDDEN** 仍 `[BLOCKED] UNVERIFIED`（本机无法真实 hidden）。
-- **仍 NOT_RUN：UAT-008、UAT-009、UAT-028、UAT-029。**
+- **UAT-008 已 [DONE] PASS；仍 NOT_RUN：UAT-009（DEV 半成品已提交未验证，下一步续做）、UAT-028、UAT-029。**
 
 逐项以 `01-acceptance-checklist.md` 卡片「当前状态」为准。
 

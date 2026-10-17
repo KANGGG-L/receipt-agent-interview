@@ -1,0 +1,591 @@
+{
+ "steps": [
+  {
+   "name": "tenant B baseline receipt created",
+   "pass": true,
+   "detail": {
+    "rid": 1,
+    "baseline": [
+     [
+      1,
+      "edited",
+      22.5,
+      1
+     ],
+     [
+      1,
+      "Item_UAT_B",
+      1.0,
+      null,
+      10.0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "AC1 form: qty 1 / price 10 / amount 10 / actual 0, six fees 5/4/3/2/1/0.5; auto total 12.50",
+   "pass": true,
+   "detail": {
+    "state": {
+     "total": "12.50",
+     "hint": "",
+     "hintVisible": false,
+     "blockers": [],
+     "auto": 12.5,
+     "receiptId": null
+    },
+    "item": {
+     "name": "Item_UAT_zero",
+     "quantity": 1,
+     "unit": "pcs",
+     "unit_price": 10,
+     "amount": 10,
+     "actual_qty": 0,
+     "cost_center_id": null,
+     "is_void": false
+    },
+    "fees": {
+     "delivery_fee": 5,
+     "deposit_amount": 4,
+     "service_fee": 3,
+     "tax_amount": 2,
+     "discount_amount": 1,
+     "rounding_adjustment": 0.5
+    }
+   }
+  },
+  {
+   "name": "AC2 save-stage UI: typed printed total 22.5 -> hint shows 明细 12.50 相差 10.00; issue bar blocker 相差 10.00",
+   "pass": true,
+   "detail": {
+    "total": "22.5",
+    "hint": "总额是你手改的，和明细加起来（12.50 元）相差 10.00 元。 改回明细合计",
+    "hintVisible": true,
+    "blockers": [
+     "err_grand_total_math: 明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。"
+    ],
+    "auto": 12.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "AC2 save click with 22.5 -> blocked locally (no request), toast names 相差 10.00",
+   "pass": true,
+   "detail": {
+    "toast": "还有 1 处必须先改的地方：明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。 改好后再点「保存并提交审核」\n×"
+   }
+  },
+  {
+   "name": "AC3 typed 12.5 -> hint hidden, no blocker",
+   "pass": true,
+   "detail": {
+    "total": "12.5",
+    "hint": "总额是你手改的，和明细加起来（12.50 元）相差 10.00 元。 改回明细合计",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": 12.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "AC3 UI save 12.5 -> 200; payload actual_qty 0, total 12.5, six fees verbatim",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "rid": 2,
+    "payload_item": {
+     "name": "Item_UAT_zero",
+     "quantity": 1,
+     "unit": "pcs",
+     "unit_price": 10,
+     "amount": 10,
+     "actual_qty": 0,
+     "cost_center_id": null,
+     "is_void": false
+    },
+    "total": 12.5
+   }
+  },
+  {
+   "name": "AC3 detail after save: no TOTAL_MISMATCH gate issue, stored actual_qty 0.0",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "gate_issues": [],
+    "math_warnings": [],
+    "stored": [
+     [
+      0.0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "AC3 reopen from queue (detail UI): total 12.50, actual 0, no blocker",
+   "pass": true,
+   "detail": {
+    "state": {
+     "total": "12.50",
+     "hint": "",
+     "hintVisible": false,
+     "blockers": [],
+     "auto": 12.5,
+     "receiptId": 2
+    },
+    "actual": "0"
+   }
+  },
+  {
+   "name": "AC3 UI approve -> 200, status approved; AC4 0->0: inventory_log qty 0",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "inventory_log": [
+     [
+      0.0,
+      0.0,
+      "in"
+     ]
+    ],
+    "toast": "单据 #2 已审核入账，库存已增加\n×"
+   }
+  },
+  {
+   "name": "AC2 API save 22.5 without confirm -> 422 MATH_MISMATCH_CONFIRM 相差 10",
+   "pass": true,
+   "detail": {
+    "status": 422,
+    "body": {
+     "status": "error",
+     "code": "MATH_MISMATCH_CONFIRM",
+     "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？",
+     "data": {
+      "warnings": [
+       "总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "name": "AC2 detail API: confirmed-mismatch receipt data.gate_issues TOTAL_MISMATCH 相差 10, math_warnings 相差 10",
+   "pass": true,
+   "detail": {
+    "save": 200,
+    "rid": 3,
+    "gate_issues": [
+     {
+      "code": "TOTAL_MISMATCH",
+      "row_index": null,
+      "item_name": "",
+      "field": "total",
+      "expected": 12.5,
+      "actual": 22.5,
+      "diff": 10.0,
+      "hint": "总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"
+     }
+    ],
+    "status": [
+     [
+      "edited"
+     ]
+    ]
+   }
+  },
+  {
+   "name": "AC2 detail UI: reopened mismatch receipt shows blocker 相差 10.00",
+   "pass": true,
+   "detail": {
+    "total": "22.50",
+    "hint": "",
+    "hintVisible": false,
+    "blockers": [
+     "err_grand_total_math: 明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。"
+    ],
+    "auto": 12.5,
+    "receiptId": 3
+   }
+  },
+  {
+   "name": "AC2 approval UI: 审核入账 blocked locally, no request, blocker message",
+   "pass": true,
+   "detail": {
+    "requests": 0,
+    "toast": "这张单还有 1 处必须先改的地方，改好并保存后再审核入账\n×"
+   }
+  },
+  {
+   "name": "AC2 approval API: 422 with 相差 10, no inventory row",
+   "pass": true,
+   "detail": {
+    "status": 422,
+    "body": {
+     "status": "error",
+     "code": "APPROVAL_BLOCKED",
+     "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。",
+     "blockers": [
+      "总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"
+     ]
+    }
+   }
+  },
+  {
+   "name": "AC2 queue 待我审批 row for mismatch receipt shows 问题数 1 (not 0)",
+   "pass": true,
+   "detail": {
+    "row": "无图\n\t#3\tVendor_A\t2026-10-17 (HKT)\t$22.50\t待老板审批\t1\t继续复核",
+    "queue_shortcut_buttons": 0
+   }
+  },
+  {
+   "name": "AC2 approve-confirm modal from queue handler (server detail data, actual 0): blocker warn visible, confirm disabled, no request",
+   "pass": true,
+   "detail": {
+    "issue": "1 处（需修改 1 处）",
+    "warnVisible": true,
+    "warn": "这张单还有必须修改的地方（例如金额对不上、缺少必填项），请先修改并保存，再点「审核入账」。",
+    "submitDisabled": true
+   }
+  },
+  {
+   "name": "AC3 detail correction: total now 12.50, no blocker",
+   "pass": true,
+   "detail": {
+    "total": "12.5",
+    "hint": "",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": 12.5,
+    "receiptId": 3
+   }
+  },
+  {
+   "name": "AC3 corrected receipt: save 200 and approve 200 (same conclusion), inventory qty 0",
+   "pass": true,
+   "detail": {
+    "save": 200,
+    "approve": 200,
+    "log": [
+     [
+      0.0
+     ]
+    ],
+    "toast": "单据 #3 已审核入账，库存已增加\n×"
+   }
+  },
+  {
+   "name": "AC4 actual blank -> auto total 22.50 (null按quantity)",
+   "pass": true,
+   "detail": {
+    "total": "22.50",
+    "hint": "",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": 22.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "AC4 null: payload actual_qty null, stored NULL, approve 200, inventory qty 1",
+   "pass": true,
+   "detail": {
+    "save": 200,
+    "payload_aq": null,
+    "approve": 200,
+    "log": [
+     [
+      1.0
+     ]
+    ],
+    "toast": "单据 #4 已审核入账，库存已增加\n×"
+   }
+  },
+  {
+   "name": "credit note: amount -10 + fees -> auto total 2.50 (signed formula)",
+   "pass": true,
+   "detail": {
+    "total": "2.50",
+    "hint": "",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": 2.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "credit note: amount -20 (auto -7.50), typed -5 -> hint shows signed -7.50 and 相差 2.50 (no clamp to 0)",
+   "pass": true,
+   "detail": {
+    "total": "-5",
+    "hint": "总额是你手改的，和明细加起来（-7.50 元）相差 2.50 元。 改回明细合计",
+    "hintVisible": true,
+    "blockers": [
+     "err_grand_total_math: 明细各项金额加总 ($-7.50) 与整单总金额 ($-5.00) 不符，相差 $2.50 元。请对照原图核对各行金额，或修改总金额。"
+    ],
+    "auto": -7.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "credit note: 改回明细合计 -> -7.50",
+   "pass": true,
+   "detail": {
+    "total": "-7.50",
+    "hint": "总额是你手改的，和明细加起来（-7.50 元）相差 2.50 元。 改回明细合计",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": -7.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "credit note + 实收 0: line effective 0 -> auto total = fees only 12.50",
+   "pass": true,
+   "detail": {
+    "total": "12.50",
+    "hint": "总额是你手改的，和明细加起来（-7.50 元）相差 2.50 元。 改回明细合计",
+    "hintVisible": false,
+    "blockers": [],
+    "auto": 12.5,
+    "receiptId": null
+   }
+  },
+  {
+   "name": "tenant B browser queue: none of tenant A receipts visible",
+   "pass": true,
+   "detail": {
+    "b_queue_ids": [
+     1
+    ],
+    "a_ids": [
+     2,
+     3,
+     4
+    ]
+   }
+  },
+  {
+   "name": "credit note API (amount -10, actual None, total 2.5) -> 200 (agrees with UI auto total)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "code": null,
+    "msg": null
+   }
+  },
+  {
+   "name": "credit note API (amount -10, actual None, total 5) -> 422 (agrees with UI auto total)",
+   "pass": true,
+   "detail": {
+    "status": 422,
+    "code": "MATH_MISMATCH_CONFIRM",
+    "msg": "单据上的数字对不上：总额对不上：各行加起来 -10 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 2.5 元，但单据总额写 5 元，相差 2.5 元。老板入账前必须改对，确定要先提交吗？"
+   }
+  },
+  {
+   "name": "credit note API (amount -10, actual 0, total 12.5) -> 200 (agrees with UI auto total)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "code": null,
+    "msg": null
+   }
+  },
+  {
+   "name": "credit note API (amount -10, actual 0, total 2.5) -> 422 (agrees with UI auto total)",
+   "pass": true,
+   "detail": {
+    "status": 422,
+    "code": "MATH_MISMATCH_CONFIRM",
+    "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 2.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？"
+   }
+  },
+  {
+   "name": "tenant B detail on A receipt -> 404",
+   "pass": true,
+   "detail": {
+    "status": 404
+   }
+  },
+  {
+   "name": "tenant B approve on A receipt -> 404",
+   "pass": true,
+   "detail": {
+    "status": 404
+   }
+  },
+  {
+   "name": "tenant B save_over on A receipt -> 404",
+   "pass": true,
+   "detail": {
+    "status": 404
+   }
+  },
+  {
+   "name": "tenant B /api/receipts lists no A receipt",
+   "pass": true,
+   "detail": {
+    "sample": "{'status': 'success', 'data': [{'id': 1, 'supplier_name': 'Vendor_B', 'supplier_code': '', 'image_url': '', 'status': 'edited', 'total_amount': 22.5, 'department_name': '', 'payment_status': 'paid_at_delivery', 'receipt_date': '2026-10-17', 'upload_date': '2026-10-17T13:46:34', 'updated_date': '2026"
+   }
+  },
+  {
+   "name": "tenant B baseline unchanged after whole run",
+   "pass": true,
+   "detail": {
+    "before": [
+     [
+      1,
+      "edited",
+      22.5,
+      1
+     ],
+     [
+      1,
+      "Item_UAT_B",
+      1.0,
+      null,
+      10.0
+     ]
+    ],
+    "after": [
+     [
+      1,
+      "edited",
+      22.5,
+      1
+     ],
+     [
+      1,
+      "Item_UAT_B",
+      1.0,
+      null,
+      10.0
+     ]
+    ]
+   }
+  },
+  {
+   "name": "screenshots distinct",
+   "pass": true,
+   "detail": {
+    "01_manual_entry_actual0_auto_12_50.png": "8069b4f54c343db1278dc667c68538c8",
+    "02_total_22_5_mismatch_hint_10.png": "4460519ff85d129e90812f2bb1e2f1d0",
+    "03_save_blocked_toast_10.png": "83cacf5caef988a3fab99cd3899431d2",
+    "04_reopened_12_5_clean.png": "d9a745613de6eb05b6f4393e4ba142c6",
+    "05_approved_zero_toast.png": "5fc3ec38d8e0dc56fe81f205d5a2dd92",
+    "06_detail_mismatch_10.png": "4e6bf899391da4fa1fa255b186ac2151",
+    "07_approve_blocked.png": "f57ff57405127309974e3cf7d874ee43",
+    "08_queue_mismatch_issue_count.png": "f84b703a0afb82cb38592869dc044483",
+    "08b_queue_approve_modal_blocked.png": "14ce444362735870801faabf52c684da",
+    "09_corrected_approved.png": "278cd30c56d8376134c5123b7103f4ea",
+    "10_null_approved_qty1.png": "96b7f669813afbb3687c1cab6c1bd465",
+    "11_credit_note_signed_hint.png": "c7569ed205820e7750d0d2526521c6e0",
+    "12_credit_note_actual0.png": "d0577e23b1680b0505d983a5b8eea5b3",
+    "13_tenant_b_queue.png": "fc6cc2d4980e078521ab9376203725c1"
+   }
+  }
+ ],
+ "net": [
+  {
+   "req": "http://127.0.0.1:15380/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_A\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":12.5,\"items\":[{\"name\":\"Item_UAT_zero\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":0,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":1,\"delivery_fee\":5,\"deposit_amount\":4,\"rounding_adjustment\":0.5,\"service_fee\":3,\"tax_amount\":2,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15380/api/receipt/2/approve",
+   "m": "POST",
+   "body": "{\"version\":1}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/receipt/2/approve",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15380/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":3,\"source\":\"manual\",\"supplier_name\":\"Vendor_A\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":12.5,\"items\":[{\"name\":\"Item_UAT_mis\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":0,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":1,\"delivery_fee\":5,\"deposit_amount\":4,\"rounding_adjustment\":0.5,\"service_fee\":3,\"tax_amount\":2,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\",\"layout_type\":\"\",\"version\":1}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15380/api/receipt/3/approve",
+   "m": "POST",
+   "body": "{\"version\":2}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/receipt/3/approve",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15380/api/save_edited",
+   "m": "POST",
+   "body": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_A\",\"date\":\"2026-10-17\",\"sheet_name\":\"2026-10\",\"total_amount\":22.5,\"items\":[{\"name\":\"Item_UAT_null\",\"quantity\":1,\"unit\":\"pcs\",\"unit_price\":10,\"amount\":10,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"printed_delivery_note\",\"currency\":\"HKD\",\"discount_amount\":1,\"delivery_fee\":5,\"deposit_amount\":4,\"rounding_adjustment\":0.5,\"service_fee\":3,\"tax_amount\":2,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/save_edited",
+   "status": 200
+  },
+  {
+   "req": "http://127.0.0.1:15380/api/receipt/4/approve",
+   "m": "POST",
+   "body": "{\"version\":1}"
+  },
+  {
+   "resp": "http://127.0.0.1:15380/api/receipt/4/approve",
+   "status": 200
+  }
+ ],
+ "hashes": {
+  "01_manual_entry_actual0_auto_12_50.png": "8069b4f54c343db1278dc667c68538c8",
+  "02_total_22_5_mismatch_hint_10.png": "4460519ff85d129e90812f2bb1e2f1d0",
+  "03_save_blocked_toast_10.png": "83cacf5caef988a3fab99cd3899431d2",
+  "04_reopened_12_5_clean.png": "d9a745613de6eb05b6f4393e4ba142c6",
+  "05_approved_zero_toast.png": "5fc3ec38d8e0dc56fe81f205d5a2dd92",
+  "06_detail_mismatch_10.png": "4e6bf899391da4fa1fa255b186ac2151",
+  "07_approve_blocked.png": "f57ff57405127309974e3cf7d874ee43",
+  "08_queue_mismatch_issue_count.png": "f84b703a0afb82cb38592869dc044483",
+  "08b_queue_approve_modal_blocked.png": "14ce444362735870801faabf52c684da",
+  "09_corrected_approved.png": "278cd30c56d8376134c5123b7103f4ea",
+  "10_null_approved_qty1.png": "96b7f669813afbb3687c1cab6c1bd465",
+  "11_credit_note_signed_hint.png": "c7569ed205820e7750d0d2526521c6e0",
+  "12_credit_note_actual0.png": "d0577e23b1680b0505d983a5b8eea5b3",
+  "13_tenant_b_queue.png": "fc6cc2d4980e078521ab9376203725c1"
+ },
+ "toasts": [
+  [
+   "还有 1 处必须先改的地方：明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。 改好后再点「保存并提交审核」\n×"
+  ],
+  [
+   "单据 #2 已审核入账，库存已增加\n×"
+  ],
+  [
+   "这张单还有 1 处必须先改的地方，改好并保存后再审核入账\n×"
+  ],
+  [
+   "单据 #3 已审核入账，库存已增加\n×"
+  ],
+  [
+   "单据 #4 已审核入账，库存已增加\n×"
+  ]
+ ],
+ "O1_observation": {
+  "receipt": 2,
+  "inventory_log": [
+   [
+    0.0,
+    0.0,
+    "in"
+   ]
+  ],
+  "toast": "单据 #2 已审核入账，库存已增加\n×"
+ },
+ "mismatch_issue_bar": "",
+ "passed": 35,
+ "total": 35
+}

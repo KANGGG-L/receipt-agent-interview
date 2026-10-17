@@ -1,0 +1,22 @@
+phase=uat008-uat port=15380 ts_local=2026-10-17 13:37:32 UTC db=/workspace/.uat008-uat-env/uat.db
+15010: FREE_RESERVED (not listening)
+15380: free
+git_head=b0e6b1e
+ M demo/app/api_receipts.py
+ M demo/app/db.py
+ M demo/app/money.py
+ M demo/app/services/inventory.py
+ M demo/app/services/receipt_utils.py
+ M demo/static/js/review_core.js
+ M demo/static/js/review_ux.js
+ M docs/handoff/01-acceptance-checklist.md
+ M docs/handoff/02-coordinator-ledger.md
+?? demo/tests/test_uat_008_actual_qty_normalization.py
+?? docs/handoff/artifacts/uat008-dev-report.md
+?? docs/handoff/artifacts/uat008-dev/
+?? docs/handoff/artifacts/uat008-qa-report.md
+?? docs/handoff/artifacts/uat008-qa/
+?? docs/handoff/artifacts/uat008-shared/probe_actual_qty_normalization_api.py
+?? docs/handoff/artifacts/uat008-shared/probe_actual_qty_ui.py
+?? docs/handoff/artifacts/uat008-shared/run_phase.sh
+?? docs/handoff/artifacts/uat008-uat/

@@ -1,0 +1,21 @@
+# red-on-HEAD: git archive HEAD (b0e6b1e, docs/handoff/artifacts excluded) -> /workspace/.uat009-dev-env/head (outside repo), new test file copied in; DB_PATH outside repo; 2026-10-17 22:02:50 UTC+8
+# cmd: DB_PATH=/workspace/.uat009-dev-env/pytest/red.db python -m pytest demo/tests/test_uat_009_new_manual_inherited_state.py demo/tests/test_uat_009_new_manual_receipt_clears_fees.py -q -rA
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=ncr_handwritten | currency leaked=CNY | old alert banner still visible
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=credit_note | currency leaked=USD | old alert banner still visible
+E         stderr=FAIL payment_evidence leaked="PAID stamp Vendor_A" | doc_form leaked=monthly_statement | currency leaked=EUR | old alert banner still visible
+E         stderr=FAIL late response rebound currentReceiptId=902
+E         stderr=FAIL singleUploadGen not bumped
+PASSED demo/tests/test_uat_009_new_manual_inherited_state.py::test_old_receipt_reopen_keeps_all_saved_document_state
+PASSED demo/tests/test_uat_009_new_manual_inherited_state.py::test_user_choices_on_new_manual_are_still_submitted
+PASSED demo/tests/test_uat_009_new_manual_inherited_state.py::test_api_new_manual_default_payload_roundtrip_and_tenant_isolation
+PASSED demo/tests/test_uat_009_new_manual_receipt_clears_fees.py::test_uat009_requirement_1_and_4_new_manual_clears_fees_and_retains_contract
+PASSED demo/tests/test_uat_009_new_manual_receipt_clears_fees.py::test_uat009_requirement_2_old_receipt_fees_preserved_db_and_ui
+PASSED demo/tests/test_uat_009_new_manual_receipt_clears_fees.py::test_uat009_requirement_3_three_paths_no_cross_session_leakage
+PASSED demo/tests/test_uat_009_new_manual_receipt_clears_fees.py::test_uat009_requirement_5_cross_tenant_isolation_and_tenant_b_unaffected
+PASSED demo/tests/test_uat_009_new_manual_receipt_clears_fees.py::test_uat009_save_payload_and_db_roundtrip_verification
+FAILED demo/tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[ncr_handwritten-CNY]
+FAILED demo/tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[credit_note-USD]
+FAILED demo/tests/test_uat_009_new_manual_inherited_state.py::test_new_manual_payload_has_no_inherited_document_state[monthly_statement-EUR]
+FAILED demo/tests/test_uat_009_new_manual_inherited_state.py::test_late_open_receipt_response_cannot_refill_new_manual
+FAILED demo/tests/test_uat_009_new_manual_inherited_state.py::test_in_flight_single_upload_is_invalidated_by_new_manual
+5 failed, 8 passed in 32.90s

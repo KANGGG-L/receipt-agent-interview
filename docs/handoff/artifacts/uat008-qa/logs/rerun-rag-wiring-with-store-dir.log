@@ -1,0 +1,4 @@
+$ mkdir demo/.rag_chroma (empty, gitignored, removed after); pytest tests/test_rag_embedding_wiring.py
+...............                                                          [100%]
+15 passed in 3.47s
+exit=0

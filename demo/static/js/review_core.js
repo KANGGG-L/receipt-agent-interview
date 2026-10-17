@@ -1307,6 +1307,30 @@ function clearReviewFees() {
 }
 window.clearReviewFees = clearReviewFees;
 
+// UAT-009（2026-10-17 复验）：新建单据（无 receipt_id）时，除六项费用与注记外，
+// 上一张单据通过表单控件或内存态带入 save payload 的单据级字段也必须回到默认值：
+// 单据版式 doc_form、币种 currency、自动付款证据 payment_evidence，以及上一张单的
+// 整单「请重点核对」提示条。默认值与首次打开页面一致（index.html 首个选项 /
+// renderEditForm 缺省：printed_delivery_note、HKD、空证据）。只重置表单控件，
+// 不改任何已保存单据；字段仍随 payload 提交（取默认值），不靠隐藏或剔除字段实现。
+const NEW_RECEIPT_DEFAULT_DOC_FORM = 'printed_delivery_note';
+const NEW_RECEIPT_DEFAULT_CURRENCY = 'HKD';
+function resetNewReceiptContext() {
+    clearReviewFees();
+    setAutoPaymentEvidence('');
+    const docFormElem = document.getElementById('inpDocForm');
+    if (docFormElem) docFormElem.value = NEW_RECEIPT_DEFAULT_DOC_FORM;
+    const curElem = document.getElementById('inpCurrency');
+    if (curElem) curElem.value = NEW_RECEIPT_DEFAULT_CURRENCY;
+    if (typeof renderCurrencySymbol === 'function') renderCurrencySymbol();
+    const alertBanner = document.getElementById('alertBanner');
+    if (alertBanner) {
+        alertBanner.classList.add('hide');
+        alertBanner.innerText = '';
+    }
+}
+window.resetNewReceiptContext = resetNewReceiptContext;
+
 // -------------------------------------------------------------
 // 手写注记动态行（与附加费用动态行同款交互）：
 // 契约字段不变：adjustment_notes: list[str]——仅换视图，落库链路零改动。
@@ -2071,9 +2095,11 @@ function recalcRow(inputElem) {
     recalcTotalSum();
 }
 
-function recalcTotalSum() {
+// UAT-008：明细自动合计的唯一实现（实收感知）。recalcTotalSum 与 review_ux 的总额手改提示
+// （itemsSumNow）共用，避免一处按实收 0 算 12.5、另一处按票面算 22.5 而互相矛盾。
+function computeItemsAutoTotal() {
     const tbody = document.getElementById('itemTableBody');
-    const rows = tbody.querySelectorAll('tr');
+    const rows = tbody ? tbody.querySelectorAll('tr') : [];
     let itemsSum = 0.0;
     rows.forEach(tr => {
         if (tr.dataset && tr.dataset.isVoid === '1') return;
@@ -2107,7 +2133,12 @@ function recalcTotalSum() {
 
     const calculatedTotal = itemsSum - fees.discount_amount - fees.rounding_adjustment
         + fees.delivery_fee + fees.deposit_amount + fees.service_fee + fees.tax_amount;
-    const netTotal = isNegDoc ? calculatedTotal : Math.max(0, calculatedTotal);
+    return isNegDoc ? calculatedTotal : Math.max(0, calculatedTotal);
+}
+window.computeItemsAutoTotal = computeItemsAutoTotal;
+
+function recalcTotalSum() {
+    const netTotal = computeItemsAutoTotal();
     // S3-19：店员手改过总额就不再被明细合计覆盖，只提示差额
     if (typeof isTotalOverridden === 'function' && isTotalOverridden()) {
         if (typeof updateTotalOverrideHint === 'function') updateTotalOverrideHint(netTotal);
@@ -2958,9 +2989,12 @@ function calculateReceiptIssues(data) {
         // 显式区分 actual_qty 为 null/未填 vs 有效 0：
         // actual_qty 为 null/未填时按票面 amount，填写了实收（含有效 0）时按 actual_qty * price 计入有效小计
         let lineEffective = amount;
+        // UAT-008：与后端 money.optional_qty 同口径——空串/纯空白 = 未填（Number('  ') 为 0，
+        // 不能据此当成有效 0）；有效 0（0 / '0' / ' 0 '）按 0 计，严禁 truthy 回落。
         const actualRaw = it.actual_qty;
-        if (actualRaw !== null && actualRaw !== undefined && actualRaw !== '' && !isNaN(Number(actualRaw))) {
-            const actualNum = Number(actualRaw);
+        const actualStr = (actualRaw === null || actualRaw === undefined) ? '' : String(actualRaw).trim();
+        if (actualStr !== '' && typeof actualRaw !== 'boolean' && isFinite(Number(actualStr))) {
+            const actualNum = Number(actualStr);
             lineEffective = Math.round(actualNum * price * 100) / 100;
             if (amount < 0 && lineEffective > 0) {
                 lineEffective = -lineEffective;

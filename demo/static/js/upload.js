@@ -1705,6 +1705,13 @@ function startManualEntry() {
     currentReceiptId = null;
     currentReceiptData = null;
 
+    // UAT-009：作废迟到的旧单详情回包与进行中的单张识别回包，避免其在新单上
+    // 重新灌入上一张单据的费用 / receipt_id（与 abortLoadingAndSwitchToManual 同口径）
+    if (typeof invalidatePendingWorkbenchOpen === 'function') invalidatePendingWorkbenchOpen();
+    singleUploadGen++;
+    if (singlePollToken) singlePollToken.cancelled = true;
+    if (typeof stopOcrTimer === 'function') stopOcrTimer();
+
     // 清理遗留的原图/文件态（不触碰 BatchUploader.photos）
     if (originalObjectUrl) {
         try { URL.revokeObjectURL(originalObjectUrl); } catch (e) {}
@@ -1739,8 +1746,11 @@ function startManualEntry() {
     if (typeof resetTotalOverride === 'function') resetTotalOverride();
     addEmptyRow({ silent: true });
 
-    // UAT-009: 新建手工单清除上一张单继承的六项附加费用与注记状态
-    if (typeof clearReviewFees === 'function') {
+    // UAT-009: 新建手工单清除上一张单继承的六项附加费用与注记状态，
+    // 以及单据版式 / 币种 / 自动付款证据 / 整单提示条（resetNewReceiptContext）
+    if (typeof resetNewReceiptContext === 'function') {
+        resetNewReceiptContext();
+    } else if (typeof clearReviewFees === 'function') {
         clearReviewFees();
     } else {
         if (typeof renderFeeRowsFromData === 'function') renderFeeRowsFromData({});
@@ -1829,7 +1839,9 @@ function abortLoadingAndSwitchToManual() {
     // 6. 表单标题与徽章设置
     if (!currentReceiptId) {
         isManualEntry = true;
-        if (typeof clearReviewFees === 'function') {
+        if (typeof resetNewReceiptContext === 'function') {
+            resetNewReceiptContext();
+        } else if (typeof clearReviewFees === 'function') {
             clearReviewFees();
         }
     }

@@ -1,0 +1,4 @@
+cleanup_ts_utc=2026-10-17T12:39:23Z
+15010: FREE_RESERVED (not listening)
+isolate_port_15180: released
+db_kept_outside_repo=/workspace/.uat008-dev-env/uat008-dev.db

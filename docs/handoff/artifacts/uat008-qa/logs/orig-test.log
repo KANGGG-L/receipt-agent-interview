@@ -1,0 +1,10 @@
+$ pytest demo/tests/test_uat_008_actual_qty_zero_arithmetic.py
+.......                                                                  [100%]
+=============================== warnings summary ===============================
+demo/tests/test_uat_008_actual_qty_zero_arithmetic.py::test_uat008_requirement_4_matched_save_and_approve_agree
+  /workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs_tenant[tid] = Chroma(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+7 passed, 1 warning in 3.60s
+exit=0

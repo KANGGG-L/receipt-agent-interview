@@ -1,0 +1,2 @@
+# green: working tree (b0e6b1e + UAT-008 uncommitted + UAT-009 fix); DB_PATH outside repo; 2026-10-17 22:03:30 UTC+8
+# cmd: DB_PATH=/workspace/.uat009-dev-env/pytest/green.db python -m pytest demo/tests/test_uat_009_new_manual_inherited_state.py demo/tests/test_uat_009_new_manual_receipt_clears_fees.py -q -rA

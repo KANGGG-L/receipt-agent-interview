@@ -1,0 +1,262 @@
+{
+  "card": "UAT-008",
+  "probe": "normalization_api",
+  "verdict": "PASS",
+  "passed": 22,
+  "total": 22,
+  "checks": [
+    {
+      "name": "blank_empty_save200_null_approve200_stock_qty1",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          null
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "blank_spaces_save200_null_approve200_stock_qty1",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          null
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "invalid_'abc'_rejected_no_write",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "body": {
+          "status": "error",
+          "code": "INVALID_ACTUAL_QTY",
+          "msg": "第 1 行的「实收」不是有效数字。没收到货请填 0，按票面数量收货请留空。",
+          "data": {
+            "row_index": 1
+          }
+        },
+        "receipts_before": 2,
+        "after": 2
+      }
+    },
+    {
+      "name": "invalid_'nan'_rejected_no_write",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "body": {
+          "status": "error",
+          "code": "INVALID_ACTUAL_QTY",
+          "msg": "第 1 行的「实收」不是有效数字。没收到货请填 0，按票面数量收货请留空。",
+          "data": {
+            "row_index": 1
+          }
+        },
+        "receipts_before": 2,
+        "after": 2
+      }
+    },
+    {
+      "name": "invalid_'inf'_rejected_no_write",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "body": {
+          "status": "error",
+          "code": "INVALID_ACTUAL_QTY",
+          "msg": "第 1 行的「实收」不是有效数字。没收到货请填 0，按票面数量收货请留空。",
+          "data": {
+            "row_index": 1
+          }
+        },
+        "receipts_before": 2,
+        "after": 2
+      }
+    },
+    {
+      "name": "invalid_True_rejected_no_write",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "body": {
+          "status": "error",
+          "code": "INVALID_ACTUAL_QTY",
+          "msg": "第 1 行的「实收」不是有效数字。没收到货请填 0，按票面数量收货请留空。",
+          "data": {
+            "row_index": 1
+          }
+        },
+        "receipts_before": 2,
+        "after": 2
+      }
+    },
+    {
+      "name": "zero_0_unmatched_422_diff_visible",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？"
+      }
+    },
+    {
+      "name": "zero_0_confirmed_detail_mismatch_approve_blocked_no_stock",
+      "pass": true,
+      "detail": {
+        "approve": 422,
+        "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。",
+        "logs": 0,
+        "batches": 0
+      }
+    },
+    {
+      "name": "zero_0_matched_save200_approve200_stored0_stock0",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          0.0
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          0.0
+        ]
+      }
+    },
+    {
+      "name": "zero_0.0_unmatched_422_diff_visible",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？"
+      }
+    },
+    {
+      "name": "zero_0.0_confirmed_detail_mismatch_approve_blocked_no_stock",
+      "pass": true,
+      "detail": {
+        "approve": 422,
+        "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。",
+        "logs": 0,
+        "batches": 0
+      }
+    },
+    {
+      "name": "zero_0.0_matched_save200_approve200_stored0_stock0",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          0.0
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          0.0
+        ]
+      }
+    },
+    {
+      "name": "zero_'0'_unmatched_422_diff_visible",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？"
+      }
+    },
+    {
+      "name": "zero_'0'_confirmed_detail_mismatch_approve_blocked_no_stock",
+      "pass": true,
+      "detail": {
+        "approve": 422,
+        "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。",
+        "logs": 0,
+        "batches": 0
+      }
+    },
+    {
+      "name": "zero_'0'_matched_save200_approve200_stored0_stock0",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          0.0
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          0.0
+        ]
+      }
+    },
+    {
+      "name": "zero_' 0 '_unmatched_422_diff_visible",
+      "pass": true,
+      "detail": {
+        "status": 422,
+        "msg": "单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？"
+      }
+    },
+    {
+      "name": "zero_' 0 '_confirmed_detail_mismatch_approve_blocked_no_stock",
+      "pass": true,
+      "detail": {
+        "approve": 422,
+        "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。",
+        "logs": 0,
+        "batches": 0
+      }
+    },
+    {
+      "name": "zero_' 0 '_matched_save200_approve200_stored0_stock0",
+      "pass": true,
+      "detail": {
+        "save": 200,
+        "stored": [
+          0.0
+        ],
+        "approve": 200,
+        "inventory_log(count,sum_qty)": [
+          1,
+          0.0
+        ]
+      }
+    },
+    {
+      "name": "tenant_b_detail_404",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "tenant_b_approve_404",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "tenant_b_save_404",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "tenant_b_baseline_unchanged",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+$ pytest tests  --ignore=demo/tests/test_admin_tabs_consolidation_e2e.py --ignore=demo/tests/test_canary_table_truncation.py --ignore=demo/tests/test_export_center_browser_e2e.py --ignore=demo/tests/test_f1b_archive_finance.py --ignore=demo/tests/test_f1b_ia_admin.py --ignore=demo/tests/test_f1b_inventory.py --ignore=demo/tests/test_f1b_settings.py --ignore=demo/tests/test_f1b_ui_dialogs.py --ignore=demo/tests/test_i18n_zh_hant.py --ignore=demo/tests/test_memory_budget_overflow_qa.py --ignore=demo/tests/test_playwright_ab_experiment_drawer.py --ignore=demo/tests/test_playwright_analytics_center_full_audit.py --ignore=demo/tests/test_playwright_canary_ab_decoupled.py --ignore=demo/tests/test_playwright_create_ab_experiment_modal.py --ignore=demo/tests/test_playwright_empty_items_save.py --ignore=demo/tests/test_playwright_historical_canary_and_ab.py --ignore=demo/tests/test_playwright_pvalue_select_switch.py --ignore=demo/tests/test_unified_config_and_probe.py --ignore=tests/test_openai_gateway_healthy_ssrf.py --ignore=tests/test_phase3_filter_adjustments_deep_qa.py --ignore=tests/test_playwright_e2e.py --ignore=tests/test_qa_eval_center_gate_verification.py --ignore=tests/test_ssrf_and_credential_guard.py --ignore=tests/test_workbench_e2e_playwright.py
+........................................................................ [  5%]
+........................................................................ [ 11%]
+........................................................................ [ 17%]
+........................................................................ [ 23%]
+........................................................................ [ 28%]
+........................................................................ [ 34%]
+........................................................................ [ 40%]
+........................................................................ [ 46%]
+........................................................................ [ 51%]
+........................................................................ [ 57%]
+........................................................................ [ 63%]
+........................................................................ [ 69%]
+........................................................................ [ 75%]
+........................................................................ [ 80%]
+........................................................................ [ 86%]
+........................................................................ [ 92%]
+........................................................................ [ 98%]
+........................                                                 [100%]
+1248 passed in 515.25s (0:08:35)
+pytest_exit=0

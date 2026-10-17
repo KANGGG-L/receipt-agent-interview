@@ -1277,3 +1277,53 @@ QA 自行补了两项提权验证：未认证访问 401、伪造租户头 404，
 - **handoff 文档**：已重写 `00-README.md`、`05-cloud-handoff-prompt.md`；新增 `06-usage-stop-handoff.md`。
 - **下一原子任务：UAT-008**（其后 UAT-009 → UAT-028 → UAT-029）。DEP-HIDDEN 仍 BLOCKED。
 - **注意**：`docs/handoff/artifacts` 含误落盘 venv/node_modules/*.db（约 3GB），commit/push 前必须清理。本条目写入时 commit/push 可能尚未完成。
+
+## UAT-008 本地 DEV 证据包（2026-10-17 21:05 UTC+8）
+
+- 角色：Development only（未跑独立 QA/UAT）；基线 `main` @ `b0e6b1e`；无 git commit/push。
+- HEAD 复验：原套件 `test_uat_008_actual_qty_zero_arithmetic.py` 7/7 通过（数值 0 / null 路径已正确）。
+- 发现并修复两处残留「保存 vs 入账」不一致：
+  - R1 后端：actual_qty 为 `""`/空白/非法串时，保存门禁按未填放行（200 无警告），落库却经 `_to_decimal` 存成 0.0，入账 422 APPROVAL_BLOCKED。修复：新增 `money.optional_qty` 作为保存门禁、落库、入账、详情 gate_issues、提醒确认五处唯一归一口径；`save_edited` 对非法实收返回 422 `INVALID_ACTUAL_QTY` 且零写库。
+  - R2 前端：`review_ux.js itemsSumNow`（S3-19 总额手改提示）忽略实收，实收 0 + 手填 22.5 时提示隐藏并清除手改标记，与问题栏「相差 10」矛盾。修复：`review_core.js` 抽出 `computeItemsAutoTotal()` 由 `recalcTotalSum` 与 `itemsSumNow` 共用。
+- 改动文件：`demo/app/{money.py, api_receipts.py, db.py}`、`demo/app/services/{inventory.py, receipt_utils.py}`、`demo/static/js/{review_core.js, review_ux.js}`；新增 `demo/tests/test_uat_008_actual_qty_normalization.py`（46 例）。
+- 测试（均实跑）：TDD red 31 failed / 15 passed -> green 46 passed；原套件 7 passed；回归 S1-P0-01 20、S1-P2-10 2、S2-01 10、S2-02 1、S2-14 4、S2-15 2 passed；demo 非浏览器全量 2160 passed / 18 skipped；根 tests 非浏览器全量 1248 passed。
+- 活体隔离端口 15180（DB 在仓外 `/workspace/.uat008-dev-env/`）：pytest 53 passed；API 探针 20/20 + 22/22；真实浏览器 14/14（7 张截图 MD5 互异）；review_ux.js 回退 HEAD 的浏览器红证 12/14。
+- 15010 前后均未监听（FREE_RESERVED）；15180 已释放；本轮产生的 gitignored 临时文件（demo/receipt_demo.db 空库等）已清理。
+- 产物：`artifacts/uat008-dev-report.md`、`artifacts/uat008-dev/`、`artifacts/uat008-shared/{run_phase.sh, probe_actual_qty_normalization_api.py, probe_actual_qty_ui.py}`。
+- checklist：`[TODO] DEV_DELIVERED (2026-10-17 DEV done, awaiting independent QA)`。
+- **下一原子任务：UAT-008 独立 QA**（另选 151xx 端口与全新 DB；QA 重点见 DEV 报告末节）。
+
+## UAT-008 独立 QA（2026-10-17 22:05 UTC+8）
+
+- 角色：Independent QA（未改产品代码，未 commit/push）；基线 `b0e6b1e` + DEV 未提交改动。
+- 隔离端口 15280，全新 DB `/workspace/.uat008-qa-env/qa.db`（仓外）；15010 前后均未监听；15280 已释放。
+- 自写探针（不复用 DEV 探针）：API 36/36（""/空白/null/"0"/" 0 "/0.0 保存门禁、落库、详情 gate_issues、入账、库存一致；"abc"/"nan"/true/"inf"/[1] -> 422 INVALID_ACTUAL_QTY 零写库，含更新已有单；source=auto 同步保存仍 200 且保持 parsed；B tenant 404 且基线不变）；真实浏览器 14/14（实收 0 + 手填 22.5 -> 提示/问题栏/保存 toast 均 10.00；改回明细合计 -> 12.50；12.5 保存与审核均 200；贷项单提示显示负数 -7.50，与 recalcTotalSum 一致）。
+- 实收 0 已匹配单入账：写 1 条 qty 0 的 inventory_log，库存不变；判定符合 AC（0按0）。toast「库存已增加」为既有文案，记为非阻断观察 O1。
+- DEV 报告所有行号逐一复核均正确（v2_1_0.py 实际在 `ai_registry/tools/math_engine/`）。
+- 测试（均实跑）：新测试 46 passed；原套件 7；回归 S1-P0-01 20、S1-P2-10 2、S2-01 10、S2-02/14/15 7；UAT-007/009/029 16；demo 非浏览器全量 2160 passed / 18 skipped；根 tests 1247 passed / 1 failed（`test_rag_embedding_wiring.py::test_real_store_creates_identity_suffixed_collections`，因 DEV 清理删除了 `demo/.rag_chroma`，补空目录后 15 passed，环境问题 E1，与本卡无关）。
+- 产物：`artifacts/uat008-qa-report.md`、`artifacts/uat008-qa/`。
+- checklist：`[TODO] QA_PASS (2026-10-17 independent QA PASS, awaiting UAT)`。
+- **下一原子任务：UAT-008 独立 UAT**（另选 151xx 端口，非 15010/15180/15280）。
+
+## UAT-008 独立 UAT（2026-10-17 21:50 UTC+8）
+
+- 角色：Independent UAT / 验收（未改产品代码，未复用 DEV/QA 脚本、端口、DB、fixture，未 commit/push）；基线 `b0e6b1e` + DEV 未提交改动。
+- 隔离端口 15380，全新 DB `/workspace/.uat008-uat-env/uat.db`（仓外，跑完已删）；15010 前后均未监听；15380 已释放。
+- 真实浏览器 + API 走查（自写 `uat008-uat/uat_ui_walk.py`，35/35）：UI 新建手工单录入 qty1/单价10/金额10/实收0 + 六费用 5/4/3/2/1/0.5 -> 自动合计 12.50；手填 22.5 -> 提示、问题栏、保存 toast 均「相差 10.00」，保存本地拦截；API 保存 422 相差 10；详情 `data.gate_issues` TOTAL_MISMATCH diff 10，UI 从队列重开同样阻断、队列问题数 1；审核入账 UI 本地拦截、确认弹窗禁用、API 422 相差 10、零库存行；改 12.5 后保存 200、审核 200（两条路径）；实收留空 -> 22.50、存 NULL、库存 +1；实收 0 -> 存 0.0、库存 +0、无批次；折让单提示显示 -7.50（不截 0），后端合计公式一致；B tenant 队列/详情/审核/覆盖保存 404，基线不变。
+- O1 裁决：非 AC 失败（各环节结论一致，库存未变）；toast「库存已增加」对实收 0 不准确，属既有文案（`review_modal.js:288`），建议另开 P3 文案卡。
+- E1 裁决：`demo/.rag_chroma` 被 `.gitignore:25` 忽略、从未入库、setup 不创建，是 RAG 运行时惰性生成目录；该用例在任何新 clone 上都会失败。建议：不入库；清理时若原已存在不得删除；另开测试夹具卡（缺失时显式 skip 或文档化 bootstrap）。本轮无目录 14 passed/1 failed，临时空目录 15 passed，已删除。
+- 新观察（非阻断，另卡）：N1 前端从未定义 `currentRole`，队列「审核入账」快捷按钮永不渲染（服务端仍鉴权）；N2 折让单行级算术 UI 未提示而后端提示，归 UAT-029；N3 QA 报告/台账时间戳 22:05 疑为误标。
+- 测试（均实跑）：新测试 46 passed；原套件 7 passed；回归绑定文件 164 passed。未重跑全量。
+- 清理：删除本阶段产生的 `demo/backups/`、`demo/receipt_demo.db`、临时 `demo/.rag_chroma`、`/workspace/.uat008-uat-env/`；保留既有 `demo/.env`、根 `artifacts/memory/`。
+- 产物：`artifacts/uat008-uat-report.md`、`artifacts/uat008-uat/`。
+- checklist：`[DONE] PASS`。
+- **下一原子任务：UAT-009**（其后 UAT-028 → UAT-029）；UAT-008 改动待协调者统一 commit/push。
+
+## Usage 停机（2026-10-17 14:04 UTC+8）
+
+- 用户指令「立刻停止 -> 整理、提交、推送」。全部 Subagent 已停止；UAT-009 DEV 在进行中被中断（未出 DEV 报告，checklist 仍 NOT_RUN）。
+- UAT-009 DEV 未完成的半成品一并提交以保留进度：`demo/static/js/upload.js`、`demo/static/js/workbench_queue.js`、`demo/tests/test_uat_009_new_manual_inherited_state.py`、`artifacts/uat009-dev/`。**未经测试验证，下一环境需从 UAT-009 DEV 重新审阅/续做。**
+- UAT-008 三阶段 PASS 的产品修复、测试、报告随本次提交入库。
+- 遗留另卡：O1 实收 0 toast 文案；E1 `demo/.rag_chroma` 测试夹具；N1 前端 `currentRole` 未定义；N2 归 UAT-029；N3 QA 时间戳疑误标。
+- **下一原子任务：UAT-009 DEV（续）**，其后 UAT-028 -> UAT-029；DEP-HIDDEN 仍 BLOCKED。
+- 密钥位置不变：`/home/box/.config/receipt-agent/model.env`（未入库）。

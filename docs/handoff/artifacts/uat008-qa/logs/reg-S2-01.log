@@ -1,0 +1,4 @@
+$ pytest demo/tests/test_review_s2_01.py demo/tests/test_p_ai_pipeline_fixes.py::test_s2_01_multipack_qty_one_is_split_and_warned
+..........                                                               [100%]
+10 passed in 2.38s
+exit=0

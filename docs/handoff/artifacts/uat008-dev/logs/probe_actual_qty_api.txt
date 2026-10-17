@@ -1,0 +1,22 @@
+PASS ac1_six_fees_independent {"delivery_fee": 5.0, "deposit_amount": 4.0, "service_fee": 3.0, "tax_amount": 2.0, "discount_amount": 1.0, "rounding_adjustment": 0.5}
+PASS ac2_mismatch_blocked_422 {"status": 422, "code": "MATH_MISMATCH_CONFIRM", "msg": "{'status': 'error', 'code': 'MATH_MISMATCH_CONFIRM', 'msg': '单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？', 'data': {'warnings': ['总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元']}}"}
+PASS ac2_discrepancy_visible_in_error "{'status': 'error', 'code': 'MATH_MISMATCH_CONFIRM', 'msg': '单据上的数字对不上：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。老板入账前必须改对，确定要先提交吗？', 'data': {'warnings': ['总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元']}}"
+PASS ac2_confirm_allows_save {"status": "success", "id": 1, "receipt_id": 1, "version": 1, "math_blockers": ["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"], "status_after": "edited"}
+PASS ac4_actual_qty_zero_persisted {"actual_qty": 0.0, "items0": {"id": 1, "name": "Item_Zero", "raw_name": "Item_Zero", "quantity": 1.0, "unit": "pcs", "raw_unit": "pcs", "unit_price": 10.0, "amount": 10.0, "sku_id": null, "cost_center_id": null, "confidence": null, "matched": false, "price_anomaly": false, "price_anomaly_direction": "", "price_diff_percent": 0.0, "unit_conversion_warning": "", "fuzzy_candidates": [], "entity_candidates": [], "is_void": false, "actual_qty": 0.0, "evidence": null, "sku_candidates": []}, "status": 200}
+PASS ac2_approve_blocked_on_mismatch {"status": 422, "body": {"status": "error", "code": "APPROVAL_BLOCKED", "msg": "单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。", "blockers": ["总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元"]}}
+PASS ac2_approve_discrepancy_visible "{'status': 'error', 'code': 'APPROVAL_BLOCKED', 'msg': '单据上的数字对不上，不能入账：总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元。请先把数字改对再入账。', 'blockers': ['总额对不上：各行加起来 0 元，减折扣 1 元，减抹零 0.5 元，加押金 4 元，加运费 5 元，加服务费 3 元，加税 2 元，应付 12.5 元，但单据总额写 22.5 元，相差 10 元']}"
+PASS unmatched_zero_inventory_log {"logs": 0, "batches": 0}
+PASS unmatched_zero_batches {"logs": 0, "batches": 0}
+PASS ac3_matched_save_200 {"status": "success", "id": 2, "receipt_id": 2, "version": 1, "math_blockers": [], "status_after": "edited"}
+PASS ac3_matched_approve_200 {"status": "success", "version": 2, "needs_review": false}
+PASS ac4_null_save_200 {"status": "success", "id": 3, "receipt_id": 3, "version": 1, "math_blockers": [], "status_after": "edited"}
+PASS ac4_null_persisted_as_null {"actual_qty": null}
+PASS ac4_null_approve_200 {"status": "success", "version": 2, "needs_review": false}
+PASS ac4_variant_str0_is_zero {"status": 200, "actual_qty": 0.0}
+PASS ac4_variant_float0_is_zero {"status": 200, "actual_qty": 0.0}
+PASS tenant_b_peek_404 {"status": 404}
+PASS tenant_b_save_404 {"status": 404}
+PASS tenant_b_approve_404 {"status": 404}
+PASS tenant_b_baseline_unchanged {"before": 0, "after": 0}
+SUMMARY PASS 20/20
+probe_actual_qty_api_exit=0

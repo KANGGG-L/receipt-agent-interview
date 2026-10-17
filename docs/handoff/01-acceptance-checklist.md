@@ -301,7 +301,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-008] 实收0的保存与入账算术校验不一致
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 21:50 UTC+8 三阶段闭环：`artifacts/uat008-dev-report.md` -> `uat008-qa-report.md` -> `uat008-uat-report.md`；UAT 隔离端口 15380 ≠15180 ≠15280，真实浏览器+API 35/35，新测试 46、原套件 7、回归 164 passed；无阻断缺陷；非阻断：O1 实收 0 入账 toast 仍称「库存已增加」建议另开文案卡，E1 `demo/.rag_chroma` 为运行时目录不入库，建议另开测试夹具卡；15010 FREE_RESERVED；未 commit/push）
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/review_core.js", "demo/app/api_receipt_lifecycle.py", "demo/app/services/inventory.py"]`

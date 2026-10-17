@@ -1,0 +1,16 @@
+PASS A0_opened_total_22.5_actual_blank_no_total_issue {"total": "22.50", "actual": "", "overridden": false, "hint": "", "hintVisible": false, "issues": [], "toasts": []}
+PASS A1_type_actual_0_auto_total_becomes_12.50 {"total": "12.50", "actual": "0", "overridden": false, "hint": "", "hintVisible": false, "issues": [], "toasts": []}
+FAIL A2_total_typed_22.5_hint_shows_diff_10_and_override_kept {"total": "22.5", "actual": "0", "overridden": false, "hint": "", "hintVisible": false, "issues": [{"id": "err_grand_total_math", "type": "blocker", "guide": "明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。"}], "toasts": []}
+PASS A2_issue_summary_blocker_diff_10_visible [{"id": "err_grand_total_math", "type": "blocker", "guide": "明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。"}]
+PASS A3_save_blocked_locally_with_diff_no_request {"toast": "还有 1 处必须先改的地方：明细各项金额加总 ($12.50) 与整单总金额 ($22.50) 不符，相差 $10.00 元。请对照原图核对各行金额，或修改总金额。 改好后再点「保存并提交审核」", "save_requests_delta": 0}
+PASS A3b_approve_click_blocked_locally_no_request {"approve_requests": 0}
+FAIL A4_total_12.5_no_total_issue_hint_hidden {"total": "12.5", "actual": "0", "overridden": true, "hint": "总额是你手改的，和明细加起来（22.50 元）相差 10.00 元。 改回明细合计", "hintVisible": true, "issues": [], "toasts": ["这张单还有 1 处必须先改的地方，改好并保存后再审核入账×", "这张单还有 1 处必须先改的地方，改好并保存后再审核入账", "×"]}
+PASS A5_save_request_actual_qty_0_total_12.5_response_200 {"status": 200, "actual_qty": 0, "total": 12.5, "fees": {"delivery_fee": 5, "deposit_amount": 4, "service_fee": 3, "tax_amount": 2, "discount_amount": 1, "rounding_adjustment": 0.5}}
+PASS A5b_db_actual_qty_0_persisted [[0.0, 1.0, 10.0]]
+PASS A6_ui_approve_200_db_approved_stock_delta_0 {"approve_status": 200, "receipt": [["approved", 12.5]], "inventory_log(count,sum_qty)": [[1, 0.0]]}
+PASS B0_blank_actual_total_22.5_no_issue {"total": "22.50", "actual": "", "overridden": false, "hint": "", "hintVisible": false, "issues": [], "toasts": ["单据 #20 已审核入账，库存已增加×", "单据 #20 已审核入账，库存已增加", "×"]}
+PASS B1_save_payload_actual_qty_null_200 {"status": 200, "actual_qty": null, "total": 22.5}
+PASS B2_ui_approve_200_null_uses_quantity_1 {"approve": 200, "actual_qty": [[null]], "inventory_log(count,sum_qty)": [[1, 1.0]]}
+PASS screenshots_md5_distinct {"01_actual0_auto_total_12_50.png": "8c383fe6d17b77f6910ad09d62269b6d", "02_total_22_5_diff_10_visible.png": "6818ab5c98de121f9626428219c087c8", "03_save_blocked_diff_10.png": "a1634047bd0bff22e86d2d93a81bc959", "04_saved_matched_12_5.png": "472476e2742b32abdc551cc3733b32af", "05_approve_confirm_dialog.png": "d059c518bdfe99ab4356e85a3112921a", "06_approved_actual0.png": "5d3c9f969c9d5493d5e320284478a71f", "07_approved_null_qty1.png": "c62aa34c0ce1b0e802e29a788ffe6825"}
+SUMMARY FAIL 12/14
+exit=1

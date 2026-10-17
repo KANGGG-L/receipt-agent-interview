@@ -33,6 +33,39 @@ def qty(value) -> float:
     return float(_to_decimal(value).quantize(_QTY, rounding=ROUND_HALF_UP))
 
 
+def optional_qty(value, strict=True):
+    """UAT-008：实收数量 actual_qty 的唯一归一口径（保存、门禁重算、落库、入账共用）。
+
+    - None / 空串 / 纯空白 -> None（「未填实收」，按票面 quantity / amount 计）；
+    - 可解析的有限数值（含 0、0.0、"0"、" 0 "）-> float（有效 0 必须保留为 0，严禁 truthy 回落）；
+    - 其它（"abc"、NaN、Infinity、bool 等）-> strict=True 抛 ValueError（由调用方拒绝）；
+      strict=False 返回 None（读侧/落库兜底：宁可视作「未填」也不伪造成有效 0）。
+    - 数值按库存数量口径舍入到 4 位小数，保证「门禁重算用的值」与「落库值」逐位一致。
+    why：此前门禁把 "" 当 None（按票面 10 元算，保存放行），落库层 _to_decimal 却把 ""/非法值
+    存成 0.0，入账按 DB 的 0 重算即被阻断 —— 同一张单保存与入账结论相反。
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if value == "":
+            return None
+    try:
+        if isinstance(value, bool):
+            raise ValueError("actual_qty 不能是布尔值")
+        try:
+            d = Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            raise ValueError("actual_qty 不是数字: %r" % (value,))
+        if not d.is_finite():
+            raise ValueError("actual_qty 不是有限数字: %r" % (value,))
+    except ValueError:
+        if strict:
+            raise
+        return None
+    return float(d.quantize(_QTY, rounding=ROUND_HALF_UP))
+
+
 def money_sum(values) -> float:
     """先按 Decimal 精确求和，再舍入到分。"""
     total = Decimal(0)

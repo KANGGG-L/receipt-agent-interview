@@ -1364,6 +1364,7 @@ def _math_gate(*, doc_form, vendor, date, items, total, service_fee=0.0, tax_amo
     items 是 [{name, quantity, unit, unit_price, amount, is_void, actual_qty}]。
     返回阻断项文案列表（空 = 通过）。构造契约对象失败时抛出，由调用方决定是否吞掉。
     """
+    from app import money as _money
     from app.models import DocForm, ReceiptData, ReceiptItem
     from app.services import math_engine
     try:
@@ -1374,7 +1375,9 @@ def _math_gate(*, doc_form, vendor, date, items, total, service_fee=0.0, tax_amo
     for it in items or []:
         if not isinstance(it, dict):
             continue
-        actual_qty = it.get("actual_qty")
+        # UAT-008：与落库（db.set_receipt_items）、入账（inventory）同一归一口径；
+        # 空串/空白 = 未填（None），有效 0 保留为 0。
+        actual_qty = _money.optional_qty(it.get("actual_qty"), strict=False)
         parsed.append(ReceiptItem(
             name=str(it.get("name", "") or ""),
             qty=float(it.get("quantity", 0) or 0),
@@ -1382,7 +1385,7 @@ def _math_gate(*, doc_form, vendor, date, items, total, service_fee=0.0, tax_amo
             unit_price=float(it.get("unit_price", 0) or 0),
             amount=float(it.get("amount", 0) or 0),
             is_void=bool(it.get("is_void", 0) or 0),
-            actual_qty=(float(actual_qty) if actual_qty not in (None, "") else None),
+            actual_qty=actual_qty,
         ))
     data = ReceiptData(
         doc_form=doc,
@@ -1873,6 +1876,21 @@ def save_edited(body: SaveEditedBody, request: Request):
     # 唯一保留的兼容口子：前端识别完成后会把识别结果「同步保存」一次，此时单据本来就是
     # 服务端 Job 写出的 parsed / parsed_with_warnings，状态保持不变、仍视为未经人工复核。
     requested_auto = (body.source == "auto")
+
+    # UAT-008：实收 actual_qty 在进入门禁重算与落库之前统一归一，且只归一这一次。
+    # 此前门禁把 "" / 空白当「未填」按票面计（保存放行），落库却把 ""/非法值存成 0.0，
+    # 入账按 DB 的 0 重算即 APPROVAL_BLOCKED —— 保存与入账结论相反。非法值直接拒绝，不写库。
+    from app import money as _money
+    for _idx, it in enumerate(body.items or [], start=1):
+        if not isinstance(it, dict) or "actual_qty" not in it:
+            continue
+        try:
+            it["actual_qty"] = _money.optional_qty(it.get("actual_qty"), strict=True)
+        except ValueError:
+            return _receipt_error(
+                422, "INVALID_ACTUAL_QTY",
+                "第 %d 行的「实收」不是有效数字。没收到货请填 0，按票面数量收货请留空。" % _idx,
+                data={"row_index": _idx})
 
     items_raw = []
     for it in body.items or []:
@@ -2400,14 +2418,15 @@ def acknowledge_warning(receipt_id: int, body: AcknowledgeWarningBody, request: 
             doc_enum = DocForm(row.doc_form) if row.doc_form else DocForm.PRINTED
         except ValueError:
             doc_enum = DocForm.PRINTED
+        from app import money as _money
         rc_items = []
         for it in items:
-            act_qty = it.get("actual_qty")
+            act_qty = _money.optional_qty(it.get("actual_qty"), strict=False)
             rc_items.append(ReceiptItem(
                 name=str(it.get("name") or ""), qty=float(it.get("quantity", 0) or 0),
                 unit=str(it.get("unit") or ""), unit_price=float(it.get("unit_price", 0) or 0),
                 amount=float(it.get("amount", 0) or 0), is_void=bool(it.get("is_void", 0) or 0),
-                actual_qty=float(act_qty) if act_qty not in (None, "") else None))
+                actual_qty=act_qty))
         rc_data = ReceiptData(
             doc_form=doc_enum, vendor=row.supplier_name or "通用供应商",
             date=row.receipt_date or "", items=rc_items,

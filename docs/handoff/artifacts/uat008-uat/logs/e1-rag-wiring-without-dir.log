@@ -1,0 +1,9 @@
+........F......                                                          [100%]
+=================================== FAILURES ===================================
+E   AssertionError: 已存在的 live demo 向量库 <demo>/.rag_chroma 必须存在。若这里为 None，先查是不是本机没有启用记忆 / 生产向量库被清退；**不要把它改回 P0-T3 的旧口径「断言不存在」**（为何旧判据过时见本组用例注释）
+    assert None is not None
+/workspace/receipt-agent-interview/tests/test_rag_embedding_wiring.py:374: AssertionError: 已存在的 live demo 向量库 <demo>/.rag_chroma 必须存在。若这里为 None，先查是不是本机没有启用记忆 / 生产向量库被清退；**不要把它改回 P0-T3 的旧口径「断言不存在」**（为何旧判据过时见本组用例注释）
+=========================== short test summary info ============================
+FAILED tests/test_rag_embedding_wiring.py::test_real_store_creates_identity_suffixed_collections
+1 failed, 14 passed in 3.62s
+exit=1

@@ -254,6 +254,10 @@
     };
 
     function itemsSumNow() {
+        // UAT-008：与 recalcTotalSum 同一实现（实收感知：有效 0 按 0 计，留空按票面金额）。
+        // 原实现只加 .inp-amount，实收 0 时提示「和明细相差 0」并清掉手改标记，
+        // 与问题摘要栏/保存门禁/入账门禁的「相差 10」结论相反。
+        if (typeof root.computeItemsAutoTotal === 'function') return root.computeItemsAutoTotal();
         if (typeof root.collectFeeMap !== 'function') return null;
         var rows = doc.querySelectorAll('#itemTableBody tr');
         var sum = 0;

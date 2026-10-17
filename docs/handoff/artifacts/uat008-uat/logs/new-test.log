@@ -1,0 +1,9 @@
+..............................................                           [100%]
+=============================== warnings summary ===============================
+demo/tests/test_uat_008_actual_qty_normalization.py::test_blank_actual_qty_save_and_approve_agree_and_stock_uses_quantity[]
+  /workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs_tenant[tid] = Chroma(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+46 passed, 1 warning in 12.07s
+exit=0

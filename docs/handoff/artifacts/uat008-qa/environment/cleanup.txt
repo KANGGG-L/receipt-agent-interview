@@ -1,0 +1,4 @@
+Sat Oct 17 13:09:48 UTC 2026
+15010: not listening
+15280: released
+db kept outside repo: /workspace/.uat008-qa-env/qa.db

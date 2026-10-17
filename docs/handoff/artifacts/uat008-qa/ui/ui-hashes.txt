@@ -1,0 +1,6 @@
+8cb95649613fafcc8a0f8f07ecc00338  01_typed_22_5_hint_issue_10.png
+66c3b4d5a705b14c0a1e48f8599619ac  02_save_blocked_toast_10.png
+d41d934c0c03f21cc3b69200ee5e37b6  03_revert_items_sum_12_50.png
+e741a805c15d2942c671697983038105  04_approved_toast.png
+e87a7f32b3e246f1fcc16b08d49b99e5  05_credit_note_negative_hint.png
+fecc10bbcc7fd7379c9247828749b825  06_credit_note_revert.png

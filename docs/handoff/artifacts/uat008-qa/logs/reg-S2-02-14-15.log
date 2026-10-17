@@ -1,0 +1,4 @@
+$ pytest demo/tests/test_p_ai_pipeline_fixes.py -k s2_02 or s2_14 or s2_15
+.......                                                                  [100%]
+7 passed, 78 deselected in 2.37s
+exit=0

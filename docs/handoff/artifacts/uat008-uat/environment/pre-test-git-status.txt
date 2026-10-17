@@ -1,0 +1,17 @@
+ M demo/app/api_receipts.py
+ M demo/app/db.py
+ M demo/app/money.py
+ M demo/app/services/inventory.py
+ M demo/app/services/receipt_utils.py
+ M demo/static/js/review_core.js
+ M demo/static/js/review_ux.js
+?? demo/tests/test_uat_008_actual_qty_normalization.py
+!! demo/.env
+!! demo/__pycache__/
+!! demo/app/__pycache__/
+!! demo/app/chains/__pycache__/
+!! demo/app/prompts/__pycache__/
+!! demo/app/services/__pycache__/
+!! demo/backups/
+!! demo/scripts/__pycache__/
+!! demo/tests/__pycache__/
