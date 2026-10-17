@@ -1,0 +1,4 @@
+tables_with_exp ['experiment', 'experiment_assignment']
+experiment count_sample 0
+experiment_assignment count_sample 0
+AFTER_SEED [{'id': 1, 'name': 'ENG04_Synthetic_Experiment', 'status': 'draft'}]

@@ -1,0 +1,18 @@
+total 1736
+drwxr-xr-x 2 box box   4096 Oct 17 04:23 .
+drwxr-xr-x 6 box box   4096 Oct 17 04:21 ..
+-rw-r--r-- 1 box box 134904 Oct 17 04:23 after-login-admin.png
+-rw-r--r-- 1 box box 127965 Oct 17 04:23 after-login-owner.png
+-rw-r--r-- 1 box box 117863 Oct 17 04:23 after-login-staff.png
+-rw-r--r-- 1 box box 113111 Oct 17 04:23 after-logout-admin.png
+-rw-r--r-- 1 box box 105497 Oct 17 04:23 after-logout-owner.png
+-rw-r--r-- 1 box box  99451 Oct 17 04:23 after-logout-staff.png
+-rw-r--r-- 1 box box 120657 Oct 17 04:23 after-refresh-admin.png
+-rw-r--r-- 1 box box  99283 Oct 17 04:23 after-refresh-owner.png
+-rw-r--r-- 1 box box 106973 Oct 17 04:23 after-refresh-staff.png
+-rw-r--r-- 1 box box 119866 Oct 17 04:23 confirm-modal-admin.png
+-rw-r--r-- 1 box box 112246 Oct 17 04:23 confirm-modal-owner.png
+-rw-r--r-- 1 box box 104618 Oct 17 04:23 confirm-modal-staff.png
+-rw-r--r-- 1 box box 133696 Oct 17 04:21 error-admin.png
+-rw-r--r-- 1 box box 119306 Oct 17 04:22 error-owner.png
+-rw-r--r-- 1 box box 119306 Oct 17 04:22 error-staff.png

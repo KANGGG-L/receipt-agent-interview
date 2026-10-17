@@ -237,6 +237,69 @@ def test_kind_labels_match_export_report_and_ledger_ui():
         "invLedgerKindLabel 必须只有一份实现"
 
 
+
+# -------------------------------------------------------------
+# UAT-003：流水品名不得截断到相同前缀；全名可获取；不以 ID 替代主名
+# -------------------------------------------------------------
+def test_uat003_api_keeps_distinct_full_names_with_shared_prefix():
+    """入库 Synthetic_Rice / Synthetic_Oil 后，logs API 必须返回完整可区分品名。"""
+    _db = _fresh_db()
+    client = _client()
+    rice_id = _sku(_db, "Synthetic_Rice")
+    oil_id = _sku(_db, "Synthetic_Oil")
+    long_zh = "特级有机黑糯米_" + ("测" * 20)
+    zh_id = _sku(_db, long_zh)
+    _db.apply_stock_log(
+        sku_id=rice_id, name="Synthetic_Rice", qty=1.0, unit="kg", amount=10.0,
+        vendor="Vendor_A", date="2026-10-17", receipt_id=None, kind="in",
+        tenant_id="default")
+    _db.apply_stock_log(
+        sku_id=oil_id, name="Synthetic_Oil", qty=2.0, unit="L", amount=20.0,
+        vendor="Vendor_A", date="2026-10-17", receipt_id=None, kind="in",
+        tenant_id="default")
+    _db.apply_stock_log(
+        sku_id=zh_id, name=long_zh, qty=3.0, unit="斤", amount=30.0,
+        vendor="Vendor_B", date="2026-10-17", receipt_id=None, kind="in",
+        tenant_id="default")
+
+    ret = _get(client)
+    assert ret.status_code == 200, ret.text
+    body = ret.json()
+    assert body["status"] == "success"
+    names = {row["name"] for row in body["data"]}
+    assert "Synthetic_Rice" in names
+    assert "Synthetic_Oil" in names
+    assert long_zh in names
+    # 前缀截断会让二者撞成同一可见串；API 层必须仍是完整原值
+    rice_rows = [r for r in body["data"] if r["name"] == "Synthetic_Rice"]
+    oil_rows = [r for r in body["data"] if r["name"] == "Synthetic_Oil"]
+    assert rice_rows and oil_rows
+    assert rice_rows[0]["name"] != oil_rows[0]["name"]
+    assert "Rice" in rice_rows[0]["name"] and "Oil" in oil_rows[0]["name"]
+
+
+def test_uat003_ui_ledger_name_cell_exposes_full_original():
+    """台账渲染必须带 inv-ledger-name-cell + title/data-full-name，且主文案用 name。"""
+    js_path = os.path.join(_DEMO_DIR, "static", "js", "inventory_board.js")
+    js = open(js_path, encoding="utf-8").read()
+    assert "inv-ledger-name-cell" in js, "ledger name cell class missing"
+    assert "data-full-name" in js, "data-full-name attr missing for full-name access"
+    assert "title=" in js and "nameEsc" in js
+    # 主展示必须绑定业务 name，禁止用 sku_id 顶替品名文本
+    assert "r.name" in js
+    # 不得出现把 sku_id 当主文案塞进品名单元格的写法
+    assert "inv-ledger-name-text" in js
+    css_path = os.path.join(_DEMO_DIR, "static", "css", "style.css")
+    css = open(css_path, encoding="utf-8").read()
+    assert "inv-ledger-name-cell" in css
+    block = re.search(
+        r"#tab-inventory\s+#inventoryLedgerTable\s+td\.inv-ledger-name-cell\s*\{([^}]*)\}",
+        css, re.S)
+    assert block, "CSS override for ledger name cell missing"
+    body = block.group(1)
+    assert "white-space: normal" in body
+    assert "overflow: visible" in body
+
 if __name__ == "__main__":
     import pytest
     sys.exit(pytest.main([__file__, "-v"]))

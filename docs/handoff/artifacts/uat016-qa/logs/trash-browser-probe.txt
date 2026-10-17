@@ -1,0 +1,2 @@
+{"verdict": "PASS", "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-qa/evidence/trash-browser-probe.json", "error": null}
+browser_probe_exit=0

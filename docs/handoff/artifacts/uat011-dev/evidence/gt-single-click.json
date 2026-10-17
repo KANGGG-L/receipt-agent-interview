@@ -1,0 +1,535 @@
+{
+  "card": "UAT-011",
+  "script": "gt_single_click.py",
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "seed_markers",
+      "pass": true,
+      "detail": {
+        "a": 200,
+        "b": 200,
+        "a_body": {
+          "status": "success",
+          "id": 1,
+          "receipt_id": 1,
+          "version": 1,
+          "math_blockers": [],
+          "status_after": "edited"
+        },
+        "b_body": {
+          "status": "success",
+          "id": 2,
+          "receipt_id": 2,
+          "version": 1,
+          "math_blockers": [],
+          "status_after": "edited"
+        }
+      }
+    },
+    {
+      "name": "gt_button_label",
+      "pass": true,
+      "detail": {
+        "text": "确认本张 GT（进入下一张）"
+      }
+    },
+    {
+      "name": "ac_single_click_posts",
+      "pass": true,
+      "detail": {
+        "confirm_count": 1,
+        "save_edited_count": 0,
+        "confirm_status": 200,
+        "other_post_urls": [
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report",
+          "http://127.0.0.1:15471/api/csp-report"
+        ]
+      }
+    },
+    {
+      "name": "ac_db_unchanged_after_gt",
+      "pass": true,
+      "detail": {
+        "before_totals": {
+          "receipts": 2,
+          "receipt_items": 2,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "after_totals": {
+          "receipts": 2,
+          "receipt_items": 2,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "A_before": {
+          "receipts": 1,
+          "receipt_items": 1,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "A_after": {
+          "receipts": 1,
+          "receipt_items": 1,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "B_before": {
+          "receipts": 1,
+          "receipt_items": 1,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "B_after": {
+          "receipts": 1,
+          "receipt_items": 1,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        }
+      }
+    },
+    {
+      "name": "ac_gt_file_confirmed",
+      "pass": true,
+      "detail": {
+        "gt_status": "confirmed",
+        "reviewed_by": "admin@demo.hk"
+      }
+    },
+    {
+      "name": "ac_double_click_no_dup_business",
+      "pass": true,
+      "detail": {
+        "confirm_count": 1,
+        "save_edited_count": 0,
+        "totals_before_dbl": {
+          "receipts": 2,
+          "receipt_items": 2,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "totals_after_dbl": {
+          "receipts": 2,
+          "receipt_items": 2,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        }
+      }
+    },
+    {
+      "name": "leave_eval_context_cleared",
+      "pass": true,
+      "detail": {
+        "in_eval": false
+      }
+    },
+    {
+      "name": "ac_leave_eval_manual_save",
+      "pass": true,
+      "detail": {
+        "save_edited_count": 1,
+        "confirm_count": 0,
+        "http": 200,
+        "body_status": "success",
+        "receipt_id": 3
+      }
+    },
+    {
+      "name": "ac_manual_save_wrote_business_db",
+      "pass": true,
+      "detail": {
+        "A_after_gt": {
+          "receipts": 1,
+          "receipt_items": 1,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        },
+        "A_after_manual": {
+          "receipts": 2,
+          "receipt_items": 2,
+          "inventory_batches": 0,
+          "inventory_log": 0,
+          "payments": 0
+        }
+      }
+    },
+    {
+      "name": "neg_tenant_b_isolation",
+      "pass": true,
+      "detail": {
+        "B_tables_stable": true,
+        "leak": false,
+        "B_names_sample": [
+          "Marker_B"
+        ],
+        "B_http": 200
+      }
+    }
+  ],
+  "posts_single": [
+    {
+      "url": "http://127.0.0.1:15471/api/evalset/sample/U001/confirm",
+      "method": "POST",
+      "post_data": "{\"gt\":{\"supplier_name\":\"U001 Synth Vendor\",\"date\":\"2026-10-15\",\"total_amount\":40,\"doc_form\":\"printed_delivery_note\",\"payment_marked\":false,\"payment_evidence\":\"\",\"currency\":\"HKD\",\"discount_amount\":0,\"deposit_amount\":0,\"delivery_fee\":0,\"service_fee\":0,\"tax_amount\":0,\"rounding_adjustment\":0,\"adjustment_notes\":[],\"items\":[{\"name\":\"测试白菜\",\"qty\":2,\"unit\":\"斤\",\"unit_price\":10,\"amount\":20},{\"name\":\"测试萝卜\",\"qty\":1,\"unit\":\"个\",\"unit_price\":20,\"amount\":20}]}}",
+      "ts": 1792236885.429188
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":43,\"column-number\":106,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.510537
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":43,\"column-number\":106,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5107164
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":210,\"column-number\":244,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5108473
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":210,\"column-number\":244,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5109782
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":211,\"column-number\":101,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5110898
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":211,\"column-number\":101,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5111964
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":213,\"column-number\":111,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5113032
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":213,\"column-number\":111,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5114152
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":215,\"column-number\":85,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5115147
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":215,\"column-number\":85,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5116093
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":216,\"column-number\":132,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5117111
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":216,\"column-number\":132,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5124502
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":217,\"column-number\":123,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.512611
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":217,\"column-number\":123,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5127254
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":218,\"column-number\":132,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5128198
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":218,\"column-number\":132,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5143304
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1314,\"column-number\":248,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5144558
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1314,\"column-number\":248,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5145643
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1315,\"column-number\":101,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5146718
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1315,\"column-number\":101,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.514803
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1316,\"column-number\":113,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.514914
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1316,\"column-number\":113,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5150256
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1318,\"column-number\":85,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5151217
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1318,\"column-number\":85,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5152023
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1319,\"column-number\":134,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5156016
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1319,\"column-number\":134,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.5157073
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1320,\"column-number\":125,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.515806
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1320,\"column-number\":125,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.515902
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"enforce\",\"blocked-uri\":\"inline\",\"line-number\":1321,\"column-number\":134,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.516092
+    },
+    {
+      "url": "http://127.0.0.1:15471/api/csp-report",
+      "method": "POST",
+      "post_data": "{\"csp-report\":{\"document-uri\":\"http://127.0.0.1:15471/evalset/workbench/U002?auto_next=1\",\"referrer\":\"http://127.0.0.1:15471/evalset/workbench/U001\",\"violated-directive\":\"style-src-attr\",\"effective-directive\":\"style-src-attr\",\"original-policy\":\"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; report-uri /api/csp-report\",\"disposition\":\"report\",\"blocked-uri\":\"inline\",\"line-number\":1321,\"column-number\":134,\"source-file\":\"http://127.0.0.1:15471/evalset/workbench/U002\",\"status-code\":200,\"script-sample\":\"\"}}",
+      "ts": 1792236885.520148
+    }
+  ],
+  "posts_double": [
+    {
+      "url": "http://127.0.0.1:15471/api/evalset/sample/U002/confirm",
+      "method": "POST",
+      "post_data": "{\"gt\":{\"supplier_name\":\"U001 Synth Vendor\",\"date\":\"2026-10-15\",\"total_amount\":40,\"doc_form\":\"printed_delivery_note\",\"payment_marked\":false,\"payment_evidence\":\"\",\"currency\":\"HKD\",\"discount_amount\":0,\"deposit_amount\":0,\"delivery_fee\":0,\"service_fee\":0,\"tax_amount\":0,\"rounding_adjustment\":0,\"adjustment_notes\":[],\"items\":[{\"name\":\"测试白菜\",\"qty\":2,\"unit\":\"斤\",\"unit_price\":10,\"amount\":20},{\"name\":\"测试萝卜\",\"qty\":1,\"unit\":\"个\",\"unit_price\":20,\"amount\":20}]}}",
+      "ts": 1792236887.6122644
+    }
+  ],
+  "posts_manual": [
+    {
+      "url": "http://127.0.0.1:15471/api/save_edited",
+      "method": "POST",
+      "post_data": "{\"receipt_id\":null,\"source\":\"manual\",\"supplier_name\":\"Vendor_Manual_After_Eval\",\"date\":\"2026-10-16\",\"sheet_name\":\"2026-10\",\"total_amount\":30,\"items\":[{\"name\":\"manual-item\",\"quantity\":2,\"unit\":\"kg\",\"unit_price\":15,\"amount\":30,\"actual_qty\":null,\"cost_center_id\":null,\"is_void\":false}],\"settlement_type\":\"cash\",\"doc_form\":\"manual_entry\",\"currency\":\"HKD\",\"discount_amount\":0,\"delivery_fee\":0,\"deposit_amount\":0,\"rounding_adjustment\":0,\"service_fee\":0,\"tax_amount\":0,\"adjustment_notes\":[],\"payment_evidence\":\"\",\"department_id\":null,\"payment_mark\":\"未付款\"}",
+      "ts": 1792236891.876246
+    }
+  ],
+  "db_before": {
+    "A": {
+      "tenant": "uat011-a",
+      "tables": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    },
+    "B": {
+      "tenant": "uat011-b",
+      "tables": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    },
+    "ALL": {
+      "tenant": null,
+      "tables": {
+        "receipts": 2,
+        "receipt_items": 2,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 2,
+        "receipt_items": 2,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    }
+  },
+  "db_after_gt": {
+    "A": {
+      "tenant": "uat011-a",
+      "tables": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    },
+    "B": {
+      "tenant": "uat011-b",
+      "tables": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 1,
+        "receipt_items": 1,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    },
+    "ALL": {
+      "tenant": null,
+      "tables": {
+        "receipts": 2,
+        "receipt_items": 2,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      },
+      "totals": {
+        "receipts": 2,
+        "receipt_items": 2,
+        "inventory_batches": 0,
+        "inventory_log": 0,
+        "payments": 0
+      }
+    }
+  },
+  "db_after_manual": {
+    "tenant": "uat011-a",
+    "tables": {
+      "receipts": 2,
+      "receipt_items": 2,
+      "inventory_batches": 0,
+      "inventory_log": 0,
+      "payments": 0
+    },
+    "totals": {
+      "receipts": 2,
+      "receipt_items": 2,
+      "inventory_batches": 0,
+      "inventory_log": 0,
+      "payments": 0
+    }
+  },
+  "fail_count": 0
+}

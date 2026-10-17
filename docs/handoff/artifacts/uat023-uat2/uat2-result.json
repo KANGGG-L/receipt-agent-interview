@@ -1,0 +1,7 @@
+{
+  "stage": "uat023-uat2",
+  "gate": "PASS",
+  "passCount": 95,
+  "failCount": 0,
+  "port": 15290
+}

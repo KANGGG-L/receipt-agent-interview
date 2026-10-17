@@ -1,0 +1,800 @@
+{
+  "pass": true,
+  "passCount": 60,
+  "failCount": 0,
+  "checks": [
+    {
+      "name": "vp390: media max-640 active",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp390: table min-width 0 (card)",
+      "ok": true,
+      "detail": "minWidth=0px display=block"
+    },
+    {
+      "name": "vp390: document no horizontal overflow",
+      "ok": true,
+      "detail": "{\"clientWidth\":390,\"scrollWidth\":390,\"bodyScrollWidth\":390,\"overflowX\":false}"
+    },
+    {
+      "name": "vp390:rice found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp390:rice visible name readable",
+      "ok": true,
+      "detail": "Synthetic_Rice"
+    },
+    {
+      "name": "vp390:rice data-full-name",
+      "ok": true,
+      "detail": "Synthetic_Rice"
+    },
+    {
+      "name": "vp390:rice word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp390:rice short name not letter-stacked",
+      "ok": true,
+      "detail": "{\"w\":119.3125,\"h\":20}"
+    },
+    {
+      "name": "vp390:rice name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":260,\"h\":21.203125,\"t\":305.828125,\"b\":327.03125,\"l\":63,\"r\":323},\"actions\":{\"w\":260,\"h\":66.71875,\"t\":492.40625,\"b\":559.125,\"l\":63,\"r\":323}}"
+    },
+    {
+      "name": "vp390:rice actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=1 actions=1"
+    },
+    {
+      "name": "vp390:rice More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":true,\"activeId\":\"1\",\"rowSkuId\":\"1\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp390:oil found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp390:oil visible name readable",
+      "ok": true,
+      "detail": "Synthetic_Oil"
+    },
+    {
+      "name": "vp390:oil data-full-name",
+      "ok": true,
+      "detail": "Synthetic_Oil"
+    },
+    {
+      "name": "vp390:oil word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp390:oil short name not letter-stacked",
+      "ok": true,
+      "detail": "{\"w\":105.078125,\"h\":20}"
+    },
+    {
+      "name": "vp390:oil name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":260,\"h\":21.203125,\"t\":303.84375,\"b\":325.046875,\"l\":63,\"r\":323},\"actions\":{\"w\":260,\"h\":66.71875,\"t\":495.3125,\"b\":562.03125,\"l\":63,\"r\":323}}"
+    },
+    {
+      "name": "vp390:oil actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=2 actions=2"
+    },
+    {
+      "name": "vp390:oil More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":false,\"activeId\":\"2\",\"rowSkuId\":\"2\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp390:long found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp390:long visible name readable",
+      "ok": true,
+      "detail": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测"
+    },
+    {
+      "name": "vp390:long data-full-name",
+      "ok": true,
+      "detail": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测"
+    },
+    {
+      "name": "vp390:long word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp390:long name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":260,\"h\":42.40625,\"t\":295.75,\"b\":338.15625,\"l\":63,\"r\":323},\"actions\":{\"w\":260,\"h\":66.71875,\"t\":503.53125,\"b\":570.25,\"l\":63,\"r\":323}}"
+    },
+    {
+      "name": "vp390:long actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=3 actions=3"
+    },
+    {
+      "name": "vp390:long More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":false,\"activeId\":\"3\",\"rowSkuId\":\"3\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp412: media max-640 active",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp412: table min-width 0 (card)",
+      "ok": true,
+      "detail": "minWidth=0px display=block"
+    },
+    {
+      "name": "vp412: document no horizontal overflow",
+      "ok": true,
+      "detail": "{\"clientWidth\":412,\"scrollWidth\":412,\"bodyScrollWidth\":412,\"overflowX\":false}"
+    },
+    {
+      "name": "vp412:rice found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp412:rice visible name readable",
+      "ok": true,
+      "detail": "Synthetic_Rice"
+    },
+    {
+      "name": "vp412:rice data-full-name",
+      "ok": true,
+      "detail": "Synthetic_Rice"
+    },
+    {
+      "name": "vp412:rice word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp412:rice short name not letter-stacked",
+      "ok": true,
+      "detail": "{\"w\":119.3125,\"h\":20}"
+    },
+    {
+      "name": "vp412:rice name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":282,\"h\":21.203125,\"t\":341.828125,\"b\":363.03125,\"l\":63,\"r\":345},\"actions\":{\"w\":282,\"h\":66.71875,\"t\":528.40625,\"b\":595.125,\"l\":63,\"r\":345}}"
+    },
+    {
+      "name": "vp412:rice actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=1 actions=1"
+    },
+    {
+      "name": "vp412:rice More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":true,\"activeId\":\"1\",\"rowSkuId\":\"1\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp412:oil found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp412:oil visible name readable",
+      "ok": true,
+      "detail": "Synthetic_Oil"
+    },
+    {
+      "name": "vp412:oil data-full-name",
+      "ok": true,
+      "detail": "Synthetic_Oil"
+    },
+    {
+      "name": "vp412:oil word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp412:oil short name not letter-stacked",
+      "ok": true,
+      "detail": "{\"w\":105.078125,\"h\":20}"
+    },
+    {
+      "name": "vp412:oil name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":282,\"h\":21.203125,\"t\":338.84375,\"b\":360.046875,\"l\":63,\"r\":345},\"actions\":{\"w\":282,\"h\":66.71875,\"t\":530.3125,\"b\":597.03125,\"l\":63,\"r\":345}}"
+    },
+    {
+      "name": "vp412:oil actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=2 actions=2"
+    },
+    {
+      "name": "vp412:oil More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":false,\"activeId\":\"2\",\"rowSkuId\":\"2\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp412:long found",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp412:long visible name readable",
+      "ok": true,
+      "detail": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测"
+    },
+    {
+      "name": "vp412:long data-full-name",
+      "ok": true,
+      "detail": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测"
+    },
+    {
+      "name": "vp412:long word-break not break-all",
+      "ok": true,
+      "detail": "wordBreak=break-word"
+    },
+    {
+      "name": "vp412:long name+actions co-visible (same card)",
+      "ok": true,
+      "detail": "{\"sameCard\":true,\"horizOverlap\":true,\"cardInView\":true,\"name\":{\"w\":282,\"h\":42.40625,\"t\":330.75,\"b\":373.15625,\"l\":63,\"r\":345},\"actions\":{\"w\":282,\"h\":66.71875,\"t\":538.53125,\"b\":605.25,\"l\":63,\"r\":345}}"
+    },
+    {
+      "name": "vp412:long actions data-sku-id == row",
+      "ok": true,
+      "detail": "row=3 actions=3"
+    },
+    {
+      "name": "vp412:long More click same-row SKU",
+      "ok": true,
+      "detail": "{\"ok\":true,\"visible\":false,\"activeId\":\"3\",\"rowSkuId\":\"3\",\"sameRow\":true,\"cspMentionsId\":true,\"note\":\"visible may be false if prior closeHandler raced; activeId+CSP prove same-row\"}"
+    },
+    {
+      "name": "vp1440: media max-640 inactive",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp1440: desktop min-width retained (~640px)",
+      "ok": true,
+      "detail": "minWidth=640px display=table"
+    },
+    {
+      "name": "vp1440: Rice/Oil/long present",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp1440: Rice has More (owner actions)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp1440: Oil has More",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp1440: names readable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "vp1440: short names not letter-stacked",
+      "ok": true,
+      "detail": "{\"rice\":{\"w\":119.3125,\"h\":20},\"oil\":{\"w\":105.078125,\"h\":20}}"
+    },
+    {
+      "name": "vp1440: document no horizontal overflow",
+      "ok": true,
+      "detail": "{\"clientWidth\":1440,\"scrollWidth\":1440,\"bodyScrollWidth\":1440,\"overflowX\":false}"
+    }
+  ],
+  "raw": {
+    "vp390": {
+      "doc": {
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "bodyScrollWidth": 390,
+        "overflowX": false
+      },
+      "tableMinWidth": "0px",
+      "tableDisplay": "block",
+      "tableClass": "data-table inventory-sku-table csp-s-20",
+      "mediaMatches640": true,
+      "rows": {
+        "rice": {
+          "found": true,
+          "skuId": "1",
+          "actionsDataSkuId": "1",
+          "visibleText": "Synthetic_Rice",
+          "fullName": "Synthetic_Rice",
+          "title": "Synthetic_Rice",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 260,
+            "h": 21.203125,
+            "t": 305.828125,
+            "b": 327.03125,
+            "l": 63,
+            "r": 323
+          },
+          "strongRect": {
+            "w": 119.3125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 260,
+            "h": 66.71875,
+            "t": 492.40625,
+            "b": 559.125,
+            "l": 63,
+            "r": 323
+          },
+          "trRect": {
+            "t": 271.109375,
+            "b": 572.125,
+            "h": 301.015625
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "oil": {
+          "found": true,
+          "skuId": "2",
+          "actionsDataSkuId": "2",
+          "visibleText": "Synthetic_Oil",
+          "fullName": "Synthetic_Oil",
+          "title": "Synthetic_Oil",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 260,
+            "h": 21.203125,
+            "t": 303.84375,
+            "b": 325.046875,
+            "l": 63,
+            "r": 323
+          },
+          "strongRect": {
+            "w": 105.078125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 260,
+            "h": 66.71875,
+            "t": 495.3125,
+            "b": 562.03125,
+            "l": 63,
+            "r": 323
+          },
+          "trRect": {
+            "t": 269.125,
+            "b": 575.03125,
+            "h": 305.90625
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "long": {
+          "found": true,
+          "skuId": "3",
+          "actionsDataSkuId": "3",
+          "visibleText": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "fullName": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "title": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 260,
+            "h": 42.40625,
+            "t": 295.75,
+            "b": 338.15625,
+            "l": 63,
+            "r": 323
+          },
+          "strongRect": {
+            "w": 252.46875,
+            "h": 41.203125
+          },
+          "actionsRect": {
+            "w": 260,
+            "h": 66.71875,
+            "t": 503.53125,
+            "b": 570.25,
+            "l": 63,
+            "r": 323
+          },
+          "trRect": {
+            "t": 261.03125,
+            "b": 583.25,
+            "h": 322.21875
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        }
+      },
+      "more": {
+        "rice": {
+          "ok": true,
+          "visible": true,
+          "activeId": "1",
+          "rowSkuId": "1",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        },
+        "oil": {
+          "ok": true,
+          "visible": false,
+          "activeId": "2",
+          "rowSkuId": "2",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        },
+        "long": {
+          "ok": true,
+          "visible": false,
+          "activeId": "3",
+          "rowSkuId": "3",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        }
+      }
+    },
+    "vp412": {
+      "doc": {
+        "clientWidth": 412,
+        "scrollWidth": 412,
+        "bodyScrollWidth": 412,
+        "overflowX": false
+      },
+      "tableMinWidth": "0px",
+      "tableDisplay": "block",
+      "tableClass": "data-table inventory-sku-table csp-s-20",
+      "mediaMatches640": true,
+      "rows": {
+        "rice": {
+          "found": true,
+          "skuId": "1",
+          "actionsDataSkuId": "1",
+          "visibleText": "Synthetic_Rice",
+          "fullName": "Synthetic_Rice",
+          "title": "Synthetic_Rice",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 282,
+            "h": 21.203125,
+            "t": 341.828125,
+            "b": 363.03125,
+            "l": 63,
+            "r": 345
+          },
+          "strongRect": {
+            "w": 119.3125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 282,
+            "h": 66.71875,
+            "t": 528.40625,
+            "b": 595.125,
+            "l": 63,
+            "r": 345
+          },
+          "trRect": {
+            "t": 307.109375,
+            "b": 608.125,
+            "h": 301.015625
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "oil": {
+          "found": true,
+          "skuId": "2",
+          "actionsDataSkuId": "2",
+          "visibleText": "Synthetic_Oil",
+          "fullName": "Synthetic_Oil",
+          "title": "Synthetic_Oil",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 282,
+            "h": 21.203125,
+            "t": 338.84375,
+            "b": 360.046875,
+            "l": 63,
+            "r": 345
+          },
+          "strongRect": {
+            "w": 105.078125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 282,
+            "h": 66.71875,
+            "t": 530.3125,
+            "b": 597.03125,
+            "l": 63,
+            "r": 345
+          },
+          "trRect": {
+            "t": 304.125,
+            "b": 610.03125,
+            "h": 305.90625
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "long": {
+          "found": true,
+          "skuId": "3",
+          "actionsDataSkuId": "3",
+          "visibleText": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "fullName": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "title": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 282,
+            "h": 42.40625,
+            "t": 330.75,
+            "b": 373.15625,
+            "l": 63,
+            "r": 345
+          },
+          "strongRect": {
+            "w": 268.78125,
+            "h": 41.203125
+          },
+          "actionsRect": {
+            "w": 282,
+            "h": 66.71875,
+            "t": 538.53125,
+            "b": 605.25,
+            "l": 63,
+            "r": 345
+          },
+          "trRect": {
+            "t": 296.03125,
+            "b": 618.25,
+            "h": 322.21875
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": true,
+          "cardInView": true,
+          "coVisible": true,
+          "letterStacked": false,
+          "hasMore": true
+        }
+      },
+      "more": {
+        "rice": {
+          "ok": true,
+          "visible": true,
+          "activeId": "1",
+          "rowSkuId": "1",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        },
+        "oil": {
+          "ok": true,
+          "visible": false,
+          "activeId": "2",
+          "rowSkuId": "2",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        },
+        "long": {
+          "ok": true,
+          "visible": false,
+          "activeId": "3",
+          "rowSkuId": "3",
+          "sameRow": true,
+          "cspMentionsId": true,
+          "note": "visible may be false if prior closeHandler raced; activeId+CSP prove same-row"
+        }
+      }
+    },
+    "vp1440": {
+      "doc": {
+        "clientWidth": 1440,
+        "scrollWidth": 1440,
+        "bodyScrollWidth": 1440,
+        "overflowX": false
+      },
+      "tableMinWidth": "640px",
+      "tableDisplay": "table",
+      "tableClass": "data-table inventory-sku-table csp-s-20",
+      "mediaMatches640": false,
+      "rows": {
+        "rice": {
+          "found": true,
+          "skuId": "1",
+          "actionsDataSkuId": "1",
+          "visibleText": "Synthetic_Rice",
+          "fullName": "Synthetic_Rice",
+          "title": "Synthetic_Rice",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 469.171875,
+            "h": 21.203125,
+            "t": 438.890625,
+            "b": 460.09375,
+            "l": 304,
+            "r": 773.171875
+          },
+          "strongRect": {
+            "w": 119.3125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 150.859375,
+            "h": 66,
+            "t": 416.5,
+            "b": 482.5,
+            "l": 1235.140625,
+            "r": 1386
+          },
+          "trRect": {
+            "t": 416.5,
+            "b": 482.5,
+            "h": 66
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": false,
+          "cardInView": true,
+          "coVisible": false,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "oil": {
+          "found": true,
+          "skuId": "2",
+          "actionsDataSkuId": "2",
+          "visibleText": "Synthetic_Oil",
+          "fullName": "Synthetic_Oil",
+          "title": "Synthetic_Oil",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 469.171875,
+            "h": 21.203125,
+            "t": 438.890625,
+            "b": 460.09375,
+            "l": 304,
+            "r": 773.171875
+          },
+          "strongRect": {
+            "w": 105.078125,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 150.859375,
+            "h": 66,
+            "t": 416.5,
+            "b": 482.5,
+            "l": 1235.140625,
+            "r": 1386
+          },
+          "trRect": {
+            "t": 416.5,
+            "b": 482.5,
+            "h": 66
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": false,
+          "cardInView": true,
+          "coVisible": false,
+          "letterStacked": false,
+          "hasMore": true
+        },
+        "long": {
+          "found": true,
+          "skuId": "3",
+          "actionsDataSkuId": "3",
+          "visibleText": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "fullName": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "title": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+          "wordBreak": "break-word",
+          "overflowWrap": "anywhere",
+          "nameRect": {
+            "w": 469.171875,
+            "h": 21.203125,
+            "t": 439.140625,
+            "b": 460.34375,
+            "l": 304,
+            "r": 773.171875
+          },
+          "strongRect": {
+            "w": 448.21875,
+            "h": 20
+          },
+          "actionsRect": {
+            "w": 150.859375,
+            "h": 66,
+            "t": 416.5,
+            "b": 482.5,
+            "l": 1235.140625,
+            "r": 1386
+          },
+          "trRect": {
+            "t": 416.5,
+            "b": 482.5,
+            "h": 66
+          },
+          "nameVisible": true,
+          "actionsVisible": true,
+          "sameCard": true,
+          "horizOverlap": false,
+          "cardInView": true,
+          "coVisible": false,
+          "letterStacked": false,
+          "hasMore": true
+        }
+      },
+      "more": {}
+    }
+  },
+  "base": "http://127.0.0.1:15295",
+  "port": 15295,
+  "timestamp": "2026-10-16T20:52:36.978Z"
+}

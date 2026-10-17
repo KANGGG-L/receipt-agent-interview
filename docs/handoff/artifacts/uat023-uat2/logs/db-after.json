@@ -1,0 +1,17 @@
+{
+  "sku": {
+    "id": 1,
+    "name": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+    "exact_hans": true
+  },
+  "department": {
+    "id": 1,
+    "name": "后厨冷链中心（超长部门名称）",
+    "exact_hans": true
+  },
+  "supplier": {
+    "id": 1,
+    "name": "鲜生农产供应商（特长名称说明）",
+    "exact_hans": true
+  }
+}

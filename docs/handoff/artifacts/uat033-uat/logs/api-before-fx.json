@@ -1,0 +1,94 @@
+{
+  "base": "http://127.0.0.1:15175",
+  "tenant": "uat033uat",
+  "steps": [
+    {
+      "name": "tenant_b_baseline",
+      "status": 200,
+      "data": {
+        "period": {
+          "label": "2026-10",
+          "start_date": "",
+          "end_date": "",
+          "prev_label": "2026-09"
+        },
+        "month": "2026-10",
+        "start_date": "",
+        "end_date": "",
+        "departments": [],
+        "unallocated": {
+          "count": 0,
+          "total": 0.0,
+          "prev_total": 0.0,
+          "delta": 0.0,
+          "trend": "flat",
+          "change_pct": 0.0
+        },
+        "month_total": 0.0,
+        "prev_total": 0.0,
+        "delta": 0.0,
+        "change_pct": 0.0,
+        "trend": "flat",
+        "currency": "HKD",
+        "basis": "已入账单据总额（含服务费、税、折扣、运费），按明细金额比例分摊到部门；外币单据按入账时汇率折成港币",
+        "unconverted": [],
+        "unconverted_count": 0,
+        "missing_fx_count": 0,
+        "unconverted_warning": ""
+      }
+    },
+    {
+      "name": "approved_cny",
+      "rid": 4
+    },
+    {
+      "name": "stripped_to_nfx",
+      "rid": 4
+    },
+    {
+      "name": "api_after_nfx",
+      "month_total": 20.0,
+      "unconverted_count": 1,
+      "missing_fx_count": 1,
+      "unconverted": [
+        {
+          "receipt_id": 4,
+          "currency": "NFX",
+          "amount": 100.0
+        }
+      ],
+      "unconverted_warning": "有 1 张单据是「NFX」，设置里没有对应汇率，没有算进合计。请老板到「设置」里填好汇率。"
+    }
+  ],
+  "tenant_b_after": {
+    "period": {
+      "label": "2026-10",
+      "start_date": "",
+      "end_date": "",
+      "prev_label": "2026-09"
+    },
+    "month": "2026-10",
+    "start_date": "",
+    "end_date": "",
+    "departments": [],
+    "unallocated": {
+      "count": 0,
+      "total": 0.0,
+      "prev_total": 0.0,
+      "delta": 0.0,
+      "trend": "flat",
+      "change_pct": 0.0
+    },
+    "month_total": 0.0,
+    "prev_total": 0.0,
+    "delta": 0.0,
+    "change_pct": 0.0,
+    "trend": "flat",
+    "currency": "HKD",
+    "basis": "已入账单据总额（含服务费、税、折扣、运费），按明细金额比例分摊到部门；外币单据按入账时汇率折成港币",
+    "unconverted": [],
+    "unconverted_count": 0,
+    "missing_fx_count": 0,
+    "unconverted_warning": ""
+  }
+}

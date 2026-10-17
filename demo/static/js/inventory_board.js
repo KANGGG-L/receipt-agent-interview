@@ -298,6 +298,53 @@ function resetInventoryFilters() {
     loadInventoryData();
 }
 
+// UAT-036：库存指标请求世代号——延迟响应不得覆盖更新的成功/失败态。
+let inventoryLoadSeq = 0;
+
+function setInventoryMetricDash() {
+    ['valTotalSKU', 'valLowStock', 'valPriceAnomaly'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = '—';
+    });
+}
+
+function markInventoryMetricsFailed() {
+    // UAT-036：GET 失败显示 — + 错误 + 可点重试，禁止把失败伪装成 0。
+    setInventoryMetricDash();
+    let notice = document.getElementById('invLoadErrorNotice');
+    if (!notice) {
+        const grid = document.querySelector('#tab-inventory .metrics-grid');
+        notice = document.createElement('div');
+        notice.id = 'invLoadErrorNotice';
+        notice.className = 'inv-load-error-notice';
+        notice.setAttribute('role', 'alert');
+        notice.setAttribute('data-uat036', 'inventory-error');
+        notice.style.cssText = 'margin:8px 0; padding:8px 12px; border-radius:6px;'
+            + ' background:#fee2e2; color:#991b1b; font-size:0.85rem;';
+        notice.innerHTML = '库存指标加载失败，当前数值不可用。'
+            + ' <button type="button" id="inventoryKpiRetry" class="btn btn-secondary"'
+            + ' data-uat036="inventory-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+        if (grid && grid.parentNode) {
+            grid.parentNode.insertBefore(notice, grid.nextSibling);
+        } else {
+            document.body.appendChild(notice);
+        }
+        const btn = document.getElementById('inventoryKpiRetry');
+        if (btn) btn.addEventListener('click', () => loadInventoryData());
+    } else {
+        notice.classList.remove('hide');
+        const btn = document.getElementById('inventoryKpiRetry');
+        if (btn) btn.classList.remove('hide');
+    }
+}
+
+function clearInventoryMetricsFailed() {
+    const notice = document.getElementById('invLoadErrorNotice');
+    if (notice) notice.classList.add('hide');
+    const btn = document.getElementById('inventoryKpiRetry');
+    if (btn) btn.classList.add('hide');
+}
+
 function loadInventoryData() {
     const inputQ = document.getElementById('invSearchInput');
     const selCat = document.getElementById('invCategorySelect');
@@ -328,9 +375,18 @@ function loadInventoryData() {
     if (InventoryUI.price !== 'all') params.set('price', InventoryUI.price);
     if (InventoryUI.includeInactive) params.set('include_inactive', '1');
 
+    const mySeq = ++inventoryLoadSeq;
     apiFetch('/api/inventory?' + params.toString())
-    .then(res => res.json())
+    .then(res => {
+        if (mySeq !== inventoryLoadSeq) return null;
+        if (!res || !res.ok) {
+            const err = new Error('inventory_http_' + ((res && res.status) || 'net'));
+            throw err;
+        }
+        return res.json();
+    })
     .then(ret => {
+        if (ret == null || mySeq !== inventoryLoadSeq) return;
         if (ret.status !== 'success') {
             // WS5-1：接口"成功响应但业务失败"同样不得静默 —— 走同一降级路径。
             console.warn('[inventory] 库存接口返回非成功状态，保留上一次数据：', ret);
@@ -348,6 +404,7 @@ function loadInventoryData() {
             PRICE_ANOMALY_THRESHOLD = Number(meta.price_anomaly_threshold_pct) / 100;
         }
         // 成功加载即清除降级标记（旧数据已由新数据替换）
+        clearInventoryMetricsFailed();
         clearInventoryStale();
         // WS3：加载库存数据时回填 owner 门店阈值控件当前值（owner-only；staff 不请求）
         if (isOwnerRoleNow()) loadPriceThresholdControl();
@@ -424,8 +481,13 @@ function loadInventoryData() {
             const priceAnomaly = !!sku.price_anomaly;
             const vsAvgPct = (sku.vs_avg_pct != null && Number.isFinite(Number(sku.vs_avg_pct)))
                 ? Number(sku.vs_avg_pct) : null;
-            const priceText = sku.last_unit_price
-                ? `$${Number(sku.last_unit_price).toFixed(2)}`
+            // UAT-021：列表「最新进货单价」列 — API 已对 staff 置 null；前端再按
+            // isOwnerRoleNow 门控，避免角色切换残留或异常 JSON 把价格渲出来。
+            // 不以导航隐藏代替 API 权限（脱敏真相源仍在 api_inventory）。
+            // UAT-027：港币展示走 I18N.fmtMoney（HK$ + 千分位）；null/非数 → —
+            const priceText = (isOwnerRoleNow() && sku.last_unit_price != null
+                && Number.isFinite(Number(sku.last_unit_price)))
+                ? I18N.fmtMoney(sku.last_unit_price)
                 : '—';
 
             const isActive = sku.active !== 0;
@@ -484,27 +546,32 @@ function loadInventoryData() {
                 const weightHint = unitHint ? ` title="${unitHint}"` : '';
                 kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
             }
+            // UAT-024：行绑定 data-sku-id；各列 data-label 供手机卡片布局与同排操作校验；
+            // 品名 title/data-full-name 保证窄屏可读完整业务名（Rice/Oil/长中文）。
+            const rawSkuName = (sku.name == null) ? '' : String(sku.name);
+            const nameEsc = w2Escape(rawSkuName);
+            tr.dataset.skuId = String(Number(sku.id));
             tr.innerHTML = `
-                <td class="inv-name-cell"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${w2Escape(sku.name)}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
-                <td><span class="badge badge-secondary">${w2Escape(sku.category || '其他')}</span></td>
-                <td class="col-right inv-metric-cell">
+                <td class="inv-name-cell" data-label="品名" title="${nameEsc}" data-full-name="${nameEsc}"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${nameEsc}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
+                <td data-label="分类"><span class="badge badge-secondary">${w2Escape(sku.category || '其他')}</span></td>
+                <td class="col-right inv-metric-cell" data-label="当前库存">
                     <div class="inv-metric-stack">
                         ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
                         <span class="inv-metric-value ${sku.is_low_stock ? 'is-low' : (skuStock < 1 ? 'is-zero' : 'is-ok')}"><strong>${skuStock}</strong> ${w2Escape(sku.base_unit)}</span>
                     </div>
                 </td>
-                <td class="col-right">${kgCell}</td>
-                <td class="col-right">
+                <td class="col-right" data-label="参考 kg">${kgCell}</td>
+                <td class="col-right" data-label="警戒线">
                     <span class="${sku.is_low_stock ? 'inv-alert-danger' : ''}">${alertVal} ${w2Escape(sku.base_unit)}</span>
                 </td>
-                <td class="col-right inv-metric-cell">
+                <td class="col-right inv-metric-cell" data-label="最新进货单价">
                     <div class="inv-metric-stack">
                         ${priceAnomalyBadge}
                         <span class="inv-price-value${priceAnomaly ? ' inv-price-hot' : ''}">${w2Escape(priceText)}</span>
                     </div>
                 </td>
-                <td class="col-center">
-                    <div class="inv-actions">
+                <td class="col-center inv-actions-cell" data-label="操作">
+                    <div class="inv-actions" data-sku-id="${Number(sku.id)}">
                         ${skuActionsHtml}
                     </div>
                 </td>
@@ -513,8 +580,9 @@ function loadInventoryData() {
         });
     })
     .catch(err => {
-        // WS5-1：接口失败绝不静默留在旧 UI —— 保留已有可用行（不清空到白屏）、
-        // 给出可见提示与 console.warn 留痕，并标注「数据可能不是最新」。
+        if (mySeq !== inventoryLoadSeq) return;
+        // WS5-1 / UAT-036：接口失败绝不静默留在旧 UI —— 指标改「—」+ 错误 + 重试，
+        // 保留已有可用行（不清空到白屏）、console.warn 留痕，并标注「数据可能不是最新」。
         // 只用 warn：契约测试断言 console.error 调用次数为 0。
         console.warn('[inventory] 库存列表加载失败，保留上一次数据：', err);
         degradeInventoryLoad();
@@ -523,6 +591,8 @@ function loadInventoryData() {
 
 // WS5-1：库存加载降级 —— 保留旧行并标注「可能不是最新」；再次成功加载时清除标记。
 function degradeInventoryLoad() {
+    // UAT-036：失败态指标统一为 —（含首次加载 HTML 默认 0 的场景），不得伪装成合法 0。
+    markInventoryMetricsFailed();
     showToast('库存加载失败，当前显示的数据可能不是最新', 'warning');
     const tbody = document.getElementById('inventoryTableBody');
     // 非库存页（无表格）时只留 toast，零 DOM 副作用。
@@ -575,7 +645,7 @@ function viewInventoryDetail(skuId) {
     const kg = (sku.standard_kg != null && Number.isFinite(Number(sku.standard_kg)))
         ? Number(sku.standard_kg).toFixed(3) + ' kg' : '未知（无换算依据）';
     const lastPrice = (isOwnerRoleNow() && sku.last_unit_price != null && Number.isFinite(Number(sku.last_unit_price)))
-        ? `$${Number(sku.last_unit_price).toFixed(2)}`
+        ? I18N.fmtMoney(sku.last_unit_price)
         : (isOwnerRoleNow() ? '未知' : '—');
     const rows = [
         ['品名', sku.name || ''],
@@ -620,6 +690,7 @@ function invLedgerKindLabel(kind) {
     // 与后端 api_export.py 既有 kind_map 同源口径（in/consume/waste/stocktake）。
     // 用词对齐：同一业务动作在系统里只能有一个中文名 —— 一律以 api_export.py 的
     // kind_map 为准，台账侧不得另起一套译名。
+    // reversal / adjust 不在导出 kind_map 内：回落显示原始 kind，方向由 qty_signed 表达。
     const map = {
         'in': '采购入库',
         'consume': '餐品消耗',
@@ -627,6 +698,25 @@ function invLedgerKindLabel(kind) {
         'stocktake': '盘点调整',
     };
     return map[kind] || kind || '-';
+}
+
+// UAT-007：台账数量方向。优先用 API qty_signed；旧响应缺字段时按 kind 本地派生，
+// 禁止只看 qty>0 一律加「+」（消耗/报损 DB 存绝对值会误显示为正）。
+function invLedgerQtySigned(r) {
+    if (r && r.qty_signed != null && r.qty_signed !== '' && Number.isFinite(Number(r.qty_signed))) {
+        return Number(r.qty_signed);
+    }
+    const qty = Number((r && r.qty) || 0);
+    const kind = (r && r.kind) ? String(r.kind) : '';
+    if (kind === 'consume' || kind === 'waste') return -Math.abs(qty);
+    return qty;
+}
+
+function invLedgerQtyText(r) {
+    const signed = invLedgerQtySigned(r);
+    if (!Number.isFinite(signed)) return '-';
+    if (signed === 0) return '0';
+    return (signed > 0 ? '+' : '') + signed;
 }
 
 function _invLedgerEmptyRow(msg) {
@@ -678,20 +768,25 @@ function loadInventoryLedger() {
             tbody.innerHTML = '';
             rows.forEach(r => {
                 const tr = document.createElement('tr');
-                const qty = Number(r.qty || 0);
-                const qtyText = (qty > 0 ? '+' : '') + qty;
+                const qtyText = invLedgerQtyText(r);
                 const amt = (r.amount != null && Number.isFinite(Number(r.amount))) ? Number(r.amount) : null;
                 const rid = (r.receipt_id != null && Number(r.receipt_id) > 0) ? Number(r.receipt_id) : null;
                 const receiptCell = rid
                     ? `<button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="openReceiptFromPriceHistory(${rid})">#${rid}</button>`
                     : '-';
+                // UAT-003：品名必须保留完整业务原值（含下划线后缀与长中文），不得被
+                // #tab-inventory 表格的 nowrap/窄列裁成相同前缀；主展示仍用 name，
+                // 不以 sku_id 替代。title + data-full-name 保证原值可获取。
+                const rawName = (r.name == null) ? '' : String(r.name);
+                const nameEsc = w2Escape(rawName);
+                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
                 tr.innerHTML = `
                     <td>${w2Escape(r.date || '')}</td>
                     <td><span class="badge badge-secondary">${w2Escape(invLedgerKindLabel(r.kind))}</span></td>
-                    <td>${w2Escape(r.name || '')}</td>
+                    ${nameCell}
                     <td class="col-right">${w2Escape(qtyText)}</td>
                     <td>${w2Escape(r.unit || '')}</td>
-                    <td class="col-right">${amt != null ? amt.toFixed(2) : '-'}</td>
+                    <td class="col-right">${amt != null ? w2Escape(I18N.fmtMoney(amt)) : '—'}</td>
                     <td>${w2Escape(r.vendor || '')}</td>
                     <td class="col-center">${receiptCell}</td>
                     <td>${w2Escape(r.note || '')}</td>
@@ -1212,7 +1307,14 @@ function loadAiLeanInsights() {
     // 店员不发 AI 洞察（owner 域接口），横幅保持隐藏
     if (isStaffRoleNow()) { banner.classList.add('hide'); return; }
 
-    apiFetch('/api/ai-insights')
+    // UAT-025：洞察请求必须携带当前界面语言，供 review_locale / 后续复盘 prompt 使用
+    const lang = (window.I18N && typeof window.I18N.getLocale === 'function')
+        ? window.I18N.getLocale()
+        : '';
+    const insightsUrl = lang
+        ? ('/api/ai-insights?lang=' + encodeURIComponent(lang))
+        : '/api/ai-insights';
+    apiFetch(insightsUrl)
     .then(res => res.json())
     .then(ret => {
         if (ret.status !== 'success' || !ret.data) {
@@ -1234,7 +1336,7 @@ function loadAiLeanInsights() {
 
         const sumText = document.getElementById('aiLeanSummaryText');
         if (sumText) {
-            sumText.innerText = `检测到 ${activeItems.length} 项食材价格异常上涨，预估影响成本 HK$ ${data.total_impact_amount.toFixed(2)}`;
+            sumText.innerText = `检测到 ${activeItems.length} 项食材价格异常上涨，预估影响成本 ${I18N.fmtMoney(data.total_impact_amount)}`;
         }
 
         renderAiLeanCards(activeItems);
@@ -1294,7 +1396,7 @@ function renderAiLeanCards(items) {
                     ${ackBadge}
                 </div>
                 <div class="ai-lean-card-desc">
-                    单价 $${it.earliest_price} -&gt; <strong style="color:#dc2626;">$${it.latest_price}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">HK$ ${it.impact_amount}</strong>
+                    单价 ${I18N.fmtMoney(it.earliest_price)} -&gt; <strong style="color:#dc2626;">${I18N.fmtMoney(it.latest_price)}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">${I18N.fmtMoney(it.impact_amount)}</strong>
                 </div>
             </div>
             <div class="ai-lean-card-actions">
@@ -1567,7 +1669,7 @@ function buildPriceChartSvg(points, opts) {
     yTicks.forEach(v => {
         const y = yAt(v);
         yGrid += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${width - padR}" y2="${y.toFixed(1)}" class="ph-grid"/>`;
-        yGrid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" class="ph-axis-label" text-anchor="end">$${v.toFixed(1)}</text>`;
+        yGrid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" class="ph-axis-label" text-anchor="end">${w2Escape(formatHkd(v))}</text>`;
     });
 
     // X 轴标签：首 / 中 / 末
@@ -1584,7 +1686,7 @@ function buildPriceChartSvg(points, opts) {
         const y = yAt(avgLine);
         avgSvg = `
             <line x1="${padL}" y1="${y.toFixed(1)}" x2="${width - padR}" y2="${y.toFixed(1)}" class="ph-avg-line"/>
-            <text x="${width - padR}" y="${(y - 6).toFixed(1)}" class="ph-avg-label" text-anchor="end">均 $${avgLine.toFixed(2)}</text>
+            <text x="${width - padR}" y="${(y - 6).toFixed(1)}" class="ph-avg-label" text-anchor="end">均 ${w2Escape(formatHkd(avgLine))}</text>
         `;
     }
 
@@ -1594,7 +1696,7 @@ function buildPriceChartSvg(points, opts) {
         const ty = yAt(thresholdUpper);
         thresholdSvg = `
             <line x1="${padL}" y1="${ty.toFixed(1)}" x2="${width - padR}" y2="${ty.toFixed(1)}" class="ph-threshold-line"/>
-            <text x="${width - padR}" y="${(ty - 6).toFixed(1)}" class="ph-threshold-label" text-anchor="end">阈值 $${thresholdUpper.toFixed(2)}</text>
+            <text x="${width - padR}" y="${(ty - 6).toFixed(1)}" class="ph-threshold-label" text-anchor="end">阈值 ${w2Escape(formatHkd(thresholdUpper))}</text>
         `;
     }
 
@@ -1606,7 +1708,7 @@ function buildPriceChartSvg(points, opts) {
             anomaly = ratio > threshold;
         }
         const cls = anomaly ? 'ph-dot-point ph-dot-up' : 'ph-dot-point';
-        const title = `${list[i].date}: $${c.price.toFixed(2)}`;
+        const title = `${list[i].date}: ${formatHkd(c.price)}`;
         dots += `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="${i === n - 1 ? 5 : 3.5}" class="${cls}"><title>${w2Escape(title)}</title></circle>`;
     });
 
@@ -1629,8 +1731,15 @@ function buildPriceChartSvg(points, opts) {
 }
 
 function formatHkd(price) {
-    if (price == null || !Number.isFinite(Number(price))) return '—';
-    return '$' + Number(price).toFixed(2);
+    // UAT-027：库存价格/走势图指标统一 HK$ + 千分位；null/非数 → —；不改 FX 计算。
+    if (price == null || price === '' || !Number.isFinite(Number(price))) return '—';
+    if (typeof I18N !== 'undefined' && I18N && typeof I18N.fmtMoney === 'function') {
+        return I18N.fmtMoney(price, 'HKD');
+    }
+    const n = Number(price);
+    const parts = n.toFixed(2).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return 'HK$' + parts.join('.');
 }
 
 // 完整日期规范化：任意来源（YYYY-MM-DD / YYYY-M-D / 含时间 / / 分隔）统一为 YYYY-MM-DD（供 hover 弹出）
@@ -1833,7 +1942,7 @@ function renderPriceHistoryModal(ret) {
             tr.innerHTML = `
                 <td>${renderDateCell(item.date)}</td>
                 <td class="ph-supplier-cell" title="${w2Escape(supName)}">${w2Escape(supName)}</td>
-                <td class="col-right"><strong>${w2Escape(Number.isFinite(price) ? price.toFixed(2) : '—')}</strong></td>
+                <td class="col-right"><strong>${w2Escape(Number.isFinite(price) ? formatHkd(price) : '—')}</strong></td>
                 <td class="col-right">${qty != null ? w2Escape(String(qty)) : '—'}</td>
                 <td><span class="badge badge-secondary">${w2Escape(({receipt: '进货单据', manual: '手工录入', initial: '初始单价', baseline: '初始单价'})[item.source] || item.source || '—')}</span></td>
                 <td class="col-right">${deltaCell}</td>

@@ -1,0 +1,42 @@
+{
+  "card": "ENG-01",
+  "phase": "DEV",
+  "isolate_port": 15451,
+  "isolate_base": "http://127.0.0.1:15451",
+  "health_status_file": "logs/health.json",
+  "qa_logs_tests_xml": "MISSING — reused precise node test_qa_live_service_port_15010_healthy from card/checklist + ENG-05 junit history",
+  "positive": {
+    "log": "pytest-positive.txt",
+    "exit_match": 0,
+    "has_1_passed": true,
+    "has_1_failed": false
+  },
+  "negatives": {
+    "no_config": {
+      "log": "pytest-neg-no-config.txt",
+      "exit_match": 1,
+      "has_1_passed": false,
+      "has_1_failed": true
+    },
+    "forbid_15010": {
+      "log": "pytest-neg-forbid-15010.txt",
+      "exit_match": 1,
+      "has_1_passed": false,
+      "has_1_failed": true
+    },
+    "non200": {
+      "log": "pytest-neg-non200.txt",
+      "exit_match": 1,
+      "has_1_passed": false,
+      "has_1_failed": true
+    },
+    "timeout": {
+      "log": "pytest-neg-timeout.txt",
+      "exit_match": 1,
+      "has_1_passed": false,
+      "has_1_failed": true
+    }
+  },
+  "15010": "FREE_RESERVED before/after (never used as probe target)",
+  "verdict": "PASS"
+}

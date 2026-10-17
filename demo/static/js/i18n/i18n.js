@@ -8,6 +8,8 @@
  *      > 香港字形」转换为繁体。覆盖 main.js 等 innerHTML 拼接出的动态内容与后端返回的提示。
  *      永不改写 input/textarea 的值，也跳过 contenteditable、script/style 与
  *      [translate="no"] / [data-i18n-skip] 子树。
+ *      业务身份数据（导出预览品名/供应商、成本明细品名等）必须包 data-i18n-skip，
+ *      与 CSV/DB 原值逐字对齐；UI chrome 与表头仍走转换层，禁止全局关闭繁体。
  *
  * 新增语言：在 locales/ 下增加目录文件并在 SUPPORTED 中登记；非中文语言不启用文字转换层。
  */
@@ -287,6 +289,7 @@
     var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1 };
 
     // 整棵子树（含自身属性）都不处理的元素。
+    // UAT-023：业务品名/供应商等身份列靠 data-i18n-skip 豁免，勿在此全局关掉转换。
     function isSkipElement(el) {
         if (!el || el.nodeType !== 1) return false;
         if (SKIP_TAGS[el.nodeName] === 1) return true;

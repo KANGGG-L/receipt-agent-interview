@@ -1,0 +1,131 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-uat/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+tests/test_phase3_filter_adjustments_deep_qa.py::test_qa_live_service_port_15010_healthy [PROBE] GET http://127.0.0.1:15461/api/health timeout=5.0
+[PROBE] GET http://127.0.0.1:15461/api/analytics/recovery-summary?tenant_id=all&date_range=24h timeout=5.0
+PASSED
+
+=============================== warnings summary ===============================
+demo/app/main.py:78
+  /workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+docs/handoff/artifacts/eng05-uat/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: 12 warnings
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-uat/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+demo/app/main.py:85
+  /workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:92
+  /workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:98
+  /workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:118
+  /workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:124
+  /workspace/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:140
+  /workspace/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:166
+  /workspace/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:201
+  /workspace/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:231
+  /workspace/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:256
+  /workspace/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:263
+  /workspace/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 24 warnings in 0.96s ========================

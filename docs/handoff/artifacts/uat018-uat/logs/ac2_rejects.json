@@ -1,0 +1,32 @@
+[
+  {
+    "label": "neg",
+    "status": 400,
+    "code": "INVALID_CONSUMPTION_QTY",
+    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+  },
+  {
+    "label": "zero",
+    "status": 400,
+    "code": "INVALID_CONSUMPTION_QTY",
+    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+  },
+  {
+    "label": "nan",
+    "status": 400,
+    "code": "INVALID_CONSUMPTION_QTY",
+    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+  },
+  {
+    "label": "inf",
+    "status": 400,
+    "code": "INVALID_CONSUMPTION_QTY",
+    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+  },
+  {
+    "label": "ninf",
+    "status": 400,
+    "code": "INVALID_CONSUMPTION_QTY",
+    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+  }
+]

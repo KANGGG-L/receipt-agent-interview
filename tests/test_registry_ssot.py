@@ -296,7 +296,14 @@ def _test_semantics(src, rel_path):
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
             and n.name.startswith("test_")]
     defs.sort(key=lambda n: (n.lineno, n.col_offset))
-    return [ast.dump(n) for n in asserts], [n.name for n in defs]
+    # Python 3.13+ omits empty list fields (e.g. keywords=[]) unless show_empty=True.
+    # Golden AC-13 baselines were recorded with empty fields present; keep dumps stable.
+    def _dump(n):
+        try:
+            return ast.dump(n, show_empty=True)
+        except TypeError:
+            return ast.dump(n)
+    return [_dump(n) for n in asserts], [n.name for n in defs]
 
 
 MATH_CONSUMER_TEST_FILES = [

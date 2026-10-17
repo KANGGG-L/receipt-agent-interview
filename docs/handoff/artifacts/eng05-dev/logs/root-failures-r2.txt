@@ -1,0 +1,28 @@
+tests.test_migration_live_copy::test_live_copy_migration
+MSG:AssertionError: 副本应包含单据数据
+assert 0 > 0
+ +  where 0 = <built-in method get of dict object at 0x7fc04c7bbe80>('receipts', 0)
+ +    where <built-in method get of dict object at 0x7fc04c7bbe80> = {'receipts': 0, 'receipt_items': 0, 'skus': 0, 'inventory_log': 0, ...}.get
+TEXT:E   AssertionError: 副本应包含单据数据
+    assert 0 > 0
+     +  where 0 = <built-in method get of dict object at 0x7fc04c7bbe80>('receipts', 0)
+     +    where <built-in method get of dict object at 0x7fc04c7bbe80> = {'receipts': 0, 'receipt_items': 0, 'skus': 0, 'inventory_log': 0, ...}.get
+
+tests.test_qa_obs_center_consistency_audit::test_ac_3_1_zero_em_dash_in_obs_center
+MSG:AssertionError: 观测中心 JS 代码中残留全角破折号渲染: [(2848, "if (!isOwner) return '—';"), (2852, "? I18N.fmtMoney(d.provisional_theoretical_cost) : '—';"), (2856, "return '—';"), (2859, 'if (!isOwner) return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>\';'), (2869, 'return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>\';'), (2872, "if (!isOwner) return '—';"), (2875, "? I18N.fmtMoney(d.provisional_gross_profit) : '—';"), (2879, "return '—';"), (3341, "const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';"), (3421, "const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';"), (3858, "priceInput.placeholder = '—';"), (3867, "if (costEl) costEl.innerText = '—';"), (3868, "if (profitEl) profitEl.innerText = '—';"), (3870, "marginEl.innerText = '—';"), (3885, "rowsBody.querySelectorAll('.ing-item-cost').forEach(el => { el.innerText = '—'; });"), (3886, "rowsBody.querySelectorAll('.ing-ref-price').forEach(el => { el.innerText = '—'; });")]
+assert 16 == 0
+ +  where 16 = len([(2848, "if (!isOwner) return '—';"), (2852, "? I18N.fmtMoney(d.provisional_theoretical_cost) : '—';"), (2856, "return '—';"), (2859, 'if (!isOwner) return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>\';'), (2869, 'return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>\';'), (2872, "if (!isOwner) return '—';"), ...])
+TEXT:E   AssertionError: 观测中心 JS 代码中残留全角破折号渲染: [(2848, "if (!isOwner) return '—';"), (2852, "? I18N.fmtMoney(d.provisional_theoretical_cost) : '—';"), (2856, "return '—';"), (2859, 'if (!isOwner) return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>\';'), (2869, 'return \'<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted
+
+tests.test_registry_ssot::test_ac13_math_consumer_assertions_untouched
+MSG:AssertionError: tests/test_u5_real_handwritten_long_receipts.py 第 11 条 assert 被改写，违反 AC-13
+assert "Assert(test=...alue=' 行')]))" == "Assert(test=...alue=' 行')]))"
+  
+  - Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='data', ctx=Load()), attr='items', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=14)]), msg=JoinedStr(values=[Constant(value='明细行被截断，预期 14 行，实际 '), FormattedValue(value=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='data', ctx=Load()), attr='items', ctx=Load())], keywords=[]), conversion=-1), Constant(value=' 行')]))
+  ?                                                                                                                       ...
+  
+  ...Full output truncated (3 lines hidden), use '-vv' to show
+TEXT:E   AssertionError: tests/test_u5_real_handwritten_long_receipts.py 第 11 条 assert 被改写，违反 AC-13
+    assert "Assert(test=...alue=' 行')]))" == "Assert(test=...alue=' 行')]))"
+      
+      - Assert(test=Compare(left=Call(func=Name(id='len', ctx=Load()), args=[Attribute(value=Name(id='data', ctx=Load()), attr='items', ctx=Load())], keywords=[]), ops=[Eq()], comparators=[Constant(value=14)]), msg=JoinedS

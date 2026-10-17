@@ -1,0 +1,15 @@
+{
+  "stopped_at": "2026-10-17 05:37 CST",
+  "port": 15700,
+  "pid": 34468,
+  "process_dead": true,
+  "STOPPED_OWNED_TEST_PROCESS": true,
+  "port_free_ss_empty": true,
+  "reuseaddr_bind_ok": true,
+  "browser_contexts_closed": true,
+  "db": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat021-uat/environment/uat_isolated.db",
+  "auth": "AUTH_ENABLED=1",
+  "checklist_flipped": false,
+  "git_commit": false,
+  "verdict": "PASS"
+}

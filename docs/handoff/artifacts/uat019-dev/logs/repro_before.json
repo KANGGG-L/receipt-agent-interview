@@ -1,0 +1,10 @@
+{
+  "huge_status": 200,
+  "stock_after": -499999999998.5,
+  "silent_negative": true,
+  "response_keys": [
+    "status",
+    "msg",
+    "data"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "card": "UAT-024",
+  "stage": "independent-qa",
+  "gate": "PASS",
+  "passCount": 60,
+  "failCount": 0,
+  "port": 15295,
+  "pytest": "5 passed",
+  "harness": "14 PASS / 0 FAIL"
+}

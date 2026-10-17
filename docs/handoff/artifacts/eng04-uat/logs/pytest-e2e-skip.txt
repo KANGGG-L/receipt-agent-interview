@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng04-uat/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview/demo
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+tests/test_admin_tabs_consolidation_e2e.py::test_admin_tabs_consolidation_e2e SKIPPED [100%]
+
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_admin_tabs_consolidation_e2e.py:153: 本地 http://127.0.0.1:15010 无可用服务，且未显式 opt-in 自动拉起（缺省不会启动任何进程：本用例拉起的 uvicorn 会执行 startup 的引擎配置自愈，可能重写所在库的 engine_config）。如需自动拉起请设 E2E_ALLOW_SPAWN_UVICORN=1；或先手动启动 demo 服务后重跑。
+============================== 1 skipped in 0.48s ==============================

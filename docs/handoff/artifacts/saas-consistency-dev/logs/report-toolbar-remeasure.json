@@ -1,0 +1,32 @@
+{
+  "labels": [
+    {
+      "text": "月份：",
+      "h": 20,
+      "whiteSpace": "nowrap",
+      "stacked": false
+    },
+    {
+      "text": "起止日期：",
+      "h": 20,
+      "whiteSpace": "nowrap",
+      "stacked": false
+    }
+  ],
+  "filters": {
+    "left": 289,
+    "right": 1046,
+    "top": 286,
+    "bottom": 334,
+    "w": 757
+  },
+  "actions": {
+    "left": 1058,
+    "right": 1387,
+    "top": 287,
+    "bottom": 332,
+    "w": 329
+  },
+  "overlap": false,
+  "titleH": 99
+}

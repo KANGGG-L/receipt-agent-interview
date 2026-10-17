@@ -1,0 +1,299 @@
+{
+  "pass": true,
+  "base": "http://127.0.0.1:15205",
+  "tenant": "uat035uat",
+  "cases": [
+    {
+      "label": "hans_1440",
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "hant": false,
+      "domDaily": {
+        "qtyCount": 1,
+        "qty": {
+          "id": "dishConsumeQty_1",
+          "ariaLabel": "测试餐品A 当日消耗份数",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "0"
+        },
+        "search": {
+          "id": "dishConsumeSearchInput",
+          "ariaLabel": "搜索在售餐品",
+          "ariaLabelledby": null,
+          "placeholder": "搜索在售餐品...",
+          "title": null,
+          "value": ""
+        },
+        "cat": {
+          "id": "dishCategoryFilter",
+          "ariaLabel": "餐品分类筛选",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": ""
+        },
+        "st": {
+          "id": "dishStatusFilter",
+          "ariaLabel": "餐品在售状态筛选",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "active"
+        },
+        "dateLabelText": "消耗核算日期：",
+        "datePresent": true,
+        "scriptSrc": "http://127.0.0.1:15205/static/js/dish_consumption.js?v=acb2353838"
+      },
+      "domBom": {
+        "cat": {
+          "id": "dishCategoryFilter",
+          "ariaLabel": "餐品分类筛选",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "",
+          "options": [
+            ":全部分类",
+            "主食:主食",
+            "默认:默认"
+          ]
+        },
+        "st": {
+          "id": "dishStatusFilter",
+          "ariaLabel": "餐品在售状态筛选",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "active",
+          "options": [
+            "active:仅在售",
+            "all:全部状态",
+            "inactive:仅已停用"
+          ]
+        }
+      },
+      "qtyVal": "2",
+      "catVal": "主食",
+      "stVal": "all",
+      "regressions": {
+        "dateLabelFor": true,
+        "dateLabelText": "消耗核算日期：",
+        "searchAria": "搜索在售餐品",
+        "searchPlaceholder": "搜索在售餐品...",
+        "logoutAria": "退出登录"
+      },
+      "spinNames": [
+        "Month Month",
+        "Day Day",
+        "Year Year",
+        "测试餐品A 当日消耗份数"
+      ],
+      "namedSpinCount": 1,
+      "namedSpinNames": [
+        "测试餐品A 当日消耗份数"
+      ],
+      "catName": "餐品分类筛选",
+      "stName": "餐品在售状态筛选",
+      "comboNames": [
+        "当前角色",
+        "餐品分类筛选",
+        "餐品在售状态筛选"
+      ],
+      "notPlaceholderAlone": true,
+      "axNameMatchesAria": true,
+      "attrsProbe": {
+        "qtyAria": "测试餐品A 当日消耗份数",
+        "catAria": "餐品分类筛选",
+        "stAria": "餐品在售状态筛选",
+        "qtyPlaceholder": "",
+        "qtyTitle": "",
+        "catTitle": "",
+        "stTitle": "",
+        "catPlaceholder": "",
+        "stPlaceholder": ""
+      },
+      "ok": true
+    },
+    {
+      "label": "hant_390",
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "hant": true,
+      "domDaily": {
+        "qtyCount": 1,
+        "qty": {
+          "id": "dishConsumeQty_1",
+          "ariaLabel": "測試餐品A 當日消耗份數",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "0"
+        },
+        "search": {
+          "id": "dishConsumeSearchInput",
+          "ariaLabel": "搜尋在售餐品",
+          "ariaLabelledby": null,
+          "placeholder": "搜尋在售餐品...",
+          "title": null,
+          "value": ""
+        },
+        "cat": {
+          "id": "dishCategoryFilter",
+          "ariaLabel": "餐品分類篩選",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": ""
+        },
+        "st": {
+          "id": "dishStatusFilter",
+          "ariaLabel": "餐品在售狀態篩選",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "active"
+        },
+        "dateLabelText": "消耗核算日期：",
+        "datePresent": true,
+        "scriptSrc": "http://127.0.0.1:15205/static/js/dish_consumption.js?v=acb2353838"
+      },
+      "domBom": {
+        "cat": {
+          "id": "dishCategoryFilter",
+          "ariaLabel": "餐品分類篩選",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "",
+          "options": [
+            ":全部分類",
+            "主食:主食",
+            "默认:預設"
+          ]
+        },
+        "st": {
+          "id": "dishStatusFilter",
+          "ariaLabel": "餐品在售狀態篩選",
+          "ariaLabelledby": null,
+          "placeholder": null,
+          "title": null,
+          "value": "active",
+          "options": [
+            "active:僅在售",
+            "all:全部狀態",
+            "inactive:僅已停用"
+          ]
+        }
+      },
+      "qtyVal": "2",
+      "catVal": "主食",
+      "stVal": "all",
+      "regressions": {
+        "dateLabelFor": true,
+        "dateLabelText": "消耗核算日期：",
+        "searchAria": "搜尋在售餐品",
+        "searchPlaceholder": "搜尋在售餐品...",
+        "logoutAria": "登出"
+      },
+      "spinNames": [
+        "Month Month",
+        "Day Day",
+        "Year Year",
+        "測試餐品A 當日消耗份數"
+      ],
+      "namedSpinCount": 1,
+      "namedSpinNames": [
+        "測試餐品A 當日消耗份數"
+      ],
+      "catName": "餐品分類篩選",
+      "stName": "餐品在售狀態篩選",
+      "comboNames": [
+        "餐品分類篩選",
+        "餐品在售狀態篩選"
+      ],
+      "notPlaceholderAlone": true,
+      "axNameMatchesAria": true,
+      "attrsProbe": {
+        "qtyAria": "測試餐品A 當日消耗份數",
+        "catAria": "餐品分類篩選",
+        "stAria": "餐品在售狀態篩選",
+        "qtyPlaceholder": "",
+        "qtyTitle": "",
+        "catTitle": "",
+        "stTitle": "",
+        "catPlaceholder": "",
+        "stPlaceholder": ""
+      },
+      "ok": true
+    }
+  ],
+  "keyboardSubmit": {
+    "ok": true,
+    "qtyId": "dishConsumeQty_1",
+    "qtyAfter": "0",
+    "aria": "測試餐品A 當日消耗份數",
+    "consumePost": {
+      "url": "http://127.0.0.1:15205/api/dishes/daily_consumption/batch",
+      "status": 200,
+      "body": {
+        "status": "success",
+        "msg": "成功记录 1 项餐品消耗",
+        "data": {
+          "date": "2026-10-17",
+          "consumption_ids": [
+            1
+          ],
+          "merged": false,
+          "quantity": 1,
+          "items": [
+            {
+              "dish_id": 1,
+              "consumption_id": 1,
+              "quantity": 1,
+              "total_cost": 0,
+              "merged": false
+            }
+          ]
+        }
+      }
+    },
+    "enterTriggered": true
+  },
+  "regressions": {
+    "dateLabelForAll": true,
+    "searchAriaAll": true,
+    "cases": [
+      {
+        "label": "hans_1440",
+        "regressions": {
+          "dateLabelFor": true,
+          "dateLabelText": "消耗核算日期：",
+          "searchAria": "搜索在售餐品",
+          "searchPlaceholder": "搜索在售餐品...",
+          "logoutAria": "退出登录"
+        }
+      },
+      {
+        "label": "hant_390",
+        "regressions": {
+          "dateLabelFor": true,
+          "dateLabelText": "消耗核算日期：",
+          "searchAria": "搜尋在售餐品",
+          "searchPlaceholder": "搜尋在售餐品...",
+          "logoutAria": "登出"
+        }
+      }
+    ]
+  },
+  "negativeChecks": {
+    "notPlaceholderTitleAlone": true,
+    "axNamesFromAriaLabel": true,
+    "statusNotWrongAllCategory": true
+  }
+}

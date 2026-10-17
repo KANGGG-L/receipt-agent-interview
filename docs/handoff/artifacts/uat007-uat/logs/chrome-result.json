@@ -1,0 +1,100 @@
+{
+  "painted": [
+    {
+      "kindLabel": "餐品消耗",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "-1"
+    },
+    {
+      "kindLabel": "adjust",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "+1"
+    },
+    {
+      "kindLabel": "reversal",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "-1"
+    },
+    {
+      "kindLabel": "采购入库",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "+1"
+    },
+    {
+      "kindLabel": "餐品消耗",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "-1"
+    },
+    {
+      "kindLabel": "采购入库",
+      "name": "Synthetic_Rice_UAT",
+      "qtyText": "+10"
+    }
+  ],
+  "samples": [
+    {
+      "id": 7,
+      "kind": "consume",
+      "qty": 1,
+      "qty_signed": -1,
+      "paintedText": "-1"
+    },
+    {
+      "id": 6,
+      "kind": "adjust",
+      "qty": 1,
+      "qty_signed": 1,
+      "paintedText": "+1"
+    },
+    {
+      "id": 5,
+      "kind": "reversal",
+      "qty": -1,
+      "qty_signed": -1,
+      "paintedText": "-1"
+    },
+    {
+      "id": 4,
+      "kind": "in",
+      "qty": 1,
+      "qty_signed": 1,
+      "paintedText": "+1"
+    },
+    {
+      "id": 3,
+      "kind": "consume",
+      "qty": 1,
+      "qty_signed": -1,
+      "paintedText": "-1"
+    },
+    {
+      "id": 1,
+      "kind": "in",
+      "qty": 10,
+      "qty_signed": 10,
+      "paintedText": "+10"
+    }
+  ],
+  "consumeTexts": [
+    "-1",
+    "-1"
+  ],
+  "inTexts": [
+    "+1"
+  ],
+  "revTexts": [
+    "-1"
+  ],
+  "adjTexts": [
+    "+1"
+  ],
+  "consumeShowsNegative": true,
+  "consumeNotBlindPlus": true,
+  "inboundShowsPlus": true,
+  "reversalShowsNegative": true,
+  "adjustShowsPlus": true,
+  "paintedConsumeNeg": true,
+  "paintedInboundPos": true,
+  "noBlindPlusOnConsume": true,
+  "UAT007_PASS": true
+}

@@ -1,0 +1,115 @@
+{
+  "scope_id": "DM-01-normal-auto-recognize",
+  "source": "ENG-02 AC1",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "job_status": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-01-normal-auto-recognize.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 1,
+    "job_id": "e121211e73854f64b9a683f3b2ab659f",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "e121211e73854f64b9a683f3b2ab659f",
+          "receipt_id": 1,
+          "image_url": "/api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 12.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 14.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 16.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 18.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 20.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 22.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 22.15
+      }
+    ]
+  }
+}

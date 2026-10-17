@@ -28,6 +28,42 @@ function loadSuppliersData() {
 
 let allArchiveReceipts = [];
 
+// SAAS-SCALE: client-side pagination for large archive lists
+const ARCHIVE_PAGE_SIZE = 50;
+let archiveCurrentPage = 1;
+let archiveFilteredCache = [];
+
+function getArchivePageSize() {
+    return ARCHIVE_PAGE_SIZE;
+}
+
+function setArchivePage(page, opts) {
+    const total = archiveFilteredCache.length;
+    const pages = Math.max(1, Math.ceil(total / ARCHIVE_PAGE_SIZE) || 1);
+    let p = Number(page) || 1;
+    if (p < 1) p = 1;
+    if (p > pages) p = pages;
+    archiveCurrentPage = p;
+    renderArchiveTable(archiveFilteredCache, { keepPage: true, ...(opts || {}) });
+}
+window.setArchivePage = setArchivePage;
+
+function updateArchivePaginationUI(total, from, to, page, pages) {
+    const rangeEl = document.getElementById('archivePageRange');
+    const pager = document.getElementById('archivePagination');
+    const prev = document.getElementById('archivePagePrev');
+    const next = document.getElementById('archivePageNext');
+    const pageLabel = document.getElementById('archivePageLabel');
+    if (rangeEl) {
+        if (total === 0) rangeEl.textContent = '显示 0–0';
+        else rangeEl.textContent = '显示 ' + from + '–' + to;
+    }
+    if (pageLabel) pageLabel.textContent = page + ' / ' + pages;
+    if (prev) prev.disabled = page <= 1 || total === 0;
+    if (next) next.disabled = page >= pages || total === 0;
+    if (pager) pager.classList.toggle('hide', false);
+}
+
 function markArchiveKpiFailed() {
     ['todoPendingNum', 'todoFailedNum', 'todoOverdueNum'].forEach(id => {
         const el = document.getElementById(id);
@@ -75,17 +111,25 @@ function invalidateReceiptListCache() {
 window.__invalidateReceiptList = invalidateReceiptListCache;
 window.fetchReceiptListShared = fetchReceiptListShared;
 
+let archiveLoadSeq = 0;
+
 function loadReceiptsHistory() {
+    const mySeq = ++archiveLoadSeq;
     fetchReceiptListShared(false)
         .then(ret => {
+            if (mySeq !== archiveLoadSeq) return;
             const retry = document.getElementById('archiveKpiRetry');
             if (retry) retry.classList.add('hide');
             allArchiveReceipts = ret.data || [];
+            archiveCurrentPage = 1;
             populateFilterSuppliers();
             applyArchiveFilters();
             updateTodoBar();
         })
-        .catch(() => { markArchiveKpiFailed(); });
+        .catch(() => {
+            if (mySeq !== archiveLoadSeq) return;
+            markArchiveKpiFailed();
+        });
 }
 
 function populateFilterSuppliers() {
@@ -257,6 +301,7 @@ function applyArchiveFilters(delay = 60) {
             }
         });
 
+        archiveCurrentPage = 1;
         renderArchiveTable(filtered);
     }, delay);
 }
@@ -305,11 +350,31 @@ function populateReceiptStatusFilter() {
 }
 
 // 渲染归档表格逻辑（锁高防抖动与焦点恢复优化）
-function renderArchiveTable(receipts) {
+function renderArchiveTable(receipts, opts) {
+    opts = opts || {};
+    const list = Array.isArray(receipts) ? receipts : [];
+    if (!opts.keepPage) {
+        archiveFilteredCache = list;
+    } else {
+        // keepPage: re-slice current cache (page nav); still accept explicit list
+        if (Array.isArray(receipts)) archiveFilteredCache = list;
+    }
+    const total = archiveFilteredCache.length;
+    const pages = Math.max(1, Math.ceil(total / ARCHIVE_PAGE_SIZE) || 1);
+    if (archiveCurrentPage > pages) archiveCurrentPage = pages;
+    if (archiveCurrentPage < 1) archiveCurrentPage = 1;
+    const page = archiveCurrentPage;
+    const startIdx = total === 0 ? 0 : (page - 1) * ARCHIVE_PAGE_SIZE;
+    const endIdx = Math.min(startIdx + ARCHIVE_PAGE_SIZE, total);
+    const pageRows = archiveFilteredCache.slice(startIdx, endIdx);
+    const from = total === 0 ? 0 : startIdx + 1;
+    const to = endIdx;
+
     const recordBadge = document.getElementById('archiveRecordCount');
     if (recordBadge) {
-        recordBadge.textContent = '共 ' + receipts.length + ' 条记录';
+        recordBadge.textContent = '共 ' + total + ' 条记录';
     }
+    updateArchivePaginationUI(total, from, to, page, pages);
 
     const tbody = document.getElementById('archiveTableBody');
     if (!tbody) return;
@@ -325,11 +390,17 @@ function renderArchiveTable(receipts) {
 
     tbody.innerHTML = '';
 
-    if (receipts.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:var(--text-muted); padding:36px;">未找到符合筛选条件的归档记录</td></tr>';
+    // SAAS-SCALE empty states: empty DB vs no-filter-results vs has-data page
+    const dbEmpty = !Array.isArray(allArchiveReceipts) || allArchiveReceipts.length === 0;
+    if (total === 0) {
+        const msg = dbEmpty
+            ? '暂无归档单据（空库）'
+            : '未找到符合筛选条件的归档记录';
+        const kind = dbEmpty ? 'empty-db' : 'no-filter-results';
+        tbody.innerHTML = '<tr data-empty-state="' + kind + '"><td colspan="10" style="text-align:center; color:var(--text-muted); padding:36px;">' + msg + '</td></tr>';
     } else {
         let html = '';
-        receipts.forEach(function(r) {
+        pageRows.forEach(function(r) {
             const st = r.status || 'uploaded';
             const statusBadgeHTML = renderStatusBadge(st);
 
@@ -372,7 +443,7 @@ function renderArchiveTable(receipts) {
             const handwrittenBadge = _isHandwritten
                 ? '<span class="badge badge-secondary" style="font-size:0.72rem; margin-left:4px;" title="街市手写单（NCR）：手写字迹与花码易误读，建议逐行对照原图">手写单</span>'
                 : '';
-            html += '<tr' + _rowWarn + '>' +
+            html += '<tr data-receipt-id="' + rid + '"' + _rowWarn + '>' +
                 '<td style="vertical-align:middle;">#' + rid + '</td>' +
                 '<td style="vertical-align:middle;"><strong>' + w2Escape(r.supplier_name || '-') + '</strong>' + supCode + handwrittenBadge + greyBadgeHtml(r.use_grey) + '</td>' +
                 '<td style="vertical-align:middle;"><span style="font-size:0.82rem; color:var(--text-muted);">' + upDate + '</span></td>' +
@@ -1421,3 +1492,21 @@ function applyCostShare() {
     closeModalById('costShareModal');
     showToast('已按比例将 ' + rows.length + ' 行明细分摊至各部门，保存后生效', 'success', TOAST_DURATION.long);
 }
+
+
+(function bindArchivePaginationControls() {
+    function bind() {
+        const prev = document.getElementById('archivePagePrev');
+        const next = document.getElementById('archivePageNext');
+        if (prev && !prev.dataset.saasScaleBound) {
+            prev.dataset.saasScaleBound = '1';
+            prev.addEventListener('click', () => setArchivePage(archiveCurrentPage - 1));
+        }
+        if (next && !next.dataset.saasScaleBound) {
+            next.dataset.saasScaleBound = '1';
+            next.addEventListener('click', () => setArchivePage(archiveCurrentPage + 1));
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
+})();

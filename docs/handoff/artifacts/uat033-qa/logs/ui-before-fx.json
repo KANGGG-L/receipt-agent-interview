@@ -1,0 +1,16 @@
+{
+  "clicked": "AI 智能库存系统\n                \n             ",
+  "summary": "时段 2026-10：已入账单据总额HK$20.00，含服务费、税、折扣。 有 1 张单据是「NFX」，设置里没有对应汇率，没有算进合计。请老板到「设置」里填好汇率。",
+  "helpers": {
+    "hasCount": true,
+    "hasNotice": true,
+    "sample": 1
+  },
+  "lastReport": {
+    "month_total": 20,
+    "unconverted_count": 1,
+    "missing_fx_count": 1,
+    "unconverted_warning": "有 1 张单据是「NFX」，设置里没有对应汇率，没有算进合计。请老板到「设置」里填好汇率。",
+    "unconverted_len": 1
+  }
+}

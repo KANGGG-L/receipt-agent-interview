@@ -1,0 +1,21 @@
+{
+  "stage": "uat033-qa",
+  "port": 15165,
+  "pid": 80226,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat033-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15165_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_15010_untouched": true,
+  "avoided_ports": [
+    15155,
+    15010,
+    15130,
+    15140,
+    15450
+  ],
+  "timestamp_local": "2026-10-17 06:40:56 Asia/Shanghai (CST)",
+  "notes": "Independent QA only; no git/checklist/UAT. Fixture cleaned (AC3)."
+}

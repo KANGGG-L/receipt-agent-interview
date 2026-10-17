@@ -1,0 +1,19 @@
+PASS empty_png_EMPTY_FILE {"status": 400, "code": "EMPTY_FILE", "msg": "上传的文件是空的，请重新选择有内容的照片再上传。"}
+PASS empty_zero_residue {"before": 0, "after": 0}
+PASS malformed_INVALID_IMAGE {"status": 400, "code": "INVALID_IMAGE", "msg": "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。"}
+PASS malformed_zero_residue {"before": 0, "after": 0}
+PASS wrong_type_UNSUPPORTED {"status": 400, "code": "UNSUPPORTED_IMAGE_FORMAT", "msg": "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。"}
+PASS oversize_FILE_TOO_LARGE {"status": 400, "code": "FILE_TOO_LARGE", "bytes": 15729664}
+PASS pdf_upload_UNSUPPORTED_not_recognition {"status": 400, "code": "UNSUPPORTED_IMAGE_FORMAT"}
+PASS valid_png_accepted {"status": 200, "receipt_id": 8, "status_field": "error", "code": "ENGINE_NOT_CONFIGURED", "image_url": true}
+PASS valid_jpg_accepted {"status": 200, "receipt_id": 9, "status_field": "error", "code": "ENGINE_NOT_CONFIGURED", "image_url": true}
+PASS valid_webp_accepted {"status": 200, "receipt_id": 10, "status_field": "error", "code": "ENGINE_NOT_CONFIGURED", "image_url": true}
+PASS heic_convert_jpeg {"status": 200}
+PASS valid_tif_accepted {"status": 200, "receipt_id": 11}
+PASS valid_timeout_path_convert_manual_keeps_image {"status": 200, "doc_form": "manual_entry", "has_original_image": true, "image_url_present": true}
+PASS error_codes_semantically_distinct {"codes": ["EMPTY_FILE", "INVALID_IMAGE", "UNSUPPORTED_IMAGE_FORMAT", "FILE_TOO_LARGE", "IMAGE_QUALITY_ERROR", "RECOGNITION_UNREADABLE", "ENGINE_TIMEOUT"]}
+PASS cross_tenant_detail_404 {"status": 404}
+PASS tenant_b_unchanged {"receipts_before": 0, "receipts_after": 0, "batches_before": 0, "batches_after": 0}
+PASS bad_inputs_not_misclassified_as_recognition {"codes": ["EMPTY_FILE", "INVALID_IMAGE", "UNSUPPORTED_IMAGE_FORMAT", "FILE_TOO_LARGE", "UNSUPPORTED_IMAGE_FORMAT"]}
+VERDICT PASS 17/17
+api_probe_exit=0

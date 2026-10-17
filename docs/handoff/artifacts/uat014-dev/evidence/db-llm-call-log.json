@@ -1,0 +1,6 @@
+{
+  "id": 1,
+  "raw_output_redacted_sample": "UAT014_LIVE_PROBE vendor note [HKID_MASKED] contact ****67",
+  "contains_HKID_MASKED": true,
+  "plaintext_hkid_sample_absent": true
+}

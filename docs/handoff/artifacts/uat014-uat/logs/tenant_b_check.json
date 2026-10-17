@@ -1,0 +1,42 @@
+{
+  "tenant_b": "uat014uatb",
+  "method": "curl with X-Role: owner + X-Tenant-Id (AUTH_ENABLED=0 demo)",
+  "api_dishes_http": "200",
+  "api_receipts_http": "200",
+  "api_default_dishes_http": "200",
+  "dishes_b_len": 0,
+  "receipts_b_len": 0,
+  "dishes_default_len": 0,
+  "db_counts_tenant_b": {
+    "llm_call_log": 0,
+    "receipts": 0,
+    "dishes": 0,
+    "vendor_memory": 0,
+    "inventory_log": 0
+  },
+  "llm_call_log_by_tenant": [
+    {
+      "tenant_id": "uat014-dev",
+      "c": 1
+    }
+  ],
+  "llm_call_log_count_tenant_b": 0,
+  "probe_log_rows": 1,
+  "probe_rows_redacted": [
+    {
+      "id": 1,
+      "tenant_id": "uat014-dev",
+      "trace_id": "uat014-live-probe",
+      "model": "uat014-mask-check",
+      "raw_sample": "UAT014_LIVE_PROBE vendor note [HKID_MASKED] contact ****67"
+    }
+  ],
+  "dishes_before_len": 0,
+  "dishes_after_len": 0,
+  "dishes_b_sample": {
+    "status": "success",
+    "data": []
+  },
+  "note": "Probe wrote llm_call_log under tenant uat014-dev only; Tenant B tables remain empty / unchanged.",
+  "verdict": "PASS"
+}

@@ -1,0 +1,126 @@
+=== inventory_board.js money markers ===
+38:    if (stockEl) stockEl.textContent = `(当前库存: ${currentStock} ${baseUnit})`;
+94:            `账面库存只有 ${have} ${unit || ''}，这次要${verb} ${qty} ${unit || ''}，差 ${diff} ${unit || ''}。\n多半是进货单还没录入。如果实物确实用了这么多，可以继续记录，库存会显示成负数，请尽快补录进货单。`);
+118:    let url = `/api/inventory/${skuId}/${kind}`;
+144:        showToast(`已成功记录库存变动（${ret.msg || '操作成功'}）`, 'success');
+487:            // UAT-027：港币展示走 I18N.fmtMoney（HK$ + 千分位）；null/非数 → —
+490:                ? I18N.fmtMoney(sku.last_unit_price)
+503:                    ? `涨价 +${vsAvgPct.toFixed(1)}%`
+507:                priceAnomalyBadge = `<span class="badge badge-danger" title="较 30 日均价涨幅超过 ${currentThresholdPctLabel()}%">${w2Escape(pctLabel)}</span>`;
+516:                            onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>
+517:                        <button class="${priceAnomaly ? 'btn btn-price-anomaly' : 'btn btn-secondary'}" style="padding:4px 10px; font-size:0.9rem; min-height:40px;"
+518:                            aria-haspopup="menu" onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▾</button>` : `
+520:                            onclick='viewInventoryDetail(${Number(sku.id)})'>详情</button>`;
+536:                        onclick="revokePriceAnomalyAck(${Number(sku.id)})" title="撤销该价格异动处置（回到未处置）">撤销处置</button>`
+543:                kgCell = `${kgVal.toFixed(3)} kg`;
+546:                const weightHint = unitHint ? ` title="${unitHint}"` : '';
+547:                kgCell = `<span${weightHint}>${w2Escape(kgCell)}</span>`;
+555:                <td class="inv-name-cell" data-label="品名" title="${nameEsc}" data-full-name="${nameEsc}"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${nameEsc}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
+556:                <td data-label="分类"><span class="badge badge-secondary">${w2Escape(sku.category || '其他')}</span></td>
+559:                        ${sku.is_low_stock ? `<span class="badge badge-danger">低库存</span>` : ''}
+560:                        <span class="inv-metric-value ${sku.is_low_stock ? 'is-low' : (skuStock < 1 ? 'is-zero' : 'is-ok')}"><strong>${skuStock}</strong> ${w2Escape(sku.base_unit)}</span>
+563:                <td class="col-right" data-label="参考 kg">${kgCell}</td>
+565:                    <span class="${sku.is_low_stock ? 'inv-alert-danger' : ''}">${alertVal} ${w2Escape(sku.base_unit)}</span>
+569:                        ${priceAnomalyBadge}
+570:                        <span class="inv-price-value${priceAnomaly ? ' inv-price-hot' : ''}">${w2Escape(priceText)}</span>
+574:                    <div class="inv-actions" data-sku-id="${Number(sku.id)}">
+575:                        ${skuActionsHtml}
+648:        ? I18N.fmtMoney(sku.last_unit_price)
+653:        ['当前库存', `${stock} ${unit}`],
+655:        ['警戒线', `${Number(sku.min_stock_alert || 0)} ${unit}`],
+661:        `<tr><th style="text-align:left; padding:6px 10px; color:var(--text-muted); font-weight:600;">${w2Escape(k)}</th>`
+662:        + `<td style="padding:6px 10px;">${w2Escape(String(v))}</td></tr>`).join('');
+666:        + `<table style="width:100%; border-collapse:collapse; font-size:0.9rem;">${rowsHtml}</table>`
+723:    return `<tr><td colspan="9" class="col-center" style="padding:24px 16px; color:var(--text-muted, #6b7280);">${w2Escape(msg)}</td></tr>`;
+740:            opts.push(`<option value="${Number(s.id)}">${w2Escape(s.name || ('#' + s.id))}</option>`);
+746:            if (cur && skuSel.querySelector(`option[value="${cur}"]`)) skuSel.value = cur;
+775:                    ? `<button type="button" class="btn btn-secondary" style="padding:2px 8px; font-size:0.75rem;" onclick="openReceiptFromPriceHistory(${rid})">#${rid}</button>`
+782:                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+784:                    <td>${w2Escape(r.date || '')}</td>
+785:                    <td><span class="badge badge-secondary">${w2Escape(invLedgerKindLabel(r.kind))}</span></td>
+786:                    ${nameCell}
+787:                    <td class="col-right">${w2Escape(qtyText)}</td>
+788:                    <td>${w2Escape(r.unit || '')}</td>
+789:                    <td class="col-right">${amt != null ? w2Escape(I18N.fmtMoney(amt)) : '—'}</td>
+790:                    <td>${w2Escape(r.vendor || '')}</td>
+791:                    <td class="col-center">${receiptCell}</td>
+792:                    <td>${w2Escape(r.note || '')}</td>
+823:            showToast(cnt > 0 ? `已清理 ${cnt} 个重复食材（${groups} 组）` : '没有重复食材需要清理', 'success');
+888:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); viewPriceHistory(${Number(skuId)})'>价格走势</div>
+889:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openStockMovementModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>变动录入</div>
+890:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openStocktakeModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>盘点</div>
+891:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openEditSkuModal(${Number(skuId)})'>编辑</div>
+892:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" onclick='closeInvMoreMenu(); openOutboundModal(${Number(skuId)}, ${jsStr(skuName)}, ${skuStock}, ${jsStr(baseUnit)})'>出库</div>
+893:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" style="color:${isActive ? '#b91c1c' : '#047857'};" onclick='closeInvMoreMenu(); toggleSkuActive(${Number(skuId)})'>${toggleText}</div>
+894:        <div class="unit-dropdown-item" role="menuitem" tabindex="0" style="color:#b91c1c; border-top:1px dashed var(--border-color);" onclick='closeInvMoreMenu(); deleteSkuDirect(${Number(skuId)}, ${jsStr(skuName)})'>删除/清理</div>
+1025:                showToast(`食材「${name}」创建成功`, 'success');
+1118:            opt.textContent = `${s.name} (${s.category || '未分类'} · 当前库存 ${s.current_stock}${s.base_unit || ''})`;
+1129:                            <input type="checkbox" class="chk-sku-sec" value="${s.id}">
+1130:                            <span>${w2Escape(s.name)} <small style="color:var(--text-muted);">[库存:${Number(s.current_stock) || 0}${w2Escape(s.base_unit)}]</small></span>
+1278:        sub.textContent = `共 ${anomalies.length} 项，按涨幅降序`
+1279:            + (anomalies.length > top.length ? `（仅显示前 ${top.length} 项）` : '');
+
+=== formatHkd definition ===
+1733:function formatHkd(price) {
+1734-    // UAT-027：库存价格/走势图指标统一 HK$ + 千分位；null/非数 → —；不改 FX 计算。
+1735-    if (price == null || price === '' || !Number.isFinite(Number(price))) return '—';
+1736-    if (typeof I18N !== 'undefined' && I18N && typeof I18N.fmtMoney === 'function') {
+1737-        return I18N.fmtMoney(price, 'HKD');
+1738-    }
+1739-    const n = Number(price);
+1740-    const parts = n.toFixed(2).split('.');
+1741-    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+=== finance.js foreign markers ===
+43:    if (r.currency && r.currency !== 'HKD') {
+67:    if (r && r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+167:        const isForeign = r.currency && r.currency !== 'HKD';
+179:        const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+189:            amountCell = `${I18N.fmtMoney(r.total_hkd)} <div style="font-size:0.72rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+190:            paidCell = `${I18N.fmtMoney(paid)}`;
+191:            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+195:            amountCell = `${I18N.fmtMoney(r.total_amount)}`;
+196:            paidCell = `${I18N.fmtMoney(paid)}`;
+197:            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+240:            problem = problem || ('单据 #' + rid + ' 只剩 ' + I18N.fmtMoney(max) + ' 没付，本次付款不能超过这个数。');
+283:            showToast('已登记支付 ' + I18N.fmtMoney(amount) + '。', 'success');
+372:            <li>「${w2Escape(drop.name)}」还没付的挂账单 <strong>${I18N.fmtMoney(drop.unpaid_credit_total)}</strong>（${Number(drop.unpaid_credit_count) || 0} 张），付款记录、别名、对账记录也一起并过去</li>
+387:        details: ['迁移单据 ' + (Number(drop.receipt_count) || 0) + ' 张', '迁移未付挂账单 ' + I18N.fmtMoney(drop.unpaid_credit_total)],
+534:                <td>${r.total_amount != null ? I18N.fmtMoney(r.total_amount) : '—'}</td>
+632:        w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(payOutstandingAmount(r)) + (isOver(r) ? '（已逾期）' : '（快到期）')));
+635:            li(pending.map(r => '#' + Number(r.id) + ' ' + w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(r.total_amount))),
+
+=== i18n fmtMoney ===
+260:    function fmtMoney(v, currency, opts) {
+261-        var n = Number(v);
+262-        if (v === null || v === undefined || v === '' || !isFinite(n)) return '—';
+263-        var o = Object.assign({ style: 'currency', currency: currency || 'HKD',
+264-            currencyDisplay: 'symbol', minimumFractionDigits: 2, maximumFractionDigits: 2 }, opts || {});
+265-        return numberFormat(o).format(n);
+266-    }
+267-
+268-    function fmtDate(v, opts) {
+269-        if (v === null || v === undefined || v === '') return '—';
+270-        var d = (v instanceof Date) ? v : null;
+271-        if (!d) {
+272-            var s = String(v);
+273-            // 纯日期按本地日期解析，避免 new Date('2026-08-01') 被当作 UTC 而跨日。
+274-            var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+275-            d = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(s);
+--
+697:        fmtMoney: fmtMoney,
+698-        fmtNumber: fmtNumber,
+699-        fmtDate: fmtDate,
+700-        convert: convertText,
+701-        applyBindings: applyBindings,
+702-        translateDocument: translateDocument,
+703-        mountSwitcher: mountSwitcher,
+704-        // 以下供测试与诊断使用
+705-        _normalizeLocale: normalizeLocale,
+706-        _resolveLocale: resolveLocale,
+707-        _localeFromNavigator: localeFromNavigator,
+708-        _createConverter: createConverter,
+709-        _translateSubtree: translateSubtree,
+710-        _handleMutations: handleMutations,
+711-        _setLocaleForTest: function (loc) { currentLocale = normalizeLocale(loc) || SOURCE_LOCALE; },
+712-        _stats: stats,

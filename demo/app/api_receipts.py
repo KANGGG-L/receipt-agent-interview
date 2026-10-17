@@ -334,12 +334,8 @@ def _save_upload(file: UploadFile) -> str:
             "上传的文件是空的，请重新选择有内容的照片再上传。")
     family = _detect_image_family(data[:12])
     if family is None:
-        filename = (getattr(file, "filename", "") or "").lower()
-        ext = os.path.splitext(filename)[1]
-        if ext in {".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".tif", ".tiff"}:
-            raise UploadRejected(
-                "INVALID_IMAGE",
-                "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。")
+        # W-SEC-3 / UAT-005：magic 不识别一律 UNSUPPORTED（不信扩展名）；
+        # INVALID_IMAGE 留给 magic 通过但 verify/解码失败的损坏图。
         raise UploadRejected(
             "UNSUPPORTED_IMAGE_FORMAT",
             "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。")
@@ -1313,9 +1309,11 @@ def get_receipt(receipt_id: int, request: Request):
             data["rag_context"] = getattr(row, "rag_context_json", None) or ""
     # UAT-001：复核工作台与归档详情统一基于 public_image_url 签发端点 URL；
     # 并在 data 内部同步透出 image_url 与 has_original_image，防止详情读取后丢失图链。
-    # 严禁把 URL 失效/未命中本地文件伪作为「无原图」（负边界约束）。
+    # has_original_image 仍按 image_path 是否落库判定（不得把死链伪作「无原图」）；
+    # Y1：展示层对不可达文件把 image_url 置空（与列表 _blank_unreachable 同源）。
     has_image = bool(row.image_path)
     image_url = public_image_url(row.id, row.image_path, _tenant_id(request)) if has_image else ""
+    image_url = _blank_unreachable_image_url(image_url, row.image_path)
     data["image_url"] = image_url
     data["has_original_image"] = has_image
     return {"status": "success", "receipt_id": row.id,

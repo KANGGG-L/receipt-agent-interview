@@ -1,0 +1,22 @@
+[PASS] btnRotate present in HTML
+[PASS] imgToolbar present in HTML
+[PASS] photoSider drawer present in HTML
+[PASS] style.css img-toolbar z-index >= 110
+[PASS] style.css imgViewerContainer z-index 110
+[PASS] style.css drawer z-index remains 95
+[PASS] style.css open drawer pointer-events none
+[PASS] style.css open drawer items pointer-events auto
+[PASS] style.css open drawer header pointer-events auto
+[PASS] review-mobile UAT020 media block present
+[PASS] review-mobile elevates img-toolbar
+[PASS] review-mobile open drawer pointer-events none
+[PASS] upload.js ensureImgToolsHitLayer
+[PASS] upload.js syncPhotoSiderClearanceForImgTools
+[PASS] upload.js refresh called from updateToolbarButtonStates
+[PASS] upload.js data-uat020 img-tools-layer
+[PASS] upload.js bake keeps originalFile
+[PASS] upload.js rotateImg still bakes via bakeCurrentRotation
+[PASS] upload.js no force click / dispatchEvent fake rotate
+[PASS] closed drawer pointer-events none retained
+
+20 PASS / 0 FAIL

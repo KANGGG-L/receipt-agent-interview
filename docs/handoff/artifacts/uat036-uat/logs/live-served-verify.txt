@@ -1,0 +1,58 @@
+=== live served JS markers from :15500 ===
+--- inventory_board.js ---
+302:let inventoryLoadSeq = 0;
+311:function markInventoryMetricsFailed() {
+321:        notice.setAttribute('data-uat036', 'inventory-error');
+325:            + ' <button type="button" id="inventoryKpiRetry" class="btn btn-secondary"'
+326:            + ' data-uat036="inventory-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+332:        const btn = document.getElementById('inventoryKpiRetry');
+336:        const btn = document.getElementById('inventoryKpiRetry');
+344:    const btn = document.getElementById('inventoryKpiRetry');
+378:    const mySeq = ++inventoryLoadSeq;
+381:        if (mySeq !== inventoryLoadSeq) return null;
+389:        if (ret == null || mySeq !== inventoryLoadSeq) return;
+578:        if (mySeq !== inventoryLoadSeq) return;
+590:    markInventoryMetricsFailed();
+--- dish_bom.js ---
+151:let dishesLoadSeq = 0;
+156:        + '<div data-uat036="dish-error" style="padding:40px 20px; text-align:center; color:var(--danger,#b91c1c);'
+160:        + '<button type="button" class="btn btn-secondary" data-uat036="dish-retry"'
+177:    const mySeq = ++dishesLoadSeq;
+180:            if (mySeq !== dishesLoadSeq) return null;
+185:            if (ret == null || mySeq !== dishesLoadSeq) return;
+197:            if (mySeq !== dishesLoadSeq) return;
+--- dish_consumption.js ---
+604:function markDishKpiFailed() {
+620:        notice.setAttribute('data-uat036', 'dish-kpi-error');
+624:            + ' <button type="button" id="dishKpiRetry" class="btn btn-secondary"'
+625:            + ' data-uat036="dish-kpi-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+629:        const btn = document.getElementById('dishKpiRetry');
+672:            markDishKpiFailed();
+684:        markDishKpiFailed();
+--- workbench_queue.js ---
+43:let workbenchQueueLoadSeq = 0;
+44:let workbenchQueueKpiFailed = false;
+47:    workbenchQueueKpiFailed = true;
+54:    let retry = document.getElementById('workbenchKpiRetry');
+60:        retry.id = 'workbenchKpiRetry';
+63:        retry.setAttribute('data-uat036', 'workbench-retry');
+83:    workbenchQueueKpiFailed = false;
+84:    const retry = document.getElementById('workbenchKpiRetry');
+89:    const mySeq = ++workbenchQueueLoadSeq;
+92:            if (mySeq !== workbenchQueueLoadSeq) return;
+99:            if (mySeq !== workbenchQueueLoadSeq) return;
+108:    if (workbenchQueueKpiFailed) return;
+142:    if (workbenchQueueKpiFailed) return;
+--- supplier_archive.js ---
+310:    const retry = document.getElementById('archiveKpiRetry');
+--- archive_list.js ---
+36:    let retry = document.getElementById('archiveKpiRetry');
+40:        retry.id = 'archiveKpiRetry';
+78:let archiveLoadSeq = 0;
+81:    const mySeq = ++archiveLoadSeq;
+84:            if (mySeq !== archiveLoadSeq) return;
+85:            const retry = document.getElementById('archiveKpiRetry');
+93:            if (mySeq !== archiveLoadSeq) return;
+=== API default vs empty tenant ===
+default n=2
+empty_uat036 n=0

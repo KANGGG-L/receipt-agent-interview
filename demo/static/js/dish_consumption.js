@@ -161,6 +161,7 @@ function onDishIngredientSkuChange(selectEl) {
 function calcDishModalTheoryCost() {
     const rows = document.querySelectorAll('#dishIngredientRowsBody tr.dish-ing-row');
     let totalTheoreticalCost = 0.0;
+    let anyUnpurchased = false;
 
     rows.forEach(tr => {
         const sel = tr.querySelector('.ing-sku-select');
@@ -193,10 +194,17 @@ function calcDishModalTheoryCost() {
             const convertedQty = isDish
                 ? effectiveQty
                 : convertUnitQtyFrontend(rawQty / yr, ingUnit || baseUnit, baseUnit);
-            const rowCost = Math.round(convertedQty * unitPrice * 100) / 100;
+            const priceKnown = Number.isFinite(unitPrice) && unitPrice > 0;
+            if (!priceKnown) {
+                anyUnpurchased = true;
+            }
+            const rowCost = Math.round(convertedQty * (priceKnown ? unitPrice : 0) * 100) / 100;
             totalTheoreticalCost += rowCost;
 
-            if (costSpan) costSpan.innerText = I18N.fmtMoney(rowCost);
+            if (costSpan) {
+                costSpan.innerText = priceKnown ? I18N.fmtMoney(rowCost) : '未采购/估算';
+                costSpan.style.color = priceKnown ? 'var(--primary, #0f766e)' : 'var(--warning, #b45309)';
+            }
         } else {
             if (costSpan) costSpan.innerText = '$0.00';
         }
@@ -213,14 +221,29 @@ function calcDishModalTheoryCost() {
     const profitEl = document.getElementById('dishModalTheoryProfit');
     const marginEl = document.getElementById('dishModalTheoryMargin');
 
-    if (costEl) costEl.innerText = I18N.fmtMoney(totalTheoreticalCost);
-    if (profitEl) {
-        profitEl.innerText = I18N.fmtMoney(grossProfit);
-        profitEl.style.color = grossProfit >= 0 ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)';
-    }
-    if (marginEl) {
-        marginEl.innerText = grossMarginRate.toFixed(1) + '%';
-        marginEl.className = 'badge ' + marginClass(grossMarginRate);
+    // UAT018: unpurchased SKU must not show definite 0 cost / 100% margin.
+    if (anyUnpurchased) {
+        if (costEl) costEl.innerText = '未知/估算 ' + I18N.fmtMoney(totalTheoreticalCost);
+        if (profitEl) {
+            profitEl.innerText = '估算 ' + I18N.fmtMoney(grossProfit);
+            profitEl.style.color = 'var(--warning, #b45309)';
+        }
+        if (marginEl) {
+            marginEl.innerText = '未知/估算';
+            marginEl.className = 'badge badge-warning';
+            marginEl.title = '含未采购食材，毛利不可作确定值';
+        }
+    } else {
+        if (costEl) costEl.innerText = I18N.fmtMoney(totalTheoreticalCost);
+        if (profitEl) {
+            profitEl.innerText = I18N.fmtMoney(grossProfit);
+            profitEl.style.color = grossProfit >= 0 ? 'var(--success, #16a34a)' : 'var(--danger, #dc2626)';
+        }
+        if (marginEl) {
+            marginEl.innerText = grossMarginRate.toFixed(1) + '%';
+            marginEl.className = 'badge ' + marginClass(grossMarginRate);
+            marginEl.title = '';
+        }
     }
 }
 
@@ -274,8 +297,10 @@ function saveDishModal() {
         const compVal = sel ? sel.value : '';
         const qtyRaw = qtyInp ? qtyInp.value : '';
         const qtyNum = parseFloat(qtyRaw);
-        const qtyVal = isNaN(qtyNum) ? 0 : qtyNum;
-        const qtyFilled = qtyRaw.trim() !== '' && !isNaN(qtyNum) && qtyNum > 0;
+        // UAT018: NaN / Infinity / non-finite must not be written (no silent clamp).
+        const qtyFinite = Number.isFinite(qtyNum);
+        const qtyVal = qtyFinite ? qtyNum : NaN;
+        const qtyFilled = qtyRaw.trim() !== '' && qtyFinite && qtyNum > 0;
         const unitVal = (unitInp ? unitInp.value : '').trim();
         let yieldVal = parseFloat(yieldInp ? yieldInp.value : 1);
         if (isNaN(yieldVal)) yieldVal = 1;
@@ -302,8 +327,8 @@ function saveDishModal() {
         }
         seenComps.add(compKey);
 
-        if (qtyVal <= 0 || isNaN(qtyVal)) {
-            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行单份用量必须大于 0'; errEl.classList.remove('hide'); }
+        if (!Number.isFinite(qtyVal) || qtyVal <= 0) {
+            if (errEl) { errEl.innerText = '第 ' + (i + 1) + ' 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）'; errEl.classList.remove('hide'); }
             return;
         }
 
@@ -601,6 +626,43 @@ function onDishConsumptionDateChange(val) {
 
 let dailyConsumptionReqSeq = 0;
 
+function markDishKpiFailed() {
+    // UAT-036：餐品 KPI GET 失败 → — + 错误 + 可点重试（不得伪装 $0.00 / 0 笔）。
+    const costEl = document.getElementById('kpiDishCost');
+    const revEl = document.getElementById('kpiDishRevenue');
+    const marginEl = document.getElementById('kpiDishGrossMargin');
+    const countEl = document.getElementById('kpiDishCount');
+    if (costEl) costEl.innerText = '—';
+    if (revEl) revEl.innerText = '—';
+    if (marginEl) { marginEl.innerText = '—'; marginEl.style.color = ''; }
+    if (countEl) countEl.innerText = '—';
+    let notice = document.getElementById('dishKpiLoadError');
+    if (!notice) {
+        const kpiGrid = document.querySelector('.metrics-grid.dish-kpi-grid');
+        notice = document.createElement('div');
+        notice.id = 'dishKpiLoadError';
+        notice.setAttribute('role', 'alert');
+        notice.setAttribute('data-uat036', 'dish-kpi-error');
+        notice.style.cssText = 'margin:8px 0 12px 0; padding:8px 12px; border-radius:6px;'
+            + ' background:#fee2e2; color:#991b1b; font-size:0.85rem;';
+        notice.innerHTML = '餐品指标加载失败，当前数值不可用。'
+            + ' <button type="button" id="dishKpiRetry" class="btn btn-secondary"'
+            + ' data-uat036="dish-kpi-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+        if (kpiGrid && kpiGrid.parentNode) {
+            kpiGrid.parentNode.insertBefore(notice, kpiGrid.nextSibling);
+        }
+        const btn = document.getElementById('dishKpiRetry');
+        if (btn) btn.addEventListener('click', () => loadDailyConsumption());
+    } else {
+        notice.classList.remove('hide');
+    }
+}
+
+function clearDishKpiFailed() {
+    const notice = document.getElementById('dishKpiLoadError');
+    if (notice) notice.classList.add('hide');
+}
+
 /**
  * 加载指定日期的餐品消耗记录与当日在售餐品录入列表
  */
@@ -612,18 +674,28 @@ function loadDailyConsumption(targetDate) {
     const reqSeq = ++dailyConsumptionReqSeq;
 
     // 并行获取当日已提交流水与当前在售餐品列表
-    Promise.all([
-        apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(curDate)).then(r => r.json()),
-        apiFetch('/api/dishes?status=active').then(r => r.json())
+    // 返回 Promise：UAT-032 提交成功后必须 await 再开 FIFO 弹窗，避免读到第一次提交的缓存。
+    return Promise.all([
+        apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(curDate)).then(r => {
+            if (!r || !r.ok) throw new Error('daily_consumption_http_' + ((r && r.status) || 'net'));
+            return r.json();
+        }),
+        apiFetch('/api/dishes?status=active').then(r => {
+            if (!r || !r.ok) throw new Error('dishes_active_http_' + ((r && r.status) || 'net'));
+            return r.json();
+        })
     ])
     .then(([dailyRes, dishesRes]) => {
         if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
         if (dailyRes.status === 'success') {
+            clearDishKpiFailed();
             const data = dailyRes.data || {};
             dailyConsumptionCache = data.consumptions || [];
+            // 合法空态：summary 全 0 / 空流水 → 显示 0，不是 —
             renderDailyKPI(data.summary || {});
             renderDailyHistoryTable(dailyConsumptionCache);
         } else {
+            markDishKpiFailed();
             showToast(dailyRes.msg || '加载当日消耗流水失败', 'error');
         }
 
@@ -635,6 +707,7 @@ function loadDailyConsumption(targetDate) {
     .catch(err => {
         if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
         console.error('loadDailyConsumption error:', err);
+        markDishKpiFailed();
         showToast('网络请求异常，无法加载每日消耗数据', 'error');
     });
 }
@@ -779,11 +852,11 @@ function renderDishConsumeEntryTable(dishes) {
             + '</td>'
             + '<td style="text-align:center;">'
             + '  <div class="dish-qty-control" style="display:inline-flex; align-items:center; gap:4px;">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', -1)">-</button>'
-            + '    <input type="number" min="0" step="0.5" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:80px; text-align:center; font-weight:700; height:38px; min-height:38px; padding:2px 4px; font-size:1rem;" value="0" onkeydown="if(event.key===\x27-\x27||event.key===\x27+\x27||event.key===\x27e\x27||event.key===\x27E\x27){event.preventDefault();}" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', 1)">+</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)">+5</button>'
-            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)">+10</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', -1)" aria-label="' + w2Escape(d.name) + ' 份数减 1">-</button>'
+            + '    <input type="number" min="0" step="0.5" id="dishConsumeQty_' + d.id + '" class="form-control dish-consume-qty-input" style="width:80px; text-align:center; font-weight:700; height:38px; min-height:38px; padding:2px 4px; font-size:1rem;" value="0" aria-label="' + w2Escape(d.name) + ' 当日消耗份数" onkeydown="if(event.key===\x27-\x27||event.key===\x27+\x27||event.key===\x27e\x27||event.key===\x27E\x27){event.preventDefault();}" oninput="onDishConsumeQtyInput(' + d.id + ', this.value)">'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="width:38px; min-width:38px; height:38px; min-height:38px; padding:0; font-size:18px; font-weight:700; display:inline-flex; align-items:center; justify-content:center;" onclick="adjustDishConsumeQty(' + d.id + ', 1)" aria-label="' + w2Escape(d.name) + ' 份数加 1">+</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 5)" aria-label="' + w2Escape(d.name) + ' 份数加 5">+5</button>'
+            + '    <button type="button" class="btn btn-secondary dish-step-btn" style="font-size:0.8rem; font-weight:600; padding:0 8px; min-height:38px; height:38px;" onclick="adjustDishConsumeQty(' + d.id + ', 10)" aria-label="' + w2Escape(d.name) + ' 份数加 10">+10</button>'
             + '  </div>'
             + '</td>'
             + '<td class="col-right" style="font-weight:700; color:var(--primary, #0f766e); font-size:0.95rem;" id="dishSubtotal_' + d.id + '">'
@@ -900,9 +973,30 @@ function _newDailyConsumeRequestId() {
 }
 
 /**
- * 批量提交每日餐品消耗并触发 FIFO 扣减
+ * UAT019：餐品消耗超库存时与库存页同合同——先问原因，再带 allow_negative 重试；
+ * 取消则不写。返回 null=取消；其余为原因字符串。
  */
-function submitDailyConsumptionBatch() {
+async function askDishConsumeOverdrawReason(message) {
+    if (typeof uiPrompt !== 'function') {
+        showToast(message || '库存不够扣，请核对数量或联系老板确认。', 'error');
+        return null;
+    }
+    return uiPrompt({
+        title: '库存不够扣',
+        message: message,
+        label: '要继续记录的话，请写明原因（会记在库存流水里）',
+        placeholder: '例如：上周的进货单还没录入',
+        confirmText: '我确认，继续记录',
+        cancelText: '先不记',
+        validate: v => (v ? '' : '请写明为什么要扣成负数，不然不能继续。'),
+    });
+}
+
+/**
+ * 批量提交每日餐品消耗并触发 FIFO 扣减。
+ * UAT019：普通点击遇 409 INSUFFICIENT_STOCK 不得静默负库存；仅显式 force+原因路径放行。
+ */
+async function submitDailyConsumptionBatch() {
     const btnSubmit = document.getElementById('btnSubmitDailyConsumeBatch');
     if (btnSubmit && btnSubmit.disabled) return;
 
@@ -940,32 +1034,28 @@ function submitDailyConsumptionBatch() {
         btnSubmit.innerText = '扣减核算中...';
     }
 
-    const payload = {
-        date: dateStr,
-        notes: '前台批量录入',
-        items: items,
-        request_id: requestId
+    const send = (extra) => {
+        const payload = Object.assign({
+            date: dateStr,
+            notes: '前台批量录入',
+            items: items,
+            request_id: requestId
+        }, extra || {});
+        return apiFetch('/api/dishes/daily_consumption/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        }).then(res => res.json().then(data => ({ status: res.status, body: data })));
     };
 
-    apiFetch('/api/dishes/daily_consumption/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(ret => {
+    const finishUi = () => {
         if (btnSubmit) {
             btnSubmit.disabled = false;
             btnSubmit.innerText = '一键扣减库存并核算真实成本';
         }
+    };
 
-        if (ret.status !== 200 || ret.body.status !== 'success') {
-            const err = ret.body.msg || '消耗扣减失败，请检查输入后重试';
-            showToast(err, 'error');
-            // 保留已录入内容，绝不清空输入框
-            return;
-        }
-
+    const onSuccess = async (ret) => {
         // 成功后才换新的 request_id。失败重试继续用刚才那个，避免双击或网络重发扣两次。
         _dailyConsumeRequestId = null;
 
@@ -990,25 +1080,64 @@ function submitDailyConsumptionBatch() {
         subtotals.forEach(st => { st.innerText = '$0.00'; });
         updateDishConsumeSummary();
 
-        // 1. 刷新当日流水与 KPI
-        loadDailyConsumption(dateStr);
+        // UAT-032：优先用 batch 响应里的累计 consumptions 快照刷新本地缓存，
+        // 再 await 列表刷新，最后才开 FIFO 弹窗——避免弹窗仍显示第一次份数/成本。
+        const snapList = Array.isArray(respData.consumptions) ? respData.consumptions : [];
+        if (snapList.length > 0) {
+            const byId = new Map((dailyConsumptionCache || []).map(c => [Number(c.id), c]));
+            snapList.forEach(c => { byId.set(Number(c.id), c); });
+            dailyConsumptionCache = Array.from(byId.values());
+        }
+
+        // 1. 刷新当日流水与 KPI（必须完成后再开弹窗）
+        try {
+            await loadDailyConsumption(dateStr);
+        } catch (e) {
+            console.error('post-submit loadDailyConsumption failed:', e);
+        }
 
         // 2. 即时刷新全局「实时库存与价格」Tab 数据（库存已扣减）
         loadInventoryData();
 
-        // 3. 自动展示第一条记录的 FIFO 批次穿透溯源报告
-        if (ret.body.data && Array.isArray(ret.body.data.consumption_ids) && ret.body.data.consumption_ids.length > 0) {
-            showCostTraceModal(ret.body.data.consumption_ids[0]);
+        // 3. 自动展示第一条记录的 FIFO 批次穿透溯源报告（累计份数/两次明细）
+        if (Array.isArray(respData.consumption_ids) && respData.consumption_ids.length > 0) {
+            const cid = respData.consumption_ids[0];
+            const fromSnap = snapList.find(c => Number(c.id) === Number(cid));
+            if (fromSnap) {
+                renderCostTraceModalContent(fromSnap);
+            } else {
+                showCostTraceModal(cid);
+            }
         }
-    })
-    .catch(err => {
-        if (btnSubmit) {
-            btnSubmit.disabled = false;
-            btnSubmit.innerText = '一键扣减库存并核算真实成本';
+    };
+
+    try {
+        let ret = await send({});
+        // UAT019：409 INSUFFICIENT_STOCK → 显式原因后 force；取消则不写、保留输入
+        if (ret.status === 409 && ret.body && ret.body.code === 'INSUFFICIENT_STOCK') {
+            const again = await askDishConsumeOverdrawReason(ret.body.msg || '库存不够扣。');
+            if (again === null) {
+                finishUi();
+                showToast('已取消，未扣减库存', 'info');
+                return;
+            }
+            ret = await send({ allow_negative: true, override_reason: again });
         }
+
+        finishUi();
+
+        if (ret.status !== 200 || !ret.body || ret.body.status !== 'success') {
+            const err = (ret.body && ret.body.msg) || '消耗扣减失败，请检查输入后重试';
+            showToast(err, 'error');
+            // 保留已录入内容，绝不清空输入框
+            return;
+        }
+        await onSuccess(ret);
+    } catch (err) {
+        finishUi();
         console.error('submitDailyConsumptionBatch error:', err);
         showToast('网络请求异常，消耗扣减失败，已保留填写内容', 'error');
-    });
+    }
 }
 
 /**
@@ -1067,25 +1196,33 @@ function renderDailyHistoryTable(consumptions) {
  * 打开 FIFO 批次成本穿透溯源报告弹窗
  */
 function showCostTraceModal(consumptionId) {
-    const traceRecord = dailyConsumptionCache.find(c => c.id === Number(consumptionId));
-    if (!traceRecord) {
-        // 若本地缓存中没有，则请求单日接口刷新
-        const dateInput = document.getElementById('dishConsumptionDate');
-        const dStr = dateInput ? dateInput.value : '';
-        apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(dStr))
-            .then(res => res.json())
-            .then(ret => {
-                if (ret.status === 'success') {
-                    const list = (ret.data || {}).consumptions || [];
-                    const found = list.find(c => c.id === Number(consumptionId));
-                    if (found) renderCostTraceModalContent(found);
-                    else showToast('未找到对应流水记录 #' + consumptionId, 'warning');
-                }
-            });
-        return;
-    }
-
-    renderCostTraceModalContent(traceRecord);
+    // UAT-032：始终按当日接口取最新累计记录再渲染，避免同日二次合并后
+    // 仍用第一次提交残留在 dailyConsumptionCache 里的份数/成本/明细。
+    const dateInput = document.getElementById('dishConsumptionDate');
+    const dStr = (dateInput ? dateInput.value : '') || todayLocalStr();
+    apiFetch('/api/dishes/daily_consumption?date=' + encodeURIComponent(dStr))
+        .then(res => {
+            if (!res || !res.ok) throw new Error('daily_consumption_http_' + ((res && res.status) || 'net'));
+            return res.json();
+        })
+        .then(ret => {
+            if (ret.status === 'success') {
+                const list = (ret.data || {}).consumptions || [];
+                dailyConsumptionCache = list;
+                const found = list.find(c => Number(c.id) === Number(consumptionId));
+                if (found) renderCostTraceModalContent(found);
+                else showToast('未找到对应流水记录 #' + consumptionId, 'warning');
+            } else {
+                showToast((ret && ret.msg) || '加载批次溯源失败', 'error');
+            }
+        })
+        .catch(err => {
+            console.error('showCostTraceModal fetch error:', err);
+            const traceRecord = (dailyConsumptionCache || []).find(
+                c => Number(c.id) === Number(consumptionId));
+            if (traceRecord) renderCostTraceModalContent(traceRecord);
+            else showToast('网络异常，无法加载批次溯源', 'error');
+        });
 }
 
 /**

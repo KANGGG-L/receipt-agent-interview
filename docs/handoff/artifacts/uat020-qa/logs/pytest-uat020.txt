@@ -1,0 +1,6 @@
+[PASS] test_html_has_rotate_toolbar_and_drawer
+[PASS] test_open_drawer_chrome_pointer_events_pass_through
+[PASS] test_review_mobile_reinforces_uat020
+[PASS] test_style_elevates_tools_above_drawer
+[PASS] test_upload_js_clearance_and_original_preserved
+5/5 PASS

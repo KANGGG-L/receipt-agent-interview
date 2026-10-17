@@ -1,0 +1,12 @@
+PASS business name preserved (Hans)
+PASS header converted via OpenCC
+PASS UI chrome converted
+PASS status cell converted (not skipped)
+PASS html escaped in names
+PASS supplier header converted
+PASS export_center defines isExportBusinessIdentityHeader
+PASS export_center emits data-i18n-skip attr
+{
+  "ok": true,
+  "passed": 8
+}

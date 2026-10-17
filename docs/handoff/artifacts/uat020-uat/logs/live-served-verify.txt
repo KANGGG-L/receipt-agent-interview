@@ -1,0 +1,51 @@
+=== live served style.css ===
+532:    pointer-events: none;
+592:    pointer-events: none;
+598:    pointer-events: none;
+601:.img-toolbar {
+611:    z-index: 110;
+687:#imgViewerContainer.img-tools-hit-layer,
+688:.img-toolbar.img-tools-hit-layer {
+690:    z-index: 110;
+698:    pointer-events: none;
+804:    .photo-sider-drawer.open {
+1567:    pointer-events: none;
+2182:    pointer-events: none;
+2184:.photo-sider-drawer.open {
+2188:    pointer-events: none;
+2190:.photo-sider-drawer.open .sider-header,
+2191:.photo-sider-drawer.open .sider-header *,
+2192:.photo-sider-drawer.open .photo-sider-item,
+2193:.photo-sider-drawer.open .photo-sider-item * {
+2422:    pointer-events: none;
+2618:    .photo-sider-drawer.open { transform: translateX(0); }
+2649:    pointer-events: none;
+3131:    pointer-events: none;
+4453:    pointer-events: none;
+4676:    pointer-events: none;
+=== live served review-mobile.css ===
+291:   Desktop style.css elevates #imgViewerContainer + .img-toolbar (z-index 110 > drawer 95)
+292:   and makes open-drawer chrome pointer-events:none (items/header re-enabled).
+297:    #imgViewerContainer.img-tools-hit-layer,
+298:    .img-toolbar,
+299:    .img-toolbar.img-tools-hit-layer {
+301:        z-index: 110;
+303:    .img-toolbar {
+309:        pointer-events: none;
+315:        pointer-events: auto;
+=== live served upload.js ===
+1892:function ensureImgToolsHitLayer() {
+1897:        if (!toolbar.getAttribute('data-uat020')) toolbar.setAttribute('data-uat020', 'img-tools-layer');
+1901:        if (!viewer.getAttribute('data-uat020')) viewer.setAttribute('data-uat020', 'img-viewer-layer');
+1905:function syncPhotoSiderClearanceForImgTools() {
+1927:function refreshUat020ImgToolsVsDrawer() {
+1928:    ensureImgToolsHitLayer();
+1929:    syncPhotoSiderClearanceForImgTools();
+1938:        syncPhotoSiderClearanceForImgTools();
+1944:            // Only react to class (open/close). Ignore style writes from syncPhotoSiderClearanceForImgTools.
+1950:            try { refreshUat020ImgToolsVsDrawer(); }
+1958:            refreshUat020ImgToolsVsDrawer();
+1962:        refreshUat020ImgToolsVsDrawer();
+1967:    refreshUat020ImgToolsVsDrawer();
+=== auth me ===
+{"status":"success","auth_enabled":false,"account":null,"identity_source":"missing"}

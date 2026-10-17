@@ -1,0 +1,254 @@
+{
+  "checks": [
+    {
+      "name": "desktop_390_target_height_ge_38",
+      "ok": true,
+      "failCount": 0
+    },
+    {
+      "name": "keyboard_focusable_sample",
+      "ok": false,
+      "failCount": 0
+    },
+    {
+      "name": "no_clip_overlap_sample",
+      "ok": true,
+      "failCount": 0
+    },
+    {
+      "name": "contrast_4_5_sample",
+      "ok": false,
+      "failCount": 0
+    },
+    {
+      "name": "token_control_min_height",
+      "ok": true,
+      "failCount": 0
+    }
+  ],
+  "sampleHeights": [
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "全部",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "待处理",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "已入账",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "有问题",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "失败",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "text": "全部",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "archive-advanced-toggle",
+      "text": "高级筛选 ▾",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "demo-role-select",
+      "text": "● 系统管理员 ● 餐厅老板 / 店长 ● 餐厅店员",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "lang-switch-btn",
+      "text": "简体中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "lang-switch-btn",
+      "text": "繁體中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "any-chip",
+      "text": "全部",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "any-chip",
+      "text": "待处理",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "any-chip",
+      "text": "已入账",
+      "h": 38
+    },
+    {
+      "vp": "1440_archive",
+      "label": "any-chip",
+      "text": "有问题",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "demo-role-select",
+      "text": "● 系统管理员 ● 餐厅老板 / 店长 ● 餐厅店员",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "lang-switch-btn",
+      "text": "简体中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "lang-switch-btn",
+      "text": "繁體中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "dish-subtab-btn",
+      "text": "每日消耗录入",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "dish-subtab-btn",
+      "text": "餐品 BOM 配方库",
+      "h": 38
+    },
+    {
+      "vp": "1440_dishes",
+      "label": "dish-subtab-btn",
+      "text": "成本波动与毛利大盘",
+      "h": 38
+    },
+    {
+      "vp": "1440_analytics",
+      "label": "demo-role-select",
+      "text": "● 系统管理员 ● 餐厅老板 / 店长 ● 餐厅店员",
+      "h": 38
+    },
+    {
+      "vp": "1440_analytics",
+      "label": "lang-switch-btn",
+      "text": "简体中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_analytics",
+      "label": "lang-switch-btn",
+      "text": "繁體中文",
+      "h": 38
+    },
+    {
+      "vp": "1440_analytics",
+      "label": "analytics-segment-btn",
+      "text": "01 线上体验感知与链路审计",
+      "h": 42
+    },
+    {
+      "vp": "1440_analytics",
+      "label": "analytics-segment-btn",
+      "text": "02 金丝雀发布监控",
+      "h": 42
+    }
+  ],
+  "toast": {
+    "h": 38,
+    "w": 38,
+    "minH": "38px",
+    "color": "rgb(30, 34, 35)",
+    "backgroundColor": "rgba(0, 0, 0, 0)"
+  },
+  "contrast": [
+    {
+      "label": "archive-chip",
+      "text": "全部",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "archive-chip",
+      "text": "待处理",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "archive-chip",
+      "text": "已入账",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "archive-chip",
+      "text": "有问题",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "archive-chip",
+      "text": "失败",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "lang-switch-btn",
+      "text": "简体中文",
+      "fg": "#ffffff",
+      "bg": "#032425",
+      "ratio": 16.368696309425587,
+      "pass": true
+    },
+    {
+      "label": "lang-switch-btn",
+      "text": "繁體中文",
+      "fg": "#1e2223",
+      "bg": "#ffffff",
+      "ratio": 16.05155227321887,
+      "pass": true
+    },
+    {
+      "label": "dish-subtab-btn",
+      "text": "每日消耗录入",
+      "fg": "#ffffff",
+      "bg": "#032425",
+      "ratio": 16.368696309425587,
+      "pass": true
+    }
+  ]
+}

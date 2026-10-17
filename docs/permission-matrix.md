@@ -4,7 +4,7 @@
 
 角色从低到高：staff（店员）< owner（老板）< admin（管理员）。门槛是「至少需要的角色」，高角色自动包含低角色的权限。
 
-共 162 个端点。
+共 164 个端点。
 
 | 方法 | 路径 | 最低角色 | 备注 |
 |---|---|---|---|
@@ -98,6 +98,8 @@
 | GET | `/api/funnel` | owner |  |
 | GET | `/api/health` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | GET | `/api/inventory` | staff |  |
+| GET | `/api/inventory/batches/orphan` | owner |  |
+| POST | `/api/inventory/batches/orphan/migrate` | owner |  |
 | GET | `/api/inventory/logs` | staff |  |
 | GET | `/api/inventory/negative_stock` | owner |  |
 | GET | `/api/inventory/price_threshold` | owner |  |

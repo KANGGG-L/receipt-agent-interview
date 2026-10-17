@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>UAT002_PASS</title></head>
+<body>
+<div id="todoBar" class="metrics-grid">
+  <div id="metricCardPending" class="metric-card csp-s-73" role="button" tabindex="0" data-todo-metric="pending" data-click-hint="点击筛选待处理单据" title="点击筛选待处理单据。统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）" aria-label="归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共2张。点击筛选待处理单据">
+    <div class="csp-s-74">待处理（待办全量）</div>
+    <div id="todoPendingNum" class="metric-value">2</div>
+  </div>
+</div>
+<button id="queueTabApprove" title="">待我审批 (<span id="qCountApprove">0</span>)</button>
+<pre id="out">{
+  "title": "点击筛选待处理单据。统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）",
+  "label": "待处理（待办全量）",
+  "num": "2",
+  "aria": "归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共2张。点击筛选待处理单据",
+  "hasClick": true,
+  "hasStats": true,
+  "no待审核_label": true,
+  "dataTodoMetric": "pending",
+  "pass": true
+}</pre>
+<script>
+window.STATUS_GROUP_MAP = { pending: ['uploaded','parsing','parsed','parsed_with_warnings','edited'] };
+window.allArchiveReceipts = [
+  { id:1, status:'uploaded', supplier:'Vendor_A' },
+  { id:2, status:'edited', supplier:'Vendor_B' },
+  { id:3, status:'approved', supplier:'Vendor_A' }
+];
+function setText(id,v){ const e=document.getElementById(id); if(e) e.textContent=String(v); }
+</script>
+<script src="http://127.0.0.1:15160/static/js/supplier_archive.js"></script>
+<script>
+try {
+  if (typeof updateTodoBar !== 'function') throw new Error('updateTodoBar missing');
+  updateTodoBar();
+  const card = document.querySelector('[data-todo-metric="pending"]');
+  const label = card.querySelector('.csp-s-74').textContent.trim();
+  const result = {
+    title: card.title,
+    label,
+    num: document.getElementById('todoPendingNum').textContent,
+    aria: card.getAttribute('aria-label'),
+    hasClick: /点击筛选/.test(card.title),
+    hasStats: /统计口径/.test(card.title) && /待老板审批/.test(card.title),
+    no待审核_label: label.indexOf('待审核') < 0,
+    dataTodoMetric: card.getAttribute('data-todo-metric'),
+  };
+  result.pass = result.hasClick && result.hasStats && result.label === '待处理（待办全量）' && result.num === '2';
+  document.getElementById('out').textContent = JSON.stringify(result, null, 2);
+  document.title = result.pass ? 'UAT002_PASS' : 'UAT002_FAIL';
+} catch (e) {
+  document.getElementById('out').textContent = String(e && e.stack || e);
+  document.title = 'UAT002_FAIL';
+}
+</script>
+
+</body></html>

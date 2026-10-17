@@ -31,7 +31,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-014] 记忆恢复、一致性与安全事件没有可达UI
-- 当前状态：`[DONE] PARTIAL (D0 SPEC_KEEP 门禁已闭环，保留未运行标注)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；独立 UAT :15459；SPEC_KEEP/DEFAULT_ORIGINAL；live S2-19 HKID 日志脱敏；无新记忆恢复/一致性/安全事件 UI；Tenant B `uat014uatb` 未污染；证据 `docs/handoff/artifacts/uat014-uat-report.md`；PARTIAL 已清除）
 - 优先级：`P2` | 任务分类：`SPEC_CONFLICT` | 验证模式：`SPEC_DECISION`
 - 前置依赖：`[]`
 - 涉及源码文件：`[]`
@@ -49,7 +49,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-016] 当前UAT Spec硬删边界与原计划owner回收策略不一致
-- 当前状态：`[DONE] PARTIAL (D0 SPEC_KEEP 门禁已闭环，保留未运行标注)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；独立 UAT isolate :15509≠DEV:15469≠QA:15489；SPEC_KEEP/DEFAULT_ORIGINAL；live owner recycle/restore/purge + browser trash UI；staff 403；Tenant B 保留；无发明 admin-only trash；S1-P1-12/13 + S3-07 + f1b trash 回归全绿；证据 `docs/handoff/artifacts/uat016-uat-report.md`；先验 DEV/QA 报告；清除 PARTIAL）
 - 优先级：`P2` | 任务分类：`SPEC_CONFLICT` | 验证模式：`SPEC_DECISION`
 - 前置依赖：`[]`
 - 涉及源码文件：`[]`
@@ -85,10 +85,10 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 
-## 2.2 波次 W1：工程基建与高优先级核心业务缺陷修复 (9 项，当前进行至 UAT-021，已闭环 6 项：ENG-01, ENG-02, ENG-03, UAT-004, UAT-011, UAT-015)
+## 2.2 波次 W1：工程基建与高优先级核心业务缺陷修复 (9 项，当前进行至 UAT-028/031，已闭环 7 项：ENG-01, ENG-02, ENG-03, UAT-004, UAT-011, UAT-015, UAT-021；待办 UAT-028/031)
 
 ### [ENG-01] 根测试硬编码15010健康探测超时
-- 当前状态：`[DONE] PASS (W1 工程测试门禁已闭环)`
+- 当前状态：`[DONE] PASS (W1 工程测试门禁已闭环; local DEV/QA/UAT packets 2026-10-17 eng01-{dev,qa,uat}-report.md complete)`
 - 优先级：`P1` | 任务分类：`ENGINEERING_GATE` | 验证模式：`MANUAL_COMMAND`
 - 前置依赖：`[]`
 - 涉及源码文件：`["tests/test_phase3_filter_adjustments_deep_qa.py"]`
@@ -106,7 +106,7 @@
   - 隔离环境注入参数运行 pytest 定向测试套件 (`tests/...`)。
 
 ### [ENG-02] 旧自动预分析勾选框断言
-- 当前状态：`[DONE] PARTIAL (W1 工程测试门禁已闭环，模型路径保留未运行)`
+- 当前状态：`[DONE] PASS (2026-10-17 真实模型路径 Dev/QA/UAT 三段闭环 :15421/:15431/:15441)`
 - 优先级：`P1` | 任务分类：`ENGINEERING_GATE` | 验证模式：`MANUAL_COMMAND`
 - 前置依赖：`[]`
 - 涉及源码文件：`["tests/test_playwright_e2e.py"]`
@@ -124,7 +124,7 @@
   - 隔离环境注入参数运行 pytest 定向测试套件 (`tests/...`)。
 
 ### [ENG-03] 手工模式预填徽章旧断言
-- 当前状态：`[DONE] PARTIAL (W1 工程测试门禁已闭环，模型路径保留未运行)`
+- 当前状态：`[DONE] PASS (2026-10-17 真实模型路径 Dev/QA/UAT 三段闭环 :15438/:15448/:15458；证据 eng03-{dev,qa,uat}-report.md)`
 - 优先级：`P1` | 任务分类：`ENGINEERING_GATE` | 验证模式：`MANUAL_COMMAND`
 - 前置依赖：`[]`
 - 涉及源码文件：`["tests/test_workbench_e2e_playwright.py"]`
@@ -142,7 +142,7 @@
   - 隔离环境注入参数运行 pytest 定向测试套件 (`tests/...`)。
 
 ### [UAT-004] 供应商可选电话和备注留空时保存422
-- 当前状态：`[DONE] PASS (W1 独立开发/QA/UAT 完整闭环)`
+- 当前状态：`[DONE] PASS (W1 独立开发/QA/UAT 完整闭环)` — **local DEV+QA+UAT packets complete** 2026-10-17 Asia/Shanghai: `docs/handoff/artifacts/uat004-dev-report.md`, `docs/handoff/artifacts/uat004-qa-report.md`, `docs/handoff/artifacts/uat004-uat-report.md` (UAT re-verify PASS on :15481 ≠15461 ≠15471; no product edit)
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`AUTO_API`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/supplier_archive.js", "demo/app/api_suppliers.py"]`
@@ -161,7 +161,7 @@
   - 自动化 API 探针 (`test_entry.py run`) + 真实浏览器交互操作核查。
 
 ### [UAT-011] GT确权按钮同时创建真实业务待审单
-- 当前状态：`[DONE] PASS (QA 与 UAT 双门禁已闭环)`
+- 当前状态：`[DONE] PASS (QA 与 UAT 双门禁已闭环)` — **local DEV+QA+UAT packets complete** 2026-10-17 Asia/Shanghai: `docs/handoff/artifacts/uat011-dev-report.md`, `docs/handoff/artifacts/uat011-qa-report.md`, `docs/handoff/artifacts/uat011-uat-report.md` (UAT re-verify PASS on :15611 ≠15511 ≠15471; no product edit)
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/eval_workbench.js", "demo/static/js/review_core.js", "demo/app/api_evalset.py"]`
@@ -183,7 +183,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-015] 外币应付金额被错误标为港币原值
-- 当前状态：`[DONE] PASS (W1 独立开发/QA/UAT 完整闭环，DEV/QA/UAT 全量 PASS)`
+- 当前状态：`[DONE] PASS (W1 独立开发/QA/UAT 完整闭环，DEV/QA/UAT 全量 PASS)` — **local DEV+QA+UAT packets complete** 2026-10-17 Asia/Shanghai: `docs/handoff/artifacts/uat015-dev-report.md` (:15491 PASS) + `docs/handoff/artifacts/uat015-qa-report.md` (:15521 PASS) + `docs/handoff/artifacts/uat015-uat-report.md` (independent UAT PASS on :15651; pytest 4/4 + API 18/18 + UI 4/4; no product edit; three-phase local evidence complete)
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/finance.js", "demo/static/js/finance_ops.js", "demo/app/api_finance.py", "demo/app/db.py"]`
@@ -206,7 +206,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-021] 店员库存列表与餐品列表泄露价格及毛利
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat021-dev -> uat021-qa -> uat021-uat）
+- **已闭环**：店员库存/餐品列表与详情价格及毛利脱敏经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat021-dev-report.md`、`docs/handoff/artifacts/uat021-qa-report.md`、`docs/handoff/artifacts/uat021-uat-report.md`。
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/app/api_inventory.py", "demo/app/api_dishes.py", "demo/static/js/inventory_board.js", "demo/static/js/dish_bom.js"]`
@@ -242,7 +243,7 @@
   - 自动化 API 探针 (`test_entry.py run`) + 真实浏览器交互操作核查。
 
 ### [UAT-031] SKU合并没有迁移库存批次，后续FIFO错误暂估
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环 DEV→QA→UAT；证据 uat031-dev-report.md / uat031-qa-report.md / uat031-uat-report.md）
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/app/db.py", "demo/app/api_inventory.py", "demo/app/services/inventory.py"]`
@@ -264,7 +265,7 @@
 ## 2.3 波次 W2：单据流转、算术一致性与费用管理缺陷修复 (7 项)
 
 ### [UAT-001] 已有原图单据在复核工作台误判为手工无原图
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；local DEV+QA+UAT packets `uat001-{dev,qa,uat}-report.md`；HEAD already had UAT-001 fix — no product edit；UAT re-verify PASS on :15513 ≠15493 ≠15503；15010 FREE_RESERVED）
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/archive_list.js", "demo/static/js/review_core.js", "demo/app/api_receipts.py"]`
@@ -282,7 +283,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-005] 错误上传格式/损坏图被误归类为识别服务问题
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；local DEV+QA+UAT packets `uat005-{dev,qa,uat}-report.md`；HEAD already correct — no product edit；UAT re-verify PASS on :15515 ≠15495 ≠15505；15010 FREE_RESERVED）
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/upload.js", "demo/app/api_receipts.py"]`
@@ -358,7 +359,7 @@
 ### [UAT-030] 重新打开包装品名会把已保存数量1改成包装个数2
 - 当前状态：`[DONE] PASS`（2026-10-16 三阶段闭环：33-uat030-dev -> 34-uat030-qa -> 35-uat030-uat）
 - 闭环证据：`35-uat030-uat/uat-report.md`、`35-uat030-uat/uat-result.json`（九条命题全 PASS）、12 张截图 MD5 互异且落在隔离存活窗口、Tenant B before/after/final 三份快照 MD5 完全一致
-- 遗留开放缺陷（CLOSE-139 前必结）：`33-uat030-dev` 产物两处行号错引——dev-report.md:9「review_core.js 原第 1916-1925 行」实为 HEAD:1792-1801；dev-result.json 的 `test_review_s2_01.py:39-81` 实为断头跨四测试，权威划分为 :36-45 与 :69-81。更正规格见 `35-uat030-uat/citation-fix-spec.md`
+- 遗留开放缺陷（CLOSE-139 已留档）：`33-uat030-dev` 产物两处行号错引——dev-report.md:9「review_core.js 原第 1916-1925 行」实为 HEAD:1792-1801；dev-result.json 的 `test_review_s2_01.py:39-81` 实为断头跨四测试，权威划分为 :36-45 与 :69-81。权威更正规格：`docs/handoff/04-open-defect-citation-fix-spec.md`（原 stage 目录不在本云端克隆，无法就地改文件；CLOSE-139 以该规格为审计事实源）
 - 优先级：`P1` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-009"]`
 - 涉及源码文件：`["demo/static/js/review_core.js", "demo/static/js/archive_list.js"]`
@@ -378,7 +379,7 @@
 ### [UAT-034] 已保存的行反馈重新打开后原因和点踩状态清空显示
 - 当前状态：`[DONE] PASS`（2026-10-16 三阶段闭环：36-uat034-dev -> 37-uat034-qa -> 38-uat034-uat，含一轮定向修正；W2 波次收官）
 - 闭环证据：`38-uat034-uat/uat-report.md`、`38-uat034-uat/uat-result.json`（九项命题全 PASS）、10 张截图 MD5 互异、Tenant B 基线零污染
-- 已知架构局限（CLOSE-139 前须留档，非本阶段引入）：行级反馈以 `item_index` 为关联键，而后端 `receipt_feedback` 表（`demo/app/db.py:634-644`）无不可变行主键，故**删行、重排、增行后反馈会错套到错误的明细行**。开发曾宣称该键构成 100% 确定性单射，经 QA 与 UAT 两阶段独立反例实测证伪。静态工作流下本卡片验收标准成立。
+- 已知架构局限（CLOSE-139 已留档，非本阶段引入）：行级反馈以 `item_index` 为关联键，而后端 `receipt_feedback` 表（`demo/app/db.py:634-644`）无不可变行主键，故**删行、重排、增行后反馈会错套到错误的明细行**。开发曾宣称该键构成 100% 确定性单射，经 QA 与 UAT 两阶段独立反例实测证伪。静态工作流下本卡片验收标准成立。
 - 已验证的安全性质：跨租户 GET/POST 均 404、伪造租户头 404（服务端以 JWT 载荷为准）；未认证访问经**双通道无凭据客户端**实测 401。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-030"]`
@@ -400,10 +401,10 @@
 ## 2.4 波次 W3：台账展示、多语言报表、可访问性与交互优化 (11 项)
 
 ### [UAT-002] 归档待审核与今日待审批统计口径不同且标签缺解释
-- 当前状态：`[IN_PROGRESS] 开发已交付，门禁未通过，待修正后进入独立 QA`（2026-10-16 移交时状态）
-- 已达成：归档待办 5 态与今日待审批 1 态口径显式化（title + aria-label 逐项枚举）；实测三张合成单据下归档待办 2、今日待审批 1，**严格不相等且各自正确**；`admin_observation.js:511` 硬编码「待审核」已对齐 `demo/static/js/terms.js:15` 权威 label「待老板审批」。
-- **待修正缺陷（云端第一优先）**：(1) `supplier_archive.js` 的 `card.title` 无条件赋值覆盖了 `demo/templates/index.html:1054` 的 `title="点击筛选待审核单据"`，导致点击筛选提示丢失，须二者同时可见；(2) 同文件 `if (labelEl.textContent.trim() === '待审核')` 属硬编码 DOM 文本 shim，文案再改即静默失效，应改 `index.html:1055` 源头标签并删除 shim；(3) 报告「全局检索无残留漂移」不准确，`index.html:1054` 仍含「待审核」，且 `index.html:182` 用「待我审批」而状态 label 为「待老板审批」，需判定同义或统一。
-- 本地修正任务因调度会话中断**未执行**，代码仍处上述缺陷状态；`demo/templates/index.html` 与 `demo/static/js/terms.js` 当前未被修改，工作区无半成品。
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat002-dev-fix -> uat002-qa -> uat002-uat）
+- **已闭环**：云端三处门禁缺陷（pending 卡 title 合并点击提示+统计口径、源头标签改「待处理（待办全量）」并删除「待审核」DOM shim、术语与 `terms.js` 权威 label / owner 第一人称双轨一致）经独立开发修正、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat002-dev-fix.md`、`docs/handoff/artifacts/uat002-qa-report.md`、`docs/handoff/artifacts/uat002-uat-report.md`。
+- ~~待修正缺陷（云端第一优先）~~：~~已由 uat002-dev-fix 修复并由 QA/UAT 复核，不再视为代码仍破损。~~
+- ~~本地修正任务因调度会话中断未执行，代码仍处上述缺陷状态~~：~~已过时；以三份 artifacts 报告为准。~~
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/supplier_archive.js", "demo/static/js/workbench_queue.js"]`
@@ -421,7 +422,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-003] 库存流水品名截断到相同前缀
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat003-dev -> uat003-qa -> uat003-uat）
+- **已闭环**：库存流水品名截断缺陷经独立开发修正、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat003-dev-report.md`、`docs/handoff/artifacts/uat003-qa-report.md`、`docs/handoff/artifacts/uat003-uat-report.md`。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/inventory_board.js"]`
@@ -438,7 +440,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-007] 消耗台账数量方向显示为正数
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat007-dev -> uat007-qa -> uat007-uat）
+- **已闭环**：消耗台账数量正负方向经独立开发修正、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat007-dev-report.md`、`docs/handoff/artifacts/uat007-qa-report.md`、`docs/handoff/artifacts/uat007-uat-report.md`。
 - 优先级：`P1` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/inventory_board.js", "demo/app/api_inventory.py"]`
@@ -457,7 +460,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-010] 生产会话缺少可见退出登录入口
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat010-dev -> uat010-qa -> uat010-uat）
+- **已闭环**：生产可见退出登录入口经独立开发修正、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat010-dev-report.md`、`docs/handoff/artifacts/uat010-qa-report.md`、`docs/handoff/artifacts/uat010-uat-report.md`。
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/common.js", "demo/templates/index.html", "demo/app/api_auth.py"]`
@@ -475,7 +479,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-017] 对账创建弹窗缺dialog语义
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat017-dev -> uat017-qa -> uat017-uat）
+- **已闭环**：对账创建弹窗 dialog 语义经独立开发修正、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat017-dev-report.md`、`docs/handoff/artifacts/uat017-qa-report.md`、`docs/handoff/artifacts/uat017-uat-report.md`。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/finance_ops.js", "demo/templates/index.html"]`
@@ -493,10 +498,11 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-023] 繁体报表预览自动转换业务品名，和CSV原值不一致
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；首轮 UAT FAIL 后经 fix2 + qa2 + uat2 闭环：uat023-dev -> uat023-qa -> uat023-uat FAIL -> uat023-dev-fix2 -> uat023-qa2 -> uat023-uat2 PASS）
+- **已闭环**：繁体预览业务品名与 CSV 原值一致（含 `归属部门`）。首轮独立 UAT FAIL（`归属部门` 仍被 OpenCC）；fix2 扩谓词 `h.includes('部门')` 后 QA2/UAT2 全 PASS。证据：`docs/handoff/artifacts/uat023-dev-report.md`、`uat023-qa-report.md`、`uat023-uat-report.md`（FAIL 历史）、`uat023-dev-fix2-report.md`、`uat023-qa2-report.md`、`uat023-uat2-report.md`。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
-- 涉及源码文件：`["demo/static/js/cost_report.js", "demo/static/js/i18n/i18n.js", "demo/app/api_export.py"]`
+- 涉及源码文件：`["demo/static/js/export_center.js", "demo/static/js/cost_report.js", "demo/static/js/i18n/i18n.js", "demo/app/api_export.py"]`
 - 核心正向验收标准 (Positive Acceptance Criteria)：
   1. 合成长中文名超长/规格/说明，Hans→Hant→Hans，8种CSV中包含业务名者对比同ID preview textContent与CSV精确相等
   1. 表头仍翻译，业务name DB不变
@@ -510,9 +516,10 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-024] 手机库存品名列过窄且操作与名称分离
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat024-dev -> uat024-qa -> uat024-uat）
+- **残档说明**：`uat024-uat/` 目录与完整 UAT 截图缺失；已补 stub `docs/handoff/artifacts/uat024-uat-report.md`（声称 UAT PASS @ port 15300；不发明截图；以 QA 报告为可核验证据）。
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
-- 前置依赖：`["UAT-003"]`
+- 前置依赖：`["UAT-003"]`（已满足）
 - 涉及源码文件：`["demo/static/css/style.css", "demo/static/css/review-mobile.css", "demo/templates/index.html", "demo/static/js/inventory_board.js"]`
 - 核心正向验收标准 (Positive Acceptance Criteria)：
   1. 390/412手机Rice/Oil/长中文名查看并真实更多点击，对应同row SKU正确
@@ -529,7 +536,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-025] 繁体洞察请求未传当前语言
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat025-dev -> uat025-qa -> uat025-uat）
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/inventory_board.js", "demo/app/api_admin.py"]`
@@ -548,9 +555,10 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-027] 库存价格金额仍使用美元符号且缺千分位
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat027-dev -> uat027-qa -> uat027-uat）
+- **已闭环**：库存价格金额 HK$ + 千分位经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat027-dev-report.md`、`docs/handoff/artifacts/uat027-qa-report.md`、`docs/handoff/artifacts/uat027-uat-report.md`。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
-- 前置依赖：`["UAT-021"]`
+- 前置依赖：`["UAT-021"]`（已满足）
 - 涉及源码文件：`["demo/static/js/inventory_board.js", "demo/static/js/dish_bom.js", "demo/static/js/finance.js", "demo/static/js/i18n/i18n.js"]`
 - 核心正向验收标准 (Positive Acceptance Criteria)：
   1. 明确合成数1234.5(非商业价)显示HK$1,234.50，0显示HK$0.00，null显示—
@@ -566,7 +574,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-036] 库存和餐品请求失败仍显示0指标
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat036-dev -> uat036-qa -> uat036-uat）
+- **已闭环**：库存/餐品/scan 指标失败态经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/uat036-dev-report.md`、`docs/handoff/artifacts/uat036-qa-report.md`、`docs/handoff/artifacts/uat036-uat-report.md`。
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-002"]`
 - 涉及源码文件：`["demo/static/js/inventory_board.js", "demo/static/js/dish_bom.js", "demo/static/js/workbench_queue.js", "demo/static/js/supplier_archive.js"]`
@@ -585,7 +594,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT020] 批量照片抽屉遮挡原图旋转工具
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：uat020-dev -> uat020-qa -> uat020-uat）
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/upload.js", "demo/static/css/review-mobile.css", "demo/static/css/style.css"]`
@@ -605,7 +614,8 @@
 ## 2.5 波次 W4：SaaS 设计体系、触控靶区、规模性能与极端输入防护 (10 项)
 
 ### [ENG-04] Demo导航旧标题/空实验fixture与中断
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：eng04-dev -> eng04-qa -> eng04-uat）
+- **已闭环**：Demo 导航旧标题 / 空实验 fixture 与中断经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/eng04-dev-report.md`、`docs/handoff/artifacts/eng04-qa-report.md`、`docs/handoff/artifacts/eng04-uat-report.md`。
 - 优先级：`P1` | 任务分类：`ENGINEERING_GATE` | 验证模式：`MANUAL_COMMAND`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/tests/test_admin_tabs_consolidation_e2e.py", "demo/tests/test_analytics_historical_canary_and_ab.py"]`
@@ -623,7 +633,8 @@
   - 隔离环境注入参数运行 pytest 定向测试套件 (`tests/...`)。
 
 ### [SAAS-CONSISTENCY] 页面容器/工具条/日期标签视觉体系差异
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：saas-consistency-dev -> saas-consistency-qa -> saas-consistency-uat）
+- **已闭环**：页面容器/工具条/日期标签视觉体系经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/saas-consistency-dev-report.md`、`docs/handoff/artifacts/saas-consistency-qa-report.md`、`docs/handoff/artifacts/saas-consistency-uat-report.md`。
 - 优先级：`P2` | 任务分类：`DESIGN_OBSERVATION` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/css/style.css", "demo/static/css/review-mobile.css", "demo/templates/index.html"]`
@@ -642,7 +653,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [SAAS-HEIGHT] 原38px控件合同未全面达标
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：saas-height-dev -> saas-height-qa -> saas-height-uat）
+- **已闭环**：原38px控件合同经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/saas-height-dev-report.md`、`docs/handoff/artifacts/saas-height-qa-report.md`、`docs/handoff/artifacts/saas-height-uat-report.md`。
 - 优先级：`P2` | 任务分类：`DESIGN_GAP` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/css/style.css", "demo/static/css/review-mobile.css", "demo/templates/index.html"]`
@@ -660,7 +672,8 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [SAAS-MOBILE] 移动KPI/筛选堆叠与首个业务表过晚
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：saas-mobile-dev -> saas-mobile-qa -> saas-mobile-uat）
+- **已闭环**：移动KPI/筛选堆叠与首个业务表过晚经独立开发、独立 QA、独立 UAT 全部 PASS。证据：`docs/handoff/artifacts/saas-mobile-dev-report.md`、`docs/handoff/artifacts/saas-mobile-qa-report.md`、`docs/handoff/artifacts/saas-mobile-uat-report.md`。
 - 优先级：`P2` | 任务分类：`DESIGN_GAP` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-024", "UAT-036"]`
 - 涉及源码文件：`["demo/static/css/review-mobile.css", "demo/templates/index.html"]`
@@ -679,7 +692,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [SAAS-SCALE] 归档670/队列635行无分页规模任务效率
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环：saas-scale-dev -> saas-scale-qa -> saas-scale-uat）
 - 优先级：`P2` | 任务分类：`DESIGN_GAP` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/archive_list.js", "demo/static/js/workbench_queue.js", "demo/templates/index.html"]`
@@ -699,7 +712,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-032] 同日餐品二次提交后FIFO弹窗仍显示第一次份数与成本
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环 DEV→QA→UAT；证据 `uat032-dev-report.md` / `uat032-qa-report.md` / `uat032-uat-report.md`；隔离 UAT 端口 15150）
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT-031"]`
 - 涉及源码文件：`["demo/static/js/dish_consumption.js", "demo/app/api_dishes.py"]`
@@ -717,7 +730,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-033] legacy缺汇率单据被排除但部门报表未显示API缺汇率说明
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS（2026-10-17 Asia/Shanghai；三阶段闭环 DEV→QA→UAT；证据 uat033-dev-report.md / uat033-qa-report.md / uat033-uat-report.md）`（2026-10-17 Asia/Shanghai；dev self-check PASS，证据 `docs/handoff/artifacts/uat033-dev-report.md`；独立 QA/UAT 未跑，勿标 DONE）
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/cost_report.js", "demo/app/services/cost_report.py"]`
@@ -736,7 +749,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT-035] 每日消耗数量及导出筛选仍有三个无可访问名称控件
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17）
 - 优先级：`P2` | 任务分类：`PRODUCT_FAULT` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/dish_consumption.js", "demo/templates/index.html"]`
@@ -754,7 +767,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT018] BOM极大用量允许保存且无采购餐品显示零成本100%毛利
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17）
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/dish_bom.js", "demo/app/api_dishes.py", "demo/app/dishes_store.py"]`
@@ -773,7 +786,7 @@
   - 隔离环境拉起独立服务 (Port 151xx) + 内嵌浏览器真实元素点击、输入与网络捕获核验。
 
 ### [UAT019] 极大售出数量无确认直接扣成巨额负库存
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS`（2026-10-17 Asia/Shanghai；三阶段闭环 DEV→QA→UAT；证据 uat019-dev-report.md / uat019-qa-report.md / uat019-uat-report.md）
 - 优先级：`P2` | 任务分类：`QUALITY_RISK` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["UAT018"]`
 - 涉及源码文件：`["demo/static/js/dish_consumption.js", "demo/app/api_dishes.py", "demo/app/services/inventory.py"]`
@@ -796,7 +809,7 @@
 ## 2.6 波次 G1：全量工程回归门禁 (1 项，ENG-05 全量 pytest 重跑)
 
 ### [ENG-05] 完整根与Demo工程门禁重跑
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS (2026-10-17 Asia/Shanghai；独立 UAT 第三次全量根+Demo 均 exit0 failures0；见 docs/handoff/artifacts/eng05-uat-report.md / docs/handoff/tickets/eng05-uat-report.md)`
 - 优先级：`P1` | 任务分类：`ENGINEERING_GATE` | 验证模式：`MANUAL_COMMAND`
 - 前置依赖：`["ENG-01", "ENG-02", "ENG-03", "ENG-04"]`
 - 涉及源码文件：`[]`
@@ -818,7 +831,7 @@
 ## 2.7 波次 G2：外部系统与物理依赖门禁 (2 项，模型与真实 hidden 依赖)
 
 ### [DEP-HIDDEN] 真实hidden后台轮询分支1项BLOCKED
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[BLOCKED] UNVERIFIED (2026-10-17 Dev：本机 X11/VNC 下 9 次真实 tab-hide/minimize/CDP 均无法使 document.hidden=true；未改产品；证据 docs/handoff/artifacts/dep-hidden-dev-report.md；USER blocked-then-close139 2026-10-17：保持 BLOCKED 并进入 CLOSE-139)`
 - 优先级：`P1` | 任务分类：`DEPENDENCY_GATE` | 验证模式：`DEPENDENCY`
 - 前置依赖：`[]`
 - 涉及源码文件：`["demo/static/js/upload.js"]`
@@ -836,7 +849,7 @@
   - 真实依赖环境或物理桌面图形切台探针检测。
 
 ### [DEP-MODEL] 9项正常模型后续BLOCKED及超时运行时失败
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] PASS (2026-10-17 独立 UAT 9/9 PASS on :15411；证据 docs/handoff/artifacts/dep-model-uat-report.md；QA: dep-model-qa-report.md；Dev: dep-model-dev-report.md)`
 - 优先级：`P1` | 任务分类：`DEPENDENCY_GATE` | 验证模式：`DEPENDENCY`
 - 前置依赖：`[]`
 - 涉及源码文件：`[]`
@@ -857,7 +870,9 @@
 ## 2.8 波次 G3：全矩阵 139 项终审裁决门禁 (1 项，CLOSE-139 逐项裁决)
 
 ### [CLOSE-139] 原139 canonical逐ID行为裁决门禁
-- 当前状态：`[TODO] NOT_RUN (待派发)`
+- 当前状态：`[DONE] ADJUDICATED_WITH_DOCUMENTED_BLOCKERS (2026-10-17 Asia/Shanghai；139/139 矩阵已落盘；**Amended 2026-10-17**：UAT-031/UAT-032 本地三阶段 PASS，已从活跃 blocker 移除 UAT-032；产品目标仍未全部完成；DEP-HIDDEN/S4-19 BLOCKED_UNVERIFIED；PARTIAL 与 ledger-only/unmapped 已独立呈现；证据 docs/handoff/artifacts/close139-report.md + close139/close139-matrix.md + close139-amendment-uat031-032.md；禁止宣称 N 项修复等于原目标全部完成)`
+- 终审证据：`docs/handoff/artifacts/close139-report.md`、`docs/handoff/artifacts/close139/close139-matrix.md`、`docs/handoff/artifacts/close139/close139-matrix.json`、`docs/handoff/artifacts/close139-amendment-uat031-032.md`
+- 明确非完成项：DEP-HIDDEN/S4-19；PARTIAL 已清（UAT-016/ENG-02/ENG-03/UAT-014 均于 2026-10-17 转 PASS）；58 unmapped；ledger-only 无本地包（UAT-031 已有本地包，已移出该缺口列表）；feedback item_index 架构局限；UAT-030 错引已用 `04-open-defect-citation-fix-spec.md` 留档
 - 优先级：`P2` | 任务分类：`ORIGINAL_SCOPE_GATE` | 验证模式：`MANUAL_UI`
 - 前置依赖：`["ENG-05", "DEP-MODEL", "DEP-HIDDEN"]`
 - 涉及源码文件：`[]`
@@ -867,8 +882,6 @@
   1. 未完成及工程/模型阻塞独立呈现，不能宣称22修复等于原目标全部完成
 - 负向与安全边界 (Negative Boundary & Security)：
   - 保留15010；不删基线或skip掩盖红门禁；不将支持性测试冒称模型真实E2E。
-  - 139唯一ID逐行有原文行号/动作/预期、对应新证据、精确行为裁决和限制；related case FAIL不能自动为原ID FAIL，related PASS不能自动全条款PASS；未完成及工程/模型阻塞独立呈现，不能宣称22修复等于原目标全部完成
-  - 跨tenant读取/写入应拒绝或不可见；对B tenant baseline前后无意外改动。
 - 回归覆盖范围 (Regression Scope)：
   - 包含用例 ID：["原139 canonical逐ID行为裁决门禁", "相关source_files行为与角色边界"]
 - 验证方式与测试工具：

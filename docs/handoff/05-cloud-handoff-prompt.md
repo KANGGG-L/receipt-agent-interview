@@ -1,69 +1,47 @@
-接手任务：收据 AI 识别 SaaS 原型的 45 项缺陷修复流水线，已完成 20 项，继续推进剩余 25 项。
+接手任务：收据 AI 识别 SaaS 原型缺陷修复流水线。**先读 `docs/handoff/00-README.md` 与 `06-usage-stop-handoff.md`。**
 
-仓库已 clone 到本地，最新 main 含本轮全部成果与交接文档。**先读 `docs/handoff/00-README.md`，再按需查同目录另外四份文档。**
+上一环境因 Cursor usage ≈90% 于 2026-10-17 19:58 Asia/Shanghai 停机；UAT-008 Dev 被中断。
 
 ## 你的角色
 
-只担任调度器（Scheduler / Gatekeeper）。代码、测试、验收全部派发给独立 Subagent 执行，你不亲自写产品代码或跑测试。
+只担任调度器（Scheduler / Gatekeeper）。代码、测试、验收全部派发给独立 Subagent；你不亲自写产品代码或跑测试。
 
 ## 流水线契约（不可违反）
 
-1. **单向门禁**：开发 -> 独立 QA -> 独立 UAT。上一阶段全绿才进下一阶段；任一 FAIL 打回开发。
-2. **三阶段互不复用**：QA 与 UAT 必须用全新隔离端口、全新数据库、全新 fixture，禁止复用前一阶段的 env、fixture 与结论。禁止只复跑绿测冒充独立验证。
-3. **调度器只收摘要**：只接收每阶段的结论、证据路径与门禁信号，不在主上下文堆积完整日志。
-4. **禁止 Git 写操作**，除非用户明确要求。
-5. 每阶段产物实时落盘，禁止只停留在会话上下文。
-6. 禁用 Emoji；供应商统一别名 `Vendor_A` / `Vendor_B`；涉真实单据与客户信息一律脱敏。
+1. **单向门禁**：开发 -> 独立 QA -> 独立 UAT。FAIL 打回开发。
+2. **三阶段互不复用**：QA/UAT 全新隔离端口、DB、fixture。
+3. **调度器只收摘要**；产物落盘到 `docs/handoff/artifacts/`。
+4. **Git**：默认不写；本轮用户已授权在 usage≈90% 时 commit+push。若尚未 push，先清理 artifacts 垃圾再提交。
+5. 禁用 Emoji；Vendor_A/B；密钥勿入库（`/home/box/.config/receipt-agent/`）。
 
-## 当前进度
+## 当前进度（相对 2026-10-16 旧交接已大变）
 
-45 项中 **20 项闭环**（16 PASS + 4 PARTIAL），D0 与 W1 已清空，**W2 波次 7/7 收官**。剩余 25 项：
+- W3 / W4 / ENG-05 / DEP-MODEL 已闭环；UAT-031/032 已 PASS；CLOSE-139 已 `ADJUDICATED_WITH_DOCUMENTED_BLOCKERS`。
+- 原 PARTIAL（ENG-02/03、UAT-014/016）已清为 PASS。
+- **DEP-HIDDEN** 仍 `[BLOCKED] UNVERIFIED`（本机无法真实 hidden）。
+- **仍 NOT_RUN：UAT-008、UAT-009、UAT-028、UAT-029。**
 
-- **W3（11 项）**：UAT-002、UAT-003、UAT-007、UAT-010、UAT-017、UAT-023、UAT-024（依赖 UAT-003）、UAT-025、UAT-027、UAT-036、UAT020
-- **W4（10 项）**：ENG-04、SAAS-CONSISTENCY、SAAS-HEIGHT、SAAS-MOBILE、SAAS-SCALE、UAT-032、UAT-033、UAT-035、UAT018、UAT019
-- **G1 / G2 / G3**：ENG-05（全量门禁重跑）、DEP-MODEL、DEP-HIDDEN（均 BLOCKED，缺真实模型凭据）、CLOSE-139（终审，前置依赖写死为 ENG-05 + DEP-MODEL + DEP-HIDDEN）
+逐项以 `01-acceptance-checklist.md` 卡片「当前状态」为准。
 
-4 项 PARTIAL（UAT-014、UAT-016、ENG-02、ENG-03）真实模型路径未验证，**不得计入完成率**。
+## 第一件事
 
-逐项状态见 `docs/handoff/01-acceptance-checklist.md`。注意该文件早期表格已过期，**以每张卡片的「当前状态」行为准**。
+1. `git status` / 确认是否已 push。
+2. **清理** `docs/handoff/artifacts/**/venv`、`**/node_modules`、`*.db*`（否则约 3GB 不可 push）。
+3. 若用户要保留进度：commit 全部产品修复 + handoff + 精简后的报告 md，然后 push `origin/main`。
+4. 派 **UAT-008**（实收 0 与入账算术校验）走完 Dev→QA→UAT。
+5. 然后 UAT-009 → UAT-028 → UAT-029；必要时在其他桌面复验 DEP-HIDDEN。
 
-## 第一件事：修完 UAT-002 的三处缺陷再进 QA
+## 必须继承的纪律
 
-UAT-002 开发已交付但调度门禁未通过，**独立 QA 与 UAT 均未开始**。必须先派开发 Subagent 修完下列三点：
-
-1. **功能回归** — `demo/static/js/supplier_archive.js` 中 `card.title = '统计口径：...'` 是无条件赋值，把 `demo/templates/index.html:1054` 原有的 `title="点击筛选待审核单据"` 覆盖掉了，用户悬停时不再知道卡片可点。口径说明与点击提示必须同时可见。
-2. **脆弱耦合** — 同文件 `if (labelEl.textContent.trim() === '待审核')` 把逻辑焊死在精确字符串上，HTML 文案再改即静默失效。与仓库自述原则冲突（`demo/static/js/review_core.js:1630-1633`：「新增一个状态只需在此登记一次，不再出现『改了三处漏一处』的漂移」）。**改 `demo/templates/index.html:1055` 的源头标签，删除该 shim。**
-3. **不准确声明** — 报告称「全局检索无残留漂移」，但 `index.html:1054` 仍含「待审核」；另 `index.html:182` 用「待我审批」而 `demo/static/js/terms.js:15` 权威 label 为「待老板审批」，需判定同义或统一。
-
-修完再走独立 QA、独立 UAT，之后进 W3 其余 10 项。
-
-## 必须继承的三条门禁纪律
-
-这一轮反复抓到同一类问题：**测试通过不等于结论成立**。
-
-1. **权威行号必须逐条自核。** 仓库评审文档中表格行与表头/前言行只差一两行，已多次抓到 worker 把权威表格行引成 `:50`（实为 `:52`）。凡 `文件:行号` 引用须打印该行原文确认。
-2. **空 `Authorization` 头不等于未认证请求。** 本产品身份来自 HttpOnly 会话 Cookie（`demo/app/auth.py:361-372`），同源请求浏览器自动携带。声称验证未认证阻断，必须给出**可复现的无凭据客户端证据**（`credentials: 'omit'` 页面上下文，或完全不带 Cookie / Authorization / X-Role / X-Tenant-Id 的独立客户端）并说明客户端上下文。
-3. **声称的测试必须真的做过。** 出现过「测试数据未达阈值所以记忆表零改动」的空证 PASS，也出现过未做的测试被写成已通过。任一硬约束若未被实际触发，**如实登记为空证并说明未覆盖范围**，不得计为通过。
-
-## 待继承的开放缺陷
-
-- **反馈索引键错位**：`receipt_feedback` 表以 `(receipt_id, item_index)` 为键且无不可变行主键（`demo/app/db.py:634-644`）。行序变化（删行 / 重排 / 增行）后行级反馈会**错套到错误的明细行**。属既有架构局限非本次引入，已在验收卡片标注，须在 CLOSE-139 留档。
-- **两处行号错引**：`33-uat030-dev` 产物中两处引用错误，更正规格见 `docs/handoff/04-open-defect-citation-fix-spec.md`，CLOSE-139 前必结。
-
-## 环境要求
-
-- 每个 Subagent 用**独立隔离环境**：独立端口、独立数据库、独立 fixture。本地用的启动脚本在云端不可用，需自建等价机制。要点：启动时注入等待窗口（Python 冷启动可能超时，`ValueError: startup timeout` 是已知现象，重试即可，**不是产品缺陷**）。
-- **阶段结束必须真正清理**：停隔离服务、关浏览器 tab、落盘含完整字段的 `cleanup.json`、确认端口释放。**不得保留任何隔离服务。**
-- 重型任务串行执行；重试前先终止旧进程；阶段结束确认无孤儿进程。
-- 若开发服务需要常驻（如本地 15010），全程保留、不得终止、不得向其业务库写测试数据。
-- 监控 worker 时**不要用心跳判定生死**：worker 心跳按阶段触发而非周期上报，长时间生成期间本就不跳，会造成误杀。应改用「进程 CPU 累计时间是否增长」+「进程是否存活」判断；进程 CPU 零增长 10 分钟以上才判停滞。网络阻塞时优先用文本注入唤醒，**不要直接杀进程重启**——本轮有一次 60 分钟死锁，靠文本注入无损唤醒，保住了前 40 分钟已完成的独立取证。
+1. 权威行号必须逐条自核。
+2. 空 Authorization ≠ 未认证（身份在 Cookie）。
+3. 声称的测试必须真做过；真实模型 AC 禁止用 mock 冒充 PASS。
+4. 保留端口约定：勿占用/勿向 15010 业务库写测试数据。
 
 ## 最终目标
 
-不是「45 项都 PASS」就完事。最终门禁是 **CLOSE-139**：对原始 139 条 canonical 需求**逐 ID**给出原文行号、动作、预期、新证据、精确行为裁决与限制。它的验收标准明文禁止「宣称 N 项修复等于原目标全部完成」，未完成项与工程/模型阻塞必须独立呈现。
-
-若 G2 两项因缺真实模型凭据长期阻塞，如实登记为外部阻塞并向用户说明，不得用降级口径掩盖。
+CLOSE-139 已裁决但**禁止**宣称原 139 项目标全部完成。未完成项与 DEP-HIDDEN 必须独立呈现。
 
 ## 首次汇报只需给出
 
-已读交接文档确认状态、UAT-002 修正派发情况、确认的阻塞点、下一步动作及证据路径。不得把历史自报当作新验证结果。
+已读交接确认状态、git/清理/push 情况、UAT-008 派发情况、阻塞点、下一步与证据路径。

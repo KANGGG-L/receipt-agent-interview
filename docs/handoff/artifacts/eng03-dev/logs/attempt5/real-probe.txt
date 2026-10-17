@@ -1,0 +1,2 @@
+{"verdict": {"AC1": true, "AC2": true, "AC3": false}, "overall": "FAIL", "AC1": {"ai_visible": false, "manual_visible": true}, "AC2": {"http": 200, "receipt_id": 1, "ai_after": false}, "AC3": {"upload_path": "api_upload", "opened_via": "ui_prefill_wait", "job_id": null, "receipt_id": null, "ai_visible": null, "ai_text": null, "supplier": null, "doc_form": "", "secs": null}}
+real_probe_exit=1

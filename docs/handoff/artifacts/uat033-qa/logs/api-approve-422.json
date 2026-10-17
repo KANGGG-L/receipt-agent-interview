@@ -1,0 +1,12 @@
+{
+  "status": 200,
+  "body": {
+    "status": "error",
+    "code": "FX_RATE_MISSING",
+    "msg": "这张单是「XXX」单，设置里还没有 XXX 兑港币的汇率，请老板到「设置」里填好汇率后再入账",
+    "data": {
+      "currency": "XXX"
+    }
+  },
+  "month_total_after": 220.0
+}

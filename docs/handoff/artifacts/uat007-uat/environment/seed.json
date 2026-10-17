@@ -1,0 +1,19 @@
+{
+  "skus": [
+    {
+      "id": 1,
+      "name": "Synthetic_Rice_UAT",
+      "stock": 10.0,
+      "tenant": "default",
+      "vendor": "Vendor_A"
+    },
+    {
+      "id": 2,
+      "name": "TenantB_SKU_UAT",
+      "stock": 7.0,
+      "tenant": "t2",
+      "vendor": "Vendor_B"
+    }
+  ],
+  "notes": "UAT-007 fresh fixture"
+}

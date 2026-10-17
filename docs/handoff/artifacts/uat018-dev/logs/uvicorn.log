@@ -1,0 +1,24 @@
+INFO:     Started server process [93412]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=2、缺向量行=0、交集=0（记忆库=/workspace/receipt-agent-interview/docs/handoff/artifacts/uat018-dev/environment/uat018.db，向量库=/workspace/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15215 (Press CTRL+C to quit)
+INFO:     127.0.0.1:40864 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53894 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53916 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53924 - "GET /api/inventory/skus/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53940 - "GET /api/inventory/skus/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53944 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53946 - "POST /api/dishes HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53962 - "POST /api/dishes HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53966 - "POST /api/dishes HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53982 - "POST /api/dishes HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:53996 - "POST /api/dishes HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:54010 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54020 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54024 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [93412]

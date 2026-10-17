@@ -1,0 +1,20 @@
+PASS hant: document/I18N locale — {"dataLocale":"zh-Hant-HK","htmlLang":"zh-Hant-HK","i18n":"zh-Hant-HK","hasConvert":true}
+PASS hant: GET /api/ai-insights captured — http://127.0.0.1:15350/api/ai-insights?lang=zh-Hant-HK
+PASS hant: query lang=zh-Hant-HK — got lang=zh-Hant-HK
+PASS hant: response review_locale=zh-Hant-HK — got review_locale="zh-Hant-HK" status=200
+PASS hant: OpenCC alone not used as pass (convert may exist; gate is request+review_locale) — {"hasConvert":true,"sample":"價格異常","locale":"zh-Hant-HK"}
+PASS hant: setLocale+reload still sends lang — lang=zh-Hant-HK
+PASS hant: setLocale+reload review_locale — review_locale=zh-Hant-HK
+PASS hans: document/I18N locale — {"dataLocale":"zh-Hans","htmlLang":"zh-Hans","i18n":"zh-Hans","hasConvert":true}
+PASS hans: GET /api/ai-insights captured — http://127.0.0.1:15350/api/ai-insights?lang=zh-Hans
+PASS hans: query lang=zh-Hans — got lang=zh-Hans
+PASS hans: response review_locale=zh-Hans — got review_locale="zh-Hans" status=200
+PASS hans: OpenCC alone not used as pass (convert may exist; gate is request+review_locale) — {"hasConvert":true,"sample":"价格异常","locale":"zh-Hans"}
+PASS hans: setLocale+reload still sends lang — lang=zh-Hans
+PASS hans: setLocale+reload review_locale — review_locale=zh-Hans
+PASS API alias zh-HK -> zh-Hant-HK — {"status":200,"review_locale":"zh-Hant-HK","url":"/api/ai-insights?lang=zh-HK"}
+PASS API alias zh-Hant* -> zh-Hant-HK — {"status":200,"review_locale":"zh-Hant-HK","url":"/api/ai-insights?lang=zh-Hant"}
+PASS API Hans zh-Hans -> zh-Hans — {"status":200,"review_locale":"zh-Hans","url":"/api/ai-insights?lang=zh-Hans"}
+PASS API empty lang -> empty review_locale — {"status":200,"review_locale":"","url":"/api/ai-insights"}
+
+pass=true passCount=18 failCount=0

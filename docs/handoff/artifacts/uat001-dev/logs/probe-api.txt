@@ -1,0 +1,12 @@
+PASS tenant_b_baseline {"count": 1, "rows": [[6, "Vendor_B_Baseline", "edited", "", 1.0]]}
+PASS edited_detail_signed_url {"status": 200, "top_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a", "data_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a", "has_original_image": true}
+PASS edited_image_http_200 {"status": 200, "bytes": 1949, "magic": "89504e47"}
+PASS manual_detail_empty_image {"status": 200, "image_url": "", "has_original_image": false}
+PASS tampered_sig_403 {"status": 403, "body": {"status": "error", "code": "IMAGE_SIGNATURE_INVALID", "msg": "单据 7 的原图链接签名无效或缺失"}}
+PASS missing_sig_403 {"status": 403, "body": {"status": "error", "code": "IMAGE_SIGNATURE_INVALID", "msg": "单据 7 的原图链接签名无效或缺失"}}
+PASS refresh_recovers_signed_url {"fresh_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a", "img_status": 200, "bytes": 1949}
+PASS cross_tenant_detail_404 {"status": 404}
+PASS cross_tenant_image_403 {"status": 403}
+PASS tenant_b_unchanged {"before": {"count": 1, "rows": [[6, "Vendor_B_Baseline", "edited", "", 1.0]]}, "after": {"count": 1, "rows": [[6, "Vendor_B_Baseline", "edited", "", 1.0]]}}
+VERDICT PASS wrote /workspace/receipt-agent-interview/docs/handoff/artifacts/uat001-dev/evidence/original-image-api-probe.json
+api_probe_exit=0

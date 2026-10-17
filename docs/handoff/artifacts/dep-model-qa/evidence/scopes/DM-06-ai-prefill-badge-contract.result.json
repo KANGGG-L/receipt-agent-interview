@@ -1,0 +1,76 @@
+{
+  "scope_id": "DM-06-ai-prefill-badge-contract",
+  "source": "ENG-03 AC3 real AI prefill must show badge (UI later)",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "job_status": true,
+    "doc_form_not_manual": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-06-ai-prefill-badge-contract.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 6,
+    "job_id": "6fbecf491ae449379706eb397c96cbef",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "6fbecf491ae449379706eb397c96cbef",
+          "receipt_id": 6,
+          "image_url": "/api/receipt/6/image?v=45a41dd8&sig=c8d591f9598f34e0201e69e7eb3090af02272807ae21e3dc1a08babaffff1624"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 6.07
+      }
+    ]
+  }
+}

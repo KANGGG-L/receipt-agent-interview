@@ -1,0 +1,190 @@
+{
+  "overall": false,
+  "checks": [
+    {
+      "name": "desktop_390_target_height_ge_38",
+      "ok": true,
+      "failCount": 0
+    },
+    {
+      "name": "keyboard_usable",
+      "ok": true,
+      "failCount": 0
+    },
+    {
+      "name": "no_clip_overlap",
+      "ok": true,
+      "failCount": 0
+    },
+    {
+      "name": "contrast_4_5_sample",
+      "ok": false,
+      "failCount": 0
+    },
+    {
+      "name": "token_control_min_height",
+      "ok": true,
+      "failCount": 0
+    }
+  ],
+  "minHeights": {
+    "1440:archive-chip": {
+      "vp": "1440_archive",
+      "label": "archive-chip",
+      "h": 38,
+      "text": "全部"
+    },
+    "1440:archive-advanced-toggle": {
+      "vp": "1440_archive",
+      "label": "archive-advanced-toggle",
+      "h": 38,
+      "text": "高级筛选 ▾"
+    },
+    "1440:demo-role-select": {
+      "vp": "1440_archive",
+      "label": "demo-role-select",
+      "h": 38,
+      "text": "● 系统管理员 ● 餐厅老板 / 店长 ● 餐厅店员"
+    },
+    "1440:lang-switch-btn": {
+      "vp": "1440_archive",
+      "label": "lang-switch-btn",
+      "h": 38,
+      "text": "简体中文"
+    },
+    "1440:app-toast-close": {
+      "vp": "1440",
+      "label": "app-toast-close",
+      "h": 38,
+      "text": "×"
+    },
+    "1440:dish-subtab-btn": {
+      "vp": "1440_dishes",
+      "label": "dish-subtab-btn",
+      "h": 38,
+      "text": "每日消耗录入"
+    },
+    "1440:analytics-segment-btn": {
+      "vp": "1440_analytics",
+      "label": "analytics-segment-btn",
+      "h": 42,
+      "text": "01 线上体验感知与链路审计"
+    },
+    "1440:filter-time-range-btn": {
+      "vp": "1440_analytics",
+      "label": "filter-time-range-btn",
+      "h": 38,
+      "text": "全部"
+    },
+    "1440:parsing-log-filter-control": {
+      "vp": "1440_analytics",
+      "label": "parsing-log-filter-control",
+      "h": 38,
+      "text": ""
+    },
+    "1440:parsing-log-filter-btn": {
+      "vp": "1440_analytics",
+      "label": "parsing-log-filter-btn",
+      "h": 38,
+      "text": "查询/刷新"
+    },
+    "1440:engine-card-toggle-btn": {
+      "vp": "1440_engine",
+      "label": "engine-card-toggle-btn",
+      "h": 38,
+      "text": "收起"
+    },
+    "390:archive-chip": {
+      "vp": "390_archive",
+      "label": "archive-chip",
+      "h": 38,
+      "text": "全部"
+    },
+    "390:archive-advanced-toggle": {
+      "vp": "390_archive",
+      "label": "archive-advanced-toggle",
+      "h": 38,
+      "text": "高级筛选 ▾"
+    },
+    "390:app-toast-close": {
+      "vp": "390_archive",
+      "label": "app-toast-close",
+      "h": 38,
+      "text": "×"
+    },
+    "390:dish-subtab-btn": {
+      "vp": "390_dishes",
+      "label": "dish-subtab-btn",
+      "h": 38,
+      "text": "每日消耗录入"
+    },
+    "390:analytics-segment-btn": {
+      "vp": "390_analytics",
+      "label": "analytics-segment-btn",
+      "h": 42,
+      "text": "02 金丝雀发布监控"
+    },
+    "390:filter-time-range-btn": {
+      "vp": "390_analytics",
+      "label": "filter-time-range-btn",
+      "h": 38,
+      "text": "全部"
+    },
+    "390:parsing-log-filter-control": {
+      "vp": "390_analytics",
+      "label": "parsing-log-filter-control",
+      "h": 38,
+      "text": ""
+    },
+    "390:parsing-log-filter-btn": {
+      "vp": "390_analytics",
+      "label": "parsing-log-filter-btn",
+      "h": 38,
+      "text": "查询/刷新"
+    },
+    "390:engine-card-toggle-btn": {
+      "vp": "390_engine",
+      "label": "engine-card-toggle-btn",
+      "h": 38,
+      "text": "收起"
+    }
+  },
+  "toast": {
+    "h": 38,
+    "w": 38,
+    "minH": "38px",
+    "color": "rgb(30, 34, 35)",
+    "backgroundColor": "rgba(0, 0, 0, 0)"
+  },
+  "contrastCount": 16,
+  "contrastFails": [
+    {
+      "vp": "1440_dishes",
+      "label": "dish-subtab-btn inactive",
+      "text": "餐品 BOM 配方库",
+      "fg": "#646464",
+      "bg": "#000000",
+      "ratio": 3.548753608712949,
+      "pass": false
+    },
+    {
+      "vp": "390_dishes",
+      "label": "dish-subtab-btn inactive",
+      "text": "餐品 BOM 配方库",
+      "fg": "#646464",
+      "bg": "#000000",
+      "ratio": 3.548753608712949,
+      "pass": false
+    }
+  ],
+  "shots": [
+    "1440-archive-controls.png",
+    "1440-dishes-controls.png",
+    "1440-analytics-controls.png",
+    "1440-engine-controls.png",
+    "390-archive-controls.png",
+    "390-dishes-controls.png",
+    "390-analytics-controls.png",
+    "390-engine-controls.png"
+  ]
+}

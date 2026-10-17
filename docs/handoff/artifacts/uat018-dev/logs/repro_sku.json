@@ -1,0 +1,10 @@
+{
+  "sku_id": null,
+  "create": {
+    "status": "error",
+    "code": "NOT_FOUND",
+    "msg": "没有找到你要的内容，可能已被删除。请刷新页面后再试。",
+    "detail": "没有找到你要的内容，可能已被删除。请刷新页面后再试。"
+  },
+  "list_sample": []
+}

@@ -1,0 +1,13 @@
+{
+  "id": 1,
+  "tenant_id": "uat014-dev",
+  "trace_id": "uat014-live-probe",
+  "model": "uat014-mask-check",
+  "prompt_redacted": "[{\"role\": \"user\", \"content\": \"UAT014_LIVE_PROBE customer [HKID_MASKED] phone ****67 alt [HKID_MASKED] id 110101********2345 key sk-***\"}]",
+  "raw_redacted": "UAT014_LIVE_PROBE vendor note [HKID_MASKED] contact ****67",
+  "contains_HKID_MASKED": true,
+  "contains_sk_mask": true,
+  "plaintext_leak_kinds": [],
+  "plaintext_leak_count": 0,
+  "verdict": "PASS"
+}

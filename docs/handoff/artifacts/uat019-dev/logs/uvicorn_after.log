@@ -1,0 +1,24 @@
+INFO:     Started server process [101142]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=2、缺向量行=0、交集=0（记忆库=/workspace/receipt-agent-interview/docs/handoff/artifacts/uat019-dev/environment/uat019_after.db，向量库=/workspace/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15245 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53378 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40620 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40628 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:40632 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 409 Conflict
+INFO:     127.0.0.1:40646 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40660 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40666 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40676 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40684 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:40700 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:40712 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 400 Bad Request
+INFO:     127.0.0.1:40716 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40724 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40726 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40732 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 409 Conflict
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [101142]

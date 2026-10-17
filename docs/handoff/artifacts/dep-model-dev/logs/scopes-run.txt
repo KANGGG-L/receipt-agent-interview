@@ -1,0 +1,19 @@
+=== SCOPE DM-01-normal-auto-recognize ===
+  -> PASS checks={'job_status': True} attempts=1
+=== SCOPE DM-02-job-terminal-done ===
+  -> PASS checks={'job_status': True, 'supplier_name': True, 'date': True, 'total_amount': True} attempts=1
+=== SCOPE DM-03-prefill-header-fields ===
+  -> PASS checks={'supplier_name': True, 'date': True, 'total_amount': True} attempts=1
+=== SCOPE DM-04-prefill-line-items ===
+  -> PASS checks={'items': True} attempts=1
+=== SCOPE DM-05-second-image-heic-done ===
+  -> PASS checks={'job_status': True} attempts=1
+=== SCOPE DM-06-ai-prefill-badge-contract ===
+  -> PASS checks={'job_status': True, 'doc_form_not_manual': True} attempts=1
+=== SCOPE DM-07-manual-entry-save ===
+  -> BLOCKED checks={} attempts=1
+=== SCOPE DM-08-ai-then-human-save ===
+  -> BLOCKED checks={} attempts=2
+=== SCOPE DM-09-original-assertions-711 ===
+  -> PASS checks={'original_match_supplier': True, 'original_match_date': True, 'original_match_total': True} attempts=1
+SUMMARY {'PASS': 7, 'FAIL': 0, 'BLOCKED': 2}

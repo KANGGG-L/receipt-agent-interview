@@ -1,0 +1,12 @@
+{
+  "card": "UAT-010",
+  "stage": "qa",
+  "verdict": "PASS",
+  "uat_started": false,
+  "port": 15210,
+  "pytest_specialty": "4 passed",
+  "frontend_harness": "PASS 18 FAIL 0",
+  "pytest_b1_logout": "2 passed",
+  "live_verify": "PASS",
+  "report": "docs/handoff/artifacts/uat010-qa-report.md"
+}

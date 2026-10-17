@@ -1,0 +1,5 @@
+=== staff boundary (curl, authoritative for AUTH_ENABLED=0 X-Role) ===
+curl X-Role:staff -> 403
+{"status":"error","code":"FORBIDDEN","msg":"权限不足：这个操作需要老板或更高权限，你现在是店员。请联系老板来操作。","detail":"权限不足：这个操作需要老板或更高权限，你现在是店员。请联系老板来操作。"}
+curl no role -> 401
+{"status":"error","code":"UNAUTHENTICATED","msg":"请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。","detail":"请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。"}

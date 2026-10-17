@@ -1,0 +1,2 @@
+{"verdict": {"AC1": true, "AC2": true, "AC3": true}, "overall": "PASS", "AC1": {"ai_visible": false, "manual_visible": true}, "AC2": {"http": 200, "receipt_id": 2, "ai_after": false}, "AC3": {"upload_path": "api_upload", "opened_via": "queue_continue_review_click", "job_id": "62142af4ceec47efa57db12969e0aff6", "receipt_id": 1, "ai_visible": true, "ai_text": "AI 预填，待核对", "supplier": "7-ELEVEN", "doc_form": "printed_delivery_note", "secs": 26.1}}
+real_probe_exit=0

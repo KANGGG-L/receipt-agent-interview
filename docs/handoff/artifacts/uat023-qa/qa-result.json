@@ -1,0 +1,10 @@
+{
+  "card": "UAT-023",
+  "stage": "QA",
+  "verdict": "PASS",
+  "report": "docs/handoff/artifacts/uat023-qa-report.md",
+  "pytest": "4 passed",
+  "harness": "8 + 19 PASS",
+  "live": "83/83 PASS on :15260",
+  "uat": "NOT_STARTED"
+}

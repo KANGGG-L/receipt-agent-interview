@@ -1,0 +1,179 @@
+{
+  "port": 15220,
+  "started_at": "2026-10-16T20:23:01.148Z",
+  "roles": [
+    {
+      "role": "admin",
+      "email": "admin@demo.hk",
+      "pass": true,
+      "steps": {
+        "afterLogin": {
+          "logoutVisible": true,
+          "logoutText": "退出登录",
+          "demoSwitchVisible": false,
+          "authEnabled": true,
+          "accountRole": "admin",
+          "accountEmail": "admin@demo.hk",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "hasAuthLoginOverlay": false
+        },
+        "receiptsBefore": 200,
+        "afterCancel": {
+          "stillLoggedIn": true,
+          "logoutVisible": true,
+          "hasLoginOverlay": false,
+          "receiptsOk": null,
+          "receiptsStatus": 200
+        },
+        "afterNetworkFail": {
+          "stillLoggedIn": true,
+          "hasLoginOverlay": false,
+          "toastText": "请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。×登录成功×网络异常，未能退出。请检查网络后重试。×",
+          "receiptsStatus": 200
+        },
+        "afterLogout": {
+          "accountNull": true,
+          "logoutVisible": false,
+          "hasLoginOverlay": true,
+          "loginHint": "已退出登录",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "receiptsStatus": 401,
+          "me": {
+            "status": "success",
+            "auth_enabled": true,
+            "account": null,
+            "identity_source": "missing"
+          }
+        },
+        "afterRefresh": {
+          "hasLoginOverlay": true,
+          "receiptsStatus": 401,
+          "meAccount": null,
+          "logoutVisible": false
+        }
+      },
+      "errors": []
+    },
+    {
+      "role": "owner",
+      "email": "boss@demo.hk",
+      "pass": true,
+      "steps": {
+        "afterLogin": {
+          "logoutVisible": true,
+          "logoutText": "退出登录",
+          "demoSwitchVisible": false,
+          "authEnabled": true,
+          "accountRole": "owner",
+          "accountEmail": "boss@demo.hk",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "hasAuthLoginOverlay": false
+        },
+        "receiptsBefore": 200,
+        "afterCancel": {
+          "stillLoggedIn": true,
+          "logoutVisible": true,
+          "hasLoginOverlay": false,
+          "receiptsOk": null,
+          "receiptsStatus": 200
+        },
+        "afterNetworkFail": {
+          "stillLoggedIn": true,
+          "hasLoginOverlay": false,
+          "toastText": "请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。×登录成功×网络异常，未能退出。请检查网络后重试。×",
+          "receiptsStatus": 200
+        },
+        "afterLogout": {
+          "accountNull": true,
+          "logoutVisible": false,
+          "hasLoginOverlay": true,
+          "loginHint": "已退出登录",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "receiptsStatus": 401,
+          "me": {
+            "status": "success",
+            "auth_enabled": true,
+            "account": null,
+            "identity_source": "missing"
+          }
+        },
+        "afterRefresh": {
+          "hasLoginOverlay": true,
+          "receiptsStatus": 401,
+          "meAccount": null,
+          "logoutVisible": false
+        }
+      },
+      "errors": []
+    },
+    {
+      "role": "staff",
+      "email": "staff@demo.hk",
+      "pass": true,
+      "steps": {
+        "afterLogin": {
+          "logoutVisible": true,
+          "logoutText": "退出登录",
+          "demoSwitchVisible": false,
+          "authEnabled": true,
+          "accountRole": "staff",
+          "accountEmail": "staff@demo.hk",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "hasAuthLoginOverlay": false
+        },
+        "receiptsBefore": 200,
+        "afterCancel": {
+          "stillLoggedIn": true,
+          "logoutVisible": true,
+          "hasLoginOverlay": false,
+          "receiptsOk": null,
+          "receiptsStatus": 200
+        },
+        "afterNetworkFail": {
+          "stillLoggedIn": true,
+          "hasLoginOverlay": false,
+          "toastText": "请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。×登录成功×网络异常，未能退出。请检查网络后重试。×",
+          "receiptsStatus": 200
+        },
+        "afterLogout": {
+          "accountNull": true,
+          "logoutVisible": false,
+          "hasLoginOverlay": true,
+          "loginHint": "已退出登录",
+          "storageHasCred": false,
+          "getAuthTokenNull": true,
+          "receiptsStatus": 401,
+          "me": {
+            "status": "success",
+            "auth_enabled": true,
+            "account": null,
+            "identity_source": "missing"
+          }
+        },
+        "afterRefresh": {
+          "hasLoginOverlay": true,
+          "receiptsStatus": 401,
+          "meAccount": null,
+          "logoutVisible": false
+        }
+      },
+      "errors": []
+    }
+  ],
+  "negative_demo_switch": {
+    "authEnabled": true,
+    "demoSwitchVisible": false,
+    "logoutVisibleLoggedOut": false,
+    "hasLoginOverlay": true,
+    "initDemoRoleSwitchIsFn": true,
+    "initDemoRoleSwitch_calls_logout": false,
+    "demo_switch_not_logout_pass": true
+  },
+  "overall": true,
+  "finished_at": "2026-10-16T20:23:15.348Z"
+}

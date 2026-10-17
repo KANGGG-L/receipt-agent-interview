@@ -1,0 +1,2 @@
+{"verdict": "PASS", "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-uat/evidence/trash-live-probe.json", "steps": 13}
+live_probe_exit=0

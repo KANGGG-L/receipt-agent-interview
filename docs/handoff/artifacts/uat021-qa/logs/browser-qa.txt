@@ -1,0 +1,12 @@
+CHROME=/usr/bin/google-chrome
+PASS browser_staff_login
+PASS browser_staff_inv_price_null | {"id":1,"last_unit_price":null,"stock":0,"unit":"斤"}
+PASS browser_staff_inv_unit_visible | 斤
+PASS browser_staff_inv_qty_visible | 0
+PASS browser_staff_dish_prices_null | {"price":null,"gp":null,"gm":null}
+PASS browser_staff_sku_detail_masked
+PASS browser_staff_dish_detail_masked
+PASS browser_staff_version_price_null | null
+PASS browser_fake_header_blocked | {"sku_price":null,"dish_price":null,"ver_price":null}
+PASS browser_owner_dish_price_visible | 48
+=== BROWSER overall pass=10 fail=0 ===

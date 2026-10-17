@@ -1,0 +1,22 @@
+=== DEFECT1 title merge ===
+   317	        const card = pendingEl.closest('[data-todo-metric="pending"]') || pendingEl.closest('.metric-card');
+   318	        if (card) {
+   319	            const statsPart = '统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）';
+   320	            const clickHint = (card.getAttribute('data-click-hint') || '').trim()
+   321	                || '点击筛选待处理单据';
+   322	            card.title = clickHint + '。' + statsPart;
+   323	            card.setAttribute('aria-label', '归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共' + pending + '张。' + clickHint);
+=== DEFECT2 no shim + source label ===
+NO_SHIM_HIT
+  1054	                        <div class="metric-card csp-s-73" role="button" tabindex="0" data-todo-metric="pending" data-click-hint="点击筛选待处理单据" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;todoFilter&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;pending&quot;}]}]" title="点击筛选待处理单据">
+  1055	                            <div class="csp-s-74">待处理（待办全量）</div>
+  1056	                            <div id="todoPendingNum" class="metric-value">0</div>
+=== DEFECT3 terminology ===
+    15	            edited: { label: '待老板审批', title: '店员已核对并提交，等老板审核入账', filter: '待老板审批' },
+   182	                                <button type="button" id="queueTabApprove" class="btn btn-sm btn-secondary queue-tab owner-only csp-s-18" data-queue-filter="to_approve" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;setWorkbenchQueueFilter&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;to_approve&quot;}]}]">待我审批 (<span id="qCountApprove">0</span>)</button>
+--- todoBar 待审核 residual in index.html todoBar region ---
+todoBar_contains_待审核= False
+todoBar_contains_待处理（待办全量）= True
+todoBar_contains_data-todo-metric= True
+demo/static/js/supplier_archive.js 待审核_hits= 0
+demo/templates/index.html 待审核_hits= 0

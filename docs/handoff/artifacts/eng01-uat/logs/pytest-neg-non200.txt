@@ -1,0 +1,201 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-uat/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+tests/test_phase3_filter_adjustments_deep_qa.py::test_qa_live_service_port_15010_healthy FAILED [100%]
+
+=================================== FAILURES ===================================
+___________________ test_qa_live_service_port_15010_healthy ____________________
+
+url = 'http://127.0.0.1:15472/api/health', timeout = 5.0, headers = None
+
+    def _probe_get_json(url, timeout, headers=None):
+        """只发 GET。超时与非 200 失败，不 skip，不把单次探测失败说成产品 health 损坏。"""
+        print("[PROBE] GET %s timeout=%s" % (url, timeout))
+        req = urllib.request.Request(url, headers=headers or {}, method="GET")
+        try:
+>           with urllib.request.urlopen(req, timeout=timeout) as resp:
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase3_filter_adjustments_deep_qa.py:512: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/usr/lib/python3.13/urllib/request.py:189: in urlopen
+    return opener.open(url, data, timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.13/urllib/request.py:495: in open
+    response = meth(req, response)
+               ^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.13/urllib/request.py:604: in http_response
+    response = self.parent.error(
+/usr/lib/python3.13/urllib/request.py:533: in error
+    return self._call_chain(*args)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.13/urllib/request.py:466: in _call_chain
+    result = func(*args)
+             ^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <urllib.request.HTTPDefaultErrorHandler object at 0x7f69a6e60c20>
+req = <urllib.request.Request object at 0x7f69a6e606e0>
+fp = <http.client.HTTPResponse object at 0x7f69a76100d0>, code = 503
+msg = 'Service Unavailable'
+hdrs = <http.client.HTTPMessage object at 0x7f69a6e0f890>
+
+    def http_error_default(self, req, fp, code, msg, hdrs):
+>       raise HTTPError(req.full_url, code, msg, hdrs, fp)
+E       urllib.error.HTTPError: HTTP Error 503: Service Unavailable
+
+/usr/lib/python3.13/urllib/request.py:613: HTTPError
+
+During handling of the above exception, another exception occurred:
+
+    def test_qa_live_service_port_15010_healthy():
+        """
+        复用原失败节点 test_qa_live_service_port_15010_healthy。
+        隔离 base URL、端口、timeout 可注入。只 GET /api/health 与 recovery-summary。
+        非 200 或超时必须失败，不能 skip。不得连接或写入 15010。
+        """
+        origin, timeout = _probe_origin_and_timeout()
+>       health = _probe_get_json(origin + "/api/health", timeout)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_phase3_filter_adjustments_deep_qa.py:544: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_phase3_filter_adjustments_deep_qa.py:520: in _probe_get_json
+    _fail_probe("探测非 200: %s HTTP %s。" % (url, exc.code))
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+message = '探测非 200: http://127.0.0.1:15472/api/health HTTP 503。'
+
+    def _fail_probe(message):
+>       pytest.fail(message + " 此结果是失败，不是 skip，也不是对产品 health 的判定。")
+E       Failed: 探测非 200: http://127.0.0.1:15472/api/health HTTP 503。 此结果是失败，不是 skip，也不是对产品 health 的判定。
+
+tests/test_phase3_filter_adjustments_deep_qa.py:449: Failed
+----------------------------- Captured stdout call -----------------------------
+[PROBE] GET http://127.0.0.1:15472/api/health timeout=5.0
+=============================== warnings summary ===============================
+demo/app/main.py:78
+  /workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+docs/handoff/artifacts/eng05-uat/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: 12 warnings
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-uat/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+demo/app/main.py:85
+  /workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:92
+  /workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:98
+  /workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:118
+  /workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:124
+  /workspace/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:140
+  /workspace/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:166
+  /workspace/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:201
+  /workspace/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:231
+  /workspace/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:256
+  /workspace/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:263
+  /workspace/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_phase3_filter_adjustments_deep_qa.py::test_qa_live_service_port_15010_healthy
+======================== 1 failed, 24 warnings in 0.92s ========================

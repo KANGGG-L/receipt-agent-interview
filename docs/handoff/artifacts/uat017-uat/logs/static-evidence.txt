@@ -1,0 +1,197 @@
+=== STATIC EVIDENCE UAT-017 2026-10-17T04:30:18+0800 ===
+--- index.html reconCreateModal opening ---
+  4136	    <!-- Wave 2：发起对账 Modal（T7/M8，D4 周期 × 供应商） — UAT-017：补 dialog 语义 -->
+  4137	    <div id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
+  4138	        <div class="modal-card csp-s-625">
+  4139	            <div class="modal-header">
+  4140	                <h3 id="reconCreateTitle">发起对账</h3>
+  4141	                <button type="button" class="modal-close-btn" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]" aria-label="关闭">x</button>
+  4142	            </div>
+  4143	            <div class="modal-body">
+  4144	                <div id="reconSupplierHint" class="csp-s-619"></div>
+  4145	                <div class="form-grid">
+  4146	                    <div class="form-group">
+  4147	                        <label for="reconPeriodType">对账周期类型</label>
+  4148	                        <select id="reconPeriodType" class="form-control" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;reconPeriodTypeChanged&quot;,&quot;a&quot;:[]}]">
+  4149	                            <option value="month">自然月</option>
+  4150	                            <option value="3d">最近 3 天</option>
+  4151	                            <option value="7d">最近 7 天</option>
+  4152	                            <option value="14d">最近 14 天</option>
+  4153	                        </select>
+  4154	                    </div>
+  4155	                    <div class="form-group">
+  4156	                        <label for="reconStart">开始日期</label>
+  4157	                        <input type="date" id="reconStart" class="form-control">
+  4158	                    </div>
+  4159	                    <div class="form-group">
+  4160	                        <label for="reconEnd">结束日期</label>
+  4161	                        <input type="date" id="reconEnd" class="form-control">
+  4162	                    </div>
+  4163	                </div>
+  4164	                <div class="csp-s-623">
+  4165	                    <button type="button" id="btnCancelReconCreate" class="btn btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]">取消</button>
+  4166	                    <button type="button" id="btnSubmitReconCreate" class="btn btn-primary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;submitReconCreate&quot;,&quot;a&quot;:[]}]">发起对账</button>
+  4167	                </div>
+  4168	            </div>
+  4169	        </div>
+  4170	    </div>
+--- finance_ops openReconModal ---
+   610	// ---- 发起对账 Modal ----
+   611	// UAT-017：经 openAccessibleModal 注册 dialog 语义 / 焦点陷阱 / Esc 归还触发焦点
+   612	function openReconModal() {
+   613	    if (!finState.supplierId) { showToast('请先选择供应商', 'warning'); return; }
+   614	    const sup = finState.suppliers.find(s => s.id === finState.supplierId);
+   615	    const hint = document.getElementById('reconSupplierHint');
+   616	    if (hint) hint.innerText = `供应商：${sup ? sup.name : ('#' + finState.supplierId)}`;
+   617	    const period = document.getElementById('reconPeriodType');
+   618	    if (period) period.value = 'month';
+   619	    const start = document.getElementById('reconStart');
+   620	    if (start) start.value = '';
+   621	    const end = document.getElementById('reconEnd');
+   622	    if (end) end.value = '';
+   623	    const modal = document.getElementById('reconCreateModal');
+   624	    if (!modal) return;
+   625	    // 保持 HTML 上的 aria-labelledby / aria-describedby；仅补全运行时 dialog 注册
+   626	    if (!modal.getAttribute('aria-labelledby')) {
+   627	        modal.setAttribute('aria-labelledby', 'reconCreateTitle');
+   628	    }
+   629	    if (!modal.getAttribute('aria-describedby')) {
+   630	        modal.setAttribute('aria-describedby', 'reconSupplierHint');
+   631	    }
+   632	    const trigger = document.activeElement;
+   633	    if (typeof openAccessibleModal === 'function') {
+   634	        openAccessibleModal(modal, '#reconPeriodType', trigger);
+   635	    } else {
+   636	        openModalById('reconCreateModal');
+   637	    }
+   638	}
+--- review_modal open/close ---
+    27	function openAccessibleModal(modal, preferredFocusSelector, explicitTrigger) {
+    28	    if (!modal) return;
+    29	    const triggerEl = explicitTrigger || document.activeElement;
+    30	    modal.classList.remove('hide');
+    31	    modal.setAttribute('role', 'dialog');
+    32	    modal.setAttribute('aria-modal', 'true');
+    33	
+    34	    _activeAccessibleModals.push({
+    35	        modal: modal,
+    36	        trigger: triggerEl
+    37	    });
+    38	
+    39	    const setFocus = () => {
+    40	        let target = null;
+    41	        if (preferredFocusSelector) {
+    42	            target = modal.querySelector(preferredFocusSelector);
+    43	        }
+    44	        if (!target) {
+    45	            const focusables = getModalFocusableElements(modal);
+    46	            target = focusables.find(el => el.id && (el.id.includes('Cancel') || el.id.includes('btnCancel'))) || focusables[0];
+    47	        }
+    48	        if (target && typeof target.focus === 'function') {
+    49	            target.focus();
+    50	        } else {
+    51	            modal.setAttribute('tabindex', '-1');
+    52	            modal.focus();
+    53	        }
+    54	    };
+    55	    setFocus();
+    56	    setTimeout(setFocus, 30);
+    57	}
+    58	window.openAccessibleModal = openAccessibleModal;
+    59	
+    60	function closeAccessibleModal(modal) {
+    61	    if (!modal) return;
+    62	    modal.classList.add('hide');
+    63	    const idx = _activeAccessibleModals.findIndex(item => item.modal === modal);
+    64	    if (idx !== -1) {
+    65	        const item = _activeAccessibleModals.splice(idx, 1)[0];
+    66	        if (item && item.trigger && typeof item.trigger.focus === 'function') {
+    67	            try { item.trigger.focus(); } catch (e) {}
+    68	        }
+    69	    }
+    70	}
+--- admin_observation Esc/Tab ---
+  1600	// 全局键盘监听：无障碍模态弹窗 Esc 安全关闭与 Tab/Shift+Tab 焦点封闭 (QA-P1-04, AC-08-05)
+  1601	document.addEventListener('keydown', function(e) {
+  1602	    let modal = null;
+  1603	    if (typeof _activeAccessibleModals !== 'undefined' && _activeAccessibleModals.length > 0) {
+  1604	        modal = _activeAccessibleModals[_activeAccessibleModals.length - 1].modal;
+  1605	    }
+  1606	    if (!modal || modal.classList.contains('hide') || modal.style.display === 'none') {
+  1607	        const visibleModals = Array.from(document.querySelectorAll('.modal-backdrop:not(.hide)'))
+  1608	            .filter(el => el.style.display !== 'none');
+  1609	        if (visibleModals.length > 0) {
+  1610	            modal = visibleModals[visibleModals.length - 1];
+  1611	        } else {
+  1612	            return;
+  1613	        }
+  1614	    }
+  1615	
+  1616	    if (e.key === 'Escape' || e.key === 'Esc') {
+  1617	        e.preventDefault();
+  1618	        e.stopPropagation();
+  1619	        if (modal.id === 'modalApproveConfirmDialog') {
+  1620	            closeApproveConfirmModal();
+  1621	        } else if (modal.id === 'modalConflictDiffDialog') {
+  1622	            closeConflictDiffModal();
+  1623	        } else if (modal.id === 'modalStockMovementDialog') {
+  1624	            closeStockMovementModal();
+  1625	        } else if (modal.id === 'analyticsEventModal') {
+  1626	            closeAnalyticsEventModal();
+  1627	        } else if (modal.id === 'kpiTrendModal') {
+  1628	            closeKpiTrendModal();
+  1629	        } else if (typeof closeAccessibleModal === 'function') {
+  1630	            closeAccessibleModal(modal);
+  1631	        } else {
+  1632	            modal.classList.add('hide');
+  1633	        }
+  1634	        return;
+  1635	    }
+  1636	
+  1637	    if (e.key === 'Tab') {
+  1638	        if (typeof getModalFocusableElements !== 'function') return;
+  1639	        const focusables = getModalFocusableElements(modal);
+  1640	        if (focusables.length === 0) {
+  1641	            e.preventDefault();
+  1642	            return;
+  1643	        }
+  1644	
+  1645	        const first = focusables[0];
+  1646	        const last = focusables[focusables.length - 1];
+  1647	        const active = document.activeElement;
+  1648	
+  1649	        // 如果焦点在模态框外部，强行拉入内部
+  1650	        if (!modal.contains(active)) {
+  1651	            e.preventDefault();
+  1652	            if (e.shiftKey) {
+  1653	                last.focus();
+  1654	            } else {
+  1655	                first.focus();
+  1656	            }
+  1657	            return;
+  1658	        }
+  1659	
+  1660	        if (e.shiftKey) {
+  1661	            if (active === first) {
+  1662	                e.preventDefault();
+  1663	                last.focus();
+  1664	            }
+  1665	        } else {
+  1666	            if (active === last) {
+  1667	                e.preventDefault();
+  1668	                first.focus();
+--- negative payment/resolve opening tags ---
+4081:    <div id="paymentModal" class="modal-backdrop hide">
+4207:    <div id="reconResolveModal" class="modal-backdrop hide">
+--- LIVE SERVED ---
+id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
+34:        if (typeof openAccessibleModal === 'function') openAccessibleModal(el);
+35:        else el.classList.remove('hide');
+463:            banner.classList.remove('hide');
+543:            payArea.classList.remove('hide');
+588:    area.classList.remove('hide');
+611:// UAT-017：经 openAccessibleModal 注册 dialog 语义 / 焦点陷阱 / Esc 归还触发焦点
+633:    if (typeof openAccessibleModal === 'function') {
+634:        openAccessibleModal(modal, '#reconPeriodType', trigger);
+844:    area.classList.remove('hide');
+912:        grp.classList.remove('hide');

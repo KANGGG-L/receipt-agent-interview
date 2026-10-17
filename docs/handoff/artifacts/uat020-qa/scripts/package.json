@@ -1,0 +1,7 @@
+{
+  "name": "uat020-qa",
+  "private": true,
+  "dependencies": {
+    "puppeteer-core": "^24.2.0"
+  }
+}

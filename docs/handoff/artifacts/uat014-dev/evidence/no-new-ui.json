@@ -1,0 +1,41 @@
+{
+  "forbidden_ui_hits": [],
+  "preexisting_vendor_memory_governance": [
+    {
+      "file": "demo/templates/index.html",
+      "token": "loadVendorMemoryGovernance",
+      "note": "pre-existing governance; NOT claimed as UAT-014 new UI"
+    },
+    {
+      "file": "demo/static/js/engine_admin.js",
+      "token": "loadVendorMemoryGovernance",
+      "note": "pre-existing governance; NOT claimed as UAT-014 new UI"
+    },
+    {
+      "file": "demo/static/js/engine_admin.js",
+      "token": "/api/admin/vendor-memory",
+      "note": "pre-existing governance; NOT claimed as UAT-014 new UI"
+    }
+  ],
+  "dirty_ui_files_vs_HEAD": [
+    "demo/static/css/f1b.css",
+    "demo/static/css/index-head.css",
+    "demo/static/css/review-mobile.css",
+    "demo/static/css/style.css",
+    "demo/static/js/archive_list.js",
+    "demo/static/js/common.js",
+    "demo/static/js/cost_report.js",
+    "demo/static/js/dish_bom.js",
+    "demo/static/js/dish_consumption.js",
+    "demo/static/js/export_center.js",
+    "demo/static/js/finance_ops.js",
+    "demo/static/js/i18n/i18n.js",
+    "demo/static/js/inventory_board.js",
+    "demo/static/js/supplier_archive.js",
+    "demo/static/js/upload.js",
+    "demo/static/js/workbench_queue.js",
+    "demo/templates/index.html"
+  ],
+  "note": "DEFAULT_ORIGINAL: card forbids adding memory-recovery/consistency/security-event UI. Zero forbidden_ui_hits required. Pre-existing vendor-memory governance is acknowledged, not claimed as new work. Dirty UI files from other in-progress cards are listed for honesty.",
+  "verdict": "PASS"
+}

@@ -1,0 +1,17 @@
+=== LIVE SERVED VERIFY 2026-10-17T04:37:45+08:00 port=15260 ===
+893:function isExportBusinessIdentityHeader(h) {
+911:            const preserveBiz = isExportBusinessIdentityHeader(h);
+927:            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+---
+7: *   2. 文字转换层：语言为 zh-Hant-HK 时，把页面上所有简体文本按「港式用语表 > OpenCC 短语 > OpenCC 单字
+10: *      [translate="no"] / [data-i18n-skip] 子树。
+11: *      业务身份数据（导出预览品名/供应商、成本明细品名等）必须包 data-i18n-skip，
+20:    var HANT = 'zh-Hant-HK';
+24:    var HTML_LANG = { 'zh-Hans': 'zh-Hans', 'zh-Hant-HK': 'zh-Hant-HK' };
+25:    var NATIVE_NAMES = { 'zh-Hans': '简体中文', 'zh-Hant-HK': '繁體中文' };
+26:    var INTL_LOCALE = { 'zh-Hans': 'zh-Hans', 'zh-Hant-HK': 'zh-Hant-HK' };
+284:    // DOM 翻译器（仅 zh-Hant-HK 启用）
+292:    // UAT-023：业务品名/供应商等身份列靠 data-i18n-skip 豁免，勿在此全局关掉转换。
+297:        if (el.getAttribute('data-i18n-skip') !== null) return true;
+---
+GET_/_200

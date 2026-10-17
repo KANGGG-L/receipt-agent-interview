@@ -1,0 +1,15 @@
+=== served inventory_board.js money markers ===
+490:                ? I18N.fmtMoney(sku.last_unit_price)
+648:        ? I18N.fmtMoney(sku.last_unit_price)
+789:                    <td class="col-right">${amt != null ? w2Escape(I18N.fmtMoney(amt)) : '—'}</td>
+1399:                    单价 ${I18N.fmtMoney(it.earliest_price)} -&gt; <strong style="color:#dc2626;">${I18N.fmtMoney(it.latest_price)}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">${I18N.fmtMoney(it.impact_amount)}</strong>
+1733:function formatHkd(price) {
+1737:        return I18N.fmtMoney(price, 'HKD');
+=== served finance.js foreign markers ===
+43:    if (r.currency && r.currency !== 'HKD') {
+67:    if (r && r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+167:        const isForeign = r.currency && r.currency !== 'HKD';
+179:        const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+=== FX formula still present in api_finance (source) ===
+263:                r["total_hkd"] = round(float(r.get("total_amount") or 0.0) * rate, 2)
+=== git clean FX backend ===

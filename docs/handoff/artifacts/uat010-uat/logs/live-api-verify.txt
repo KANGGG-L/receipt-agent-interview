@@ -1,0 +1,30 @@
+=== UAT-010 UAT live API 2026-10-17 04:23:24 CST port=15220 ===
+--- ROLE=admin email=admin@demo.hk ---
+LOGIN_STATUS=success admin
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:23:24 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_JAR=401
+RECEIPTS_STALE=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+LOGOUT_HAS_TOKEN_KEY=False
+--- ROLE=owner email=boss@demo.hk ---
+LOGIN_STATUS=success owner
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:23:24 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_JAR=401
+RECEIPTS_STALE=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+LOGOUT_HAS_TOKEN_KEY=False
+--- ROLE=staff email=staff@demo.hk ---
+LOGIN_STATUS=success staff
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:23:24 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_JAR=401
+RECEIPTS_STALE=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+LOGOUT_HAS_TOKEN_KEY=False
+X_ROLE_ONLY=401
+LIVE_API_DONE

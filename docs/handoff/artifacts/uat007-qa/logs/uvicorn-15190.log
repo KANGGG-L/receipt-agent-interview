@@ -1,0 +1,22 @@
+INFO:     Started server process [119552]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15190 (Press CTRL+C to quit)
+INFO:     127.0.0.1:38558 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38570 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38574 - "GET /static/js/inventory_board.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53628 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53642 - "GET /api/inventory/skus HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:39008 - "POST /api/inventory/2/consume HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39018 - "GET /api/inventory/logs?sku_id=2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39034 - "GET /api/inventory/logs?sku_id=2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39038 - "GET /api/inventory/logs?sku_id=2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39042 - "POST /api/inventory/2/consume HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39058 - "GET /api/inventory/logs?sku_id=2&kind=consume HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39062 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39078 - "POST /api/inventory/3/consume HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:39090 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [119552]

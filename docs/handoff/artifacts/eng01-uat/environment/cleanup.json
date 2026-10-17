@@ -1,0 +1,14 @@
+{
+  "cleaned_at": "2026-10-17 19:24:40 CST",
+  "ports_checked": [
+    15010,
+    15471,
+    15472,
+    15473
+  ],
+  "15010_status": "FREE_RESERVED",
+  "15471_stopped": true,
+  "15472_stopped": true,
+  "15473_stopped": true,
+  "note": "No baseline on 15010; temporary isolate 15471 (root health) and stubs 15472/15473 stopped."
+}

@@ -1,0 +1,55 @@
+{
+  "file": "/workspace/receipt-agent-interview/tests/test_phase3_filter_adjustments_deep_qa.py",
+  "hit_count": 9,
+  "hits": [
+    {
+      "line": 442,
+      "role": "forbid_or_doc_reject",
+      "text": "# 在线链路健康探测。目标地址、端口、timeout 均可注入；禁止回落或写入 15010。"
+    },
+    {
+      "line": 445,
+      "role": "forbid_or_doc_reject",
+      "text": "_LIVE_PORT_FORBIDDEN = 15010"
+    },
+    {
+      "line": 460,
+      "role": "forbid_or_doc_reject",
+      "text": "\"\"\"读取 PW_TEST_BASE_URL/TEST_BASE_URL、PW_TEST_PORT/TEST_PORT、timeout。未配置则失败，不回落 15010。\"\"\""
+    },
+    {
+      "line": 537,
+      "role": "historical_failure_node_name",
+      "text": "def test_qa_live_service_port_15010_healthy():"
+    },
+    {
+      "line": 539,
+      "role": "comment_or_docstring_historical_node",
+      "text": "复用原失败节点 test_qa_live_service_port_15010_healthy。"
+    },
+    {
+      "line": 541,
+      "role": "forbid_or_doc_reject",
+      "text": "非 200 或超时必须失败，不能 skip。不得连接或写入 15010。"
+    },
+    {
+      "line": 547,
+      "role": "comment_or_docstring_historical_node",
+      "text": "\"这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。\""
+    },
+    {
+      "line": 557,
+      "role": "comment_or_docstring_historical_node",
+      "text": "\"这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。\""
+    },
+    {
+      "line": 561,
+      "role": "comment_or_docstring_historical_node",
+      "text": "\"这是配置目标的合同断言失败，不是对 15010 产品 health 的判定。\""
+    }
+  ],
+  "hardcoded_target_urls": [],
+  "connect_host_port_15010_literals": [],
+  "verdict": "PASS",
+  "note": "15010 appears only as FORBIDDEN reject constant, fail-message text, historical node name, and reject docs — not as probe target URL/fallback connect."
+}

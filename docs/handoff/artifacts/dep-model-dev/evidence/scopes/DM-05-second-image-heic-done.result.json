@@ -1,0 +1,130 @@
+{
+  "scope_id": "DM-05-second-image-heic-done",
+  "source": "real model on HEIC-derived JPEG (assets)",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "job_status": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-05-second-image-heic-done.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 5,
+    "job_id": "cb2080c6a8fe4122bd03a318ad33e242",
+    "result_summary": {
+      "supplier_name": "華記行清潔用品有限公司",
+      "date": "2024-01-29",
+      "total_amount": 1149.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 4
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "cb2080c6a8fe4122bd03a318ad33e242",
+          "receipt_id": 5,
+          "image_url": "/api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 12.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 14.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 16.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 18.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 20.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 22.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 24.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 26.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 28.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "華記行清潔用品有限公司",
+          "date": "2024-01-29",
+          "total_amount": 1149.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 4
+        },
+        "elapsed_s": 29.2
+      }
+    ]
+  }
+}

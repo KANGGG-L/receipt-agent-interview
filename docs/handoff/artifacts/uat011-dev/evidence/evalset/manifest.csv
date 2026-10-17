@@ -1,0 +1,3 @@
+sample_id,image,split,doc_form,layout_type,supplier_id,gt_status,gt_source_model,src_sha1,short_side
+U001,receipts/U001.png,test,printed_delivery_note,table,U001V,confirmed,uat011/synth,83f00209352c49066c08231d9b1a9f5a091fe096,640
+U002,receipts/U002.png,test,printed_delivery_note,table,U001V,confirmed,uat011/synth,83f00209352c49066c08231d9b1a9f5a091fe096,640

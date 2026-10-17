@@ -1,0 +1,15 @@
+STATIC EVIDENCE SAAS-CONSISTENCY QA
+--page-max-width: True
+--page-inline-pad: True
+--page-block-gap: True
+--page-card-pad: True
+--toolbar-gap: True
+--toolbar-cluster-gap: True
+--toolbar-divider: True
+st-wrap max-width 100%: True
+report-date-label class in html: True
+page-shell in html: True
+cache bust saas_consistency: True
+brandish_new_in_saas_block: NONE
+dev_report_marks_brand_complete: True
+dev_explicit_not_complete_brand: True

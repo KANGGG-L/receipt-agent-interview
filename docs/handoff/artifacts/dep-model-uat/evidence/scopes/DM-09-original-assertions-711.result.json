@@ -1,0 +1,90 @@
+{
+  "scope_id": "DM-09-original-assertions-711",
+  "source": "read original/assertions vs live job for sample_711",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "original_match_supplier": true,
+    "original_match_date": true,
+    "original_match_total": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-09-original-assertions-711.job.json",
+    "evidence/scopes/DM-09-original-assertions-711.assertions-compare.json"
+  ],
+  "notes": [
+    "original/assertions from demo/samples/20161001_711_thermal_receipt.json"
+  ],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 9,
+    "job_id": "40473fa4f854488ab4d7ef68b587a33e",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "40473fa4f854488ab4d7ef68b587a33e",
+          "receipt_id": 9,
+          "image_url": "/api/receipt/9/image?v=b28bba5d&sig=a1de38bd6a1256a0c146ca22cbfaf5c2537d554d9b2ccc88c0636ff4cea211d4"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 10.06
+      }
+    ]
+  }
+}

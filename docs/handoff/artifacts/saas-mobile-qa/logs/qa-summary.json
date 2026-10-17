@@ -1,0 +1,101 @@
+{
+  "overall": "PASS",
+  "gates": [
+    {
+      "id": "AC1-search-full-390",
+      "ok": true,
+      "msg": "search w=316 fullyInView"
+    },
+    {
+      "id": "AC1-filter-expand-390",
+      "ok": true,
+      "msg": "filtersOpen tableY=576"
+    },
+    {
+      "id": "AC1-filter-clear-390",
+      "ok": true,
+      "msg": "cleared after={\"search\":\"\",\"cat\":\"\",\"filt\":\"all\"}"
+    },
+    {
+      "id": "AC2-inv-table-earlier-390",
+      "ok": true,
+      "msg": "tableY 468 < baseline 891"
+    },
+    {
+      "id": "AC2-arc-table-earlier-390",
+      "ok": true,
+      "msg": "archiveTableY 748 < baseline 1408"
+    },
+    {
+      "id": "AC3-bottom-nav-390",
+      "ok": true,
+      "msg": "blocked=false pad=72px clearance=678"
+    },
+    {
+      "id": "AC4-kpi-visible-390",
+      "ok": true,
+      "msg": "kpiCount=3 kpiHidden=0"
+    },
+    {
+      "id": "AC1-search-full-412",
+      "ok": true,
+      "msg": "search w=338 fullyInView"
+    },
+    {
+      "id": "AC1-filter-expand-412",
+      "ok": true,
+      "msg": "filtersOpen tableY=576"
+    },
+    {
+      "id": "AC1-filter-clear-412",
+      "ok": true,
+      "msg": "cleared after={\"search\":\"\",\"cat\":\"\",\"filt\":\"all\"}"
+    },
+    {
+      "id": "AC2-inv-table-earlier-412",
+      "ok": true,
+      "msg": "tableY 468 < baseline 891"
+    },
+    {
+      "id": "AC2-arc-table-earlier-412",
+      "ok": true,
+      "msg": "archiveTableY 748 < baseline 1408"
+    },
+    {
+      "id": "AC3-bottom-nav-412",
+      "ok": true,
+      "msg": "blocked=false pad=72px clearance=678"
+    },
+    {
+      "id": "AC4-kpi-visible-412",
+      "ok": true,
+      "msg": "kpiCount=3 kpiHidden=0"
+    }
+  ],
+  "summary": {
+    "390": {
+      "invTableY": 468,
+      "invSearchW": 316,
+      "invSearchFullyInView": true,
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "filtersOpen": true,
+      "cleared": true,
+      "archiveTableY": 748,
+      "bottomBlocked": false,
+      "padBottom": "72px"
+    },
+    "412": {
+      "invTableY": 468,
+      "invSearchW": 338,
+      "invSearchFullyInView": true,
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "filtersOpen": true,
+      "cleared": true,
+      "archiveTableY": 748,
+      "bottomBlocked": false,
+      "padBottom": "72px"
+    }
+  }
+}

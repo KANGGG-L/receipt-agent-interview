@@ -1,0 +1,9 @@
+finance_js_fx_missing_label=True
+finance_js_orig_currency=True
+finance_js_total_hkd=True
+finance_ops_unknown_not_hard_hkd=True
+finance_ops_fx_missing=True
+api_fx_snapshot_rate=True
+api_fx_missing=True
+api_total_hkd_none_on_missing=True
+ALL_PASS

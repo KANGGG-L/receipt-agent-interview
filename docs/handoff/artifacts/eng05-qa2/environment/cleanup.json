@@ -1,0 +1,12 @@
+{
+  "cleaned_at": "2026-10-17 09:18:25 CST",
+  "ports_checked": [
+    15010,
+    15415,
+    15425
+  ],
+  "15010_status": "FREE_RESERVED",
+  "15415_stopped": true,
+  "15425_stopped": true,
+  "note": "No baseline was on 15010 before or after; port left free/reserved. Temporary 15415 (root health) and 15425 (demo PW) stopped."
+}

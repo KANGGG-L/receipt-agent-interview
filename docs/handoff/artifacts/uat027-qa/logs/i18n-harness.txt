@@ -1,0 +1,16 @@
+{
+ "summary": {
+  "passed": 85,
+  "failed": 0,
+  "total": 85
+ },
+ "failures": [],
+ "perf": [
+  {
+   "name": "perf: 1000 distinct row strings",
+   "ok": true,
+   "coldMs": 15.92,
+   "cachedMs": 0.42
+  }
+ ]
+}

@@ -1,0 +1,9 @@
+=== UAT-017 browser MANUAL_UI ===
+pass=true
+c1=true
+c2_tab=true
+c2_esc=true
+c3=true
+neg=true
+ax={"dialogCount":1,"dialogNames":["发起对账"],"namedMatch":true,"namedNames":["发起对账"]}
+errors=[]

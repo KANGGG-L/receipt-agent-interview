@@ -44,6 +44,12 @@
             background: var(--bg-input, #1e2936); color: #fff;
             border: 1px solid rgba(255,255,255,0.2); font-size: 0.82rem;
         }
+        /* UAT-010：生产会话退出登录按钮（侧栏；AUTH_ENABLED=1 时显示） */
+        .auth-logout-wrap { padding-top: 6px; padding-bottom: 6px; }
+        .auth-logout-btn {
+            width: 100%; padding: 7px 10px; font-size: 0.82rem; cursor: pointer;
+            border-radius: 6px; box-sizing: border-box;
+        }
         /* FR-8 反馈飞轮：点赞/点踩 + textarea 反馈窗 */
         .feedback-cell { display:flex; flex-direction:column; gap:6px; min-width:160px; }
         .feedback-actions { display:flex; gap:6px; }

@@ -1,0 +1,15 @@
+CELL_RICE <td class="inv-ledger-name-cell" title="Synthetic_Rice" data-full-name="Synthetic_Rice"><span class="inv-ledger-name-text">Synthetic_Rice</span></td>
+CELL_OIL <td class="inv-ledger-name-cell" title="Synthetic_Oil" data-full-name="Synthetic_Oil"><span class="inv-ledger-name-text">Synthetic_Oil</span></td>
+CELL_ZH_SNIP <td class="inv-ledger-name-cell" title="特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测" data-full-name="特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测"><spa...
+VISIBLE_RICE Synthetic_Rice
+VISIBLE_OIL Synthetic_Oil
+VISIBLE_DISTINCT true
+VISIBLE_HAS_RICE true
+VISIBLE_HAS_OIL true
+FULL_VIA_DATA true
+FULL_VIA_TITLE true
+ZH_FULL_IN_DATA true
+ZH_UNDERSCORE true
+NO_SKU_ID_AS_PRIMARY true
+CSS_OVERRIDE_NORMAL true
+NODE_HARNESS_PASS=true

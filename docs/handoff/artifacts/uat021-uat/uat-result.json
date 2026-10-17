@@ -1,0 +1,20 @@
+{
+  "card": "UAT-021",
+  "role": "independent_uat",
+  "verdict": "PASS",
+  "port": 15700,
+  "auth_enabled": 1,
+  "live_api": {
+    "pass": 42,
+    "fail": 0,
+    "overall": true
+  },
+  "browser_manual_ui": {
+    "pass": 27,
+    "fail": 0,
+    "overall": true
+  },
+  "checklist_flipped": false,
+  "git": false,
+  "report": "docs/handoff/artifacts/uat021-uat-report.md"
+}

@@ -1,0 +1,14 @@
+{
+  "stage": "eng04-qa",
+  "port": 15010,
+  "pid": 45504,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/eng04-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15010_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_15010_note": "15010 reserved for ENG-04 E2E only; avoided 15150-15800; stopped after QA",
+  "timestamp_local": "2026-10-17 05:51:03 CST",
+  "notes": "Independent QA only; no git/checklist/UAT. Hand-off residual: uat024-uat-report.md MISSING on disk."
+}

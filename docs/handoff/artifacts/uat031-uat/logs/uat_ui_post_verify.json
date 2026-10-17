@@ -1,0 +1,70 @@
+{
+  "verdict": "PASS",
+  "checks": [
+    {
+      "name": "ui_ac1_post_merge",
+      "pass": true,
+      "detail": {
+        "stock": 2.0,
+        "batches": [
+          {
+            "batch_id": 4,
+            "inbound_date": "2026-10-03",
+            "unit_cost": 40.0,
+            "remaining_qty": 1.0,
+            "unit": "kg",
+            "receipt_id": 6
+          },
+          {
+            "batch_id": 5,
+            "inbound_date": "2026-10-04",
+            "unit_cost": 50.0,
+            "remaining_qty": 1.0,
+            "unit": "kg",
+            "receipt_id": 7
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui_ac2_consume",
+      "pass": true,
+      "detail": {
+        "cost": 52.5,
+        "body": {
+          "status": "success",
+          "msg": "已消耗",
+          "cost": 52.5,
+          "current_stock": 0.75,
+          "data": {
+            "current_stock": 0.75,
+            "cost": 52.5
+          }
+        }
+      }
+    },
+    {
+      "name": "ui_db_provenance_no_estimated",
+      "pass": true,
+      "detail": {
+        "migrated_batches": 1,
+        "estimated": 0,
+        "batch_count": 2,
+        "initials": [
+          1.0,
+          1.0
+        ],
+        "migrated_logs": 1
+      }
+    },
+    {
+      "name": "ui_tenant_b_still_3",
+      "pass": true,
+      "detail": {
+        "stock": 3.0
+      }
+    }
+  ],
+  "primary": 4,
+  "secondary": 5
+}

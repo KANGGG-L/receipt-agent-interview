@@ -1,0 +1,20 @@
+{
+  "stage": "uat010-qa",
+  "port": 15210,
+  "pid": 129258,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat010-qa/environment/qa_isolated_smoke.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "stop_exit_code": 0,
+  "port_free": true,
+  "port_released": "port_15210_released",
+  "pid_alive_after_stop": false,
+  "browser_tab_closed": true,
+  "browser_tabs_opened": 0,
+  "host_15010_status": "not_present_ok",
+  "host_15010_untouched": true,
+  "orphan_listen_151xx": null,
+  "ss_listen_empty": true,
+  "reuseaddr_bind_ok": true,
+  "timestamp_local": "2026-10-17 04:20:02 CST",
+  "notes": "Fresh port 15210 (avoided 15150-15200). Specialty 4/4 + harness 18/0 + B1 logout 2/2 PASS. Live API three cookie roles logout+401 PASS. No browser. No git write. UAT not started."
+}

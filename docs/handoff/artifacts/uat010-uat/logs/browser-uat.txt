@@ -1,0 +1,6 @@
+ROLE_admin=PASS errors=[]
+ROLE_owner=PASS errors=[]
+ROLE_staff=PASS errors=[]
+NEGATIVE_DEMO_SWITCH={"authEnabled":true,"demoSwitchVisible":false,"logoutVisibleLoggedOut":false,"hasLoginOverlay":true,"initDemoRoleSwitchIsFn":true,"initDemoRoleSwitch_calls_logout":false,"demo_switch_not_logout_pass":true}
+BROWSER_OVERALL=PASS
+WROTE /workspace/receipt-agent-interview/docs/handoff/artifacts/uat010-uat/logs/browser-uat-result.json

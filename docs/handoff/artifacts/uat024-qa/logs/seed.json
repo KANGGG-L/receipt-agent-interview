@@ -1,0 +1,12 @@
+{
+  "rice_id": 1,
+  "oil_id": 2,
+  "long_id": 3,
+  "long_name": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+  "long_len": 28,
+  "t2_sku_id": 4,
+  "vendors_in_prose": [
+    "Vendor_A",
+    "Vendor_B"
+  ]
+}

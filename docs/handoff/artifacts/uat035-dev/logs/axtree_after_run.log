@@ -1,0 +1,86 @@
+{
+  "pass": false,
+  "cases": [
+    {
+      "label": "hans_1440",
+      "domDaily": {
+        "qtyAria": "测试餐品A 当日消耗份数",
+        "searchAria": "搜索在售餐品",
+        "catAria": "餐品分类筛选",
+        "stAria": "餐品在售状态筛选",
+        "scriptSrc": "http://127.0.0.1:15185/static/js/dish_consumption.js?v=acb2353838"
+      },
+      "qtyVal": "2",
+      "catVal": "主食",
+      "stVal": "all",
+      "dateNamed": true,
+      "spinNames": [
+        "Month Month",
+        "Day Day",
+        "Year Year",
+        "测试餐品A 当日消耗份数"
+      ],
+      "namedSpinCount": 1,
+      "catName": "餐品分类筛选",
+      "stName": "餐品在售状态筛选",
+      "comboNames": [
+        "当前角色",
+        "餐品分类筛选",
+        "餐品在售状态筛选"
+      ],
+      "ok": true
+    },
+    {
+      "label": "hant_390",
+      "domDaily": {
+        "qtyAria": "測試餐品A 當日消耗份數",
+        "searchAria": "搜尋在售餐品",
+        "catAria": "餐品分類篩選",
+        "stAria": "餐品在售狀態篩選",
+        "scriptSrc": "http://127.0.0.1:15185/static/js/dish_consumption.js?v=acb2353838"
+      },
+      "qtyVal": "2",
+      "catVal": "主食",
+      "stVal": "all",
+      "dateNamed": true,
+      "spinNames": [
+        "Month Month",
+        "Day Day",
+        "Year Year",
+        "測試餐品A 當日消耗份數"
+      ],
+      "namedSpinCount": 1,
+      "catName": "餐品分類篩選",
+      "stName": "餐品在售狀態篩選",
+      "comboNames": [
+        "餐品分類篩選",
+        "餐品在售狀態篩選"
+      ],
+      "ok": true
+    }
+  ],
+  "tenantB": {
+    "dishes": {
+      "status": "success",
+      "data": [
+        {
+          "id": 1,
+          "name": "测试餐品A",
+          "category": "主食",
+          "category_id": 1,
+          "price": 28,
+          "description": "",
+          "status": "active",
+          "version": 1,
+          "created_at": "2026-10-17T06:46:20",
+          "updated_at": "2026-10-17T06:46:20",
+          "ingredients": [],
+          "theoretical_cost": 0,
+          "gross_profit": 28,
+          "gross_margin_rate": 100
+        }
+      ]
+    },
+    "ok": false
+  }
+}

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>UAT-007 browser</title>
+<link rel="stylesheet" href="http://127.0.0.1:15200/static/css/style.css">
+<style>
+#tab-inventory { width: 900px; margin: 12px; }
+#inventoryLedgerTable { width: 100%; }
+.badge { display: inline-block; padding: 2px 6px; }
+.badge-secondary { background: #e5e7eb; }
+</style>
+</head><body>
+<div id="tab-inventory">
+  <table id="inventoryLedgerTable" class="data-table">
+    <thead>
+      <tr>
+        <th>日期</th><th>类型</th><th>品名</th>
+        <th class="col-right">变动数量</th><th>单位</th>
+        <th class="col-right">金额</th><th>供应商</th>
+        <th class="col-center">关联单据</th><th>备注</th>
+      </tr>
+    </thead>
+    <tbody id="inventoryLedgerBody">
+      <tr><td colspan="9">加载中…</td></tr>
+    </tbody>
+  </table>
+</div>
+<pre id="out"></pre>
+<script>
+window.__UAT007_API__ = {"status": "success", "data": [{"id": 7, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": 1.0, "qty_signed": -1.0, "unit": "kg", "amount": null, "vendor": "", "date": "2026-10-17", "kind": "consume", "note": "UAT007 second consume", "receipt_id": null, "created_at": "2026-10-17T04:12:33"}, {"id": 6, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": 1.0, "qty_signed": 1.0, "unit": "kg", "amount": null, "vendor": "", "date": "2026-10-17", "kind": "adjust", "note": "冲销作废餐品消耗恢复库存", "receipt_id": null, "created_at": "2026-10-17T04:12:33"}, {"id": 5, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": -1.0, "qty_signed": -1.0, "unit": "kg", "amount": null, "vendor": "Vendor_A", "date": "2026-10-17", "kind": "reversal", "note": "冲销单据 #501", "receipt_id": 501, "created_at": "2026-10-17T04:12:33"}, {"id": 4, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": 1.0, "qty_signed": 1.0, "unit": "kg", "amount": null, "vendor": "Vendor_B", "date": "2026-10-17", "kind": "in", "note": "", "receipt_id": null, "created_at": "2026-10-17T04:12:33"}, {"id": 3, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": 1.0, "qty_signed": -1.0, "unit": "kg", "amount": null, "vendor": "", "date": "2026-10-17", "kind": "consume", "note": "UAT007 uat consume", "receipt_id": null, "created_at": "2026-10-17T04:12:33"}, {"id": 1, "sku_id": 1, "name": "Synthetic_Rice_UAT", "qty": 10.0, "qty_signed": 10.0, "unit": "kg", "amount": null, "vendor": "Vendor_A", "date": "2026-10-17", "kind": "in", "note": "", "receipt_id": null, "created_at": "2026-10-17T04:11:46"}], "meta": {"count": 6}};
+function w2Escape(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+window.w2Escape = w2Escape;
+window.apiFetch = function(url) {
+  return Promise.resolve({ json: () => Promise.resolve(window.__UAT007_API__) });
+};
+window.showToast = function(){};
+window.isOwnerRoleNow = function(){ return true; };
+window.openReceiptFromPriceHistory = function(){};
+</script>
+<script src="http://127.0.0.1:15200/static/js/inventory_board.js"></script>
+<script>
+(async function() {
+  const out = document.getElementById('out');
+  try {
+    if (typeof loadInventoryLedger !== 'function') throw new Error('loadInventoryLedger missing');
+    if (typeof invLedgerQtyText !== 'function') throw new Error('invLedgerQtyText missing');
+    loadInventoryLedger();
+    await new Promise(r => setTimeout(r, 150));
+    const rows = [...document.querySelectorAll('#inventoryLedgerBody tr')];
+    const painted = rows.map(tr => {
+      const tds = [...tr.querySelectorAll('td')];
+      return {
+        kindLabel: (tds[1] && tds[1].textContent || '').trim(),
+        name: (tds[2] && tds[2].textContent || '').trim(),
+        qtyText: (tds[3] && tds[3].textContent || '').trim(),
+      };
+    });
+    // helper on sample rows
+    const samples = (window.__UAT007_API__.data || []).map(r => ({
+      id: r.id, kind: r.kind, qty: r.qty, qty_signed: r.qty_signed,
+      paintedText: invLedgerQtyText(r)
+    }));
+    const consumePainted = painted.filter(p => p.kindLabel.includes('消耗') || p.kindLabel.toLowerCase().includes('consume'));
+    // Chinese label map uses 消耗 for consume
+    const consumeTexts = samples.filter(s => s.kind === 'consume').map(s => s.paintedText);
+    const inTexts = samples.filter(s => s.kind === 'in' && Number(s.qty) === 1).map(s => s.paintedText);
+    const revTexts = samples.filter(s => s.kind === 'reversal').map(s => s.paintedText);
+    const adjTexts = samples.filter(s => s.kind === 'adjust').map(s => s.paintedText);
+    const consumeCellTexts = painted.filter(p => {
+      // match by looking at samples order via name+qty
+      return consumeTexts.includes(p.qtyText) && p.qtyText.startsWith('-');
+    });
+    const result = {
+      painted,
+      samples,
+      consumeTexts,
+      inTexts,
+      revTexts,
+      adjTexts,
+      consumeShowsNegative: consumeTexts.length > 0 && consumeTexts.every(t => t === '-1'),
+      consumeNotBlindPlus: consumeTexts.every(t => t !== '+1'),
+      inboundShowsPlus: inTexts.length > 0 && inTexts.every(t => t === '+1'),
+      reversalShowsNegative: revTexts.every(t => t === '-1'),
+      adjustShowsPlus: adjTexts.every(t => t === '+1'),
+      paintedConsumeNeg: painted.some(p => p.qtyText === '-1'),
+      paintedInboundPos: painted.some(p => p.qtyText === '+1'),
+      noBlindPlusOnConsume: !painted.some(p => p.qtyText === '+1' && (p.kindLabel.includes('消耗'))),
+    };
+    result.UAT007_PASS = !!(
+      result.consumeShowsNegative && result.consumeNotBlindPlus &&
+      result.inboundShowsPlus && result.reversalShowsNegative &&
+      result.adjustShowsPlus && result.paintedConsumeNeg && result.paintedInboundPos
+    );
+    out.textContent = 'TITLE_TAG ' + (result.UAT007_PASS ? 'UAT007_PASS' : 'UAT007_FAIL') + '\n' + JSON.stringify(result, null, 2);
+    document.title = result.UAT007_PASS ? 'UAT007_PASS' : 'UAT007_FAIL';
+  } catch (e) {
+    out.textContent = 'TITLE_TAG UAT007_FAIL\n' + String(e && e.stack || e);
+    document.title = 'UAT007_FAIL';
+  }
+})();
+</script>
+</body></html>

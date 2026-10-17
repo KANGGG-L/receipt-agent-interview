@@ -1,0 +1,12 @@
+CELL_RICE <td class="inv-ledger-name-cell" title="Synthetic_Rice" data-full-name="Synthetic_Rice"><span class="inv-ledger-name-text">Synthetic_Rice</span></td>
+CELL_OIL <td class="inv-ledger-name-cell" title="Synthetic_Oil" data-full-name="Synthetic_Oil"><span class="inv-ledger-name-text">Synthetic_Oil</span></td>
+VISIBLE_RICE Synthetic_Rice
+VISIBLE_OIL Synthetic_Oil
+VISIBLE_DISTINCT true
+FULL_VIA_DATA true
+ZH_UNDERSCORE true
+LONG_ZH_LEN 28
+NO_SKU_ID_AS_PRIMARY true
+JS_HAS_TEMPLATE true
+CSS_OVERRIDE_NORMAL true
+NODE_HARNESS_PASS=true

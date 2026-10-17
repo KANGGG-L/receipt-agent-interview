@@ -1,0 +1,142 @@
+{
+  "pass": 27,
+  "fail": 0,
+  "checks": [
+    {
+      "label": "ui_staff_login_role",
+      "pass": true,
+      "detail": "{\"role\":\"staff\",\"email\":\"staff@demo.hk\",\"enabled\":true,\"isOwner\":false}"
+    },
+    {
+      "label": "ui_staff_inv_row_found",
+      "pass": true,
+      "detail": "{\"found\":true,\"priceText\":\"—\",\"rowText\":\" UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 — 详情 \",\"hasDollarPrice\":false,\"nameHint\":\"UAT021料-招牌菜\",\"stockHint\":\"0 斤\",\"unitHint\":null}"
+    },
+    {
+      "label": "ui_staff_inv_price_cell_emdash",
+      "pass": true,
+      "detail": "—"
+    },
+    {
+      "label": "ui_staff_inv_no_dollar_price",
+      "pass": true,
+      "detail": " UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 — 详情 "
+    },
+    {
+      "label": "browser_staff_inv_api_price_null",
+      "pass": true,
+      "detail": "{\"last_unit_price\":null,\"stock\":0,\"unit\":\"斤\"}"
+    },
+    {
+      "label": "browser_staff_inv_qty_unit_visible",
+      "pass": true,
+      "detail": "0斤"
+    },
+    {
+      "label": "browser_staff_dish_api_prices_null",
+      "pass": true,
+      "detail": "{\"price\":null,\"gp\":null,\"gm\":null}"
+    },
+    {
+      "label": "browser_staff_sku_detail_masked",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "browser_staff_dish_detail_masked",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "browser_staff_version_price_null",
+      "pass": true,
+      "detail": "null"
+    },
+    {
+      "label": "browser_fake_header_blocked",
+      "pass": true,
+      "detail": "{\"sku\":null,\"dish\":null,\"ver\":null}"
+    },
+    {
+      "label": "ui_staff_dish_row_found",
+      "pass": true,
+      "detail": "{\"found\":true,\"text\":\" UAT021招牌菜默认—UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00\",\"has48Money\":false,\"cellTexts\":[\"UAT021招牌菜\",\"默认\",\"—\",\"UAT021料-招牌菜 0.5斤\",\"-        +    +5    +10\",\"$0.00\"],\"isOwner\":false}"
+    },
+    {
+      "label": "ui_staff_dish_no_painted_48",
+      "pass": true,
+      "detail": " UAT021招牌菜默认—UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00"
+    },
+    {
+      "label": "ui_staff_isOwner_false",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "ui_owner_login_role",
+      "pass": true,
+      "detail": "{\"role\":\"owner\",\"isOwner\":true}"
+    },
+    {
+      "label": "ui_owner_inv_row_found",
+      "pass": true,
+      "detail": "{\"found\":true,\"priceText\":\"$0.00\",\"hasDollar\":true,\"rowText\":\" UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 $0.00 详情 更多 ▾ \"}"
+    },
+    {
+      "label": "ui_owner_inv_price_cell_visible",
+      "pass": true,
+      "detail": "$0.00"
+    },
+    {
+      "label": "browser_owner_dish_api_price_48",
+      "pass": true,
+      "detail": "48"
+    },
+    {
+      "label": "browser_owner_dish_api_margin",
+      "pass": true,
+      "detail": "gp=48 gm=100"
+    },
+    {
+      "label": "browser_owner_dish_detail_price",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "browser_owner_version_price",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "browser_owner_sku_prices_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "ui_owner_dish_row_found",
+      "pass": true,
+      "detail": "{\"found\":true,\"text\":\" UAT021招牌菜默认HK$48.00UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00\",\"has48\":true,\"isOwner\":true}"
+    },
+    {
+      "label": "ui_owner_dish_painted_48",
+      "pass": true,
+      "detail": " UAT021招牌菜默认HK$48.00UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00"
+    },
+    {
+      "label": "ui_owner_isOwner_true",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "ui_staff_inventory_nav_visible_not_hidden_as_auth",
+      "pass": true,
+      "detail": "{\"invVisible\":true,\"dishesChromeVisible\":false,\"scanVisible\":true,\"dishesSectionExists\":true}"
+    },
+    {
+      "label": "ui_staff_dishes_section_exists_api_is_source_of_truth",
+      "pass": true,
+      "detail": "{\"invVisible\":true,\"dishesChromeVisible\":false,\"scanVisible\":true,\"dishesSectionExists\":true}"
+    }
+  ],
+  "overall": true
+}

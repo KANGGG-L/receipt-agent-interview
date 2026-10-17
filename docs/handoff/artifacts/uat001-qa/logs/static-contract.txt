@@ -1,0 +1,10 @@
+api_data_image_url=True
+api_has_original_image=True
+api_public_image_url_detail=True
+review_uat001_bound=True
+review_load_fail_label=True
+review_no_pretend_manual_on_error=True
+archive_uat001_bound=True
+archive_load_fail_label=True
+archive_uses_ret_image_url=True
+ALL_PASS

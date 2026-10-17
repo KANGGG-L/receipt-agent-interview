@@ -1,0 +1,181 @@
+/workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/workspace/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Started server process [148740]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15260 (Press CTRL+C to quit)
+INFO:     127.0.0.1:52010 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52016 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52022 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52032 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52034 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52046 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52050 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52066 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52072 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52084 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52098 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52106 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52120 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52136 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52148 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52156 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52164 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52180 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52196 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52200 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52204 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52218 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52228 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52242 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52252 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52254 - "GET /static/js/export_center.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52260 - "GET /static/js/i18n/i18n.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52264 - "GET /static/js/cost_report.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59732 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59740 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37876 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37884 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37890 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37906 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37910 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37920 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37922 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37932 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37946 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37978 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37990 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37998 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38002 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38006 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38014 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38026 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38028 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38044 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38046 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38062 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38068 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38070 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38072 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38080 - "GET /static/js/export_center.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38092 - "GET /static/js/i18n/i18n.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38104 - "GET /static/js/cost_report.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35840 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35852 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35862 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35878 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35886 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35892 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35894 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35902 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35904 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35912 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35916 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35920 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35932 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35944 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35948 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35958 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35970 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35978 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35990 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35998 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36008 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36024 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36034 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36046 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36056 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36062 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36070 - "GET /static/js/export_center.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36086 - "GET /static/js/i18n/i18n.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36098 - "GET /static/js/cost_report.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59530 - "GET /static/js/export_center.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59542 - "GET /static/js/i18n/i18n.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59546 - "GET / HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [148740]

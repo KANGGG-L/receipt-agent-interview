@@ -1,0 +1,2 @@
+{"overall": "FAIL", "fatal": "Page.wait_for_selector: Timeout 15000ms exceeded.\nCall log:\n  - waiting for locator(\"#receiptFile\") to be visible\n    33 × locator resolved to hidden <input multiple hidden=\"\" type=\"file\" id=\"receiptFile\" accept=\"image/*\" aria-label=\"收据图片\" class=\"hide csp-s-9\"/>\n"}
+real_probe_exit=1

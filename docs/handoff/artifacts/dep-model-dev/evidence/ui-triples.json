@@ -1,0 +1,83 @@
+[
+  {
+    "triple": "desk-staff",
+    "role": "staff",
+    "status": "PASS",
+    "notes": [],
+    "screens": [
+      "screens/desk-staff-00-landing.png",
+      "screens/desk-staff-01-manual-badge.png",
+      "screens/desk-staff-02-after-recognize.png",
+      "screens/desk-staff-03-after-save.png"
+    ],
+    "manual_ai_badge_hidden": true,
+    "manual_badge_visible": true,
+    "upload_status": 200,
+    "upload_body": {
+      "status": "queued",
+      "job_id": "8cb2709e97794e25a95e3595a0faa56a",
+      "receipt_id": 13
+    },
+    "prefill_visible": true,
+    "error_visible": false,
+    "ai_badge_visible": true,
+    "inpSupplier": "7-Eleven",
+    "inpDate": "2016-10-01",
+    "inpTotal": "13.00",
+    "item_rows": 1,
+    "saved_clicked": true
+  },
+  {
+    "triple": "mob-staff",
+    "role": "staff",
+    "status": "PASS",
+    "notes": [],
+    "screens": [
+      "screens/mob-staff-00-landing.png",
+      "screens/mob-staff-01-manual-badge.png",
+      "screens/mob-staff-02-after-recognize.png",
+      "screens/mob-staff-03-after-save.png"
+    ],
+    "manual_ai_badge_hidden": true,
+    "manual_badge_visible": true,
+    "upload_status": 200,
+    "upload_body": {
+      "status": "queued",
+      "job_id": "691d6aac38634bac885099042320b8f9",
+      "receipt_id": 14
+    },
+    "prefill_visible": true,
+    "error_visible": false,
+    "ai_badge_visible": true,
+    "inpSupplier": "7-Eleven",
+    "inpDate": "2016-10-01",
+    "inpTotal": "13.00",
+    "item_rows": 1,
+    "saved_clicked": true
+  },
+  {
+    "triple": "desk-owner",
+    "role": "owner",
+    "status": "PASS",
+    "notes": [
+      "role switched to owner via #demoRoleSelect + navigation",
+      "open_helper=None"
+    ],
+    "screens": [
+      "screens/desk-owner-00-landing.png",
+      "screens/desk-owner-02-after-recognize.png",
+      "screens/desk-owner-final-00-landing.png",
+      "screens/desk-owner-final-02-receipt.png"
+    ],
+    "attempts": 1,
+    "upload_body": {
+      "status": "queued",
+      "job_id": "9ae0fb7afe884159ab557174f2b3bddb",
+      "receipt_id": 16
+    },
+    "job_status": "done",
+    "prefill_visible": true,
+    "inpSupplier": "7-ELEVEN",
+    "inpTotal": "13"
+  }
+]

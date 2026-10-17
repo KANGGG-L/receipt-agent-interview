@@ -1,0 +1,15 @@
+{
+  "stage": "saas-height-qa",
+  "port": 15040,
+  "pid": 59306,
+  "pidfile": 59304,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-height-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15040_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15040 for SAAS-HEIGHT QA; avoided 15020-15030, 15420, 15150-15800; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:12 Asia/Shanghai (CST)",
+  "notes": "Independent QA only; no git/checklist/UAT. Did not flip acceptance checklist."
+}

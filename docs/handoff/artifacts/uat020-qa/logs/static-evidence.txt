@@ -1,0 +1,55 @@
+=== CSS markers ===
+demo/static/css/review-mobile.css:290:/* ---------- UAT020：批量抽屉不得遮挡原图旋转/裁剪工具（390/412/1024） ----------
+demo/static/css/review-mobile.css:292:   and makes open-drawer chrome pointer-events:none (items/header re-enabled).
+demo/static/css/review-mobile.css:297:    #imgViewerContainer.img-tools-hit-layer,
+demo/static/css/review-mobile.css:299:    .img-toolbar.img-tools-hit-layer {
+demo/static/css/review-mobile.css:301:        z-index: 110;
+demo/static/css/review-mobile.css:309:        pointer-events: none;
+demo/static/css/style.css:532:    pointer-events: none;
+demo/static/css/style.css:592:    pointer-events: none;
+demo/static/css/style.css:598:    pointer-events: none;
+demo/static/css/style.css:609:    /* UAT020: sit above .photo-sider-drawer (z-index:95) so rotate/crop receive real hits */
+demo/static/css/style.css:611:    z-index: 110;
+demo/static/css/style.css:685:/* UAT020: preview surface above batch drawer so crop/slice drag is not intercepted */
+demo/static/css/style.css:687:#imgViewerContainer.img-tools-hit-layer,
+demo/static/css/style.css:688:.img-toolbar.img-tools-hit-layer {
+demo/static/css/style.css:690:    z-index: 110;
+demo/static/css/style.css:698:    pointer-events: none;
+demo/static/css/style.css:1567:    pointer-events: none;
+demo/static/css/style.css:2182:    pointer-events: none;
+demo/static/css/style.css:2186:    /* UAT020: chrome / empty list flex area must not steal hits from elevated img tools.
+demo/static/css/style.css:2188:    pointer-events: none;
+demo/static/css/style.css:2422:    pointer-events: none;
+demo/static/css/style.css:2649:    pointer-events: none;
+demo/static/css/style.css:3131:    pointer-events: none;
+demo/static/css/style.css:4453:    pointer-events: none;
+demo/static/css/style.css:4676:    pointer-events: none;
+=== JS markers ===
+132:            const file = (photo && photo.file) || selectedFile || originalFile;
+267:        originalFile = file;
+298:            originalFile: file,
+1713:    originalFile = null;
+1891:// 不丢 originalFile / objectUrl；不 force-click。独立 QA 需用真实 elementFromPoint + click 复验。
+1892:function ensureImgToolsHitLayer() {
+1897:        if (!toolbar.getAttribute('data-uat020')) toolbar.setAttribute('data-uat020', 'img-tools-layer');
+1901:        if (!viewer.getAttribute('data-uat020')) viewer.setAttribute('data-uat020', 'img-viewer-layer');
+1905:function syncPhotoSiderClearanceForImgTools() {
+1927:function refreshUat020ImgToolsVsDrawer() {
+1928:    ensureImgToolsHitLayer();
+1929:    syncPhotoSiderClearanceForImgTools();
+1938:        syncPhotoSiderClearanceForImgTools();
+1944:            // Only react to class (open/close). Ignore style writes from syncPhotoSiderClearanceForImgTools.
+1950:            try { refreshUat020ImgToolsVsDrawer(); }
+1958:            refreshUat020ImgToolsVsDrawer();
+1962:        refreshUat020ImgToolsVsDrawer();
+1967:    refreshUat020ImgToolsVsDrawer();
+2312: * - 保留 originalFile/originalObjectUrl 与 photo.originalFile 不被覆盖，reset 可回原
+2325:        let currFile = (photo && photo.file) || selectedFile || originalFile;
+2429:                    // UAT020 / rotate bake: never drop originalFile / objectUrl (reset must restore)
+2430:                    if (!photo.originalFile && photo.file) photo.originalFile = photo.file;
+2519:    // 烤入后 reset 仍能回到原始 originalFile（保留 originalFile/originalObjectUrl 不被覆盖，photo.originalFile 同理）
+2528:            photo.file = photo.originalFile || photo.file;
+2534:    } else if (originalFile) {
+2536:        selectedFile = originalFile;
+2537:        setMainPreviewFromFile(originalFile, originalObjectUrl);
+2539:        // 无 photo 也无 originalFile 但有 _bakedPreviewUrl 残留，清理

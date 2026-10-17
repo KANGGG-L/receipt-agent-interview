@@ -1,0 +1,6 @@
+tests/test_qa_eval_center_gate_verification.py::test_qa_live_service_port_15010_e2e SKIPPED [ 70%]
+tests/test_qa_kpi_trend_v2_deep_verification.py::TestKpiTrendApiCustomDates::test_custom_date_range_valid_response PASSED [ 70%]
+tests/test_qa_kpi_trend_v2_deep_verification.py::TestKpiTrendApiCustomDates::test_same_single_day_range PASSED [ 70%]
+--
+SKIPPED [1] tests/test_qa_eval_center_gate_verification.py:622: Port 15010 service is not running or not reachable
+=========== 1291 passed, 1 skipped, 59 warnings in 444.89s (0:07:24) ===========

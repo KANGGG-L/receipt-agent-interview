@@ -1,0 +1,20 @@
+{"verdict": "PASS", "passed": 18, "total": 18}
+PASS ac1_set_fx_sgd_5 
+PASS ac1_create_supplier 
+PASS ac1_approve 
+PASS ac1_archive_original_sgd100 
+PASS ac1_payables_hkd500 
+PASS ac1_supplier_unpaid_500 
+PASS ac2_partial_pay_100 
+PASS ac2_unpaid_400 
+PASS ac3_live_fx_to_6 
+PASS ac3_historical_still_snapshot_500_400 
+PASS ac2_full_pay_400 
+PASS ac2_full_unpaid_0 
+PASS ac4_legacy_approve 
+PASS ac4_missing_snapshot_unknown_not_hkd 
+PASS ac4_pay_rejected_fx_missing 
+PASS neg_overpayment_rejected 
+PASS neg_tenant_b_no_a_payables 
+PASS neg_tenant_b_cannot_pay_a_receipt 
+api_probe_exit=0

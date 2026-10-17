@@ -17,12 +17,19 @@ function loadSupplierAdmin() {
     if (SupplierUI.q) params.set('q', SupplierUI.q);
     if (SupplierUI.includeInactive) params.set('include_inactive', '1');
     apiFetch('/api/suppliers?' + params.toString())
-        .then(res => res.json())
+        .then(res => {
+            if (!res || !res.ok) throw new Error('suppliers_http_' + ((res && res.status) || 'net'));
+            return res.json();
+        })
         .then(ret => {
             if (ret.status !== 'success') return;
             window.__supplierCache = ret.data || [];
             renderSupplierAdminRows(window.__supplierCache);
+            // 仅刷新待办条展示口径；若归档 KPI 仍失败则 updateTodoBar 自行短路。
             updateTodoBar();
+        })
+        .catch(err => {
+            console.warn('[supplier] 供应商档案加载失败：', err);
         });
 }
 
@@ -298,6 +305,14 @@ function viewSupplierReceipts(id) {
 
 // ---- 待办条（D-SUP-10 / M7 / UAT-002） ----
 function updateTodoBar() {
+    // UAT-036：归档 KPI 已处于失败「—」时，禁止用空 allArchiveReceipts 刷成假 0
+    //（例如供应商档案成功回调里顺带调用本函数）。
+    const retry = document.getElementById('archiveKpiRetry');
+    const pendingProbe = document.getElementById('todoPendingNum');
+    if (retry && !retry.classList.contains('hide')
+        && pendingProbe && String(pendingProbe.textContent).trim() === '—') {
+        return;
+    }
     const recs = allArchiveReceipts || [];
     let pending = 0, failed = 0, overdue = 0;
     recs.forEach(r => {
@@ -310,17 +325,17 @@ function updateTodoBar() {
     setText('todoFailedNum', failed);
     setText('todoOverdueNum', overdue);
 
-    // UAT-002: 明确统计口径可见性与术语统一（注明5态口径：已上传、识别中、待核对、待核对（有疑问）、待老板审批）
+    // UAT-002: 口径可见性（5态枚举）。标签文案以 index.html 源头为准，禁止按 DOM 文本 shim。
+    // title 必须同时保留「点击筛选」提示与统计口径说明（不得无条件覆盖 HTML title）。
     const pendingEl = document.getElementById('todoPendingNum');
     if (pendingEl) {
-        const card = pendingEl.closest('.metric-card');
+        const card = pendingEl.closest('[data-todo-metric="pending"]') || pendingEl.closest('.metric-card');
         if (card) {
-            const labelEl = card.querySelector('.csp-s-74') || card.querySelector('.metric-label') || card.firstElementChild;
-            if (labelEl && labelEl.textContent.trim() === '待审核') {
-                labelEl.textContent = '待处理（待办全量）';
-            }
-            card.title = '统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）';
-            card.setAttribute('aria-label', '归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共' + pending + '张');
+            const statsPart = '统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）';
+            const clickHint = (card.getAttribute('data-click-hint') || '').trim()
+                || '点击筛选待处理单据';
+            card.title = clickHint + '。' + statsPart;
+            card.setAttribute('aria-label', '归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共' + pending + '张。' + clickHint);
         }
     }
 }

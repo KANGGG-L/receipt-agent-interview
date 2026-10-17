@@ -1,0 +1,47 @@
+=== UAT-010 static evidence 2026-10-17 04:18:44 CST ===
+--- index.html logout entry ---
+33:                <div class="demo-role-switch" id="demoRoleSwitch">
+34:                    <label for="demoRoleSelect" data-i18n="role.label">当前角色</label>
+35:                    <select id="demoRoleSelect">
+42:                <!-- UAT-010：生产会话可见退出登录入口（AUTH_ENABLED=1 且已登录时由 common.js 显示） -->
+43:                <div class="demo-role-switch auth-logout-wrap" id="authLogoutWrap" style="display:none;">
+44:                    <button type="button" id="authLogoutBtn" class="btn btn-secondary auth-logout-btn" aria-label="退出登录">退出登录</button>
+--- common.js logout handlers ---
+450:const AUTH_TOKEN_KEY = 'receipt_auth_token';
+459:function getAuthToken() {
+463:    try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+526:    const getToken = (opts && opts.getToken) || getAuthToken;
+570:        getToken: getAuthToken,
+580:        getToken: getAuthToken,
+722:function clearClientAuthCredentials() {
+724:    try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+725:    try { sessionStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+731:        if (localStorage.getItem(AUTH_TOKEN_KEY)) return true;
+734:        if (sessionStorage.getItem(AUTH_TOKEN_KEY)) return true;
+739:function syncAuthChrome() {
+753:    const roleSwitch = document.getElementById('demoRoleSwitch');
+759:function requestAuthLogout() {
+768:        onCancel: function () { /* 取消：保持会话，不假退出 */ }
+772:function performAuthLogout() {
+794:            AuthState.account = null;
+796:            showLoginPanel('已退出登录');
+810:            showToast('网络异常，未能退出。请检查网络后重试。', 'error');
+867:                AuthState.account = null;
+1371:function initDemoRoleSwitch() {
+--- api_auth logout ---
+2:"""认证端点：/api/auth/login、/api/auth/logout、/api/auth/me。"""
+57:@router.post("/api/auth/logout")
+58:def logout(request: Request):
+63:    - 不签发新令牌、不改账号、不扩大任何角色写权限；
+64:    - 与 demo 角色下拉（X-Role）无关——那不是生产注销。
+69:        auth.revoke_jti(full["jti"], full["exp"])
+72:    auth.clear_session_cookie(resp)
+--- css ---
+48:        .auth-logout-wrap { padding-top: 6px; padding-bottom: 6px; }
+49:        .auth-logout-btn {
+--- OLD: role switch must NOT call logout ---
+initDemoRoleSwitch_calls_logout= False
+initDemoRoleSwitch_has_performAuthLogout= False
+has_authLogoutBtn= True
+getAuthToken_returns_null= True
+cancel_noop= True

@@ -1,0 +1,721 @@
+{
+  "ok": true,
+  "attempts": [
+    {
+      "attempt": 1,
+      "upload_http": 200,
+      "upload": {
+        "status": "queued",
+        "job_id": "9772620db4db4b6ca054c34fc11d5af8",
+        "receipt_id": 8,
+        "image_url": "/api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c"
+      },
+      "job_status": "error",
+      "polls": [
+        {
+          "t": 0.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 2.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 4.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 6.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 8.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 10.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 12.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 14.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 16.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 18.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 20.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 22.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 24.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 26.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 28.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 30.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 32.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 34.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 36.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 38.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 40.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 42.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 44.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 46.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 48.1,
+          "http": 200,
+          "job_status": "error"
+        }
+      ],
+      "error_msg": "识别服务这次响应太慢，请再试一次，或直接手工录入，原图已经保留",
+      "result_summary": {
+        "supplier_name": null,
+        "date": null,
+        "total_amount": null,
+        "doc_form": null,
+        "items_n": 0
+      },
+      "elapsed_s": 48.1
+    },
+    {
+      "attempt": 2,
+      "upload_http": 200,
+      "upload": {
+        "status": "queued",
+        "job_id": "2bd0c5b8090f4fea8a1bfc77bcf8c3bf",
+        "receipt_id": 9,
+        "image_url": "/api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6"
+      },
+      "job_status": "done",
+      "polls": [
+        {
+          "t": 0.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 2.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 4.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 6.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 8.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 10.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 12.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 14.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 16.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 18.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 20.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 22.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 24.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 26.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 28.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 30.0,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 32.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 34.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 36.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 38.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 40.1,
+          "http": 200,
+          "job_status": "running"
+        },
+        {
+          "t": 42.1,
+          "http": 200,
+          "job_status": "done"
+        }
+      ],
+      "error_msg": null,
+      "result_summary": {
+        "supplier_name": "7-ELEVEN",
+        "date": "2016-10-01",
+        "total_amount": 13.0,
+        "doc_form": "printed_delivery_note",
+        "items_n": 1
+      },
+      "elapsed_s": 42.1
+    }
+  ],
+  "job_id": "2bd0c5b8090f4fea8a1bfc77bcf8c3bf",
+  "receipt_id": 9,
+  "job": {
+    "job_id": "2bd0c5b8090f4fea8a1bfc77bcf8c3bf",
+    "job_status": "done",
+    "receipt_id": 9,
+    "started_ts": 1792202020.6393502,
+    "image_guard": {
+      "flagged": false,
+      "reasons": [],
+      "metrics": {
+        "faint_ink_score": 0.0,
+        "tiny_text_score": 0.0,
+        "edge_band_score": 0.0269,
+        "edge_band_components": 1,
+        "edge_overlay_detected": false,
+        "qr_detected": false,
+        "qr_suspicious": false,
+        "qr_payload": "",
+        "signal_count": 0,
+        "high_confidence_injection": false,
+        "strong_ink_fraction": 0.03026,
+        "width": 403,
+        "height": 531,
+        "degraded": false
+      }
+    },
+    "experiment_override": null,
+    "result": {
+      "status": "success",
+      "receipt_id": 9,
+      "data": {
+        "id": 9,
+        "receipt_id": 9,
+        "supplier_name": "7-ELEVEN",
+        "date": "2016-10-01",
+        "sheet_name": "2016-10",
+        "total_amount": 13.0,
+        "status": "parsed",
+        "settlement_type": "",
+        "payment_mark": "未付款",
+        "payment_mark_state": "not_detected",
+        "department_id": null,
+        "department_name": "",
+        "doc_form": "printed_delivery_note",
+        "layout_type": "",
+        "version": 1,
+        "math_warnings": [],
+        "quality_warnings": [],
+        "review_priority_score": 0.1,
+        "items": [
+          {
+            "id": 11,
+            "name": "維他檸檬茶500毫升裝",
+            "raw_name": "維他檸檬茶500毫升裝",
+            "quantity": 1.0,
+            "unit": "件",
+            "raw_unit": "件",
+            "unit_price": 13.0,
+            "amount": 13.0,
+            "sku_id": null,
+            "cost_center_id": null,
+            "confidence": 0.98,
+            "matched": false,
+            "price_anomaly": false,
+            "price_anomaly_direction": "",
+            "price_diff_percent": 0.0,
+            "unit_conversion_warning": "",
+            "fuzzy_candidates": [],
+            "entity_candidates": [],
+            "is_void": false,
+            "actual_qty": null,
+            "evidence": null,
+            "sku_candidates": []
+          }
+        ],
+        "audit_logs": [],
+        "ai_prefill": {
+          "doc_form": "printed_delivery_note",
+          "vendor": "7-ELEVEN",
+          "date": "2016-10-01",
+          "items": [
+            {
+              "name": "維他檸檬茶500毫升裝",
+              "qty": 1.0,
+              "unit": "件",
+              "unit_price": 13.0,
+              "amount": 13.0,
+              "raw_name": "維他檸檬茶500毫升裝",
+              "is_void": false,
+              "actual_qty": null,
+              "evidence": null,
+              "confidence": 0.98,
+              "contains_huama": false,
+              "unit_conversion_warning": null
+            }
+          ],
+          "total": 13.0,
+          "discount_amount": 0.0,
+          "deposit_amount": 0.0,
+          "delivery_fee": 0.0,
+          "service_fee": 0.0,
+          "tax_amount": 0.0,
+          "rounding_adjustment": 0.0,
+          "fees_detail": {},
+          "adjustment_notes": [],
+          "payment_marked": false,
+          "payment_evidence": "",
+          "currency": "HKD",
+          "confidence": 0.98,
+          "contains_huama": false,
+          "math_warnings": [],
+          "field_warnings": []
+        },
+        "audit_result": {
+          "overall_consistent": true,
+          "discrepancies": [],
+          "corrected_suggestions": {},
+          "trust": 0.95,
+          "reason": "确定性校验通过：契约/算术/字段完整性均无异常",
+          "skipped": false,
+          "engine": "code_engine",
+          "mode": "text",
+          "audit_ms": 0.1
+        },
+        "gate_issues": [],
+        "audit_skipped": false,
+        "audit_notice": "",
+        "use_grey": 0,
+        "confidence": 0.98,
+        "currency": "HKD",
+        "rag_context": "",
+        "service_fee": 0.0,
+        "tax_amount": 0.0,
+        "discount_amount": 0.0,
+        "delivery_fee": 0.0,
+        "deposit_amount": 0.0,
+        "rounding_adjustment": 0.0,
+        "adjustment_notes": [],
+        "payment_evidence": "",
+        "image_guard": {
+          "flagged": false,
+          "reasons": [],
+          "metrics": {
+            "faint_ink_score": 0.0,
+            "tiny_text_score": 0.0,
+            "edge_band_score": 0.0269,
+            "edge_band_components": 1,
+            "edge_overlay_detected": false,
+            "qr_detected": false,
+            "qr_suspicious": false,
+            "qr_payload": "",
+            "signal_count": 0,
+            "high_confidence_injection": false,
+            "strong_ink_fraction": 0.03026,
+            "width": 403,
+            "height": 531,
+            "degraded": false
+          }
+        },
+        "ai_decisions": [
+          {
+            "id": 15,
+            "ts": "2026-10-17T09:54:20",
+            "decision_type": "extract",
+            "engine": "openai",
+            "model": "deepseek-v4-flash-vision",
+            "use_grey": 0,
+            "field_path": "overall",
+            "ai_value": "{\"attempt\": 1, \"engine\": \"openai\", \"status\": \"extract_ok\", \"use_grey\": 0, \"tokens_total\": 2307, \"cost_hkd\": 0.009842, \"elapsed_ms\": {\"extract\": 40236.4, \"parse\": 0.0, \"rag\": 0.0, \"audit\": 0.0, \"total\": 0, \"extract_cumulative\": 40236.4, \"parse_cumulative\": 0.0, \"rag_cumulative\": 4.9}, \"success\": true}",
+            "extra": "{\"tokens_prompt\": 1753, \"tokens_completion\": 554, \"tokens_cached\": 1280, \"tokens_total\": 2307, \"cost_hkd\": 0.009842, \"cost_estimated\": 0, \"cost_estimated_reason\": \"\", \"elapsed_ms\": {\"extract\": 40236.4, \"parse\": 0.0, \"rag\": 0.0, \"audit\": 0.0, \"total\": 0, \"extract_cumulative\": 40236.4, \"parse_cumulative\": 0.0, \"rag_cumulative\": 4.9}, \"success\": true, \"image_path\": \"/workspace/receipt-agent-interview/demo/uploads/0509c5b5.jpg\", \"supplier\": \"7-ELEVEN\", \"doc_form\": \"printed_delivery_note\", \"max_tokens\": 4096, \"temperature\": 0.0, \"image_detail\": \"high\", \"image_guard_flagged\": false, \"image_guard\": {\"flagged\": false, \"reasons\": [], \"metrics\": {\"faint_ink_score\": 0.0, \"tiny_text_score\": 0.0, \"edge_band_score\": 0.0269, \"edge_band_components\": 1, \"edge_overlay_detected\": false, \"qr_detected\": false, \"qr_suspicious\": false, \"qr_payload\": \"\", \"signal_count\": 0, \"high_confidence_injection\": false, \"strong_ink_fraction\": 0.03026, \"width\": 403, \"height\": 531, \"degraded\": false}}}",
+            "tokens_total": 2307,
+            "tokens_prompt": 1753,
+            "tokens_completion": 554,
+            "cost_hkd": 0.009842,
+            "cost_estimated": 0,
+            "cost_estimated_reason": "",
+            "elapsed_ms": {
+              "extract": 40236.4,
+              "parse": 0.0,
+              "rag": 0.0,
+              "audit": 0.0,
+              "total": 0,
+              "extract_cumulative": 40236.4,
+              "parse_cumulative": 0.0,
+              "rag_cumulative": 4.9
+            },
+            "success": true,
+            "image_path": "/workspace/receipt-agent-interview/demo/uploads/0509c5b5.jpg",
+            "supplier": "7-ELEVEN",
+            "doc_form": "printed_delivery_note"
+          },
+          {
+            "id": 16,
+            "ts": "2026-10-17T09:54:20",
+            "decision_type": "audit",
+            "engine": "EngineKind.OPENAI",
+            "model": "deepseek-v4-flash-vision",
+            "use_grey": 0,
+            "field_path": "overall",
+            "ai_value": "{\"overall_consistent\": true, \"trust\": 0.95, \"discrepancies_count\": 0, \"reason\": \"确定性校验通过：契约/算术/字段完整性均无异常\", \"skipped\": false}",
+            "extra": "{\"discrepancies\": [], \"corrected_suggestions\": {}, \"tokens_prompt\": 0, \"tokens_completion\": 0, \"tokens_cached\": 0, \"tokens_total\": 0, \"cost_hkd\": 0.0, \"cost_estimated\": 0, \"cost_estimated_reason\": \"\", \"elapsed_ms\": {\"audit\": 0.1, \"total\": 0.1}, \"success\": true, \"max_tokens\": 4096, \"temperature\": 0.0}",
+            "tokens_total": 0,
+            "tokens_prompt": 0,
+            "tokens_completion": 0,
+            "cost_hkd": 0.0,
+            "cost_estimated": 0,
+            "cost_estimated_reason": "",
+            "elapsed_ms": {
+              "audit": 0.1,
+              "total": 0.1
+            },
+            "success": true,
+            "image_path": "",
+            "supplier": "",
+            "doc_form": ""
+          }
+        ]
+      },
+      "image_url": "/api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6",
+      "version": 1,
+      "quality_warnings": [],
+      "image_guard": {
+        "flagged": false,
+        "reasons": [],
+        "metrics": {
+          "faint_ink_score": 0.0,
+          "tiny_text_score": 0.0,
+          "edge_band_score": 0.0269,
+          "edge_band_components": 1,
+          "edge_overlay_detected": false,
+          "qr_detected": false,
+          "qr_suspicious": false,
+          "qr_payload": "",
+          "signal_count": 0,
+          "high_confidence_injection": false,
+          "strong_ink_fraction": 0.03026,
+          "width": 403,
+          "height": 531,
+          "degraded": false
+        }
+      },
+      "experiment_override": null,
+      "rag_hint_source": "",
+      "vendor_hint_origin": ""
+    },
+    "image_url": "/api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6"
+  },
+  "data": {
+    "id": 9,
+    "receipt_id": 9,
+    "supplier_name": "7-ELEVEN",
+    "date": "2016-10-01",
+    "sheet_name": "2016-10",
+    "total_amount": 13.0,
+    "status": "parsed",
+    "settlement_type": "",
+    "payment_mark": "未付款",
+    "payment_mark_state": "not_detected",
+    "department_id": null,
+    "department_name": "",
+    "doc_form": "printed_delivery_note",
+    "layout_type": "",
+    "version": 1,
+    "math_warnings": [],
+    "quality_warnings": [],
+    "review_priority_score": 0.1,
+    "items": [
+      {
+        "id": 11,
+        "name": "維他檸檬茶500毫升裝",
+        "raw_name": "維他檸檬茶500毫升裝",
+        "quantity": 1.0,
+        "unit": "件",
+        "raw_unit": "件",
+        "unit_price": 13.0,
+        "amount": 13.0,
+        "sku_id": null,
+        "cost_center_id": null,
+        "confidence": 0.98,
+        "matched": false,
+        "price_anomaly": false,
+        "price_anomaly_direction": "",
+        "price_diff_percent": 0.0,
+        "unit_conversion_warning": "",
+        "fuzzy_candidates": [],
+        "entity_candidates": [],
+        "is_void": false,
+        "actual_qty": null,
+        "evidence": null,
+        "sku_candidates": []
+      }
+    ],
+    "audit_logs": [],
+    "ai_prefill": {
+      "doc_form": "printed_delivery_note",
+      "vendor": "7-ELEVEN",
+      "date": "2016-10-01",
+      "items": [
+        {
+          "name": "維他檸檬茶500毫升裝",
+          "qty": 1.0,
+          "unit": "件",
+          "unit_price": 13.0,
+          "amount": 13.0,
+          "raw_name": "維他檸檬茶500毫升裝",
+          "is_void": false,
+          "actual_qty": null,
+          "evidence": null,
+          "confidence": 0.98,
+          "contains_huama": false,
+          "unit_conversion_warning": null
+        }
+      ],
+      "total": 13.0,
+      "discount_amount": 0.0,
+      "deposit_amount": 0.0,
+      "delivery_fee": 0.0,
+      "service_fee": 0.0,
+      "tax_amount": 0.0,
+      "rounding_adjustment": 0.0,
+      "fees_detail": {},
+      "adjustment_notes": [],
+      "payment_marked": false,
+      "payment_evidence": "",
+      "currency": "HKD",
+      "confidence": 0.98,
+      "contains_huama": false,
+      "math_warnings": [],
+      "field_warnings": []
+    },
+    "audit_result": {
+      "overall_consistent": true,
+      "discrepancies": [],
+      "corrected_suggestions": {},
+      "trust": 0.95,
+      "reason": "确定性校验通过：契约/算术/字段完整性均无异常",
+      "skipped": false,
+      "engine": "code_engine",
+      "mode": "text",
+      "audit_ms": 0.1
+    },
+    "gate_issues": [],
+    "audit_skipped": false,
+    "audit_notice": "",
+    "use_grey": 0,
+    "confidence": 0.98,
+    "currency": "HKD",
+    "rag_context": "",
+    "service_fee": 0.0,
+    "tax_amount": 0.0,
+    "discount_amount": 0.0,
+    "delivery_fee": 0.0,
+    "deposit_amount": 0.0,
+    "rounding_adjustment": 0.0,
+    "adjustment_notes": [],
+    "payment_evidence": "",
+    "image_guard": {
+      "flagged": false,
+      "reasons": [],
+      "metrics": {
+        "faint_ink_score": 0.0,
+        "tiny_text_score": 0.0,
+        "edge_band_score": 0.0269,
+        "edge_band_components": 1,
+        "edge_overlay_detected": false,
+        "qr_detected": false,
+        "qr_suspicious": false,
+        "qr_payload": "",
+        "signal_count": 0,
+        "high_confidence_injection": false,
+        "strong_ink_fraction": 0.03026,
+        "width": 403,
+        "height": 531,
+        "degraded": false
+      }
+    },
+    "ai_decisions": [
+      {
+        "id": 15,
+        "ts": "2026-10-17T09:54:20",
+        "decision_type": "extract",
+        "engine": "openai",
+        "model": "deepseek-v4-flash-vision",
+        "use_grey": 0,
+        "field_path": "overall",
+        "ai_value": "{\"attempt\": 1, \"engine\": \"openai\", \"status\": \"extract_ok\", \"use_grey\": 0, \"tokens_total\": 2307, \"cost_hkd\": 0.009842, \"elapsed_ms\": {\"extract\": 40236.4, \"parse\": 0.0, \"rag\": 0.0, \"audit\": 0.0, \"total\": 0, \"extract_cumulative\": 40236.4, \"parse_cumulative\": 0.0, \"rag_cumulative\": 4.9}, \"success\": true}",
+        "extra": "{\"tokens_prompt\": 1753, \"tokens_completion\": 554, \"tokens_cached\": 1280, \"tokens_total\": 2307, \"cost_hkd\": 0.009842, \"cost_estimated\": 0, \"cost_estimated_reason\": \"\", \"elapsed_ms\": {\"extract\": 40236.4, \"parse\": 0.0, \"rag\": 0.0, \"audit\": 0.0, \"total\": 0, \"extract_cumulative\": 40236.4, \"parse_cumulative\": 0.0, \"rag_cumulative\": 4.9}, \"success\": true, \"image_path\": \"/workspace/receipt-agent-interview/demo/uploads/0509c5b5.jpg\", \"supplier\": \"7-ELEVEN\", \"doc_form\": \"printed_delivery_note\", \"max_tokens\": 4096, \"temperature\": 0.0, \"image_detail\": \"high\", \"image_guard_flagged\": false, \"image_guard\": {\"flagged\": false, \"reasons\": [], \"metrics\": {\"faint_ink_score\": 0.0, \"tiny_text_score\": 0.0, \"edge_band_score\": 0.0269, \"edge_band_components\": 1, \"edge_overlay_detected\": false, \"qr_detected\": false, \"qr_suspicious\": false, \"qr_payload\": \"\", \"signal_count\": 0, \"high_confidence_injection\": false, \"strong_ink_fraction\": 0.03026, \"width\": 403, \"height\": 531, \"degraded\": false}}}",
+        "tokens_total": 2307,
+        "tokens_prompt": 1753,
+        "tokens_completion": 554,
+        "cost_hkd": 0.009842,
+        "cost_estimated": 0,
+        "cost_estimated_reason": "",
+        "elapsed_ms": {
+          "extract": 40236.4,
+          "parse": 0.0,
+          "rag": 0.0,
+          "audit": 0.0,
+          "total": 0,
+          "extract_cumulative": 40236.4,
+          "parse_cumulative": 0.0,
+          "rag_cumulative": 4.9
+        },
+        "success": true,
+        "image_path": "/workspace/receipt-agent-interview/demo/uploads/0509c5b5.jpg",
+        "supplier": "7-ELEVEN",
+        "doc_form": "printed_delivery_note"
+      },
+      {
+        "id": 16,
+        "ts": "2026-10-17T09:54:20",
+        "decision_type": "audit",
+        "engine": "EngineKind.OPENAI",
+        "model": "deepseek-v4-flash-vision",
+        "use_grey": 0,
+        "field_path": "overall",
+        "ai_value": "{\"overall_consistent\": true, \"trust\": 0.95, \"discrepancies_count\": 0, \"reason\": \"确定性校验通过：契约/算术/字段完整性均无异常\", \"skipped\": false}",
+        "extra": "{\"discrepancies\": [], \"corrected_suggestions\": {}, \"tokens_prompt\": 0, \"tokens_completion\": 0, \"tokens_cached\": 0, \"tokens_total\": 0, \"cost_hkd\": 0.0, \"cost_estimated\": 0, \"cost_estimated_reason\": \"\", \"elapsed_ms\": {\"audit\": 0.1, \"total\": 0.1}, \"success\": true, \"max_tokens\": 4096, \"temperature\": 0.0}",
+        "tokens_total": 0,
+        "tokens_prompt": 0,
+        "tokens_completion": 0,
+        "cost_hkd": 0.0,
+        "cost_estimated": 0,
+        "cost_estimated_reason": "",
+        "elapsed_ms": {
+          "audit": 0.1,
+          "total": 0.1
+        },
+        "success": true,
+        "image_path": "",
+        "supplier": "",
+        "doc_form": ""
+      }
+    ]
+  },
+  "attempt_count": 2
+}

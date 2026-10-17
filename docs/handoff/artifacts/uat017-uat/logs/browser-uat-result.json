@@ -1,0 +1,308 @@
+{
+  "port": 15250,
+  "pass": true,
+  "criteria": {
+    "openAria": {
+      "hidden": false,
+      "role": "dialog",
+      "ariaModal": "true",
+      "labelledby": "reconCreateTitle",
+      "describedby": "reconSupplierHint",
+      "titleText": "发起对账",
+      "hintText": "供应商：Vendor_A",
+      "activeId": "reconPeriodType",
+      "display": "flex",
+      "visibility": "visible",
+      "rect": {
+        "w": 1280,
+        "h": 800,
+        "t": 0,
+        "l": 0
+      },
+      "panelRect": {
+        "w": 1116,
+        "h": 391.171875,
+        "t": 204.40625,
+        "l": 82,
+        "b": 595.578125,
+        "r": 1198
+      },
+      "cancelVisible": true,
+      "submitVisible": true,
+      "cancelText": "取消",
+      "submitText": "发起对账",
+      "stackLen": 1,
+      "stackHasTrigger": true
+    },
+    "c1_dialog_name": {
+      "pass": true,
+      "detail": {
+        "aria": {
+          "hidden": false,
+          "role": "dialog",
+          "ariaModal": "true",
+          "labelledby": "reconCreateTitle",
+          "describedby": "reconSupplierHint",
+          "titleText": "发起对账",
+          "hintText": "供应商：Vendor_A",
+          "activeId": "reconPeriodType",
+          "display": "flex",
+          "visibility": "visible",
+          "rect": {
+            "w": 1280,
+            "h": 800,
+            "t": 0,
+            "l": 0
+          },
+          "panelRect": {
+            "w": 1116,
+            "h": 391.171875,
+            "t": 204.40625,
+            "l": 82,
+            "b": 595.578125,
+            "r": 1198
+          },
+          "cancelVisible": true,
+          "submitVisible": true,
+          "cancelText": "取消",
+          "submitText": "发起对账",
+          "stackLen": 1,
+          "stackHasTrigger": true
+        },
+        "ax": {
+          "dialogCount": 1,
+          "dialogNames": [
+            "发起对账"
+          ],
+          "namedMatch": true,
+          "namedNames": [
+            "发起对账"
+          ]
+        }
+      }
+    },
+    "preferredFocus": "reconPeriodType",
+    "tabFocusables": {
+      "count": 6,
+      "ids": [
+        "关闭",
+        "reconPeriodType",
+        "reconStart",
+        "reconEnd",
+        "btnCancelReconCreate",
+        "btnSubmitReconCreate"
+      ]
+    },
+    "tabTrail": [
+      {
+        "id": "reconStart",
+        "inside": true
+      },
+      {
+        "id": "reconStart",
+        "inside": true
+      },
+      {
+        "id": "reconStart",
+        "inside": true
+      },
+      {
+        "id": "reconStart",
+        "inside": true
+      },
+      {
+        "id": "reconEnd",
+        "inside": true
+      },
+      {
+        "id": "reconEnd",
+        "inside": true
+      },
+      {
+        "id": "reconEnd",
+        "inside": true
+      },
+      {
+        "id": "reconEnd",
+        "inside": true
+      }
+    ],
+    "c2_tab_trap": {
+      "pass": true,
+      "detail": {
+        "tabAllInside": true,
+        "count": 6
+      }
+    },
+    "afterEsc": {
+      "hidden": true,
+      "activeIsTrigger": true,
+      "activeId": "BUTTON",
+      "activeText": "发起对账",
+      "stackLen": 0
+    },
+    "c2_esc_restore": {
+      "pass": true,
+      "detail": {
+        "hidden": true,
+        "activeIsTrigger": true,
+        "activeId": "BUTTON",
+        "activeText": "发起对账",
+        "stackLen": 0
+      }
+    },
+    "afterCancel": {
+      "hidden": true,
+      "stackLen": 0
+    },
+    "submitCancel": {
+      "submitVisible": true,
+      "submitDisabled": false,
+      "submitText": "发起对账",
+      "cancelVisible": true,
+      "cancelText": "取消",
+      "hasSubmitHandler": true,
+      "hasCancelHandler": true
+    },
+    "hans390": {
+      "locale": "zh-Hans",
+      "titleText": "发起对账",
+      "panel": {
+        "w": 315,
+        "h": 391.171875,
+        "t": 226.40625,
+        "l": 37.5,
+        "r": 352.5,
+        "b": 617.578125
+      },
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "occluded": false,
+      "cancelVisibleInVp": true,
+      "submitVisibleInVp": true,
+      "titleVisibleInVp": true
+    },
+    "hant390": {
+      "locale": "zh-Hant-HK",
+      "titleText": "發起對賬",
+      "panel": {
+        "w": 315,
+        "h": 391.171875,
+        "t": 226.40625,
+        "l": 37.5,
+        "r": 352.5,
+        "b": 617.578125
+      },
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "occluded": false,
+      "cancelVisibleInVp": true,
+      "submitVisibleInVp": true,
+      "titleVisibleInVp": true
+    },
+    "c3_controls_locale_390": {
+      "pass": true,
+      "detail": {
+        "afterCancel": {
+          "hidden": true,
+          "stackLen": 0
+        },
+        "submitInfo": {
+          "submitVisible": true,
+          "submitDisabled": false,
+          "submitText": "发起对账",
+          "cancelVisible": true,
+          "cancelText": "取消",
+          "hasSubmitHandler": true,
+          "hasCancelHandler": true
+        },
+        "hans390": {
+          "locale": "zh-Hans",
+          "titleText": "发起对账",
+          "panel": {
+            "w": 315,
+            "h": 391.171875,
+            "t": 226.40625,
+            "l": 37.5,
+            "r": 352.5,
+            "b": 617.578125
+          },
+          "viewport": {
+            "w": 390,
+            "h": 844
+          },
+          "occluded": false,
+          "cancelVisibleInVp": true,
+          "submitVisibleInVp": true,
+          "titleVisibleInVp": true
+        },
+        "hant390": {
+          "locale": "zh-Hant-HK",
+          "titleText": "發起對賬",
+          "panel": {
+            "w": 315,
+            "h": 391.171875,
+            "t": 226.40625,
+            "l": 37.5,
+            "r": 352.5,
+            "b": 617.578125
+          },
+          "viewport": {
+            "w": 390,
+            "h": 844
+          },
+          "occluded": false,
+          "cancelVisibleInVp": true,
+          "submitVisibleInVp": true,
+          "titleVisibleInVp": true
+        }
+      }
+    },
+    "negative": {
+      "paymentHasReconCreateTitle": false,
+      "resolveHasReconCreateTitle": false,
+      "paymentOpeningHasReconCreateTitle": false,
+      "resolveOpeningHasReconCreateTitle": false,
+      "paymentRole": null,
+      "resolveRole": null
+    },
+    "c_negative": {
+      "pass": true,
+      "detail": {
+        "paymentHasReconCreateTitle": false,
+        "resolveHasReconCreateTitle": false,
+        "paymentOpeningHasReconCreateTitle": false,
+        "resolveOpeningHasReconCreateTitle": false,
+        "paymentRole": null,
+        "resolveRole": null
+      }
+    }
+  },
+  "errors": [],
+  "ax": {
+    "dialogCount": 1,
+    "dialogNames": [
+      "发起对账"
+    ],
+    "namedMatch": true,
+    "namedNames": [
+      "发起对账"
+    ]
+  },
+  "screenshots": [
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat017-uat/ui/open-dialog-desktop-hans.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat017-uat/ui/open-dialog-controls.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat017-uat/ui/open-dialog-390-hans.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat017-uat/ui/open-dialog-390-hant.png"
+  ],
+  "supplierId": 1,
+  "triggerInfo": {
+    "tag": "BUTTON",
+    "text": "发起对账",
+    "isActive": true
+  }
+}

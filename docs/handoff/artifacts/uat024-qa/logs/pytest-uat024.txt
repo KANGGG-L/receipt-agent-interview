@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat024-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1
+collecting ... collected 5 items
+
+demo/tests/test_uat_024_mobile_inventory_name_actions.py::test_inventory_row_stamps_data_labels_and_sku_id PASSED [ 20%]
+demo/tests/test_uat_024_mobile_inventory_name_actions.py::test_name_text_uses_break_word_not_break_all PASSED [ 40%]
+demo/tests/test_uat_024_mobile_inventory_name_actions.py::test_mobile_css_card_layout_and_no_min_width_force PASSED [ 60%]
+demo/tests/test_uat_024_mobile_inventory_name_actions.py::test_index_marks_inventory_sku_table_class PASSED [ 80%]
+demo/tests/test_uat_024_mobile_inventory_name_actions.py::test_desktop_min_width_not_removed_globally PASSED [100%]
+
+============================== 5 passed in 0.45s ===============================

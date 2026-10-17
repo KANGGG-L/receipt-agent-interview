@@ -1,0 +1,15 @@
+=== api_inventory.py self-checked lines ===
+629:            qty=body.quantity,
+740:_OUTBOUND_LOG_KINDS = frozenset({"consume", "waste"})
+741:# 已按方向落库的 kind：stocktake 存 diff（可负），reversal 存负 qty。
+745:def ledger_qty_signed(kind, qty):
+758:    if k in _OUTBOUND_LOG_KINDS:
+759:        return -abs(q)
+826:            "qty": r.qty,
+827:            "qty_signed": ledger_qty_signed(r.kind, r.qty),
+=== inventory_board.js self-checked lines ===
+635:function invLedgerQtySigned(r) {
+645:function invLedgerQtyText(r) {
+649:    return (signed > 0 ? '+' : '') + signed;
+701:                const qtyText = invLedgerQtyText(r);
+717:                    <td class="col-right">${w2Escape(qtyText)}</td>

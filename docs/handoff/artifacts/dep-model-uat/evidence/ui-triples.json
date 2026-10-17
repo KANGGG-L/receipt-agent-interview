@@ -1,0 +1,71 @@
+[
+  {
+    "triple": "desk-staff",
+    "role": "staff",
+    "status": "PASS",
+    "notes": [],
+    "screens": [
+      "screens/desk-staff-00-landing.png",
+      "screens/desk-staff-01-manual-badge.png",
+      "screens/desk-staff-02-after-recognize.png",
+      "screens/desk-staff-03-after-save.png"
+    ],
+    "attempts": 1,
+    "manual_badge_visible": true,
+    "manual_ai_badge_hidden": true,
+    "inpSupplier": "7-Eleven",
+    "inpDate": "2016-10-01",
+    "inpTotal": "13.00",
+    "item_rows": 0,
+    "ai_badge_visible": true,
+    "prefill_visible": true,
+    "error_visible": false,
+    "api_supplier": "7-Eleven",
+    "saved_clicked": true
+  },
+  {
+    "triple": "mob-staff",
+    "role": "staff",
+    "status": "PASS",
+    "notes": [
+      "role select: Page.select_option: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\"#demoRoleSelect\")\n    - locator resolved to <select id=\"demoRoleSelect\">…</select>\n  - attempting select option action\n    2 × waiting for element to be visible and enabled\n      - element is not visible\n    - retrying select option action\n    - waiting 20ms\n    2 × waiting for element to be visible and enabled\n      - element is not visible\n    - retrying select option action\n      - waiting 100ms\n    60 × waiting for element to be visible and enabled\n       - element is not visible\n     - retrying select option action\n       - waiting 500ms\n"
+    ],
+    "screens": [
+      "screens/mob-staff-00-landing.png",
+      "screens/mob-staff-01-manual-badge.png",
+      "screens/mob-staff-02-after-recognize.png",
+      "screens/mob-staff-03-after-save.png"
+    ],
+    "attempts": 1,
+    "manual_badge_visible": true,
+    "manual_ai_badge_hidden": true,
+    "inpSupplier": "7-Eleven",
+    "inpDate": "2016-10-01",
+    "inpTotal": "13.00",
+    "item_rows": 0,
+    "ai_badge_visible": true,
+    "prefill_visible": true,
+    "error_visible": false,
+    "saved_clicked": true
+  },
+  {
+    "triple": "desk-owner",
+    "role": "owner",
+    "status": "PASS",
+    "notes": [],
+    "screens": [
+      "screens/desk-owner-00-landing.png",
+      "screens/desk-owner-02-after-recognize.png",
+      "screens/desk-owner-final-00-landing.png",
+      "screens/desk-owner-final-02-receipt.png"
+    ],
+    "attempts": 1,
+    "inpSupplier": "7-Eleven",
+    "inpDate": "2016-10-01",
+    "inpTotal": "13.00",
+    "item_rows": 0,
+    "ai_badge_visible": false,
+    "prefill_visible": true,
+    "error_visible": false
+  }
+]

@@ -1,0 +1,21 @@
+{
+  "card": "UAT-015",
+  "phase": "uat015-dev",
+  "port": 15491,
+  "verdict": "PASS",
+  "pytest_exit": 0,
+  "api_probe": {
+    "exit": 0,
+    "verdict": "PASS",
+    "passed": 18,
+    "total": 18
+  },
+  "ui_probe": {
+    "exit": 0,
+    "verdict": "PASS",
+    "passed": 4,
+    "total": 4
+  },
+  "static_ok": true,
+  "product_edits": "none"
+}

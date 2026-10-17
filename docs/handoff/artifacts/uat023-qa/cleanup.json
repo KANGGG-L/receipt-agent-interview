@@ -1,0 +1,12 @@
+{
+  "stage": "uat023-qa",
+  "port": 15260,
+  "pid_stopped": true,
+  "port_free": true,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa/environment/qa_isolated_smoke.db",
+  "auth_enabled": 0,
+  "git": "no commit / no push",
+  "checklist_flipped": false,
+  "uat_started": false,
+  "finished_at": "2026-10-17T04:38:06+0800"
+}

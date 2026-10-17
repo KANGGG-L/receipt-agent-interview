@@ -1,0 +1,45 @@
+{
+  "card": "ENG-01",
+  "phase": "QA",
+  "isolate_port": 15461,
+  "isolate_base": "http://127.0.0.1:15461",
+  "dev_port_was": 15451,
+  "health_status_file": "logs/health.json",
+  "precise_node": "tests/test_phase3_filter_adjustments_deep_qa.py::test_qa_live_service_port_15010_healthy",
+  "positive": {
+    "log": "pytest-positive.txt",
+    "exit_match": 0,
+    "has_1_passed": true,
+    "has_1_failed": false,
+    "probe_log": "pytest-positive-probe.txt"
+  },
+  "negatives": {
+    "no_config": {
+      "log": "pytest-neg-no-config.txt",
+      "exit_match": 1,
+      "has_1_failed": true,
+      "asserted": "未配置…拒绝回落硬编码 15010（失败非 skip）"
+    },
+    "forbid_15010": {
+      "log": "pytest-neg-forbid-15010.txt",
+      "exit_match": 1,
+      "has_1_failed": true,
+      "asserted": "探测目标解析到 15010。拒绝连接，拒绝写入"
+    },
+    "non200": {
+      "log": "pytest-neg-non200.txt",
+      "exit_match": 1,
+      "has_1_failed": true,
+      "asserted": "探测非 200 … HTTP 503"
+    },
+    "timeout": {
+      "log": "pytest-neg-timeout.txt",
+      "exit_match": 1,
+      "has_1_failed": true,
+      "asserted": "探测超时 …（失败非 skip）"
+    }
+  },
+  "literal_audit": "evidence/literal-audit.json verdict PASS (affected file scope)",
+  "15010": "FREE_RESERVED before/after (never used as probe target)",
+  "verdict": "PASS"
+}

@@ -97,13 +97,15 @@ def test_dish_crud_and_bom_calculation():
     assert round(data["data"]["gross_margin_rate"], 2) == 76.18
     assert len(data["data"]["ingredients"]) == 2
 
-    # 3. 查询餐品列表
+    # 3. 查询餐品列表（UAT-021：staff 成本/毛利脱敏为 null；owner 可见）
     list_resp = client.get("/api/dishes", headers=_staff_headers())
     assert list_resp.status_code == 200
     dishes = list_resp.json()["data"]
     assert len(dishes) == 1
     assert dishes[0]["id"] == dish_id
-    assert dishes[0]["theoretical_cost"] == 16.2
+    assert dishes[0]["theoretical_cost"] is None
+    owner_list = client.get("/api/dishes", headers=_owner_headers()).json()["data"]
+    assert owner_list[0]["theoretical_cost"] == 16.2
 
     # 4. 查询单个餐品详情
     detail_resp = client.get(f"/api/dishes/{dish_id}", headers=_staff_headers())
@@ -111,10 +113,13 @@ def test_dish_crud_and_bom_calculation():
     dish_detail = detail_resp.json()["data"]
     assert dish_detail["id"] == dish_id
     assert len(dish_detail["ingredients"]) == 2
-    # 验证关联 SKU 实时库存
+    # 验证关联 SKU 实时库存（数量可见；进货单价 staff 脱敏）
     ing1 = next(ing for ing in dish_detail["ingredients"] if ing["sku_id"] == sku1_id)
     assert ing1["sku_current_stock"] == 20.0
-    assert ing1["sku_last_unit_price"] == 50.0
+    assert ing1["sku_last_unit_price"] is None
+    owner_detail = client.get(f"/api/dishes/{dish_id}", headers=_owner_headers()).json()["data"]
+    oing1 = next(ing for ing in owner_detail["ingredients"] if ing["sku_id"] == sku1_id)
+    assert oing1["sku_last_unit_price"] == 50.0
 
     # 5. 更新餐品：调价至 72 元，并修改白萝卜为 300g
     update_payload = {
@@ -196,8 +201,16 @@ def test_daily_consumption_batch_and_fifo_deduction():
     sku_row = db.get_sku(sku_beef)
     assert sku_row.current_stock == 5.0
 
-    # 5. 按日期查询当日消耗及汇总
-    query_resp = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=_staff_headers())
+    # 5. 按日期查询当日消耗及汇总（UAT-021：成本汇总仅 owner 可见）
+    staff_q = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=_staff_headers())
+    assert staff_q.status_code == 200
+    staff_data = staff_q.json()["data"]
+    assert len(staff_data["consumptions"]) == 1
+    assert staff_data["consumptions"][0]["quantity"] == 30.0
+    assert staff_data["consumptions"][0]["total_cost"] is None
+    assert staff_data["summary"]["total_cost"] is None
+
+    query_resp = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=_owner_headers())
     assert query_resp.status_code == 200
     res_data = query_resp.json()["data"]
     assert res_data["date"] == "2026-08-27"
@@ -273,8 +286,8 @@ def test_void_daily_consumption_and_rollback():
     finally:
         s.close()
 
-    # 5. 验证冲销后查询：is_void=1 且汇总金额不计入该条
-    query_resp = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=_staff_headers())
+    # 5. 验证冲销后查询：is_void=1 且汇总金额不计入该条（成本字段需 owner）
+    query_resp = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=_owner_headers())
     summary = query_resp.json()["data"]["summary"]
     assert summary["total_quantity"] == 0.0
     assert summary["total_cost"] == 0.0
@@ -721,15 +734,17 @@ def test_zero_cost_and_estimated_batches_transparency():
     }, headers=headers_owner).json()
     dish_id = dish_resp["data"]["id"]
 
-    # 消耗该餐品 1 份
+    # 消耗该餐品 1 份（UAT019：零库存普通提交 409；显式 force + 原因才允许负库存/暂估）
     resp_consume = client.post("/api/dishes/daily_consumption/batch", json={
         "date": "2026-08-27",
-        "items": [{"dish_id": dish_id, "quantity": 1.0}]
+        "items": [{"dish_id": dish_id, "quantity": 1.0}],
+        "allow_negative": True,
+        "override_reason": "零成本暂估透传验收",
     }, headers=headers_staff)
-    assert resp_consume.status_code == 200
+    assert resp_consume.status_code == 200, resp_consume.text
 
-    # 查询当日消耗
-    resp_daily = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=headers_staff)
+    # 查询当日消耗（完整性预警对 staff 可见；明细成本字段以 owner 核对）
+    resp_daily = client.get("/api/dishes/daily_consumption?date=2026-08-27", headers=headers_owner)
     assert resp_daily.status_code == 200
     data = resp_daily.json()["data"]
 

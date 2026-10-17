@@ -1,0 +1,177 @@
+{
+  "checks": [
+    {
+      "name": "tenant_b_before",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 0
+      }
+    },
+    {
+      "name": "create_unpurchased_sku",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": 5
+      }
+    },
+    {
+      "name": "create_purchased_sku",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": 6
+      }
+    },
+    {
+      "name": "seed_purchased_price",
+      "pass": true,
+      "detail": {
+        "row": [
+          6,
+          "uat018qa3",
+          25.0,
+          10.0
+        ]
+      }
+    },
+    {
+      "name": "api_sees_purchased_price",
+      "pass": true,
+      "detail": {
+        "hit": {
+          "id": 6,
+          "name": "QA已采购料UAT018c",
+          "last_unit_price": 25.0,
+          "current_stock": 10.0
+        }
+      }
+    },
+    {
+      "name": "ac1_extreme_unpurchased_persist_estimate",
+      "pass": true,
+      "detail": {
+        "http": 200,
+        "id": 4,
+        "theory_cost_status": "estimated",
+        "theory_cost_source": "unpurchased_zero_price",
+        "margin": null,
+        "cost": null,
+        "profit": null,
+        "prov_margin": 100.0,
+        "prov_cost": 0.0,
+        "qty": 999999999999.0,
+        "cost_known": false,
+        "cost_source": "unpurchased_zero_price"
+      }
+    },
+    {
+      "name": "ac1_list_persist_no_clamp",
+      "pass": true,
+      "detail": {
+        "found": true,
+        "qty": 999999999999.0,
+        "status": "estimated",
+        "margin": null,
+        "cost": null
+      }
+    },
+    {
+      "name": "ac2_reject_neg",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+      }
+    },
+    {
+      "name": "ac2_reject_zero",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+      }
+    },
+    {
+      "name": "ac2_reject_nan",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "nan"
+      }
+    },
+    {
+      "name": "ac2_reject_inf",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "inf"
+      }
+    },
+    {
+      "name": "ac2_reject_ninf",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "ninf"
+      }
+    },
+    {
+      "name": "ac4_purchased_normal_cost",
+      "pass": true,
+      "detail": {
+        "http": 200,
+        "theory_cost_status": "complete",
+        "cost": 10.0,
+        "margin": 90.0,
+        "source": "last_unit_price",
+        "id": 5
+      }
+    },
+    {
+      "name": "open_risk_not_b26",
+      "pass": true,
+      "detail": {
+        "status": "open_risk_not_adjudicated",
+        "source": null
+      }
+    },
+    {
+      "name": "tenant_b_after",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 0
+      }
+    },
+    {
+      "name": "ui_source_markers",
+      "pass": true,
+      "detail": {
+        "bom": true,
+        "cons": true
+      }
+    }
+  ],
+  "summary": {
+    "total": 16,
+    "failed": 0,
+    "pass": true,
+    "dish_extreme_id": 4,
+    "dish_purch_id": 5,
+    "sku_un": 5,
+    "sku_purch": 6,
+    "base": "http://127.0.0.1:15225",
+    "tenant": "uat018qa3",
+    "tenant_b": "uat018qab3"
+  }
+}

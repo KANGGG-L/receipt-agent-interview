@@ -1,0 +1,25 @@
+{
+  "card": "UAT-021",
+  "role": "independent_qa",
+  "verdict": "PASS",
+  "port": 15650,
+  "auth_enabled": 1,
+  "specialty_pytest": {
+    "passed": 10,
+    "failed": 0
+  },
+  "live_api": {
+    "pass": 69,
+    "fail": 0,
+    "overall": true
+  },
+  "browser": {
+    "pass": 10,
+    "fail": 0,
+    "overall": true
+  },
+  "uat_started": false,
+  "git": false,
+  "checklist_flipped": false,
+  "report": "docs/handoff/artifacts/uat021-qa-report.md"
+}

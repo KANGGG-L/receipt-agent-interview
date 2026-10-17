@@ -1,0 +1,1 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.833" timestamp="2026-10-17T19:29:09.017355+08:00" hostname="grok-bot-vm-370483901"><testcase classname="tests.test_b2_cost_report" name="test_departments_are_tenant_scoped" time="0.437" /></testsuite></testsuites>

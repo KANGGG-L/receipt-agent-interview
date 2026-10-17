@@ -1,0 +1,374 @@
+{
+  "generatedAt": "2026-10-16T22:31:54.664Z",
+  "budgets": {
+    "archivePageSizeMaxDom": 50,
+    "queuePageSizeMaxDom": 50,
+    "archiveRenderPage1Ms": 200,
+    "archivePageNextMs": 100,
+    "archiveGotoLastMs": 150,
+    "archiveFilterMs": 250,
+    "archiveSearchMs": 250,
+    "queueRenderPage1Ms": 200,
+    "queuePageNextMs": 100,
+    "queueGotoLastMs": 150,
+    "archiveTotal": 670,
+    "queueTodoTotal": 635
+  },
+  "archive": {
+    "budgets": {
+      "archivePageSizeMaxDom": 50,
+      "queuePageSizeMaxDom": 50,
+      "archiveRenderPage1Ms": 200,
+      "archivePageNextMs": 100,
+      "archiveGotoLastMs": 150,
+      "archiveFilterMs": 250,
+      "archiveSearchMs": 250,
+      "queueRenderPage1Ms": 200,
+      "queuePageNextMs": 100,
+      "queueGotoLastMs": 150,
+      "archiveTotal": 670,
+      "queueTodoTotal": 635
+    },
+    "checks": {
+      "lastItemReachable": true,
+      "noLostRecords": true
+    },
+    "timings": {
+      "archiveRenderPage1Ms": 80,
+      "archivePageNextMs": 9,
+      "archiveGotoLastMs": 4,
+      "archiveSearchMs": 6
+    },
+    "dom": {
+      "archiveDataRows": 50,
+      "archiveBadge": "共 670 条记录",
+      "archiveRange": "显示 1–50",
+      "archivePageLabel": "1 / 14",
+      "archiveFirstId": "900670",
+      "archiveLastOnPageId": "900621",
+      "archiveFilteredTotal": 670,
+      "archivePageSizeConst": 50,
+      "archivePage2Rows": 50,
+      "archivePage2FirstId": "900620",
+      "archiveLastPageRows": 20,
+      "archiveLastItemId": "900001",
+      "archiveExpectedLastId": "900001"
+    },
+    "empty": {
+      "noFilter": {
+        "state": "no-filter-results",
+        "text": "未找到符合筛选条件的归档记录",
+        "badge": "共 0 条记录"
+      },
+      "emptyDb": {
+        "state": "empty-db",
+        "text": "暂无归档单据（空库）"
+      }
+    },
+    "search": {
+      "hitTotal": 39,
+      "domRows": 39,
+      "badge": "共 39 条记录",
+      "range": "显示 1–39"
+    },
+    "crossPage": {
+      "editId": 900006,
+      "before": "uploaded",
+      "after": "edited",
+      "rowPresentOnReturn": true,
+      "rowHtmlHasEditedHint": true
+    }
+  },
+  "queue": {
+    "timings": {
+      "queueRenderPage1Ms": 4,
+      "queuePageNextMs": 3,
+      "queueGotoLastMs": 2
+    },
+    "dom": {
+      "queueDataRows": 50,
+      "queueCount": "共 635 条",
+      "queueRange": "显示 1–50",
+      "queuePageLabel": "1 / 13",
+      "queueFilteredTotal": 635,
+      "qCountTodo": "635",
+      "queuePage2Rows": 50,
+      "queueLastPageRows": 35,
+      "queueLastItemId": "900635",
+      "queueExpectedLastId": "900635"
+    },
+    "empty": {
+      "noFilter": {
+        "state": "no-filter-results",
+        "text": "当前队列暂无待处理单据"
+      },
+      "emptyDb": {
+        "state": "empty-db",
+        "text": "暂无单据（空库）"
+      }
+    },
+    "crossPage": {
+      "editId": 900004,
+      "status": "edited",
+      "rowPresent": true,
+      "rowHintsEdited": true
+    },
+    "checks": {
+      "todoTotalOk": true,
+      "lastItemReachable": true
+    }
+  },
+  "archiveChrome": {
+    "kind": "archive",
+    "badge": {
+      "id": "archiveRecordCount",
+      "present": true,
+      "text": "共 670 条记录",
+      "visible": true,
+      "w": 98,
+      "h": 26,
+      "top": -3110,
+      "left": 464,
+      "dataSaas": null
+    },
+    "range": {
+      "id": "archivePageRange",
+      "present": true,
+      "text": "显示 1–50",
+      "visible": true,
+      "w": 71,
+      "h": 20,
+      "top": 662,
+      "left": 289,
+      "dataSaas": null
+    },
+    "label": {
+      "id": "archivePageLabel",
+      "present": true,
+      "text": "1 / 14",
+      "visible": true,
+      "w": 38,
+      "h": 20,
+      "top": 696,
+      "left": 384,
+      "dataSaas": null
+    },
+    "pager": {
+      "id": "archivePagination",
+      "present": true,
+      "text": "显示 1–50 上一页 1 / 14 下一页",
+      "visible": true,
+      "w": 1098,
+      "h": 69,
+      "top": 660,
+      "left": 289,
+      "dataSaas": "archive-pager"
+    },
+    "prev": {
+      "id": "archivePagePrev",
+      "present": true,
+      "text": "上一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 684,
+      "left": 289,
+      "dataSaas": null
+    },
+    "next": {
+      "id": "archivePageNext",
+      "present": true,
+      "text": "下一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 684,
+      "left": 426,
+      "dataSaas": null
+    },
+    "rows": 50,
+    "tabTitle": "归档对账"
+  },
+  "queueChrome": {
+    "kind": "queue",
+    "badge": {
+      "id": "queueFilteredCount",
+      "present": true,
+      "text": "共 635 条",
+      "visible": true,
+      "w": 75,
+      "h": 26,
+      "top": 780,
+      "left": 289,
+      "dataSaas": null
+    },
+    "range": {
+      "id": "queuePageRange",
+      "present": true,
+      "text": "显示 1–50",
+      "visible": true,
+      "w": 71,
+      "h": 20,
+      "top": 781,
+      "left": 368,
+      "dataSaas": null
+    },
+    "label": {
+      "id": "queuePageLabel",
+      "present": true,
+      "text": "1 / 13",
+      "visible": true,
+      "w": 38,
+      "h": 20,
+      "top": 818,
+      "left": 384,
+      "dataSaas": null
+    },
+    "pager": {
+      "id": "queuePagination",
+      "present": true,
+      "text": "共 635 条 显示 1–50 上一页 1 / 13 下一页",
+      "visible": true,
+      "w": 1098,
+      "h": 72,
+      "top": 779,
+      "left": 289,
+      "dataSaas": "queue-pager"
+    },
+    "prev": {
+      "id": "queuePagePrev",
+      "present": true,
+      "text": "上一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 806,
+      "left": 289,
+      "dataSaas": null
+    },
+    "next": {
+      "id": "queuePageNext",
+      "present": true,
+      "text": "下一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 806,
+      "left": 426,
+      "dataSaas": null
+    },
+    "rows": 50,
+    "tabTitle": "识别复核"
+  },
+  "shotMd5": {
+    "archivePage1": "d800b4efd4f4b511270449165962a7a2",
+    "archiveChrome": "d4f140cf89b4a03febd44426d7e9afbf",
+    "queuePage1": "03e015ae418ff114422e9ab714206944",
+    "queueChrome": "14fc9c57da2a4d80a8083151defb535b"
+  },
+  "chromeDistinct": {
+    "archiveVsQueuePage1Md5Differ": true,
+    "pagerShotsDiffer": true,
+    "archivePaginationVisible": true,
+    "queuePaginationVisible": true,
+    "badgeCopyDistinct": true,
+    "pagerDataAttrsDistinct": true,
+    "eyeballGate": "PASS"
+  },
+  "budgetResults": [
+    {
+      "name": "archiveDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "archiveRenderPage1Ms",
+      "actual": 80,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "archivePageNextMs",
+      "actual": 9,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "archiveGotoLastMs",
+      "actual": 4,
+      "max": 150,
+      "pass": true
+    },
+    {
+      "name": "archiveSearchMs",
+      "actual": 6,
+      "max": 250,
+      "pass": true
+    },
+    {
+      "name": "queueDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "queueRenderPage1Ms",
+      "actual": 4,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "queuePageNextMs",
+      "actual": 3,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "queueGotoLastMs",
+      "actual": 2,
+      "max": 150,
+      "pass": true
+    }
+  ],
+  "allBudgetsPass": true,
+  "acceptance": {
+    "totalsAndRange": true,
+    "lastItemArchive": true,
+    "lastItemQueue": true,
+    "noLost": true,
+    "todo635": true,
+    "emptyStatesArchive": true,
+    "emptyStatesQueue": true,
+    "crossPageArchive": true,
+    "crossPageQueue": true,
+    "domCapped": true,
+    "pageSize50": true,
+    "uxChromeDistinct": true
+  },
+  "acceptancePass": true,
+  "uatGate": "PASS",
+  "chromeEyeball": {
+    "archiveNavOk": true,
+    "queueNavOk": true,
+    "archiveBadgeVisible": true,
+    "archiveRangeVisible": true,
+    "archivePagerVisible": true,
+    "archiveRows": 50,
+    "archiveBadgeText": "共 670 条记录",
+    "archiveRangeText": "显示 1–50",
+    "archiveLabelText": "1 / 14",
+    "queueBadgeVisible": true,
+    "queueRangeVisible": true,
+    "queuePagerVisible": true,
+    "queueRows": 50,
+    "queueBadgeText": "共 635 条",
+    "queueRangeText": "显示 1–50",
+    "queueLabelText": "1 / 13",
+    "pageShotsDiffer": true,
+    "pagerShotsDiffer": true,
+    "pagerDataAttrsDistinct": true,
+    "badgeCopyDistinct": true,
+    "pass": true
+  }
+}

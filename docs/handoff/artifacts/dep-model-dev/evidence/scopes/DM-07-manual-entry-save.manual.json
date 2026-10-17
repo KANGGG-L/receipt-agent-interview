@@ -1,0 +1,37 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "http": 200,
+      "receipt_id": 12,
+      "body": {
+        "status": "success",
+        "id": 12,
+        "receipt_id": 12,
+        "version": 1,
+        "math_blockers": [],
+        "status_after": "edited"
+      },
+      "db": {
+        "receipt": {
+          "id": 12,
+          "supplier_name": "Vendor_A",
+          "status": "edited",
+          "doc_form": "manual_entry",
+          "total_amount": 80.0,
+          "version": 1,
+          "receipt_date": "2026-10-17"
+        },
+        "items": [
+          {
+            "name": "测试菜心",
+            "quantity": 4.0,
+            "unit": "斤",
+            "unit_price": 20.0,
+            "amount": 80.0
+          }
+        ]
+      }
+    }
+  ]
+}

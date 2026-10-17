@@ -1,0 +1,31 @@
+{
+  "period": {
+    "label": "2026-10",
+    "start_date": "",
+    "end_date": "",
+    "prev_label": "2026-09"
+  },
+  "month": "2026-10",
+  "start_date": "",
+  "end_date": "",
+  "departments": [],
+  "unallocated": {
+    "count": 2,
+    "total": 220.0,
+    "prev_total": 0.0,
+    "delta": 220.0,
+    "trend": "new",
+    "change_pct": 100.0
+  },
+  "month_total": 220.0,
+  "prev_total": 0.0,
+  "delta": 220.0,
+  "change_pct": 100.0,
+  "trend": "new",
+  "currency": "HKD",
+  "basis": "已入账单据总额（含服务费、税、折扣、运费），按明细金额比例分摊到部门；外币单据按入账时汇率折成港币",
+  "unconverted": [],
+  "unconverted_count": 0,
+  "missing_fx_count": 0,
+  "unconverted_warning": ""
+}

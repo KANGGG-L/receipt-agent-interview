@@ -1,0 +1,136 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat003-qa/environment/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1
+collecting ... collected 4 items
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401 PASSED [ 25%]
+demo/tests/test_uat_010_logout_entry.py::test_logout_idempotent_and_does_not_expand_write_perms PASSED [ 50%]
+demo/tests/test_uat_010_logout_entry.py::test_ui_has_visible_logout_entry_and_safe_handlers PASSED [ 75%]
+demo/tests/test_uat_010_logout_entry.py::test_logout_does_not_store_credentials_in_response_body_beyond_msg PASSED [100%]
+
+=============================== warnings summary ===============================
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/uat003-qa/environment/venv/lib/python3.13/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py: 12 warnings
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/uat003-qa/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/tests/test_uat_010_logout_entry.py::test_three_cookie_roles_logout_then_protected_api_401
+  /workspace/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 4 passed, 25 warnings in 1.08s ========================

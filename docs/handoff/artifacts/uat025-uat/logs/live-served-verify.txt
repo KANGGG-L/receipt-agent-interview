@@ -1,0 +1,17 @@
+=== served JS markers (inventory_board.js) ===
+1245:    // UAT-025：洞察请求必须携带当前界面语言，供 review_locale / 后续复盘 prompt 使用
+1246:    const lang = (window.I18N && typeof window.I18N.getLocale === 'function')
+1247:        ? window.I18N.getLocale()
+1250:        ? ('/api/ai-insights?lang=' + encodeURIComponent(lang))
+
+=== live API curl verify ===
+lang=zh-Hant-HK -> 'zh-Hant-HK'
+lang=zh-Hans -> 'zh-Hans'
+lang=zh-HK -> 'zh-Hant-HK'
+lang=zh-Hant -> 'zh-Hant-HK'
+lang=(omit) -> ''
+staff -> 403
+{"status":"error","code":"FORBIDDEN","msg":"权限不足：这个操作需要老板或更高权限，你现在是店员。请联系老板来操作。","detail":"权限不足：这个操作需要老板
+
+=== /api/auth/me ===
+{"status":"success","auth_enabled":false,"account":null,"identity_source":"missing"}

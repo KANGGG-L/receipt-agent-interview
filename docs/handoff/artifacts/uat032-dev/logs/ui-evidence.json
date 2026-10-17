@@ -1,0 +1,12 @@
+{
+  "verdict": "PASS",
+  "dish_id": 1,
+  "date": "2026-10-17",
+  "traceDishQty": "2026-10-17 / 售出 5 份",
+  "traceTotalCost": "HK$25.00",
+  "table": "#1\tUI牛肉饭UAT032 默认\t5 份\tHK$25.00\n单份 HK$5.00\n\tHK$150.00\t83.3%\t正常\t批次溯源冲销作废",
+  "details": "UI牛肉UAT032 合计耗用: 2.5 kg\n食材总计: HK$25.00\n批次 #1 入库日期: 2026-04-01 ｜ 扣减 1.5 kg @ HK$10.00/kg\nHK$15.00\n批次 #1 入库日期: 2026-04-01 ｜ 扣减 1 kg @ HK$10.00/kg\nHK$10.00",
+  "qty_has_5": true,
+  "table_has_5": true,
+  "details_has_two_batches": true
+}

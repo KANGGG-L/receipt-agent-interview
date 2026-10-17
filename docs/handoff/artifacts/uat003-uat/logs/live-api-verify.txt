@@ -1,0 +1,12 @@
+DEFAULT:
+COUNT 3
+NAMES ['Synthetic_Oil', 'Synthetic_Rice', '特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测']
+RICE Synthetic_Rice qty 1.0 sku 1 vendor Vendor_A name!=sku True
+OIL Synthetic_Oil qty 2.0 sku 2 vendor Vendor_A
+LONG_ZH_LEN 28 HAS_UNDERSCORE True
+DISTINCT True
+T2:
+COUNT 1 NAMES ['Synthetic_Rice'] QTYS [9.0]
+DEFAULT_HAS_QTY9 False
+CROSS_TENANT_OK True
+NOAUTH 401

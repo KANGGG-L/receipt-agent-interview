@@ -1,0 +1,36 @@
+{
+  "supplier_name": "U001 Synth Vendor",
+  "date": "2026-10-15",
+  "total_amount": 40,
+  "doc_form": "printed_delivery_note",
+  "payment_marked": false,
+  "payment_evidence": "",
+  "currency": "HKD",
+  "discount_amount": 0,
+  "deposit_amount": 0,
+  "delivery_fee": 0,
+  "service_fee": 0,
+  "tax_amount": 0,
+  "rounding_adjustment": 0,
+  "adjustment_notes": [],
+  "items": [
+    {
+      "name": "测试白菜",
+      "qty": 2,
+      "unit": "斤",
+      "unit_price": 10,
+      "amount": 20
+    },
+    {
+      "name": "测试萝卜",
+      "qty": 1,
+      "unit": "个",
+      "unit_price": 20,
+      "amount": 20
+    }
+  ],
+  "gt_status": "confirmed",
+  "gt_source_model": "uat011/synth",
+  "gt_reviewed_by": "admin@demo.hk",
+  "gt_reviewed_at": "2026-10-17T19:35:48"
+}

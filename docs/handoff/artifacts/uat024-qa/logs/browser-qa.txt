@@ -1,0 +1,62 @@
+PASS vp390: media max-640 active
+PASS vp390: table min-width 0 (card) — minWidth=0px display=block
+PASS vp390: document no horizontal overflow — {"clientWidth":390,"scrollWidth":390,"bodyScrollWidth":390,"overflowX":false}
+PASS vp390:rice found
+PASS vp390:rice visible name readable — Synthetic_Rice
+PASS vp390:rice data-full-name — Synthetic_Rice
+PASS vp390:rice word-break not break-all — wordBreak=break-word
+PASS vp390:rice short name not letter-stacked — {"w":119.3125,"h":20}
+PASS vp390:rice name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":260,"h":21.203125,"t":305.828125,"b":327.03125,"l":63,"r":323},"actions":{"w":260,"h":66.71875,"t":492.40625,"b":559.125,"l":63,"r":323}}
+PASS vp390:rice actions data-sku-id == row — row=1 actions=1
+PASS vp390:rice More click same-row SKU — {"ok":true,"visible":true,"activeId":"1","rowSkuId":"1","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp390:oil found
+PASS vp390:oil visible name readable — Synthetic_Oil
+PASS vp390:oil data-full-name — Synthetic_Oil
+PASS vp390:oil word-break not break-all — wordBreak=break-word
+PASS vp390:oil short name not letter-stacked — {"w":105.078125,"h":20}
+PASS vp390:oil name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":260,"h":21.203125,"t":303.84375,"b":325.046875,"l":63,"r":323},"actions":{"w":260,"h":66.71875,"t":495.3125,"b":562.03125,"l":63,"r":323}}
+PASS vp390:oil actions data-sku-id == row — row=2 actions=2
+PASS vp390:oil More click same-row SKU — {"ok":true,"visible":false,"activeId":"2","rowSkuId":"2","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp390:long found
+PASS vp390:long visible name readable — 特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测
+PASS vp390:long data-full-name — 特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测
+PASS vp390:long word-break not break-all — wordBreak=break-word
+PASS vp390:long name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":260,"h":42.40625,"t":295.75,"b":338.15625,"l":63,"r":323},"actions":{"w":260,"h":66.71875,"t":503.53125,"b":570.25,"l":63,"r":323}}
+PASS vp390:long actions data-sku-id == row — row=3 actions=3
+PASS vp390:long More click same-row SKU — {"ok":true,"visible":false,"activeId":"3","rowSkuId":"3","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp412: media max-640 active
+PASS vp412: table min-width 0 (card) — minWidth=0px display=block
+PASS vp412: document no horizontal overflow — {"clientWidth":412,"scrollWidth":412,"bodyScrollWidth":412,"overflowX":false}
+PASS vp412:rice found
+PASS vp412:rice visible name readable — Synthetic_Rice
+PASS vp412:rice data-full-name — Synthetic_Rice
+PASS vp412:rice word-break not break-all — wordBreak=break-word
+PASS vp412:rice short name not letter-stacked — {"w":119.3125,"h":20}
+PASS vp412:rice name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":282,"h":21.203125,"t":341.828125,"b":363.03125,"l":63,"r":345},"actions":{"w":282,"h":66.71875,"t":528.40625,"b":595.125,"l":63,"r":345}}
+PASS vp412:rice actions data-sku-id == row — row=1 actions=1
+PASS vp412:rice More click same-row SKU — {"ok":true,"visible":true,"activeId":"1","rowSkuId":"1","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp412:oil found
+PASS vp412:oil visible name readable — Synthetic_Oil
+PASS vp412:oil data-full-name — Synthetic_Oil
+PASS vp412:oil word-break not break-all — wordBreak=break-word
+PASS vp412:oil short name not letter-stacked — {"w":105.078125,"h":20}
+PASS vp412:oil name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":282,"h":21.203125,"t":338.84375,"b":360.046875,"l":63,"r":345},"actions":{"w":282,"h":66.71875,"t":530.3125,"b":597.03125,"l":63,"r":345}}
+PASS vp412:oil actions data-sku-id == row — row=2 actions=2
+PASS vp412:oil More click same-row SKU — {"ok":true,"visible":false,"activeId":"2","rowSkuId":"2","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp412:long found
+PASS vp412:long visible name readable — 特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测
+PASS vp412:long data-full-name — 特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测
+PASS vp412:long word-break not break-all — wordBreak=break-word
+PASS vp412:long name+actions co-visible (same card) — {"sameCard":true,"horizOverlap":true,"cardInView":true,"name":{"w":282,"h":42.40625,"t":330.75,"b":373.15625,"l":63,"r":345},"actions":{"w":282,"h":66.71875,"t":538.53125,"b":605.25,"l":63,"r":345}}
+PASS vp412:long actions data-sku-id == row — row=3 actions=3
+PASS vp412:long More click same-row SKU — {"ok":true,"visible":false,"activeId":"3","rowSkuId":"3","sameRow":true,"cspMentionsId":true,"note":"visible may be false if prior closeHandler raced; activeId+CSP prove same-row"}
+PASS vp1440: media max-640 inactive
+PASS vp1440: desktop min-width retained (~640px) — minWidth=640px display=table
+PASS vp1440: Rice/Oil/long present
+PASS vp1440: Rice has More (owner actions)
+PASS vp1440: Oil has More
+PASS vp1440: names readable
+PASS vp1440: short names not letter-stacked — {"rice":{"w":119.3125,"h":20},"oil":{"w":105.078125,"h":20}}
+PASS vp1440: document no horizontal overflow — {"clientWidth":1440,"scrollWidth":1440,"bodyScrollWidth":1440,"overflowX":false}
+
+SUMMARY pass=true passCount=60 failCount=0

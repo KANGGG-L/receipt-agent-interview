@@ -1,0 +1,72 @@
+=== UAT-024 static evidence 2026-10-17 04:50:10 CST ===
+--- inventory_board.js markers ---
+456:                            aria-haspopup="menu" onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▾</button>` : `
+488:            // 品名 title/data-full-name 保证窄屏可读完整业务名（Rice/Oil/长中文）。
+491:            tr.dataset.skuId = String(Number(sku.id));
+493:                <td class="inv-name-cell" data-label="品名" title="${nameEsc}" data-full-name="${nameEsc}"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${nameEsc}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
+511:                <td class="col-center inv-actions-cell" data-label="操作">
+714:                // 不以 sku_id 替代。title + data-full-name 保证原值可获取。
+717:                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+--- style.css inv-name-text word-break ---
+2829:.inv-name-text {
+2830-    flex: 1;
+2831-    min-width: 0;
+2832-    overflow: visible;
+2833-    text-overflow: clip;
+2834-    white-space: normal;
+2835-    /* UAT-024：break-word 而非 break-all，避免 Rice/Oil 等短名在窄列逐字竖排 */
+--
+2898:/* 库存表去省略号：品名已改为可换行（.inv-name-text word-break:break-word），
+2899-   分类/折算kg 保持单行但需可见且列宽充足，故覆盖通用 td 的 overflow:hidden/ellipsis
+2900-   同时为保证“价格走势”在窄视口下完整可见，min-width 收敛至 640（原860过宽导致操作列被横滚藏起） */
+2901-/* UAT-024：桌面/宽屏保留 min-width:640 保证操作列完整；
+2902-   <=640px 手机由 review-mobile.css 覆盖为 min-width:0 + 卡片行，避免 document 水平溢出 */
+2903-#tab-inventory table.data-table {
+2904-    min-width: 640px;
+--
+2920:#tab-inventory .inv-name-text {
+2921-    text-align: center;
+2922-    font-size: 1.02rem;
+2923-    font-weight: 700;
+2924-    line-height: 1.3;
+2925-    white-space: normal;
+2926:    /* UAT-024：与 .inv-name-text 同源，短名不逐字竖排 */
+2927-    word-break: break-word;
+2928-    overflow-wrap: anywhere;
+2929-    overflow: visible;
+2930-    text-overflow: clip;
+2931-}
+2932:#tab-inventory .inv-name-text strong {
+2933-    font-size: 1.02rem;
+2934-    font-weight: 700;
+2935-    line-height: 1.3;
+2936-}
+2937-/* UAT-003：库存流水台账品名列 —— 覆盖 #tab-inventory td:nth-child(3) 的
+2938-   white-space:nowrap，避免 Synthetic_Rice / Synthetic_Oil 被窄列裁成相同前缀。
+--- review-mobile.css UAT-024 ---
+41:    background: none; color: var(--text-main, #1e2223); border: none; padding: 6px 0; min-width: 0;
+124:    .app-toast { width: auto !important; max-width: 100% !important; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; }
+128:        max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word;
+143:    #prefillFormCard .form-grid .form-group { grid-column: auto !important; }
+145:    table.data-table.receipt-item-table, .receipt-item-table tbody { display: block; width: 100%; min-width: 0; table-layout: auto; border-spacing: 0; }
+152:    .receipt-item-table tbody td { display: block; padding: 0; border: none; min-width: 0; text-align: left !important; }
+156:    .receipt-item-table tbody td:not([data-label]) { grid-column: 1 / -1; }
+157:    .receipt-item-table td[data-label="品名"] { grid-column: 1 / -1; }
+158:    .receipt-item-table td[data-label="数量"] { grid-column: span 3; }
+160:    .receipt-item-table td[data-label="数量"] input { min-width: 0; flex: 1 1 0; }
+161:    .receipt-item-table td[data-label="单位"] { grid-column: span 3; }
+162:    .receipt-item-table td[data-label="单价"] { grid-column: span 3; }
+163:    .receipt-item-table td[data-label="金额"] { grid-column: span 3; }
+164:    .receipt-item-table td[data-label="部门"] { grid-column: 1 / -1; }
+165:    .receipt-item-table td[data-label="操作"] { grid-column: 1 / -1; }
+183:/* ---------- UAT-024：手机库存表 —— 品名可读 + 操作与名称同卡，无 document 水平溢出 ----------
+197:        min-width: 0 !important;
+229:        min-width: 0;
+246:    #tab-inventory #inventoryTable td.inv-name-cell,
+248:        grid-column: 1 / -1;
+250:    #tab-inventory #inventoryTable td.inv-actions-cell,
+252:        grid-column: 1 / -1;
+263:        word-break: break-word;
+--- index inventory-sku-table ---
+721:                            <table id="inventoryTable" class="data-table inventory-sku-table csp-s-20">
+742:                                <tbody id="inventoryTableBody">

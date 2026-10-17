@@ -1,0 +1,352 @@
+{
+  "pass": 69,
+  "fail": 0,
+  "checks": [
+    {
+      "label": "owner_login",
+      "pass": true,
+      "detail": "code=200"
+    },
+    {
+      "label": "owner_role",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "owner_me_cookie",
+      "pass": true,
+      "detail": "{\"status\": \"success\", \"auth_enabled\": true, \"account\": {\"email\": \"boss@demo.hk\", \"role\": \"owner\"}, \"identity_source\": \"cookie\", \"demo_identity\": false}"
+    },
+    {
+      "label": "owner_create_sku",
+      "pass": true,
+      "detail": "code=200 body={'status': 'success', 'id': 1, 'canonical_name': 'QA021料-招牌菜'}"
+    },
+    {
+      "label": "sku_id_present",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "label": "owner_create_dish",
+      "pass": true,
+      "detail": "code=200 {'status': 'success', 'data': {'id': 1, 'name': 'QA021招牌菜', 'category': '默认', 'category_id': 2, 'price': 48.0, 'description': '', 'status': 'active', 'version': 1, 'created_at': '2026-10-17T05:32:38', 'updated_at': '2026-10-17T05:32:38', 'i"
+    },
+    {
+      "label": "dish_id_present",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "label": "owner_inv_list_has_sku",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "owner_inv_list_price_visible",
+      "pass": true,
+      "detail": "last_unit_price=0.0"
+    },
+    {
+      "label": "owner_dish_list_price_visible",
+      "pass": true,
+      "detail": "price=48.0"
+    },
+    {
+      "label": "owner_dish_list_margin_visible",
+      "pass": true,
+      "detail": "gp=48.0 gm=100.0"
+    },
+    {
+      "label": "owner_dish_detail_price",
+      "pass": true,
+      "detail": "price=48.0"
+    },
+    {
+      "label": "owner_version_price_visible",
+      "pass": true,
+      "detail": "price=48.0"
+    },
+    {
+      "label": "owner_sku_detail_prices_visible_flag",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "owner_sku_detail_last_unit_price",
+      "pass": true,
+      "detail": "v=0.0"
+    },
+    {
+      "label": "staff_login",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_me_cookie",
+      "pass": true,
+      "detail": "{\"status\": \"success\", \"auth_enabled\": true, \"account\": {\"email\": \"staff@demo.hk\", \"role\": \"staff\"}, \"identity_source\": \"cookie\", \"demo_identity\": false}"
+    },
+    {
+      "label": "staff_inv_list_200",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_inv_list_has_sku",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_inv_list_last_unit_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_inv_list_price_anomaly_masked",
+      "pass": true,
+      "detail": "v=False"
+    },
+    {
+      "label": "staff_inv_list_vs_avg_pct_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_inv_list_ack_action_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_inv_list_unit_visible",
+      "pass": true,
+      "detail": "unit=斤"
+    },
+    {
+      "label": "staff_inv_list_qty_visible",
+      "pass": true,
+      "detail": "stock=0.0"
+    },
+    {
+      "label": "staff_inv_list_name_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_inv_meta_threshold_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_inv_meta_anomaly_count_masked",
+      "pass": true,
+      "detail": "v=0"
+    },
+    {
+      "label": "staff_sku_detail_prices_visible_false",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_sku_detail_last_unit_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_sku_detail_avg_cost_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_sku_detail_vs_avg_pct_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_sku_detail_latest_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_sku_detail_qty_visible",
+      "pass": true,
+      "detail": "stock=0.0"
+    },
+    {
+      "label": "staff_sku_detail_unit_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_list_has_dish",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_list_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_theoretical_cost_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_gross_profit_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_gross_margin_rate_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_ing_sku_last_unit_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_ing_ingredient_cost_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_list_ing_qty_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_list_ing_unit_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_detail_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_detail_theoretical_cost_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_detail_gross_profit_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_detail_gross_margin_rate_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_dish_detail_ing_sku_last_unit_price_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_detail_ing_ingredient_cost_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_detail_ing_qty",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_dish_detail_ing_unit",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_200",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_dish_price_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "staff_version_dish_theoretical_cost_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_dish_gross_profit_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_dish_gross_margin_rate_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_dish_last_unit_price_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_name_visible",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_ing_qty",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_ing_unit",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "staff_version_ing_price_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "fake_header_inv_list_still_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "fake_header_dish_list_still_null",
+      "pass": true,
+      "detail": "price=None gp=None"
+    },
+    {
+      "label": "fake_header_dish_detail_still_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "fake_header_sku_detail_still_null",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "label": "fake_header_version_still_null",
+      "pass": true,
+      "detail": "v=None"
+    },
+    {
+      "label": "x_role_alone_inventory_401",
+      "pass": true,
+      "detail": "code=401"
+    },
+    {
+      "label": "tenant_isolation_covered_by_specialty_pytest",
+      "pass": true,
+      "detail": null
+    }
+  ],
+  "overall": true
+}

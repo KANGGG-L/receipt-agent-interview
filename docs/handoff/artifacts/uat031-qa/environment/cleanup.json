@@ -1,0 +1,10 @@
+{
+  "uvicorn_pid": 256096,
+  "port": 15141,
+  "stopped": true,
+  "ports_kept_free": [
+    15010,
+    15131
+  ],
+  "stopped_at": "2026-10-17 15:15:16 CST"
+}

@@ -12,6 +12,7 @@
 读路径（详情/报表）不允许 500：跨量纲/子配方缺失一律降级为 (0.0, warning)。
 """
 
+import math
 from typing import Dict, List, Optional, Tuple
 
 from app.services.unit_factors import convert_unit_quantity
@@ -39,9 +40,15 @@ def compute_ingredient_cost(session, sku, consumption_qty, unit,
         yr = float(yield_rate) if yield_rate else 1.0
         if yr <= 0:
             yr = 1.0
-        effective_qty = float(consumption_qty or 0.0) / yr
+        raw_qty = float(consumption_qty or 0.0)
+        # UAT018 read-path: non-finite legacy qty must not poison JSON / margin.
+        if not math.isfinite(raw_qty) or not math.isfinite(yr):
+            return 0.0, "配方用量非有限数值（NaN/Infinity），成本按未知处理"
+        effective_qty = raw_qty / yr
         target_unit = sku.base_unit or unit
         converted = convert_unit_quantity(effective_qty, unit, target_unit)
+        if not math.isfinite(float(converted)):
+            return 0.0, "用量换算结果非有限数值"
     except ValueError as e:
         return 0.0, f"单位不可换算（{unit} -> {getattr(sku, 'base_unit', '')}）：{e}"
     except Exception as e:  # noqa: BLE001 - 读路径降级
@@ -59,6 +66,17 @@ def _sku_component_entry(session, row) -> Dict:
     cost, warning = compute_ingredient_cost(
         session, sku, getattr(row, "consumption_qty", 0.0),
         getattr(row, "unit", ""), yr)
+    # UAT018: unpurchased / zero last price is provisional estimate, not certain cost.
+    raw_price = float(sku.last_unit_price) if sku and sku.last_unit_price is not None else 0.0
+    cost_known = bool(sku is not None and raw_price > 0 and not warning)
+    if sku is None:
+        cost_source = "sku_missing"
+    elif raw_price <= 0:
+        cost_source = "unpurchased_zero_price"
+    elif warning:
+        cost_source = "conversion_warning"
+    else:
+        cost_source = "last_unit_price"
     return {
         "id": getattr(row, "id", None),
         "component_type": "sku",
@@ -76,6 +94,8 @@ def _sku_component_entry(session, row) -> Dict:
         "loss_rate": round(1.0 - yr, 4),
         "notes": getattr(row, "notes", "") or "",
         "ingredient_cost": cost,
+        "cost_known": cost_known,
+        "cost_source": cost_source,
         "warning": warning,
         "expanded": [],
     }
@@ -130,6 +150,19 @@ def _dish_component_entry(session, row, tenant_id=None) -> Dict:
         "loss_rate": round(1.0 - yr, 4),
         "notes": getattr(row, "notes", "") or "",
         "ingredient_cost": round(cost, 2),
+        # UAT018: sub-recipe known only when every expanded leaf has a purchase price.
+        "cost_known": bool(expanded) and all(
+            float(x.get("unit_price") or 0) > 0 and not x.get("warning")
+            for x in expanded
+        ) and not warning,
+        "cost_source": (
+            "sub_recipe_complete" if (
+                bool(expanded) and all(
+                    float(x.get("unit_price") or 0) > 0 and not x.get("warning")
+                    for x in expanded
+                ) and not warning
+            ) else ("sub_recipe_unpurchased" if expanded else "sub_recipe_empty")
+        ),
         "warning": warning,
         "expanded": expanded,
     }

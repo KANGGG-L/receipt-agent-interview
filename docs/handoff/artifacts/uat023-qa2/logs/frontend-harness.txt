@@ -1,0 +1,26 @@
+PASS business name preserved (Hans)
+PASS header converted via OpenCC
+PASS UI chrome converted
+PASS status cell converted (not skipped)
+PASS html escaped in names
+PASS supplier header converted
+PASS export_center defines isExportBusinessIdentityHeader
+PASS export_center emits data-i18n-skip attr
+PASS identity header 归属部门
+PASS identity header 部门名称
+PASS identity header 部门 exact
+PASS identity header 销售对象
+PASS non-identity 分类
+PASS non-identity 单据状态
+PASS build marks only 归属部门 cell with data-i18n-skip
+PASS build HTML contains Hans dept name
+PASS build HTML does not pre-convert dept to Hant
+PASS Hant: 归属部门 cell == CSV Hans
+PASS Hant: 归属部门 header still converts
+PASS Hant: converted header differs from Hans label
+PASS Hant without skip: dept name converts (control)
+PASS Hant without skip: matches OpenCC of dept
+{
+  "ok": true,
+  "passed": 22
+}

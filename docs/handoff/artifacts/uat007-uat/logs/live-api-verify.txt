@@ -1,0 +1,21 @@
+SKU_GET status=200 STOCK_AFTER_SEED=10.0
+CONSUME_STATUS=200 STOCK=9.0
+CONSUME_ROW id=3 qty=1.0 qty_signed=-1.0 kind=consume
+ID_ALIGN db_id=3 api_id=3 db_qty=1.0 kind=consume PASS
+STOCK_AFTER_IN1=10.0
+IN1_ROW id=4 qty=1.0 qty_signed=1.0
+REVERSAL id=5 qty=-1.0 qty_signed=-1.0
+ADJUST id=6 qty=1.0 qty_signed=1.0
+SECOND_CONSUME_STATUS=200 STOCK=9.0
+CONSUME_COUNT=2
+  consume id=7 qty=1.0 signed=-1.0
+  consume id=3 qty=1.0 signed=-1.0
+CROSS_TENANT_CONSUME_STATUS=404
+CROSS_TENANT_B_STOCK_UNCHANGED=7.0
+CROSS_TENANT_LOGS_NO_A=true count_b=1
+API_LOGS_WRITTEN=/workspace/receipt-agent-interview/docs/handoff/artifacts/uat007-uat/logs/api-logs-default.json count=6
+UI_USES_QTY_SIGNED=True
+OLD_PATTERN_ABSENT=True
+USES_HELPER_CALL=True
+PASS_FLAGS=consume_stock,consume_signed,id_align,inbound_signed,reversal_adjust,no_double_deduct,cross_tenant,ui_source
+LIVE_VERIFY_PASS=true

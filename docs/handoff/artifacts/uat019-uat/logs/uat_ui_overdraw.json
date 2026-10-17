@@ -1,0 +1,113 @@
+{
+  "passed": 10,
+  "total": 10,
+  "failed": [],
+  "checks": [
+    {
+      "name": "ui_seed",
+      "pass": true,
+      "detail": {
+        "skuId": 8,
+        "dishId": 7,
+        "stock": 1,
+        "stocktake": 200,
+        "dishStatus": 200
+      }
+    },
+    {
+      "name": "ui_js_contract",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "hasAsk": true,
+        "hasForce": true,
+        "has409": true
+      }
+    },
+    {
+      "name": "ui_fill_huge_qty",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "id": "dishConsumeQty_7",
+        "value": "999999999999"
+      }
+    },
+    {
+      "name": "ui_prompt_on_409",
+      "pass": true,
+      "detail": {
+        "visible": true,
+        "title": "库存不够扣",
+        "msg": "「UAT019UI料」库存只有 1 kg，不够扣 499999999999.5 kg。请先核对数量；如果确实要扣，请确认后写明原因。",
+        "hasCancel": true,
+        "hasConfirm": true
+      }
+    },
+    {
+      "name": "ui_first_batch_409",
+      "pass": true,
+      "detail": {
+        "n": 1,
+        "statuses": [
+          {
+            "status": 409,
+            "code": "INSUFFICIENT_STOCK"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui_cancel_no_write",
+      "pass": true,
+      "detail": {
+        "stock": 1
+      }
+    },
+    {
+      "name": "ui_force_path_409_then_200",
+      "pass": true,
+      "detail": {
+        "statuses": [
+          {
+            "status": 409,
+            "code": "INSUFFICIENT_STOCK",
+            "statusField": "error"
+          },
+          {
+            "status": 200,
+            "statusField": "success"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui_force_negative_stock",
+      "pass": true,
+      "detail": {
+        "stock": -1
+      }
+    },
+    {
+      "name": "ui_stock_reset",
+      "pass": true,
+      "detail": {
+        "stock": 1,
+        "resetStatus": 200
+      }
+    },
+    {
+      "name": "ui_normal_one_portion",
+      "pass": true,
+      "detail": {
+        "stock": 0.5,
+        "statuses": [
+          {
+            "status": 200,
+            "msg": "成功记录 1 项餐品消耗"
+          }
+        ]
+      }
+    }
+  ]
+}

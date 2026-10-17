@@ -1,0 +1,18 @@
+{
+  "verdict": "BLOCKED",
+  "attempts_count": 9,
+  "attempts_achieving_hidden": 0,
+  "ports": {
+    "15010": "FREE_RESERVED",
+    "15431": "FREE"
+  },
+  "generated_at": "2026-10-17 10:34:41 CST",
+  "ports_during_probe": {
+    "15010": "FREE",
+    "15431": "IN_USE"
+  },
+  "ports_after_cleanup": {
+    "15010": "FREE_RESERVED",
+    "15431": "FREE"
+  }
+}

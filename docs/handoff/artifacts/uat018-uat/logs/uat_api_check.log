@@ -1,0 +1,17 @@
+PASS tenant_b_before {"status": 200, "n": 0, "tenant": "uat018uatb"}
+PASS create_unpurchased_sku {"status": 200, "id": 1}
+PASS create_purchased_sku {"status": 200, "id": 2}
+PASS seed_purchased_price {"last_unit_price": 25.0, "current_stock": 10.0, "via": "sqlite_update"}
+PASS ac1_extreme_unpurchased_persist_estimate {"status": 200, "theory_cost_status": "estimated", "theory_cost_source": "unpurchased_zero_price", "margin": null, "cost": null, "profit": null, "prov_margin": 100.0, "prov_cost": 0.0, "qty": 999999999999.0, "cost_known": false, "cost_sourc
+PASS ac1_list_persist_no_clamp {"found": true, "qty": 999999999999.0, "status": "estimated", "margin": null, "cost": null}
+PASS tenant_b_after_seed {"status": 200, "n": 0}
+PASS ac2_reject_neg {"status": 400, "code": "INVALID_CONSUMPTION_QTY", "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"}
+PASS ac2_reject_zero {"status": 400, "code": "INVALID_CONSUMPTION_QTY", "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"}
+PASS ac2_reject_nan {"status": 400, "code": "INVALID_CONSUMPTION_QTY", "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）", "rejected": "nan"}
+PASS ac2_reject_inf {"status": 400, "code": "INVALID_CONSUMPTION_QTY", "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）", "rejected": "inf"}
+PASS ac2_reject_ninf {"status": 400, "code": "INVALID_CONSUMPTION_QTY", "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）", "rejected": "ninf"}
+PASS ac4_purchased_normal_cost {"status": 200, "theory_cost_status": "complete", "cost": 10.0, "margin": 90.0, "source": "last_unit_price"}
+PASS open_risk_not_b26 {"BOM_QTY_UPPER_LIMIT_STATUS": "open_risk_not_adjudicated", "BOM_QTY_UPPER_LIMIT_SOURCE": null, "BOM_QTY_UPPER_LIMIT_NOTE": "Finite extreme BOM qty (e.g. 999999999999) may still persist until an upper limit is adjudicated; rejects apply onl
+PASS tenant_b_final {"status": 200, "n": 0}
+PASS ui_source_markers {"bom_unknown": true, "cons_finite": true}
+SUMMARY {"total": 16, "failed": 0, "pass": true, "dish_extreme_id": 1, "dish_purch_id": 2, "sku_un": 1, "sku_purch": 2, "base": "http://127.0.0.1:15235", "tenant": "uat018uat", "tenant_b": "uat018uatb"}

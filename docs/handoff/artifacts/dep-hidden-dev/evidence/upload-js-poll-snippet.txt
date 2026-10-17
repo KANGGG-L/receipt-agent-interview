@@ -1,0 +1,99 @@
+488|const JOB_POLL_INTERVAL_MS = 800;
+489|const JOB_POLL_TIMEOUT_MS = 5 * 60 * 1000;   // 5 分钟总超时
+490|
+491|// 纯函数：本轮轮询判定——cancelled（令牌作废）/ timeout（超总时长）/ poll（继续）
+492|function jobPollVerdict(token, startTs, nowMs, timeoutMs) {
+493|    if (token && token.cancelled) return 'cancelled';
+494|    if (timeoutMs > 0 && (nowMs - startTs) >= timeoutMs) return 'timeout';
+495|    return 'poll';
+496|}
+497|
+498|// opts（可选）：{ token, timeoutMs, intervalMs }
+499|//   token = {cancelled:false} 取消令牌（照片移除/被新上传替换时置 cancelled）
+500|function pollReceiptJob(jobId, onSettled, opts) {
+501|    const token = opts && opts.token;
+502|    const timeoutMs = (opts && opts.timeoutMs != null) ? opts.timeoutMs : JOB_POLL_TIMEOUT_MS;
+503|    const intervalMs = (opts && opts.intervalMs != null) ? opts.intervalMs : JOB_POLL_INTERVAL_MS;
+504|    const startTs = Date.now();
+505|    let netFails = 0;
+506|    const fetchJob = () => {
+507|        const fn = (typeof window !== 'undefined' && typeof window.apiFetch === 'function')
+508|            ? window.apiFetch : apiFetch;
+509|        return fn(`/api/job/${jobId}`);
+510|    };
+511|    const pauseWhileHidden = () => {
+512|        const resume = () => {
+513|            if (typeof document !== 'undefined' && document.hidden) return;
+514|            document.removeEventListener('visibilitychange', resume);
+515|            setTimeout(tick, intervalMs);
+516|        };
+517|        document.addEventListener('visibilitychange', resume);
+518|    };
+519|
+520|    function tick() {
+521|        const verdict = jobPollVerdict(token, startTs, Date.now(), timeoutMs);
+522|        if (verdict === 'cancelled') {
+523|            onSettled({ status: 'cancelled', msg: '轮询已取消' });
+524|            return;
+525|        }
+526|        if (verdict === 'timeout') {
+527|            onSettled({ status: 'error',
+528|                msg: '等了太久还没读完，已经停止等待。请点「转手工录入」自己填，原图会保留。', code: 'ENGINE_TIMEOUT' });
+529|            return;
+530|        }
+531|        if (typeof document !== 'undefined' && document.hidden) {
+532|            pauseWhileHidden();
+533|            return;
+534|        }
+535|        fetchJob()
+536|            .then(res => res.json())
+537|            .then(job => {
+538|                netFails = 0;
+539|                if (job && job.job_status === 'done') {
+540|                    updateLoadingStage(null, '读完了，正在打开核对表单...');
+541|                    // done → result 与同步 upload 成功响应同构
+542|                    const result = job.result || { status: 'error', msg: '识别结果为空' };
+543|                    // 顶层 image_url 兜底（部分路径 result 可能缺字段）
+544|                    if (!result.image_url && job.image_url) result.image_url = job.image_url;
+545|                    onSettled(result);
+546|                } else if (job && job.job_status === 'error') {
+547|                    onSettled({
+548|                        status: 'error',
+549|                        msg: job.error_msg || '识别失败',
+550|                        receipt_id: job.receipt_id,
+551|                        image_url: job.image_url || null,
+552|                        error_code: job.error_code,
+553|                        experiment_override: job.experiment_override,
+554|                    });
+555|                } else if (job && job.status === 'error') {
+556|                    // HTTP 级错误（如 404 任务不存在）
+557|                    onSettled({ status: 'error', msg: job.msg || '查询识别任务失败' });
+558|                } else {
+559|                    if (job && job.job_status) {
+560|                        const stText = job.job_status === 'queued' ? '正在排队，马上开始...' : '正在认字、对数、配食材...';
+561|                        const stageNameEl = document.getElementById('loadingStageName');
+562|                        if (stageNameEl) stageNameEl.textContent = stText;
+563|                    }
+564|                    // 若已有转码后的 image_url，提前通知（HEIC 预览）
+565|                    if (job && job.image_url && typeof opts?.onProgress === 'function') {
+566|                        opts.onProgress(job);
+567|                    }
+568|                    setTimeout(tick, intervalMs);
+569|                }
+570|            })
+571|            .catch(err => {
+572|                if (typeof document !== 'undefined' && document.hidden) {
+573|                    pauseWhileHidden();
+574|                    return;
+575|                }
+576|                netFails += 1;
+577|                if (netFails < 3) {
+578|                    setTimeout(tick, intervalMs);
+579|                    return;
+580|                }
+581|                console.error('轮询任务状态异常', err);
+582|                onSettled({ status: 'error', msg: '查询识别进度失败，请稍后重试' });
+583|            });
+584|    }
+585|    tick();
+586|}

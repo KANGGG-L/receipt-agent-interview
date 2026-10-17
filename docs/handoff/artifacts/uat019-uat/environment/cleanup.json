@@ -1,0 +1,6 @@
+{
+  "pid_stopped": 106002,
+  "port_15265_freed": true,
+  "port_15010_remained_free": true,
+  "note": "uvicorn stopped after UAT019 independent UAT"
+}

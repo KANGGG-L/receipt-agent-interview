@@ -1,0 +1,13 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat003-qa/environment/venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1
+collecting ... collected 4 items
+
+demo/tests/test_uat_017_recon_create_dialog.py::test_recon_create_modal_has_dialog_semantics_in_html PASSED [ 25%]
+demo/tests/test_uat_017_recon_create_dialog.py::test_open_recon_modal_uses_accessible_modal_path PASSED [ 50%]
+demo/tests/test_uat_017_recon_create_dialog.py::test_accessible_modal_helpers_still_present PASSED [ 75%]
+demo/tests/test_uat_017_recon_create_dialog.py::test_uat017_scope_does_not_rewrite_unrelated_modals PASSED [100%]
+
+============================== 4 passed in 0.35s ===============================

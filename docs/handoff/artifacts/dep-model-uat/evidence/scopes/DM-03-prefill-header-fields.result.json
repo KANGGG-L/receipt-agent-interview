@@ -1,0 +1,87 @@
+{
+  "scope_id": "DM-03-prefill-header-fields",
+  "source": "ENG-02 AC2 prefill header",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "supplier_name": true,
+    "date": true,
+    "total_amount": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-03-prefill-header-fields.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 3,
+    "job_id": "84ac5b8aac1e4fb0870ef1aec3c5a052",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "84ac5b8aac1e4fb0870ef1aec3c5a052",
+          "receipt_id": 3,
+          "image_url": "/api/receipt/3/image?v=71339ee3&sig=81a851688cdad2e42d624fb33d9c97403364ba01691400308c03d0d1f6548e03"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 10.06
+      }
+    ]
+  }
+}

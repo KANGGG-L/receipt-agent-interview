@@ -2817,6 +2817,12 @@ def vendor_price_hint(request: Request, sku_id: int, vendor: str = "",
 # -------------------------------------------------------------
 @router.get("/api/ai-insights")
 def ai_insights(request: Request, lang: str = ""):
+    """极简 AI 发现。UAT-025：客户端须传 ``lang``（如 zh-Hant-HK / zh-Hans 或 API 已接受等价）。
+
+    本接口不调用复盘模型；仅把 ``normalize_locale(lang)`` 写入 ``data.review_locale``，
+    供前端实读，并与 ``build_review_prompt(..., locale=)`` 使用同一归一结果。
+    缺省或无法识别时 ``review_locale`` 为空字符串，不得用 UI 繁转冒充模型语言。
+    """
     require_role("owner")(request)
     from app.i18n_text import normalize_locale
     from app.services.inventory import cost_summary as get_cost

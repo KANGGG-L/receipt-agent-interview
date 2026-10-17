@@ -1,0 +1,20 @@
+{
+  "stage": "uat003-qa",
+  "port": 15170,
+  "pid": 111488,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat003-qa/environment/qa_isolated_smoke.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "stop_exit_code": 0,
+  "port_free": true,
+  "port_released": "port_15170_released",
+  "pid_alive_after_stop": false,
+  "browser_tab_closed": true,
+  "browser_tabs_opened": 0,
+  "host_15010_status": "not_present_ok",
+  "host_15010_untouched": true,
+  "orphan_listen_151xx": null,
+  "ss_listen_empty": true,
+  "reuseaddr_bind_ok": true,
+  "timestamp_local": "2026-10-17 04:03:13 CST",
+  "notes": "Fresh port 15170 (not 15150/15160). Pytest 7/7 PASS. Live API + Node name-cell harness PASS. No browser tab. No git push."
+}

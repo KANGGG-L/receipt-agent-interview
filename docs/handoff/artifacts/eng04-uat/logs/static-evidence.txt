@@ -1,0 +1,48 @@
+=== index.html nav.analytics ===
+90:                <button class="sidebar-btn admin-only" id="analyticsBoardBtn" data-target="tab-analytics" data-title="观测中心" data-i18n-attr="data-title:nav.analytics">
+92:                    <span data-i18n="nav.analytics">观测中心</span>
+2873:                        <div class="analytics-segmented-bar analytics-segmented-nav" role="tablist" aria-label="观测中心功能区">
+
+=== e2e asserts (title + 加载中) ===
+3:管理端导航与 AI 效果观测与评测中心单页大盘端到端 (E2E) 测试套件
+11:    - 观测中心入口 #analyticsBoardBtn 可见且包含 "观测中心"（现行 data-i18n=nav.analytics；旧称「AI 效果观测与评测中心」已废弃）
+18:Phase 2: AI 效果观测与评测中心四大独立功能区 (Segmented Control) 统一渲染
+23:    1. 全量埋点事件分布 (#analyticsEventDistBody) 与 挽回/点踩指标 (#analyticsRecoveryBody)
+198:            # 验证 #analyticsBoardBtn 可见且包含现行标题「观测中心」（ENG-04：旧标题「AI 效果观测与评测中心」已废弃）
+202:            assert "观测中心" in analytics_btn_text, (
+203:                f"Expected '观测中心' in #analyticsBoardBtn, got '{analytics_btn_text}'"
+205:            assert "AI 效果观测与评测中心" not in analytics_btn_text, (
+206:                f"Stale title 'AI 效果观测与评测中心' must not appear in #analyticsBoardBtn, got '{analytics_btn_text}'"
+270:            # Phase 2: AI 效果观测与评测中心四大独立功能区 (Segmented Subviews)
+272:            print("\n[Phase 2] 校验 AI 效果观测与评测中心四大独立功能区 (Segmented Control)...")
+275:            # 点击观测中心入口，随后业务观测链路必须真实执行（等待埋点 DOM 非「加载中」）
+294:                    const dist = document.getElementById('analyticsEventDistBody');
+295:                    const rec = document.getElementById('analyticsRecoveryBody');
+297:                    return !dist.innerText.includes('加载中') &&
+298:                           !rec.innerText.includes('加载中');
+304:            dist_text = page.locator("#analyticsEventDistBody").inner_text()
+305:            rec_text = page.locator("#analyticsRecoveryBody").inner_text()
+306:            assert "加载中" not in dist_text, "telemetry event dist still loading after analytics nav"
+307:            assert "加载中" not in rec_text, "telemetry recovery still loading after analytics nav"
+328:            event_dist = page.locator("#analyticsEventDistBody")
+329:            assert event_dist.is_visible(), "#analyticsEventDistBody must be visible in view 1"
+330:            recovery = page.locator("#analyticsRecoveryBody")
+331:            assert recovery.is_visible(), "#analyticsRecoveryBody must be visible in view 1"
+346:                    return grey && !grey.innerText.includes('加载中');
+378:                    return !ab.innerText.includes('加载中') && pval.children.length > 0;
+408:                    return !golden.innerText.includes('加载中') && !gt.innerText.includes('加载中');
+
+=== synthetic experiment helpers ===
+7:3. GET /api/admin/experiments/{exp_id} 返回结构包含 guardrail_events 与 snapshots
+41:_SYNTHETIC_EXP_NAME = "ENG04_Synthetic_Experiment"
+44:def _ensure_synthetic_experiment():
+51:        if exp.get("name") == _SYNTHETIC_EXP_NAME:
+54:        name=_SYNTHETIC_EXP_NAME,
+115:    target_exp_id = _ensure_synthetic_experiment()
+140:def test_experiment_admin_detail_structure():
+145:    target_id = _ensure_synthetic_experiment()
+153:    assert "guardrail_events" in data
+154:    assert "snapshots" in data
+159:    assert exp.get("name") == _SYNTHETIC_EXP_NAME
+165:    assert isinstance(data["guardrail_events"], list)
+166:    assert isinstance(data["snapshots"], list)

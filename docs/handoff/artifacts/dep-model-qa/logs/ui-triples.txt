@@ -1,0 +1,9 @@
+=== ui triples begin 2026-10-17 10:11:35 CST ===
+=== UI desk-staff ===
+  -> FAIL supplier=None ai_badge=None
+=== UI mob-staff ===
+  -> PASS supplier=7-ELEVEN ai_badge=True
+=== UI desk-owner ===
+  -> PASS supplier=7-ELEVEN ai_badge=False
+UI SUMMARY {'desk-staff': 'FAIL', 'mob-staff': 'PASS', 'desk-owner': 'PASS'}
+exit=1

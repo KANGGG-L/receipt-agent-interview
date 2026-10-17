@@ -220,8 +220,8 @@ def test_golden_samples_gt_linkage_and_scopes(client, isolated_env):
 
 
 def test_confirm_sample_promotes_source_receipt_to_golden(client, isolated_env):
-    """Test confirming a sample in evalset automatically sets is_golden_sample = 1
-    for the source receipt.
+    """Confirm keeps source_receipt_id linkage for gt_confirmed scope; does NOT auto-set
+    is_golden_sample (api_evalset.confirm_sample: 不晋升黄金样本).
     """
     evalset_dir = isolated_env["evalset_dir"]
 
@@ -249,17 +249,18 @@ def test_confirm_sample_promotes_source_receipt_to_golden(client, isolated_env):
     assert body["status"] == "success"
     assert body["data"]["gt_status"] == "confirmed"
 
-    # Verify that the source receipt is now promoted to golden set!
+    # Confirm must NOT auto-promote to curated golden set
     updated_receipt = db.get_receipt_row(rid)
-    assert getattr(updated_receipt, "is_golden_sample", 0) == 1
+    assert (getattr(updated_receipt, "is_golden_sample", 0) or 0) == 0
 
-    # Verify golden board reflects this under scope=golden and scope=gt_confirmed
-    resp_board = client.get("/api/admin/golden-samples?scope=golden", headers=_admin_headers())
-    assert resp_board.status_code == 200
-    items = resp_board.json()["items"]
+    # Preserved source_receipt_id still drives gt_confirmed board linkage
+    # fall through via board API
+    resp_conf = client.get("/api/admin/golden-samples?scope=gt_confirmed", headers=_admin_headers())
+    assert resp_conf.status_code == 200
+    items = resp_conf.json()["items"]
     matching = [it for it in items if it["id"] == rid]
     assert len(matching) == 1
-    assert matching[0]["is_golden_sample"] is True
+    assert matching[0]["is_golden_sample"] is False
     assert matching[0]["gt_status"] == "confirmed"
     assert matching[0]["gt_label"] == "已确权"
     assert matching[0]["sample_id"] == sample_id

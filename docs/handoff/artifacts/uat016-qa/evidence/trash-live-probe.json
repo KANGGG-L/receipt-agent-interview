@@ -1,0 +1,90 @@
+{
+  "base": "http://127.0.0.1:15489",
+  "steps": [
+    {
+      "mk_drafts": {
+        "mine": 1,
+        "theirs": 2
+      }
+    },
+    {
+      "discard_mine_staff": {
+        "status": 200,
+        "msg": "已放弃这张单，它放进了「回收站」，老板可以在那里恢复。"
+      }
+    },
+    {
+      "discard_theirs_staff": {
+        "status": 200
+      }
+    },
+    {
+      "staff_list_trash": {
+        "status": 403,
+        "expect": 403
+      }
+    },
+    {
+      "owner_list_trash": {
+        "status": 200,
+        "ids": [
+          1
+        ],
+        "deleted_by": "staff@demo.hk",
+        "tenant_scoped": true
+      }
+    },
+    {
+      "cross_tenant_restore_purge": {
+        "restore": 404,
+        "purge": 404,
+        "expect": 404
+      }
+    },
+    {
+      "owner_restore": {
+        "status": 200,
+        "msg": "单据 #1 已从回收站恢复。"
+      }
+    },
+    {
+      "trash_after_restore": {
+        "ids": [],
+        "mine_gone": true
+      }
+    },
+    {
+      "owner_purge": {
+        "status": 200,
+        "msg": "单据 #1 已彻底删除。"
+      }
+    },
+    {
+      "trash_after_purge": {
+        "ids": []
+      }
+    },
+    {
+      "tenant_b_unchanged": {
+        "ids": [
+          2
+        ],
+        "theirs_still_trashed": true
+      }
+    },
+    {
+      "old_admin_trash_gone": {
+        "status": 404,
+        "expect": 404
+      }
+    },
+    {
+      "discard_approved_blocked": {
+        "status": 409,
+        "code": "CANNOT_DISCARD_APPROVED"
+      },
+      "note": "hard-delete boundary: approved cannot discard; purge-approved 409 covered in pytest"
+    }
+  ],
+  "verdict": "PASS"
+}

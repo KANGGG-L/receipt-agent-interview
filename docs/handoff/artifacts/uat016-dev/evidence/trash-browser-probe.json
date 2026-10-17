@@ -1,0 +1,31 @@
+{
+  "verdict": "PASS",
+  "shots": [
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-dev/ui/01-trash-list.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-dev/ui/02-after-restore.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-dev/ui/03-after-purge.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-dev/ui/04-staff-no-trash.png"
+  ],
+  "steps": [
+    {
+      "seeded_default_tenant": [
+        1,
+        2
+      ]
+    },
+    {
+      "list_visible": true
+    },
+    {
+      "restore_ui": true,
+      "rid": 1
+    },
+    {
+      "purge_ui": true,
+      "rid": 2
+    },
+    {
+      "staff_trash_hidden": true
+    }
+  ]
+}

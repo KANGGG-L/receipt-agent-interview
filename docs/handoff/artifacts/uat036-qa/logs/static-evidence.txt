@@ -1,0 +1,37 @@
+=== inventory markers ===
+302:let inventoryLoadSeq = 0;
+311:function markInventoryMetricsFailed() {
+326:            + ' data-uat036="inventory-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+341:function clearInventoryMetricsFailed() {
+378:    const mySeq = ++inventoryLoadSeq;
+381:        if (mySeq !== inventoryLoadSeq) return null;
+389:        if (ret == null || mySeq !== inventoryLoadSeq) return;
+407:        clearInventoryMetricsFailed();
+578:        if (mySeq !== inventoryLoadSeq) return;
+590:    markInventoryMetricsFailed();
+=== dish markers ===
+demo/static/js/dish_consumption.js:604:function markDishKpiFailed() {
+demo/static/js/dish_consumption.js:672:            markDishKpiFailed();
+demo/static/js/dish_consumption.js:684:        markDishKpiFailed();
+demo/static/js/dish_bom.js:151:let dishesLoadSeq = 0;
+demo/static/js/dish_bom.js:153:function markDishesLoadFailed() {
+demo/static/js/dish_bom.js:160:        + '<button type="button" class="btn btn-secondary" data-uat036="dish-retry"'
+demo/static/js/dish_bom.js:177:    const mySeq = ++dishesLoadSeq;
+demo/static/js/dish_bom.js:180:            if (mySeq !== dishesLoadSeq) return null;
+demo/static/js/dish_bom.js:185:            if (ret == null || mySeq !== dishesLoadSeq) return;
+demo/static/js/dish_bom.js:187:                markDishesLoadFailed();
+demo/static/js/dish_bom.js:197:            if (mySeq !== dishesLoadSeq) return;
+demo/static/js/dish_bom.js:199:            markDishesLoadFailed();
+=== workbench markers ===
+43:let workbenchQueueLoadSeq = 0;
+46:function markWorkbenchQueueMetricsFailed() {
+63:        retry.setAttribute('data-uat036', 'workbench-retry');
+89:    const mySeq = ++workbenchQueueLoadSeq;
+92:            if (mySeq !== workbenchQueueLoadSeq) return;
+99:            if (mySeq !== workbenchQueueLoadSeq) return;
+101:            markWorkbenchQueueMetricsFailed();
+=== supplier archive guard ===
+310:    const retry = document.getElementById('archiveKpiRetry');
+311:    const pendingProbe = document.getElementById('todoPendingNum');
+324:    setText('todoPendingNum', pending);
+330:    const pendingEl = document.getElementById('todoPendingNum');

@@ -1,0 +1,712 @@
+{
+  "checks": [
+    {
+      "name": "1440_container_left_align",
+      "ok": true,
+      "detail": [
+        {
+          "k": "1440-today",
+          "cardLeft": 264,
+          "tabLeft": 264,
+          "note": "visible cards only"
+        },
+        {
+          "k": "1440-inventory",
+          "cardLeft": 264,
+          "tabLeft": 264,
+          "note": "visible cards only"
+        },
+        {
+          "k": "1440-archive",
+          "cardLeft": 264,
+          "tabLeft": 264,
+          "note": "visible cards only"
+        },
+        {
+          "k": "1440-settings",
+          "cardLeft": 264,
+          "tabLeft": 264,
+          "note": "visible cards only"
+        }
+      ],
+      "method": "first visible card left edge; hidden arc panes excluded"
+    },
+    {
+      "name": "1440_report_date_labels_nowrap",
+      "ok": true,
+      "detail": [
+        {
+          "text": "月份：",
+          "h": 20,
+          "whiteSpace": "nowrap",
+          "stacked": false
+        },
+        {
+          "text": "起止日期：",
+          "h": 20,
+          "whiteSpace": "nowrap",
+          "stacked": false
+        }
+      ]
+    },
+    {
+      "name": "390_no_doc_overflow",
+      "ok": true,
+      "detail": {
+        "today": false,
+        "inventory": false,
+        "settings": false
+      }
+    },
+    {
+      "name": "layout_tokens_present",
+      "ok": true,
+      "detail": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      }
+    },
+    {
+      "name": "1440_report_toolbar_no_overlap",
+      "ok": true,
+      "detail": {
+        "filters": {
+          "left": 289,
+          "right": 1046,
+          "top": 286,
+          "bottom": 334,
+          "w": 757
+        },
+        "actions": {
+          "left": 1058,
+          "right": 1387,
+          "top": 287,
+          "bottom": 332,
+          "w": 329
+        }
+      }
+    }
+  ],
+  "shots": [
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/1440-today.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/1440-inventory.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/1440-archive.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/1440-settings.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/1440-report-date-labels.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/390-today.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/390-inventory.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-dev/ui/390-settings.png"
+  ],
+  "metrics": {
+    "1440-today": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "main": {
+        "left": 240,
+        "width": 1200,
+        "padL": "24px",
+        "maxW": "1200px"
+      },
+      "tab": {
+        "left": 264,
+        "width": 1148
+      },
+      "stWrap": {
+        "left": 264,
+        "width": 1148,
+        "maxW": "100%"
+      },
+      "cards": [
+        {
+          "left": 264,
+          "width": 372,
+          "top": 187
+        },
+        {
+          "left": 652,
+          "width": 372,
+          "top": 187
+        },
+        {
+          "left": 1040,
+          "width": 372,
+          "top": 187
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "1440-inventory": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "main": {
+        "left": 240,
+        "width": 1200,
+        "padL": "24px",
+        "maxW": "1200px"
+      },
+      "tab": {
+        "left": 264,
+        "width": 1148
+      },
+      "stWrap": null,
+      "cards": [
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 255
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 772
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "1440-archive": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "main": {
+        "left": 240,
+        "width": 1200,
+        "padL": "24px",
+        "maxW": "1200px"
+      },
+      "tab": {
+        "left": 264,
+        "width": 1148
+      },
+      "stWrap": null,
+      "cards": [
+        {
+          "left": 0,
+          "width": 0,
+          "top": 0
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 313
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 578
+        },
+        {
+          "left": 0,
+          "width": 0,
+          "top": 0
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 1218
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "1440-settings": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "main": {
+        "left": 240,
+        "width": 1200,
+        "padL": "24px",
+        "maxW": "1200px"
+      },
+      "tab": {
+        "left": 264,
+        "width": 1148
+      },
+      "stWrap": {
+        "left": 264,
+        "width": 1148,
+        "maxW": "100%"
+      },
+      "cards": [
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 187
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 1777
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 2870
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "1440-report": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "main": {
+        "left": 240,
+        "width": 1200,
+        "padL": "24px",
+        "maxW": "1200px"
+      },
+      "tab": {
+        "left": 264,
+        "width": 1148
+      },
+      "stWrap": null,
+      "cards": [
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 112
+        },
+        {
+          "left": 264,
+          "width": 1148,
+          "top": 223
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 39,
+          "h": 20,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 66,
+          "h": 20,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "390-today": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "main": {
+        "left": 0,
+        "width": 390,
+        "padL": "12px",
+        "maxW": "390px"
+      },
+      "tab": {
+        "left": 12,
+        "width": 366
+      },
+      "stWrap": {
+        "left": 12,
+        "width": 366,
+        "maxW": "100%"
+      },
+      "cards": [
+        {
+          "left": 12,
+          "width": 366,
+          "top": 230
+        },
+        {
+          "left": 12,
+          "width": 366,
+          "top": 464
+        },
+        {
+          "left": 12,
+          "width": 366,
+          "top": 699
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "390-inventory": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "main": {
+        "left": 0,
+        "width": 390,
+        "padL": "12px",
+        "maxW": "390px"
+      },
+      "tab": {
+        "left": 12,
+        "width": 366
+      },
+      "stWrap": null,
+      "cards": [
+        {
+          "left": 12,
+          "width": 366,
+          "top": 555
+        },
+        {
+          "left": 12,
+          "width": 366,
+          "top": 1222
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    },
+    "390-settings": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "main": {
+        "left": 0,
+        "width": 390,
+        "padL": "12px",
+        "maxW": "390px"
+      },
+      "tab": {
+        "left": 12,
+        "width": 366
+      },
+      "stWrap": {
+        "left": 12,
+        "width": 366,
+        "maxW": "100%"
+      },
+      "cards": [
+        {
+          "left": 12,
+          "width": 366,
+          "top": 230
+        },
+        {
+          "left": 12,
+          "width": 366,
+          "top": 1918
+        },
+        {
+          "left": 12,
+          "width": 366,
+          "top": 3783
+        }
+      ],
+      "labels": [
+        {
+          "text": "月份：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        },
+        {
+          "text": "起止日期：",
+          "w": 0,
+          "h": 0,
+          "whiteSpace": "nowrap",
+          "writingMode": "horizontal-tb",
+          "wordBreak": "keep-all",
+          "lineHeight": "19.68px",
+          "fontSize": "13.12px",
+          "letterStackedSuspect": false
+        }
+      ],
+      "tokens": {
+        "pageMaxWidth": "1440px",
+        "pageInlinePad": "24px",
+        "pageBlockGap": "16px",
+        "pageCardPad": "24px",
+        "toolbarGap": "12px",
+        "toolbarClusterGap": "8px",
+        "toolbarDivider": "rgba(30, 34, 35, 0.08)",
+        "bgMain": "#f3f2f1",
+        "borderColor": "rgba(30, 34, 35, 0.08)"
+      },
+      "docOverflowX": false
+    }
+  },
+  "report_toolbar_remeasure": {
+    "labels": [
+      {
+        "text": "月份：",
+        "h": 20,
+        "whiteSpace": "nowrap",
+        "stacked": false
+      },
+      {
+        "text": "起止日期：",
+        "h": 20,
+        "whiteSpace": "nowrap",
+        "stacked": false
+      }
+    ],
+    "filters": {
+      "left": 289,
+      "right": 1046,
+      "top": 286,
+      "bottom": 334,
+      "w": 757
+    },
+    "actions": {
+      "left": 1058,
+      "right": 1387,
+      "top": 287,
+      "bottom": 332,
+      "w": 329
+    },
+    "overlap": false,
+    "titleH": 99
+  }
+}

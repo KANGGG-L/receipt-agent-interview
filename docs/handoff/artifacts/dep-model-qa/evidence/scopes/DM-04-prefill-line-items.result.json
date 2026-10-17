@@ -1,0 +1,85 @@
+{
+  "scope_id": "DM-04-prefill-line-items",
+  "source": "ENG-02 AC2 line items",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "items": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-04-prefill-line-items.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 4,
+    "job_id": "e16bf3c20a034b20805d69b235d81bfe",
+    "result_summary": {
+      "supplier_name": "7-Eleven",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "e16bf3c20a034b20805d69b235d81bfe",
+          "receipt_id": 4,
+          "image_url": "/api/receipt/4/image?v=47e7d348&sig=348b37eba94304e939bc8b971ea16a84b9453021ab30303aae03fcd72be81b01"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 10.07
+      }
+    ]
+  }
+}

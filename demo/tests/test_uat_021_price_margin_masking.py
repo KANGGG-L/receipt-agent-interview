@@ -248,3 +248,55 @@ def test_tenant_isolation_and_b_baseline_unpolluted(client):
     # 租户 A 的 staff 跨租户查详情返回 404
     assert client.get(f"/api/dishes/{dish_b}", headers=hdr(tn_a, "staff")).status_code == 404
     assert client.get(f"/api/inventory/skus/{sku_b}", headers=hdr(tn_a, "staff")).status_code == 404
+
+def test_staff_dish_version_snapshot_price_masked(client):
+    """UAT-021 同义路径：staff GET /api/dishes/{id}/versions/{v} 不得泄露 snapshot.dish.price。"""
+    tn = new_tenant()
+    _, dish_id = _setup_inventory_and_dish(client, tn, unit_price=10.0, stock=50.0, dish_price=42.5)
+
+    # 创建时会 snapshot v1；staff 读版本快照
+    res = client.get(f"/api/dishes/{dish_id}/versions/1", headers=hdr(tn, "staff"))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["status"] == "success"
+    data = body["data"]
+    snap = data.get("snapshot") or {}
+    dish = snap.get("dish") or {}
+    assert dish.get("price") is None, f"staff version snapshot must not leak price, got {dish.get('price')}"
+    for key in ("theoretical_cost", "gross_profit", "gross_margin_rate", "last_unit_price"):
+        assert dish.get(key) in (None,) or key not in dish
+    # 非敏感：品名 / 配方用量仍可读
+    assert dish.get("name") == "招牌菜"
+    ings = snap.get("ingredients") or []
+    assert len(ings) >= 1
+    assert ings[0].get("consumption_qty") == 0.5
+    assert ings[0].get("unit") == "斤"
+    assert ings[0].get("sku_last_unit_price") in (None,) or "sku_last_unit_price" not in ings[0]
+
+
+def test_owner_dish_version_snapshot_price_visible(client):
+    """AC 3 同义：owner 读同一版本快照可见售价。"""
+    tn = new_tenant()
+    _, dish_id = _setup_inventory_and_dish(client, tn, unit_price=10.0, stock=50.0, dish_price=42.5)
+
+    res = client.get(f"/api/dishes/{dish_id}/versions/1", headers=hdr(tn, "owner"))
+    assert res.status_code == 200, res.text
+    dish = (res.json()["data"].get("snapshot") or {}).get("dish") or {}
+    assert dish.get("price") == 42.5
+
+
+def test_fake_owner_header_cannot_bypass_dish_version(client):
+    """AC 4 同义：staff cookie + 伪 X-Role:owner 不能看版本快照售价。"""
+    tn = "default"
+    _, dish_id = _setup_inventory_and_dish(
+        client, tn, sku_name="料-版本脱敏", dish_name="版本脱敏菜",
+        unit_price=11.0, stock=20.0, dish_price=33.0)
+    staff_token = auth.issue_token("staff@demo.hk", "staff", tn)
+    cookies = {auth.SESSION_COOKIE: staff_token}
+    attack_headers = {"X-Role": "owner", "X-Tenant-Id": tn}
+    res = client.get(
+        f"/api/dishes/{dish_id}/versions/1", cookies=cookies, headers=attack_headers)
+    assert res.status_code == 200, res.text
+    dish = (res.json()["data"].get("snapshot") or {}).get("dish") or {}
+    assert dish.get("price") is None, "fake owner header must not leak version snapshot price"
+

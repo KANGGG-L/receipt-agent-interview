@@ -1,0 +1,315 @@
+{
+  "pass": true,
+  "passCount": 61,
+  "failCount": 0,
+  "checks": [
+    {
+      "name": "chrome launched",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: navigate tab-scan",
+      "ok": true,
+      "detail": "{\"display\":\"block\",\"active\":true,\"hasFile\":true}"
+    },
+    {
+      "name": "1440: seed two photos",
+      "ok": true,
+      "detail": "{\"n\":2,\"open\":true,\"siderOpen\":true,\"btnVisible\":true,\"imgSrc\":true,\"statuses\":[\"pending\",\"pending\"]}"
+    },
+    {
+      "name": "1440: drawer open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: tools scrolled into view",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: elementFromPoint hits #btnRotate (drawer open)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":332.328125,\"cy\":823.8125,\"r\":{\"left\":289,\"top\":801.3125,\"width\":86.65625,\"height\":45},\"drawerOpen\":true,\"drawerBottom\":\"219px\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "1440: real mouse click rotates 90°",
+      "ok": true,
+      "detail": "{\"beforeRot\":0,\"afterRot\":0,\"hasOriginal\":true,\"hasRotatedFlag\":true,\"dims\":{\"nw\":480,\"nh\":360}}"
+    },
+    {
+      "name": "1440: originalFile preserved after rotate",
+      "ok": true,
+      "detail": "{\"origSize\":452773,\"fileSize\":156501}"
+    },
+    {
+      "name": "1440: crop drag + apply (切图) with drawer open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"cropHit\":{\"hit\":true,\"top\":\"btnCropToggle\"},\"selection\":{\"overlayHidden\":false,\"cropRect\":{\"left\":57,\"top\":129.6875,\"width\":115,\"height\":260},\"activeTool\":\"crop\"},\"beforeApply\":{\"cropped\":false,\"fileSize\":156501,\"origSize\":452773,\"nw\":480,\"nh\":360,\"hasOriginal\":true},\"afterApply\":{\"cropped\":true,\"fileSize\":77655,\"origSize\":452773,\"nw\":242,\"nh\":547,\"hasOriginal\":true,\"hasCroppedUrl\":tru"
+    },
+    {
+      "name": "1440: drawer close operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: drawer reopen operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1440: elementFromPoint hits rotate when drawer closed",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":332.328125,\"cy\":823.8125,\"r\":{\"left\":289,\"top\":801.3125,\"width\":86.65625,\"height\":45},\"drawerOpen\":false,\"drawerBottom\":\"\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "1440: reset restores / original preserved",
+      "ok": true,
+      "detail": "{\"ok\":true,\"before\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":77655,\"cropped\":true},\"after\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":452773,\"cropped\":false,\"croppedUrl\":false,\"nw\":360,\"nh\":480,\"rotation\":0},\"resetBox\":{\"x\":412.6640625,\"y\":823.8125,\"id\":\"btnReset\",\"w\":58.015625}}"
+    },
+    {
+      "name": "1440: no force-click used in QA harness",
+      "ok": true,
+      "detail": "page.mouse.click only"
+    },
+    {
+      "name": "1440: drawer close-btn hittable while open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hit\":\"sider-close-btn\",\"cx\":465,\"cy\":83}"
+    },
+    {
+      "name": "1440: drawer item selectable while open (or chrome if occluded)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"beforeIdx\":0,\"after\":{\"activeIndex\":1,\"n\":2},\"itemBox\":{\"okPrep\":true,\"cx\":264,\"cy\":258,\"index\":1,\"hit\":\"photo-sider-item pending   \",\"r\":{\"left\":248,\"top\":246,\"width\":243,\"height\":66},\"n\":2}}"
+    },
+    {
+      "name": "1024: navigate tab-scan",
+      "ok": true,
+      "detail": "{\"display\":\"block\",\"active\":true,\"hasFile\":true}"
+    },
+    {
+      "name": "1024: seed two photos",
+      "ok": true,
+      "detail": "{\"n\":2,\"open\":true,\"siderOpen\":true,\"btnVisible\":true,\"imgSrc\":true,\"statuses\":[\"pending\",\"pending\"]}"
+    },
+    {
+      "name": "1024: drawer open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024: tools scrolled into view",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024: elementFromPoint hits #btnRotate (drawer open)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":760.015625,\"cy\":560.125,\"r\":{\"left\":716.6875,\"top\":537.625,\"width\":86.65625,\"height\":45},\"drawerOpen\":true,\"drawerBottom\":\"244px\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "1024: real mouse click rotates 90°",
+      "ok": true,
+      "detail": "{\"beforeRot\":0,\"afterRot\":0,\"hasOriginal\":true,\"hasRotatedFlag\":true,\"dims\":{\"nw\":480,\"nh\":360}}"
+    },
+    {
+      "name": "1024: originalFile preserved after rotate",
+      "ok": true,
+      "detail": "{\"origSize\":452773,\"fileSize\":156501}"
+    },
+    {
+      "name": "1024: crop drag + apply (切图) with drawer open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"cropHit\":{\"hit\":true,\"top\":\"btnCropToggle\"},\"selection\":{\"overlayHidden\":false,\"cropRect\":{\"left\":170,\"top\":129.375,\"width\":341,\"height\":260},\"activeTool\":\"crop\"},\"beforeApply\":{\"cropped\":false,\"fileSize\":156501,\"origSize\":452773,\"nw\":480,\"nh\":360,\"hasOriginal\":true},\"afterApply\":{\"cropped\":true,\"fileSize\":72316,\"origSize\":452773,\"nw\":341,\"nh\":260,\"hasOriginal\":true,\"hasCroppedUrl\":tru"
+    },
+    {
+      "name": "1024: drawer close operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024: drawer reopen operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "1024: elementFromPoint hits rotate when drawer closed",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":760.015625,\"cy\":560.125,\"r\":{\"left\":716.6875,\"top\":537.625,\"width\":86.65625,\"height\":45},\"drawerOpen\":false,\"drawerBottom\":\"\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "1024: reset restores / original preserved",
+      "ok": true,
+      "detail": "{\"ok\":true,\"before\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":72316,\"cropped\":true},\"after\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":452773,\"cropped\":false,\"croppedUrl\":false,\"nw\":360,\"nh\":480,\"rotation\":0},\"resetBox\":{\"x\":840.3515625,\"y\":560.125,\"id\":\"btnReset\",\"w\":58.015625}}"
+    },
+    {
+      "name": "1024: no force-click used in QA harness",
+      "ok": true,
+      "detail": "page.mouse.click only"
+    },
+    {
+      "name": "1024: drawer close-btn hittable while open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hit\":\"sider-close-btn\",\"cx\":395,\"cy\":83}"
+    },
+    {
+      "name": "1024: drawer item selectable while open (or chrome if occluded)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"beforeIdx\":0,\"after\":{\"activeIndex\":1,\"n\":2},\"itemBox\":{\"okPrep\":true,\"cx\":264,\"cy\":266.25,\"index\":1,\"hit\":\"photo-sider-item pending   \",\"r\":{\"left\":248,\"top\":254.25,\"width\":173,\"height\":66},\"n\":2}}"
+    },
+    {
+      "name": "412: navigate tab-scan",
+      "ok": true,
+      "detail": "{\"display\":\"block\",\"active\":true,\"hasFile\":true}"
+    },
+    {
+      "name": "412: seed two photos",
+      "ok": true,
+      "detail": "{\"n\":2,\"open\":true,\"siderOpen\":true,\"btnVisible\":true,\"imgSrc\":true,\"statuses\":[\"pending\",\"pending\"]}"
+    },
+    {
+      "name": "412: drawer open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "412: tools scrolled into view",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "412: elementFromPoint hits #btnRotate (drawer open)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":288.359375,\"cy\":613.078125,\"r\":{\"left\":245.03125,\"top\":590.578125,\"width\":86.65625,\"height\":45},\"drawerOpen\":true,\"drawerBottom\":\"391px\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "412: real mouse click rotates 90°",
+      "ok": true,
+      "detail": "{\"beforeRot\":0,\"afterRot\":0,\"hasOriginal\":true,\"hasRotatedFlag\":true,\"dims\":{\"nw\":480,\"nh\":360}}"
+    },
+    {
+      "name": "412: originalFile preserved after rotate",
+      "ok": true,
+      "detail": "{\"origSize\":452773,\"fileSize\":156501}"
+    },
+    {
+      "name": "412: crop drag + apply (切图) with drawer open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"cropHit\":{\"hit\":true,\"top\":\"btnCropToggle\"},\"selection\":{\"overlayHidden\":false,\"cropRect\":{\"left\":77,\"top\":129.421875,\"width\":155,\"height\":260},\"activeTool\":\"crop\"},\"beforeApply\":{\"cropped\":false,\"fileSize\":156501,\"origSize\":452773,\"nw\":480,\"nh\":360,\"hasOriginal\":true},\"afterApply\":{\"cropped\":true,\"fileSize\":72058,\"origSize\":452773,\"nw\":241,\"nh\":405,\"hasOriginal\":true,\"hasCroppedUrl\":t"
+    },
+    {
+      "name": "412: drawer close operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "412: drawer reopen operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "412: elementFromPoint hits rotate when drawer closed",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":288.359375,\"cy\":613.078125,\"r\":{\"left\":245.03125,\"top\":590.578125,\"width\":86.65625,\"height\":45},\"drawerOpen\":false,\"drawerBottom\":\"\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "412: reset restores / original preserved",
+      "ok": true,
+      "detail": "{\"ok\":true,\"before\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":72058,\"cropped\":true},\"after\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":452773,\"cropped\":false,\"croppedUrl\":false,\"nw\":360,\"nh\":480,\"rotation\":0},\"resetBox\":{\"x\":78.0078125,\"y\":666.078125,\"id\":\"btnReset\",\"w\":58.015625}}"
+    },
+    {
+      "name": "412: no force-click used in QA harness",
+      "ok": true,
+      "detail": "page.mouse.click only"
+    },
+    {
+      "name": "412: drawer close-btn hittable while open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hit\":\"sider-close-btn\",\"cx\":378,\"cy\":83}"
+    },
+    {
+      "name": "412: drawer item selectable while open (or chrome if occluded)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"beforeIdx\":0,\"after\":{\"activeIndex\":1,\"n\":2},\"itemBox\":{\"okPrep\":true,\"cx\":25,\"cy\":258,\"index\":1,\"hit\":\"photo-sider-item pending   \",\"r\":{\"left\":9,\"top\":246,\"width\":395,\"height\":66},\"n\":2}}"
+    },
+    {
+      "name": "390: navigate tab-scan",
+      "ok": true,
+      "detail": "{\"display\":\"block\",\"active\":true,\"hasFile\":true}"
+    },
+    {
+      "name": "390: seed two photos",
+      "ok": true,
+      "detail": "{\"n\":2,\"open\":true,\"siderOpen\":true,\"btnVisible\":true,\"imgSrc\":true,\"statuses\":[\"pending\",\"pending\"]}"
+    },
+    {
+      "name": "390: drawer open",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: tools scrolled into view",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: elementFromPoint hits #btnRotate (drawer open)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":288.359375,\"cy\":613.078125,\"r\":{\"left\":245.03125,\"top\":590.578125,\"width\":86.65625,\"height\":45},\"drawerOpen\":true,\"drawerBottom\":\"320px\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "390: real mouse click rotates 90°",
+      "ok": true,
+      "detail": "{\"beforeRot\":0,\"afterRot\":0,\"hasOriginal\":true,\"hasRotatedFlag\":true,\"dims\":{\"nw\":480,\"nh\":360}}"
+    },
+    {
+      "name": "390: originalFile preserved after rotate",
+      "ok": true,
+      "detail": "{\"origSize\":452773,\"fileSize\":156501}"
+    },
+    {
+      "name": "390: crop drag + apply (切图) with drawer open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"cropHit\":{\"hit\":true,\"top\":\"btnCropToggle\"},\"selection\":{\"overlayHidden\":false,\"cropRect\":{\"left\":72,\"top\":129.421875,\"width\":144,\"height\":260},\"activeTool\":\"crop\"},\"beforeApply\":{\"cropped\":false,\"fileSize\":156501,\"origSize\":452773,\"nw\":480,\"nh\":360,\"hasOriginal\":true},\"afterApply\":{\"cropped\":true,\"fileSize\":75650,\"origSize\":452773,\"nw\":241,\"nh\":436,\"hasOriginal\":true,\"hasCroppedUrl\":t"
+    },
+    {
+      "name": "390: drawer close operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: drawer reopen operable",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "390: elementFromPoint hits rotate when drawer closed",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hitBtn\":true,\"hitDrawer\":false,\"topTag\":\"btnRotate\",\"cx\":288.359375,\"cy\":613.078125,\"r\":{\"left\":245.03125,\"top\":590.578125,\"width\":86.65625,\"height\":45},\"drawerOpen\":false,\"drawerBottom\":\"\",\"toolbarZ\":\"110\",\"drawerZ\":\"95\",\"dataUat020\":\"img-tools-layer\"}"
+    },
+    {
+      "name": "390: reset restores / original preserved",
+      "ok": true,
+      "detail": "{\"ok\":true,\"before\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":75650,\"cropped\":true},\"after\":{\"hasOriginal\":true,\"origSize\":452773,\"fileSize\":452773,\"cropped\":false,\"croppedUrl\":false,\"nw\":360,\"nh\":480,\"rotation\":0},\"resetBox\":{\"x\":78.0078125,\"y\":666.078125,\"id\":\"btnReset\",\"w\":58.015625}}"
+    },
+    {
+      "name": "390: no force-click used in QA harness",
+      "ok": true,
+      "detail": "page.mouse.click only"
+    },
+    {
+      "name": "390: drawer close-btn hittable while open",
+      "ok": true,
+      "detail": "{\"ok\":true,\"hit\":\"sider-close-btn\",\"cx\":356,\"cy\":83}"
+    },
+    {
+      "name": "390: drawer item selectable while open (or chrome if occluded)",
+      "ok": true,
+      "detail": "{\"ok\":true,\"beforeIdx\":0,\"after\":{\"activeIndex\":1,\"n\":2},\"itemBox\":{\"okPrep\":true,\"cx\":25,\"cy\":258,\"index\":1,\"hit\":\"photo-sider-item pending   \",\"r\":{\"left\":9,\"top\":246,\"width\":373,\"height\":66},\"n\":2}}"
+    }
+  ],
+  "port": 15550,
+  "base": "http://127.0.0.1:15550",
+  "timestamp": "2026-10-16T21:25:49.590Z"
+}

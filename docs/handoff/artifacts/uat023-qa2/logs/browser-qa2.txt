@@ -1,0 +1,7 @@
+=== UAT-023 browser MANUAL_UI ===
+pass=true
+passCount=95 failCount=0
+locale_hant={"lang":"zh-Hant-HK","dataLocale":"zh-Hant-HK"}
+convertProbe={"hasI18N":true,"exportCsv":"匯出 CSV","status":"已入賬","supplierHdr":"供應商名稱","locale":"zh-Hant-HK"}
+db={"before":null,"mid":null,"after":null}
+failed=[]

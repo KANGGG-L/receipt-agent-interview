@@ -1,0 +1,23 @@
+{
+  "card": "ENG-04",
+  "stage": "independent-uat",
+  "verdict": "PASS",
+  "generated_local": "2026-10-17 05:53:04 CST",
+  "criteria": {
+    "nav_observation_path": "PASS",
+    "titles_not_stale": "PASS",
+    "synthetic_experiment_structure": "PASS",
+    "skip_exact_reason_not_pass": "PASS"
+  },
+  "counts": {
+    "unit_passed": 10,
+    "e2e_live_passed": 1,
+    "e2e_skip_when_unavailable": 1,
+    "main_exit_on_skip": 5,
+    "live_detail_structure": "PASS"
+  },
+  "port": 15010,
+  "avoided_ports": "15150-15800",
+  "git": false,
+  "checklist_flipped": false
+}

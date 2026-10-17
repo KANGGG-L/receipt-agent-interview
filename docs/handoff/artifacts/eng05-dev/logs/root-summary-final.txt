@@ -1,0 +1,6 @@
+ROOT suite (r2 authoritative):
+  exit=1
+  3 failed, 1288 passed, 1 skipped
+  duration=469.18s
+  junit=logs/root-junit-r2.xml
+  log=logs/root-pytest-r2.txt

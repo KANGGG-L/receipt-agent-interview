@@ -608,14 +608,33 @@ function renderReconTasks(tasks) {
 // ---- 登记支付 Modal：见 finance.js ----
 
 // ---- 发起对账 Modal ----
+// UAT-017：经 openAccessibleModal 注册 dialog 语义 / 焦点陷阱 / Esc 归还触发焦点
 function openReconModal() {
     if (!finState.supplierId) { showToast('请先选择供应商', 'warning'); return; }
     const sup = finState.suppliers.find(s => s.id === finState.supplierId);
-    document.getElementById('reconSupplierHint').innerText = `供应商：${sup.name}`;
-    document.getElementById('reconPeriodType').value = 'month';
-    document.getElementById('reconStart').value = '';
-    document.getElementById('reconEnd').value = '';
-    document.getElementById('reconCreateModal').classList.remove('hide');
+    const hint = document.getElementById('reconSupplierHint');
+    if (hint) hint.innerText = `供应商：${sup ? sup.name : ('#' + finState.supplierId)}`;
+    const period = document.getElementById('reconPeriodType');
+    if (period) period.value = 'month';
+    const start = document.getElementById('reconStart');
+    if (start) start.value = '';
+    const end = document.getElementById('reconEnd');
+    if (end) end.value = '';
+    const modal = document.getElementById('reconCreateModal');
+    if (!modal) return;
+    // 保持 HTML 上的 aria-labelledby / aria-describedby；仅补全运行时 dialog 注册
+    if (!modal.getAttribute('aria-labelledby')) {
+        modal.setAttribute('aria-labelledby', 'reconCreateTitle');
+    }
+    if (!modal.getAttribute('aria-describedby')) {
+        modal.setAttribute('aria-describedby', 'reconSupplierHint');
+    }
+    const trigger = document.activeElement;
+    if (typeof openAccessibleModal === 'function') {
+        openAccessibleModal(modal, '#reconPeriodType', trigger);
+    } else {
+        openModalById('reconCreateModal');
+    }
 }
 
 function reconPeriodTypeChanged() {

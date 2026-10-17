@@ -37,6 +37,30 @@ def _staff_headers():
     return {"X-Role": "staff", "X-Email": "staff@demo.hk"}
 
 
+# ENG-04：空实验库不得 vague skip；合成实验必须可读且详情结构实际验证。
+_SYNTHETIC_EXP_NAME = "ENG04_Synthetic_Experiment"
+
+
+def _ensure_synthetic_experiment():
+    """保证存在一条可查询的合成实验；空库时创建，已存在则复用。
+
+    why：旧实现在 list_experiments() 为空时 pytest.skip("No experiments available")，
+    门禁会把 skip 当绿或中断详情结构断言。ENG-04 要求合成实验可读且结构必验。
+    """
+    for exp in db.list_experiments() or []:
+        if exp.get("name") == _SYNTHETIC_EXP_NAME:
+            return int(exp["id"])
+    created = db.create_experiment(
+        name=_SYNTHETIC_EXP_NAME,
+        hypothesis="ENG-04 synthetic fixture for detail structure verification",
+        success_metric="accuracy",
+        target_percent=50,
+        min_sample=10,
+    )
+    assert created and created.get("id"), "create_experiment must return id for synthetic fixture"
+    return int(created["id"])
+
+
 def test_canary_history_rbac_and_structure():
     """验证历史灰测履历接口的 RBAC 保护与数据字段。"""
     # 匿名拦截
@@ -87,10 +111,8 @@ def test_grey_test_samples_scope_filtering():
 
 
 def test_experiment_samples_api_and_rbac():
-    """验证 A/B 实验样本明细流接口 RBAC 与数据流。"""
-    # 获取已有实验
-    exps = db.list_experiments()
-    target_exp_id = exps[0]["id"] if exps else 1
+    """验证 A/B 实验样本明细流接口 RBAC 与数据流（合成实验，禁止空 id=1 碰运气）。"""
+    target_exp_id = _ensure_synthetic_experiment()
 
     # 匿名拦截
     res = client.get(f"/api/admin/experiments/{target_exp_id}/samples")
@@ -106,19 +128,23 @@ def test_experiment_samples_api_and_rbac():
     data = res.json()
     assert data["status"] == "success"
     assert "samples" in data
+    assert isinstance(data["samples"], list)
     assert "control_count" in data
     assert "treatment_count" in data
     assert "total_samples" in data
+    assert isinstance(data["control_count"], int)
+    assert isinstance(data["treatment_count"], int)
+    assert isinstance(data["total_samples"], int)
 
 
 def test_experiment_admin_detail_structure():
-    """验证 GET /api/admin/experiments/{id} 返回完备的 metrics、detail、guardrail 与 snapshot。"""
-    exps = db.list_experiments()
-    if not exps:
-        pytest.skip("No experiments available")
-    target_id = exps[0]["id"]
+    """验证 GET /api/admin/experiments/{id} 返回完备的 metrics、detail、guardrail 与 snapshot。
+
+    ENG-04：不得因空实验库 skip；合成实验必须可读且详情键实际验证（含类型）。
+    """
+    target_id = _ensure_synthetic_experiment()
     res = client.get(f"/api/admin/experiments/{target_id}", headers=_admin_headers())
-    assert res.status_code == 200
+    assert res.status_code == 200, "synthetic experiment detail must be readable, got %s" % res.status_code
     data = res.json()
     assert data["status"] == "success"
     assert "experiment" in data
@@ -126,6 +152,18 @@ def test_experiment_admin_detail_structure():
     assert "detail" in data
     assert "guardrail_events" in data
     assert "snapshots" in data
+
+    exp = data["experiment"]
+    assert isinstance(exp, dict)
+    assert exp.get("id") == target_id
+    assert exp.get("name") == _SYNTHETIC_EXP_NAME
+    assert "status" in exp
+
+    # 结构实际验证：类型与可迭代，不只检查键存在
+    assert data["metrics"] is not None
+    assert data["detail"] is not None
+    assert isinstance(data["guardrail_events"], list)
+    assert isinstance(data["snapshots"], list)
 
 
 def test_dom_structure_for_historical_canary_and_ab():

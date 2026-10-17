@@ -1,0 +1,21 @@
+41:    background: none; color: var(--text-main, #1e2223); border: none; padding: 6px 0; min-width: 0;
+124:    .app-toast { width: auto !important; max-width: 100% !important; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word; }
+128:        max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere; word-break: break-word;
+145:    table.data-table.receipt-item-table, .receipt-item-table tbody { display: block; width: 100%; min-width: 0; table-layout: auto; border-spacing: 0; }
+152:    .receipt-item-table tbody td { display: block; padding: 0; border: none; min-width: 0; text-align: left !important; }
+160:    .receipt-item-table td[data-label="数量"] input { min-width: 0; flex: 1 1 0; }
+183:/* ---------- UAT-024：手机库存表 —— 品名可读 + 操作与名称同卡，无 document 水平溢出 ----------
+197:        min-width: 0 !important;
+229:        min-width: 0;
+246:    #tab-inventory #inventoryTable td.inv-name-cell,
+263:        word-break: break-word;
+456:                            aria-haspopup="menu" onclick='toggleInventoryMoreMenu(this, ${Number(sku.id)})'>更多 ▾</button>` : `
+488:            // 品名 title/data-full-name 保证窄屏可读完整业务名（Rice/Oil/长中文）。
+491:            tr.dataset.skuId = String(Number(sku.id));
+493:                <td class="inv-name-cell" data-label="品名" title="${nameEsc}" data-full-name="${nameEsc}"><div class="inv-name-wrap"><span class="inv-name-text"><strong>${nameEsc}</strong></span>${activeBadge}${ackBadge}${ackRevokeHtml}</div></td>
+714:                // 不以 sku_id 替代。title + data-full-name 保证原值可获取。
+717:                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+SKU_COUNT 3
+['Synthetic_Rice', 'Synthetic_Oil', '特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测']
+T2_NAMES ['Synthetic_Rice']
+T2_NO_OIL True

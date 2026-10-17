@@ -1,0 +1,24 @@
+[OK] admin_observation has Esc/Tab listener block
+[OK] keydown listener registered
+[OK] extracted closeModalById
+[OK] extracted openReconModal
+[OK] trigger focused before open
+[OK] modal visible (hide removed)
+[OK] role=dialog after open
+[OK] aria-modal=true after open
+[OK] aria-labelledby=reconCreateTitle
+[OK] aria-describedby=reconSupplierHint
+[OK] preferred focus on #reconPeriodType
+[OK] _activeAccessibleModals stacked
+[OK] stack trigger is open button
+[OK] focusables include period/cancel/submit
+[OK] Tab from last wraps to first
+[OK] Shift+Tab from first wraps to last
+[OK] Esc hides modal
+[OK] Esc clears stack
+[OK] Esc restores trigger focus
+[OK] re-open works
+[OK] closeModalById hides + restores trigger
+[OK] payment modal not in byId as rewritten
+
+SUMMARY PASS=22 FAIL=0

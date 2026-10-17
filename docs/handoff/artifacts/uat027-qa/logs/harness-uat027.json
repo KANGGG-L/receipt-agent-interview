@@ -1,0 +1,125 @@
+{
+  "summary": {
+    "pass": 29,
+    "fail": 0,
+    "total": 29
+  },
+  "results": [
+    {
+      "name": "fmtMoney 1234.5 zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney 0 zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney null zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney undefined zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney empty zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney SGD not HKD-prefixed zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney SGD has grouping zh-Hans",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney 1234.5 zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney 0 zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney null zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney undefined zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney empty zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney SGD not HKD-prefixed zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "fmtMoney SGD has grouping zh-Hant-HK",
+      "ok": true
+    },
+    {
+      "name": "formatHkd delegates to I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "list last_unit_price uses I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "no bare `$`+toFixed list price",
+      "ok": true
+    },
+    {
+      "name": "no formatHkd return `$`+toFixed",
+      "ok": true
+    },
+    {
+      "name": "AI cards use I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "AI summary uses I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "chart/history use formatHkd",
+      "ok": true
+    },
+    {
+      "name": "ledger amount uses I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "dish_bom price/cost/profit use I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "dish_bom null path shows em-dash",
+      "ok": true
+    },
+    {
+      "name": "finance HKD path uses I18N.fmtMoney",
+      "ok": true
+    },
+    {
+      "name": "finance foreign keeps formatCurrency / original currency",
+      "ok": true
+    },
+    {
+      "name": "finance does not force HKD label on foreign original",
+      "ok": true
+    },
+    {
+      "name": "i18n fmtMoney defaults currency HKD",
+      "ok": true
+    },
+    {
+      "name": "i18n fmtMoney null/non-finite → em-dash",
+      "ok": true
+    }
+  ]
+}

@@ -56,12 +56,19 @@ def login(body: LoginBody, request: Request):
 
 @router.post("/api/auth/logout")
 def logout(request: Request):
-    """吊销当前令牌并清除会话 Cookie；令牌已失效时也返回成功（登出幂等）。"""
+    """吊销当前令牌并清除会话 Cookie；令牌已失效时也返回成功（登出幂等）。
+
+    UAT-010：生产可见退出入口依赖本端点真正清会话。行为边界：
+    - 只吊销当前请求携带的令牌（Bearer 或 Cookie）并 delete_cookie；
+    - 不签发新令牌、不改账号、不扩大任何角色写权限；
+    - 与 demo 角色下拉（X-Role）无关——那不是生产注销。
+    """
     tok, _origin = auth._request_token(request)
     full = auth.parse_token_full(tok) if tok else None
     if full:
         auth.revoke_jti(full["jti"], full["exp"])
     resp = JSONResponse(content={"status": "success", "msg": "已退出登录"})
+    # 无论令牌是否仍有效，都清除 Cookie，避免「假退出」残留会话。
     auth.clear_session_cookie(resp)
     return resp
 

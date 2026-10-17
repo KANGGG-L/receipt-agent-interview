@@ -1,0 +1,2 @@
+{"verdict": "PASS", "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat016-dev/evidence/spec-keep.json"}
+spec_keep_exit=0

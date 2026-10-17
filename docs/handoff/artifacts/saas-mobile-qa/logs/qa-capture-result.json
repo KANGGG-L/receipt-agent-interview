@@ -1,0 +1,275 @@
+{
+  "base": "http://127.0.0.1:15120",
+  "baseline": {
+    "invTableY": 891,
+    "archiveTableY": 1408
+  },
+  "results": {
+    "390": {
+      "inv": {
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "tableY": 468,
+        "search": {
+          "w": 316,
+          "h": 44,
+          "left": 37,
+          "right": 353,
+          "fullyInView": true
+        },
+        "kpiH": 67,
+        "kpiCols": "116.656px 116.672px 116.656px",
+        "kpiCount": 3,
+        "kpiHidden": 0,
+        "filtersCollapsed": true,
+        "filterCbChecked": false,
+        "panelDisplay": "none",
+        "mainWrapperPadBottom": "72px"
+      },
+      "invFirst": {
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "tableY": 468,
+        "search": {
+          "w": 316,
+          "h": 44,
+          "left": 37,
+          "right": 353,
+          "fullyInView": true
+        },
+        "kpiH": 67,
+        "kpiCols": "116.656px 116.672px 116.656px",
+        "kpiCount": 3,
+        "kpiHidden": 0,
+        "filtersCollapsed": true,
+        "filterCbChecked": false,
+        "panelDisplay": "none",
+        "mainWrapperPadBottom": "72px"
+      },
+      "invExp": {
+        "filtersOpen": true,
+        "filterCbChecked": true,
+        "panelDisplay": "flex",
+        "tableY": 576
+      },
+      "clearResult": {
+        "before": {
+          "search": "qa-dirty-search",
+          "cat": "肉类",
+          "filt": "low"
+        },
+        "after": {
+          "search": "",
+          "cat": "",
+          "filt": "all"
+        },
+        "cleared": true
+      },
+      "bottom": {
+        "lastBottom": 105,
+        "tabTop": 783,
+        "blocked": false,
+        "clearance": 678,
+        "padBottom": "72px",
+        "tabVisible": true
+      },
+      "arc": {
+        "viewport": {
+          "w": 390,
+          "h": 844
+        },
+        "archiveTableY": 748,
+        "todoH": 67,
+        "todoCount": 3,
+        "todoHidden": 0,
+        "fltKeyword": {
+          "w": 316,
+          "fullyInView": true
+        },
+        "filterGridDisplay": "none",
+        "advancedHidden": true
+      },
+      "arcExp": {
+        "advancedHidden": false,
+        "filterGridDisplay": "block",
+        "archiveTableY": 1440
+      },
+      "resetPresent": true
+    },
+    "412": {
+      "inv": {
+        "viewport": {
+          "w": 412,
+          "h": 915
+        },
+        "tableY": 468,
+        "search": {
+          "w": 338,
+          "h": 44,
+          "left": 37,
+          "right": 375,
+          "fullyInView": true
+        },
+        "kpiH": 67,
+        "kpiCols": "124px 124px 124px",
+        "kpiCount": 3,
+        "kpiHidden": 0,
+        "filtersCollapsed": true,
+        "filterCbChecked": false,
+        "panelDisplay": "none",
+        "mainWrapperPadBottom": "72px"
+      },
+      "invFirst": {
+        "viewport": {
+          "w": 412,
+          "h": 915
+        },
+        "tableY": 468,
+        "search": {
+          "w": 338,
+          "h": 44,
+          "left": 37,
+          "right": 375,
+          "fullyInView": true
+        },
+        "kpiH": 67,
+        "kpiCols": "124px 124px 124px",
+        "kpiCount": 3,
+        "kpiHidden": 0,
+        "filtersCollapsed": true,
+        "filterCbChecked": false,
+        "panelDisplay": "none",
+        "mainWrapperPadBottom": "72px"
+      },
+      "invExp": {
+        "filtersOpen": true,
+        "filterCbChecked": true,
+        "panelDisplay": "flex",
+        "tableY": 576
+      },
+      "clearResult": {
+        "before": {
+          "search": "qa-dirty-search",
+          "cat": "肉类",
+          "filt": "low"
+        },
+        "after": {
+          "search": "",
+          "cat": "",
+          "filt": "all"
+        },
+        "cleared": true
+      },
+      "bottom": {
+        "lastBottom": 176,
+        "tabTop": 854,
+        "blocked": false,
+        "clearance": 678,
+        "padBottom": "72px",
+        "tabVisible": true
+      },
+      "arc": {
+        "viewport": {
+          "w": 412,
+          "h": 915
+        },
+        "archiveTableY": 748,
+        "todoH": 67,
+        "todoCount": 3,
+        "todoHidden": 0,
+        "fltKeyword": {
+          "w": 338,
+          "fullyInView": true
+        },
+        "filterGridDisplay": "none",
+        "advancedHidden": true
+      },
+      "arcExp": {
+        "advancedHidden": false,
+        "filterGridDisplay": "block",
+        "archiveTableY": 1440
+      },
+      "resetPresent": true
+    }
+  },
+  "evaluation": {
+    "overall": true,
+    "gates": [
+      {
+        "id": "AC1-search-full-390",
+        "ok": true,
+        "msg": "search w=316 fullyInView"
+      },
+      {
+        "id": "AC1-filter-expand-390",
+        "ok": true,
+        "msg": "filtersOpen tableY=576"
+      },
+      {
+        "id": "AC1-filter-clear-390",
+        "ok": true,
+        "msg": "cleared after={\"search\":\"\",\"cat\":\"\",\"filt\":\"all\"}"
+      },
+      {
+        "id": "AC2-inv-table-earlier-390",
+        "ok": true,
+        "msg": "tableY 468 < baseline 891"
+      },
+      {
+        "id": "AC2-arc-table-earlier-390",
+        "ok": true,
+        "msg": "archiveTableY 748 < baseline 1408"
+      },
+      {
+        "id": "AC3-bottom-nav-390",
+        "ok": true,
+        "msg": "blocked=false pad=72px clearance=678"
+      },
+      {
+        "id": "AC4-kpi-visible-390",
+        "ok": true,
+        "msg": "kpiCount=3 kpiHidden=0"
+      },
+      {
+        "id": "AC1-search-full-412",
+        "ok": true,
+        "msg": "search w=338 fullyInView"
+      },
+      {
+        "id": "AC1-filter-expand-412",
+        "ok": true,
+        "msg": "filtersOpen tableY=576"
+      },
+      {
+        "id": "AC1-filter-clear-412",
+        "ok": true,
+        "msg": "cleared after={\"search\":\"\",\"cat\":\"\",\"filt\":\"all\"}"
+      },
+      {
+        "id": "AC2-inv-table-earlier-412",
+        "ok": true,
+        "msg": "tableY 468 < baseline 891"
+      },
+      {
+        "id": "AC2-arc-table-earlier-412",
+        "ok": true,
+        "msg": "archiveTableY 748 < baseline 1408"
+      },
+      {
+        "id": "AC3-bottom-nav-412",
+        "ok": true,
+        "msg": "blocked=false pad=72px clearance=678"
+      },
+      {
+        "id": "AC4-kpi-visible-412",
+        "ok": true,
+        "msg": "kpiCount=3 kpiHidden=0"
+      }
+    ]
+  },
+  "timestamp": "2026-10-16T22:22:54.969Z"
+}

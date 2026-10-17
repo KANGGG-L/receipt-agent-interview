@@ -1,0 +1,92 @@
+{
+  "scope_id": "DM-03-prefill-header-fields",
+  "source": "ENG-02 AC2 prefill header",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "supplier_name": true,
+    "date": true,
+    "total_amount": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-03-prefill-header-fields.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 3,
+    "job_id": "f241b6cb265e446fa4dcc3c0a82058e2",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "f241b6cb265e446fa4dcc3c0a82058e2",
+          "receipt_id": 3,
+          "image_url": "/api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 12.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 12.07
+      }
+    ]
+  }
+}

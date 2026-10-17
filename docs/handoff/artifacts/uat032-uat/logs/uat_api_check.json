@@ -1,0 +1,292 @@
+{
+  "checks": [
+    {
+      "name": "js_await_load_before_modal",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "js_showCostTraceModal_always_fetch",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "js_cache_bust_uat032",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "api_consumptions_snapshot",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "tenant_b_baseline",
+      "pass": true,
+      "detail": 3.0
+    },
+    {
+      "name": "first_submit_ok",
+      "pass": true,
+      "detail": [
+        200,
+        {
+          "status": "success",
+          "msg": "成功记录 1 项餐品消耗",
+          "data": {
+            "date": "2026-04-10",
+            "consumption_ids": [
+              1
+            ],
+            "merged": false,
+            "quantity": 3.0,
+            "items": [
+              {
+                "dish_id": 1,
+                "consumption_id": 1,
+                "quantity": 3.0,
+                "total_cost": 15.0,
+                "merged": false
+              }
+            ],
+            "consumptions": [
+              {
+                "id": 1,
+                "date": "2026-04-10",
+                "dish_id": 1,
+                "dish_name": "UAT032牛肉饭",
+                "dish_category": "默认",
+                "dish_price": 30.0,
+                "quantity": 3.0,
+                "unit_cost": 5.0,
+                "total_cost": 15.0,
+                "revenue": 90.0,
+                "gross_profit": 75.0,
+                "gross_margin_rate": 83.33,
+                "notes": "",
+                "is_void": 0,
+                "created_at": "2026-10-17T15:26:07",
+                "details": [
+                  {
+                    "id": 1,
+                    "sku_id": 2,
+                    "sku_name": "UAT032牛肉",
+                    "qty_consumed": 1.5,
+                    "unit": "kg",
+                    "unit_cost": 10.0,
+                    "total_cost": 15.0,
+                    "batch_id": 2,
+                    "batch_date": "2026-04-01",
+                    "is_estimated": 0,
+                    "is_zero_cost": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "first_not_merged",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "first_qty_3",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "first_snap_details_1",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "second_submit_ok",
+      "pass": true,
+      "detail": [
+        200,
+        {
+          "status": "success",
+          "msg": "成功记录 1 项餐品消耗",
+          "data": {
+            "date": "2026-04-10",
+            "consumption_ids": [
+              1
+            ],
+            "merged": true,
+            "quantity": 5.0,
+            "items": [
+              {
+                "dish_id": 1,
+                "consumption_id": 1,
+                "quantity": 5.0,
+                "total_cost": 25.0,
+                "merged": true
+              }
+            ],
+            "consumptions": [
+              {
+                "id": 1,
+                "date": "2026-04-10",
+                "dish_id": 1,
+                "dish_name": "UAT032牛肉饭",
+                "dish_category": "默认",
+                "dish_price": 30.0,
+                "quantity": 5.0,
+                "unit_cost": 5.0,
+                "total_cost": 25.0,
+                "revenue": 150.0,
+                "gross_profit": 125.0,
+                "gross_margin_rate": 83.33,
+                "notes": "",
+                "is_void": 0,
+                "created_at": "2026-10-17T15:26:07",
+                "details": [
+                  {
+                    "id": 1,
+                    "sku_id": 2,
+                    "sku_name": "UAT032牛肉",
+                    "qty_consumed": 1.5,
+                    "unit": "kg",
+                    "unit_cost": 10.0,
+                    "total_cost": 15.0,
+                    "batch_id": 2,
+                    "batch_date": "2026-04-01",
+                    "is_estimated": 0,
+                    "is_zero_cost": false
+                  },
+                  {
+                    "id": 2,
+                    "sku_id": 2,
+                    "sku_name": "UAT032牛肉",
+                    "qty_consumed": 1.0,
+                    "unit": "kg",
+                    "unit_cost": 10.0,
+                    "total_cost": 10.0,
+                    "batch_id": 2,
+                    "batch_date": "2026-04-01",
+                    "is_estimated": 0,
+                    "is_zero_cost": false
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "second_merged",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "second_qty_5",
+      "pass": true,
+      "detail": 5.0
+    },
+    {
+      "name": "second_same_cid",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "dialog_snap_qty_5",
+      "pass": true,
+      "detail": 5.0
+    },
+    {
+      "name": "dialog_snap_cost_25",
+      "pass": true,
+      "detail": 25.0
+    },
+    {
+      "name": "dialog_snap_details_2",
+      "pass": true,
+      "detail": 2
+    },
+    {
+      "name": "dialog_snap_detail_cost_sum",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "table_one_row",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "table_qty_5",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "table_cost_25",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "table_details_2",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "table_matches_dialog_snap",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "replay_ok",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "replay_flag",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "replay_qty_still_5",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "replay_snap_details_2",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "other_day_qty_1",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "day_a_unpolluted",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "day_b_isolated",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "name": "tenant_b_unchanged",
+      "pass": true,
+      "detail": [
+        3.0,
+        3.0
+      ]
+    },
+    {
+      "name": "static_js_served",
+      "pass": true,
+      "detail": null
+    }
+  ],
+  "verdict": "PASS",
+  "cid": 1,
+  "day_a": "2026-04-10"
+}

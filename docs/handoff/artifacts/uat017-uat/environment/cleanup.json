@@ -1,0 +1,21 @@
+{
+  "stage": "uat017-uat",
+  "port": 15250,
+  "pid": 140450,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat017-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "stop_exit_code": 0,
+  "port_free": true,
+  "port_released": "port_15250_released",
+  "pid_alive_after_stop": false,
+  "browser_tab_closed": true,
+  "browser_tabs_opened": 0,
+  "browser_note": "Chrome headless via puppeteer-core; contexts closed; no interactive GUI left open",
+  "host_15010_status": "not_present_ok",
+  "host_15010_untouched": true,
+  "orphan_listen_151xx": null,
+  "ss_listen_empty": true,
+  "reuseaddr_bind_ok": true,
+  "timestamp_local": "2026-10-17 04:30:37 CST",
+  "notes": "Fresh port 15250 (avoided 15150-15240). Browser MANUAL_UI AXTree/Tab/Esc/Hans-Hant-390 PASS. No git/checklist write."
+}

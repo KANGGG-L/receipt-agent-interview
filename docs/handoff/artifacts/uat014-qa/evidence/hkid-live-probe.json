@@ -1,0 +1,21 @@
+{
+  "health_base": "http://127.0.0.1:15449",
+  "port": "15449",
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat014-qa/environment/uat014.db",
+  "log_id": 1,
+  "row_found": true,
+  "sanitize_unit_ok": true,
+  "sanitize_preview_redacted": "UAT014_LIVE_PROBE customer [HKID_MASKED] phone ****67 alt [HKID_MASKED] id 110101********2345 key sk-***",
+  "model": "uat014-mask-check",
+  "tenant_id": "uat014-dev",
+  "trace_id": "uat014-live-probe",
+  "prompt_redacted_sample": "[{\"role\": \"user\", \"content\": \"UAT014_LIVE_PROBE customer [HKID_MASKED] phone ****67 alt [HKID_MASKED] id 110101********2345 key sk-***\"}]",
+  "raw_output_redacted_sample": "UAT014_LIVE_PROBE vendor note [HKID_MASKED] contact ****67",
+  "contains_HKID_MASKED": true,
+  "contains_sk_mask": true,
+  "contains_mainland_mask": true,
+  "plaintext_leak_count": 0,
+  "plaintext_leaks_kinds": [],
+  "has_mask_tokens": true,
+  "verdict": "PASS"
+}

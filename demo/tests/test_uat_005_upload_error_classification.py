@@ -26,7 +26,7 @@ from app import db, api_receipts
 from app.main import app
 
 client = TestClient(app)
-FIXTURES_DIR = "/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures"
+FIXTURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "uat005")
 
 
 def _hdr(tenant="uat_a", role="staff"):
@@ -229,10 +229,13 @@ def test_uat005_valid_formats_and_9_formats_contract():
     assert r_mal.json()["code"] == "INVALID_IMAGE"
 
     # 9. 纯平模糊图 (Laplacian 方差为 0) -> 400 IMAGE_QUALITY_ERROR
+    # 引擎未配置时上传会在模糊门禁之前短路为 ENGINE_NOT_CONFIGURED；此处强制走画质门。
+    from unittest.mock import patch
     buf = io.BytesIO()
     Image.new("RGB", (64, 64), (128, 128, 128)).save(buf, format="PNG")
-    r_blur = client.post("/api/upload", headers=_hdr(tenant), files={"receipt": ("zero_blur.png", buf.getvalue(), "image/png")})
-    assert r_blur.status_code == 400
+    with patch.object(api_receipts, "_recognition_engine_unconfigured", return_value=False):
+        r_blur = client.post("/api/upload", headers=_hdr(tenant), files={"receipt": ("zero_blur.png", buf.getvalue(), "image/png")})
+    assert r_blur.status_code == 400, r_blur.text
     assert r_blur.json()["code"] == "IMAGE_QUALITY_ERROR"
 
 

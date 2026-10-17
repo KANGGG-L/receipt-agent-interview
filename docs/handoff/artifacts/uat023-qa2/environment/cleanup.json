@@ -1,0 +1,14 @@
+{
+  "stage": "uat023-qa2",
+  "port": 15280,
+  "pid": 156464,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/qa2_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15280_released",
+  "pid_alive_after_stop": false,
+  "browser_note": "Chrome headless via puppeteer-core; contexts closed",
+  "host_15010_untouched": true,
+  "timestamp_local": "2026-10-17 04:44:57 CST",
+  "notes": "Fresh port 15280 (avoided 15150-15270). Re-QA after fix2; painted DOM 归属部门 PASS. No git/checklist/UAT."
+}

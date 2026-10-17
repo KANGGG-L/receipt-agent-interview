@@ -1,0 +1,2 @@
+{"verdict": "PASS", "hits": 0, "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat014-qa/evidence/no-new-ui.json"}
+no_new_ui_exit=0

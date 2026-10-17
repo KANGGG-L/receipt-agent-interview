@@ -1,0 +1,29 @@
+=== repo static markers ===
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:302:let inventoryLoadSeq = 0;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:311:function markInventoryMetricsFailed() {
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:378:    const mySeq = ++inventoryLoadSeq;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:381:        if (mySeq !== inventoryLoadSeq) return null;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:389:        if (ret == null || mySeq !== inventoryLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:578:        if (mySeq !== inventoryLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:590:    markInventoryMetricsFailed();
+/workspace/receipt-agent-interview/demo/static/js/dish_bom.js:151:let dishesLoadSeq = 0;
+/workspace/receipt-agent-interview/demo/static/js/dish_bom.js:177:    const mySeq = ++dishesLoadSeq;
+/workspace/receipt-agent-interview/demo/static/js/dish_bom.js:180:            if (mySeq !== dishesLoadSeq) return null;
+/workspace/receipt-agent-interview/demo/static/js/dish_bom.js:185:            if (ret == null || mySeq !== dishesLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/dish_bom.js:197:            if (mySeq !== dishesLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/dish_consumption.js:604:function markDishKpiFailed() {
+/workspace/receipt-agent-interview/demo/static/js/dish_consumption.js:672:            markDishKpiFailed();
+/workspace/receipt-agent-interview/demo/static/js/dish_consumption.js:684:        markDishKpiFailed();
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:43:let workbenchQueueLoadSeq = 0;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:44:let workbenchQueueKpiFailed = false;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:47:    workbenchQueueKpiFailed = true;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:83:    workbenchQueueKpiFailed = false;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:89:    const mySeq = ++workbenchQueueLoadSeq;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:92:            if (mySeq !== workbenchQueueLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:99:            if (mySeq !== workbenchQueueLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:108:    if (workbenchQueueKpiFailed) return;
+/workspace/receipt-agent-interview/demo/static/js/workbench_queue.js:142:    if (workbenchQueueKpiFailed) return;
+/workspace/receipt-agent-interview/demo/static/js/archive_list.js:78:let archiveLoadSeq = 0;
+/workspace/receipt-agent-interview/demo/static/js/archive_list.js:81:    const mySeq = ++archiveLoadSeq;
+/workspace/receipt-agent-interview/demo/static/js/archive_list.js:84:            if (mySeq !== archiveLoadSeq) return;
+/workspace/receipt-agent-interview/demo/static/js/archive_list.js:93:            if (mySeq !== archiveLoadSeq) return;

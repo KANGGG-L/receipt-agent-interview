@@ -1,0 +1,45 @@
+[
+  {
+    "id": 7,
+    "kind": "consume",
+    "qty": 1,
+    "qty_signed": -1,
+    "text": "-1"
+  },
+  {
+    "id": 6,
+    "kind": "adjust",
+    "qty": 1,
+    "qty_signed": 1,
+    "text": "+1"
+  },
+  {
+    "id": 5,
+    "kind": "reversal",
+    "qty": -1,
+    "qty_signed": -1,
+    "text": "-1"
+  },
+  {
+    "id": 4,
+    "kind": "in",
+    "qty": 1,
+    "qty_signed": 1,
+    "text": "+1"
+  },
+  {
+    "id": 3,
+    "kind": "consume",
+    "qty": 1,
+    "qty_signed": -1,
+    "text": "-1"
+  },
+  {
+    "id": 1,
+    "kind": "in",
+    "qty": 10,
+    "qty_signed": 10,
+    "text": "+10"
+  }
+]
+NODE_HARNESS_PASS=true

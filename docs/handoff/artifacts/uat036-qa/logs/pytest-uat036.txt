@@ -1,0 +1,4 @@
+PASS test_dish_and_workbench_fail_markers
+PASS test_inventory_fail_markers
+PASS test_supplier_archive_does_not_clobber_archive_dash
+3/3 PASS

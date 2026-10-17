@@ -1,0 +1,91 @@
+{
+  "steps": [
+    {
+      "create_sku": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "id": 1,
+          "canonical_name": "未采购测试料UAT018"
+        }
+      }
+    },
+    {
+      "extreme_unpurchased": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "data": {
+            "id": 1,
+            "name": "UAT018极大BOM无采购",
+            "category": "测试",
+            "category_id": 2,
+            "price": 88.0,
+            "description": "",
+            "status": "active",
+            "version": 1,
+            "created_at": "2026-10-17T06:57:08",
+            "updated_at": "2026-10-17T06:57:08",
+            "ingredients": [
+              {
+                "id": 1,
+                "component_type": "sku",
+                "component_id": 1,
+                "component_name": "未采购测试料UAT018",
+                "sku_id": 1,
+                "sku_name": "未采购测试料UAT018",
+                "sku_category": "测试",
+                "sku_base_unit": "kg",
+                "sku_current_stock": 0.0,
+                "sku_last_unit_price": 0.0,
+                "consumption_qty": 999999999999.0,
+                "unit": "kg",
+                "yield_rate": 1.0,
+                "loss_rate": 0.0,
+                "notes": "",
+                "ingredient_cost": 0.0,
+                "warning": "",
+                "expanded": []
+              }
+            ],
+            "theoretical_cost": 0.0,
+            "gross_profit": 88.0,
+            "gross_margin_rate": 100.0
+          }
+        }
+      }
+    },
+    {
+      "reject_nan": {
+        "status": 500,
+        "msg": "系统出了点问题，这次操作没有完成，数据没有被改动。请稍后再试，如果一直这样请联系管理员。",
+        "code": "INTERNAL_ERROR"
+      }
+    },
+    {
+      "reject_inf": {
+        "status": 500,
+        "msg": "系统出了点问题，这次操作没有完成，数据没有被改动。请稍后再试，如果一直这样请联系管理员。",
+        "code": "INTERNAL_ERROR"
+      }
+    },
+    {
+      "reject_neg": {
+        "status": 400,
+        "msg": "食材单份消耗量必须大于 0",
+        "code": null
+      }
+    },
+    {
+      "reject_zero": {
+        "status": 400,
+        "msg": "食材单份消耗量必须大于 0",
+        "code": null
+      }
+    }
+  ],
+  "tenant_b": {
+    "status": "success",
+    "data": []
+  }
+}

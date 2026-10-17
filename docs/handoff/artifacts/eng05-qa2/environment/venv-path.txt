@@ -1,0 +1,1 @@
+PY=/workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa2/environment/venv/bin/python

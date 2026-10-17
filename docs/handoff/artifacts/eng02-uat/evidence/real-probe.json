@@ -1,0 +1,824 @@
+{
+  "base": "http://127.0.0.1:15441",
+  "mocks_used": false,
+  "checks": {
+    "AC1_chkAutoAnalyze_count": 0,
+    "AC2_upload": {
+      "status": 200,
+      "query": "treatment=true&async=true&force=false",
+      "force_in_query": false,
+      "job_id": "dcb99152d9c043228936ec03d4892576",
+      "keys": [
+        "image_url",
+        "job_id",
+        "receipt_id",
+        "status"
+      ]
+    },
+    "AC2_result": {
+      "prefill": true,
+      "secs": 19.5,
+      "supplier": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total": "13.00",
+      "item_rows": 1,
+      "preConfirm_hidden": true,
+      "job_polls": 24
+    },
+    "AC3_quality": {
+      "preConfirm_visible": true,
+      "quality_warn_visible": true,
+      "uploads_before_click": 0,
+      "after_start": {
+        "status": 400,
+        "force_in_query": false,
+        "body": "{\"status\":\"error\",\"code\":\"IMAGE_QUALITY_ERROR\",\"msg\":\"图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试\",\"quality_warnings\":[\"image_blur\"],\"blur_score\":1.06,\"confidence\":0.35}",
+        "errorCard_visible": true,
+        "btnForceRetry_visible": true
+      }
+    }
+  },
+  "network": [
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.69,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.7,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/auth/me"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/suppliers"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipts"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/departments"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/suppliers"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/payables"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes/daily_consumption?date=2026-10-17"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes?status=active"
+    },
+    {
+      "t": 1792233535.86,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?include_inactive=0"
+    },
+    {
+      "t": 1792233535.88,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?stock=low"
+    },
+    {
+      "t": 1792233535.9,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory/logs?"
+    },
+    {
+      "t": 1792233535.91,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/payments"
+    },
+    {
+      "t": 1792233535.91,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/reconciliation"
+    },
+    {
+      "t": 1792233536.71,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/auth/me"
+    },
+    {
+      "t": 1792233536.72,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipts"
+    },
+    {
+      "t": 1792233536.72,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?"
+    },
+    {
+      "t": 1792233536.72,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/suppliers"
+    },
+    {
+      "t": 1792233536.74,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory/logs?"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.81,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/auth/me"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/suppliers"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipts"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/departments"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes/daily_consumption?date=2026-10-17"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes?status=active"
+    },
+    {
+      "t": 1792233536.94,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?include_inactive=0"
+    },
+    {
+      "t": 1792233536.95,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory/logs?"
+    },
+    {
+      "t": 1792233538.55,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/upload?treatment=true&async=true&force=false"
+    },
+    {
+      "t": 1792233538.65,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233538.65,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipt/1/image?v=a3de56ca&sig=31b01b00521a439196bdc52ae5ef35f82295d8f88fa32aa2473f9d96642f3953"
+    },
+    {
+      "t": 1792233539.47,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233540.27,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233541.08,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233541.88,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233542.69,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233543.49,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233544.3,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233545.1,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233545.91,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233546.71,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233547.52,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233548.32,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233549.13,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233549.93,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233550.74,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233551.54,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233552.35,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233553.15,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233553.96,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233554.77,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233555.58,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233556.38,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233557.19,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/job/dcb99152d9c043228936ec03d4892576"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.21,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.22,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/csp-report"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/auth/me"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/suppliers"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipts"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/departments"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes/daily_consumption?date=2026-10-17"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/dishes?status=active"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory?include_inactive=0"
+    },
+    {
+      "t": 1792233558.33,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/receipt/1/image?v=a3de56ca&sig=31b01b00521a439196bdc52ae5ef35f82295d8f88fa32aa2473f9d96642f3953"
+    },
+    {
+      "t": 1792233558.34,
+      "m": "GET",
+      "url": "http://127.0.0.1:15441/api/inventory/logs?"
+    },
+    {
+      "t": 1792233561.8,
+      "m": "POST",
+      "url": "http://127.0.0.1:15441/api/upload?treatment=true&async=true&force=false"
+    }
+  ],
+  "verdict": {
+    "AC1": true,
+    "AC2": true,
+    "AC3": true
+  },
+  "overall": "PASS"
+}

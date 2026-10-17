@@ -1,0 +1,46 @@
+=== UAT-010 live API verify 2026-10-17 04:19:44 CST port=15210 ===
+HTML_HAS_authLogoutBtn=1
+HTML_HAS_退出登录=2
+HTML_HAS_demoRoleSwitch=1
+JS_HAS_requestAuthLogout=1
+JS_HAS_cancel_noop=1
+JS_getAuthToken_null=1
+JS_getAuthToken_returns_null= True
+initDemoRoleSwitch_calls_logout_api= False
+syncAuthChrome_hides_demoRoleSwitch= True
+--- ROLE=admin email=admin@demo.hk ---
+LOGIN_BODY={"status":"success","token":"admin@demo.hk.admin.1792225184.default.c96e7b88684e8836.214084b7096ce7ffcb6c9f1bd4505040789caacbd6ee27fb121be141e310435b","refresh_token":null,"account":{"email":"admin@demo.hk","role":"admin","tenant":"default"}}
+ME={"status":"success","auth_enabled":true,"account":{"email":"admin@demo.hk","role":"admin"},"identity_source":"cookie","demo_identity":false}
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:19:44 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_COOKIE_JAR=401
+RECEIPTS_STALE_TOKEN=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+ROLE_admin_PASS=true
+--- ROLE=owner email=boss@demo.hk ---
+LOGIN_BODY={"status":"success","token":"boss@demo.hk.owner.1792225185.default.9940cbd7fcf2d093.be32aa2a8bb8365213c09354f71348038f1ea0f8f7828d61a98a4849cae041d2","refresh_token":null,"account":{"email":"boss@demo.hk","role":"owner","tenant":"default"}}
+ME={"status":"success","auth_enabled":true,"account":{"email":"boss@demo.hk","role":"owner"},"identity_source":"cookie","demo_identity":false}
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:19:45 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_COOKIE_JAR=401
+RECEIPTS_STALE_TOKEN=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+ROLE_owner_PASS=true
+--- ROLE=staff email=staff@demo.hk ---
+LOGIN_BODY={"status":"success","token":"staff@demo.hk.staff.1792225185.default.055651f26678600f.6eff6ed5e7a282a6a0ec9bfd5d4be0e0ad051e441294f1530fdc52d9a35e3806","refresh_token":null,"account":{"email":"staff@demo.hk","role":"staff","tenant":"default"}}
+ME={"status":"success","auth_enabled":true,"account":{"email":"staff@demo.hk","role":"staff"},"identity_source":"cookie","demo_identity":false}
+RECEIPTS_BEFORE=200
+LOGOUT_BODY={"status":"success","msg":"已退出登录"}
+LOGOUT_SET_COOKIE=set-cookie: receipt_session=""; expires=Fri, 16 Oct 2026 20:19:45 GMT; Max-Age=0; Path=/; SameSite=lax
+RECEIPTS_AFTER_COOKIE_JAR=401
+RECEIPTS_STALE_TOKEN=401
+ME_AFTER={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+ROLE_staff_PASS=true
+--- NEGATIVE: X-Role alone without cookie ---
+X_ROLE_ONLY_RECEIPTS=401
+X_ROLE_NOT_PRODUCTION_AUTH_PASS=true
+IDEMPOTENT_LOGOUT={"status":"success","msg":"已退出登录"}
+IDEMPOTENT_PASS=true
+LIVE_VERIFY_OVERALL=PASS

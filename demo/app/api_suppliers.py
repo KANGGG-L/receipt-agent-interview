@@ -482,8 +482,7 @@ def cost_report(request: Request, month: str = "", start_date: str = "",
             "trend": _trend_type(month_total, prev_total_all),
             "currency": "HKD",
             "basis": "已入账单据总额（含服务费、税、折扣、运费），按明细金额比例分摊到部门；外币单据按入账时汇率折成港币",
-            "unconverted": built["unconverted"],
-            "unconverted_warning": cr.unconverted_warning(built["unconverted"]),
+            **cr.unconverted_fields(built["unconverted"]),
         },
     }
 

@@ -1,0 +1,15 @@
+{
+  "stage": "saas-scale-uat",
+  "port": 15140,
+  "pid": 73643,
+  "pidfile": 73643,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-scale-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15140_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15140 for SAAS-SCALE UAT; avoided 15130/15450; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:33 Asia/Shanghai (CST)",
+  "notes": "Independent UAT PASS; checklist/ledger flipped; no git push."
+}

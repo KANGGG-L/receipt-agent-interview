@@ -1,0 +1,25 @@
+PASS identity header 食材品名
+PASS identity header 供应商名称
+PASS non-identity 分类
+PASS html contains data-i18n-skip
+PASS html escapes script in name
+PASS html does not contain raw <script>
+PASS Hans: name unchanged
+PASS Hans: name == CSV cell
+PASS Hant: name preserved (skip)
+PASS Hant: name == CSV cell exact
+PASS Hant: header converted
+PASS Hant: chrome converted
+PASS Hant: status converted (not skipped)
+PASS Hans again: name still LONG
+PASS Hans again: name == CSV
+PASS Hans again: header back to Hans source form
+PASS Hant not globally disabled
+PASS chrome actually converted under Hant
+PASS status actually converted under Hant
+{
+  "ok": true,
+  "passed": 19,
+  "hantHeader": "食材品名",
+  "hantChrome": "匯出 CSV"
+}

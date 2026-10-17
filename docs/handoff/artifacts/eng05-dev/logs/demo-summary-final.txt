@@ -1,0 +1,7 @@
+DEMO suite (full demo/tests/, collected 2193 + 1 collection-skip):
+  exit=1
+  35 failed, 2139 passed, 20 skipped
+  duration=1024.17s (0:17:04)
+  junit=logs/demo-junit.xml
+  log=logs/demo-pytest.txt
+  NOT a 418-subset

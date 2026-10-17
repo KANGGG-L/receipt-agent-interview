@@ -1,0 +1,20 @@
+{
+  "stage": "uat007-qa",
+  "port": 15190,
+  "pid": 119552,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat007-qa/environment/qa_isolated_smoke.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "stop_exit_code": 0,
+  "port_free": true,
+  "port_released": "port_15190_released",
+  "pid_alive_after_stop": false,
+  "browser_tab_closed": true,
+  "browser_tabs_opened": 0,
+  "host_15010_status": "not_present_ok",
+  "host_15010_untouched": true,
+  "orphan_listen_151xx": null,
+  "ss_listen_empty": true,
+  "reuseaddr_bind_ok": true,
+  "timestamp_local": "2026-10-17 04:10:43 CST",
+  "notes": "Fresh port 15190 (avoided 15150-15180). Specialty 5/5 + ledger API 7/7 + consume regression 2/2 PASS. Live API AC1-5 PASS. No browser. No git write. UAT not started."
+}

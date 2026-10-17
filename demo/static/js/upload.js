@@ -1887,7 +1887,85 @@ function abortLoadingAndSwitchToManual() {
 // 工具激活状态: null (未选中任何工具), 'zoom' (定点放大模式), 'crop' (裁剪模式)
 let activeTool = null;
 
+// UAT020：批量照片抽屉（z-index 95）曾盖住原图旋转/裁剪。给工具层打标记 + 抽屉底部让出工具条。
+// 不丢 originalFile / objectUrl；不 force-click。独立 QA 需用真实 elementFromPoint + click 复验。
+function ensureImgToolsHitLayer() {
+    const toolbar = document.getElementById('imgToolbar');
+    const viewer = document.getElementById('imgViewerContainer');
+    if (toolbar) {
+        toolbar.classList.add('img-tools-hit-layer');
+        if (!toolbar.getAttribute('data-uat020')) toolbar.setAttribute('data-uat020', 'img-tools-layer');
+    }
+    if (viewer) {
+        viewer.classList.add('img-tools-hit-layer');
+        if (!viewer.getAttribute('data-uat020')) viewer.setAttribute('data-uat020', 'img-viewer-layer');
+    }
+}
+
+function syncPhotoSiderClearanceForImgTools() {
+    const drawer = document.getElementById('photoSider');
+    const toolbar = document.getElementById('imgToolbar');
+    if (!drawer) return;
+    if (!drawer.classList.contains('open') || !toolbar || toolbar.classList.contains('hide') || toolbar.offsetParent === null) {
+        drawer.style.bottom = '';
+        drawer.style.height = '';
+        return;
+    }
+    const tr = toolbar.getBoundingClientRect();
+    if (!tr || tr.width <= 0 || tr.height <= 0) {
+        drawer.style.bottom = '';
+        drawer.style.height = '';
+        return;
+    }
+    // Keep drawer above the toolbar band so rotate remains hittable even if stacking contexts differ.
+    const gap = 10;
+    const clearBottom = Math.max(0, Math.round(window.innerHeight - tr.top + gap));
+    drawer.style.bottom = clearBottom + 'px';
+    drawer.style.height = 'auto';
+}
+
+function refreshUat020ImgToolsVsDrawer() {
+    ensureImgToolsHitLayer();
+    syncPhotoSiderClearanceForImgTools();
+}
+
+(function bindUat020DrawerClearanceObservers() {
+    if (typeof window === 'undefined' || window.__uat020DrawerClearanceBound) return;
+    window.__uat020DrawerClearanceBound = true;
+    let _uat020Syncing = false;
+    window.addEventListener('resize', function () {
+        if (_uat020Syncing) return;
+        syncPhotoSiderClearanceForImgTools();
+    });
+    function watchDrawer() {
+        const drawer = document.getElementById('photoSider');
+        if (!drawer || typeof MutationObserver === 'undefined') return;
+        const mo = new MutationObserver(function (mutations) {
+            // Only react to class (open/close). Ignore style writes from syncPhotoSiderClearanceForImgTools.
+            const classChanged = mutations.some(function (m) {
+                return m.type === 'attributes' && m.attributeName === 'class';
+            });
+            if (!classChanged || _uat020Syncing) return;
+            _uat020Syncing = true;
+            try { refreshUat020ImgToolsVsDrawer(); }
+            finally { _uat020Syncing = false; }
+        });
+        mo.observe(drawer, { attributes: true, attributeFilter: ['class'] });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', function () {
+            watchDrawer();
+            refreshUat020ImgToolsVsDrawer();
+        });
+    } else {
+        watchDrawer();
+        refreshUat020ImgToolsVsDrawer();
+    }
+})();
+
 function updateToolbarButtonStates() {
+    refreshUat020ImgToolsVsDrawer();
+
     const photo = getActivePhoto();
     const cropDisabled = !isPhotoSelectable(photo);  // 已解析/已保存不可裁剪
     // 删除图片 / 更改图片：pending 与失败态可见（失败态提供换图重传出口），解析开始后隐藏避免改动原图
@@ -2348,6 +2426,8 @@ function bakeCurrentRotation() {
                 if (currFile._originalName) newFile._originalName = currFile._originalName;
                 selectedFile = newFile;
                 if (photo) {
+                    // UAT020 / rotate bake: never drop originalFile / objectUrl (reset must restore)
+                    if (!photo.originalFile && photo.file) photo.originalFile = photo.file;
                     if (photo.croppedObjectUrl) {
                         try { URL.revokeObjectURL(photo.croppedObjectUrl); } catch (e) {}
                     }

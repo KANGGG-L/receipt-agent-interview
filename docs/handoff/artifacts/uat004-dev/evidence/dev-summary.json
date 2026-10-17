@@ -1,0 +1,11 @@
+{
+  "card": "UAT-004",
+  "phase": "DEV",
+  "verdict": "PASS",
+  "port": 15461,
+  "supplier_rows": 9,
+  "api_probe": "evidence/supplier-optional-probe.json",
+  "ui_probe": "evidence/supplier-ui-probe.json",
+  "product_edits": "none (HEAD already satisfies AC; re-verify only)",
+  "ts": "2026-10-17 19:27:37 CST"
+}

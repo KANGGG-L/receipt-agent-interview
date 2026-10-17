@@ -1,0 +1,19 @@
+{
+  "card": "UAT-017",
+  "role": "independent_qa",
+  "verdict": "PASS",
+  "port": 15240,
+  "pytest_specialty": {
+    "passed": 4,
+    "failed": 0
+  },
+  "frontend_harness": {
+    "pass": 22,
+    "fail": 0
+  },
+  "uvicorn_served_html_js": "PASS",
+  "uat_started": false,
+  "git": false,
+  "checklist_flipped": false,
+  "report": "docs/handoff/artifacts/uat017-qa-report.md"
+}

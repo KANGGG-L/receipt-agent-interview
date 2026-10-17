@@ -1,0 +1,42 @@
+=== inventory_board.js:691-693 ===
+   691	                const rawName = (r.name == null) ? '' : String(r.name);
+   692	                const nameEsc = w2Escape(rawName);
+   693	                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+=== style.css:2908 (baseline nowrap) ===
+  2902	#tab-inventory table.data-table td:nth-child(2),
+  2903	#tab-inventory table.data-table td:nth-child(3),
+  2904	#tab-inventory table.data-table td:nth-child(4),
+  2905	#tab-inventory table.data-table td:nth-child(5),
+  2906	#tab-inventory table.data-table td:nth-child(6) {
+  2907	    overflow: visible;
+  2908	    white-space: nowrap;
+  2909	    text-overflow: clip;
+=== style.css:2934-2940 (override) ===
+  2931	/* UAT-003：库存流水台账品名列 —— 覆盖 #tab-inventory td:nth-child(3) 的
+  2932	   white-space:nowrap，避免 Synthetic_Rice / Synthetic_Oil 被窄列裁成相同前缀。
+  2933	   选择器双 ID 提高优先级；原值经 title / data-full-name 可获取，主文案仍为业务名。 */
+  2934	#tab-inventory #inventoryLedgerTable td.inv-ledger-name-cell {
+  2935	    height: auto;
+  2936	    min-height: 66px;
+  2937	    overflow: visible;
+  2938	    white-space: normal;
+  2939	    word-break: break-word;
+  2940	    overflow-wrap: anywhere;
+=== api_inventory.py:799 ===
+   798	        data.append({
+   799	            "id": r.id, "sku_id": r.sku_id, "name": r.name,
+   800	            "qty": r.qty, "unit": r.unit, "amount": r.amount if can_see_prices else None,
+   801	            "vendor": r.vendor, "date": d, "kind": r.kind,
+   802	            "note": r.note, "receipt_id": r.receipt_id,
+   803	            "created_at": r.created_at,
+   804	        })
+=== served JS nameCell from :15180 ===
+   691	                const rawName = (r.name == null) ? '' : String(r.name);
+   692	                const nameEsc = w2Escape(rawName);
+   693	                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+=== served CSS override from :15180 ===
+  2934	#tab-inventory #inventoryLedgerTable td.inv-ledger-name-cell {
+  2935	    height: auto;
+  2936	    min-height: 66px;
+  2937	    overflow: visible;
+  2938	    white-space: normal;

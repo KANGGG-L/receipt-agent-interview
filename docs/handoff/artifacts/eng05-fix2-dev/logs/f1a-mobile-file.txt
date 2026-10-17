@@ -1,0 +1,27 @@
+===== f1a_mobile 2026-10-17 08:51:49 CST =====
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 16 items
+
+demo/tests/test_f1a_mobile.py::test_s3_01_upload_buttons_not_covered[390-844] PASSED [  6%]
+demo/tests/test_f1a_mobile.py::test_s3_01_upload_buttons_not_covered[412-915] PASSED [ 12%]
+demo/tests/test_f1a_mobile.py::test_s3_01_upload_buttons_not_covered[360-740] PASSED [ 18%]
+demo/tests/test_f1a_mobile.py::test_s3_01_start_analysis_button_clickable_when_quality_bad[390-844] PASSED [ 25%]
+demo/tests/test_f1a_mobile.py::test_s3_01_start_analysis_button_clickable_when_quality_bad[412-915] PASSED [ 31%]
+demo/tests/test_f1a_mobile.py::test_s3_01_start_analysis_button_clickable_when_quality_bad[360-740] PASSED [ 37%]
+demo/tests/test_f1a_mobile.py::test_s3_19_good_quality_analyses_directly_without_confirm_card PASSED [ 43%]
+demo/tests/test_f1a_mobile.py::test_s3_26_camera_and_gallery_buttons_on_mobile_single_on_desktop PASSED [ 50%]
+demo/tests/test_f1a_mobile.py::test_s3_03_bottom_tab_bar_and_more_sheet PASSED [ 56%]
+demo/tests/test_f1a_mobile.py::test_s3_03_more_sheet_admin_only_items PASSED [ 62%]
+demo/tests/test_f1a_mobile.py::test_s3_03_role_switch_in_more_sheet_reloads_with_new_role PASSED [ 68%]
+demo/tests/test_f1a_mobile.py::test_s3_03_desktop_has_no_tab_bar PASSED  [ 75%]
+demo/tests/test_f1a_mobile.py::test_s3_08_review_rows_are_cards_and_save_button_fixed_full_width PASSED [ 81%]
+demo/tests/test_f1a_mobile.py::test_s3_08_toast_inside_screen_and_banner_limited PASSED [ 87%]
+demo/tests/test_f1a_mobile.py::test_s3_08_auto_scroll_to_form_after_convert PASSED [ 93%]
+demo/tests/test_f1a_mobile.py::test_s3_09_waiting_ux_no_fake_percent_eta_and_escape_next_to_timer PASSED [100%]
+
+============================= 16 passed in 32.75s ==============================
+f1a_mobile exit=0

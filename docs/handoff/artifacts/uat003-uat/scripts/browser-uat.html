@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>UAT-003 browser</title>
+<link rel="stylesheet" href="http://127.0.0.1:15180/static/css/style.css">
+<style>
+/* force narrow ledger viewport similar to squeezed inventory columns */
+#tab-inventory { width: 720px; margin: 12px; }
+#inventoryLedgerTable { width: 100%; }
+.badge { display: inline-block; padding: 2px 6px; }
+.badge-secondary { background: #e5e7eb; }
+</style>
+</head><body>
+<div id="tab-inventory">
+  <table id="inventoryLedgerTable" class="data-table">
+    <thead>
+      <tr>
+        <th>日期</th><th>类型</th><th>品名</th>
+        <th class="col-right">变动数量</th><th>单位</th>
+        <th class="col-right">金额</th><th>供应商</th>
+        <th class="col-center">关联单据</th><th>备注</th>
+      </tr>
+    </thead>
+    <tbody id="inventoryLedgerBody">
+      <tr><td colspan="9">加载中…</td></tr>
+    </tbody>
+  </table>
+</div>
+<pre id="out"></pre>
+<script>
+/* live API payload captured from isolated :15180 during this UAT */
+window.__UAT003_API__ =
+{"status":"success","data":[{"id":3,"sku_id":3,"name":"特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测","qty":3.0,"unit":"斤","amount":null,"vendor":"Vendor_B","date":"2026-10-17","kind":"in","note":"","receipt_id":null,"created_at":"2026-10-17T04:04:27"},{"id":2,"sku_id":2,"name":"Synthetic_Oil","qty":2.0,"unit":"L","amount":null,"vendor":"Vendor_A","date":"2026-10-17","kind":"in","note":"","receipt_id":null,"created_at":"2026-10-17T04:04:27"},{"id":1,"sku_id":1,"name":"Synthetic_Rice","qty":1.0,"unit":"kg","amount":null,"vendor":"Vendor_A","date":"2026-10-17","kind":"in","note":"","receipt_id":null,"created_at":"2026-10-17T04:04:27"}],"meta":{"count":3}};
+function w2Escape(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+window.w2Escape = w2Escape;
+window.apiFetch = function(url) {
+  // loadInventoryLedger only GETs /api/inventory/logs?...
+  return Promise.resolve({
+    json: () => Promise.resolve(window.__UAT003_API__)
+  });
+};
+window.showToast = function(){};
+window.isOwnerRoleNow = function(){ return true; };
+</script>
+<script src="http://127.0.0.1:15180/static/js/inventory_board.js"></script>
+<script>
+(async function() {
+  const out = document.getElementById('out');
+  try {
+    if (typeof loadInventoryLedger !== 'function') throw new Error('loadInventoryLedger missing');
+    loadInventoryLedger();
+    // allow promise then() to paint
+    await new Promise(r => setTimeout(r, 100));
+    const cells = [...document.querySelectorAll('#inventoryLedgerTable td.inv-ledger-name-cell')];
+    const texts = cells.map(c => (c.querySelector('.inv-ledger-name-text') || c).textContent.trim());
+    const titles = cells.map(c => c.getAttribute('title') || '');
+    const fulls = cells.map(c => c.getAttribute('data-full-name') || '');
+    const rice = cells.find(c => (c.getAttribute('data-full-name') || '').includes('Synthetic_Rice'));
+    const oil = cells.find(c => (c.getAttribute('data-full-name') || '').includes('Synthetic_Oil'));
+    const zh = cells.find(c => (c.getAttribute('data-full-name') || '').includes('特级有机黑糯米_'));
+    function cs(el) {
+      if (!el) return null;
+      const s = getComputedStyle(el);
+      return { whiteSpace: s.whiteSpace, overflow: s.overflow, wordBreak: s.wordBreak, textOverflow: s.textOverflow };
+    }
+    const riceText = rice ? rice.querySelector('.inv-ledger-name-text').textContent.trim() : '';
+    const oilText = oil ? oil.querySelector('.inv-ledger-name-text').textContent.trim() : '';
+    const zhText = zh ? zh.querySelector('.inv-ledger-name-text').textContent.trim() : '';
+    const zhFull = zh ? (zh.getAttribute('data-full-name') || '') : '';
+    const result = {
+      cellCount: cells.length,
+      texts,
+      titles,
+      fulls,
+      riceText,
+      oilText,
+      zhText,
+      zhFull,
+      zhTitle: zh ? zh.getAttribute('title') : '',
+      visibleDistinct: riceText !== oilText && riceText.includes('Rice') && oilText.includes('Oil'),
+      riceVisibleFull: riceText === 'Synthetic_Rice',
+      oilVisibleFull: oilText === 'Synthetic_Oil',
+      titleMatches: !!(rice && oil && zh) &&
+        rice.getAttribute('title') === 'Synthetic_Rice' &&
+        oil.getAttribute('title') === 'Synthetic_Oil' &&
+        zh.getAttribute('title') === zhFull,
+      dataFullMatches: !!(rice && oil && zh) &&
+        rice.getAttribute('data-full-name') === 'Synthetic_Rice' &&
+        oil.getAttribute('data-full-name') === 'Synthetic_Oil' &&
+        zhFull.indexOf('_') >= 0 && zhFull.length === 28,
+      notReplacedById: texts.every(t => t !== '1' && t !== '2' && t !== '3') &&
+        riceText === 'Synthetic_Rice' && oilText === 'Synthetic_Oil' &&
+        !/^#?\d+$/.test(riceText),
+      cssRice: cs(rice),
+      cssRiceText: cs(rice && rice.querySelector('.inv-ledger-name-text')),
+      cssWrapNormal: rice && getComputedStyle(rice).whiteSpace === 'normal',
+      cssOverflowVisible: rice && getComputedStyle(rice).overflow === 'visible',
+      // painted box: clientWidth of text should allow suffix; scrollWidth comparison
+      riceClientW: rice ? rice.clientWidth : 0,
+      riceScrollW: rice ? rice.scrollWidth : 0,
+      oilClientW: oil ? oil.clientWidth : 0,
+      oilScrollW: oil ? oil.scrollWidth : 0,
+      // suffix characters present in visible DOM text (not clipped out of textContent)
+      riceHasSuffixInDOM: riceText.indexOf('Rice') >= 0,
+      oilHasSuffixInDOM: oilText.indexOf('Oil') >= 0,
+    };
+    result.pass =
+      result.cellCount === 3 &&
+      result.visibleDistinct &&
+      result.riceVisibleFull &&
+      result.oilVisibleFull &&
+      result.titleMatches &&
+      result.dataFullMatches &&
+      result.notReplacedById &&
+      result.cssWrapNormal &&
+      result.cssOverflowVisible &&
+      result.riceHasSuffixInDOM &&
+      result.oilHasSuffixInDOM;
+    out.textContent = JSON.stringify(result, null, 2);
+    document.title = result.pass ? 'UAT003_PASS' : 'UAT003_FAIL';
+    document.documentElement.setAttribute('data-uat003', result.pass ? 'PASS' : 'FAIL');
+  } catch (e) {
+    out.textContent = String(e && e.stack || e);
+    document.title = 'UAT003_FAIL';
+  }
+})();
+</script>
+</body></html>

@@ -1,0 +1,40 @@
+=== served inventory_board.js ===
+487:            // UAT-027：港币展示走 I18N.fmtMoney（HK$ + 千分位）；null/非数 → —
+490:                ? I18N.fmtMoney(sku.last_unit_price)
+648:        ? I18N.fmtMoney(sku.last_unit_price)
+789:                    <td class="col-right">${amt != null ? w2Escape(I18N.fmtMoney(amt)) : '—'}</td>
+1339:            sumText.innerText = `检测到 ${activeItems.length} 项食材价格异常上涨，预估影响成本 ${I18N.fmtMoney(data.total_impact_amount)}`;
+1399:                    单价 ${I18N.fmtMoney(it.earliest_price)} -&gt; <strong style="color:#dc2626;">${I18N.fmtMoney(it.latest_price)}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">${I18N.fmtMoney(it.impact_amount)}</strong>
+1672:        yGrid += `<text x="${padL - 8}" y="${(y + 4).toFixed(1)}" class="ph-axis-label" text-anchor="end">${w2Escape(formatHkd(v))}</text>`;
+1689:            <text x="${width - padR}" y="${(y - 6).toFixed(1)}" class="ph-avg-label" text-anchor="end">均 ${w2Escape(formatHkd(avgLine))}</text>
+1699:            <text x="${width - padR}" y="${(ty - 6).toFixed(1)}" class="ph-threshold-label" text-anchor="end">阈值 ${w2Escape(formatHkd(thresholdUpper))}</text>
+1711:        const title = `${list[i].date}: ${formatHkd(c.price)}`;
+1733:function formatHkd(price) {
+1736:    if (typeof I18N !== 'undefined' && I18N && typeof I18N.fmtMoney === 'function') {
+1737:        return I18N.fmtMoney(price, 'HKD');
+1863:                <div class="ph-metric-value">${w2Escape(formatHkd(summary.latest_price))}</div>
+1867:                <div class="ph-metric-value">${noRecent ? '—' : w2Escape(formatHkd(summary.avg_30d))}</div>
+1876:                <div class="ph-metric-value ph-metric-range">${w2Escape(formatHkd(summary.min_price))} <span class="ph-range-sep">–</span> ${w2Escape(formatHkd(summary.max_price))}</div>
+1945:                <td class="col-right"><strong>${w2Escape(Number.isFinite(price) ? formatHkd(price) : '—')}</strong></td>
+1974:        ? formatHkd(data.avg_cost) : '-';
+1976:        ? formatHkd(data.last_unit_price) : '-';
+2004:            ? formatHkd(b.unit_cost) : '-';
+
+=== served finance.js ===
+43:    if (r.currency && r.currency !== 'HKD') {
+67:    if (r && r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+167:        const isForeign = r.currency && r.currency !== 'HKD';
+179:        const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+189:            amountCell = `${I18N.fmtMoney(r.total_hkd)} <div style="font-size:0.72rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+190:            paidCell = `${I18N.fmtMoney(paid)}`;
+191:            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+195:            amountCell = `${I18N.fmtMoney(r.total_amount)}`;
+196:            paidCell = `${I18N.fmtMoney(paid)}`;
+197:            outCell = `<strong>${I18N.fmtMoney(out)}</strong>`;
+240:            problem = problem || ('单据 #' + rid + ' 只剩 ' + I18N.fmtMoney(max) + ' 没付，本次付款不能超过这个数。');
+283:            showToast('已登记支付 ' + I18N.fmtMoney(amount) + '。', 'success');
+372:            <li>「${w2Escape(drop.name)}」还没付的挂账单 <strong>${I18N.fmtMoney(drop.unpaid_credit_total)}</strong>（${Number(drop.unpaid_credit_count) || 0} 张），付款记录、别名、对账记录也一起并过去</li>
+387:        details: ['迁移单据 ' + (Number(drop.receipt_count) || 0) + ' 张', '迁移未付挂账单 ' + I18N.fmtMoney(drop.unpaid_credit_total)],
+534:                <td>${r.total_amount != null ? I18N.fmtMoney(r.total_amount) : '—'}</td>
+632:        w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(payOutstandingAmount(r)) + (isOver(r) ? '（已逾期）' : '（快到期）')));
+635:            li(pending.map(r => '#' + Number(r.id) + ' ' + w2Escape(r.supplier_name || '未识别') + I18N.fmtMoney(r.total_amount))),

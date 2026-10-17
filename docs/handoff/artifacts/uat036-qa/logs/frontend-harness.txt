@@ -1,0 +1,27 @@
+[PASS] inventoryLoadSeq present
+[PASS] markInventoryMetricsFailed sets em-dash
+[PASS] inventory retry button data-uat036
+[PASS] inventory checks res.ok
+[PASS] inventory catch guards mySeq
+[PASS] degradeInventoryLoad calls markInventoryMetricsFailed
+[PASS] clearInventoryMetricsFailed on success
+[PASS] dishesLoadSeq present
+[PASS] markDishesLoadFailed distinct from empty copy
+[PASS] dish retry onclick loadDishesList
+[PASS] loadDishesList guards mySeq
+[PASS] markDishKpiFailed sets kpi to em-dash
+[PASS] dish kpi retry present
+[PASS] dailyConsumptionReqSeq still used
+[PASS] daily_consumption checks res.ok
+[PASS] workbenchQueueLoadSeq present
+[PASS] markWorkbenchQueueMetricsFailed sets qCount to em-dash
+[PASS] workbench retry data-uat036
+[PASS] updateWorkbenchQueueCounters skips when failed
+[PASS] renderWorkbenchQueueTable skips when failed
+[PASS] updateTodoBar guards archive fail em-dash
+[PASS] markArchiveKpiFailed still sets em-dash
+[PASS] archiveLoadSeq present
+[PASS] inventory success still assigns meta counts (not only dash)
+[PASS] dish KPI success still uses summary zeros via renderDailyKPI
+
+25 PASS / 0 FAIL

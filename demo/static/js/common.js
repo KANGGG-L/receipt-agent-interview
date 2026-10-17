@@ -712,6 +712,112 @@ function hideLoginPanel() {
     if (overlay && overlay.remove) overlay.remove();
 }
 
+// UAT-010：生产会话可见退出登录入口
+// - 仅 AUTH_ENABLED=1 且已登录时显示按钮；demo 角色下拉不是生产注销
+// - 取消确认 / 网络失败不得假退出（不清 AuthState、不弹登录面板）
+// - 成功后清客户端凭据键、吊销服务端会话，再显示登录面板
+let _authLogoutInFlight = false;
+let _authLogoutBtnBound = false;
+
+function clearClientAuthCredentials() {
+    // 生产会话凭据在 HttpOnly Cookie；本地仅清历史 Bearer 键，绝不写入密码/token。
+    try { localStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+    try { sessionStorage.removeItem(AUTH_TOKEN_KEY); } catch (e) {}
+    setAuthToken(null);
+}
+
+function storageHasAuthCredentials() {
+    try {
+        if (localStorage.getItem(AUTH_TOKEN_KEY)) return true;
+    } catch (e) {}
+    try {
+        if (sessionStorage.getItem(AUTH_TOKEN_KEY)) return true;
+    } catch (e) {}
+    return false;
+}
+
+function syncAuthChrome() {
+    const loggedIn = !!(AuthState.enabled && AuthState.account);
+    const logoutWrap = document.getElementById('authLogoutWrap');
+    const logoutBtn = document.getElementById('authLogoutBtn');
+    if (logoutWrap) logoutWrap.style.display = loggedIn ? '' : 'none';
+    if (logoutBtn) {
+        logoutBtn.style.display = loggedIn ? '' : 'none';
+        logoutBtn.disabled = !!_authLogoutInFlight;
+        if (!_authLogoutBtnBound) {
+            _authLogoutBtnBound = true;
+            logoutBtn.addEventListener('click', requestAuthLogout);
+        }
+    }
+    // 生产鉴权开启时隐藏 demo 角色下拉，避免把「切换角色」误当成退出登录
+    const roleSwitch = document.getElementById('demoRoleSwitch');
+    if (roleSwitch) {
+        roleSwitch.style.display = AuthState.enabled ? 'none' : '';
+    }
+}
+
+function requestAuthLogout() {
+    if (!AuthState.enabled) return; // demo 免密模式无生产注销语义
+    if (_authLogoutInFlight) return;
+    showCustomConfirmModal({
+        title: '退出登录',
+        message: '确定退出当前账号吗？退出后需要重新登录才能继续操作。',
+        confirmText: '退出登录',
+        cancelText: '取消',
+        onConfirm: function () { performAuthLogout(); },
+        onCancel: function () { /* 取消：保持会话，不假退出 */ }
+    });
+}
+
+function performAuthLogout() {
+    if (_authLogoutInFlight) return;
+    _authLogoutInFlight = true;
+    syncAuthChrome();
+    const btn = document.getElementById('authLogoutBtn');
+    if (btn) btn.disabled = true;
+
+    apiFetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+        credentials: 'same-origin',
+        body: '{}'
+    })
+    .then(function (res) {
+        return Promise.all([res.status, res.json().catch(function () { return null; })]);
+    })
+    .then(function (pair) {
+        const httpStatus = pair[0];
+        const body = pair[1];
+        _authLogoutInFlight = false;
+        if (httpStatus >= 200 && httpStatus < 300 && body && body.status === 'success') {
+            clearClientAuthCredentials();
+            AuthState.account = null;
+            syncAuthChrome();
+            showLoginPanel('已退出登录');
+            if (typeof showToast === 'function') showToast('已退出登录', 'info');
+            return;
+        }
+        // 非成功：不清除本地会话态，避免假退出
+        syncAuthChrome();
+        const msg = (body && body.msg) ? body.msg : ('退出失败（HTTP ' + httpStatus + '）');
+        if (typeof showToast === 'function') showToast(msg, 'error');
+    })
+    .catch(function (err) {
+        _authLogoutInFlight = false;
+        syncAuthChrome();
+        console.error('退出登录请求异常', err);
+        if (typeof showToast === 'function') {
+            showToast('网络异常，未能退出。请检查网络后重试。', 'error');
+        }
+    });
+}
+
+window.requestAuthLogout = requestAuthLogout;
+window.performAuthLogout = performAuthLogout;
+window.syncAuthChrome = syncAuthChrome;
+window.clearClientAuthCredentials = clearClientAuthCredentials;
+window.storageHasAuthCredentials = storageHasAuthCredentials;
+
 function submitAuthLogin() {
     const emailElem = document.getElementById('authLoginEmail');
     const pwdElem = document.getElementById('authLoginPassword');
@@ -734,7 +840,7 @@ function submitAuthLogin() {
     .then(([httpStatus, ret]) => {
         if (btn) btn.disabled = false;
         if (httpStatus === 200 && ret && ret.status === 'success') {
-            setAuthToken(null);
+            clearClientAuthCredentials();
             AuthState.account = ret.account || null;
             if (errBox) errBox.textContent = '';
             // 登录成功 → 重探 /me 校验令牌并恢复正常界面
@@ -756,7 +862,10 @@ function probeAuthAndEnter(reloadData) {
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, body]) => {
             if (decideAuthProbe(httpStatus, body) === 'login') {
-                setAuthToken(null);
+                clearClientAuthCredentials();
+                AuthState.enabled = !!(body && body.auth_enabled);
+                AuthState.account = null;
+                syncAuthChrome();
                 showLoginPanel('请先登录');
                 return;
             }
@@ -771,6 +880,9 @@ function probeAuthAndEnter(reloadData) {
             if (banner) {
                 banner.style.display = AuthState.enabled ? 'none' : 'block';
             }
+            // 生产 Cookie 会话：确保 localStorage 无残留 Bearer；同步退出按钮可见性
+            clearClientAuthCredentials();
+            syncAuthChrome();
             hideLoginPanel();
             syncManualEntryVisibility();   // D12：按角色显隐「新建手工单」入口
             // QA-P1-03: 登录后强制刷新。首屏探测成功时复用已经发出的列表，避免同一页打两次 /api/receipts。

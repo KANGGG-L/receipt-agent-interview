@@ -1,0 +1,89 @@
+=== SEED ===
+WARN create_dish: module 'app.db' has no attribute 'create_dish'
+PASS DB seed long name present 
+=== PREVIEW vs CSV (8 reports) ===
+PASS inventory_stocktake: preview headers == CSV Hans headers 
+PASS inventory_stocktake: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS inventory_stocktake: biz col[1]='食材品名' row0 preview==HantCSV 
+PASS inventory_stocktake: biz col[1]='食材品名' row1 preview==HantCSV 
+PASS inventory_stocktake: biz col[9]='备注' row0 preview==HantCSV 
+PASS inventory_stocktake: biz col[9]='备注' row1 preview==HantCSV 
+PASS inventory_stocktake: synthetic long biz name appears in preview 
+PASS inventory_stocktake: Hant CSV headers == localize(Hans) 
+PASS dish_ingredient_consumption: preview headers == CSV Hans headers 
+PASS dish_ingredient_consumption: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS dish_ingredient_consumption: biz col[0]='食材品名' row0 preview==HantCSV 
+PASS dish_ingredient_consumption: biz col[8]='建议采购补货量' row0 preview==HantCSV 
+PASS dish_ingredient_consumption: Hant CSV headers == localize(Hans) 
+PASS inventory_valuation: preview headers == CSV Hans headers 
+PASS inventory_valuation: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS inventory_valuation: biz col[1]='食材品名' row0 preview==HantCSV 
+PASS inventory_valuation: biz col[1]='食材品名' row1 preview==HantCSV 
+PASS inventory_valuation: synthetic long biz name appears in preview 
+PASS inventory_valuation: Hant CSV headers == localize(Hans) 
+PASS inventory_price_anomaly: preview headers == CSV Hans headers 
+PASS inventory_price_anomaly: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS inventory_price_anomaly: biz col[0]='食材品名' row0 preview==HantCSV 
+PASS inventory_price_anomaly: biz col[0]='食材品名' row1 preview==HantCSV 
+PASS inventory_price_anomaly: Hant CSV headers == localize(Hans) 
+PASS dish_cost_margin: preview headers == CSV Hans headers 
+PASS dish_cost_margin: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS dish_cost_margin: empty-or-no-identity-ok 
+PASS dish_cost_margin: Hant CSV headers == localize(Hans) 
+PASS spend_summary: preview headers == CSV Hans headers 
+PASS spend_summary: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS spend_summary: biz col[1]='核算对象' row0 preview==HantCSV 
+PASS spend_summary: biz col[1]='核算对象' row1 preview==HantCSV 
+PASS spend_summary: biz col[1]='核算对象' row2 preview==HantCSV 
+PASS spend_summary: biz col[1]='核算对象' row3 preview==HantCSV 
+PASS spend_summary: biz col[1]='核算对象' row4 preview==HantCSV 
+PASS spend_summary: Hant CSV headers == localize(Hans) 
+PASS inventory_stock_logs: preview headers == CSV Hans headers 
+PASS inventory_stock_logs: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS inventory_stock_logs: biz col[3]='食材品名' row0 preview==HantCSV 
+PASS inventory_stock_logs: biz col[3]='食材品名' row1 preview==HantCSV 
+PASS inventory_stock_logs: biz col[3]='食材品名' row2 preview==HantCSV 
+PASS inventory_stock_logs: biz col[3]='食材品名' row3 preview==HantCSV 
+PASS inventory_stock_logs: biz col[3]='食材品名' row4 preview==HantCSV 
+PASS inventory_stock_logs: biz col[3]='食材品名' row5 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row0 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row1 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row2 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row3 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row4 preview==HantCSV 
+PASS inventory_stock_logs: biz col[7]='往来供应商/经手' row5 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row0 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row1 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row2 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row3 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row4 preview==HantCSV 
+PASS inventory_stock_logs: biz col[9]='操作备注' row5 preview==HantCSV 
+PASS inventory_stock_logs: Hant CSV headers == localize(Hans) 
+PASS receipts_itemized_ledger: preview headers == CSV Hans headers 
+PASS receipts_itemized_ledger: preview rows == CSV Hans rows (str, sanitize-aware) 
+PASS receipts_itemized_ledger: biz col[2]='供应商名称' row0 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[2]='供应商名称' row1 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[2]='供应商名称' row2 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[3]='供应商电话' row0 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[3]='供应商电话' row1 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[3]='供应商电话' row2 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[7]='归属部门' row0 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[7]='归属部门' row1 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[7]='归属部门' row2 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[8]='商品品名' row0 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[8]='商品品名' row1 preview==HantCSV 
+PASS receipts_itemized_ledger: biz col[8]='商品品名' row2 preview==HantCSV 
+PASS receipts_itemized_ledger: synthetic long biz name appears in preview 
+PASS receipts_itemized_ledger: Hant CSV headers == localize(Hans) 
+PASS at least one report had biz rows for identity compare 
+=== DB UNCHANGED AFTER EXPORTS ===
+PASS DB sku name unchanged after preview/download 
+PASS DB supplier name unchanged 
+=== SERVED JS wiring ===
+PASS served export_center has isExportBusinessIdentityHeader 
+PASS served export_center emits data-i18n-skip 
+PASS served i18n has data-i18n-skip skip 
+PASS served i18n not DISABLE_HANT 
+PASS served i18n has zh-Hant-HK 
+PASS served cost_report has data-i18n-skip on dep/supplier/raw_name 
+{"failed": 0, "passed": 83, "total": 83}

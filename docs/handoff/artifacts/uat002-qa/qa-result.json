@@ -1,0 +1,31 @@
+{
+  "card": "UAT-002",
+  "stage": "QA",
+  "overall_three_defect_gate": "PASS",
+  "defects": {
+    "1_title_merge": "PASS",
+    "2_shim_and_data_attr": "PASS",
+    "3_terminology": "PASS"
+  },
+  "pytest": {
+    "file": "demo/tests/test_uat_002_today_archive_scope_labels.py",
+    "passed": [
+      "test_03",
+      "test_04"
+    ],
+    "failed": [
+      "test_01",
+      "test_02",
+      "test_05"
+    ],
+    "fail_reason": "ModuleNotFoundError: langchain_community on approve path (env)",
+    "exit_code": 1
+  },
+  "node_harness": "PASS",
+  "served_html_smoke": "PASS",
+  "port_used": 15150,
+  "cleanup": "docs/handoff/artifacts/uat002-qa/environment/cleanup.json",
+  "report": "docs/handoff/artifacts/uat002-qa-report.md",
+  "uat_started": false,
+  "timestamp_local": "2026-10-17 03:56:19 CST"
+}

@@ -8,7 +8,7 @@ Phase 1: RBAC 角色权限与侧边栏动态导航隔离
   - admin 角色:
     - 侧边栏小节 #adminSidebarSection 可见且包含 "系统与算法工程"
     - 系统与引擎配置入口 #adminEngineBtn 可见且包含 "系统与引擎配置"
-    - AI 效果观测与评测中心入口 #analyticsBoardBtn 可见且包含 "AI 效果观测与评测中心"
+    - 观测中心入口 #analyticsBoardBtn 可见且包含 "观测中心"（现行 data-i18n=nav.analytics；旧称「AI 效果观测与评测中心」已废弃）
     - 旧独立入口 #goldenBoardBtn 和 #evalsetReviewBtn 保持不可见 (隐藏)
   - staff 角色:
     - #adminSidebarSection, #adminEngineBtn, #analyticsBoardBtn 均不可见
@@ -195,12 +195,15 @@ def run_admin_tabs_consolidation_e2e():
                 f"Expected '系统与引擎配置' in #adminEngineBtn, got '{admin_engine_text}'"
             )
 
-            # 验证 #analyticsBoardBtn 可见且包含 'AI 效果观测与评测中心'
+            # 验证 #analyticsBoardBtn 可见且包含现行标题「观测中心」（ENG-04：旧标题「AI 效果观测与评测中心」已废弃）
             analytics_btn = page.locator("#analyticsBoardBtn")
             assert analytics_btn.is_visible(), "analyticsBoardBtn should be visible for admin role"
             analytics_btn_text = analytics_btn.inner_text().strip()
-            assert "AI 效果观测与评测中心" in analytics_btn_text, (
-                f"Expected 'AI 效果观测与评测中心' in #analyticsBoardBtn, got '{analytics_btn_text}'"
+            assert "观测中心" in analytics_btn_text, (
+                f"Expected '观测中心' in #analyticsBoardBtn, got '{analytics_btn_text}'"
+            )
+            assert "AI 效果观测与评测中心" not in analytics_btn_text, (
+                f"Stale title 'AI 效果观测与评测中心' must not appear in #analyticsBoardBtn, got '{analytics_btn_text}'"
             )
 
             # 验证 #goldenBoardBtn 和 #evalsetReviewBtn 独立入口保持不可见
@@ -269,7 +272,7 @@ def run_admin_tabs_consolidation_e2e():
             print("\n[Phase 2] 校验 AI 效果观测与评测中心四大独立功能区 (Segmented Control)...")
             switch_demo_role(page, "admin")
 
-            # 点击 AI 效果观测与评测中心入口
+            # 点击观测中心入口，随后业务观测链路必须真实执行（等待埋点 DOM 非「加载中」）
             page.locator("#analyticsBoardBtn").click()
             page.wait_for_selector("#tab-analytics", timeout=10000)
 
@@ -296,6 +299,12 @@ def run_admin_tabs_consolidation_e2e():
                 }""",
                 timeout=15000
             )
+
+            # ENG-04：导航后业务观测链路真实执行 — 埋点区已结束加载态，且节点仍在 DOM
+            dist_text = page.locator("#analyticsEventDistBody").inner_text()
+            rec_text = page.locator("#analyticsRecoveryBody").inner_text()
+            assert "加载中" not in dist_text, "telemetry event dist still loading after analytics nav"
+            assert "加载中" not in rec_text, "telemetry recovery still loading after analytics nav"
 
             # ------------------------------------------------------------
             # 2.1 独立功能区一：线上体验感知与埋点监控 (#sec-telemetry)
@@ -630,6 +639,7 @@ def test_opt_in_spawn_is_reaped_on_failure(monkeypatch):
 if __name__ == "__main__":
     _reason = unavailability_reason()
     if _reason:
+        # ENG-04：skip 必须报告精确原因，且不得计为 PASS（退出码 5 = pytest all-skipped 约定）
         print("[SKIP] %s" % _reason)
-        sys.exit(0)
+        sys.exit(5)
     run_admin_tabs_consolidation_e2e()

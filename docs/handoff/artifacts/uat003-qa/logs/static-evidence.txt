@@ -1,0 +1,74 @@
+=== UAT-003 static evidence 2026-10-17 04:02:18 CST ===
+
+--- inventory_board.js name cell (expect title + data-full-name + r.name) ---
+   688	                // UAT-003：品名必须保留完整业务原值（含下划线后缀与长中文），不得被
+   689	                // #tab-inventory 表格的 nowrap/窄列裁成相同前缀；主展示仍用 name，
+   690	                // 不以 sku_id 替代。title + data-full-name 保证原值可获取。
+   691	                const rawName = (r.name == null) ? '' : String(r.name);
+   692	                const nameEsc = w2Escape(rawName);
+   693	                const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+   694	                tr.innerHTML = `
+   695	                    <td>${w2Escape(r.date || '')}</td>
+   696	                    <td><span class="badge badge-secondary">${w2Escape(invLedgerKindLabel(r.kind))}</span></td>
+   697	                    ${nameCell}
+
+--- Check primary label is r.name not sku_id in nameCell ---
+nameCell_snippet:
+const nameCell = `<td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>`;
+                tr.innerHTML = `
+                    <td>${w2Escape(r.date || '')}</td>
+                    <td><span class="badge badge-secondary">${w2Escape(invLedgerKindLabel(r.kind))}</span></td>
+                    ${nameCell}
+   
+HAS_R_NAME True
+nameCell_template: <td class="inv-ledger-name-cell" title="${nameEsc}" data-full-name="${nameEsc}"><span class="inv-ledger-name-text">${nameEsc || '-'}</span></td>
+SKU_ID_AS_PRIMARY False
+HAS_DATA_FULL_NAME True
+HAS_TITLE True
+HAS_INV_LEDGER_NAME_CELL True
+
+--- CSS override block style.css ---
+  2931	/* UAT-003：库存流水台账品名列 —— 覆盖 #tab-inventory td:nth-child(3) 的
+  2932	   white-space:nowrap，避免 Synthetic_Rice / Synthetic_Oil 被窄列裁成相同前缀。
+  2933	   选择器双 ID 提高优先级；原值经 title / data-full-name 可获取，主文案仍为业务名。 */
+  2934	#tab-inventory #inventoryLedgerTable td.inv-ledger-name-cell {
+  2935	    height: auto;
+  2936	    min-height: 66px;
+  2937	    overflow: visible;
+  2938	    white-space: normal;
+  2939	    word-break: break-word;
+  2940	    overflow-wrap: anywhere;
+  2941	    text-overflow: clip;
+  2942	    max-width: 16rem;
+  2943	    text-align: left;
+  2944	    vertical-align: middle;
+  2945	}
+  2946	#tab-inventory #inventoryLedgerTable .inv-ledger-name-text {
+  2947	    display: inline-block;
+  2948	    max-width: 100%;
+  2949	    white-space: normal;
+  2950	    word-break: break-word;
+  2951	    overflow-wrap: anywhere;
+  2952	    line-height: 1.35;
+  2953	}
+
+--- Specificity: nowrap baseline still present at 2902-2909 ---
+  2902	#tab-inventory table.data-table td:nth-child(2),
+  2903	#tab-inventory table.data-table td:nth-child(3),
+  2904	#tab-inventory table.data-table td:nth-child(4),
+  2905	#tab-inventory table.data-table td:nth-child(5),
+  2906	#tab-inventory table.data-table td:nth-child(6) {
+  2907	    overflow: visible;
+  2908	    white-space: nowrap;
+  2909	    text-overflow: clip;
+
+--- Confirm white-space: normal in ledger override ---
+BLOCK_FOUND True
+HAS_WHITE_SPACE_NORMAL True
+HAS_OVERFLOW_VISIBLE True
+HAS_WORD_BREAK True
+
+--- No emoji in changed regions ---
+inventory_board.js EMOJI_HITS 0
+style.css EMOJI_HITS 0
+test_inventory_ledger_api.py EMOJI_HITS 0

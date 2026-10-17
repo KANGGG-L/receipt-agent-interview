@@ -1,0 +1,39 @@
+demo/tests/test_admin_tabs_consolidation_e2e.py::test_admin_tabs_consolidation_e2e SKIPPED [  0%]
+demo/tests/test_eval_baseline_denominators.py::test_d1_tampered_denominators_with_valid_sha_detected SKIPPED [ 22%]
+demo/tests/test_eval_baseline_denominators.py::test_d2_strict_mode_exits_on_denominator_mismatch SKIPPED [ 22%]
+demo/tests/test_eval_baseline_denominators.py::test_d3_legit_baseline_matches SKIPPED [ 22%]
+demo/tests/test_eval_baseline_freeze.py::test_freeze_is_deterministic SKIPPED [ 23%]
+demo/tests/test_eval_baseline_freeze.py::test_frozen_denominators_pin_p10 SKIPPED [ 23%]
+demo/tests/test_eval_baseline_freeze.py::test_run_eval_baseline_match_true SKIPPED [ 23%]
+demo/tests/test_eval_baseline_freeze.py::test_tampered_baseline_match_false SKIPPED [ 23%]
+demo/tests/test_eval_baseline_freeze.py::test_sample_set_drift_match_false SKIPPED [ 23%]
+demo/tests/test_eval_baseline_freeze.py::test_baseline_strict_exits_on_mismatch SKIPPED [ 23%]
+demo/tests/test_eval_harness.py::test_real_corpus_splits_disjoint SKIPPED [ 24%]
+demo/tests/test_eval_harness.py::test_real_corpus_test_split_scale_matches_historical_baseline SKIPPED [ 24%]
+demo/tests/test_evalset_gt_linkage.py::test_real_evalset_confirmed_samples_appear_in_golden_board SKIPPED [ 28%]
+demo/tests/test_evalset_gt_linkage.py::test_scope_gt_pending_includes_draft_evalset_samples SKIPPED [ 28%]
+demo/tests/test_gt_consistency_validator.py::test_real_corpus_totals SKIPPED [ 40%]
+demo/tests/test_gt_consistency_validator.py::test_real_corpus_checklist_csv_and_md SKIPPED [ 40%]
+demo/tests/test_image_injection_guard.py::test_real_receipts_zero_false_positive SKIPPED [ 43%]
+demo/tests/test_residue_rules.py::test_real_corpus_rule_row_counts SKIPPED [ 78%]
+demo/tests/test_sku_alias_candidates.py::test_real_corpus_coverage_and_high_confidence SKIPPED [ 83%]
+SKIPPED [1] demo/tests/test_i18n_zh_hant.py:37: could not import 'opencc': No module named 'opencc'
+SKIPPED [1] demo/tests/test_admin_tabs_consolidation_e2e.py:153: 本地 http://127.0.0.1:15010 无可用服务，且未显式 opt-in 自动拉起（缺省不会启动任何进程：本用例拉起的 uvicorn 会执行 startup 的引擎配置自愈，可能重写所在库的 engine_config）。如需自动拉起请设 E2E_ALLOW_SPAWN_UVICORN=1；或先手动启动 demo 服务后重跑。
+SKIPPED [1] demo/tests/test_eval_baseline_denominators.py:92: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_denominators.py:114: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_denominators.py:128: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:80: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:104: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:133: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:150: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:168: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_baseline_freeze.py:184: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_eval_harness.py:461: 需要 --run-eval 且 demo/evalsets/ 语料存在
+SKIPPED [1] demo/tests/test_eval_harness.py:473: 需要 --run-eval 且 demo/evalsets/ 语料存在
+SKIPPED [1] demo/tests/test_evalset_gt_linkage.py:275: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_evalset_gt_linkage.py:315: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets（真实收据属业务数据，不入库）
+SKIPPED [1] demo/tests/test_gt_consistency_validator.py:161: 需要 --run-eval 且 demo/evalsets/ 语料存在
+SKIPPED [1] demo/tests/test_gt_consistency_validator.py:180: 需要 --run-eval 且 demo/evalsets/ 语料存在
+SKIPPED [1] demo/tests/test_image_injection_guard.py:238: 真实收据样本不足 30 张（demo/uploads/ 已 gitignore），跳过零误报回归
+SKIPPED [1] demo/tests/test_residue_rules.py:118: 需要 --run-eval 且 demo/evalsets/ 语料存在
+SKIPPED [1] demo/tests/test_sku_alias_candidates.py:259: 需要 --run-eval 且 demo/evalsets/ 语料存在

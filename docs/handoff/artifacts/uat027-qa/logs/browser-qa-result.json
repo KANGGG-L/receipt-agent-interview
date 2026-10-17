@@ -1,0 +1,147 @@
+{
+  "pass": 28,
+  "fail": 0,
+  "total": 28,
+  "checks": [
+    {
+      "name": "unit fmtMoney 1234.5 zh-Hans",
+      "ok": true,
+      "detail": "HK$1,234.50"
+    },
+    {
+      "name": "unit fmtMoney 0 zh-Hans",
+      "ok": true,
+      "detail": "HK$0.00"
+    },
+    {
+      "name": "unit fmtMoney null zh-Hans",
+      "ok": true,
+      "detail": "—"
+    },
+    {
+      "name": "unit fmtMoney SGD not HK$ zh-Hans",
+      "ok": true,
+      "detail": "SGD 1,234.50"
+    },
+    {
+      "name": "unit formatCurrency SGD not HK$ zh-Hans",
+      "ok": true,
+      "detail": "S$ 1234.50"
+    },
+    {
+      "name": "unit fmtMoney 1234.5 zh-Hant-HK",
+      "ok": true,
+      "detail": "HK$1,234.50"
+    },
+    {
+      "name": "unit fmtMoney 0 zh-Hant-HK",
+      "ok": true,
+      "detail": "HK$0.00"
+    },
+    {
+      "name": "unit fmtMoney null zh-Hant-HK",
+      "ok": true,
+      "detail": "—"
+    },
+    {
+      "name": "unit fmtMoney SGD not HK$ zh-Hant-HK",
+      "ok": true,
+      "detail": "SGD 1,234.50"
+    },
+    {
+      "name": "unit formatCurrency SGD not HK$ zh-Hant-HK",
+      "ok": true,
+      "detail": "S$ 1234.50"
+    },
+    {
+      "name": "hans list UAT027_SynthHi visible",
+      "ok": true,
+      "detail": "UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情\n                        更多 ▾"
+    },
+    {
+      "name": "hans list Hi = HK$1,234.50",
+      "ok": true,
+      "detail": "UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情\n                        更多 ▾"
+    },
+    {
+      "name": "hans list Zero = HK$0.00",
+      "ok": true,
+      "detail": "UAT027_SynthZero | 食材 | 6 kg | 6.000 kg | 1 kg | HK$0.00 | 详情\n                        更多 ▾"
+    },
+    {
+      "name": "hans list Null = —",
+      "ok": true,
+      "detail": "UAT027_SynthNull | 食材 | 3 kg | 3.000 kg | 1 kg | — | 详情\n                        更多 ▾"
+    },
+    {
+      "name": "hans list no bare $1234 without HK",
+      "ok": true,
+      "detail": "UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情\n                        更多 ▾"
+    },
+    {
+      "name": "hans open SynthHi detail",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hans detail has HK$1,234.50",
+      "ok": true,
+      "detail": "HK$1,234.50,HK$0.00,HK$0.00\tVendor_B\t-\t,HK$1,234.50\tVendor_A\t-\t,HK$2,469.00\tVendor_A\t-\t"
+    },
+    {
+      "name": "hans price-history control",
+      "ok": true,
+      "detail": "版本历史"
+    },
+    {
+      "name": "hans PH metrics/history show HK$1,234.50",
+      "ok": true,
+      "detail": "[object Object]"
+    },
+    {
+      "name": "hans PH no bare $toFixed without HK prefix on 1234.5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "hans ledger uses HK$ grouping if amounts painted",
+      "ok": true,
+      "detail": "HK$1,234.50,HK$0.00,HK$0.00\tVendor_B\t-\t,HK$1,234.50\tVendor_A\t-\t,HK$2,469.00\tVendor_A\t-\t"
+    },
+    {
+      "name": "hant list Hi = HK$1,234.50",
+      "ok": true,
+      "detail": "UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 詳情\n                        更多 ▾"
+    },
+    {
+      "name": "hant list Zero = HK$0.00",
+      "ok": true,
+      "detail": "UAT027_SynthZero | 食材 | 6 kg | 6.000 kg | 1 kg | HK$0.00 | 詳情\n                        更多 ▾"
+    },
+    {
+      "name": "hant list Null = —",
+      "ok": true,
+      "detail": "UAT027_SynthNull | 食材 | 3 kg | 3.000 kg | 1 kg | — | 詳情\n                        更多 ▾"
+    },
+    {
+      "name": "hant PH metrics show HK$1,234.50",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "ai cards surface (optional live)",
+      "ok": true,
+      "detail": "no anomaly card in fixture; static harness covers I18N.fmtMoney on AI paths"
+    },
+    {
+      "name": "finance formatCurrency SGD not forced HKD",
+      "ok": true,
+      "detail": "S$ 1234.50"
+    },
+    {
+      "name": "payables API shape intact (FX fields contract)",
+      "ok": true,
+      "detail": "{\"currency\":\"HKD\",\"n\":0,\"basis\":\"只算已入账的赊单，已付的金额已扣除；外币单据按入账时的汇率折成港币\"}"
+    }
+  ]
+}

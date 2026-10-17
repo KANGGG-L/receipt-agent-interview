@@ -1,0 +1,84 @@
+{
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "ui_defaults_before_save",
+      "pass": true,
+      "detail": {
+        "phone": "",
+        "notes": "",
+        "pref": "",
+        "terms": "30"
+      }
+    },
+    {
+      "name": "ui_save_post_success_empty_optional",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "request": {
+          "name": "Vendor_A_UI",
+          "contact_phone": "",
+          "notes": "",
+          "settlement_pref": null,
+          "payment_terms_days": 30
+        },
+        "response": {
+          "status": "success",
+          "id": 9
+        }
+      }
+    },
+    {
+      "name": "ui_save_readback",
+      "pass": true,
+      "detail": {
+        "http": 200,
+        "row": {
+          "id": 9,
+          "name": "Vendor_A_UI",
+          "supplier_code": "SUP-51167497",
+          "active": 1,
+          "payment_terms_days": 30,
+          "settlement_pref": "",
+          "contact_phone": "",
+          "notes": "",
+          "receipt_count": 0,
+          "unpaid_credit_total": 0.0,
+          "unpaid_credit_count": 0,
+          "is_overdue": false,
+          "overdue_amount": 0.0,
+          "overdue_count": 0,
+          "pending_credit_total": 0.0,
+          "pending_credit_count": 0,
+          "unpaid_basis": "只算已入账的赊单，已付的金额已扣除；外币按入账时的汇率折成港币。还没审批入账的赊单另列在「待入账赊单」里"
+        },
+        "listed_eval": {
+          "status": 200,
+          "row": {
+            "id": 9,
+            "name": "Vendor_A_UI",
+            "supplier_code": "SUP-51167497",
+            "active": 1,
+            "payment_terms_days": 30,
+            "settlement_pref": "",
+            "contact_phone": "",
+            "notes": "",
+            "receipt_count": 0,
+            "unpaid_credit_total": 0,
+            "unpaid_credit_count": 0,
+            "is_overdue": false,
+            "overdue_amount": 0,
+            "overdue_count": 0,
+            "pending_credit_total": 0,
+            "pending_credit_count": 0,
+            "unpaid_basis": "只算已入账的赊单，已付的金额已扣除；外币按入账时的汇率折成港币。还没审批入账的赊单另列在「待入账赊单」里"
+          }
+        }
+      }
+    }
+  ],
+  "ts": "2026-10-17 19:27:30 CST",
+  "base": "http://127.0.0.1:15461",
+  "tenant": "uat004-ui"
+}

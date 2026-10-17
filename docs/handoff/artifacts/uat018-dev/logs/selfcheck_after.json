@@ -1,0 +1,160 @@
+{
+  "base": "http://127.0.0.1:15215",
+  "tenant": "uat018dev",
+  "checks": [
+    {
+      "name": "tenant_b_empty",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 0
+      }
+    },
+    {
+      "name": "create_unpurchased_sku",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": 1
+      }
+    },
+    {
+      "name": "create_purchased_sku",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "id": 2
+      }
+    },
+    {
+      "name": "prices_set",
+      "pass": true,
+      "detail": {
+        "unpurchased": 0.0,
+        "purchased": 25.0
+      }
+    },
+    {
+      "name": "extreme_unpurchased_save_status",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "msg": null
+      }
+    },
+    {
+      "name": "extreme_not_certain_100",
+      "pass": true,
+      "detail": {
+        "status": "estimated",
+        "source": "unpurchased_zero_price",
+        "margin": null,
+        "prov_margin": 100.0,
+        "cost": null,
+        "prov_cost": 0.0
+      }
+    },
+    {
+      "name": "ingredient_unpurchased_marker",
+      "pass": true,
+      "detail": {
+        "cost_known": false,
+        "cost_source": "unpurchased_zero_price"
+      }
+    },
+    {
+      "name": "reject_neg",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+      }
+    },
+    {
+      "name": "reject_zero",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）"
+      }
+    },
+    {
+      "name": "reject_nan",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "nan"
+      }
+    },
+    {
+      "name": "reject_inf",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "inf"
+      }
+    },
+    {
+      "name": "reject_ninf",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_QTY",
+        "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "rejected": "-inf"
+      }
+    },
+    {
+      "name": "purchased_normal_cost",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "theory_status": "complete",
+        "cost": 10.0,
+        "margin": 90.0
+      }
+    },
+    {
+      "name": "extreme_finite_persisted_no_clamp",
+      "pass": true,
+      "detail": {
+        "qty": 999999999999.0
+      }
+    },
+    {
+      "name": "open_risk_constants",
+      "pass": true,
+      "detail": {
+        "status": "open_risk_not_adjudicated",
+        "source": null
+      }
+    },
+    {
+      "name": "list_dishes_200",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 2
+      }
+    },
+    {
+      "name": "tenant_b_still_empty",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 0
+      }
+    }
+  ],
+  "summary": {
+    "total": 17,
+    "failed": 0,
+    "pass": true
+  }
+}

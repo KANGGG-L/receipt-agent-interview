@@ -2,6 +2,13 @@
 """餐品消耗的补充存储：售出时的售价快照、提交请求的去重记录。
 
 表在首次使用时建（CREATE TABLE IF NOT EXISTS），租户列必备。
+
+UAT018 open risk (not closed):
+- Extreme *finite* BOM consumption_qty upper-limit is NOT adjudicated yet.
+- Do NOT claim a B2-6-mandated BOM qty cap here; do NOT silent-clamp large finite qty.
+- NaN / Infinity / negative / 0 writes are rejected in api_dishes._validate_recipe_payload.
+- Unpurchased theory cost uses disclosed provisional estimate markers (theory_cost_source),
+  not a silent definite 0-cost / 100% margin.
 """
 
 import json
@@ -11,6 +18,16 @@ from sqlalchemy import text
 
 from app import db
 from app.store_util import Gate
+
+# UAT018 — extreme finite BOM qty ceiling adjudication status (product risk ledger).
+# Source: none claimed (explicitly not B2-6). Status remains open until PM decides.
+BOM_QTY_UPPER_LIMIT_STATUS = "open_risk_not_adjudicated"
+BOM_QTY_UPPER_LIMIT_SOURCE = None  # do not invent / claim historical B2-6 cap
+BOM_QTY_UPPER_LIMIT_NOTE = (
+    "Finite extreme BOM qty (e.g. 999999999999) may still persist until an upper "
+    "limit is adjudicated; rejects apply only to non-finite / <=0 values."
+)
+
 
 _DDL = [
     """CREATE TABLE IF NOT EXISTS consumption_snapshots (

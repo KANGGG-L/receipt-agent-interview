@@ -1,0 +1,311 @@
+{
+  "card": "UAT-015",
+  "verdict": "PASS",
+  "passed": 18,
+  "total": 18,
+  "results": [
+    {
+      "name": "ac1_set_fx_sgd_5",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "ac1_create_supplier",
+      "pass": true,
+      "detail": {
+        "sid": 6
+      }
+    },
+    {
+      "name": "ac1_approve",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "rid": 5,
+        "body": {
+          "status": "success",
+          "version": 2,
+          "needs_review": false
+        }
+      }
+    },
+    {
+      "name": "ac1_archive_original_sgd100",
+      "pass": true,
+      "detail": {
+        "currency": "SGD",
+        "total_amount": 100.0
+      }
+    },
+    {
+      "name": "ac1_payables_hkd500",
+      "pass": true,
+      "detail": {
+        "pdata_keys": [
+          "rows",
+          "total_outstanding",
+          "outstanding_count",
+          "overdue_amount",
+          "overdue_count",
+          "currency",
+          "basis"
+        ],
+        "row": {
+          "receipt_id": 5,
+          "supplier_id": 6,
+          "supplier_name": "Vendor_A_UAT015",
+          "receipt_date": "2026-10-05",
+          "due_date": "2026-11-04",
+          "currency": "SGD",
+          "total_amount": 100.0,
+          "total_hkd": 500.0,
+          "paid_amount": 0.0,
+          "outstanding_amount": 500.0,
+          "payment_status": "unpaid",
+          "is_overdue": false,
+          "overdue_days": 0,
+          "fx_missing": false,
+          "id": 5,
+          "has_fx_snapshot": true,
+          "fx_snapshot_rate": 5.0
+        },
+        "total_outstanding": 500.0
+      }
+    },
+    {
+      "name": "ac1_supplier_unpaid_500",
+      "pass": true,
+      "detail": {
+        "supplier": {
+          "id": 6,
+          "name": "Vendor_A_UAT015",
+          "supplier_code": "SUP-9457DD4F",
+          "active": 1,
+          "payment_terms_days": 30,
+          "settlement_pref": "credit",
+          "contact_phone": "",
+          "notes": "",
+          "receipt_count": 1,
+          "unpaid_credit_total": 500.0,
+          "unpaid_credit_count": 1,
+          "is_overdue": false,
+          "overdue_amount": 0.0,
+          "overdue_count": 0,
+          "pending_credit_total": 0.0,
+          "pending_credit_count": 0,
+          "unpaid_basis": "只算已入账的赊单，已付的金额已扣除；外币按入账时的汇率折成港币。还没审批入账的赊单另列在「待入账赊单」里"
+        }
+      }
+    },
+    {
+      "name": "ac2_partial_pay_100",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "msg": "付款已登记",
+          "id": 3,
+          "data": {
+            "allocations": [
+              {
+                "receipt_id": 5,
+                "amount": 100.0,
+                "payment_status": "partial"
+              }
+            ],
+            "unallocated_amount": 0.0
+          }
+        }
+      }
+    },
+    {
+      "name": "ac2_unpaid_400",
+      "pass": true,
+      "detail": {
+        "row": {
+          "receipt_id": 5,
+          "supplier_id": 6,
+          "supplier_name": "Vendor_A_UAT015",
+          "receipt_date": "2026-10-05",
+          "due_date": "2026-11-04",
+          "currency": "SGD",
+          "total_amount": 100.0,
+          "total_hkd": 500.0,
+          "paid_amount": 100.0,
+          "outstanding_amount": 400.0,
+          "payment_status": "partial",
+          "is_overdue": false,
+          "overdue_days": 0,
+          "fx_missing": false,
+          "id": 5,
+          "has_fx_snapshot": true,
+          "fx_snapshot_rate": 5.0
+        },
+        "total_outstanding": 400.0
+      }
+    },
+    {
+      "name": "ac3_live_fx_to_6",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "ac3_historical_still_snapshot_500_400",
+      "pass": true,
+      "detail": {
+        "row": {
+          "receipt_id": 5,
+          "supplier_id": 6,
+          "supplier_name": "Vendor_A_UAT015",
+          "receipt_date": "2026-10-05",
+          "due_date": "2026-11-04",
+          "currency": "SGD",
+          "total_amount": 100.0,
+          "total_hkd": 500.0,
+          "paid_amount": 100.0,
+          "outstanding_amount": 400.0,
+          "payment_status": "partial",
+          "is_overdue": false,
+          "overdue_days": 0,
+          "fx_missing": false,
+          "id": 5,
+          "has_fx_snapshot": true,
+          "fx_snapshot_rate": 5.0
+        },
+        "total_outstanding": 400.0
+      }
+    },
+    {
+      "name": "ac2_full_pay_400",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "msg": "付款已登记",
+          "id": 4,
+          "data": {
+            "allocations": [
+              {
+                "receipt_id": 5,
+                "amount": 400.0,
+                "payment_status": "paid"
+              }
+            ],
+            "unallocated_amount": 0.0
+          }
+        }
+      }
+    },
+    {
+      "name": "ac2_full_unpaid_0",
+      "pass": true,
+      "detail": {
+        "row": {
+          "receipt_id": 5,
+          "supplier_id": 6,
+          "supplier_name": "Vendor_A_UAT015",
+          "receipt_date": "2026-10-05",
+          "due_date": "2026-11-04",
+          "currency": "SGD",
+          "total_amount": 100.0,
+          "total_hkd": 500.0,
+          "paid_amount": 500.0,
+          "outstanding_amount": 0.0,
+          "payment_status": "paid",
+          "is_overdue": false,
+          "overdue_days": 0,
+          "fx_missing": false,
+          "id": 5,
+          "has_fx_snapshot": true,
+          "fx_snapshot_rate": 5.0
+        },
+        "total_outstanding": 0
+      }
+    },
+    {
+      "name": "ac4_legacy_approve",
+      "pass": true,
+      "detail": {
+        "rid": 6,
+        "status": 200
+      }
+    },
+    {
+      "name": "ac4_missing_snapshot_unknown_not_hkd",
+      "pass": true,
+      "detail": {
+        "row": {
+          "receipt_id": 6,
+          "supplier_id": 7,
+          "supplier_name": "Vendor_Legacy_UAT015",
+          "receipt_date": "2026-10-05",
+          "due_date": "2026-11-04",
+          "currency": "SGD",
+          "total_amount": 120.0,
+          "total_hkd": null,
+          "paid_amount": 0.0,
+          "outstanding_amount": 0.0,
+          "payment_status": "unpaid",
+          "is_overdue": false,
+          "overdue_days": 0,
+          "fx_missing": true,
+          "id": 6,
+          "has_fx_snapshot": false
+        }
+      }
+    },
+    {
+      "name": "ac4_pay_rejected_fx_missing",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "FX_RATE_MISSING",
+        "body": {
+          "status": "error",
+          "code": "FX_RATE_MISSING",
+          "msg": "单据 #6 是外币单，设置里还没有对应汇率，请先到「设置」里填写汇率"
+        }
+      }
+    },
+    {
+      "name": "neg_overpayment_rejected",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "PAYMENT_OVER_OUTSTANDING"
+      }
+    },
+    {
+      "name": "neg_tenant_b_no_a_payables",
+      "pass": true,
+      "detail": {
+        "row_count": 0,
+        "leak": []
+      }
+    },
+    {
+      "name": "neg_tenant_b_cannot_pay_a_receipt",
+      "pass": true,
+      "detail": {
+        "status": 404,
+        "body": {
+          "status": "error",
+          "code": "RECEIPT_NOT_FOUND",
+          "msg": "找不到单据 #5，请刷新页面后重新选择"
+        }
+      }
+    }
+  ],
+  "meta": {
+    "tenant_a": "uat015-a",
+    "tenant_b": "uat015-b",
+    "rid_main": 5,
+    "sid_main": 6
+  }
+}

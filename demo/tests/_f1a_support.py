@@ -15,7 +15,7 @@ _TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _TESTS_DIR not in sys.path:
     sys.path.insert(0, _TESTS_DIR)
 
-from _playwright_server import start_pinned_server  # noqa: E402
+from _playwright_server import start_pinned_server, is_healthy  # noqa: E402
 
 def _default_shot_dir(env_key, leaf):
     """截图目录。沙箱机器上的 /home/user 保留；本机没有该目录时不在 /home 下创建。
@@ -82,6 +82,27 @@ class Site:
         assert code == 200 and ret.get("status") == "success", (code, ret)
         return ret.get("receipt_id") or ret.get("id")
 
+    def ensure_ready(self, timeout=20.0):
+        """Wait until the ephemeral server answers /api/health (or fail clearly).
+
+        Full-suite runs can briefly starve uvicorn so a bare Page.goto(load)
+        hits the default 30s navigation timeout even though the process is
+        still alive. Probe readiness before navigating; if the child exited,
+        surface the server log instead of a opaque Playwright timeout.
+        """
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.handle.proc.poll() is not None:
+                raise RuntimeError(
+                    "F1a ephemeral server exited early (port %d). Log tail:\n%s"
+                    % (self.port, self.handle.read_log()[-3000:]))
+            if is_healthy(timeout=2.0, base_url=self.url):
+                return
+            time.sleep(0.25)
+        raise RuntimeError(
+            "F1a ephemeral server not healthy within %.0fs (port %d). Log tail:\n%s"
+            % (timeout, self.port, self.handle.read_log()[-3000:]))
+
 
 @pytest.fixture(scope="module")
 def site():
@@ -125,9 +146,32 @@ class Page:
         self.role = role
 
     def open(self, tab="tab-scan"):
-        self.page.goto(self.site.url + "/")
-        self.page.wait_for_load_state("load")
-        self.page.wait_for_timeout(900)
+        # Harden against full-suite flakiness: health probe + retry +
+        # domcontentloaded (index loads 30+ scripts; wait_until=load can
+        # exceed the default 30s under CPU contention even when the server
+        # is fine — see ENG-05 QA red on test_s3_07_staff_discard_*).
+        last_err = None
+        for attempt in range(3):
+            self.site.ensure_ready(timeout=20.0)
+            try:
+                self.page.goto(
+                    self.site.url + "/",
+                    wait_until="domcontentloaded",
+                    timeout=60000,
+                )
+                break
+            except Exception as exc:
+                # Retry only navigation/timeouts; leave assertion errors alone.
+                name = type(exc).__name__
+                if name not in ("TimeoutError", "Error") and "Timeout" not in name:
+                    raise
+                last_err = exc
+                time.sleep(0.5 * (attempt + 1))
+        else:
+            raise last_err
+        # attached not visible: mobile CSS hides .sidebar-nav (bottom tab bar instead)
+        self.page.wait_for_selector(".sidebar-nav", state="attached", timeout=15000)
+        self.page.wait_for_timeout(400)
         self.page.evaluate(
             "t => { const b = document.querySelector('.sidebar-nav .sidebar-btn[data-target=\"' + t + '\"]'); if (b) b.click(); }", tab)
         self.page.wait_for_timeout(300)

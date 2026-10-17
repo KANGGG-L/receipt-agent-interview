@@ -1,0 +1,193 @@
+=== STATIC EVIDENCE 2026-10-17T04:34:43+08:00 ===
+--- isExportBusinessIdentityHeader ---
+56:// 加载供应商、部门等过滤辅助数据源
+58:    // 部门
+68:    // 供应商
+282:    // 5. 供应商下拉
+286:                <label>指定往来供应商</label>
+288:                    <option value="">全部供应商</option>
+295:    // 6. 部门下拉
+299:                <label>归属成本部门</label>
+301:                    <option value="">全部部门</option>
+303:                    <option value="0">未分配部门</option>
+352:    // 10. 花销透视维度（期间花销汇总表：部门 / 供应商）
+358:                    <option value="department" selected>按部门</option>
+359:                    <option value="supplier">按供应商</option>
+365:    // 11. FILTERS-§5: 花销维度聚焦（随透视维度联动渲染部门/供应商下拉）
+395:                <input type="text" id="expKeyword" class="form-control export-control-input" style="width:190px;" placeholder="单号 / 供应商 / 品名" oninput="handleExportSearchInput('expKeyword')">
+495:    // 20. FILTERS-§6: 关联单号 / 供应商关键词（防抖）
+507:                <label>供应商关键词</label>
+543:                    <span>数据脱敏保护 (隐藏供应商电话与全称)</span>
+569:        supSel.innerHTML = '<option value="">全部供应商</option>' +
+576:        deptSel.innerHTML = '<option value="">全部部门</option>' +
+578:            '<option value="0">未分配部门</option>';
+607:            <option value="">全部供应商</option>
+612:            <option value="">全部部门</option>
+772:            // 按当前透视维度落参数名：按部门 → department_id；按供应商 → supplier_id
+891:// UAT-023：业务身份列（品名/供应商/部门名等）与 CSV 行数据同口径——后端原样输出、
+893:function isExportBusinessIdentityHeader(h) {
+895:    return h.includes('品名') || h.includes('名称') || h.includes('说明')
+897:        || h.includes('供应商') || h.includes('往来')
+898:        || h === '部门' || h.includes('部门名称');
+909:            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
+911:            const preserveBiz = isExportBusinessIdentityHeader(h);
+917:            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
+927:            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+938:// 默认估算值，行渲染进 DOM 后回读实测高度修正缓存（长品名折行行高更高），避免滚动跳动。
+--- buildExportRowsHtml skipAttr ---
+// UAT-023：业务身份列（品名/供应商/部门名等）与 CSV 行数据同口径——后端原样输出、
+// 预览不得被 OpenCC 改字形。表头仍走 DOM 翻译；UI chrome 不全局关繁体。
+function isExportBusinessIdentityHeader(h) {
+    if (!h) return false;
+    return h.includes('品名') || h.includes('名称') || h.includes('说明')
+        || h.includes('备注') || h.includes('配方') || h.includes('建议')
+        || h.includes('供应商') || h.includes('往来')
+        || h === '部门' || h.includes('部门名称');
+}
+
+// 行 HTML 构建（预览渲染 / 虚拟滚动窗口 / 打印全量 三处共用，保证口径一致）
+function buildExportRowsHtml(rows, headers) {
+    let html = '';
+    rows.forEach(r => {
+        html += '<tr>';
+        r.forEach((cell, idx) => {
+            const h = headers[idx] || '';
+            const alignClass = exportColAlignClass(h);
+            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
+            const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
+            const preserveBiz = isExportBusinessIdentityHeader(h);
+
+            // 特殊样式高亮（统一为胶囊徽标）
+            // 已知债（A5，本次不修）：徽标判定靠单元格文本子串猜测（'异常'/'正常'…），
+            // 后端文案措辞变化会静默失效。正道是后端在 summary/单元格元数据里显式下发
+            // 语义标记（如 {text, tone}），待下一轮重构处理。
+            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
+            // 写进 innerHTML 的形态用转义后的文本（先转义再包徽标，避免二次解码）
+            const cellText = (cell === null || cell === undefined) ? '-' : String(cell);
+            let cellContent = esc(cellText);
+            if (cellText.includes('异常') || cellText.includes('低库存') || cellText.includes('承压') || cellText.includes('跌价') || cellText.includes('逾期') || cellText.includes('预警') || cellText.includes('异动')) {
+                cellContent = `<span class="badge badge-danger">${cellContent}</span>`;
+            } else if (cellText.includes('已入账') || cellText.includes('正常') || cellText.includes('稳定') || cellText.includes('下降') || cellText.includes('已审批') || cellText.includes('充足') || cellText.includes('健康')) {
+                cellContent = `<span class="badge badge-success">${cellContent}</span>`;
+            }
+
+            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+            html += `<td class="${alignClass} ${wrapClass}"${skipAttr}>${cellContent}</td>`;
+        });
+        html += '</tr>';
+    });
+    return html;
+--- cost_report skip ---
+129:                tr.addEventListener('click', () => openCostDrilldown(dep.id, dep.name, periodLabel));
+142:                    <td><span data-i18n-skip>${w2Escape(dep.name)}</span>${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">已停用</span>'}</td>
+263:        Object.keys(groups).forEach(suppName => {
+264:            const groupItems = groups[suppName];
+272:                    供应商：<span data-i18n-skip>${w2Escape(suppName)}</span> · 小计 ${I18N.fmtMoney(subtotal)} · ${groupItems.length} 条
+285:                    <td data-i18n-skip>${w2Escape(r.raw_name || '-')}</td>
+--- i18n isSkipElement / Hant intact ---
+/*
+ * 前端国际化核心（无构建步骤，纯静态脚本，必须在 main.js 之前同步加载）。
+ *
+ * 两层：
+ *   1. 键值层：I18N.t(key, params)，语言目录在 i18n/locales/*.js，通过 I18N.registerLocale 注册。
+ *      给外壳（导航、语言切换器、通用按钮、状态名、角色名）和新代码使用。
+ *   2. 文字转换层：语言为 zh-Hant-HK 时，把页面上所有简体文本按「港式用语表 > OpenCC 短语 > OpenCC 单字
+ *      > 香港字形」转换为繁体。覆盖 main.js 等 innerHTML 拼接出的动态内容与后端返回的提示。
+ *      永不改写 input/textarea 的值，也跳过 contenteditable、script/style 与
+ *      [translate="no"] / [data-i18n-skip] 子树。
+ *      业务身份数据（导出预览品名/供应商、成本明细品名等）必须包 data-i18n-skip，
+ *      与 CSV/DB 原值逐字对齐；UI chrome 与表头仍走转换层，禁止全局关闭繁体。
+ *
+ * 新增语言：在 locales/ 下增加目录文件并在 SUPPORTED 中登记；非中文语言不启用文字转换层。
+ */
+(function (root) {
+    'use strict';
+
+    var SOURCE_LOCALE = 'zh-Hans';
+    var HANT = 'zh-Hant-HK';
+    // DOM 翻译器（仅 zh-Hant-HK 启用）
+    // ------------------------------------------------------------------
+    var TEXT_ATTRS = ['placeholder', 'title', 'aria-label', 'alt', 'aria-placeholder',
+        'aria-roledescription', 'aria-valuetext', 'data-tooltip', 'label'];
+    var BUTTON_INPUT_TYPES = { button: 1, submit: 1, reset: 1 };
+    var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1 };
+
+    // 整棵子树（含自身属性）都不处理的元素。
+    // UAT-023：业务品名/供应商等身份列靠 data-i18n-skip 豁免，勿在此全局关掉转换。
+    function isSkipElement(el) {
+        if (!el || el.nodeType !== 1) return false;
+        if (SKIP_TAGS[el.nodeName] === 1) return true;
+        if (!el.getAttribute) return false;
+        if (el.getAttribute('data-i18n-skip') !== null) return true;
+        if (el.getAttribute('translate') === 'no') return true;
+        var ce = el.getAttribute('contenteditable');
+        if (ce !== null && ce !== 'false') return true;
+        return false;
+    }
+
+    // textarea 的子文本就是它的值，只处理属性（placeholder/title），不处理内容。
+    function isValueContainer(el) {
+        return !!el && el.nodeType === 1 && el.nodeName === 'TEXTAREA';
+    }
+
+    var SKIP_SELECTOR = 'script,style,noscript,template,[data-i18n-skip],[translate="no"],'
+        + '[contenteditable]:not([contenteditable="false"])';
+
+    function inSkippedSubtree(node) {
+        var n = node && node.nodeType === 1 ? node : (node ? node.parentNode : null);
+        if (!n || n.nodeType !== 1) return false;
+        // 浏览器里用原生 closest（解析期每秒上万条记录，逐级 getAttribute 太慢）；无 closest 的环境逐级判断。
+        if (typeof n.closest === 'function') return n.closest(SKIP_SELECTOR) !== null;
+        while (n && n.nodeType === 1) {
+            if (isSkipElement(n)) return true;
+            n = n.parentNode;
+        }
+DISABLE_HANT count: 0
+openccPass present: 3
+zh-Hant-HK present: 6
+--- api_export preview contract ---
+class ExportReq(BaseModel):
+    report_id: str
+    params: Optional[Dict[str, Any]] = {}
+    desensitized: Optional[bool] = False
+    # 界面语言（zh-Hans / zh-Hant-HK）。只影响 CSV 表头与下载文件名；行数据原样输出，
+    # 不做简繁转换（供应商名、品名属于业务数据，导出后可能回灌或对账）。缺省为简体原文。
+    lang: Optional[str] = None
+
+
+@router.post("/api/export/preview")
+def preview_report(req: ExportReq, request: Request):
+    """在线获取报表预览数据：全量行、列头、总行数及关键汇总指标。
+
+    UAT-023 契约：headers / rows 均为简体源文案，行内业务名（品名、供应商等）
+    **不做**简繁转换（与 download 行数据同口径，便于预览 textContent 与 CSV 逐字对齐）。
+    表头的繁体展示由前端 DOM 转换层负责；前端须对业务身份列加 data-i18n-skip，
+    不得全局关闭 zh-Hant-HK 转换。DB 中的业务名称本接口只读、不回写。
+    """
+    require_role("staff")(request)
+    tenant_id = _tenant_id(request)
+
+    # AC-12: 敏感报表权限控制（门禁标记声明在 REPORTS_META，与 download 同一实现）
+    _enforce_report_role_gate(req.report_id, request)
+
+    data = ExportDataProcessor.get_data(
+        req.report_id, req.params or {}, tenant_id, is_desens=bool(req.desensitized)
+    )
+
+    all_rows = data.get("rows", [])
+    # 预览与导出同口径：preview 返回全量行（行数见 total_rows），不截断。
+
+    return {
+        "status": "success",
+        "data": {
+            "title": data.get("title"),
+            "headers": data.get("headers", []),
+            "preview_rows": all_rows,
+            "total_rows": len(all_rows),
+            "summary": data.get("summary", {}),
+        },
+    }
+--- thead must NOT skip ---
+thead has <th: True
+thead has data-i18n-skip: False
+buildExportRowsHtml has data-i18n-skip: True

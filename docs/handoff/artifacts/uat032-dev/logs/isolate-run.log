@@ -1,0 +1,2 @@
+{"verdict": "PASS", "passed": 31, "total": 31, "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat032-dev/logs/selfcheck-evidence.json"}
+ports_ok port=15132 free; 15010 free

@@ -1,0 +1,2 @@
+ROOT_EXIT=1
+3 failed, 1288 passed, 1 skipped in 469.18s

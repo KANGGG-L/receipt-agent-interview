@@ -1,0 +1,178 @@
+{
+  "pass": true,
+  "base": "http://127.0.0.1:15235",
+  "tenant": "uat018uat",
+  "checks": [
+    {
+      "name": "ui_list_loaded_with_tenant",
+      "pass": true,
+      "detail": {
+        "cacheLen": 2,
+        "network": [
+          {
+            "url": "http://127.0.0.1:15235/api/dishes?status=active",
+            "tenant": "uat018uat",
+            "role": "owner"
+          },
+          {
+            "url": "http://127.0.0.1:15235/api/dishes/daily_consumption?date=2026-10-17",
+            "tenant": "uat018uat",
+            "role": "owner"
+          },
+          {
+            "url": "http://127.0.0.1:15235/api/dishes?status=active",
+            "tenant": "uat018uat",
+            "role": "owner"
+          },
+          {
+            "url": "http://127.0.0.1:15235/api/dishes",
+            "tenant": "uat018uat",
+            "role": "owner"
+          },
+          {
+            "url": "http://127.0.0.1:15235/api/dishes",
+            "tenant": "uat018uat",
+            "role": "owner"
+          },
+          {
+            "url": "http://127.0.0.1:15235/api/dishes/categories",
+            "tenant": "uat018uat",
+            "role": "owner"
+          }
+        ],
+        "estimatedNames": [
+          "UAT极大BOM无采购"
+        ],
+        "completeNames": [
+          {
+            "name": "UAT正常已采购BOM",
+            "margin": 90,
+            "cost": 10
+          }
+        ]
+      }
+    },
+    {
+      "name": "ui_list_has_estimated_marker",
+      "pass": true,
+      "detail": {
+        "hasUnknown": true,
+        "estimatedNames": [
+          "UAT极大BOM无采购"
+        ],
+        "textSample": "测试\n2 道餐品\n均价 HK$94.00 · 平均理论毛利 94.7%\n[已展开]\n测试\n在售\nUAT正常已采购BOM\nHK$100.00\n建议售价\n理论单份成本\nHK$10.00\n单份理论毛利\nHK$90.00\n理论毛利率\n90.0%\nBOM 食材清单 (1 种):\nUAT已采购料UAT018: 0.4kg (HK$10.00)\n编辑配方\n停用\n测试\n在售\nUAT极大BOM无采购\nHK$88.00\n建议售价\n理论单份成本\n估算 HK$0.00\n单份理论毛利\n估算 HK$88.00\n理论毛利率\n未知/估算\nBOM 食材清单 (1 种):\nUAT未采购料UAT018: 999999999999kg (未采购/估算)\n编辑配方\n停用\n                                  测试    2 道餐品    均价 HK$94.00 · 平均理论毛利 94.7%    [已展开]                                餐品名称          分类          建议售价          食材配方组成          理论单份成本          理论毛利率          操作                    UAT正常已采购BOM测试HK$100.00UAT已采购料UAT018 0.4kgHK$10.0090.0%  编辑  停用UAT极大BOM无采购测试HK$88.00UAT未采购料UAT018 999999999999kg估算 HK$0.00未知/估算  编辑  停用            "
+      }
+    },
+    {
+      "name": "ui_estimated_badge_not_certain_100",
+      "pass": true,
+      "detail": {
+        "badgeSample": "<span class=\"badge badge-warning\" style=\"font-size:0.72rem;\" title=\"成本未采购/未知，毛利不可作确定值（来源: unpurchased_zero_price)\">未知/估算</span>",
+        "costSample": "<span title=\"暂估来源: unpurchased_zero_price\">估算 HK$0.00</span>",
+        "completeBadge": "<span class=\"badge badge-success\" style=\"font-size:0.72rem;\">90.0%</span>",
+        "completeCost": "HK$10.00"
+      }
+    },
+    {
+      "name": "ui_purchased_badge_keeps_margin",
+      "pass": true,
+      "detail": {
+        "badgeSample": "<span class=\"badge badge-warning\" style=\"font-size:0.72rem;\" title=\"成本未采购/未知，毛利不可作确定值（来源: unpurchased_zero_price)\">未知/估算</span>",
+        "costSample": "<span title=\"暂估来源: unpurchased_zero_price\">估算 HK$0.00</span>",
+        "completeBadge": "<span class=\"badge badge-success\" style=\"font-size:0.72rem;\">90.0%</span>",
+        "completeCost": "HK$10.00"
+      }
+    },
+    {
+      "name": "ui_modal_estimated_markers",
+      "pass": true,
+      "detail": {
+        "cost": "未知/估算 HK$0.00",
+        "profit": "估算 HK$88.00",
+        "margin": "未知/估算",
+        "qty": "999999999999"
+      }
+    },
+    {
+      "name": "ui_client_reject_NaN",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "toastMsg": "",
+        "errText": "第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "badVal": "NaN"
+      }
+    },
+    {
+      "name": "ui_client_reject_Infinity",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "toastMsg": "",
+        "errText": "第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "badVal": "Infinity"
+      }
+    },
+    {
+      "name": "ui_client_reject_-1",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "toastMsg": "",
+        "errText": "第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "badVal": "-1"
+      }
+    },
+    {
+      "name": "ui_client_reject_0",
+      "pass": true,
+      "detail": {
+        "ok": true,
+        "toastMsg": "",
+        "errText": "第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+        "badVal": "0"
+      }
+    },
+    {
+      "name": "ui_modal_purchased_keeps_cost",
+      "pass": true,
+      "detail": {
+        "cost": "HK$10.00",
+        "margin": "90.0%",
+        "profit": "HK$90.00"
+      }
+    }
+  ],
+  "network": [
+    {
+      "url": "http://127.0.0.1:15235/api/dishes?status=active",
+      "tenant": "uat018uat",
+      "role": "owner"
+    },
+    {
+      "url": "http://127.0.0.1:15235/api/dishes/daily_consumption?date=2026-10-17",
+      "tenant": "uat018uat",
+      "role": "owner"
+    },
+    {
+      "url": "http://127.0.0.1:15235/api/dishes?status=active",
+      "tenant": "uat018uat",
+      "role": "owner"
+    },
+    {
+      "url": "http://127.0.0.1:15235/api/dishes",
+      "tenant": "uat018uat",
+      "role": "owner"
+    },
+    {
+      "url": "http://127.0.0.1:15235/api/dishes",
+      "tenant": "uat018uat",
+      "role": "owner"
+    },
+    {
+      "url": "http://127.0.0.1:15235/api/dishes/categories",
+      "tenant": "uat018uat",
+      "role": "owner"
+    }
+  ]
+}

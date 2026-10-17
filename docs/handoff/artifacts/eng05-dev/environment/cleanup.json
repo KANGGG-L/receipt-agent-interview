@@ -1,0 +1,12 @@
+{
+  "cleaned_at": "2026-10-17 07:56:03 CST",
+  "ports_checked": [
+    15010,
+    15275,
+    15285
+  ],
+  "15010_status": "FREE_RESERVED",
+  "15275_free": true,
+  "15285_free": true,
+  "note": "No baseline was on 15010 before or after; port left free/reserved. Temporary 15275/15285 stopped."
+}

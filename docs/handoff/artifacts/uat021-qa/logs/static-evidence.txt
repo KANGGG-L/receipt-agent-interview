@@ -1,0 +1,133 @@
+=== UAT-021 static evidence 2026-10-17 05:31 CST ===
+--- api_dishes _redact_dish_version_payload ---
+119:                  can_see_prices: bool = True) -> Dict:
+140:    if not can_see_prices:
+177:def _redact_dish_version_payload(payload):
+181:    snap = out.get("snapshot") if isinstance(out, dict) else None
+318:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+375:            out.append(_dish_to_dict(session, r, _tenant_id(request), can_see_prices=can_see_prices))
+448:        snap_prices = dishes_store.snapshot_prices(tenant_id)
+663:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+717:                    "unit_cost": dt.unit_cost if can_see_prices else None,
+718:                    "total_cost": dt.total_cost if can_see_prices else None,
+735:                "dish_price": dish_price if can_see_prices else None,
+737:                "unit_cost": r.unit_cost if can_see_prices else None,
+738:                "total_cost": r.total_cost if can_see_prices else None,
+739:                "revenue": item_rev if can_see_prices else None,
+740:                "gross_profit": item_gp if can_see_prices else None,
+741:                "gross_margin_rate": item_gm if can_see_prices else None,
+767:            "total_cost": total_cost if can_see_prices else None,
+768:            "total_revenue": total_revenue if can_see_prices else None,
+769:            "gross_profit": gross_profit if can_see_prices else None,
+770:            "gross_margin_rate": gross_margin_rate if can_see_prices else None,
+954:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+960:        return {"status": "success", "data": _dish_to_dict(session, dish, _tenant_id(request), can_see_prices=can_see_prices)}
+1060:        db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+1179:            db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+1265:    UAT-021：staff 可读版本结构（用量/单位），但 snapshot.dish.price 及同义成本/
+1269:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+1276:        snapshot = db.get_dish_recipe_version(dish.id, int(version), tenant_id)
+1277:        if snapshot is None:
+1279:        if not can_see_prices:
+1280:            snapshot = _redact_dish_version_payload(snapshot)
+1281:        return {"status": "success", "data": snapshot}
+1301:        snapshot = snap.get("snapshot") or {}
+1302:        snap_dish = snapshot.get("dish") or {}
+1303:        comps = snapshot.get("ingredients") or []
+1362:        db.snapshot_dish_recipe(session, dish, changed_by=_actor(request),
+1389:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+1419:    prior_snaps = dishes_store.snapshot_prices(tenant_id)
+1607:                "total_cost": round(float(cons_row.total_cost or 0.0), 2) if can_see_prices else None,
+1613:            dishes_store.save_snapshot(tenant_id, _cid, _price, _ver)
+--- api_inventory staff null prices ---
+109:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+123:    ack_map = db.list_price_anomaly_acks(tenant_id=tenant_id) if can_see_prices else {}
+151:        if price == "anomaly" and (not can_see_prices or not price_anomaly):
+155:        if price_anomaly and can_see_prices:
+165:            "last_unit_price": s.last_unit_price if can_see_prices else None,
+166:            "price_anomaly": price_anomaly if can_see_prices else False,
+167:            "vs_avg_pct": vs_avg_pct if can_see_prices else None,
+170:            "ack_action": (ack.get("action") or None) if can_see_prices else None,
+176:                 "price_anomaly_count": anomaly_count if can_see_prices else 0,
+178:                 "price_anomaly_threshold_pct": _threshold_pct(tenant_id) if can_see_prices else None,
+180:                 "price_anomaly_ack_map": ({str(k): v for k, v in ack_map.items()} if can_see_prices else {})},
+329:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+356:    last_unit_price = sku.last_unit_price
+357:    if not can_see_prices:
+359:        last_unit_price, avg_cost, vs_avg_pct, avg_30d, latest_price = None, None, None, None, None
+365:            "prices_visible": can_see_prices,
+375:            "last_unit_price": last_unit_price,
+383:            "threshold_pct": _threshold_pct(tenant_id) if can_see_prices else None,
+512:            unit_cost = sku.last_unit_price if (sku.last_unit_price and sku.last_unit_price > 0) else 0.0
+783:    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
+828:            "unit": r.unit, "amount": r.amount if can_see_prices else None,
+--- inventory_board isOwnerRoleNow gate ---
+410:        if (isOwnerRoleNow()) loadPriceThresholdControl();
+485:            // isOwnerRoleNow 门控，避免角色切换残留或异常 JSON 把价格渲出来。
+487:            const priceText = (isOwnerRoleNow() && sku.last_unit_price != null
+488:                && Number.isFinite(Number(sku.last_unit_price)))
+489:                ? `$${Number(sku.last_unit_price).toFixed(2)}`
+513:            const skuActionsHtml = isOwnerRoleNow() ? `
+533:            const ackRevokeHtml = (ackAction && isOwnerRoleNow())
+646:    const lastPrice = (isOwnerRoleNow() && sku.last_unit_price != null && Number.isFinite(Number(sku.last_unit_price)))
+647:        ? `$${Number(sku.last_unit_price).toFixed(2)}`
+648:        : (isOwnerRoleNow() ? '未知' : '—');
+657:        ['价格异动', isOwnerRoleNow() ? (sku.price_anomaly ? '是' : '否') : '—'],
+804:    if (!isOwnerRoleNow()) {
+848:    if (!isOwnerRoleNow()) {
+1149:    if (!isOwnerRoleNow()) {
+1254:    if (!isOwnerRoleNow()) {
+1967:    const lastPrice = (data.last_unit_price != null && Number.isFinite(Number(data.last_unit_price)) && Number(data.last_unit_price) > 0)
+1968:        ? formatHkd(data.last_unit_price) : '-';
+--- dish_bom isOwnerRoleNow ---
+550:        let priceCount = 0;
+553:            if (d.price != null && Number.isFinite(Number(d.price))) {
+554:                sumPrice += Number(d.price);
+555:                priceCount++;
+557:            if (d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost))) {
+558:                sumCost += Number(d.theoretical_cost);
+563:        g.avgPrice = priceCount > 0 ? (sumPrice / priceCount) : null;
+564:        g.avgTheoreticalCost = priceCount > 0 ? (sumCost / priceCount) : null;
+578:    const isOwner = isOwnerRoleNow();
+587:    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
+588:    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
+594:    const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
+595:    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+597:    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
+598:    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
+630:        + '      <div style="font-size:1.1rem; font-weight:700; color:var(--primary, #0f766e);">' + priceDisplay + '</div>'
+668:    const isOwner = isOwnerRoleNow();
+669:    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
+670:    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
+676:    const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
+677:    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+679:    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
+680:    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
+687:        + '<td class="col-right" style="font-weight:600;">' + priceDisplay + '</td>'
+705:    const isOwner = isOwnerRoleNow();
+--- auth: cookie not X-Role when AUTH_ENABLED=1 ---
+5:- AUTH_ENABLED 默认 0 → /api/auth/me 返回 auth_enabled=false、account=null，
+9:- AUTH_ENABLED=1（生产）时身份只能来自 Bearer 验签，不回落 X-Role / X-Email；且启动阶段
+114:    return os.environ.get("AUTH_ENABLED", "0").strip().lower() in ("1", "true", "yes")
+138:    当 AUTH_ENABLED=1 时强制核验：
+142:    why 第 2 项要按环境门控：本仓库是面试/演示资产，interview-show.sh 以 AUTH_ENABLED=1
+153:            "生产环境鉴权已开启（AUTH_ENABLED=1），但 DEMO_TOKEN_SECRET 未设置或仍是"
+165:                f"生产环境鉴权已开启（AUTH_ENABLED=1，ENV={env_name()}），但预置账号 {email} 仍在使用内置默认弱口令 ({weak})。"
+174:            "生产环境鉴权已开启（AUTH_ENABLED=1），但 DEMO_TOKEN_SECRET 未设置或仍是"
+336:    cookie = request.cookies.get(SESSION_COOKIE) if hasattr(request, "cookies") else None
+337:    if cookie:
+338:        return cookie, "cookie"
+344:    if (account or {}).get("source") != "cookie":
+351:def set_session_cookie(response, token: str) -> None:
+352:    response.set_cookie(
+357:def clear_session_cookie(response) -> None:
+358:    response.delete_cookie(SESSION_COOKIE, path="/")
+361:def resolve_account(request: Request):
+367:      - source="cookie" ：HttpOnly 会话 Cookie 中的令牌验签通过（同一种令牌，
+369:      - source="header" ：X-Role 头声明（仅在 AUTH_ENABLED=0 的 demo 免密模式）；
+374:    AUTH_ENABLED=1（生产）时不回落 X-Role：身份只能来自令牌。
+384:    role = request.headers.get("X-Role")
+397:        （require_role / require_admin 已注入），否则回落到 resolve_account(request)
+417:            acct = resolve_account(request)
+463:        account = resolve_account(request)
+478:    account = resolve_account(request)

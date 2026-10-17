@@ -288,7 +288,7 @@ def test_ac6_migration_is_idempotent_and_keeps_assigned_rows(tmp_path):
         versions = [row[0] for row in conn.execute(text(
             "SELECT name FROM schema_version"))]
     assert all("category" not in str(name) for name in versions)
-    assert db.schema_version() == 5
+    assert db.schema_version() == 6  # v6 sku_merge_source_provenance (UAT-031 lineage)
 
 
 def test_ac1_to_ac4_sku_identity_and_custom_label():

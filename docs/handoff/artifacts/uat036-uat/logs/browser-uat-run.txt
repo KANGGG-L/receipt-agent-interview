@@ -1,0 +1,61 @@
+PASS baseline workbench not dash — {"qCountTodo":"0","qCountReview":"0","qCountApprove":"0","qCountIssues":"0","hasDash":false,"retryVisible":false,"bodyText":"当前队列暂无待处理单据","badge":"0 张待办"}
+PASS baseline inventory has real numbers (not dash) — {"valTotalSKU":"2","valLowStock":"1","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"","hasDash":false,"tableText":"UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存\n0.5 kg\n\t0.500 kg\t1 kg\t\n$6.
+PASS baseline dish KPI not dash (legitimate zeros ok) — {"kpiDishCost":"HK$0.00","kpiDishRevenue":"HK$0.00","kpiDishGrossMargin":"0.0%","kpiDishCount":"0 笔","kpiDash":false,"kpiErrVisible":false,"kpiRetryVisible":false,"dishErrorVisible":false,"dishRetryVisible":false,"dishErrorText":"","gridText":"\n                            \n    
+PASS C1 inventory GET500 → all metrics — — {"valTotalSKU":"—","valLowStock":"—","valPriceAnomaly":"—","noticeVisible":true,"retryVisible":true,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":true,"tableText":"UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存\n0.5 kg\n\t0.50
+PASS C1 inventory error notice visible — 库存指标加载失败，当前数值不可用。 重试
+PASS C1 inventory retry visible
+PASS C1 inventory NOT fake 0 — —
+PASS C1 dish KPI GET500 → — — {"kpiDishCost":"—","kpiDishRevenue":"—","kpiDishGrossMargin":"—","kpiDishCount":"—","kpiDash":true,"kpiErrVisible":true,"kpiRetryVisible":true,"dishErrorVisible":false,"dishRetryVisible":false,"dishErrorText":"餐品列表加载失败当前不是空库；指标不可用重试","gridText":"餐品列表加载失败当前不是空库；指标不可用重试"}
+PASS C1 dish KPI error+retry visible
+PASS C1 dish list fail copy (not empty library) — 餐品列表加载失败
+当前不是空库；指标不可用
+重试
+PASS C1 dish retry visible — {"present":true,"w":74.015625,"h":45,"visible":true}
+PASS C1 workbench GET500 → qCount — — {"qCountTodo":"—","qCountReview":"—","qCountApprove":"—","qCountIssues":"—","hasDash":true,"retryVisible":true,"bodyText":"工作台队列加载失败，指标不可用（不是空队列）。","badge":"加载失败"}
+PASS C1 workbench retry visible
+PASS C1 workbench fail copy not empty-queue — 工作台队列加载失败，指标不可用（不是空队列）。
+PASS C2 inventory retry clicked
+PASS C2 inventory recovered real numbers — {"valTotalSKU":"2","valLowStock":"1","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":false,"tableText":"UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存\n0.5 kg\n\t0
+PASS C2 dish retry clicked
+PASS C2 dish KPI recovered (not —) — {"kpiDishCost":"HK$0.00","kpiDishRevenue":"HK$0.00","kpiDishGrossMargin":"0.0%","kpiDishCount":"0 笔","kpiDash":false,"kpiErrVisible":false,"kpiRetryVisible":false,"dishErrorVisible":false,"dishRetryVisible":false,"dishErrorText":"","gridText":"暂无匹配的餐品数据\n可点击右上角「+ 新建餐品」创建您的第一个餐品 B
+PASS C2 dish list recovered (fail panel gone) — 暂无匹配的餐品数据
+可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方
+PASS C2 workbench retry clicked
+PASS C2 workbench recovered (not —) — {"qCountTodo":"0","qCountReview":"0","qCountApprove":"0","qCountIssues":"0","hasDash":false,"retryVisible":false,"bodyText":"当前队列暂无待处理单据","badge":"0 张待办"}
+PASS C3 empty inventory metrics are 0 not — — {"valTotalSKU":"0","valLowStock":"0","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":false,"tableText":"库存还没有食材\n上传第一张进货单据后，食材会按明细自动建档\n新增食材"}
+PASS C3 empty inventory no error notice — 库存指标加载失败，当前数值不可用。 重试
+PASS C3 empty inventory empty-state copy (not fail) — 库存还没有食材
+上传第一张进货单据后，食材会按明细自动建档
+新增食材
+PASS C3 empty dish KPI legitimate zeros (not —) — {"cost":"HK$0.00","count":"0 笔","kpiDash":false}
+PASS C3 empty dish KPI shows 0-ish values — {"kpiDishCost":"HK$0.00","kpiDishRevenue":"HK$0.00","kpiDishGrossMargin":"0.0%","kpiDishCount":"0 笔","kpiDash":false,"kpiErrVisible":false,"kpiRetryVisible":false,"dishErrorVisible":false,"dishRetryVisible":false,"dishErrorText":"","gridText":"暂无匹配的餐品数据\n可点击右上角「+ 新建餐品」创建您的第一个餐品 B
+PASS C3 empty dish list not fail panel — 暂无匹配的餐品数据
+可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方
+PASS C3 empty workbench counts are 0 not — — {"qCountTodo":"0","qCountReview":"0","qCountApprove":"0","qCountIssues":"0","hasDash":false,"retryVisible":false,"bodyText":"当前队列暂无待处理单据","badge":"0 张待办"}
+PASS C4 inventory request A held — held=1
+PASS C4 inventory B loaded real numbers before release — {"valTotalSKU":"2","valLowStock":"1","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":false,"tableText":"UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存\n0.5 kg\n\t0
+PASS C4 inventory stale A released — released=1
+PASS C4 inventory stale A did NOT overwrite (still real, not 999) — {"valTotalSKU":"2","valLowStock":"1","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":false,"tableText":"UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存\n0.5 kg\n\t0
+PASS C4 inventory table has no STALE_SHOULD_NOT_SHOW — UAT036_Flour
+	食材	
+10 kg
+	10.000 kg	2 kg	
+$8.00
+	
+详情
+更多 ▾
+
+
+UAT036_Sugar
+	食材	
+低库存
+PASS C4 dish stale released — released=3
+PASS C4 dish stale did NOT bring STALE_DISH — 暂无匹配的餐品数据
+可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方
+PASS C4 dish after race not showing stale-only state
+PASS C4 workbench stale released — released=1
+PASS C4 workbench stale did NOT set qCountTodo=1 from stale edited — {"qCountTodo":"0","qCountReview":"0","qCountApprove":"0","qCountIssues":"0","hasDash":false,"retryVisible":false,"bodyText":"当前队列暂无待处理单据","badge":"0 张待办"}
+PASS C4 workbench newer empty wins (0 not stale 1) — {"qCountTodo":"0","qCountReview":"0","qCountApprove":"0","qCountIssues":"0","hasDash":false,"retryVisible":false,"bodyText":"当前队列暂无待处理单据","badge":"0 张待办"}
+PASS NEG legitimate empty stays 0 (not converted to —) — {"valTotalSKU":"0","valLowStock":"0","valPriceAnomaly":"0","noticeVisible":false,"retryVisible":false,"noticeText":"库存指标加载失败，当前数值不可用。 重试","hasDash":false,"tableText":"库存还没有食材\n上传第一张进货单据后，食材会按明细自动建档\n新增食材"}
+
+SUMMARY pass=true passCount=40 failCount=0

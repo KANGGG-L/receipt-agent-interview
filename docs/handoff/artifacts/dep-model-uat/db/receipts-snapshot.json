@@ -1,0 +1,214 @@
+{
+  "receipts": [
+    {
+      "id": 1,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 2,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 3,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 4,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 5,
+      "supplier_name": "華記行清潔用品有限公司",
+      "receipt_date": "2024-01-29",
+      "total_amount": 1149.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 6,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 7,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 80.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 8,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "edited",
+      "doc_form": "printed_delivery_note",
+      "version": 2
+    },
+    {
+      "id": 9,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 10,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 11,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 12,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    }
+  ],
+  "sample_items": {
+    "1": [
+      {
+        "name": "維他檸檬茶 500毫升裝",
+        "quantity": 1.0,
+        "unit": "樽",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "2": [
+      {
+        "name": "維他檸檬茶500毫升裝",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "3": [
+      {
+        "name": "维他柠檬茶 500毫升装",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "4": [
+      {
+        "name": "維他檸檬茶 500毫升裝",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "6": [
+      {
+        "name": "維他檸檬茶 500毫升裝",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "7": [
+      {
+        "name": "测试菜心",
+        "quantity": 4.0,
+        "unit": "斤",
+        "unit_price": 20.0,
+        "amount": 80.0
+      }
+    ],
+    "8": [
+      {
+        "name": "維他檸檬茶500毫升裝",
+        "quantity": 1.0,
+        "unit": "",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "9": [
+      {
+        "name": "維他檸檬茶 500毫升",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "10": [
+      {
+        "name": "維他檸檬茶500毫升裝",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "11": [
+      {
+        "name": "维他柠檬茶 500毫升",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ],
+    "12": [
+      {
+        "name": "維他檸檬茶500毫升裝",
+        "quantity": 1.0,
+        "unit": "瓶",
+        "unit_price": 13.0,
+        "amount": 13.0
+      }
+    ]
+  },
+  "count": 12
+}

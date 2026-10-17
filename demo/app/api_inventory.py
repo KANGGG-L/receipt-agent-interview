@@ -736,6 +736,30 @@ def price_history(sku_id: int, request: Request):
 # WS4：库存流水台账（Append-Only 只读）
 # -------------------------------------------------------------
 _VALID_LOG_KINDS = ("in", "consume", "waste", "stocktake")
+# 出库类在 DB 存绝对值（扣库存逻辑用 magnitude）；台账展示必须带方向符号。
+_OUTBOUND_LOG_KINDS = frozenset({"consume", "waste"})
+# 已按方向落库的 kind：stocktake 存 diff（可负），reversal 存负 qty。
+_SIGNED_LOG_KINDS = frozenset({"stocktake", "reversal"})
+
+
+def ledger_qty_signed(kind, qty):
+    """台账展示用带符号数量（只读派生，不改 DB / 不二次扣库存）。
+
+    约定（UAT-007）：
+    - consume / waste：DB 存正数 magnitude → 展示 -abs(qty)
+    - in / adjust（冲销恢复）：正数表示入库/回补 → 展示原值（通常为正）
+    - stocktake / reversal：DB 已带方向 → 原样返回
+    """
+    try:
+        q = float(qty or 0.0)
+    except (TypeError, ValueError):
+        return 0.0
+    k = (kind or "").strip()
+    if k in _OUTBOUND_LOG_KINDS:
+        return -abs(q)
+    if k in _SIGNED_LOG_KINDS:
+        return q
+    return q
 
 
 @router.get("/api/inventory/logs")
@@ -751,6 +775,8 @@ def inventory_logs(request: Request, sku_id: Optional[int] = None, kind: str = "
     - `limit` 默认 200，收敛到 [1, 1000]（越界/非法回落 200 或封顶 1000）。
     - 日期过滤按 `date`（空则回落 `created_at[:10]`），闭区间 [start_date, end_date]，
       与 api_export 的 inventory_stock_logs 报表口径一致。
+    - 每行含 `qty`（DB 原值）与 `qty_signed`（台账方向展示值，UAT-007）；
+      `id` 与 DB 主键一致，供 DB/API/UI 三层对账。
     返回 `{"status":"success","data":[...],"meta":{"count":N}}`。
     """
     account = require_role("staff")(request)
@@ -797,7 +823,9 @@ def inventory_logs(request: Request, sku_id: Optional[int] = None, kind: str = "
             continue
         data.append({
             "id": r.id, "sku_id": r.sku_id, "name": r.name,
-            "qty": r.qty, "unit": r.unit, "amount": r.amount if can_see_prices else None,
+            "qty": r.qty,
+            "qty_signed": ledger_qty_signed(r.kind, r.qty),
+            "unit": r.unit, "amount": r.amount if can_see_prices else None,
             "vendor": r.vendor, "date": d, "kind": r.kind,
             "note": r.note, "receipt_id": r.receipt_id,
             "created_at": r.created_at,

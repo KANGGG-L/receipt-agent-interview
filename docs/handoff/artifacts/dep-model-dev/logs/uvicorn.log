@@ -1,0 +1,894 @@
+INFO:     Started server process [225156]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=2、缺向量行=0、交集=0（记忆库=/workspace/receipt-agent-interview/docs/handoff/artifacts/dep-model-dev/environment/dep_model.db，向量库=/workspace/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15391 (Press CTRL+C to quit)
+INFO:     127.0.0.1:59172 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59510 - "GET /api/admin/engine-config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59516 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59520 - "GET /api/admin/engine HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59524 - "GET /api/admin/engine-config HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59534 - "GET /api/settings/engine HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:59548 - "GET /api/admin/config HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:34742 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34750 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+识别腿与审核腿同源（openai/deepseek-v4-flash-vision），违反 ai_registry 准入规则 3，请在引擎配置切换异构审核模型
+INFO:     127.0.0.1:34754 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34760 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34776 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59848 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59862 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59868 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59876 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59878 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35486 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35488 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+/workspace/receipt-agent-interview/demo/app/services/rag.py:222: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+  _vs = Chroma(
+RECEIPT_LATENCY extract_ms=20361.5 parse_ms=0.0 rag_ms=329.0 audit_ms=0.1 retry_count=0 total_ms=20714.7 status=parsed
+TOKENS prompt=1754 completion=870 total=2624 cost_hkd=0.014383 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:35504 - "GET /api/job/e121211e73854f64b9a683f3b2ab659f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35520 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35530 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35534 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35544 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52818 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52828 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52840 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52852 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52866 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39728 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39744 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39760 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39766 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39770 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57666 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57676 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57678 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57694 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57704 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50386 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50388 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50394 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50410 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50420 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=45512.7 parse_ms=0.0 rag_ms=5.3 audit_ms=0.1 retry_count=0 total_ms=45531.7 status=parsed
+TOKENS prompt=1754 completion=3002 total=4756 cost_hkd=0.045007 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:40628 - "GET /api/job/c2402e520869437599056f218b6044dd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40638 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40648 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40662 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40674 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40690 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40698 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40250 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=11793.8 parse_ms=0.0 rag_ms=5.8 audit_ms=0.1 retry_count=0 total_ms=11811.8 status=parsed
+TOKENS prompt=1755 completion=619 total=2374 cost_hkd=0.010781 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:40262 - "GET /api/job/f241b6cb265e446fa4dcc3c0a82058e2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40270 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40280 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40292 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40298 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40308 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35676 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35688 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35690 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35696 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:35702 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=16626.3 parse_ms=0.0 rag_ms=6.1 audit_ms=0.2 retry_count=0 total_ms=16643.7 status=parsed
+TOKENS prompt=1754 completion=967 total=2721 cost_hkd=0.018058 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:46960 - "GET /api/job/73b8d2d2ca2847f6833b6095cfed82f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46966 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46982 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46994 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47006 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47016 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47020 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40354 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40370 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40378 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40384 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40388 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55376 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55392 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=26959.5 parse_ms=0.0 rag_ms=5.6 audit_ms=0.2 retry_count=0 total_ms=27150.9 status=parsed
+TOKENS prompt=1924 completion=1669 total=3593 cost_hkd=0.026263 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:55416 - "GET /api/job/cb2080c6a8fe4122bd03a318ad33e242 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55424 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55434 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53360 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+[PRIMARY_FAIL] 识别引擎 [openai] 调用异常: OpenAI 兼容接口失败 429: {"error":{"code":"upstream_request_rejected","message":"Cluster TPM rate limit exceeded.","trace_id":"a0c058620b585260564b1c79bfb4d603","type":"invalid_request_error"},"request_id":"req_75b6818f-1e4f-401e-9f80-fc0b86003d2a"} (category=engine_error)
+无可用 token 用量(收据=6 engine=openai 原值={'prompt_tokens': 0, 'completion_tokens': 0, 'cached_tokens': 0, 'total_tokens': 0} 未解析字段=['none']) -> 成本记 0 并标记为估算值
+INFO:     127.0.0.1:53372 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53384 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53396 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53398 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41666 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41670 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=15402.4 parse_ms=0.0 rag_ms=6.2 audit_ms=0.1 retry_count=1 total_ms=15426.9 status=parsed
+TOKENS prompt=1754 completion=1003 total=2757 cost_hkd=0.016294 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:41674 - "GET /api/job/e329a86670a8499289565b3c4e3f1857 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41690 - "POST /api/receipts/manual HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:41698 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41714 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41726 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41732 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41736 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34282 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34298 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34300 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34316 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34320 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36504 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36520 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36532 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36548 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36562 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42672 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42686 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42694 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42704 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42706 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57498 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57508 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57524 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57526 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57542 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40006 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+[PRIMARY_FAIL] 识别引擎 [openai] 调用异常: 识别服务响应太慢（等了 45 秒仍没有返回）：HTTPSConnectionPool(host='discovery-api.intern-ai.org.cn', port=443): Read timed out. (read timeout=45) (category=timeout)
+无可用 token 用量(收据=8 engine=openai 原值={'prompt_tokens': 0, 'completion_tokens': 0, 'cached_tokens': 0, 'total_tokens': 0} 未解析字段=['none']) -> 成本记 0 并标记为估算值
+RECEIPT_LATENCY extract_ms=46607.1 parse_ms=0.0 rag_ms=0.0 audit_ms=0.0 retry_count=0 total_ms=46615.4 status=error
+TOKENS prompt=0 completion=0 total=0 cost_hkd=0.000000 cost_estimated=True(no_token_usage) success=False engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:40020 - "GET /api/job/9772620db4db4b6ca054c34fc11d5af8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40022 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40028 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40030 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40036 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41104 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41112 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41122 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41124 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42530 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42540 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42546 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42548 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42560 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33202 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33206 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33212 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33224 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33226 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33386 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33398 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33408 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33420 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=40236.4 parse_ms=0.0 rag_ms=4.9 audit_ms=0.1 retry_count=0 total_ms=40253.5 status=parsed
+TOKENS prompt=1753 completion=554 total=2307 cost_hkd=0.009842 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:33432 - "GET /api/job/2bd0c5b8090f4fea8a1bfc77bcf8c3bf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33436 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33452 - "POST /api/upload?async=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33456 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46952 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46966 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46968 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46982 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46996 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=11249.7 parse_ms=0.0 rag_ms=6.2 audit_ms=0.1 retry_count=0 total_ms=11266.9 status=parsed
+TOKENS prompt=1755 completion=709 total=2464 cost_hkd=0.012073 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:44862 - "GET /api/job/f134646e82df42378ea3802a56e683c3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39736 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39750 - "GET /api/receipt/10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39762 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39772 - "POST /api/receipt/manual HTTP/1.1" 405 Method Not Allowed
+INFO:     127.0.0.1:39786 - "POST /api/receipts/manual HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:39796 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53870 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53882 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53892 - "GET /api/receipt/12 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53906 - "GET /api/receipt/12 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53914 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38532 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38532 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38532 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38532 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38508 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38516 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38526 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38542 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38532 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:38540 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38516 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38526 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38542 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38540 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "POST /api/track HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "POST /api/upload?treatment=true&async=true&force=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38532 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipt/13/image?v=95ec331e&sig=ea1dff793cb95f4f6a8384cf9b51155d1ebfb9f6139e4087772f9e86e47213d7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=23595.4 parse_ms=0.0 rag_ms=5.8 audit_ms=0.2 retry_count=0 total_ms=23616.9 status=parsed
+TOKENS prompt=1754 completion=539 total=2293 cost_hkd=0.009628 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:38508 - "GET /api/job/8cb2709e97794e25a95e3595a0faa56a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44442 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44454 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:38508 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44484 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44484 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/receipt/13/image?v=95ec331e&sig=ea1dff793cb95f4f6a8384cf9b51155d1ebfb9f6139e4087772f9e86e47213d7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44484 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44484 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44498 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44462 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44480 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44484 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44502 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:44464 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /api/receipt/13/image?v=95ec331e&sig=ea1dff793cb95f4f6a8384cf9b51155d1ebfb9f6139e4087772f9e86e47213d7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44462 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44502 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44498 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44464 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "POST /api/track HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "POST /api/upload?treatment=true&async=true&force=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44480 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipt/14/image?v=37443097&sig=cd0b1159615e71253af92460d5253a344a8adca378d787449d996a3c74b9274e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=24961.4 parse_ms=0.0 rag_ms=6.0 audit_ms=0.2 retry_count=0 total_ms=24981.5 status=parsed
+TOKENS prompt=1753 completion=522 total=2275 cost_hkd=0.009382 cost_estimated=False(-) success=True engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:44484 - "GET /api/job/691d6aac38634bac885099042320b8f9 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57068 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44484 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57068 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57070 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/receipt/13/image?v=95ec331e&sig=ea1dff793cb95f4f6a8384cf9b51155d1ebfb9f6139e4087772f9e86e47213d7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/receipt/14/image?v=37443097&sig=cd0b1159615e71253af92460d5253a344a8adca378d787449d996a3c74b9274e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/css/f1b.css?v=2eecd6ca7e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/css/review-mobile.css?v=962b440c02 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/css/style.css?v=5c93238454 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/workbench_queue.js?v=79785dc484 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/upload.js?v=b6eb876618 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/supplier_archive.js?v=ba34533095 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/dish_consumption.js?v=2a62753cb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/inventory_board.js?v=9b1085c6e8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/cost_report.js?v=05196946db HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/archive_list.js?v=bfc967d74f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /static/js/dish_bom.js?v=1f89debb6c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57120 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57094 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57078 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57134 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57110 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:57112 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/ai-insights?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipt/14/image?v=37443097&sig=cd0b1159615e71253af92460d5253a344a8adca378d787449d996a3c74b9274e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipt/13/image?v=95ec331e&sig=ea1dff793cb95f4f6a8384cf9b51155d1ebfb9f6139e4087772f9e86e47213d7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/receipt/9/image?v=0509c5b5&sig=981534d4906b179b03df0cd0f531e1ae73325377c67861755080c839ed10bad6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipt/8/image?v=be003550&sig=a8762d187ca5942fef7792e8efe6ea5cffed39cbb845e514647624bee58c530c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipt/5/image?v=077c9d9d&sig=ce7ab8e8218f62a3d7cefed3273a737e50a372c7f2cc6f2092c9c3ea32ea0f8a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/receipt/3/image?v=7cf89ba0&sig=a308b1b3fb462d0136debcef3ae2bd549156e212f095de0eeb298cd22f458b8c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/receipt/4/image?v=3375b799&sig=90fb7a8d38745975b80f6082700421539684f843325fd2e7320d3cc85b567208 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/receipt/6/image?v=2c8b89bc&sig=68fefba4125f94b6504019c460cea58ba509d47680b24bedb367e354a28ceacc HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57134 - "GET /api/receipt/1/image?v=84b81253&sig=f0bd5372da1ed31df2abcc9a2e45ebc967fce4ebbac2f6f4a8980976b7b4199e HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "POST /api/upload?treatment=true&async=true&force=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57120 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/receipt/15/image?v=1b0557c0&sig=ba552a899e09178e00cb043bc700a4c7e26bae4b39a774da2f9ced1a2c0b617a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK
+RECEIPT_LATENCY extract_ms=41115.8 parse_ms=0.0 rag_ms=0.0 audit_ms=0.0 retry_count=0 total_ms=41124.2 status=error
+TOKENS prompt=1754 completion=4096 total=5850 cost_hkd=0.060722 cost_estimated=False(-) success=False engine=openai model=deepseek-v4-flash-vision
+INFO:     127.0.0.1:57112 - "GET /api/job/a0ec4101151945389effe85499293876 HTTP/1.1" 200 OK

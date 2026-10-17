@@ -1,0 +1,12 @@
+{
+  "uvicorn_pid": 257609,
+  "port": 15251,
+  "stopped": true,
+  "ports_kept_free": [
+    15010,
+    15131,
+    15141
+  ],
+  "stopped_at": "2026-10-17 15:17:52 CST",
+  "reuseaddr_bind_ok": true
+}

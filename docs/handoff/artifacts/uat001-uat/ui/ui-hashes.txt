@@ -1,0 +1,6 @@
+3ef7bd77cfbe9c31f0be78400552c50e  ui/01_workbench_edited_with_image.png
+c9395a272491917ffc57bd098ddc0d56  ui/02_workbench_manual_without_image.png
+bd5be3dea241e82bbb3dffdfd903bb20  ui/03_archive_edited_with_image.png
+3e946db250ab607d0d27a9dbad8d256b  ui/04_archive_edited_reopen_refresh.png
+d8547f14b08b7c45542679a4ed765312  ui/05_archive_manual_without_image.png
+982f48bcfb272862d5d65fafacf0d501  ui/06_workbench_tampered_handled.png

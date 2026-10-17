@@ -1,0 +1,21 @@
+=== LIVE SERVED VERIFY 2026-10-17T04:27:18+08:00 port=15240 ===
+SERVED_OPEN_TAG= <div id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
+SERVED_HTML_role_dialog=True
+SERVED_HTML_aria_modal=True
+SERVED_HTML_labelledby=True
+SERVED_HTML_describedby=True
+SERVED_TITLE= True
+SERVED_CANCEL_SUBMIT= True
+SERVED_JS_openAccessibleModal= True
+SERVED_JS_bare_remove_hide= False
+SERVED_JS_closeModalById= True
+SERVED_REVIEW_open= True
+SERVED_REVIEW_close_focus= True
+SERVED_ESC= True
+SERVED_TAB= True
+SERVED_paymentModal_no_reconCreateTitle= True
+SERVED_reconResolveModal_no_reconCreateTitle= True
+ALL_PASS= True
+453877 /tmp/uat017_root.html
+ 53084 /tmp/uat017_finance.js
+506961 total

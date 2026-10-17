@@ -1,0 +1,19 @@
+1. ::demo.tests.test_i18n_zh_hant: collection skipped
+2. demo.tests.test_admin_tabs_consolidation_e2e::test_admin_tabs_consolidation_e2e: 本地 http://127.0.0.1:15010 无可用服务，且未显式 opt-in 自动拉起（缺省不会启动任何进程：本用例拉起的 uvicorn 会执行 startup 的引擎配置自愈，可能重写所在库的 engine_config）。如需自动拉起请设 E2E_ALLOW_SPAWN_UVICORN=1；或先手动启动 demo 服务后重跑。
+3. demo.tests.test_eval_baseline_denominators::test_d1_tampered_denominators_with_valid_sha_detected: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+4. demo.tests.test_eval_baseline_denominators::test_d2_strict_mode_exits_on_denominator_mismatch: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+5. demo.tests.test_eval_baseline_denominators::test_d3_legit_baseline_matches: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+6. demo.tests.test_eval_baseline_freeze::test_freeze_is_deterministic: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+7. demo.tests.test_eval_baseline_freeze::test_frozen_denominators_pin_p10: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+8. demo.tests.test_eval_baseline_freeze::test_run_eval_baseline_match_true: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+9. demo.tests.test_eval_baseline_freeze::test_tampered_baseline_match_false: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+10. demo.tests.test_eval_baseline_freeze::test_sample_set_drift_match_false: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+11. demo.tests.test_eval_baseline_freeze::test_baseline_strict_exits_on_mismatch: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets/manifest.csv（真实收据属业务数据，不入库）
+12. demo.tests.test_eval_harness::test_real_corpus_splits_disjoint: 需要 --run-eval 且 demo/evalsets/ 语料存在
+13. demo.tests.test_eval_harness::test_real_corpus_test_split_scale_matches_historical_baseline: 需要 --run-eval 且 demo/evalsets/ 语料存在
+14. demo.tests.test_evalset_gt_linkage::test_real_evalset_confirmed_samples_appear_in_golden_board: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets（真实收据属业务数据，不入库）
+15. demo.tests.test_evalset_gt_linkage::test_scope_gt_pending_includes_draft_evalset_samples: 评测语料缺失：/workspace/receipt-agent-interview/demo/evalsets（真实收据属业务数据，不入库）
+16. demo.tests.test_gt_consistency_validator::test_real_corpus_totals: 需要 --run-eval 且 demo/evalsets/ 语料存在
+17. demo.tests.test_gt_consistency_validator::test_real_corpus_checklist_csv_and_md: 需要 --run-eval 且 demo/evalsets/ 语料存在
+18. demo.tests.test_residue_rules::test_real_corpus_rule_row_counts: 需要 --run-eval 且 demo/evalsets/ 语料存在
+19. demo.tests.test_sku_alias_candidates::test_real_corpus_coverage_and_high_confidence: 需要 --run-eval 且 demo/evalsets/ 语料存在

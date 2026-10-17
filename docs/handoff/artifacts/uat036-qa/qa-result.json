@@ -1,0 +1,219 @@
+{
+  "card": "UAT-036",
+  "stage": "independent-qa",
+  "verdict": "PASS",
+  "port": 15450,
+  "browser": {
+    "pass": true,
+    "passCount": 40,
+    "failCount": 0,
+    "checks": [
+      {
+        "name": "baseline workbench not dash",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"0\",\"qCountReview\":\"0\",\"qCountApprove\":\"0\",\"qCountIssues\":\"0\",\"hasDash\":false,\"retryVisible\":false,\"bodyText\":\"当前队列暂无待处理单据\",\"badge\":\"0 张待办\"}"
+      },
+      {
+        "name": "baseline inventory has real numbers (not dash)",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"2\",\"valLowStock\":\"1\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"\",\"hasDash\":false,\"tableText\":\"UAT036_Flour\\n\\t食材\\t\\n10 kg\\n\\t10.000 kg\\t2 kg\\t\\n$8.00\\n\\t\\n详情\\n更多 ▾\\n\\n\\nUAT036_Sugar\\n\\t食材\\t\\n低库存\\n0.5 kg\\n\\t0.500 kg\\t1 kg\\t\\n$6.00\\n\\t\\n详情\\n更多 ▾\"}"
+      },
+      {
+        "name": "baseline dish KPI not dash (legitimate zeros ok)",
+        "ok": true,
+        "detail": "{\"kpiDishCost\":\"HK$0.00\",\"kpiDishRevenue\":\"HK$0.00\",\"kpiDishGrossMargin\":\"0.0%\",\"kpiDishCount\":\"0 笔\",\"kpiDash\":false,\"kpiErrVisible\":false,\"kpiRetryVisible\":false,\"dishErrorVisible\":false,\"dishRetryVisible\":false,\"dishErrorText\":\"\",\"gridText\":\"\\n                            \\n                        \"}"
+      },
+      {
+        "name": "C1 inventory GET500 → all metrics —",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"—\",\"valLowStock\":\"—\",\"valPriceAnomaly\":\"—\",\"noticeVisible\":true,\"retryVisible\":true,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":true,\"tableText\":\"UAT036_Flour\\n\\t食材\\t\\n10 kg\\n\\t10.000 kg\\t2 kg\\t\\n$8.00\\n\\t\\n详情\\n更多 ▾\\n\\n\\nUAT036_Sugar\\n\\t食材\\t\\n低库存\\n0.5 kg\\n\\t0.500 kg\\t1 kg\\t\\n$6.00\\n\\t\\n详情\\n更多 ▾\"}"
+      },
+      {
+        "name": "C1 inventory error notice visible",
+        "ok": true,
+        "detail": "库存指标加载失败，当前数值不可用。 重试"
+      },
+      {
+        "name": "C1 inventory retry visible",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C1 inventory NOT fake 0",
+        "ok": true,
+        "detail": "—"
+      },
+      {
+        "name": "C1 dish KPI GET500 → —",
+        "ok": true,
+        "detail": "{\"kpiDishCost\":\"—\",\"kpiDishRevenue\":\"—\",\"kpiDishGrossMargin\":\"—\",\"kpiDishCount\":\"—\",\"kpiDash\":true,\"kpiErrVisible\":true,\"kpiRetryVisible\":true,\"dishErrorVisible\":false,\"dishRetryVisible\":false,\"dishErrorText\":\"餐品列表加载失败当前不是空库；指标不可用重试\",\"gridText\":\"餐品列表加载失败当前不是空库；指标不可用重试\"}"
+      },
+      {
+        "name": "C1 dish KPI error+retry visible",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C1 dish list fail copy (not empty library)",
+        "ok": true,
+        "detail": "餐品列表加载失败\n当前不是空库；指标不可用\n重试"
+      },
+      {
+        "name": "C1 dish retry visible",
+        "ok": true,
+        "detail": "{\"present\":true,\"w\":74.015625,\"h\":45,\"visible\":true}"
+      },
+      {
+        "name": "C1 workbench GET500 → qCount —",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"—\",\"qCountReview\":\"—\",\"qCountApprove\":\"—\",\"qCountIssues\":\"—\",\"hasDash\":true,\"retryVisible\":true,\"bodyText\":\"工作台队列加载失败，指标不可用（不是空队列）。\",\"badge\":\"加载失败\"}"
+      },
+      {
+        "name": "C1 workbench retry visible",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C1 workbench fail copy not empty-queue",
+        "ok": true,
+        "detail": "工作台队列加载失败，指标不可用（不是空队列）。"
+      },
+      {
+        "name": "C2 inventory retry clicked",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C2 inventory recovered real numbers",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"2\",\"valLowStock\":\"1\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":false,\"tableText\":\"UAT036_Flour\\n\\t食材\\t\\n10 kg\\n\\t10.000 kg\\t2 kg\\t\\n$8.00\\n\\t\\n详情\\n更多 ▾\\n\\n\\nUAT036_Sugar\\n\\t食材\\t\\n低库存\\n0.5 kg\\n\\t0.500 kg\\t1 kg\\t\\n$6.00\\n\\t\\n详情\\n更多 ▾\"}"
+      },
+      {
+        "name": "C2 dish retry clicked",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C2 dish KPI recovered (not —)",
+        "ok": true,
+        "detail": "{\"kpiDishCost\":\"HK$0.00\",\"kpiDishRevenue\":\"HK$0.00\",\"kpiDishGrossMargin\":\"0.0%\",\"kpiDishCount\":\"0 笔\",\"kpiDash\":false,\"kpiErrVisible\":false,\"kpiRetryVisible\":false,\"dishErrorVisible\":false,\"dishRetryVisible\":false,\"dishErrorText\":\"\",\"gridText\":\"暂无匹配的餐品数据\\n可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方\"}"
+      },
+      {
+        "name": "C2 dish list recovered (fail panel gone)",
+        "ok": true,
+        "detail": "暂无匹配的餐品数据\n可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方"
+      },
+      {
+        "name": "C2 workbench retry clicked",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C2 workbench recovered (not —)",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"0\",\"qCountReview\":\"0\",\"qCountApprove\":\"0\",\"qCountIssues\":\"0\",\"hasDash\":false,\"retryVisible\":false,\"bodyText\":\"当前队列暂无待处理单据\",\"badge\":\"0 张待办\"}"
+      },
+      {
+        "name": "C3 empty inventory metrics are 0 not —",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"0\",\"valLowStock\":\"0\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":false,\"tableText\":\"库存还没有食材\\n上传第一张进货单据后，食材会按明细自动建档\\n新增食材\"}"
+      },
+      {
+        "name": "C3 empty inventory no error notice",
+        "ok": true,
+        "detail": "库存指标加载失败，当前数值不可用。 重试"
+      },
+      {
+        "name": "C3 empty inventory empty-state copy (not fail)",
+        "ok": true,
+        "detail": "库存还没有食材\n上传第一张进货单据后，食材会按明细自动建档\n新增食材"
+      },
+      {
+        "name": "C3 empty dish KPI legitimate zeros (not —)",
+        "ok": true,
+        "detail": "{\"cost\":\"HK$0.00\",\"count\":\"0 笔\",\"kpiDash\":false}"
+      },
+      {
+        "name": "C3 empty dish KPI shows 0-ish values",
+        "ok": true,
+        "detail": "{\"kpiDishCost\":\"HK$0.00\",\"kpiDishRevenue\":\"HK$0.00\",\"kpiDishGrossMargin\":\"0.0%\",\"kpiDishCount\":\"0 笔\",\"kpiDash\":false,\"kpiErrVisible\":false,\"kpiRetryVisible\":false,\"dishErrorVisible\":false,\"dishRetryVisible\":false,\"dishErrorText\":\"\",\"gridText\":\"暂无匹配的餐品数据\\n可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方\"}"
+      },
+      {
+        "name": "C3 empty dish list not fail panel",
+        "ok": true,
+        "detail": "暂无匹配的餐品数据\n可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方"
+      },
+      {
+        "name": "C3 empty workbench counts are 0 not —",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"0\",\"qCountReview\":\"0\",\"qCountApprove\":\"0\",\"qCountIssues\":\"0\",\"hasDash\":false,\"retryVisible\":false,\"bodyText\":\"当前队列暂无待处理单据\",\"badge\":\"0 张待办\"}"
+      },
+      {
+        "name": "C4 inventory request A held",
+        "ok": true,
+        "detail": "held=1"
+      },
+      {
+        "name": "C4 inventory B loaded real numbers before release",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"2\",\"valLowStock\":\"1\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":false,\"tableText\":\"UAT036_Flour\\n\\t食材\\t\\n10 kg\\n\\t10.000 kg\\t2 kg\\t\\n$8.00\\n\\t\\n详情\\n更多 ▾\\n\\n\\nUAT036_Sugar\\n\\t食材\\t\\n低库存\\n0.5 kg\\n\\t0.500 kg\\t1 kg\\t\\n$6.00\\n\\t\\n详情\\n更多 ▾\"}"
+      },
+      {
+        "name": "C4 inventory stale A released",
+        "ok": true,
+        "detail": "released=1"
+      },
+      {
+        "name": "C4 inventory stale A did NOT overwrite (still real, not 999)",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"2\",\"valLowStock\":\"1\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":false,\"tableText\":\"UAT036_Flour\\n\\t食材\\t\\n10 kg\\n\\t10.000 kg\\t2 kg\\t\\n$8.00\\n\\t\\n详情\\n更多 ▾\\n\\n\\nUAT036_Sugar\\n\\t食材\\t\\n低库存\\n0.5 kg\\n\\t0.500 kg\\t1 kg\\t\\n$6.00\\n\\t\\n详情\\n更多 ▾\"}"
+      },
+      {
+        "name": "C4 inventory table has no STALE_SHOULD_NOT_SHOW",
+        "ok": true,
+        "detail": "UAT036_Flour\n\t食材\t\n10 kg\n\t10.000 kg\t2 kg\t\n$8.00\n\t\n详情\n更多 ▾\n\n\nUAT036_Sugar\n\t食材\t\n低库存"
+      },
+      {
+        "name": "C4 dish stale released",
+        "ok": true,
+        "detail": "released=3"
+      },
+      {
+        "name": "C4 dish stale did NOT bring STALE_DISH",
+        "ok": true,
+        "detail": "暂无匹配的餐品数据\n可点击右上角「+ 新建餐品」创建您的第一个餐品 BOM 配方"
+      },
+      {
+        "name": "C4 dish after race not showing stale-only state",
+        "ok": true,
+        "detail": ""
+      },
+      {
+        "name": "C4 workbench stale released",
+        "ok": true,
+        "detail": "released=1"
+      },
+      {
+        "name": "C4 workbench stale did NOT set qCountTodo=1 from stale edited",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"0\",\"qCountReview\":\"0\",\"qCountApprove\":\"0\",\"qCountIssues\":\"0\",\"hasDash\":false,\"retryVisible\":false,\"bodyText\":\"当前队列暂无待处理单据\",\"badge\":\"0 张待办\"}"
+      },
+      {
+        "name": "C4 workbench newer empty wins (0 not stale 1)",
+        "ok": true,
+        "detail": "{\"qCountTodo\":\"0\",\"qCountReview\":\"0\",\"qCountApprove\":\"0\",\"qCountIssues\":\"0\",\"hasDash\":false,\"retryVisible\":false,\"bodyText\":\"当前队列暂无待处理单据\",\"badge\":\"0 张待办\"}"
+      },
+      {
+        "name": "NEG legitimate empty stays 0 (not converted to —)",
+        "ok": true,
+        "detail": "{\"valTotalSKU\":\"0\",\"valLowStock\":\"0\",\"valPriceAnomaly\":\"0\",\"noticeVisible\":false,\"retryVisible\":false,\"noticeText\":\"库存指标加载失败，当前数值不可用。 重试\",\"hasDash\":false,\"tableText\":\"库存还没有食材\\n上传第一张进货单据后，食材会按明细自动建档\\n新增食材\"}"
+      }
+    ]
+  },
+  "static": {
+    "frontend_harness": "25/0",
+    "pytest_static": "3/3",
+    "node_check": "6 OK"
+  },
+  "timestamp_local": "2026-10-17 05:10:23 CST"
+}

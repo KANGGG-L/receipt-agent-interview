@@ -1,0 +1,7 @@
+PASS kind=consume qty=1 signed=-1 => -1 expect=-1
+PASS kind=in qty=1 signed=1 => +1 expect=+1
+PASS kind=reversal qty=-5 signed=-5 => -5 expect=-5
+PASS kind=adjust qty=1 signed=1 => +1 expect=+1
+PASS kind=waste qty=2.5 signed=-2.5 => -2.5 expect=-2.5
+PASS kind=consume qty=1 signed=undefined => -1 expect=-1
+NODE_HARNESS_PASS=true

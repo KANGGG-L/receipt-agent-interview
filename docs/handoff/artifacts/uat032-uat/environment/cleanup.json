@@ -1,0 +1,10 @@
+{
+  "stopped_pid": 263815,
+  "port_15150": "free_process_stopped_timewait_only",
+  "port_15150_reuseaddr_bind": "ok",
+  "port_15142": "free",
+  "port_15132": "free",
+  "port_15010": "free",
+  "stopped_at": "2026-10-17 15:26:56 Asia/Shanghai",
+  "note": "uvicorn SIGTERM; no LISTEN on 15150; leftover TCP TIME-WAIT only; SO_REUSEADDR bind OK"
+}

@@ -1,0 +1,19 @@
+{
+  "card": "UAT-003",
+  "stage": "independent-qa",
+  "verdict": "PASS",
+  "criteria": {
+    "rice_oil_distinguishable": "PASS",
+    "full_name_accessible": "PASS",
+    "business_name_not_id_cross_tenant": "PASS"
+  },
+  "pytest": {
+    "file": "tests/test_inventory_ledger_api.py",
+    "passed": 7,
+    "failed": 0
+  },
+  "port": 15170,
+  "evidence": "docs/handoff/artifacts/uat003-qa-report.md",
+  "uat_started": false,
+  "timestamp_local": "2026-10-17 Asia/Shanghai"
+}

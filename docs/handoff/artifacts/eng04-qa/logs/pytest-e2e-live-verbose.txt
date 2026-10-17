@@ -1,0 +1,30 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat036-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview/demo
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+tests/test_admin_tabs_consolidation_e2e.py::test_admin_tabs_consolidation_e2e 
+[Phase 1] 校验 RBAC 角色权限与侧边栏动态导航...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_sidebar_layout.png
+Switching to staff role...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/staff_sidebar_no_admin.png
+Switching to owner role...
+
+[Phase 2] 校验 AI 效果观测与评测中心四大独立功能区 (Segmented Control)...
+校验独立功能区 1: 线上体验感知与埋点监控...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_subview1_telemetry.png
+校验独立功能区 2: 金丝雀发布监控...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_subview2_canary.png
+校验独立功能区 3: A/B 科学实验台...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_subview3_experiment.png
+校验独立功能区 4: 基准资产与 GT 确权...
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_subview4_eval.png
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_unified.png
+Saved: /workspace/receipt-agent-interview/demo/gui-test-screenshots/admin_tab_analytics_segmented.png
+
+All 4 independent functional areas checks passed successfully.
+PASSED
+
+============================== 1 passed in 5.79s ===============================

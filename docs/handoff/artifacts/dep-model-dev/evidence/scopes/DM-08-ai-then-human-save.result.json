@@ -1,0 +1,22 @@
+{
+  "scope_id": "DM-08-ai-then-human-save",
+  "source": "ENG-02/03 AI prefill then human edit save + DB",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "save_http": true,
+    "db_receipt": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-08-ai-then-human-save.save.json",
+    "evidence/scopes/DM-08-ai-then-human-save.job.json"
+  ],
+  "notes": [
+    "re-run after fixing db_receipt; used existing AI-parsed receipt for human save"
+  ]
+}

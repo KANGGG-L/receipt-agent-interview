@@ -1,0 +1,54 @@
+{
+  "pass": 10,
+  "fail": 0,
+  "checks": [
+    {
+      "label": "browser_staff_login",
+      "pass": true
+    },
+    {
+      "label": "browser_staff_inv_price_null",
+      "pass": true,
+      "detail": "{\"id\":1,\"last_unit_price\":null,\"stock\":0,\"unit\":\"斤\"}"
+    },
+    {
+      "label": "browser_staff_inv_unit_visible",
+      "pass": true,
+      "detail": "斤"
+    },
+    {
+      "label": "browser_staff_inv_qty_visible",
+      "pass": true,
+      "detail": "0"
+    },
+    {
+      "label": "browser_staff_dish_prices_null",
+      "pass": true,
+      "detail": "{\"price\":null,\"gp\":null,\"gm\":null}"
+    },
+    {
+      "label": "browser_staff_sku_detail_masked",
+      "pass": true
+    },
+    {
+      "label": "browser_staff_dish_detail_masked",
+      "pass": true
+    },
+    {
+      "label": "browser_staff_version_price_null",
+      "pass": true,
+      "detail": "null"
+    },
+    {
+      "label": "browser_fake_header_blocked",
+      "pass": true,
+      "detail": "{\"sku_price\":null,\"dish_price\":null,\"ver_price\":null}"
+    },
+    {
+      "label": "browser_owner_dish_price_visible",
+      "pass": true,
+      "detail": "48"
+    }
+  ],
+  "overall": true
+}

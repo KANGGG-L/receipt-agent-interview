@@ -1,0 +1,35 @@
+INFO:     Started server process [256096]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=5、缺向量行=0、交集=0（记忆库=/workspace/receipt-agent-interview/docs/handoff/artifacts/uat031-qa/environment/qa_isolated.db，向量库=/workspace/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15141 (Press CTRL+C to quit)
+INFO:     127.0.0.1:36944 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36948 - "GET /docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53864 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53872 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53882 - "GET /api/receipt/3 HTTP/1.1" 200 OK
+/workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+  _vs_tenant[tid] = Chroma(
+INFO:     127.0.0.1:53894 - "POST /api/receipt/3/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53910 - "GET /api/inventory/skus/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53912 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53926 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53942 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53952 - "GET /api/receipt/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53958 - "POST /api/receipt/4/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53962 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53964 - "GET /api/receipt/5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53980 - "POST /api/receipt/5/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53994 - "GET /api/inventory/skus/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54008 - "GET /api/inventory/skus/3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54018 - "POST /api/inventory/skus/merge HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54026 - "GET /api/inventory/skus/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54028 - "POST /api/inventory/skus/merge HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54040 - "POST /api/inventory/2/consume HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54054 - "GET /api/inventory/batches/orphan HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54070 - "POST /api/inventory/batches/orphan/migrate HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54086 - "GET /api/inventory/skus/1 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [256096]

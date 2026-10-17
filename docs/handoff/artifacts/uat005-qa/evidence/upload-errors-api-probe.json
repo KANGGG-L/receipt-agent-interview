@@ -1,0 +1,179 @@
+{
+  "card": "UAT-005",
+  "script": "probe_upload_errors_api.py",
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "empty_png_EMPTY_FILE",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "EMPTY_FILE",
+        "msg": "上传的文件是空的，请重新选择有内容的照片再上传。"
+      }
+    },
+    {
+      "name": "empty_zero_residue",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "malformed_INVALID_IMAGE",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_IMAGE",
+        "msg": "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。"
+      }
+    },
+    {
+      "name": "malformed_zero_residue",
+      "pass": true,
+      "detail": {
+        "before": 0,
+        "after": 0
+      }
+    },
+    {
+      "name": "wrong_type_UNSUPPORTED",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "UNSUPPORTED_IMAGE_FORMAT",
+        "msg": "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。"
+      }
+    },
+    {
+      "name": "oversize_FILE_TOO_LARGE",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "FILE_TOO_LARGE",
+        "bytes": 15729664
+      }
+    },
+    {
+      "name": "pdf_upload_UNSUPPORTED_not_recognition",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "UNSUPPORTED_IMAGE_FORMAT"
+      }
+    },
+    {
+      "name": "valid_png_accepted",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "receipt_id": 8,
+        "status_field": "error",
+        "code": "ENGINE_NOT_CONFIGURED",
+        "image_url": true
+      }
+    },
+    {
+      "name": "valid_jpg_accepted",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "receipt_id": 9,
+        "status_field": "error",
+        "code": "ENGINE_NOT_CONFIGURED",
+        "image_url": true
+      }
+    },
+    {
+      "name": "valid_webp_accepted",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "receipt_id": 10,
+        "status_field": "error",
+        "code": "ENGINE_NOT_CONFIGURED",
+        "image_url": true
+      }
+    },
+    {
+      "name": "heic_convert_jpeg",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "valid_tif_accepted",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "receipt_id": 11
+      }
+    },
+    {
+      "name": "valid_timeout_path_convert_manual_keeps_image",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "doc_form": "manual_entry",
+        "has_original_image": true,
+        "image_url_present": true
+      }
+    },
+    {
+      "name": "error_codes_semantically_distinct",
+      "pass": true,
+      "detail": {
+        "codes": [
+          "EMPTY_FILE",
+          "INVALID_IMAGE",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          "FILE_TOO_LARGE",
+          "IMAGE_QUALITY_ERROR",
+          "RECOGNITION_UNREADABLE",
+          "ENGINE_TIMEOUT"
+        ]
+      }
+    },
+    {
+      "name": "cross_tenant_detail_404",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "tenant_b_unchanged",
+      "pass": true,
+      "detail": {
+        "receipts_before": 0,
+        "receipts_after": 0,
+        "batches_before": 0,
+        "batches_after": 0
+      }
+    },
+    {
+      "name": "bad_inputs_not_misclassified_as_recognition",
+      "pass": true,
+      "detail": {
+        "codes": [
+          "EMPTY_FILE",
+          "INVALID_IMAGE",
+          "UNSUPPORTED_IMAGE_FORMAT",
+          "FILE_TOO_LARGE",
+          "UNSUPPORTED_IMAGE_FORMAT"
+        ]
+      }
+    }
+  ],
+  "counts": {
+    "a_before": 0,
+    "a_final": 4,
+    "valid_ids": {
+      "png": 8,
+      "jpg": 9,
+      "webp": 10
+    }
+  }
+}

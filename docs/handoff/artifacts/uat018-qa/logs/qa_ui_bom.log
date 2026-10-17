@@ -1,0 +1,11 @@
+PASS ui_list_loaded_with_tenant {"cacheLen":2,"network":[{"url":"http://127.0.0.1:15225/api/dishes?status=active","tenant":"uat018qa3","role":"owner"},{"url":"http://127.0.0.1:15225/api/dishes/daily_consumption?date=2026-10-17","tenant":"uat018qa3","role":"owner"},{"url":"http://127.0.0.1:15225/api/dishes?status=active","tenant":"uat018qa3","role":"o
+PASS ui_list_has_estimated_marker {"hasUnknown":true,"estimatedNames":["QA极大BOM无采购"],"textSample":"测试\n2 道餐品\n均价 HK$94.00 · 平均理论毛利 94.7%\n[已展开]\n测试\n在售\nQA正常已采购BOM\nHK$100.00\n建议售价\n理论单份成本\nHK$10.00\n单份理论毛利\nHK$90.00\n理论毛利率\n90.0%\nBOM 食材清单 (1 种):\nQA已采购料UAT018c: 0.4kg (HK$10.00)\n编辑配方\n停用\n测试\n在售\nQA极大BOM无采购\nHK$88.00\n建议售价\n理论单份成本\n估算 HK$0.00\n单份理论毛利
+PASS ui_estimated_badge_not_certain_100 {"badgeSample":"<span class=\"badge badge-warning\" style=\"font-size:0.72rem;\" title=\"成本未采购/未知，毛利不可作确定值（来源: unpurchased_zero_price)\">未知/估算</span>","costSample":"<span title=\"暂估来源: unpurchased_zero_price\">估算 HK$0.00</span>","completeBadge":"<span class=\"badge badge-success\" style=\"font-size:0.72rem;\">90.0%</sp
+PASS ui_purchased_badge_keeps_margin {"badgeSample":"<span class=\"badge badge-warning\" style=\"font-size:0.72rem;\" title=\"成本未采购/未知，毛利不可作确定值（来源: unpurchased_zero_price)\">未知/估算</span>","costSample":"<span title=\"暂估来源: unpurchased_zero_price\">估算 HK$0.00</span>","completeBadge":"<span class=\"badge badge-success\" style=\"font-size:0.72rem;\">90.0%</sp
+PASS ui_modal_estimated_markers {"cost":"未知/估算 HK$0.00","profit":"估算 HK$88.00","margin":"未知/估算","qty":"999999999999"}
+PASS ui_client_reject_NaN {"ok":true,"toastMsg":"","errText":"第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）","badVal":"NaN"}
+PASS ui_client_reject_Infinity {"ok":true,"toastMsg":"","errText":"第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）","badVal":"Infinity"}
+PASS ui_client_reject_-1 {"ok":true,"toastMsg":"","errText":"第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）","badVal":"-1"}
+PASS ui_client_reject_0 {"ok":true,"toastMsg":"","errText":"第 1 行单份用量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）","badVal":"0"}
+PASS ui_modal_purchased_keeps_cost {"cost":"HK$10.00","margin":"90.0%","profit":"HK$90.00"}
+SUMMARY {"pass":true,"n":10,"failed":0}

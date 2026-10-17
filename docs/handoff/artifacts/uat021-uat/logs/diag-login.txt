@@ -1,0 +1,41 @@
+CONSOLE error Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-0EZqoz+oBhx7gF4nvY2bSqoGyy4zLjNF+SDQXGp/ZrY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The action has been blocked.
+CONSOLE info Applying inline style violates the following Content Security Policy directive 'style-src 'self''. Either the 'unsafe-inline' keyword, a hash ('sha256-0EZqoz+oBhx7gF4nvY2bSqoGyy4zLjNF+SDQXGp/ZrY='), or a nonce ('nonce-...') is required to enable inline execution. Note that hashes do not apply to event handlers, style attributes and javascript: navigations unless the 'unsafe-hashes' keyword is present. The policy is report-only, so the violation has been logged but no further action has been taken.
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE verbose [DOM] Multiple forms should be contained in their own form elements; break up complex forms into ones that represent a single action: (More info: https://goo.gl/9p2vKq) %o
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE warn [inventory] 库存列表加载失败，保留上一次数据： Error: inventory_http_401
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error 加载工作台队列异常: Error: receipts
+CONSOLE error 加载财务面板失败: Error: receipts
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error loadDailyConsumption error: Error: daily_consumption_http_401
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 401 (Unauthorized)
+CONSOLE error Failed to load resource: the server responded with a status of 404 (Not Found)
+BEFORE {"overlay":true,"auth":null}
+AFTER {
+  "overlay": false,
+  "err": null,
+  "auth": null,
+  "me": {
+    "status": "success",
+    "auth_enabled": true,
+    "account": {
+      "email": "staff@demo.hk",
+      "role": "staff"
+    },
+    "identity_source": "cookie",
+    "demo_identity": false
+  }
+}

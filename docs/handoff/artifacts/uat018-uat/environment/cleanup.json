@@ -1,0 +1,15 @@
+{
+  "stage": "uat018-uat",
+  "port": 15235,
+  "pid": 97794,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat018-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "pid_alive_after_stop": false,
+  "port_15235_free": true,
+  "port_15010_free": true,
+  "tenants": {
+    "a": "uat018uat",
+    "b": "uat018uatb"
+  },
+  "dish_deactivate_note": "POST /api/dishes/{id}/deactivate returned NOT_FOUND in this build; isolated DB discarded with server stop; Tenant B remained empty"
+}

@@ -1,0 +1,29 @@
+{
+  "tenant_b": "uat014qab",
+  "llm_call_log_count_tenant_b": 0,
+  "probe_log_rows": 1,
+  "probe_rows_redacted": [
+    {
+      "id": 1,
+      "tenant_id": "uat014-dev",
+      "trace_id": "uat014-live-probe",
+      "model": "uat014-mask-check",
+      "raw_sample": "UAT014_LIVE_PROBE vendor note [HKID_MASKED] contact ****67"
+    }
+  ],
+  "tenants_in_llm_call_log": [
+    {
+      "tenant_id": "uat014-dev",
+      "c": 1
+    }
+  ],
+  "dishes_before_len": "error:dishes_fail",
+  "dishes_after_len": "error:dishes_fail",
+  "dishes_before": {
+    "error": "dishes_fail"
+  },
+  "dishes_after": {
+    "error": "dishes_fail"
+  },
+  "verdict": "PASS"
+}

@@ -1,0 +1,268 @@
+{
+  "passed": 28,
+  "total": 28,
+  "failed": [],
+  "checks": [
+    {
+      "name": "tenant_b_before",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "n": 0,
+        "tenant": "uat019uatb2"
+      }
+    },
+    {
+      "name": "tenant_b_seed",
+      "pass": true,
+      "detail": {
+        "sku_b": 1,
+        "stock": 7.0
+      }
+    },
+    {
+      "name": "setup_dish甲",
+      "pass": true,
+      "detail": {
+        "sku": 2,
+        "dish": 1,
+        "stock": 1.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac1_huge_ordinary_409",
+      "pass": true,
+      "detail": {
+        "status": 409,
+        "code": "INSUFFICIENT_STOCK",
+        "msg": "「UAT019料甲」库存只有 1 kg，不够扣 499999999999.5 kg。请先核对数量；如果确实要扣，请确认后写明原因。",
+        "data_keys": [
+          "current_stock",
+          "requested",
+          "unit",
+          "sku_id",
+          "name",
+          "can_override",
+          "reason_required",
+          "shortfalls"
+        ]
+      }
+    },
+    {
+      "name": "ac1_stock_unchanged",
+      "pass": true,
+      "detail": {
+        "stock": 1.0
+      }
+    },
+    {
+      "name": "ac1_can_override_contract",
+      "pass": true,
+      "detail": {
+        "can_override": true,
+        "reason_required": true,
+        "shortfalls": [
+          {
+            "sku_id": 2,
+            "name": "UAT019料甲",
+            "unit": "kg",
+            "current_stock": 1.0,
+            "requested": 499999999999.5,
+            "shortfall": 499999999998.5
+          }
+        ]
+      }
+    },
+    {
+      "name": "ac1_not_silent_huge_negative",
+      "pass": true,
+      "detail": {
+        "stock": 1.0,
+        "would_have_been": -499999999998.5
+      }
+    },
+    {
+      "name": "tenant_b_after_ac1",
+      "pass": true,
+      "detail": {
+        "stock": 7.0
+      }
+    },
+    {
+      "name": "setup_dish乙",
+      "pass": true,
+      "detail": {
+        "sku": 3,
+        "dish": 2,
+        "stock": 1.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac2_force_no_reason_409",
+      "pass": true,
+      "detail": {
+        "status": 409,
+        "code": "INSUFFICIENT_STOCK",
+        "msg": "「UAT019料乙」库存只有 1 kg，不够扣 2 kg。要继续扣的话，请写明原因。",
+        "stock": 1.0
+      }
+    },
+    {
+      "name": "ac2_stock_still_1",
+      "pass": true,
+      "detail": {
+        "stock": 1.0
+      }
+    },
+    {
+      "name": "ac2_force_with_reason_200",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body_status": "success",
+        "msg": "成功记录 1 项餐品消耗"
+      }
+    },
+    {
+      "name": "ac2_negative_stock_as_contract",
+      "pass": true,
+      "detail": {
+        "stock": -1.0
+      }
+    },
+    {
+      "name": "setup_dish丙",
+      "pass": true,
+      "detail": {
+        "sku": 4,
+        "dish": 3,
+        "stock": 1.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac2_no_new_sale_qty_cap_force_allows_extreme",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "stock": -499999999998.5
+      }
+    },
+    {
+      "name": "setup_dish丁",
+      "pass": true,
+      "detail": {
+        "sku": 5,
+        "dish": 4,
+        "stock": 1.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac3_normal_deduct_0_5",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "stock": 0.5
+      }
+    },
+    {
+      "name": "setup_dish戊",
+      "pass": true,
+      "detail": {
+        "sku": 6,
+        "dish": 5,
+        "stock": 1.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac4_bad_date",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_DATE"
+      }
+    },
+    {
+      "name": "ac4_future_date",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "INVALID_CONSUMPTION_DATE"
+      }
+    },
+    {
+      "name": "ac4_nan",
+      "pass": true,
+      "detail": {
+        "status": 400,
+        "code": "CONSUMPTION_FAILED",
+        "msg": "Out of range float values are not JSON compliant: nan"
+      }
+    },
+    {
+      "name": "ac4_stock_untouched",
+      "pass": true,
+      "detail": {
+        "stock": 1.0
+      }
+    },
+    {
+      "name": "setup_dish己",
+      "pass": true,
+      "detail": {
+        "sku": 7,
+        "dish": 6,
+        "stock": 10.0,
+        "st_sku": 200,
+        "st_dish": 200
+      }
+    },
+    {
+      "name": "ac5_first_ok",
+      "pass": true,
+      "detail": {
+        "status": 200
+      }
+    },
+    {
+      "name": "ac5_replay",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "replayed": true
+      }
+    },
+    {
+      "name": "ac5_no_double_deduct",
+      "pass": true,
+      "detail": {
+        "stock": 9.0
+      }
+    },
+    {
+      "name": "reverse_reversal_blocked_intact",
+      "pass": true,
+      "detail": {
+        "has_class": true,
+        "has_raise": true
+      }
+    },
+    {
+      "name": "tenant_b_final",
+      "pass": true,
+      "detail": {
+        "stock": 7.0,
+        "dishes_n": 0
+      }
+    }
+  ]
+}

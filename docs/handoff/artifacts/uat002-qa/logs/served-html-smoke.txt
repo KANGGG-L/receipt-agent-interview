@@ -1,0 +1,6 @@
+bytes 425161
+served_js_clickhint_line:320:const clickHint = (card.getAttribute('data-click-hint') || '').trim()
+served_js_title_line:322:card.title = clickHint + '。' + statsPart;
+CHECKS {'data-todo-metric=pending': True, 'data-click-hint': True, 'title_click': True, 'label_pending_full': True, 'no_待审核_in_todoBar': True, 'queue_待我审批': True, 'js_no_shim': True, 'js_title_merge': True}
+SMOKE_PASS True
+served_terms:15:edited: { label: '待老板审批', title: '店员已核对并提交，等老板审核入账', filter: '待老板审批' },

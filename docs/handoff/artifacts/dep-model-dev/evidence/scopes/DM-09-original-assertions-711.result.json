@@ -1,0 +1,95 @@
+{
+  "scope_id": "DM-09-original-assertions-711",
+  "source": "read original/assertions vs live job for sample_711",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "original_match_supplier": true,
+    "original_match_date": true,
+    "original_match_total": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-09-original-assertions-711.job.json",
+    "evidence/scopes/DM-09-original-assertions-711.assertions-compare.json"
+  ],
+  "notes": [
+    "original/assertions from demo/samples/20161001_711_thermal_receipt.json"
+  ],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 10,
+    "job_id": "f134646e82df42378ea3802a56e683c3",
+    "result_summary": {
+      "supplier_name": "7-Eleven",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "f134646e82df42378ea3802a56e683c3",
+          "receipt_id": 10,
+          "image_url": "/api/receipt/10/image?v=15fefe25&sig=379b38b1313cdb51dc2bfd82d8118e4a774146778e801693846064d8688ca8f4"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 12.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 12.07
+      }
+    ]
+  }
+}

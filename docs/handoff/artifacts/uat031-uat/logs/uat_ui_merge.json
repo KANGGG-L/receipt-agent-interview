@@ -1,0 +1,74 @@
+{
+  "base": "http://127.0.0.1:15251",
+  "tenant": "uat031uat",
+  "primary": "4",
+  "secondary": "5",
+  "checks": [
+    {
+      "name": "modal_opened",
+      "pass": true,
+      "detail": {
+        "modalVisible": true
+      }
+    },
+    {
+      "name": "ui_merge_success",
+      "pass": true,
+      "detail": {
+        "http": 200,
+        "status": "success",
+        "data": {
+          "primary_sku_id": 4,
+          "primary_name": "UI主SKU牛肉",
+          "merged_sku_ids": [
+            5
+          ],
+          "merged_names": [
+            "UI副SKU牛肉丸"
+          ],
+          "new_stock": 2,
+          "alias_repointed": 1,
+          "batches_migrated": 1,
+          "logs_migrated": 1,
+          "items_migrated": 1
+        },
+        "msg": "SKU 合并成功（历史流水、库存批次与供应商别名已归集到主 SKU）"
+      }
+    },
+    {
+      "name": "ui_after_state",
+      "pass": true,
+      "detail": {
+        "modalHidden": true,
+        "toastHasMerge": true
+      }
+    }
+  ],
+  "verdict": "PASS",
+  "merge_response": {
+    "http": 200,
+    "status": "success",
+    "data": {
+      "primary_sku_id": 4,
+      "primary_name": "UI主SKU牛肉",
+      "merged_sku_ids": [
+        5
+      ],
+      "merged_names": [
+        "UI副SKU牛肉丸"
+      ],
+      "new_stock": 2,
+      "alias_repointed": 1,
+      "batches_migrated": 1,
+      "logs_migrated": 1,
+      "items_migrated": 1
+    },
+    "msg": "SKU 合并成功（历史流水、库存批次与供应商别名已归集到主 SKU）"
+  },
+  "api_calls_sample": [
+    {
+      "url": "http://127.0.0.1:15251/api/inventory/skus/merge",
+      "method": "POST"
+    }
+  ]
+}

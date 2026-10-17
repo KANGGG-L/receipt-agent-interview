@@ -1,0 +1,9 @@
+=== live served verify 2026-10-17 05:33 CST ===
+INV_isOwnerRoleNow_gate=2
+INV_dash_for_staff=1
+DISH_isOwner_price=2
+DISH_priceDisplay_emdash=2
+HEALTH={"status":"degraded"}
+ME_ANON={"status":"success","auth_enabled":true,"account":null,"identity_source":"missing"}
+XROLE_INV=401
+{"status":"error","code":"UNAUTHENTICATED","msg":"请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。","detail":"请先登录。你还没有登录，或登录已经过期，请重新登录后再操作。"}

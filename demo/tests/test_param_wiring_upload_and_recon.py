@@ -36,6 +36,14 @@ from app import api_finance, api_receipts
 from app.services import preprocess
 
 STAFF_HEADERS = {"X-Role": "staff"}
+
+def _valid_jpeg_bytes():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (32, 32), color=(8, 16, 24)).save(buf, format="JPEG")
+    return buf.getvalue()
+
 OWNER_HEADERS = {"X-Role": "owner"}
 
 
@@ -52,10 +60,11 @@ def batch_env(monkeypatch, tmp_path):
 
     def _save_upload(_f):
         p = tmp_path / "fake_upload.jpg"
-        p.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 64)
+        p.write_bytes(_valid_jpeg_bytes())
         return str(p)
 
     monkeypatch.setattr(api_receipts, "_save_upload", _save_upload)
+    monkeypatch.setattr(api_receipts, "_recognition_engine_unconfigured", lambda: False)
     monkeypatch.setattr(api_receipts, "_laplacian_variance", lambda _p: None)
     monkeypatch.setattr(api_receipts, "public_image_url", lambda *a, **k: "")
     monkeypatch.setattr(api_receipts, "build_detail", lambda _row: {})

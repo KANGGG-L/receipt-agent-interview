@@ -1,0 +1,189 @@
+{
+  "base": "http://127.0.0.1:15141",
+  "tenant": "uat031qa",
+  "checks": [
+    {
+      "name": "tenant_b_baseline",
+      "pass": true,
+      "detail": {
+        "sku_id": 1,
+        "stock": 3.0,
+        "batches": [
+          {
+            "batch_id": 1,
+            "inbound_date": "2026-10-01",
+            "unit_cost": 30.0,
+            "remaining_qty": 3.0,
+            "unit": "kg",
+            "receipt_id": 3
+          }
+        ]
+      }
+    },
+    {
+      "name": "pre_merge",
+      "pass": true,
+      "detail": {
+        "primary": {
+          "id": 2,
+          "stock": 1.0,
+          "batches": [
+            {
+              "batch_id": 2,
+              "inbound_date": "2026-10-01",
+              "unit_cost": 40.0,
+              "remaining_qty": 1.0,
+              "unit": "kg",
+              "receipt_id": 4
+            }
+          ]
+        },
+        "secondary": {
+          "id": 3,
+          "stock": 1.0,
+          "batches": [
+            {
+              "batch_id": 3,
+              "inbound_date": "2026-10-02",
+              "unit_cost": 50.0,
+              "remaining_qty": 1.0,
+              "unit": "kg",
+              "receipt_id": 5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "merge_api",
+      "pass": true,
+      "detail": {
+        "primary_sku_id": 2,
+        "primary_name": "本地新鲜牛肉",
+        "merged_sku_ids": [
+          3
+        ],
+        "merged_names": [
+          "手打牛肉丸"
+        ],
+        "new_stock": 2.0,
+        "alias_repointed": 1,
+        "batches_migrated": 1,
+        "logs_migrated": 1,
+        "items_migrated": 1
+      }
+    },
+    {
+      "name": "ac1_post_merge_batches",
+      "pass": true,
+      "detail": {
+        "stock": 2.0,
+        "batches": [
+          {
+            "batch_id": 2,
+            "inbound_date": "2026-10-01",
+            "unit_cost": 40.0,
+            "remaining_qty": 1.0,
+            "unit": "kg",
+            "receipt_id": 4
+          },
+          {
+            "batch_id": 3,
+            "inbound_date": "2026-10-02",
+            "unit_cost": 50.0,
+            "remaining_qty": 1.0,
+            "unit": "kg",
+            "receipt_id": 5
+          }
+        ]
+      }
+    },
+    {
+      "name": "ac1_db_unify_provenance",
+      "pass": true,
+      "detail": {
+        "migrated_batches": 1,
+        "migrated_logs": 1,
+        "migrated_items": 1,
+        "secondary_batches_left": 0
+      }
+    },
+    {
+      "name": "cross_tenant_rejected",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "error",
+          "code": "SECONDARY_NOT_FOUND",
+          "msg": "副 SKU #1 不存在"
+        }
+      }
+    },
+    {
+      "name": "ac2_consume_cost",
+      "pass": true,
+      "detail": {
+        "cost": 52.5,
+        "body": {
+          "status": "success",
+          "msg": "已消耗",
+          "cost": 52.5,
+          "current_stock": 0.75,
+          "data": {
+            "current_stock": 0.75,
+            "cost": 52.5
+          }
+        }
+      }
+    },
+    {
+      "name": "ac2_no_estimated_and_neg_keep_batches",
+      "pass": true,
+      "detail": {
+        "estimated_count": 0,
+        "open_remaining": [
+          0.75
+        ],
+        "batch_count": 2,
+        "initials": [
+          1.0,
+          1.0
+        ]
+      }
+    },
+    {
+      "name": "orphan_dry_run",
+      "pass": true,
+      "detail": {
+        "status": "PENDING_APPROVAL",
+        "dry_run": true,
+        "approved": false,
+        "msg": "存量批次迁移需要单独批准，当前为只读 dry-run 预览模式",
+        "orphan_count": 0,
+        "candidates": []
+      }
+    },
+    {
+      "name": "ac4_tenant_b_unchanged",
+      "pass": true,
+      "detail": {
+        "stock": 3.0,
+        "batches": [
+          {
+            "batch_id": 1,
+            "inbound_date": "2026-10-01",
+            "unit_cost": 30.0,
+            "remaining_qty": 3.0,
+            "unit": "kg",
+            "receipt_id": 3
+          }
+        ]
+      }
+    }
+  ],
+  "verdict": "PASS",
+  "primary_sku_id": 2,
+  "secondary_sku_id": 3,
+  "tenant_b_sku_id": 1
+}

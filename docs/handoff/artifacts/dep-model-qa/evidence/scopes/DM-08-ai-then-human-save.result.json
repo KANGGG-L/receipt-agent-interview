@@ -1,0 +1,79 @@
+{
+  "scope_id": "DM-08-ai-then-human-save",
+  "source": "ENG-02/03 AI prefill then human edit save + DB",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 2,
+  "status": "PASS",
+  "checks": {
+    "save_http": true,
+    "db_receipt": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-08-ai-then-human-save.job.json",
+    "evidence/scopes/DM-08-ai-then-human-save.save.json"
+  ],
+  "notes": [
+    "retry after harness receipt_date fix; prior_status=BLOCKED; prior_attempts=1"
+  ],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 14,
+    "job_id": "56a9c7c48cef491a988296b0acd48153",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "56a9c7c48cef491a988296b0acd48153",
+          "receipt_id": 14,
+          "image_url": "/api/receipt/14/image?v=6c23f498&sig=c7e7511bd8fe068b9e205066723179331fdfaf0dd00c261bd0a3b0bf6d73b481"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 6.06
+      }
+    ]
+  }
+}

@@ -1,0 +1,83 @@
+{
+  "scope_id": "DM-02-job-terminal-done",
+  "source": "ENG-02 AC2 / DEP-MODEL job done",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "job_status": true,
+    "supplier_name": true,
+    "date": true,
+    "total_amount": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-02-job-terminal-done.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 2,
+    "job_id": "2b57d6b27fd0439e88eca2d9aef77414",
+    "result_summary": {
+      "supplier_name": "7-ELEVEN",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "2b57d6b27fd0439e88eca2d9aef77414",
+          "receipt_id": 2,
+          "image_url": "/api/receipt/2/image?v=de48dbbc&sig=2849e543691af9fab6b59e81fb3bb5dae1674b5116759747c3f5c7229c3a440c"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 8.06
+      }
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 /* F1b：设置页、今日待办、归档子 Tab、回收站、库存操作列等新增与覆盖样式 */
-.st-wrap { max-width: 980px; margin: 0 auto; }
+/* SAAS-CONSISTENCY: fill .main-container like inventory/archive (was max-width:980px) */
+.st-wrap { max-width: 100%; width: 100%; margin: 0; box-sizing: border-box; }
 .st-head h2 { margin: 0 0 4px; font-size: 1.4rem; }
 .st-sub { color: var(--text-muted); font-size: 0.92rem; margin: 0 0 12px; }
 .st-card { margin-bottom: 18px; }
@@ -92,8 +93,10 @@
     #tab-engine .engine-preset-toolbar, #tab-engine .preset-combobox-wrap,
     #tab-analytics .btn-group, #tab-analytics #filterTimeRange,
     #tab-analytics .analytics-segmented-bar, #tab-analytics .parsing-log-filter-label { flex-wrap: wrap; max-width: 100%; }
+    #tab-analytics .analytics-segmented-bar { overflow-x: auto; box-sizing: border-box; }
     #tab-engine .engine-preset-toolbar > *, #tab-analytics #filterTimeRange > * { min-width: 0; max-width: 100%; }
-    #tab-analytics .analytics-segment-btn { flex: 1 1 45%; min-width: 0; }
+    #tab-analytics .analytics-segment-btn { flex: 1 1 45%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+    #tab-analytics .analytics-segment-text { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
     #tab-engine .preset-combobox-wrap { width: 100%; }
     #tab-engine button, #tab-analytics button { white-space: normal; }
 }
@@ -145,4 +148,20 @@ body[data-role="staff"] .mobile-tab[data-tab="tab-archive"] { display: none; }
 #tab-analytics #parsingLogStartDate, #tab-analytics #parsingLogEndDate { height: auto !important; }
 @media (max-width: 640px) {
     #tab-analytics #filterTimeRange { flex-wrap: wrap !important; max-width: 100%; }
+}
+
+@media (max-width: 640px) {
+    #tab-analytics #btnTelemetrySubTabAudit,
+    #tab-analytics #btnTelemetrySubTabEvents,
+    #tab-analytics .csp-s-344,
+    #tab-analytics .csp-s-345 {
+        max-width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    #tab-analytics #telemetrySubContentAudit,
+    #tab-analytics #telemetrySubContentEvents,
+    #sec-telemetry { max-width: 100%; overflow-x: auto; box-sizing: border-box; }
 }

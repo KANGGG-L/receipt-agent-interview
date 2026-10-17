@@ -1,0 +1,15 @@
+{
+  "stage": "saas-mobile-qa",
+  "port": 15120,
+  "pid": 66367,
+  "pidfile": 66367,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-mobile-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15120_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15120 for SAAS-MOBILE QA; avoided 15020-15050, 154xx, 15150-15800; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:23 Asia/Shanghai (CST)",
+  "notes": "Independent QA only; no git/checklist/UAT. Did not flip acceptance checklist."
+}

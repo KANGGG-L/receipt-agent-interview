@@ -1,0 +1,6 @@
+PASS ui_seed {"sid": 10, "rid": 8, "sid_l": 11, "rid_l": 9}
+PASS ui_shows_hkd500_converted {"snippet": "#9\nVendor_UI_Legacy\t10-05\t未知 汇率未知\n原币 S$ 120.00\n\t未付\t\t—\t—\n#8\nVendor_UI_SGD\t10-05\tHK$500.00\n原币 S$ 100.00\n\t未付\t\t—\t登记支付"}
+PASS ui_legacy_shows_unknown_not_hard_hkd {"snippet": "#9\nVendor_UI_Legacy\t10-05\t未知 汇率未知\n原币 S$ 120.00\n\t未付\t\t—\t—\n#8\nVendor_UI_SGD\t10-05\tHK$500.00\n原币 S$ 100.00\n\t未付\t\t—\t登记支付"}
+PASS ui_payment_modal_hkd_balance {"snippet": "登记支付\nx\n供应商：Vendor_UI_SGD\n本次支付合计（按下面每张单自动加起来）\n支付方式\n银行转账\n支票\n现金\nFPS 转数快\n支付日期\n付款凭证图\n备注\n选择要付的挂账单（只列出已入账、还没付清的）。可以只付一部分，改「本次付」就行。\n\t单据\t开单日期\t金额\t已付\t待付\t本次付\t状态\n\t#8\t10-05\tHK$500.00\n原币 S$ 100.00\n\tHK$0.00\tHK$500.00\t\t已入账\n取消\n确认登记支付"}
+{"verdict": "PASS", "passed": 4, "total": 4}
+ui_probe_exit=0

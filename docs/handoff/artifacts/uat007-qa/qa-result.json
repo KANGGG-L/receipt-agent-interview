@@ -1,0 +1,11 @@
+{
+  "card": "UAT-007",
+  "stage": "qa",
+  "verdict": "PASS",
+  "uat_started": false,
+  "port": 15190,
+  "pytest_specialty_and_ledger": "12 passed",
+  "pytest_consume_regression": "2 passed",
+  "live_verify": "PASS",
+  "report": "docs/handoff/artifacts/uat007-qa-report.md"
+}

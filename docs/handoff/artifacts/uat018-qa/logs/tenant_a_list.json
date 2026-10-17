@@ -1,0 +1,47 @@
+{
+  "n": 1,
+  "extreme": {
+    "id": 4,
+    "name": "QA极大BOM无采购",
+    "category": "测试",
+    "category_id": 5,
+    "price": 88.0,
+    "description": "",
+    "status": "active",
+    "version": 1,
+    "created_at": "2026-10-17T07:02:29",
+    "updated_at": "2026-10-17T07:02:29",
+    "ingredients": [
+      {
+        "id": 4,
+        "component_type": "sku",
+        "component_id": 5,
+        "component_name": "QA未采购料UAT018c",
+        "sku_id": 5,
+        "sku_name": "QA未采购料UAT018c",
+        "sku_category": "测试",
+        "sku_base_unit": "kg",
+        "sku_current_stock": 0.0,
+        "sku_last_unit_price": 0.0,
+        "consumption_qty": 999999999999.0,
+        "unit": "kg",
+        "yield_rate": 1.0,
+        "loss_rate": 0.0,
+        "notes": "",
+        "ingredient_cost": 0.0,
+        "cost_known": false,
+        "cost_source": "unpurchased_zero_price",
+        "warning": "",
+        "expanded": []
+      }
+    ],
+    "theoretical_cost": null,
+    "gross_profit": null,
+    "gross_margin_rate": null,
+    "theory_cost_status": "estimated",
+    "theory_cost_source": "unpurchased_zero_price",
+    "provisional_theoretical_cost": 0.0,
+    "provisional_gross_profit": 88.0,
+    "provisional_gross_margin_rate": 100.0
+  }
+}

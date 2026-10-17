@@ -1,0 +1,6 @@
+{
+  "stopped_at": "2026-10-17 07:15:52 Asia/Shanghai",
+  "port": 15255,
+  "pid_file": "logs/uvicorn.pid",
+  "15010_free": true
+}

@@ -1,0 +1,2 @@
+{"verdict": "PASS", "log_id": 1, "path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat014-dev/evidence/hkid-live-probe.json"}
+hkid_probe_exit=0

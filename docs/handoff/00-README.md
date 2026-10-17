@@ -1,110 +1,74 @@
-# 交接说明：本机调度流水线状态（转云端接手用）
+# 交接说明：本机调度流水线状态（转下一环境接手用）
 
-> 生成时间：2026-10-16 21:00 (Asia/Singapore)
-> 本目录四份文档是本地 Orca 调度流水线的权威状态快照，供云端 agent 无需依赖本机路径即可接续。
+> 生成时间：2026-10-17 19:58 (Asia/Shanghai / CST)
+> 触发：Cursor usage 约 90%，用户要求停止所有任务；交接文档已刷新。**commit/push 由用户另行确认或按既有 90% 指令执行。**
+> 权威状态以本文件 + `01-acceptance-checklist.md` 各卡片「当前状态」行为准；早期表格与 2026-10-16 快照已过期。
 
 ---
 
 ## 1. 任务背景与最终目标
 
-仓库 `receipt-agent-interview` 是一个**收据 AI 识别与库存管理 SaaS 原型**（面试项目）。当前目标不是新功能，而是**按四阶段门禁把既有的 45 项待修计划逐项做实**：
+仓库 `receipt-agent-interview`：收据 AI 识别与库存管理 SaaS 原型（面试项目）。目标是按四阶段门禁把 45 项待修计划做实，并以 **CLOSE-139** 对原始 139 条 canonical 需求逐 ID 裁决。
 
 ```
-产品(已完成) -> 开发 -> 独立 QA -> 独立 UAT
+产品 -> 开发 -> 独立 QA -> 独立 UAT
 ```
 
-四条硬约束贯穿全程：
+硬约束：单向门禁；QA/UAT 全新端口/DB/fixture；调度器不写产品代码；禁用 Emoji；Vendor_A/B；密钥在 `/home/box/.config/receipt-agent/`（勿入库）。
 
-1. **单向门禁**：上一阶段全绿才可进下一阶段；任一 FAIL 打回开发。
-2. **三阶段互不复用**：QA 与 UAT 必须用**全新隔离端口、全新数据库、全新 fixture**，禁止复用前一阶段的 env 与结论。
-3. **调度器不做实事**：主 Agent 只做派发与门禁裁决，代码/测试/验收全部由独立 Subagent 执行。
-4. **零 Git 写操作**（本轮例外：用户已明确授权最终 commit push）。
+## 2. 当前进度（2026-10-17 停机快照）
 
-## 2. 最终目标是什么
-
-不是「45 项都 PASS」就完事。最终门禁是 **`CLOSE-139`**：对原始 139 条 canonical 需求**逐 ID**给出原文行号、动作、预期、新证据、精确行为裁决与限制。它的前置依赖写死为 `ENG-05 + DEP-MODEL + DEP-HIDDEN`，且验收标准明文禁止「宣称 N 项修复等于原目标全部完成」。
-
-## 3. 当前进度（务必以此为准，不要用旧的台账表格）
-
-| 波次 | 项数 | 闭环 | 剩余 |
-|---|---|---|---|
-| D0 规格澄清 | 4 | 4 | 0 |
-| W1 高优核心修复 | 9 | 9 | 0 |
-| W2 单据流转与费用 | 7 | **7** | 0 |
-| W3 台账与交互 | 11 | 0 | **11** |
-| W4 体验与规模 | 10 | 0 | **10** |
-| G1 工程全量门禁 | 1 | 0 | **1** |
-| G2 外部依赖门禁 | 2 | 0 | **2（BLOCKED）** |
-| G3 终审矩阵 | 1 | 0 | **1** |
-| **合计** | **45** | **20** | **25** |
-
-- 20 项闭环中 **16 项 PASS、4 项 PARTIAL**（UAT-014、UAT-016、ENG-02、ENG-03，遗留限制未处理，**不得计入完成率**）。
-- 逐项状态见 `01-acceptance-checklist.md`。注意该文件早期表格已过期，**以每张卡片的「当前状态」行为准**。
-
-## 4. 未完成的 25 项
-
-**W3（11 项，台账展示/多语言/可访问性/交互）**
-UAT-002、UAT-003、UAT-007、UAT-010、UAT-017、UAT-023、UAT-024（依赖 UAT-003）、UAT-025、UAT-027、UAT-036、UAT020
-
-**W4（10 项，体验与规模）**
-ENG-04、SAAS-CONSISTENCY、SAAS-HEIGHT、SAAS-MOBILE、SAAS-SCALE（分页与性能验证）、UAT-032、UAT-033、UAT-035、UAT018、UAT019
-
-**G1 / G2 / G3**
-ENG-05（根与 Demo 全量门禁重跑，须 exit 0 失败 0）、DEP-MODEL（9 项真实模型）、DEP-HIDDEN（真实 hidden 后台轮询）、CLOSE-139（终审）
-
-## 5. UAT-002：开发已交付但门禁未通过，云端第一件事是接手它
-
-`task_98fa10f1f077` / dispatch `ctx_50b910b118a8`，隔离端口 15976，产物目录 `39-uat002-dev/`。
-
-**已做对并应保留的部分**
-- 两个计数器口径显式化：归档待办枚举 5 态、今日待审批枚举 1 态，逐项写进 title 与 aria-label。
-- 实测三张合成单据下归档待办 **2**、今日待审批 **1**，**严格不相等**，状态流转与租户隔离正确。**这是本卡片的核心目标，不允许为了让数字相等而改动。**
-- `admin_observation.js:511` 的硬编码「待审核」已对齐 `demo/static/js/terms.js:15` 的权威 label「待老板审批」。
-
-**调度器拦下的三处缺陷（必须先修完才能进 QA）**
-
-1. **功能回归** — `demo/static/js/supplier_archive.js` 新增的 `card.title = '统计口径：...'` 是无条件赋值，把 `demo/templates/index.html:1054` 原有的 `title="点击筛选待审核单据"` 覆盖掉了，用户悬停时不再知道卡片可点。口径说明与点击提示**必须同时可见**。
-
-2. **脆弱耦合** — 同文件新增的 `if (labelEl.textContent.trim() === '待审核')` 把逻辑焊死在精确字符串上，HTML 文案再改一次就静默失效。这与仓库自述原则冲突（`demo/static/js/review_core.js:1630-1633`：「新增一个状态只需在此登记一次，不再出现『改了三处漏一处』的漂移」）。**应改 `demo/templates/index.html:1055` 的源头标签并删除该 shim。**
-
-3. **不准确声明** — 报告称「全局检索无残留漂移」，实测 `index.html:1054` 仍含「待审核」；另 `index.html:182` 队列按钮用「待我审批」而状态权威 label 为「待老板审批」，需判定是同义不同人称还是漂移。
-
-**另有程序性问题**：该 worker 修改了白名单外的 `admin_observation.js` 且未先 ask（越权）。因实质方向正确未要求回退，但需在报告中如实登记。
-
-> 修正任务曾派发但注入未送达（Orca `--inject` 对已 idle 会话失效，文本注入亦无响应），**修正尚未执行**，代码仍处上述缺陷状态。`index.html` 与 `terms.js` 当前**未被修改**，工作区不含半成品。
-
-## 6. 其它必须继承的开放缺陷
-
-| 缺陷 | 位置 | 要求 |
-|---|---|---|
-| 两处行号错引 | `33-uat030-dev/dev-report.md:9` 写「review_core.js 原第 1916–1925 行」，实际在 HEAD:1792-1801（1916-1925 属 `recalcRow`）；`dev-result.json` 的 `test_review_s2_01.py:39-81` 为断头且跨四个测试，权威划分为 `:36-45` 与 `:69-81` | CLOSE-139 前必结。更正规格见 `04-open-defect-citation-fix-spec.md` |
-| 反馈索引键错位 | `receipt_feedback` 表以 `(receipt_id, item_index)` 为键且无不可变行主键（`demo/app/db.py:634-644`） | 行序变化（删行/重排/增行）后反馈会**错套到错误明细行**。属既有架构局限非本次引入，已在验收卡片标注，须在 CLOSE-139 留档 |
-| 4 项 PARTIAL 遗留限制 | UAT-014、UAT-016、ENG-02、ENG-03 | 真实模型路径未验证，不得计为完成 |
-
-## 7. 本轮沉淀的三条门禁纪律（血泪教训，务必继承）
-
-这一轮门禁反复抓到同一类问题：**测试通过 ≠ 结论成立**。三条规则已写入 `02-coordinator-ledger.md`：
-
-1. **权威行号必须逐条自核。** 本仓库的评审文档中，表格行与表头/前言行只差一两行。已连续多次抓到 worker 把权威表格行引成 `:50`（实为 `:52`）。凡形如 `文件:行号` 的引用，须打印该行原文确认。
-
-2. **空 `Authorization` 头不等于未认证请求。** 本产品身份来自 HttpOnly 会话 Cookie（`demo/app/auth.py:361-372`），同源请求由浏览器自动携带，把 `Authorization` 置空对鉴权毫无影响。声称验证了未认证阻断，必须提供**可复现的无凭据客户端证据**（`credentials: 'omit'` 的页面上下文，或完全不带 Cookie / Authorization / X-Role / X-Tenant-Id 的独立客户端）并说明所用客户端上下文。
-
-3. **声称的测试必须真的做过。** 出现过「测试数据未达阈值所以记忆表零改动」的空证 PASS；也出现过「未做的测试被写成已通过」。任一硬约束若未被实际触发，必须**如实登记为空证并说明未覆盖范围**，不得计为通过。
-
-## 8. 环境与运行约束
-
-- 常驻开发服务占用 **15010**，全程保留、不得终止、不得向其业务库写测试数据。
-- 本地隔离测试端口按阶段递减使用（已用到 15974），**云端可自行规划**。
-- 隔离环境启动脚本在本地：`~/harness-tmp/receipt-repair-plan-20261015/scripts/isolate.py`，提供 `prepare/start/stop`。**云端需要自建等价机制**，要点：独立端口、独立数据库、独立 fixture、启动时注入等待窗口（Python 冷启动可能超时，`ValueError: startup timeout` 是已知现象，重试即可，**不是产品缺陷**）。
-- 每阶段结束必须真正清理并留证：停隔离服务、关浏览器 tab、落盘含完整字段的 `cleanup.json`、确认端口释放。**不得保留任何隔离服务**。
-- 涉真实单据或客户信息一律脱敏；供应商统一用 `Vendor_A` / `Vendor_B`。
-- 文档与代码注释**禁用 Emoji**。
-
-## 9. 本目录文档索引
-
-| 文件 | 内容 |
+| 波次 | 状态 |
 |---|---|
-| `01-acceptance-checklist.md` | 45 项验收卡片全集，每张含优先级、分类、涉及源码、核心验收标准、负向边界、回归范围。以各卡片「当前状态」行为准 |
-| `02-coordinator-ledger.md` | 调度台账全流水：每次派发记录、门禁裁决依据、被拦下的缺陷及原因、运维事故与处置规则 |
-| `03-takeover-report.md` | 本轮协调权移交的取证过程与会话解析结论 |
-| `04-open-defect-citation-fix-spec.md` | 两处行号错引的更正规格 |
+| D0 / W1 / W2 / W3 / W4 | 计划内卡片基本已闭环（含 UAT-031/032） |
+| G1 ENG-05 | `[DONE] PASS`（根+Demo 全量三阶段） |
+| G2 DEP-MODEL | `[DONE] PASS`（真实模型 9/9） |
+| G2 DEP-HIDDEN | `[BLOCKED] UNVERIFIED`（本机无法翻转 `document.hidden`） |
+| G3 CLOSE-139 | `[DONE] ADJUDICATED_WITH_DOCUMENTED_BLOCKERS`（已修订去掉 UAT-032 阻塞） |
+
+**45 张验收卡粗计：** 约 39 `[DONE] PASS`；CLOSE-139 已裁决（带文档化阻塞）；DEP-HIDDEN BLOCKED；**仍 NOT_RUN：UAT-008、UAT-009、UAT-028、UAT-029**。
+
+原 4 项 PARTIAL（ENG-02/03、UAT-014/016）已在真实路径或 SPEC_KEEP 复验后清为 PASS。
+
+## 3. 停机时正在做的事
+
+- 用户指令：usage 到约 90% → **停止所有任务 → commit → push**。
+- 停机时 **UAT-008 Dev** 已被 `StopSubagent` 中断（`[TODO] NOT_RUN`，无完整 DEV 报告）。
+- 按 `partials-triage.md` 顺序，UAT-005 已本地三阶段 PASS；**下一张本应是 UAT-008**，其后 UAT-009、UAT-028、UAT-029。
+
+## 4. 下一环境第一件事
+
+1. 读本文件与 `05-cloud-handoff-prompt.md`（已同步刷新）。
+2. 确认工作区未提交改动：`git status`（大量 `demo/` 产品修复 + `docs/handoff/artifacts/` 证据；**artifacts 约 3.1G，含误落盘 venv/node_modules/*.db，push 前必须清理**）。
+3. 若尚未 push：清理产物垃圾 → 写 commit → push `origin/main`（用户已授权 usage-90% 场景）。
+4. 然后派 **UAT-008** Dev→QA→UAT（实收 0 算术校验）。
+
+## 5. 仍开放的阻塞 / 缺口
+
+| 项 | 说明 |
+|---|---|
+| DEP-HIDDEN / S4-19 | 本机 X11/VNC 9 次无法 `document.hidden===true`；用户选择 `blocked-then-close139`；需其他桌面复验 |
+| UAT-008/009/028/029 | checklist 仍 NOT_RUN |
+| CLOSE-139 | 已裁决但**不等于**原 139 全完成；见 `artifacts/close139-report.md` 与 amendment |
+| artifacts 体积 | 删掉 `**/environment/venv`、`**/node_modules`、`*.db*` 后再提交 |
+| 密钥 | `/home/box/.config/receipt-agent/{openai_rec.env,model.env}`；DEP-MODEL 已验证可用 |
+
+## 6. 关键证据索引
+
+- 清单：`01-acceptance-checklist.md`
+- 台账：`02-coordinator-ledger.md`
+- 分流：`artifacts/partials-triage.md`
+- 终审：`artifacts/close139-report.md`、`artifacts/close139-amendment-uat031-032.md`
+- 各卡报告：`artifacts/<card>-{dev,qa,uat}-report.md`（约 100+）
+
+## 7. 同目录文档
+
+| 文件 | 用途 |
+|---|---|
+| `00-README.md` | **本文件**（状态快照） |
+| `01-acceptance-checklist.md` | 45 卡权威状态 |
+| `02-coordinator-ledger.md` | 调度流水 |
+| `03-takeover-report.md` | 早期接管报告（历史） |
+| `04-open-defect-citation-fix-spec.md` | UAT-030 行号错引更正 |
+| `05-cloud-handoff-prompt.md` | **下一 agent 可粘贴的调度 prompt** |
+| `06-usage-stop-handoff.md` | 本次 usage 停机短摘要 |

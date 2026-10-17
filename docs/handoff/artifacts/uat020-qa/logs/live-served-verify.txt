@@ -1,0 +1,63 @@
+=== live-served-verify UAT020 @ 2026-10-17 05:25:59 CST ===
+GET / -> 200
+auth/me: {"status":"success","auth_enabled":false,"account":null,"identity_source":"missing"}
+
+=== CSS markers (served style.css) ===
+532:    pointer-events: none;
+592:    pointer-events: none;
+598:    pointer-events: none;
+601:.img-toolbar {
+611:    z-index: 110;
+686:#imgViewerContainer,
+687:#imgViewerContainer.img-tools-hit-layer,
+688:.img-toolbar.img-tools-hit-layer {
+690:    z-index: 110;
+698:    pointer-events: none;
+804:    .photo-sider-drawer.open {
+1567:    pointer-events: none;
+2182:    pointer-events: none;
+2184:.photo-sider-drawer.open {
+2188:    pointer-events: none;
+2190:.photo-sider-drawer.open .sider-header,
+2191:.photo-sider-drawer.open .sider-header *,
+2192:.photo-sider-drawer.open .photo-sider-item,
+2193:.photo-sider-drawer.open .photo-sider-item * {
+2422:    pointer-events: none;
+2618:    .photo-sider-drawer.open { transform: translateX(0); }
+2649:    pointer-events: none;
+3131:    pointer-events: none;
+4453:    pointer-events: none;
+4676:    pointer-events: none;
+
+=== review-mobile UAT020 ===
+290:/* ---------- UAT020：批量抽屉不得遮挡原图旋转/裁剪工具（390/412/1024） ----------
+292:   and makes open-drawer chrome pointer-events:none (items/header re-enabled).
+301:        z-index: 110;
+309:        pointer-events: none;
+
+=== upload.js markers ===
+132:            const file = (photo && photo.file) || selectedFile || originalFile;
+267:        originalFile = file;
+298:            originalFile: file,
+1713:    originalFile = null;
+1891:// 不丢 originalFile / objectUrl；不 force-click。独立 QA 需用真实 elementFromPoint + click 复验。
+1892:function ensureImgToolsHitLayer() {
+1897:        if (!toolbar.getAttribute('data-uat020')) toolbar.setAttribute('data-uat020', 'img-tools-layer');
+1901:        if (!viewer.getAttribute('data-uat020')) viewer.setAttribute('data-uat020', 'img-viewer-layer');
+1905:function syncPhotoSiderClearanceForImgTools() {
+1927:function refreshUat020ImgToolsVsDrawer() {
+1928:    ensureImgToolsHitLayer();
+1929:    syncPhotoSiderClearanceForImgTools();
+1938:        syncPhotoSiderClearanceForImgTools();
+1944:            // Only react to class (open/close). Ignore style writes from syncPhotoSiderClearanceForImgTools.
+1950:            try { refreshUat020ImgToolsVsDrawer(); }
+1958:            refreshUat020ImgToolsVsDrawer();
+1962:        refreshUat020ImgToolsVsDrawer();
+1967:    refreshUat020ImgToolsVsDrawer();
+2312: * - 保留 originalFile/originalObjectUrl 与 photo.originalFile 不被覆盖，reset 可回原
+2325:        let currFile = (photo && photo.file) || selectedFile || originalFile;
+2429:                    // UAT020 / rotate bake: never drop originalFile / objectUrl (reset must restore)
+2430:                    if (!photo.originalFile && photo.file) photo.originalFile = photo.file;
+2519:    // 烤入后 reset 仍能回到原始 originalFile（保留 originalFile/originalObjectUrl 不被覆盖，photo.originalFile 同理）
+2528:            photo.file = photo.originalFile || photo.file;
+2534:    } else if (originalFile) {

@@ -74,7 +74,11 @@ def test_bom_versioning_snapshot_lifecycle():
     assert v1_detail["changed_by"] == "owner@demo.hk"
     assert v1_detail["changed_by"] != "boss@demo.hk"
     assert v1_detail["snapshot"]["dish"]["name"] == "版本测试菜"
-    assert v1_detail["snapshot"]["dish"]["price"] == 30.0
+    # UAT-021：staff 读版本快照售价/成本脱敏为 null；owner 可见
+    assert v1_detail["snapshot"]["dish"]["price"] is None
+    owner_v1 = client.get(f"/api/dishes/{dish_id}/versions/1",
+                          headers=_owner_headers()).json()["data"]
+    assert owner_v1["snapshot"]["dish"]["price"] == 30.0
     assert len(v1_detail["snapshot"]["ingredients"]) == 1
     assert v1_detail["snapshot"]["ingredients"][0]["consumption_qty"] == 0.1
 

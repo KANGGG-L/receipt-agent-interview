@@ -1,0 +1,31 @@
+[PASS] fmtMoney 1234.5 zh-Hans
+[PASS] fmtMoney 0 zh-Hans
+[PASS] fmtMoney null zh-Hans
+[PASS] fmtMoney undefined zh-Hans
+[PASS] fmtMoney empty zh-Hans
+[PASS] fmtMoney SGD not HKD-prefixed zh-Hans
+[PASS] fmtMoney SGD has grouping zh-Hans
+[PASS] fmtMoney 1234.5 zh-Hant-HK
+[PASS] fmtMoney 0 zh-Hant-HK
+[PASS] fmtMoney null zh-Hant-HK
+[PASS] fmtMoney undefined zh-Hant-HK
+[PASS] fmtMoney empty zh-Hant-HK
+[PASS] fmtMoney SGD not HKD-prefixed zh-Hant-HK
+[PASS] fmtMoney SGD has grouping zh-Hant-HK
+[PASS] formatHkd delegates to I18N.fmtMoney
+[PASS] list last_unit_price uses I18N.fmtMoney
+[PASS] no bare `$`+toFixed list price
+[PASS] no formatHkd return `$`+toFixed
+[PASS] AI cards use I18N.fmtMoney
+[PASS] AI summary uses I18N.fmtMoney
+[PASS] chart/history use formatHkd
+[PASS] ledger amount uses I18N.fmtMoney
+[PASS] dish_bom price/cost/profit use I18N.fmtMoney
+[PASS] dish_bom null path shows em-dash
+[PASS] finance HKD path uses I18N.fmtMoney
+[PASS] finance foreign keeps formatCurrency / original currency
+[PASS] finance does not force HKD label on foreign original
+[PASS] i18n fmtMoney defaults currency HKD
+[PASS] i18n fmtMoney null/non-finite → em-dash
+
+29 PASS / 0 FAIL

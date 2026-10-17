@@ -104,3 +104,19 @@ def unconverted_warning(unconverted: List[dict]) -> str:
     cur = "、".join(sorted({u["currency"] for u in unconverted}))
     return ("有 %d 张单据是「%s」，设置里没有对应汇率，没有算进合计。请老板到「设置」里填好汇率。"
             % (len(unconverted), cur))
+
+
+def unconverted_fields(unconverted: List[dict]) -> dict:
+    """API/UI 共用：列表 + 计数别名 + 人话提示（Form-B2 / UAT-033）。
+
+    unconverted_count / missing_fx_count 同源，便于前端兼容两种字段名；
+    合计仍只含已折算单据，缺汇率单只出现在本结构里。
+    """
+    rows = list(unconverted or [])
+    n = len(rows)
+    return {
+        "unconverted": rows,
+        "unconverted_count": n,
+        "missing_fx_count": n,
+        "unconverted_warning": unconverted_warning(rows),
+    }

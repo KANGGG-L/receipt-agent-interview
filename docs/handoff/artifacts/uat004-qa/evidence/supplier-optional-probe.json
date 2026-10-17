@@ -1,0 +1,224 @@
+{
+  "card": "UAT-004",
+  "phase": "DEV",
+  "base": "http://127.0.0.1:15471",
+  "tenant_a": "uat004-a",
+  "tenant_b": "uat004-b",
+  "verdict": "PASS",
+  "failures": [],
+  "steps": [
+    {
+      "name": "tenant_b_baseline",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "count": 0,
+        "names": []
+      }
+    },
+    {
+      "name": "ac1_ui_default_create_http",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "id": 1
+        },
+        "payload": {
+          "name": "Vendor_A",
+          "contact_phone": "",
+          "notes": "",
+          "settlement_pref": null,
+          "payment_terms_days": null
+        }
+      }
+    },
+    {
+      "name": "ac1_ui_default_readback_empty_norm",
+      "pass": true,
+      "detail": {
+        "row_id": 1,
+        "contact_phone": "",
+        "notes": "",
+        "settlement_pref": "",
+        "empty_string_norm": true
+      }
+    },
+    {
+      "name": "ac2_fill_both_readback",
+      "pass": true,
+      "detail": {
+        "patch_status": 200,
+        "patch_body": {
+          "status": "success"
+        },
+        "contact_phone": "91234567",
+        "notes": "note-uat004"
+      }
+    },
+    {
+      "name": "ac3_null_omitted_empty_string",
+      "pass": true,
+      "detail": {
+        "variants": [
+          {
+            "case": "create_omitted_phone_notes",
+            "http": 200,
+            "id": 2,
+            "contact_phone": "",
+            "notes": "",
+            "pass": true
+          },
+          {
+            "case": "create_null_phone_notes",
+            "http": 200,
+            "id": 3,
+            "contact_phone": "",
+            "notes": "",
+            "pass": true
+          },
+          {
+            "case": "create_empty_string_phone_notes",
+            "http": 200,
+            "id": 4,
+            "contact_phone": "",
+            "notes": "",
+            "pass": true
+          },
+          {
+            "case": "patch_empty_string_clears",
+            "http": 200,
+            "contact_phone": "",
+            "notes": "",
+            "pass": true
+          },
+          {
+            "case": "patch_null_clears",
+            "http": 200,
+            "contact_phone": "",
+            "notes": "",
+            "pass": true
+          },
+          {
+            "case": "patch_omit_phone_notes_unchanged",
+            "http": 200,
+            "contact_phone": "91112222",
+            "notes": "omit-keep",
+            "settlement_pref": "cash",
+            "pass": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "ac4_explicit_empty_settlement_422",
+      "pass": true,
+      "detail": {
+        "create_status": 422,
+        "create_body": {
+          "status": "error",
+          "code": "VALIDATION_ERROR",
+          "msg": "有一项内容填写的内容不对，请检查后重新填写。",
+          "detail": [
+            {
+              "loc": [
+                "body",
+                "settlement_pref"
+              ],
+              "field": "settlement_pref",
+              "msg": "有一项内容填写的内容不对，请检查后重新填写。",
+              "type": "value_error"
+            }
+          ]
+        },
+        "patch_status": 422,
+        "patch_body": {
+          "status": "error",
+          "code": "VALIDATION_ERROR",
+          "msg": "有一项内容填写的内容不对，请检查后重新填写。",
+          "detail": [
+            {
+              "loc": [
+                "body",
+                "settlement_pref"
+              ],
+              "field": "settlement_pref",
+              "msg": "有一项内容填写的内容不对，请检查后重新填写。",
+              "type": "value_error"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "neg_empty_phone_notes_not_422",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "body": {
+          "status": "success",
+          "id": 5
+        }
+      }
+    },
+    {
+      "name": "neg_credit_settlement_still_ok",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "settlement_pref": "credit",
+        "contact_phone": ""
+      }
+    },
+    {
+      "name": "neg_tenant_b_isolation",
+      "pass": true,
+      "detail": {
+        "b_sees_vendor_a": false,
+        "hack_status": 404,
+        "hack_body": {
+          "status": "error",
+          "msg": "供应商不存在"
+        },
+        "b_names_after": [
+          "Vendor_Only_In_B"
+        ],
+        "a_names_leak": false,
+        "b_row": {
+          "id": 7,
+          "name": "Vendor_Only_In_B",
+          "supplier_code": "SUP-CA2357D4",
+          "active": 1,
+          "payment_terms_days": null,
+          "settlement_pref": "",
+          "contact_phone": "222",
+          "notes": "b-note",
+          "receipt_count": 0,
+          "unpaid_credit_total": 0.0,
+          "unpaid_credit_count": 0,
+          "is_overdue": false,
+          "overdue_amount": 0.0,
+          "overdue_count": 0,
+          "pending_credit_total": 0.0,
+          "pending_credit_count": 0,
+          "unpaid_basis": "只算已入账的赊单，已付的金额已扣除；外币按入账时的汇率折成港币。还没审批入账的赊单另列在「待入账赊单」里"
+        },
+        "seed_status": 200
+      }
+    },
+    {
+      "name": "ui_payload_contract_static",
+      "pass": true,
+      "detail": {
+        "file": "/workspace/receipt-agent-interview/demo/static/js/supplier_archive.js",
+        "phone_trim": true,
+        "notes_trim": true,
+        "payload_fields": true,
+        "settlement_null_when_blank": true,
+        "snippet_line_hint": "saveSupplier payload mirrors AC1 UI defaults"
+      }
+    }
+  ],
+  "ts": "2026-10-17 19:28:58 CST"
+}

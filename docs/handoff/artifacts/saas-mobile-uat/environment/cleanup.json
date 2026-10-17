@@ -1,0 +1,14 @@
+{
+  "stage": "saas-mobile-uat",
+  "port": 15130,
+  "pid": 68437,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-mobile-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15130_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15130 for SAAS-MOBILE UAT; avoided 15120/15430/15020-15050/154xx/15150-15800; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:24 Asia/Shanghai (CST)",
+  "notes": "Independent UAT only; no git/checklist. MANUAL_UI 390/412 PASS 16/16."
+}

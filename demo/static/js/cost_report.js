@@ -8,6 +8,22 @@
 let lastCostReportQuery = '';
 let lastCostReportData = null;
 
+// UAT-033：缺汇率说明 —— API 已返回 unconverted / unconverted_warning / *_count；
+// 合计不含缺汇率单；空表也不要吞掉提示。
+function costReportMissingFxCount(d) {
+    if (!d) return 0;
+    if (Array.isArray(d.unconverted)) return d.unconverted.length;
+    return Number(d.unconverted_count || d.missing_fx_count || 0) || 0;
+}
+
+function costReportMissingFxNotice(d, missFx) {
+    const n = (missFx == null) ? costReportMissingFxCount(d) : Number(missFx) || 0;
+    if (n <= 0) return '';
+    const w = (d && d.unconverted_warning) ? String(d.unconverted_warning).trim() : '';
+    if (w) return ' ' + w;
+    return ' 有 ' + n + ' 张外币单据还没有汇率，没算进来，请到「设置」里补上汇率。';
+}
+
 function currentMonthStr() {
     const now = new Date();
     return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -111,8 +127,10 @@ function loadCostReport() {
         const depts = d.departments || [];
         const unalloc = d.unallocated || {};
         const unallocCount = Number(unalloc.count) || 0;
+        const missFx = costReportMissingFxCount(d);
 
-        if (depts.length === 0 && Number(d.month_total) === 0 && unallocCount === 0) {
+        // 仅真正「无记录」才早退；若有缺汇率被排除的单据，继续渲染 0 合计并显示说明
+        if (depts.length === 0 && Number(d.month_total) === 0 && unallocCount === 0 && missFx === 0) {
             body.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:28px;">这段时间还没有进货记录</td></tr>';
             if (summary) {
                 summary.textContent = '时段 ' + periodLabel + '：暂无进货记录。';
@@ -139,7 +157,7 @@ function loadCostReport() {
                 }
 
                 tr.innerHTML = `
-                    <td>${w2Escape(dep.name)}${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">已停用</span>'}</td>
+                    <td><span data-i18n-skip>${w2Escape(dep.name)}</span>${active ? '' : ' <span style="color:var(--text-muted); font-size:0.72rem;">已停用</span>'}</td>
                     <td class="col-right" style="font-weight:600;">${I18N.fmtMoney(dep.total)}</td>
                     <td class="col-right" style="color:var(--text-muted);">${prevText}</td>
                     <td class="col-right">${deltaHtml}</td>`;
@@ -197,8 +215,7 @@ function loadCostReport() {
         if (summary) {
             const incAll = !!(document.getElementById('costReportIncNonApproved') || {}).checked;
             let txt = '时段 ' + periodLabel + '：' + (incAll ? '进货总额（含还没入账的单据）' : '已入账单据总额') + I18N.fmtMoney(d.month_total) + '，含服务费、税、折扣。';
-            const missFx = Number(d.unconverted_count || d.missing_fx_count || 0);
-            if (missFx > 0) txt += ' 有 ' + missFx + ' 张外币单据还没有汇率，没算进来，请到「设置」里补上汇率。';
+            txt += costReportMissingFxNotice(d, missFx);
             summary.textContent = txt;
         }
     })
@@ -269,7 +286,7 @@ function openCostDrilldown(deptId, deptName, displayPeriod) {
             headerTr.style.fontWeight = '600';
             headerTr.innerHTML = `
                 <td colspan="5" style="color:var(--primary); padding:8px 12px;">
-                    供应商：${w2Escape(suppName)} · 小计 ${I18N.fmtMoney(subtotal)} · ${groupItems.length} 条
+                    供应商：<span data-i18n-skip>${w2Escape(suppName)}</span> · 小计 ${I18N.fmtMoney(subtotal)} · ${groupItems.length} 条
                 </td>`;
             body.appendChild(headerTr);
 
@@ -282,7 +299,7 @@ function openCostDrilldown(deptId, deptName, displayPeriod) {
                             #${Number(r.receipt_id)}
                         </button>
                     </td>
-                    <td>${w2Escape(r.raw_name || '-')}</td>
+                    <td data-i18n-skip>${w2Escape(r.raw_name || '-')}</td>
                     <td>${Number(r.quantity)}</td>
                     <td class="col-right">${I18N.fmtMoney(r.amount)}</td>`;
                 body.appendChild(tr);

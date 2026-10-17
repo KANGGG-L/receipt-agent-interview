@@ -1,0 +1,6 @@
+OK demo/static/js/inventory_board.js
+OK demo/static/js/dish_bom.js
+OK demo/static/js/dish_consumption.js
+OK demo/static/js/workbench_queue.js
+OK demo/static/js/supplier_archive.js
+OK demo/static/js/archive_list.js

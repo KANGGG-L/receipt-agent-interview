@@ -1,0 +1,12 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 3 items
+
+demo/tests/test_f1a_flows.py::test_s3_04_busy_stays_on_error_card_with_retry_and_manual PASSED [ 33%]
+demo/tests/test_f1a_flows.py::test_s3_07_discard_uses_in_app_dialog_and_owner_gets_undo PASSED [ 66%]
+demo/tests/test_f1a_flows.py::test_s3_07_flag_uses_in_app_dialog_with_reason PASSED [100%]
+
+============================== 3 passed in 8.26s ===============================

@@ -1,0 +1,9 @@
+DEFAULT_COUNT 3
+NAMES ['特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测', 'Synthetic_Oil', 'Synthetic_Rice']
+RICE Synthetic_Rice qty 1.0 vendor Vendor_A
+OIL Synthetic_Oil qty 2.0 vendor Vendor_A
+LONG_ZH_LEN 28 HAS_UNDERSCORE True
+CROSS_TENANT_DEFAULT_OK True
+T2_NAMES ['Synthetic_Rice'] count 1
+CROSS_TENANT_T2_OK True
+API_LIVE_PASS True

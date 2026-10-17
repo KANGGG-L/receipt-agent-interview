@@ -1,0 +1,44 @@
+=== served JS markers ===
+302:let inventoryLoadSeq = 0;
+311:function markInventoryMetricsFailed() {
+321:        notice.setAttribute('data-uat036', 'inventory-error');
+326:            + ' data-uat036="inventory-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+378:    const mySeq = ++inventoryLoadSeq;
+381:        if (mySeq !== inventoryLoadSeq) return null;
+389:        if (ret == null || mySeq !== inventoryLoadSeq) return;
+578:        if (mySeq !== inventoryLoadSeq) return;
+590:    markInventoryMetricsFailed();
+151:let dishesLoadSeq = 0;
+158:        + '<div style="font-size:0.95rem; font-weight:500;">餐品列表加载失败</div>'
+160:        + '<button type="button" class="btn btn-secondary" data-uat036="dish-retry"'
+177:    const mySeq = ++dishesLoadSeq;
+180:            if (mySeq !== dishesLoadSeq) return null;
+185:            if (ret == null || mySeq !== dishesLoadSeq) return;
+197:            if (mySeq !== dishesLoadSeq) return;
+602:let dailyConsumptionReqSeq = 0;
+604:function markDishKpiFailed() {
+625:            + ' data-uat036="dish-kpi-retry" style="margin-left:8px; min-height:38px;">重试</button>';
+649:    const reqSeq = ++dailyConsumptionReqSeq;
+663:        if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
+672:            markDishKpiFailed();
+682:        if (reqSeq !== dailyConsumptionReqSeq) return; // 过期响应：已有更新的加载请求，丢弃
+684:        markDishKpiFailed();
+43:let workbenchQueueLoadSeq = 0;
+46:function markWorkbenchQueueMetricsFailed() {
+63:        retry.setAttribute('data-uat036', 'workbench-retry');
+89:    const mySeq = ++workbenchQueueLoadSeq;
+92:            if (mySeq !== workbenchQueueLoadSeq) return;
+99:            if (mySeq !== workbenchQueueLoadSeq) return;
+101:            markWorkbenchQueueMetricsFailed();
+310:    const retry = document.getElementById('archiveKpiRetry');
+311:    const pendingProbe = document.getElementById('todoPendingNum');
+324:    setText('todoPendingNum', pending);
+330:    const pendingEl = document.getElementById('todoPendingNum');
+=== API default tenant ===
+status success n 2 meta {'total_active': 2, 'low_stock_count': 1, 'price_anomaly_count': 0, 'price_anomaly_threshold_pct': 10.0, 'price_anomaly_ack_map': {}}
+=== API empty tenant ===
+status success n 0 meta {'total_active': 0, 'low_stock_count': 0, 'price_anomaly_count': 0, 'price_anomaly_threshold_pct': 10.0, 'price_anomaly_ack_map': {}}
+=== dishes empty ===
+status success n 0
+=== receipts empty ===
+status success n 0

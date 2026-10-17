@@ -1,0 +1,178 @@
+{
+  "scope_id": "DM-02-job-terminal-done",
+  "source": "ENG-02 AC2 / DEP-MODEL job done",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "job_status": true,
+    "supplier_name": true,
+    "date": true,
+    "total_amount": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-02-job-terminal-done.job.json"
+  ],
+  "notes": [],
+  "job_bundle_summary": {
+    "ok": true,
+    "attempt_count": 1,
+    "receipt_id": 2,
+    "job_id": "c2402e520869437599056f218b6044dd",
+    "result_summary": {
+      "supplier_name": "7-Eleven",
+      "date": "2016-10-01",
+      "total_amount": 13.0,
+      "doc_form": "printed_delivery_note",
+      "items_n": 1
+    },
+    "attempts": [
+      {
+        "attempt": 1,
+        "upload_http": 200,
+        "upload": {
+          "status": "queued",
+          "job_id": "c2402e520869437599056f218b6044dd",
+          "receipt_id": 2,
+          "image_url": "/api/receipt/2/image?v=d4e5b7fd&sig=abb4836dfe909d2e9468e4c444e1ca1732381bb10587af753f02720ea09a29b3"
+        },
+        "job_status": "done",
+        "polls": [
+          {
+            "t": 0.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 2.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 4.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 6.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 8.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 10.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 12.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 14.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 16.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 18.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 20.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 22.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 24.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 26.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 28.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 30.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 32.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 34.0,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 36.1,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 38.1,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 40.1,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 42.1,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 44.1,
+            "http": 200,
+            "job_status": "running"
+          },
+          {
+            "t": 46.1,
+            "http": 200,
+            "job_status": "done"
+          }
+        ],
+        "error_msg": null,
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "elapsed_s": 46.12
+      }
+    ]
+  }
+}

@@ -645,3 +645,635 @@ QA 自行补了两项提权验证：未认证访问 401、伪造租户头 404，
   - 术语漂移实证：`admin_observation.js:508-512` 把 `edited` 渲染为「待审核」，其余多处用「待审批」。
 - **卡片负向边界已前置强调**：禁止让两个数字相等、禁止改审批状态机、禁止删除任一计数器。本项是口径说明与术语统一任务，不是逻辑统一任务——若开发试图「统一数字」即判FAIL。
 - 已要求术语收敛须**全仓检索**所有渲染 `edited` 的位置，不得只改一两处；若必须触及 admin_observation.js 或术语表，须先 ask 确认。
+
+## UAT-002 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`。三阶段闭环路径：`uat002-dev-fix` -> `uat002-qa` -> `uat002-uat`。
+- 证据：`docs/handoff/artifacts/uat002-dev-fix.md`、`docs/handoff/artifacts/uat002-qa-report.md`、`docs/handoff/artifacts/uat002-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-002] 已从「门禁未通过 / 待修正」更新为 `[DONE] PASS`，旧「待修正缺陷」「本地修正未执行」段落已划线作废并改为「已闭环」摘要。
+- W3 下一原子任务：**UAT-003**（库存流水品名截断到相同前缀）；本轮仅派发开发，尚未进入独立 QA/UAT。
+
+## UAT-003 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`。三阶段闭环路径：`uat003-dev` -> `uat003-qa` -> `uat003-uat`。
+- 证据：`docs/handoff/artifacts/uat003-dev-report.md`、`docs/handoff/artifacts/uat003-qa-report.md`、`docs/handoff/artifacts/uat003-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-003] 已从 `[TODO] NOT_RUN` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT-007**（消耗台账数量方向显示为正数，P1 PRODUCT_FAULT）；本轮仅派发开发，尚未进入独立 QA/UAT。
+
+## UAT-007 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`。三阶段闭环路径：`uat007-dev` -> `uat007-qa` -> `uat007-uat`。
+- 证据：`docs/handoff/artifacts/uat007-dev-report.md`、`docs/handoff/artifacts/uat007-qa-report.md`、`docs/handoff/artifacts/uat007-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-007] 已从 `[TODO] NOT_RUN` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT-010**（生产会话缺少可见退出登录入口，P2 QUALITY_RISK）；本轮仅派发开发，尚未进入独立 QA/UAT。
+
+## UAT-010 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`。三阶段闭环路径：`uat010-dev` -> `uat010-qa` -> `uat010-uat`。
+- 证据：`docs/handoff/artifacts/uat010-dev-report.md`、`docs/handoff/artifacts/uat010-qa-report.md`、`docs/handoff/artifacts/uat010-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-010] 已从 `[TODO] NOT_RUN` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT-017**（对账创建弹窗缺 dialog 语义，P2 PRODUCT_FAULT）；本轮仅派发开发，尚未进入独立 QA/UAT。
+
+## UAT-017 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat017-dev-report.md`。
+- 产品改动：`demo/templates/index.html`（`#reconCreateModal` dialog ARIA）、`demo/static/js/finance_ops.js`（`openReconModal` 走 `openAccessibleModal`）。
+- 专项测试：`demo/tests/test_uat_017_recon_create_dialog.py`（4 passed，静态语义与接线）。
+- 下一门禁：独立 QA（隔离端口 + AXTree dialog 名 / Tab 陷阱 / Esc 归还焦点 / 提交取消可用）。
+
+## UAT-017 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`。三阶段闭环路径：`uat017-dev` -> `uat017-qa` -> `uat017-uat`。
+- 证据：`docs/handoff/artifacts/uat017-dev-report.md`、`docs/handoff/artifacts/uat017-qa-report.md`、`docs/handoff/artifacts/uat017-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-017] 已从 `[TODO] NOT_RUN` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT-023**（繁体报表预览自动转换业务品名，和 CSV 原值不一致，P2 PRODUCT_FAULT）；本轮仅派发开发，尚未进入独立 QA/UAT。
+
+## UAT-023 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat023-dev-report.md`。
+- 产品改动：`demo/static/js/export_center.js`（预览业务身份列 `data-i18n-skip`）、`demo/static/js/cost_report.js`（部门/供应商/品名 skip）、`demo/static/js/i18n/i18n.js` + `docs/i18n.md`（策略说明）、`demo/app/api_export.py`（preview 契约 docstring）。
+- 专项测试：`demo/tests/test_uat_023_export_preview_biz_names.py`（4 passed）、`demo/tests/frontend_uat023_export_preview_harness.js`（8 PASS）。
+- 下一门禁：独立 QA（隔离端口；合成长中文名；Hans→Hant→Hans；8 种含业务名 CSV 与同 ID preview textContent 精确相等；表头仍翻译；DB 名不变）。
+
+## UAT-023 三阶段闭环（含 fix2 复验，2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat023-dev` -> `uat023-qa` -> `uat023-uat` **FAIL**（`归属部门` 仍被 OpenCC）-> `uat023-dev-fix2` -> `uat023-qa2` -> `uat023-uat2` **PASS**。
+- 证据：`docs/handoff/artifacts/uat023-dev-report.md`、`uat023-qa-report.md`、`uat023-uat-report.md`（FAIL 历史）、`uat023-dev-fix2-report.md`、`uat023-qa2-report.md`、`uat023-uat2-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-023] 已更新为 `[DONE] PASS`，注明 fix2 + qa2 + uat2。
+- W3 下一原子任务：**UAT-024**（手机库存品名列过窄且操作与名称分离，P2 QUALITY_RISK；前置 UAT-003 已满足）。
+
+## UAT-024 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat024-dev-report.md`。
+- 产品改动：`demo/static/js/inventory_board.js`（data-label / data-sku-id / title）、`demo/static/css/style.css`（break-word）、`demo/static/css/review-mobile.css`（<=640 卡片行）、`demo/templates/index.html`（`inventory-sku-table`）。
+- 专项测试：`demo/tests/test_uat_024_mobile_inventory_name_actions.py`（5 PASS）、`demo/tests/frontend_uat024_inventory_mobile_harness.js`（14 PASS）。
+- 下一门禁：独立 QA（隔离端口；390/412 Rice/Oil/长中文；同排 More；无 document 水平溢出；1440 不退化）。
+
+## UAT-024 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat024-dev` -> `uat024-qa` -> `uat024-uat`。
+- 证据：`docs/handoff/artifacts/uat024-dev-report.md`、`docs/handoff/artifacts/uat024-qa-report.md`、`docs/handoff/artifacts/uat024-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-024] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT-025**（繁体洞察请求未传当前语言，P2 PRODUCT_FAULT）。
+
+## UAT-025 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat025-dev-report.md`。
+- 产品改动：`demo/static/js/inventory_board.js`（`loadAiLeanInsights` 携带 `I18N.getLocale()` 为 `?lang=`）、`demo/app/api_admin.py`（UAT-025 契约 docstring；既有 `lang` -> `review_locale`）。
+- 专项测试：`demo/tests/test_uat_025_ai_insights_lang.py`（静态 2 PASS；API TestClient 需运行时依赖）、`demo/tests/frontend_uat025_ai_insights_lang_harness.js`（11 PASS）。
+- 下一门禁：独立 QA（隔离端口；真实 Hant/Hans 触发 GET `/api/ai-insights` 网络捕获 `lang`；响应 `review_locale` 实读；不可用 UI 繁转冒充）。
+
+## UAT-025 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV -> 独立 QA -> 独立 UAT 全 PASS；卡片已翻 `[DONE] PASS`。
+- 证据：`docs/handoff/artifacts/uat025-dev-report.md`、`uat025-qa-report.md`、`uat025-uat-report.md`。
+- W3 下一原子任务顺序：**UAT-036**（库存和餐品请求失败仍显示0指标；前置 UAT-002 已满足），随后 **UAT020**（批量照片抽屉遮挡原图旋转工具）。
+- **UAT-027 BLOCKED**：前置依赖 UAT-021 仍为 W1 `[TODO] NOT_RUN`，不得跳过依赖派发。
+
+## UAT-036 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat036-dev-report.md`。
+- 产品改动：`demo/static/js/inventory_board.js`、`demo/static/js/dish_bom.js`、`demo/static/js/workbench_queue.js`、`demo/static/js/supplier_archive.js`（另：`dish_consumption.js` 餐品 KPI 失败态与序号，因 AC「餐品指标」实际渲染点在此）。
+- 下一门禁：独立 QA（隔离端口；fault 注入 GET 500 → —+错误+可点重试；取消注入恢复数值；空 tenant 200/[] → 合法 0；延迟请求不被旧响应覆盖）。
+- W3 再下一项：**UAT020**；UAT-027 仍 BLOCKED on UAT-021。
+
+## UAT-036 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat036-dev` -> `uat036-qa` -> `uat036-uat`。
+- 证据：`docs/handoff/artifacts/uat036-dev-report.md`、`docs/handoff/artifacts/uat036-qa-report.md`、`docs/handoff/artifacts/uat036-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-036] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- W3 下一原子任务：**UAT020**（批量照片抽屉遮挡原图旋转工具，P2 QUALITY_RISK）。
+- **UAT-027 仍 BLOCKED**：前置依赖 UAT-021 仍为 W1 `[TODO] NOT_RUN`，不得跳过依赖派发。
+
+## UAT020 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat020-dev-report.md`。
+- 产品改动：`demo/static/js/upload.js`（工具层标记 + 抽屉底部让出工具条 + bake 保 originalFile）、`demo/static/css/style.css`、`demo/static/css/review-mobile.css`。
+- 专项测试：`demo/tests/test_uat_020_drawer_rotate_static.py`（5 PASS）、`demo/tests/frontend_uat020_drawer_rotate_harness.js`（20 PASS）。
+- 下一门禁：独立 QA（隔离端口；两张合成图；1440/390/412/1024；抽屉开启时 elementFromPoint 落在 `#btnRotate` 且真实 click 旋转 90°；裁剪有效；抽屉开/关均可操作；禁 force-click）。
+- **UAT-027 仍 BLOCKED on UAT-021**。
+
+## UAT020 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat020-dev` -> `uat020-qa` -> `uat020-uat`。
+- 证据：`docs/handoff/artifacts/uat020-dev-report.md`、`docs/handoff/artifacts/uat020-qa-report.md`、`docs/handoff/artifacts/uat020-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT020] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **W3 剩余**：仅 **UAT-027**（库存价格金额仍使用美元符号且缺千分位），状态仍为 `BLOCKED`（前置依赖 **UAT-021** 仍为 W1 未闭环）。
+- **下一原子任务**：**UAT-021**（W1：店员库存列表与餐品列表泄露价格及毛利，P1）——完成后解锁 UAT-027。
+
+## UAT-021 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat021-dev-report.md`；专项日志 `docs/handoff/artifacts/uat021-dev/logs/pytest-uat021.txt`（10 passed）。
+- 产品改动：`demo/app/api_dishes.py`（`_redact_dish_version_payload` + `get_dish_version` staff 脱敏）、`demo/static/js/inventory_board.js`（列表单价列 `isOwnerRoleNow` 门控）。`api_inventory.py` / `dish_bom.js` 本轮无代码改动（主干脱敏已在 HEAD）。
+- 专项测试：`demo/tests/test_uat_021_price_margin_masking.py`（10 PASS，含版本快照与伪头）。
+- 清单：`[UAT-021]` → `[TODO] DEV_DELIVERED`；`[UAT020]` 已 `[DONE] PASS`。
+- **W3 剩余**：仅 **UAT-027 BLOCKED on UAT-021**；下一门禁为 UAT-021 独立 QA（再 UAT），全 PASS 后解锁 UAT-027。
+
+## UAT-021 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat021-dev` -> `uat021-qa` -> `uat021-uat`。
+- 证据：`docs/handoff/artifacts/uat021-dev-report.md`、`docs/handoff/artifacts/uat021-qa-report.md`、`docs/handoff/artifacts/uat021-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-021] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **UAT-027 解锁**：前置依赖 UAT-021 已满足；清单中 [UAT-027] 由 `BLOCKED` 改为 `READY`。
+- **下一原子任务**：**UAT-027**（库存价格金额仍使用美元符号且缺千分位，P2）。
+
+## UAT-027 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat027-dev-report.md`；专项日志 `docs/handoff/artifacts/uat027-dev/logs/harness-uat027.txt`（29 PASS）。
+- 产品改动：`demo/static/js/inventory_board.js`（列表/详情/流水/AI 卡/走势图 `I18N.fmtMoney` + `formatHkd`）。`dish_bom.js` / `finance.js` / `i18n/i18n.js` 本轮无代码改动（主干已符合 AC）。
+- 专项测试：`demo/tests/frontend_uat027_money_format_harness.js`（29 PASS，Hans+Hant + 静态契约）。
+- 清单：`[UAT-021]` → `[DONE] PASS`；`[UAT-027]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：UAT-027 独立 QA（再独立 UAT）；W3 在 UAT-027 闭环后收官。
+
+
+## UAT-027 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat027-dev` -> `uat027-qa` -> `uat027-uat`。
+- 证据：`docs/handoff/artifacts/uat027-dev-report.md`、`docs/handoff/artifacts/uat027-qa-report.md`、`docs/handoff/artifacts/uat027-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-027] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+
+## W3 波次收官（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **W3 波次 11/11 全部闭环**（UAT-002 / 003 / 007 / 010 / 017 / 023 / 024 / 025 / 027 / 036 / UAT020）。
+- 解锁项：**UAT-021**（W1）亦已闭环，作为 UAT-027 前置依赖 unblocker。
+- 汇总证据：`docs/handoff/artifacts/w3-closeout-summary.md`。
+- 45 项中约 **32 工作流闭环 / 13 待办**（含 PARTIAL；不表述为产品完成率）。
+- **下一阶段进入 W4**，首项 **ENG-04**（Demo导航旧标题/空实验fixture与中断，P1 ENGINEERING_GATE）。
+
+## ENG-04 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/eng04-dev-report.md`。
+- 测试改动：`demo/tests/test_admin_tabs_consolidation_e2e.py`（侧栏标题对齐现行「观测中心」；导航后观测链路仍真实等待 DOM）、`demo/tests/test_analytics_historical_canary_and_ab.py`（合成实验 fixture；详情结构必验；禁止空库 vague skip 冒充通过）。
+- 清单：`[ENG-04]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：ENG-04 独立 QA（再独立 UAT）；端口约定保留 15010；不删基线。
+
+
+## ENG-04 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`eng04-dev` -> `eng04-qa` -> `eng04-uat`。
+- 证据：`docs/handoff/artifacts/eng04-dev-report.md`、`docs/handoff/artifacts/eng04-qa-report.md`、`docs/handoff/artifacts/eng04-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [ENG-04] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **残档**：补写 `docs/handoff/artifacts/uat024-uat-report.md` stub（磁盘原缺 UAT 报告/目录；声称 PASS @ port 15300；不发明截图）。
+- **下一原子任务**：**SAAS-CONSISTENCY**（页面容器/工具条/日期标签视觉体系差异，P2 DESIGN_OBSERVATION）。
+
+## SAAS-CONSISTENCY 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/saas-consistency-dev-report.md`。
+- 源码：`demo/static/css/style.css`、`demo/static/css/review-mobile.css`、`demo/templates/index.html`（另：`demo/static/css/f1b.css` 的 `.st-wrap` 为对齐必要覆盖源）。
+- 清单：`[SAAS-CONSISTENCY]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：SAAS-CONSISTENCY 独立 QA（再独立 UAT）；端口约定保留 15010；不删基线；未获批准的语义/品牌扩展不标完成。
+
+## SAAS-CONSISTENCY 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`saas-consistency-dev` -> `saas-consistency-qa` -> `saas-consistency-uat`。
+- 证据：`docs/handoff/artifacts/saas-consistency-dev-report.md`、`docs/handoff/artifacts/saas-consistency-qa-report.md`、`docs/handoff/artifacts/saas-consistency-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [SAAS-CONSISTENCY] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**SAAS-HEIGHT**（原38px控件合同未全面达标，P2 DESIGN_GAP）。
+
+## SAAS-HEIGHT 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/saas-height-dev-report.md`。
+- 源码：`demo/static/css/style.css`、`demo/static/css/review-mobile.css`、`demo/templates/index.html`（cache-bust `20261017_saas_height`；token `--control-min-height: 38px`）。
+- 清单：`[SAAS-HEIGHT]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：SAAS-HEIGHT 独立 QA（再独立 UAT）；端口约定保留 15010；不删基线。
+
+## SAAS-HEIGHT 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`saas-height-dev` -> `saas-height-qa` -> `saas-height-uat`。
+- 证据：`docs/handoff/artifacts/saas-height-dev-report.md`、`docs/handoff/artifacts/saas-height-qa-report.md`、`docs/handoff/artifacts/saas-height-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [SAAS-HEIGHT] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**SAAS-MOBILE**（移动KPI/筛选堆叠与首个业务表过晚，P2 DESIGN_GAP；前置依赖 UAT-024 + UAT-036 已满足）。
+
+## SAAS-MOBILE 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/saas-mobile-dev-report.md`。
+- 源码：`demo/static/css/review-mobile.css`、`demo/templates/index.html`（cache-bust `20261017_saas_mobile`）。
+- 改前/改后 Y：库存表 891→468；归档表 1438→748（卡面基线 y891/y1408）。
+- 清单：`[SAAS-MOBILE]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：SAAS-MOBILE 独立 QA（再独立 UAT）；端口约定保留 15010；不删基线；不得隐藏全部 KPI。
+
+## SAAS-MOBILE 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`saas-mobile-dev` -> `saas-mobile-qa` -> `saas-mobile-uat`。
+- 证据：`docs/handoff/artifacts/saas-mobile-dev-report.md`、`docs/handoff/artifacts/saas-mobile-qa-report.md`、`docs/handoff/artifacts/saas-mobile-uat-report.md`。
+- 清单：`01-acceptance-checklist.md` 的 [SAAS-MOBILE] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**SAAS-SCALE**（归档670/队列635行无分页规模任务效率，P2 DESIGN_GAP）。
+
+## SAAS-SCALE 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/saas-scale-dev-report.md`；实测 `docs/handoff/artifacts/saas-scale-dev/logs/measure-result.json`。
+- 源码：`demo/static/js/archive_list.js`、`demo/static/js/workbench_queue.js`、`demo/templates/index.html`（cache-bust `20261017_saas_scale`）。
+- 实现：归档/队列客户端分页 pageSize=50；空库 vs 无筛选结果区分；总数+当前范围；末项可达；跨页编辑态保留；670/635 合成规模预算全 PASS。
+- 清单：`[SAAS-SCALE]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：SAAS-SCALE 独立 QA（再独立 UAT）；端口约定保留 15010；不删基线；性能预算须复测而非空 PASS。
+
+## SAAS-SCALE 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`saas-scale-dev` -> `saas-scale-qa` -> `saas-scale-uat`。
+- 证据：`docs/handoff/artifacts/saas-scale-dev-report.md`、`docs/handoff/artifacts/saas-scale-qa-report.md`、`docs/handoff/artifacts/saas-scale-uat-report.md`。
+- UAT 端口 **15140**（≠15130 QA / ≠15450 DEV；15010 保留）；性能预算 9/9 复测 PASS；QA 残档「archive/queue PNG 同 MD5」经独立 chrome eyeball（真实侧栏 `tab-archive`/`tab-scan`）关闭。
+- 清单：`01-acceptance-checklist.md` 的 [SAAS-SCALE] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**UAT-033**（legacy缺汇率单据被排除但部门报表未显示API缺汇率说明，P2 PRODUCT_FAULT；无前置依赖）。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发。
+
+## UAT-033 开发阶段交付（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 阶段：DEV only（独立 QA / UAT 未派发，不得宣称卡片 PASS）。
+- 证据：`docs/handoff/artifacts/uat033-dev-report.md`；实测 `docs/handoff/artifacts/uat033-dev/logs/`。
+- 源码：`demo/static/js/cost_report.js`、`demo/app/services/cost_report.py`、`demo/app/api_suppliers.py`（response fields）、`demo/tests/test_uat_033_cost_report_missing_fx_notice.py`。
+- 实现：API 暴露 `unconverted_count`/`missing_fx_count`；UI 读 `unconverted`/`unconverted_warning` 并在空合计时仍显示缺汇率说明；legacy NFX 不进合计；新单缺 FX 审批仍 422。
+- 清单：`[UAT-033]` → `[TODO] DEV_DELIVERED`。
+- **下一原子门禁**：UAT-033 独立 QA（再独立 UAT）；端口约定保留 15010；勿把下一卡片推进到 UAT-033 之后；**UAT-032** 仍被 **UAT-031** 阻塞。
+
+## UAT-033 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat033-dev` -> `uat033-qa` -> `uat033-uat`。
+- 证据：`docs/handoff/artifacts/uat033-dev-report.md`、`docs/handoff/artifacts/uat033-qa-report.md`、`docs/handoff/artifacts/uat033-uat-report.md`。
+- UAT 端口 **15175**（≠15165 QA / ≠15155 DEV；避免 15010/15130/15140/15450；15010 保留）；legacy NFX API+UI 缺汇率说明 PASS；补汇率后恢复；新单 XXX 审批仍 422；Tenant B 未变；fixture finally 清理；QA 残档「full-page PNG 同 MD5」经独立 crop eyeball 关闭。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-033] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**UAT-035**（每日消耗数量及导出筛选仍有三个无可访问名称控件，P2 PRODUCT_FAULT MANUAL_UI；无前置依赖）。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发。
+
+## UAT-035 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat035-dev` -> `uat035-qa` -> `uat035-uat`。
+- 证据：`docs/handoff/artifacts/uat035-dev-report.md`、`docs/handoff/artifacts/uat035-qa-report.md`、`docs/handoff/artifacts/uat035-uat-report.md`。
+- UAT 端口 **15205**（≠15195 QA / ≠15185 DEV；避免 15010/15155/15165/15175/15130/15140/15450；15010 保留）；owner Hans/Hant×1440/390 AXTree 目标 spinbutton+两 combobox 字段描述名 PASS；真实键盘筛选/提交 200 qty=1；既有命名不回归；负向不拿 placeholder/title 计数；Tenant B 未变。
+- 清单：`01-acceptance-checklist.md` 的 [UAT-035] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**UAT018**（BOM极大用量允许保存且无采购餐品显示零成本100%毛利，P2 QUALITY_RISK MANUAL_UI；无前置依赖）。UAT019 依赖 UAT018，暂不派发。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发。
+
+## UAT018 DEV note (2026-10-17 Asia/Shanghai)
+
+- Dev delivered on isolated port **15215**; evidence `docs/handoff/artifacts/uat018-dev-report.md`.
+- Checklist: `[TODO] DEV_DELIVERED` only (not DONE). Independent QA / UAT not run.
+- Next atomic remains **UAT018** until independent QA PASS then UAT PASS.
+- Do not dispatch UAT019 until UAT018 closed.
+
+## UAT018 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat018-dev` -> `uat018-qa` -> `uat018-uat`。
+- 证据：`docs/handoff/artifacts/uat018-dev-report.md`、`docs/handoff/artifacts/uat018-qa-report.md`、`docs/handoff/artifacts/uat018-uat-report.md`。
+- UAT 端口 **15235**（≠15225 QA / ≠15215 DEV；避免 15010/15185/15195/15205/15155/15165/15175/15130/15140/15450；15010 保留）；无采购+极大 BOM 估算标记 PASS；NaN/Inf/负/0 拒绝；已采购正常成本保留；`open_risk_not_adjudicated`（非 B2-6、无静默夹断）；Tenant B 未变。
+- 清单：`01-acceptance-checklist.md` 的 [UAT018] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- **下一原子任务**：**UAT019**（极大售出数量无确认直接扣成巨额负库存，P2 QUALITY_RISK MANUAL_UI；前置依赖 UAT018 已满足）。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发。
+
+## UAT019 DEV note (2026-10-17 Asia/Shanghai)
+- Role: Development only. Independent QA / UAT NOT run.
+- Checklist: `[UAT019]` → `[TODO] DEV_DELIVERED` only (not DONE).
+- Fix: dish daily batch pre-checks expanded BOM vs stock; ordinary → 409 INSUFFICIENT_STOCK; force = allow_negative + override_reason (same contract as SKU consume). Shared helpers in `inventory.py`. UI prompts reason on 409.
+- Negative: no new sale-qty business cap; reverse/already-consumed 409 untouched; extreme finite upper-limit remains open_risk.
+- Next atomic remains **UAT019** until independent QA PASS then UAT PASS.
+- Do not advance ledger past UAT019.
+
+## UAT019 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 裁决：`[DONE] PASS`（2026-10-17）。路径：`uat019-dev` -> `uat019-qa` -> `uat019-uat`。
+- 证据：`docs/handoff/artifacts/uat019-dev-report.md`、`docs/handoff/artifacts/uat019-qa-report.md`、`docs/handoff/artifacts/uat019-uat-report.md`。
+- UAT 端口 **15265**（≠15255 QA / ≠15245 DEV；避免 15010/15215/15225/15235/15185/15195/15205/15155/15165/15175；15010 保留）；普通极大售出 409 无静默负库存 PASS；force+reason 合同 PASS；正常 1→0.5；非法日期/非数不写；重复 request_id 不二扣；无新业务 cap；reverse 409 未放宽；Tenant B 未变。
+- 清单：`01-acceptance-checklist.md` 的 [UAT019] 已从 `[TODO] DEV_DELIVERED` 更新为 `[DONE] PASS`。
+- W4 除 **UAT-032**（前置仍依赖 **UAT-031**，清单仍为 `[TODO] NOT_RUN`，本轮不发明 UAT-031 解阻路径）外其余项已闭环。
+- **下一原子任务**：**ENG-05**（完整根与 Demo 工程门禁重跑，P1 ENGINEERING_GATE / G1；前置 ENG-01..04 已满足）。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿在清单无解阻路径时发明 UAT-031 工作。
+
+## ENG-05 DEV gate FAIL（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- Role: Development / first ENGINEERING_GATE run only（对齐 ENG-04 三相：本阶段止于 DEV 交接，不翻 DONE）。
+- 裁决：`[TODO] FAIL`（非 DONE）。证据：`docs/handoff/artifacts/eng05-dev-report.md`；日志目录 `docs/handoff/artifacts/eng05-dev/logs/`。
+- Root `tests/`：**3 failed / 1288 passed / 1 skipped**，exit 1，469.18s（权威 r2：segno 已装 + 隔离 health URL 15275）。
+- Demo `demo/tests/` 全量（collect 2193，**非 418 子集**）：**35 failed / 2139 passed / 20 skipped**，exit 1，1024.17s。
+- 15010：跑前跑后均为 FREE_RESERVED（本机无常驻基线监听）；临时 15275/15285 已停；`environment/cleanup.json`。
+- Skip 已逐项写明未验证范围（评测语料缺失、opencc、15010 E2E 未起等）；未用 skip 掩盖红项。
+- 清单：`01-acceptance-checklist.md` 的 [ENG-05] 已从 `[TODO] NOT_RUN` 更新为 `[TODO] FAIL`。
+- **下一原子任务仍为 ENG-05**（需先消化报告中的红测或再派独立 QA 复跑确认；在退出码 0 / failures 0 之前不得 DONE）。其后按账本为 **DEP-MODEL** 或 **DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发。
+
+## ENG-05 DEV fix delivered（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 角色：Dev only（修 eng05-dev-report 所列根 3 + Demo 35 红测；未宣称 ENG-05 DONE）。
+- 报告：`docs/handoff/artifacts/eng05-fix-dev-report.md`。
+- 本地定向复跑：原先列出的失败用例均已 PASSED；**未**跑完整根/Demo 全量门禁。
+- 清单：`[ENG-05]` → `[TODO] DEV_DELIVERED`（非 DONE）。
+- **下一原子任务仍为 ENG-05**（独立 QA 全量 `tests/` + 全量 `demo/tests/` 复跑；退出码 0 / failures 0 之前不得 DONE）。其后 **DEP-MODEL** 或 **DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞。
+- 15010：FREE_RESERVED；临时 PW 端口已清理。
+
+## ENG-05 Independent QA FAIL（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 角色：Independent QA（全量根 `tests/` + 全量 `demo/tests/`；未做 UAT；未 git push）。
+- 根：exit 0；**1291 passed, 1 skipped, 0 failed**（444.89s）。
+- Demo：exit 1；**1 failed, 2173 passed, 20 skipped**（1122.70s；collect 2193 + 1 collection skip）。
+- 唯一红测：`demo.tests.test_f1a_flows::test_s3_07_staff_discard_does_not_promise_undo` — Playwright `Page.goto` Timeout 30s 访问 ephemeral `http://127.0.0.1:54307/`（F1a `site` 自启服务），未跑到 discard 文案断言。
+- 报告：`docs/handoff/artifacts/eng05-qa-report.md`。
+- 清单：`[ENG-05]` → `[TODO] FAIL`（非 DONE）。
+- **下一原子任务仍为 ENG-05**（修该红或判定重跑；退出码 0 / failures 0 之前不得 DONE / 不得派独立 UAT）。其后 **DEP-MODEL** 或 **DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞。
+
+## ENG-05 Fix2 DEV_DELIVERED（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 角色：Dev only（修 eng05-qa 残留 1 红：`test_s3_07_staff_discard_does_not_promise_undo` goto 30s；未宣称 ENG-05 DONE）。
+- 根因：F1a `Page.open` 裸 `goto(wait_until=load, 30s)`，全量套件争用下偶发超时；非产品挂死（同 module 前后用例绿）。
+- 修复：`demo/tests/_f1a_support.py` — `Site.ensure_ready` + `domcontentloaded`/60s + 最多 3 次重试 + `.sidebar-nav` attached。
+- 本地复测：staff_discard ×3 PASS；`test_f1a_flows.py` 32/32；`test_f1a_mobile.py` 16/16。
+- 证据：`docs/handoff/artifacts/eng05-fix2-dev-report.md`。
+- 清单：`[ENG-05]` → `[TODO] DEV_DELIVERED`（非 DONE）。
+- **下一原子任务仍为 ENG-05**（独立 QA 全量 `tests/` + 全量 `demo/tests/` 复跑；退出码 0 / failures 0 之前不得 DONE / 不得派独立 UAT）。其后 **DEP-MODEL** 或 **DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞。
+
+
+## ENG-05 Independent QA#2 PASS（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 角色：Independent QA（全量根 `tests/` + 全量 `demo/tests/`；未做 UAT；未 git push；未宣称 DONE）。
+- 根：exit 0；**1291 passed, 1 skipped, 0 failed**（449.44s）。
+- Demo：exit 0；**2175 passed, 19 skipped, 0 failed**（952.41s；collect 2193 + 1 collection skip）。
+- QA#1 红测已绿：`demo.tests.test_f1a_flows::test_s3_07_staff_discard_does_not_promise_undo` PASSED（fix2 harness）。
+- 报告：`docs/handoff/artifacts/eng05-qa2-report.md`。
+- 清单：`[ENG-05]` → `[TODO] DEV_DELIVERED / QA_PASS`（**非 DONE**）。
+- **下一原子任务：ENG-05 独立 UAT 第三次全量复跑**（ENG-04 three-phase）。其后 **DEP-MODEL** 或 **DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞。
+
+## ENG-05 Independent UAT PASS（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- 角色：Independent UAT（第三轮全量；未做开发/QA）。
+- 报告：`docs/handoff/artifacts/eng05-uat-report.md`（副本 `docs/handoff/tickets/eng05-uat-report.md`）。
+- 根 `tests/`：exit 0；**0 failed**，1291 passed，1 skipped（458.58s；junit tests=1292 fail=0 err=0 skip=1）。
+- Demo `demo/tests/` 全量（非 418 子集）：exit 0；**0 failed**，2175 passed，19 skipped（961.71s；collected 2193 +1 collection skip；junit tests=2194 fail=0 err=0 skip=19）。
+- skip 均逐项说明（15010 预留、opencc 缺失、evalsets/`--run-eval` 缺失等）；skip ≠ PASS。
+- 15010：全程 FREE_RESERVED；临时 15515/15525 已停；`environment/cleanup.json`。
+- 清单：`[ENG-05]` → `[DONE] PASS`。
+- **下一原子任务：DEP-MODEL**（G2；随后 DEP-HIDDEN；见 `00-README.md` 顺序）。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿发明 UAT-031。
+
+## DEP-MODEL DEV 交付（2026-10-17 Asia/Shanghai）
+
+- **卡片**：`[DEP-MODEL]` G2 依赖门禁；真实模型 9 scope 首轮实证。
+- **结论**：`DEV_DELIVERED` — 9/9 PASS（真实 job done + original/assertions 对照 + 人工保存/DB + 三组合 UI 证据）。**不得记 DONE PASS**，须独立 QA 复验 9 项。
+- **目录发现限制**：云端克隆无本地 `harness-tmp` 原 UAG scope 目录；9 个 scope_id 由 ENG-02/ENG-03 PARTIAL 遗留模型路径 + 识别合同推断，报告已明示。
+- **凭据**：`openai_rec.env` / `model.env` 已 source；冒烟与在线 job 成功；密钥未入日志。
+- **证据**：`docs/handoff/artifacts/dep-model-dev-report.md`、`dep-model-dev/evidence/summary.json`、`screens/`、`db/receipts-snapshot.json`。
+- **端口**：隔离 15391；**15010 保持空闲预留**。
+- **下一原子任务：DEP-MODEL 独立 QA 复验 9 项**（新端口/新库）；通过后再派独立 UAT 或按 DEPENDENCY_GATE 收口后进 **DEP-HIDDEN**。
+- **UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿发明 UAT-031。
+
+
+## DEP-MODEL QA 复验（2026-10-17 Asia/Shanghai）
+
+- **卡片**：`[DEP-MODEL]` G2 依赖门禁；独立 QA 对 9 scope 真实模型复验。
+- **结论**：`QA_PASS` — 9/9 PASS（新鲜隔离 :15401 + 新库；冒烟 exit 0；original/assertions 对照；人工保存/DB；原三组合 UI）。**不得记 DONE PASS**，须独立 UAT 再复验 9 项。
+- **尝试**：DM-07/DM-08 各 attempts=2（首轮 harness `date` 列名错误 BLOCKED；改 `receipt_date` 后 PASS；非 mock）。
+- **证据**：`docs/handoff/artifacts/dep-model-qa-report.md`、`dep-model-qa/evidence/summary.json`、`screens/`、`db/receipts-snapshot.json`。
+- **端口**：隔离 15401；**15010 保持空闲预留**。
+- **下一原子任务：DEP-MODEL 独立 UAT 复验 9 项**（新端口/新库）；通过后再进 **DEP-HIDDEN**。
+- **UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿发明 UAT-031。
+
+## DEP-MODEL UAT 复验（2026-10-17 Asia/Shanghai）
+
+- **卡片**：`[DEP-MODEL]` G2 依赖门禁；独立 UAT 对 9 scope 真实模型第三次复验（Dev→QA→UAT）。
+- **结果**：UAT_PASS；9/9 PASS on isolate **:15411**（新库）；smoke exit 0；原三组合 UI PASS；含 QA harness `receipt_date` 修复，DM-07/08 无回归。
+- **证据**：`docs/handoff/artifacts/dep-model-uat-report.md`；`docs/handoff/artifacts/dep-model-uat/`。
+- **清单**：DEP-MODEL → `[DONE] PASS`。
+- **下一原子任务：DEP-HIDDEN**。**UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿发明 UAT-031。
+
+## DEP-HIDDEN DEV 实证（2026-10-17 Asia/Shanghai）
+
+- **卡片**：`[DEP-HIDDEN]` G2 依赖门禁；真实 hidden 后台轮询分支。
+- **结论**：`BLOCKED` / **UNVERIFIED** — 9 次尝试（Playwright headed 去 backgrounding 旗标 + 系统 Chrome CDP 切台/确认 minimized + xdotool minimize/切桌面 + `Page.setWebLifecycleState`；`Emulation.setEmulatedVisibilityState` 本机协议不存在）均无法使 `document.hidden===true` 或触发 `visibilitychange`。按卡片要求明示未验；**未**对 `upload.js` 做假修；**未**用 Object.defineProperty 冒充真实 hidden。
+- **原 case 预期（已发现，未能量测）**：S4-19 / `JOB_POLL_INTERVAL_MS=800`；hidden 期间应暂停轮询；可见后按 ~800ms 恢复。产品已有 `pauseWhileHidden`（支持性观察，不作本门禁 PASS）。
+- **证据**：`docs/handoff/artifacts/dep-hidden-dev-report.md`；`dep-hidden-dev/evidence/attempts.json`；`screens/`。
+- **端口**：隔离 15431 已停；**15010 保持空闲预留**。
+- **DONE？**：**否**。账本仍停在 **DEP-HIDDEN**（可派独立 QA 在可触发 Page Visibility 的主机上复探；在未取得真实 hidden 证据前不得 DONE PASS / 不得进 CLOSE-139）。
+- **UAT-032** 仍被 **UAT-031** 阻塞，暂不派发；勿发明 UAT-031。
+
+## CLOSE-139 G3 终审裁决（2026-10-17 Asia/Shanghai，云端 Grok Bot 执行）
+
+- **用户决策 (t15s77)**：`blocked-then-close139` — **DEP-HIDDEN** 保持 **BLOCKED/UNVERIFIED**（9 次真实 hidden 失败）；不得发明 PASS；带着该未验依赖进入 CLOSE-139 并如实留档。
+- **前置**：ENG-05 DONE PASS；DEP-MODEL DONE PASS；DEP-HIDDEN BLOCKED UNVERIFIED（不变）。
+- **交付**：
+  - `docs/handoff/artifacts/close139-report.md`
+  - `docs/handoff/artifacts/close139/close139-matrix.md`（139 行）
+  - `docs/handoff/artifacts/close139/close139-matrix.json`
+  - 副本：`docs/handoff/tickets/close139-report.md`、`docs/handoff/artifacts/close139/close139-report.md`
+- **ID 盘点**：`docs/review-2026-10` 并集 **139** = S1(39)+S2(31)+S3(26)+S4(22)+I18N(14)+B2(7)。
+- **裁决分布（不得当作产品完成率）**：RELATED_PASS_LOCAL_EVIDENCE 29；RELATED_PASS_LEDGER_ONLY 29；UNMAPPED_SUITE_ONLY 58；HISTORICAL_FIXED_CLAIM 7；OPEN_OR_PARTIAL_I18N 7；PARTIAL 5；SPEC_KEEP_PASS 3；BLOCKED_UNVERIFIED 1（S4-19）。
+- **清单**：`[CLOSE-139]` → `[DONE] ADJUDICATED_WITH_DOCUMENTED_BLOCKERS`。**不是**「原 139 目标全部完成」。
+- **明确阻塞 / 缺口（原裁决；见后文修订）**：DEP-HIDDEN/S4-19；UAT-032 未派（UAT-031 本地包缺失 + checklist 漂移）— **后已由 UAT-031/032 闭环修订移除**；PARTIAL 四卡；58 unmapped；ledger-only 无云端包；feedback `item_index` 架构局限；UAT-030 错引以 `04-open-defect-citation-fix-spec.md` 作权威更正留档（原 stage 文件不在本克隆）。
+- **未做**：未将 checklist 中仍为 `NOT_RUN` 的 W1/W2 卡仅凭台账改写为 DONE（避免无包漂绿）；未 git push；未占用 15010。
+- **无用户则不可推进的项（原裁决）**：换主机复验 DEP-HIDDEN；补齐/重跑 UAT-031 证据后再派 UAT-032（**后者已完成，见后文**）；导入原主机 stage 包升级 ledger-only；新开 epic 修 feedback 主键 / 覆盖 58 unmapped。
+- **下一动作（原裁决；见修订节）**：流水线 G3 已收口。若用户要继续产品修复，须显式点名上述阻塞项；调度器默认不再自动派发下一原子。
+
+## UAT-031 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **卡片**：`[UAT-031]` SKU合并没有迁移库存批次，后续FIFO错误暂估 — P1 PRODUCT_FAULT MANUAL_UI。
+- **结果**：独立 UAT **PASS**（Dev 已 DEV_DELIVERED；QA PASS；本轮 UAT PASS）。
+- **隔离**：端口 **15251**（≠15141 QA / ≠15131 DEV）；**15010 保持空闲**；租户 `uat031uat` / `uat031uatb`。
+- **证据**：
+  - `docs/handoff/artifacts/uat031-uat-report.md`
+  - `docs/handoff/artifacts/uat031-uat/`（logs：pytest 11 passed、uat_api_check 10/10、uat_ui_merge PASS、uat_ui_post_verify PASS；ui/ 截图）
+  - 先验：`uat031-dev-report.md`、`uat031-qa-report.md`
+- **清单**：UAT-031 → `[DONE] PASS`（2026-10-17）。
+- **解阻**：**UAT-032** 前置 `["UAT-031"]` 已满足，现可派发。
+- **下一原子任务：UAT-032**（同日餐品二次提交后FIFO弹窗仍显示第一次份数与成本，P2 PRODUCT_FAULT MANUAL_UI）。
+- 未 git push；未占用 15010。
+
+## UAT-032 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **卡片**：`[UAT-032]` 同日餐品二次提交后FIFO弹窗仍显示第一次份数与成本 — P2 PRODUCT_FAULT MANUAL_UI。
+- **结果**：独立 UAT **PASS**（Dev DEV_DELIVERED；QA PASS；本轮 UAT PASS）。
+- **隔离**：端口 **15150**（≠15142 QA / ≠15132 DEV）；**15010 保持空闲**；租户 `uat032uat` / `uat032uatb`。
+- **验收要点**：
+  - 同日 3+2 不同 request_id → response/table/dialog 售出 **5** 份；FIFO 两明细（1.5kg+1kg）累计成本 **HK$25.00**（拒只用表格=5）。
+  - 重放第二 request_id 仍 qty **5**（`replayed=true`）。
+  - 换日不串；Tenant B 库存不变。
+- **证据**：
+  - `docs/handoff/artifacts/uat032-uat-report.md`
+  - `docs/handoff/artifacts/uat032-uat/`（logs：pytest 5 passed、uat_api_check 31/31、uat_ui_fifo PASS；ui/modal-after-second.png）
+  - 先验：`uat032-dev-report.md`、`uat032-qa-report.md`
+- **清单**：UAT-032 → `[DONE] PASS`（2026-10-17）。
+- **W4**：UAT-032 已闭环；W4 除历史已记项外本卡收官。
+- **CLOSE-139 修订提示（已闭合）**：终审时曾将 UAT-032 记为未派/未验阻塞；本卡现已三阶段 PASS。矩阵/报告修订见下节「CLOSE-139 修订」；裁决仍为 ADJUDICATED_WITH_DOCUMENTED_BLOCKERS，未宣称全部完成。
+- **建议下一动作（已执行）**：**CLOSE-139 修订**已落盘（见下节「CLOSE-139 修订」）；UAT-032 已从活跃 blocker 移除；裁决仍为 ADJUDICATED_WITH_DOCUMENTED_BLOCKERS，未宣称 139 全绿。
+- 未 git push；未占用 15010。
+
+## CLOSE-139 修订（UAT-031/032 闭环后，2026-10-17 Asia/Shanghai）
+
+- **触发**：用户 `do-uat031` 后 UAT-031 / UAT-032 均已三阶段 DONE PASS；原 CLOSE-139 曾将 UAT-032 列为活跃 blocker、UAT-031 列为无本地包缺口。
+- **动作（docs-only）**：修订矩阵/报告；**不**把裁决改写成「原 139 目标全部完成」。
+- **交付**：
+  - `docs/handoff/artifacts/close139-amendment-uat031-032.md`
+  - 更新 `docs/handoff/artifacts/close139-report.md`（副本：`artifacts/close139/`、`tickets/`）
+  - 更新 `docs/handoff/artifacts/close139/close139-matrix.md` + `.json`（B2-2 补充 UAT-032 交叉引用；**verdict_counts 不变**）
+  - 更新 `01-acceptance-checklist.md` `[CLOSE-139]` 说明（状态仍为 `ADJUDICATED_WITH_DOCUMENTED_BLOCKERS`）
+- **仍活跃 / 诚实缺口**：DEP-HIDDEN/S4-19 BLOCKED_UNVERIFIED；PARTIAL 已清（UAT-016/ENG-02/ENG-03/UAT-014 均于同日转 PASS）；58 unmapped；其余 ledger-only 无云端包；feedback item_index；UAT-030 错引规格留档。
+- **下一动作**：G3 裁决仍收口于 documented blockers。调度器默认**不再**自动派发下一原子。若用户要继续，须显式点名（例：换主机复验 DEP-HIDDEN、导入 ledger-only 包、新开 unmapped/PARTIAL epic）。勿宣称原目标全部完成。
+- 未 git push；未占用 15010。
+
+## PARTIAL 续办：triage + ENG-02 三段闭环（2026-10-17）
+- Triage: `artifacts/partials-triage.md`（顺序 ENG-02, ENG-03, UAT-014, UAT-016, 然后 ledger-only ENG-01, UAT-004/011/015, UAT-001/005/008/009/028/029/030/034）。
+- ENG-02: Dev :15421 / QA :15431 / UAT :15441 各自全新 DB，真实模型路径（无 route mock）AC1-3 全 PASS；mocked pytest 3 passed 仅作支撑回归。报告 `artifacts/eng02-{dev,qa,uat}-report.md`。清单转 `[DONE] PASS`。
+- 15010 FREE_RESERVED；无 git push；三端口均已停止。
+- **下一原子任务：ENG-03**（手工模式预填徽章，真实 AI 预填徽章需真实模型）。
+
+## ENG-03 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **卡片**：`[ENG-03]` 手工模式预填徽章旧断言 — P1 ENGINEERING_GATE MANUAL_COMMAND。
+- **结果**：独立 UAT **PASS**（Dev DEV_DELIVERED :15438；QA PASS :15448；本轮 UAT PASS :15458）。真实模型路径，无 route mock / 无假 syncReviewSourceBadge 冒称 AC3。
+- **验收要点**：
+  - AC1：手工模式 `#aiPrefillNoticeBadge` 隐藏；手工徽章「手工录入」可见。
+  - AC2：真实人工填写 Vendor_A / total 80 保存 HTTP 200；保存后 AI 徽章仍隐藏；doc_form=manual_entry。
+  - AC3：真实上传 job `fb01d922917a4226a515d0e8fb4b1093` -> done；继续复核后 AI 徽章「AI 预填，待核对」可见；supplier 7-Eleven；doc_form=printed_delivery_note。
+- **证据**：
+  - `docs/handoff/artifacts/eng03-uat-report.md`
+  - `docs/handoff/artifacts/eng03-uat/`（real-probe.json，screens，pytest 1 passed）
+  - 先验：`eng03-dev-report.md`、`eng03-qa-report.md`
+- **清单**：ENG-03 → `[DONE] PASS`（2026-10-17）。PARTIAL 残余（模型路径未验）已清除。
+- **15010** FREE_RESERVED；无 git push；端口 15458 已停。
+- **下一原子任务：UAT-014**（已于同日闭环，见下方 UAT-014 三阶段条目；现下一卡为 UAT-016）。
+
+## UAT-014 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **卡片**：`[UAT-014]` 记忆恢复、一致性与安全事件没有可达UI — P2 SPEC_CONFLICT / SPEC_DECISION（D0 SPEC_KEEP）。
+- **结果**：独立 UAT **PASS**（Dev DEV_DELIVERED :15439；QA PASS :15449；本轮 UAT PASS :15459）。无产品代码改动；DEFAULT_ORIGINAL / SPEC_KEEP。
+- **验收要点**：
+  - AC1：SPEC_DECISION = DEFAULT_ORIGINAL；原 canonical S2-19/S2-11；派生 UI 未宣称完成。
+  - AC2：live `record_llm_call` → `llm_call_log` HKID/电话/内地证/key 脱敏；`plaintext_leak_count=0`；仅见 `[HKID_MASKED]` / `****67` / `110101********2345` / `sk-***`。
+  - AC3：无新记忆恢复/一致性/安全事件 UI（`forbidden_ui_hits=[]`）；Tenant B `uat014uatb` HTTP 200 空且 llm_call_log=0。
+  - 回归：S2-19 x3 + S2-11 x2 = 5 passed。
+- **证据**：
+  - `docs/handoff/artifacts/uat014-uat-report.md`
+  - `docs/handoff/artifacts/uat014-uat/`（hkid-live-probe / db-llm-call-log / no-new-ui / tenant-b）
+  - 先验：`uat014-dev-report.md`、`uat014-qa-report.md`
+- **清单**：UAT-014 → `[DONE] PASS`（2026-10-17）。PARTIAL 残余（D0 SPEC_KEEP 未运行）已清除。
+- **15010** FREE_RESERVED；无 git push；端口 15459 已停。
+- **下一原子任务：UAT-016**（已于同日闭环，见下方 UAT-016 三阶段条目；现下一卡为 ENG-01）。
+
+## UAT-016 三阶段闭环（2026-10-17 Asia/Shanghai，云端 Grok Bot 调度）
+
+- **卡片**：`[UAT-016]` 当前UAT Spec硬删边界与原计划owner回收策略不一致 — P2 SPEC_CONFLICT / SPEC_DECISION（D0 SPEC_KEEP）。
+- **结果**：独立 UAT **PASS**（Dev DEV_DELIVERED :15469；QA PASS :15489；本轮 UAT PASS :15509 / F1B :15519）。无产品代码改动；DEFAULT_ORIGINAL / SPEC_KEEP。
+- **验收要点**：
+  - AC1：SPEC_DECISION = DEFAULT_ORIGINAL；原 canonical S1-P1-12 / api-conventions admin trash 移除；派生 admin-only hard-delete 未宣称完成。
+  - AC2：live owner recycle/restore/purge；staff trash list 403；跨 tenant restore/purge 404；`/api/admin/trash` 404；approved discard 409 `CANNOT_DISCARD_APPROVED`。
+  - AC3：无新 admin trash UI/API（`admin_trash_hits=[]`；`admin_trash_router_absent=true`）。
+  - Browser：`#trashCard` list → restore → purge（`uiConfirm`）；staff 隐藏。
+  - Tenant B：A purge 后 B trash 仍含 discarded id 2。
+  - 回归：S1-P1-12/13 x5 + S3-07 x3 + f1b trash x2 = 10 passed。
+- **证据**：
+  - `docs/handoff/artifacts/uat016-uat-report.md`
+  - `docs/handoff/artifacts/uat016-uat/`（trash-live-probe / trash-browser-probe / spec-keep；ui 01-04）
+  - 先验：`uat016-dev-report.md`、`uat016-qa-report.md`
+- **清单**：UAT-016 → `[DONE] PASS`（2026-10-17）。PARTIAL 残余（D0 SPEC_KEEP 未运行）已清除。
+- **15010** FREE_RESERVED；无 git push；端口 15509/15519 已停。
+- **下一原子任务：ENG-01**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，pytest isolate 复验）。
+
+### ENG-01 local DEV packet (2026-10-17 19:19 CST)
+- Re-verify only; checklist stays `[DONE] PASS` with note `local DEV packet … pending QA/UAT`.
+- Isolate :15451 health ok; precise node `test_qa_live_service_port_15010_healthy` PASSED; negatives (no-config / forbid-15010 / non-200 / timeout) each FAILED exit 1.
+- Literal audit PASS (no probe-target 15010). Evidence: `artifacts/eng01-dev-report.md` + `artifacts/eng01-dev/`.
+- 15010 FREE_RESERVED; no git push; no product edits.
+- Next: independent QA then UAT local packets.
+
+### ENG-01 local QA packet (2026-10-17 19:22 CST)
+- Independent QA re-verify; checklist stayed `[DONE] PASS` with note pending UAT.
+- Isolate :15461 health ok; precise node PASSED; four negatives FAILED exit 1 (no skip).
+- Literal audit PASS. Evidence: `artifacts/eng01-qa-report.md` + `artifacts/eng01-qa/`.
+- 15010 FREE_RESERVED; no git; no product edits.
+- Next: independent UAT local packet.
+
+### ENG-01 local UAT packet (2026-10-17 19:24 CST)
+- Independent UAT re-verify; checklist remains `[DONE] PASS` — local DEV/QA/UAT packets complete.
+- Isolate :15471 (≠15451 ≠15461) health ok; precise node `test_qa_live_service_port_15010_healthy` PASSED; negatives (no-config / forbid-15010 / non-200 / timeout) each FAILED exit 1 (no skip).
+- Literal audit PASS (0 host:15010 probe URLs). Evidence: `artifacts/eng01-uat-report.md` + `artifacts/eng01-uat/`.
+- 15010 FREE_RESERVED; no git push; no product edits.
+- **下一原子任务：UAT-004**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，复验补证据）。
+
+### UAT-004 local UAT packet (2026-10-17 19:31 CST)
+- Independent UAT re-verify; checklist remains `[DONE] PASS` — local DEV/QA/UAT packets complete.
+- Isolate :15481 (≠15461 ≠15471); API probe 10/10 PASS; browser name-only save 3/3 PASS; S1-P0-05 1 passed; no product edits.
+- Evidence: `artifacts/uat004-uat-report.md` + `artifacts/uat004-uat/`.
+- 15010 FREE_RESERVED; no git push.
+- **UAT-011** local DEV+QA packets landed 2026-10-17 (`uat011-dev-report.md`, `uat011-qa-report.md`, both PASS); UAT local still pending. Next per triage after UAT-011 UAT: **UAT-015**.
+- **上一原子任务完成：UAT-011 DEV re-verify**（ledger DONE PASS 保持；本机补 DEV 证据包）。
+
+### UAT-011 local QA packet (2026-10-17 19:36 CST)
+- Independent QA re-verify PASS on isolate :15511 (≠ DEV 15471); 15010 FREE_RESERVED; no product edit; no git.
+- Evidence: `docs/handoff/artifacts/uat011-qa-report.md`, folder `uat011-qa/` (gt-single-click 10/10, static ALL_PASS).
+- Checklist kept `[DONE] PASS`; annotated local DEV+QA packets; UAT local still pending (No UAT this stage).
+
+### UAT-011 local UAT packet (2026-10-17 19:37 CST)
+- Independent UAT re-verify; checklist remains `[DONE] PASS` — local DEV/QA/UAT packets complete.
+- Isolate :15611 (≠ DEV 15471, ≠ QA 15511); gt-single-click 10/10 PASS; static ALL_PASS; no product edits.
+- Evidence: `artifacts/uat011-uat-report.md` + `artifacts/uat011-uat/`.
+- 15010 FREE_RESERVED; no git push.
+- **下一原子任务：UAT-015**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，复验补证据）。
+
+### 2026-10-17 — UAT-015 local DEV re-verify packet
+- **触发**：continue-partials triage → UAT-015（ledger DONE PASS，无本地包）。
+- **结论**：`DEV_REVERIFY_PASS` — isolate :15491；pytest `test_uat_015_currency_payables.py` 4 passed；live API probe 18/18；UI probe 4/4（HK$500 + 原币 S$100；legacy 汇率未知不硬标 HKD）；static contract ALL_PASS。**产品无改动**。账本保持 `[DONE] PASS`。
+- **证据**：`docs/handoff/artifacts/uat015-dev-report.md`；`uat015-dev/`；shared scripts `uat015-shared/`。
+- **未做**：独立 QA / UAT 本地包（本阶段仅 DEV）。15010 FREE_RESERVED；无 git push。
+- **下一原子任务：UAT-015 QA**（独立复验补包），然后 UAT；其后 triage 下一项 UAT-001。
+
+### UAT-015 local QA packet (2026-10-17 19:42 CST)
+- Independent QA re-verify PASS on isolate :15521 (≠ DEV 15491); 15010 FREE_RESERVED; no product edit; no git.
+- Evidence: `docs/handoff/artifacts/uat015-qa-report.md`, folder `uat015-qa/` (pytest 4/4, API 18/18, UI 4/4, static ALL_PASS).
+- Checklist kept `[DONE] PASS`; annotated local DEV+QA packets; UAT local still pending (No UAT this stage).
+- **下一原子任务：UAT-015 UAT**（独立复验补包）；其后 triage 下一项 UAT-001。
+
+### UAT-015 local UAT packet (2026-10-17 19:43 CST)
+- Independent UAT re-verify; checklist remains `[DONE] PASS` — local DEV/QA/UAT packets complete.
+- Isolate :15651 (≠ DEV 15491, ≠ QA 15521); pytest 4/4; API probe 18/18; UI probe 4/4; static ALL_PASS; no product edits.
+- Evidence: `artifacts/uat015-uat-report.md` + `artifacts/uat015-uat/`.
+- 15010 FREE_RESERVED; no git push.
+- **下一原子任务：UAT-001**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，复验补证据）。
+
+### 2026-10-17 — UAT-001 local DEV re-verify packet
+- **触发**：continue-partials triage → UAT-001（ledger DONE PASS，本地包补齐）。
+- **结论**：`DEV_REVERIFY_PASS` — isolate :15493；pytest `test_uat_001_edited_receipt_has_original_image.py` 5 passed；live API probe 10/10；UI probe 8/8；static ALL_PASS。**产品无改动**。
+- **证据**：`docs/handoff/artifacts/uat001-dev-report.md`；`uat001-dev/`；shared `uat001-shared/`。
+- **未做**：独立 QA / UAT（本阶段仅 DEV）。15010 FREE_RESERVED；无 git push。
+- **下一原子任务：UAT-001 QA**（独立复验补包），然后 UAT；其后 triage 下一项 UAT-005。
+
+### UAT-001 local QA packet (2026-10-17 19:48 CST)
+- Independent QA re-verify PASS on isolate :15503 (≠ DEV 15493); 15010 FREE_RESERVED; no product edit; no git.
+- Evidence: `docs/handoff/artifacts/uat001-qa-report.md`, folder `uat001-qa/` (pytest 5/5, API 10/10, UI 8/8, static ALL_PASS).
+- Checklist remained `[TODO] DEV_DELIVERED` pending UAT (No DONE this stage).
+- **下一原子任务：UAT-001 UAT**（独立复验补包）；其后 triage 下一项 UAT-005。
+
+### UAT-001 local UAT packet (2026-10-17 19:49 CST)
+- Independent UAT re-verify **PASS** — checklist promoted to `[DONE] PASS` (2026-10-17); local DEV/QA/UAT packets complete.
+- Isolate :15513 (≠ DEV 15493, ≠ QA 15503); pytest 5/5; API probe 10/10; UI probe 8/8; static ALL_PASS; no product edits.
+- Evidence: `artifacts/uat001-uat-report.md` + `artifacts/uat001-uat/`.
+- 15010 FREE_RESERVED; no git push.
+- **下一原子任务：UAT-005**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，复验补证据）。
+
+## UAT-005 本地 DEV 证据包（2026-10-17）
+
+- 角色：Development re-verify only（未跑独立 QA/UAT）
+- 隔离端口 15495；pytest 10 passed；API 17/17；UI 10/10；static ALL_PASS
+- 产物：`docs/handoff/artifacts/uat005-dev-report.md` + `uat005-dev/` + `uat005-shared/`
+- checklist：`[TODO] DEV_DELIVERED`（ledger 既往 PASS；QA/UAT 本地包仍待）
+- 产品改动：无；15010 FREE_RESERVED；无 git push
+
+## UAT-005 本地 QA 证据包（2026-10-17）
+
+- 独立 QA 复验 PASS（port 15505 ≠ DEV 15495）；产物 `artifacts/uat005-qa-report.md`、`artifacts/uat005-qa/`。
+- 未改产品代码；未标 DONE；未开 UAT。15010 FREE_RESERVED；无 git。
+- 下一原子任务：已完成 → 见下方 UAT-005 local UAT packet。
+
+### UAT-005 local UAT packet (2026-10-17 19:55 CST)
+- Independent UAT re-verify **PASS** — checklist promoted to `[DONE] PASS` (2026-10-17); local DEV/QA/UAT packets complete.
+- Isolate :15515 (≠ DEV 15495, ≠ QA 15505); pytest 10/10; API probe 17/17; UI probe 10/10; static ALL_PASS; no product edits.
+- Evidence: `artifacts/uat005-uat-report.md` + `artifacts/uat005-uat/`.
+- 15010 FREE_RESERVED; no git push.
+- **下一原子任务：UAT-008**（按 `artifacts/partials-triage.md` 顺序；ledger-only 无本地包，复验补证据）。
+
+## USAGE STOP / 下一环境交接（2026-10-17 19:58 Asia/Shanghai）
+
+- **触发**：用户确认 usage 已到；按指令停止全部任务；交接文档刷新。
+- **已停止**：所有 Subagent（含 UAT-008 Dev 中断，无完整 DEV 报告）。
+- **handoff 文档**：已重写 `00-README.md`、`05-cloud-handoff-prompt.md`；新增 `06-usage-stop-handoff.md`。
+- **下一原子任务：UAT-008**（其后 UAT-009 → UAT-028 → UAT-029）。DEP-HIDDEN 仍 BLOCKED。
+- **注意**：`docs/handoff/artifacts` 含误落盘 venv/node_modules/*.db（约 3GB），commit/push 前必须清理。本条目写入时 commit/push 可能尚未完成。

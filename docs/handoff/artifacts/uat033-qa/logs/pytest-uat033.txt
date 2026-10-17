@@ -1,0 +1,140 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat025-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview/demo
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 4 items
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored PASSED [ 25%]
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_only_legacy_nfx_empty_month_still_surfaces_count PASSED [ 50%]
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_ui_source_uses_unconverted_fields_not_blind_count_only PASSED [ 75%]
+tests/test_b2_cost_report.py::test_unconverted_currency_is_listed_not_summed PASSED [100%]
+
+=============================== warnings summary ===============================
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py: 12 warnings
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/uat025-qa/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/services/rag.py:24: DeprecationWarning: `langchain-community` is being sunset and is no longer actively maintained. See https://github.com/langchain-ai/langchain-community/issues/674 for details and migration guidance toward standalone integration packages.
+    from langchain_community.vectorstores import Chroma
+
+tests/test_uat_033_cost_report_missing_fx_notice.py::test_legacy_nfx_excluded_with_count_and_warning_then_restored
+  /workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+    _vs_tenant[tid] = Chroma(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 4 passed, 26 warnings in 1.54s ========================

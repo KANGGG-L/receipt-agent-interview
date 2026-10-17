@@ -1,0 +1,14 @@
+{
+  "stage": "saas-consistency-uat",
+  "port": 15030,
+  "pid": 53856,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-consistency-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15030_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15030 for SAAS-CONSISTENCY independent UAT; avoided 15020/15410/15150-15800; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:02 Asia/Shanghai (CST)",
+  "notes": "Independent UAT only; no git/checklist. MANUAL_UI screenshots+measurements."
+}

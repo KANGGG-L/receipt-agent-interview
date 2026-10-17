@@ -888,6 +888,17 @@ function exportColAlignClass(h) {
     return '';
 }
 
+// UAT-023：业务身份列（品名/供应商/部门名等）与 CSV 行数据同口径——后端原样输出、
+// 预览不得被 OpenCC 改字形。表头仍走 DOM 翻译；UI chrome 不全局关繁体。
+function isExportBusinessIdentityHeader(h) {
+    if (!h) return false;
+    // 部门身份列：部门 / 部门名称 / 归属部门 等（UAT-023 fix2：旧谓词漏掉「归属部门」）
+    return h.includes('品名') || h.includes('名称') || h.includes('说明')
+        || h.includes('备注') || h.includes('配方') || h.includes('建议')
+        || h.includes('供应商') || h.includes('往来')
+        || h.includes('部门') || h === '销售对象';
+}
+
 // 行 HTML 构建（预览渲染 / 虚拟滚动窗口 / 打印全量 三处共用，保证口径一致）
 function buildExportRowsHtml(rows, headers) {
     let html = '';
@@ -898,6 +909,7 @@ function buildExportRowsHtml(rows, headers) {
             const alignClass = exportColAlignClass(h);
             const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
             const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
+            const preserveBiz = isExportBusinessIdentityHeader(h);
 
             // 特殊样式高亮（统一为胶囊徽标）
             // 已知债（A5，本次不修）：徽标判定靠单元格文本子串猜测（'异常'/'正常'…），
@@ -913,7 +925,8 @@ function buildExportRowsHtml(rows, headers) {
                 cellContent = `<span class="badge badge-success">${cellContent}</span>`;
             }
 
-            html += `<td class="${alignClass} ${wrapClass}">${cellContent}</td>`;
+            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+            html += `<td class="${alignClass} ${wrapClass}"${skipAttr}>${cellContent}</td>`;
         });
         html += '</tr>';
     });

@@ -1,0 +1,39 @@
+PASS unit fmtMoney 1234.5 zh-Hans — HK$1,234.50
+PASS unit fmtMoney 0 zh-Hans — HK$0.00
+PASS unit fmtMoney null zh-Hans — —
+PASS unit fmtMoney SGD not HK$ zh-Hans — SGD 1,234.50
+PASS unit formatCurrency SGD not HK$ zh-Hans — S$ 1234.50
+PASS unit fmtMoney 1234.5 zh-Hant-HK — HK$1,234.50
+PASS unit fmtMoney 0 zh-Hant-HK — HK$0.00
+PASS unit fmtMoney null zh-Hant-HK — —
+PASS unit fmtMoney SGD not HK$ zh-Hant-HK — SGD 1,234.50
+PASS unit formatCurrency SGD not HK$ zh-Hant-HK — S$ 1234.50
+PASS hans list UAT027_SynthHi visible — UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情
+                        更多 ▾
+PASS hans list Hi = HK$1,234.50 — UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情
+                        更多 ▾
+PASS hans list Zero = HK$0.00 — UAT027_SynthZero | 食材 | 6 kg | 6.000 kg | 1 kg | HK$0.00 | 详情
+                        更多 ▾
+PASS hans list Null = — — UAT027_SynthNull | 食材 | 3 kg | 3.000 kg | 1 kg | — | 详情
+                        更多 ▾
+PASS hans list no bare $1234 without HK — UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 详情
+                        更多 ▾
+PASS hans open SynthHi detail
+PASS hans detail has HK$1,234.50 — HK$1,234.50,HK$0.00,HK$0.00	Vendor_B	-	,HK$1,234.50	Vendor_A	-	,HK$2,469.00	Vendor_A	-	
+PASS hans price-history control — 版本历史
+PASS hans PH metrics/history show HK$1,234.50 — [object Object]
+PASS hans PH no bare $toFixed without HK prefix on 1234.5
+PASS hans ledger uses HK$ grouping if amounts painted — HK$1,234.50,HK$0.00,HK$0.00	Vendor_B	-	,HK$1,234.50	Vendor_A	-	,HK$2,469.00	Vendor_A	-	
+PASS hant list Hi = HK$1,234.50 — UAT027_SynthHi | 食材 | 13 kg | 13.000 kg | 1 kg | HK$1,234.50 | 詳情
+                        更多 ▾
+PASS hant list Zero = HK$0.00 — UAT027_SynthZero | 食材 | 6 kg | 6.000 kg | 1 kg | HK$0.00 | 詳情
+                        更多 ▾
+PASS hant list Null = — — UAT027_SynthNull | 食材 | 3 kg | 3.000 kg | 1 kg | — | 詳情
+                        更多 ▾
+PASS hant PH metrics show HK$1,234.50
+PASS ai cards surface (optional live) — no anomaly card in fixture; static harness covers I18N.fmtMoney on AI paths
+PASS finance formatCurrency SGD not forced HKD — S$ 1234.50
+PASS payables API shape intact (FX fields contract) — {"currency":"HKD","n":0,"basis":"只算已入账的赊单，已付的金额已扣除；外币单据按入账时的汇率折成港币"}
+
+28 PASS /
+28 PASS / 0 FAIL

@@ -1,0 +1,113 @@
+{
+  "uatGate": "PASS",
+  "acceptance": {
+    "totalsAndRange": true,
+    "lastItemArchive": true,
+    "lastItemQueue": true,
+    "noLost": true,
+    "todo635": true,
+    "emptyStatesArchive": true,
+    "emptyStatesQueue": true,
+    "crossPageArchive": true,
+    "crossPageQueue": true,
+    "domCapped": true,
+    "pageSize50": true,
+    "uxChromeDistinct": true
+  },
+  "budgetResults": [
+    {
+      "name": "archiveDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "archiveRenderPage1Ms",
+      "actual": 80,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "archivePageNextMs",
+      "actual": 9,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "archiveGotoLastMs",
+      "actual": 4,
+      "max": 150,
+      "pass": true
+    },
+    {
+      "name": "archiveSearchMs",
+      "actual": 6,
+      "max": 250,
+      "pass": true
+    },
+    {
+      "name": "queueDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "queueRenderPage1Ms",
+      "actual": 4,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "queuePageNextMs",
+      "actual": 3,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "queueGotoLastMs",
+      "actual": 2,
+      "max": 150,
+      "pass": true
+    }
+  ],
+  "chromeDistinct": {
+    "archiveVsQueuePage1Md5Differ": true,
+    "pagerShotsDiffer": true,
+    "archivePaginationVisible": true,
+    "queuePaginationVisible": true,
+    "badgeCopyDistinct": true,
+    "pagerDataAttrsDistinct": true,
+    "eyeballGate": "PASS"
+  },
+  "shotMd5": {
+    "archivePage1": "d800b4efd4f4b511270449165962a7a2",
+    "archiveChrome": "d4f140cf89b4a03febd44426d7e9afbf",
+    "queuePage1": "03e015ae418ff114422e9ab714206944",
+    "queueChrome": "14fc9c57da2a4d80a8083151defb535b"
+  },
+  "timings": {
+    "archiveRenderPage1Ms": 80,
+    "archivePageNextMs": 9,
+    "archiveGotoLastMs": 4,
+    "archiveSearchMs": 6,
+    "queueRenderPage1Ms": 4,
+    "queuePageNextMs": 3,
+    "queueGotoLastMs": 2
+  },
+  "archiveDom": {
+    "badge": "共 670 条记录",
+    "range": "显示 1–50",
+    "pageLabel": "1 / 14",
+    "rows": 50,
+    "total": 670,
+    "lastId": "900001"
+  },
+  "queueDom": {
+    "badge": "共 635 条",
+    "range": "显示 1–50",
+    "pageLabel": "1 / 13",
+    "rows": 50,
+    "total": 635,
+    "lastId": "900635"
+  }
+}

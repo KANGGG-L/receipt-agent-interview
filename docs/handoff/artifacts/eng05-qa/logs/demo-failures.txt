@@ -1,0 +1,81 @@
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_does_not_clear_matched_sku_on_name_mismatch PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_rematches_when_pointed_sku_missing PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_upsert_protect_live_target_blocks_repoint PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_upsert_protect_allows_repoint_when_old_target_dead PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_passes_protect_flag_only_when_sku_created PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_delegates_matching_to_receipt_utils PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_does_not_flip_alias_when_matcher_misses PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_rematches_unconfirmed_pointer_to_unrelated_sku PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_approve_consistency.py::test_approve_keeps_unconfirmed_pointer_when_name_matches PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_reports_clean_with_counts PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_reports_pollution_with_specific_fields PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_surfaces_script_output_not_hardcoded PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_has_no_rewritten_check_sql PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_and_cli_loader_point_to_the_same_script PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_only_admin_can_read PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_check_failure_returns_error_envelope PASSED [ 99%]
+demo/tests/test_vendor_sku_alias_consistency_api.py::test_endpoint_is_read_only PASSED [ 99%]
+demo/tests/test_w1_alias_timing.py::test_w1_first_order_registers_alias_after_reorder PASSED [ 99%]
+demo/tests/test_w1_alias_timing.py::test_w2_second_approve_blocked_alias_unchanged PASSED [ 99%]
+demo/tests/test_w1_alias_timing.py::test_w3_no_vendor_name_no_archive_no_alias PASSED [ 99%]
+demo/tests/test_w1_alias_timing.py::test_w4_apply_direct_without_archive_still_no_supplier PASSED [100%]
+
+=================================== FAILURES ===================================
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+    Call log:
+      - navigating to "http://127.0.0.1:54307/", waiting until "load"
+/workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/lib/python3.13/site-packages/playwright/_impl/_connection.py:636: playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+=============================== warnings summary ===============================
+demo/app/main.py:78
+  /workspace/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+docs/handoff/artifacts/eng05-qa/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: 12 warnings
+  /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/lib/python3.13/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+demo/app/main.py:85
+  /workspace/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:92
+  /workspace/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:98
+  /workspace/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+demo/app/main.py:118
+  /workspace/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")

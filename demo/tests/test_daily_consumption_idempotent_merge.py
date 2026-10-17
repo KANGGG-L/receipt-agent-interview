@@ -99,9 +99,9 @@ def test_daily_consumption_second_submit_merges():
     # 库存只按增量扣减一次（4 份 * 0.5kg = 2kg）
     assert round(db.get_sku(sku).current_stock, 4) == 93.0
 
-    # 台账合并：单一记录、份数与成本累加、明细追挂
+    # 台账合并：单一记录、份数与成本累加、明细追挂（UAT-021：成本字段需 owner）
     day = client.get("/api/dishes/daily_consumption?date=2026-04-02",
-                     headers=_staff_headers()).json()["data"]
+                     headers=_owner_headers()).json()["data"]
     assert len(day["consumptions"]) == 1
     cons = day["consumptions"][0]
     assert cons["id"] == first_id

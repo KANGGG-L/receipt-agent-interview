@@ -1,0 +1,12 @@
+PASS showErrorCard_available {"available": true}
+PASS ui_card_EMPTY_FILE {"title": "文件内容为空", "badge": "文件无效", "heading": "上传的文件是空的，无法识别", "expect_title": "文件内容为空", "expect_badge": "文件无效"}
+PASS ui_card_INVALID_IMAGE {"title": "图片文件已损坏", "badge": "图片损坏", "heading": "这张照片打不开，可能文件已损坏", "expect_title": "图片文件已损坏", "expect_badge": "图片损坏"}
+PASS ui_card_UNSUPPORTED_IMAGE_FORMAT {"title": "文件格式不支持", "badge": "格式不支持", "heading": "这种文件格式不支持", "expect_title": "文件格式不支持", "expect_badge": "格式不支持"}
+PASS ui_card_FILE_TOO_LARGE {"title": "文件过大", "badge": "超出大小限制", "heading": "文件大小超过限制，无法上传", "expect_title": "文件过大", "expect_badge": "超出大小限制"}
+PASS ui_card_ENGINE_TIMEOUT_not_file_issue {"title": "自动识别现在比较忙", "badge": "不是照片的问题", "heading": "自动识别现在很忙，这张单还没读完"}
+PASS ui_upload_empty_png {"upload_resps": [{"status": 400, "body": {"status": "error", "code": "EMPTY_FILE", "msg": "上传的文件是空的，请重新选择有内容的照片再上传。"}, "url": "http://127.0.0.1:15495/api/upload?treatment=true&async=true&force=false"}], "title": "文件内容为空", "code": "EMPTY_FILE"}
+PASS ui_upload_malformed_png {"upload_resps": [{"status": 400, "body": {"status": "error", "code": "INVALID_IMAGE", "msg": "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。"}, "url": "http://127.0.0.1:15495/api/upload?treatment=true&async=true&force=false"}], "title": "图片文件已损坏", "code": "INVALID_IMAGE"}
+PASS ui_upload_wrong_type {"upload_resps": [{"status": 400, "body": {"status": "error", "code": "UNSUPPORTED_IMAGE_FORMAT", "msg": "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。"}, "url": "http://127.0.0.1:15495/api/upload?treatment=true&async=true&force=false"}], "title": "文件格式不支持", "code": "UNSUPPORTED_IMAGE_FORMAT"}
+PASS screenshots_distinct {"count": 8, "unique": 8}
+VERDICT PASS 10/10
+ui_probe_exit=0

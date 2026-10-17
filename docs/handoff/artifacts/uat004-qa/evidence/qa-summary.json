@@ -1,0 +1,17 @@
+{
+  "card": "UAT-004",
+  "phase": "QA",
+  "port": 15471,
+  "dev_port": 15461,
+  "api_verdict": "PASS",
+  "api_failures": [],
+  "api_steps_pass": 10,
+  "api_steps_total": 10,
+  "ui_verdict": "PASS",
+  "ui_steps_pass": 3,
+  "ui_steps_total": 3,
+  "regression_s1_p0_05": "1 passed",
+  "product_edits": "none",
+  "verdict": "PASS",
+  "ts": "2026-10-17 19:29:23 CST"
+}

@@ -1,0 +1,24 @@
+/workspace/receipt-agent-interview/demo/tests/test_analytics_historical_canary_and_ab.py:2:"""AI 效果观测与评测中心：历史灰度测试与 A/B 实验深度数据观测测试。
+/workspace/receipt-agent-interview/demo/tests/test_analytics_historical_canary_and_ab.py:41:_SYNTHETIC_EXP_NAME = "ENG04_Synthetic_Experiment"
+/workspace/receipt-agent-interview/demo/tests/test_analytics_historical_canary_and_ab.py:44:def _ensure_synthetic_experiment():
+/workspace/receipt-agent-interview/demo/tests/test_analytics_historical_canary_and_ab.py:115:    target_exp_id = _ensure_synthetic_experiment()
+/workspace/receipt-agent-interview/demo/tests/test_analytics_historical_canary_and_ab.py:145:    target_id = _ensure_synthetic_experiment()
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:3:管理端导航与 AI 效果观测与评测中心单页大盘端到端 (E2E) 测试套件
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:11:    - 观测中心入口 #analyticsBoardBtn 可见且包含 "观测中心"（现行 data-i18n=nav.analytics；旧称「AI 效果观测与评测中心」已废弃）
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:18:Phase 2: AI 效果观测与评测中心四大独立功能区 (Segmented Control) 统一渲染
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:198:            # 验证 #analyticsBoardBtn 可见且包含现行标题「观测中心」（ENG-04：旧标题「AI 效果观测与评测中心」已废弃）
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:202:            assert "观测中心" in analytics_btn_text, (
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:203:                f"Expected '观测中心' in #analyticsBoardBtn, got '{analytics_btn_text}'"
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:205:            assert "AI 效果观测与评测中心" not in analytics_btn_text, (
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:206:                f"Stale title 'AI 效果观测与评测中心' must not appear in #analyticsBoardBtn, got '{analytics_btn_text}'"
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:270:            # Phase 2: AI 效果观测与评测中心四大独立功能区 (Segmented Subviews)
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:272:            print("\n[Phase 2] 校验 AI 效果观测与评测中心四大独立功能区 (Segmented Control)...")
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:275:            # 点击观测中心入口，随后业务观测链路必须真实执行（等待埋点 DOM 非「加载中」）
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:297:                    return !dist.innerText.includes('加载中') &&
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:298:                           !rec.innerText.includes('加载中');
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:306:            assert "加载中" not in dist_text, "telemetry event dist still loading after analytics nav"
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:307:            assert "加载中" not in rec_text, "telemetry recovery still loading after analytics nav"
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:346:                    return grey && !grey.innerText.includes('加载中');
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:378:                    return !ab.innerText.includes('加载中') && pval.children.length > 0;
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:408:                    return !golden.innerText.includes('加载中') && !gt.innerText.includes('加载中');
+/workspace/receipt-agent-interview/demo/tests/test_admin_tabs_consolidation_e2e.py:644:        sys.exit(5)

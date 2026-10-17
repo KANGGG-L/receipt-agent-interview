@@ -1,0 +1,68 @@
+{
+  "390": {
+    "inv": {
+      "tableY": 891,
+      "search": {
+        "w": 240,
+        "h": 40,
+        "top": 580,
+        "fullyInView": true
+      },
+      "kpiH": 399,
+      "kpiCols": "366px",
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "toolbarH": 296,
+      "searchParentW": 240
+    },
+    "arc": {
+      "archiveTableY": 1438,
+      "todoH": 399,
+      "todoCols": "366px",
+      "supplierY": 0,
+      "filterCardY": 613,
+      "fltKeyword": {
+        "w": 48,
+        "fullyInView": true
+      },
+      "advancedHidden": true
+    },
+    "filterOk": {
+      "expanded": true,
+      "resetOk": true
+    }
+  },
+  "412": {
+    "inv": {
+      "tableY": 891,
+      "search": {
+        "w": 240,
+        "h": 40,
+        "top": 580,
+        "fullyInView": true
+      },
+      "kpiH": 399,
+      "kpiCols": "388px",
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "toolbarH": 296,
+      "searchParentW": 240
+    },
+    "arc": {
+      "archiveTableY": 1438,
+      "todoH": 399,
+      "todoCols": "388px",
+      "supplierY": 0,
+      "filterCardY": 613,
+      "fltKeyword": {
+        "w": 70,
+        "fullyInView": true
+      },
+      "advancedHidden": true
+    },
+    "filterOk": {
+      "expanded": true,
+      "resetOk": true
+    }
+  }
+}

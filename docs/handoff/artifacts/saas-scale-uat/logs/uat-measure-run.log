@@ -1,0 +1,37 @@
+{
+  "uatGate": "FAIL",
+  "allBudgetsPass": true,
+  "acceptancePass": false,
+  "archiveRows": 50,
+  "queueRows": 50,
+  "archiveTotal": 670,
+  "queueTotal": 635,
+  "timings": {
+    "archiveRenderPage1Ms": 80,
+    "archivePageNextMs": 9,
+    "archiveGotoLastMs": 4,
+    "archiveSearchMs": 6,
+    "queueRenderPage1Ms": 4,
+    "queuePageNextMs": 3,
+    "queueGotoLastMs": 2
+  },
+  "chromeDistinct": {
+    "archiveVsQueuePage1Md5Differ": false,
+    "archiveBadgeLooksArchive": true,
+    "queueBadgeLooksQueue": true,
+    "archivePaginationVisible": false,
+    "queuePaginationVisible": false,
+    "idsDiffer": true,
+    "rangeIdsDiffer": true
+  },
+  "shotMd5": {
+    "archivePage1": "d17438e8f3bf2deb77f80b031f1576ea",
+    "archiveChrome": "d17438e8f3bf2deb77f80b031f1576ea",
+    "queuePage1": "d17438e8f3bf2deb77f80b031f1576ea",
+    "queueChrome": "d17438e8f3bf2deb77f80b031f1576ea"
+  },
+  "budgetFails": [],
+  "acceptanceFails": [
+    "uxChromeDistinct"
+  ]
+}

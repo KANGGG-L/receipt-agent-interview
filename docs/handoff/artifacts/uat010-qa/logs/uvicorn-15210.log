@@ -1,0 +1,35 @@
+INFO:     Started server process [129258]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15210 (Press CTRL+C to quit)
+INFO:     127.0.0.1:39706 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45302 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45318 - "GET /static/js/common.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45330 - "GET /static/js/common.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45342 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45346 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45352 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45358 - "POST /api/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45374 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45380 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45392 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45408 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45412 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45424 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45430 - "POST /api/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45434 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45450 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45464 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45476 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45492 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45500 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45506 - "POST /api/auth/logout HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45520 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45532 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45540 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45544 - "GET /api/receipts HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:45556 - "POST /api/auth/logout HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [129258]

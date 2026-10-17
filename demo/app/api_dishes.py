@@ -110,6 +110,9 @@ class DailyConsumptionBatchCreate(BaseModel):
     items: List[DailyConsumptionItem]
     # 前端每次点「提交」生成一个新的随机串；同一个串重复提交（双击、网络重发）只记一次
     request_id: Optional[str] = None
+    # UAT019：库存不够时与 SKU 消耗同合同——普通提交 409；显式 force + 原因才允许负库存
+    allow_negative: bool = False
+    override_reason: str = ""
 
 
 # -------------------------------------------------------------
@@ -132,6 +135,31 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None,
     gross_profit = round(price - theoretical_cost, 2)
     gross_margin_rate = round((price - theoretical_cost) / price * 100, 2) if price > 0 else 0.0
 
+    # UAT018: unpurchased / unknown leaf prices → provisional estimate, not certain.
+    # Disclose source; keep provisional_* for honesty; null certain fields so UI
+    # cannot present definite 0 cost / 100% margin.
+    unknown_sources = []
+    for ing in ingredients:
+        if ing.get("cost_known") is False:
+            src = ing.get("cost_source") or "unknown"
+            if src not in unknown_sources:
+                unknown_sources.append(src)
+    if ingredients and unknown_sources:
+        theory_cost_status = "estimated"
+        theory_cost_source = ",".join(unknown_sources)
+        provisional_theoretical_cost = theoretical_cost
+        provisional_gross_profit = gross_profit
+        provisional_gross_margin_rate = gross_margin_rate
+        theoretical_cost = None
+        gross_profit = None
+        gross_margin_rate = None
+    else:
+        theory_cost_status = "complete"
+        theory_cost_source = "last_unit_price" if ingredients else "no_ingredients"
+        provisional_theoretical_cost = theoretical_cost
+        provisional_gross_profit = gross_profit
+        provisional_gross_margin_rate = gross_margin_rate
+
     cat_val = (dish_row.category or "").strip()
     if not cat_val or cat_val == "其他":
         cat_val = "默认"
@@ -142,6 +170,11 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None,
         theoretical_cost = None
         gross_profit = None
         gross_margin_rate = None
+        provisional_theoretical_cost = None
+        provisional_gross_profit = None
+        provisional_gross_margin_rate = None
+        theory_cost_status = None
+        theory_cost_source = None
         desensitized_ingredients = []
         for ing in ingredients:
             ing_copy = dict(ing)
@@ -170,7 +203,47 @@ def _dish_to_dict(session, dish_row, tenant_id: Optional[str] = None,
         "theoretical_cost": theoretical_cost,
         "gross_profit": gross_profit,
         "gross_margin_rate": gross_margin_rate,
+        "theory_cost_status": theory_cost_status,
+        "theory_cost_source": theory_cost_source,
+        "provisional_theoretical_cost": provisional_theoretical_cost,
+        "provisional_gross_profit": provisional_gross_profit,
+        "provisional_gross_margin_rate": provisional_gross_margin_rate,
     }
+
+
+
+def _redact_dish_version_payload(payload):
+    """UAT-021：店员读版本快照时脱敏售价/成本/毛利同义字段（深拷贝，不改库内 JSON）。"""
+    import copy
+    out = copy.deepcopy(payload) if payload is not None else {}
+    snap = out.get("snapshot") if isinstance(out, dict) else None
+    if not isinstance(snap, dict):
+        return out
+    dish = snap.get("dish")
+    if isinstance(dish, dict):
+        for key in (
+            "price", "theoretical_cost", "gross_profit", "gross_margin_rate",
+            "avg_cost", "last_unit_price", "unit_cost", "ingredient_cost",
+        ):
+            if key in dish:
+                dish[key] = None
+    for ing in snap.get("ingredients") or []:
+        if not isinstance(ing, dict):
+            continue
+        for key in (
+            "sku_last_unit_price", "ingredient_cost", "unit_price",
+            "unit_cost", "last_unit_price", "price",
+        ):
+            if key in ing:
+                ing[key] = None
+        expanded = ing.get("expanded")
+        if isinstance(expanded, list):
+            for exp in expanded:
+                if isinstance(exp, dict):
+                    for key in ("unit_price", "ingredient_cost", "unit_cost"):
+                        if key in exp:
+                            exp[key] = None
+    return out
 
 
 def _component_field(ing, key, default=None):
@@ -217,9 +290,21 @@ def _validate_recipe_payload(session, tenant_id, ingredients, dish_id=None):
         seen.add(key)
 
         qty = _component_field(ing, "consumption_qty")
-        if qty is None or float(qty) <= 0:
-            return {"status": "error",
-                    "msg": "食材单份消耗量必须大于 0"}, 400, None
+        # UAT018: reject NaN / Infinity / negative / 0 before write.
+        # Extreme finite qty is NOT silently clamped (upper-limit adjudication open).
+        try:
+            if qty is None:
+                raise ValueError("missing")
+            qty_f = float(qty)
+        except (TypeError, ValueError):
+            return {"status": "error", "code": "INVALID_CONSUMPTION_QTY",
+                    "msg": "食材单份消耗量必须是大于 0 的有限数值",
+                    "rejected_value": qty}, 400, None
+        if not math.isfinite(qty_f) or qty_f <= 0:
+            return {"status": "error", "code": "INVALID_CONSUMPTION_QTY",
+                    "msg": "食材单份消耗量必须是大于 0 的有限数值（不可为 NaN、Infinity、负数或 0）",
+                    "rejected_value": qty if math.isfinite(qty_f) else str(qty_f)}, 400, None
+        qty = qty_f
         try:
             yr_raw = _component_field(ing, "yield_rate", 1.0)
             yr = 1.0 if yr_raw is None else float(yr_raw)
@@ -398,6 +483,8 @@ def get_cost_analysis(
                 "category": dish_dict["category"],
                 "price": d_obj.price,
                 "theoretical_cost": dish_dict["theoretical_cost"],
+                "theory_cost_status": dish_dict.get("theory_cost_status"),
+                "provisional_theoretical_cost": dish_dict.get("provisional_theoretical_cost"),
                 "total_sold_quantity": 0.0,
                 "total_cost": 0.0,
                 "total_revenue": 0.0,
@@ -457,7 +544,12 @@ def get_cost_analysis(
             st["total_gross_profit"] = round(st["total_revenue"] - st["total_cost"], 2)
             if st["total_revenue"] > 0:
                 st["avg_gross_margin_rate"] = round(st["total_gross_profit"] / st["total_revenue"] * 100, 2)
-            st["cost_variance"] = round(st["avg_unit_cost"] - st["theoretical_cost"], 2)
+            theory_base = st["theoretical_cost"]
+            if theory_base is None:
+                theory_base = st.get("provisional_theoretical_cost")
+            if theory_base is None:
+                theory_base = 0.0
+            st["cost_variance"] = round(st["avg_unit_cost"] - float(theory_base), 2)
 
             total_sold = round(total_sold + st["total_sold_quantity"], 4)
             total_cost_all = round(total_cost_all + st["total_cost"], 2)
@@ -616,6 +708,71 @@ def _consumption_tenant_scope(query, tenant_id):
             db._DailyConsumptionRow.tenant_id == "",
         )
     )
+
+
+
+def _serialize_consumption_row(session, r, can_see_prices: bool) -> Dict:
+    """Serialize one daily_consumption row + all FIFO detail rows (cumulative).
+
+    UAT-032: batch response must carry post-merge quantity/cost/details so the
+    FIFO modal is not forced to trust a stale client cache from the first submit.
+    Shape matches GET /api/dishes/daily_consumption consumptions[] entries.
+    """
+    dish = session.get(db._DishRow, r.dish_id)
+    dish_name = dish.name if dish else f"未知餐品#{r.dish_id}"
+    dish_price = dish.price if dish else 0.0
+    dish_category = (dish.category if dish else "") or "默认"
+    if dish_category == "其他":
+        dish_category = "默认"
+
+    details_rows = (
+        session.query(db._DailyConsumptionDetailRow)
+        .filter(db._DailyConsumptionDetailRow.consumption_id == r.id)
+        .order_by(db._DailyConsumptionDetailRow.id.asc())
+        .all()
+    )
+    details = []
+    for dt in details_rows:
+        sku = session.get(db._SkuRow, dt.sku_id)
+        batch = session.get(db._InventoryBatchRow, dt.batch_id) if dt.batch_id else None
+        is_estimated = batch.is_estimated if batch else (1 if not dt.batch_id else 0)
+        is_zero_cost = (dt.unit_cost <= 0.0 or dt.total_cost <= 0.0)
+        details.append({
+            "id": dt.id,
+            "sku_id": dt.sku_id,
+            "sku_name": sku.name if sku else f"SKU#{dt.sku_id}",
+            "qty_consumed": dt.qty_consumed,
+            "unit": dt.unit,
+            "unit_cost": dt.unit_cost if can_see_prices else None,
+            "total_cost": dt.total_cost if can_see_prices else None,
+            "batch_id": dt.batch_id,
+            "batch_date": dt.batch_date,
+            "is_estimated": is_estimated,
+            "is_zero_cost": is_zero_cost,
+        })
+
+    item_rev = round(float(r.quantity or 0.0) * float(dish_price or 0.0), 2)
+    item_gp = round(item_rev - float(r.total_cost or 0.0), 2)
+    item_gm = round(item_gp / item_rev * 100, 2) if item_rev > 0 else 0.0
+
+    return {
+        "id": r.id,
+        "date": r.date,
+        "dish_id": r.dish_id,
+        "dish_name": dish_name,
+        "dish_category": dish_category,
+        "dish_price": dish_price if can_see_prices else None,
+        "quantity": r.quantity,
+        "unit_cost": r.unit_cost if can_see_prices else None,
+        "total_cost": r.total_cost if can_see_prices else None,
+        "revenue": item_rev if can_see_prices else None,
+        "gross_profit": item_gp if can_see_prices else None,
+        "gross_margin_rate": item_gm if can_see_prices else None,
+        "notes": r.notes or "",
+        "is_void": r.is_void,
+        "created_at": r.created_at,
+        "details": details,
+    }
 
 
 @router.get("/api/dishes/daily_consumption")
@@ -1225,8 +1382,13 @@ def list_dish_versions(dish_id: int, request: Request):
 
 @router.get("/api/dishes/{dish_id}/versions/{version}")
 def get_dish_version(dish_id: int, version: int, request: Request):
-    """查询指定版本完整快照（菜品字段 + 配方）。"""
-    require_role("staff")(request)
+    """查询指定版本完整快照（菜品字段 + 配方）。
+
+    UAT-021：staff 可读版本结构（用量/单位），但 snapshot.dish.price 及同义成本/
+    毛利字段必须脱敏为 null；不以导航隐藏代替 API 权限。
+    """
+    account = require_role("staff")(request)
+    can_see_prices = ROLE_RANK.get((account or {}).get("role"), 0) >= ROLE_RANK["owner"]
     tenant_id = _tenant_id(request)
     session = db.get_session()
     try:
@@ -1236,6 +1398,8 @@ def get_dish_version(dish_id: int, version: int, request: Request):
         snapshot = db.get_dish_recipe_version(dish.id, int(version), tenant_id)
         if snapshot is None:
             return JSONResponse(status_code=404, content={"status": "error", "msg": f"版本 v{int(version)} 不存在"})
+        if not can_see_prices:
+            snapshot = _redact_dish_version_payload(snapshot)
         return {"status": "success", "data": snapshot}
     finally:
         session.close()
@@ -1430,6 +1594,53 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                     "notes": (item.notes or "").strip(),
                 }
 
+        # UAT019：提交前按展开 BOM 汇总各 SKU 需求，库存不够则 409（不静默巨量负库存）。
+        # 显式 allow_negative + 非空 override_reason 才按既有合同放行；不新增业务份数 cap。
+        from app.services.inventory import (
+            collect_sku_shortfalls,
+            can_force_negative_stock,
+            insufficient_stock_response,
+        )
+        needed_by_sku: Dict[int, float] = {}
+        for key, mitem in merged_items.items():
+            dish_pre = session.get(db._DishRow, int(key))
+            if not dish_pre:
+                continue
+            quantity_pre = round(float(mitem["quantity"]), 4)
+            try:
+                expanded_pre = expand_recipe(session, dish_pre.id, quantity_pre, tenant_id)
+            except UnitConversionError:
+                raise
+            except ValueError:
+                raise
+            for sku_id, info in expanded_pre.items():
+                qty_needed = round(float(info.get("qty") or 0.0), 4)
+                unit_needed = info.get("unit") or ""
+                if qty_needed <= 0:
+                    continue
+                sku_pre = db.scoped(
+                    session.query(db._SkuRow).filter(db._SkuRow.id == int(sku_id)),
+                    db._SkuRow,
+                    tenant_id,
+                ).first()
+                if not sku_pre:
+                    raise ValueError(
+                        f"餐品「{dish_pre.name}」配方展开出的食材 SKU #{sku_id} 不存在或无权使用")
+                qty_in_sku_unit = convert_unit_quantity(
+                    qty_needed, unit_needed, sku_pre.base_unit, tenant_id=tenant_id)
+                sid = int(sku_id)
+                needed_by_sku[sid] = round(needed_by_sku.get(sid, 0.0) + float(qty_in_sku_unit), 4)
+
+        force_ok = can_force_negative_stock(body.allow_negative, body.override_reason)
+        shortfalls = collect_sku_shortfalls(session, needed_by_sku, tenant_id)
+        if shortfalls and not force_ok:
+            return insufficient_stock_response(
+                shortfalls,
+                allow_negative=body.allow_negative,
+                override_reason=body.override_reason,
+            )
+        override_reason = (body.override_reason or "").strip() if force_ok else ""
+
         created_records = []
         result_items = []
         any_merged = False
@@ -1490,6 +1701,9 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 sku.current_stock = round(sku.current_stock - qty_in_sku_unit, 4)
 
                 # 写入 inventory_log
+                _note = log_note
+                if override_reason:
+                    _note = "%s（库存不足仍扣减，原因：%s）" % (log_note, override_reason)
                 stock_log = db._StockLogRow(
                     sku_id=sku.id,
                     name=sku.name,
@@ -1500,7 +1714,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                     date=date_str,
                     receipt_id=None,
                     kind="consume",
-                    note=log_note,
+                    note=_note,
                     created_at=db.now_iso(),
                     tenant_id=tenant_id,
                 )
@@ -1567,8 +1781,32 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
             })
 
         session.commit()
+        if override_reason:
+            try:
+                account = getattr(request.state, "account", {})
+                who = account.get("email", "owner") if isinstance(account, dict) else "owner"
+                db.append_system_audit_log(
+                    who, "stock_overdraw_confirmed",
+                    "daily_consumption:%s" % ",".join(str(x) for x in created_records),
+                    {"needed_by_sku": needed_by_sku},
+                    {"reason": override_reason, "date": date_str,
+                     "allow_negative": True})
+            except Exception:
+                logging.getLogger("api_dishes").exception(
+                    "stock_overdraw audit failed (consumption already committed)")
         for _cid, _price, _ver in pending_snaps:
             dishes_store.save_snapshot(tenant_id, _cid, _price, _ver)
+        # UAT-032: include full post-merge consumption snapshots (qty + all FIFO
+        # detail rows) so the client FIFO modal never has to guess from a stale
+        # first-submit cache. Replay of the same request_id returns this body.
+        consumption_snapshots = []
+        for _cid in created_records:
+            _cons = session.get(db._DailyConsumptionRow, int(_cid))
+            if _cons is None:
+                continue
+            consumption_snapshots.append(
+                _serialize_consumption_row(session, _cons, can_see_prices)
+            )
         resp = {
             "status": "success",
             "msg": f"成功记录 {len(created_records)} 项餐品消耗",
@@ -1578,6 +1816,7 @@ def submit_daily_consumption_batch(body: DailyConsumptionBatchCreate, request: R
                 "merged": any_merged,
                 "quantity": total_quantity,
                 "items": result_items,
+                "consumptions": consumption_snapshots,
             },
         }
         if req_id:

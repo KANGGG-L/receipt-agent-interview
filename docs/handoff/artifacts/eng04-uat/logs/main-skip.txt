@@ -1,0 +1,1 @@
+[SKIP] 本地 http://127.0.0.1:15010 无可用服务，且未显式 opt-in 自动拉起（缺省不会启动任何进程：本用例拉起的 uvicorn 会执行 startup 的引擎配置自愈，可能重写所在库的 engine_config）。如需自动拉起请设 E2E_ALLOW_SPAWN_UVICORN=1；或先手动启动 demo 服务后重跑。

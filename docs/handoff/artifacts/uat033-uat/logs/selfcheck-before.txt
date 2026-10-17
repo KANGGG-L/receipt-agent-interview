@@ -1,0 +1,4 @@
+API_BEFORE_OK /workspace/receipt-agent-interview/docs/handoff/artifacts/uat033-uat/logs/api-before-fx.json
+RID_NFX 4
+WARNING 有 1 张单据是「NFX」，设置里没有对应汇率，没有算进合计。请老板到「设置」里填好汇率。
+MONTH_TOTAL 20.0

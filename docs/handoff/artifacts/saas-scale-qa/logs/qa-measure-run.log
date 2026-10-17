@@ -1,0 +1,20 @@
+{
+  "qaGate": "PASS",
+  "allBudgetsPass": true,
+  "acceptancePass": true,
+  "archiveRows": 50,
+  "queueRows": 50,
+  "archiveTotal": 670,
+  "queueTotal": 635,
+  "timings": {
+    "archiveRenderPage1Ms": 81,
+    "archivePageNextMs": 9,
+    "archiveGotoLastMs": 4,
+    "archiveSearchMs": 7,
+    "queueRenderPage1Ms": 4,
+    "queuePageNextMs": 3,
+    "queueGotoLastMs": 2
+  },
+  "budgetFails": [],
+  "acceptanceFails": []
+}

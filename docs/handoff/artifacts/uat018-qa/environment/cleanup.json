@@ -1,0 +1,26 @@
+{
+  "stage": "uat018-qa",
+  "port": 15225,
+  "pid": 94971,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat018-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_15010_untouched": true,
+  "avoided_ports": [
+    15215,
+    15010,
+    15185,
+    15195,
+    15205,
+    15155,
+    15165,
+    15175,
+    15130,
+    15140,
+    15450
+  ],
+  "timestamp_local": "2026-10-17 07:04:35 Asia/Shanghai (CST)",
+  "notes": "Independent QA only; no git/checklist/UAT. uvicorn stopped."
+}

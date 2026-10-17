@@ -1,0 +1,10 @@
+{
+  "cleaned_at": "2026-10-17 10:35:08 CST",
+  "ports_checked": [
+    15010,
+    15431
+  ],
+  "15010_status": "FREE_RESERVED",
+  "15431_stopped": true,
+  "note": "Isolated dep-hidden-dev uvicorn on 15431 stopped. 15010 left free/reserved. No product source changes. No git push."
+}

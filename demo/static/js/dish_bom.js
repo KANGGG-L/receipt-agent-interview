@@ -129,6 +129,57 @@ function switchDishSubtab(subtabId) {
 // --------------------------------------------------------------------------
 
 // 毛利率分档口径（全文件唯一事实源）：>=60 优 / >=40 中 / 其余 差。
+
+/**
+ * UAT018: theory cost certainty helpers.
+ * estimated/unknown must NOT render as definite $0 / 100% margin.
+ */
+function dishTheoryCostIsCertain(d) {
+    if (!d) return false;
+    if (d.theory_cost_status && d.theory_cost_status !== 'complete') return false;
+    return d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
+}
+function dishTheoryMarginIsCertain(d) {
+    if (!d) return false;
+    if (d.theory_cost_status && d.theory_cost_status !== 'complete') return false;
+    return d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
+}
+function dishTheoryCostDisplay(d, isOwner) {
+    if (!isOwner) return '-';
+    if (dishTheoryCostIsCertain(d)) return I18N.fmtMoney(d.theoretical_cost);
+    if (d && d.theory_cost_status === 'estimated') {
+        const prov = (d.provisional_theoretical_cost != null && Number.isFinite(Number(d.provisional_theoretical_cost)))
+            ? I18N.fmtMoney(d.provisional_theoretical_cost) : '-';
+        const src = d.theory_cost_source || 'unpurchased';
+        return '<span title="暂估来源: ' + w2Escape(String(src)) + '">估算 ' + prov + '</span>';
+    }
+    return '-';
+}
+function dishTheoryMarginBadgeHtml(d, isOwner) {
+    if (!isOwner) return '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">-</span>';
+    if (dishTheoryMarginIsCertain(d)) {
+        const marginRate = Number(d.gross_margin_rate);
+        return '<span class="badge ' + marginClass(marginRate) + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span>';
+    }
+    if (d && d.theory_cost_status === 'estimated') {
+        const src = d.theory_cost_source || 'unpurchased';
+        return '<span class="badge badge-warning" style="font-size:0.72rem;" title="成本未采购/未知，毛利不可作确定值（来源: '
+            + w2Escape(String(src)) + ')">未知/估算</span>';
+    }
+    return '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">-</span>';
+}
+function dishTheoryProfitDisplay(d, isOwner) {
+    if (!isOwner) return '-';
+    if (d && d.theory_cost_status === 'estimated') {
+        const prov = (d.provisional_gross_profit != null && Number.isFinite(Number(d.provisional_gross_profit)))
+            ? I18N.fmtMoney(d.provisional_gross_profit) : '-';
+        return '估算 ' + prov;
+    }
+    if (d && d.gross_profit != null && Number.isFinite(Number(d.gross_profit))) return I18N.fmtMoney(d.gross_profit);
+    return '-';
+}
+
+
 // 徽章样式与文字颜色共用同一分档函数，阈值不再散落在各处硬编码。
 const MARGIN_GOOD = 60;
 const MARGIN_WARN = 40;
@@ -147,23 +198,56 @@ function marginTextColor(v) {
     return MARGIN_COLOR[marginTier(v)];
 }
 
+// UAT-036：餐品列表请求世代号--延迟响应不得覆盖更新的成功/失败态。
+let dishesLoadSeq = 0;
+
+function markDishesLoadFailed() {
+    // 与「空库 / 筛选无结果」文案区分：失败不得伪装成「暂无匹配的餐品数据」。
+    const failHtml = ''
+        + '<div data-uat036="dish-error" style="padding:40px 20px; text-align:center; color:var(--danger,#b91c1c);'
+        + ' background:var(--bg-card); border-radius:8px; border:1px dashed var(--danger,#b91c1c);">'
+        + '<div style="font-size:0.95rem; font-weight:500;">餐品列表加载失败</div>'
+        + '<div style="font-size:0.8rem; margin-top:4px; color:var(--text-muted);">当前不是空库；指标不可用</div>'
+        + '<button type="button" class="btn btn-secondary" data-uat036="dish-retry"'
+        + ' style="margin-top:12px; min-height:38px;" onclick="loadDishesList()">重试</button>'
+        + '</div>';
+    const grid = document.getElementById('dishCardGrid');
+    if (grid) grid.innerHTML = failHtml;
+    const tableView = document.getElementById('dishTableView');
+    if (tableView) tableView.innerHTML = failHtml;
+}
+
+function clearDishesLoadFailed() {
+    // 成功路径由 filterDishBomLibrary / renderDishCards 整页重绘，无需额外清理。
+}
+
 /**
  * 加载餐品库全量列表
  */
 function loadDishesList() {
+    const mySeq = ++dishesLoadSeq;
     apiFetch('/api/dishes')
-        .then(res => res.json())
+        .then(res => {
+            if (mySeq !== dishesLoadSeq) return null;
+            if (!res || !res.ok) throw new Error('dishes_http_' + ((res && res.status) || 'net'));
+            return res.json();
+        })
         .then(ret => {
+            if (ret == null || mySeq !== dishesLoadSeq) return;
             if (ret.status !== 'success') {
+                markDishesLoadFailed();
                 showToast(ret.msg || '加载餐品列表失败', 'error');
                 return;
             }
+            clearDishesLoadFailed();
             dishLibraryCache = ret.data || [];
             refreshDishCategoryOptions();
             filterDishBomLibrary();
         })
         .catch(err => {
+            if (mySeq !== dishesLoadSeq) return;
             console.error('loadDishesList error:', err);
+            markDishesLoadFailed();
             showToast('网络异常，无法加载餐品列表', 'error');
         });
 }
@@ -521,7 +605,7 @@ function groupDishesByCategory(dishes) {
                 sumPrice += Number(d.price);
                 priceCount++;
             }
-            if (d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost))) {
+            if (dishTheoryCostIsCertain(d)) {
                 sumCost += Number(d.theoretical_cost);
             }
         });
@@ -551,28 +635,26 @@ function renderDishCardHtml(d) {
         ? '<span class="badge badge-info" style="font-size:0.72rem; background: rgba(37,99,235,0.1); color:#2563eb; max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:middle;" title="' + w2Escape(d.category) + '">' + w2Escape(d.category) + '</span>'
         : '';
 
-    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
-    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
-    const marginBadgeClass = hasMargin ? marginClass(marginRate) : 'badge-neutral';
-    const marginBadgeHtml = hasMargin
-        ? '<span class="badge ' + marginBadgeClass + '" style="font-size:0.72rem;">' + marginRate.toFixed(1) + '%</span>'
-        : '<span class="badge badge-neutral" style="font-size:0.72rem; color:var(--text-muted);">—</span>';
+    const marginBadgeHtml = dishTheoryMarginBadgeHtml(d, isOwner);
 
     const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
-    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '-';
 
-    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
-    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
-
-    const hasProfit = isOwner && d.gross_profit != null && Number.isFinite(Number(d.gross_profit));
-    const profitDisplay = hasProfit ? I18N.fmtMoney(d.gross_profit) : '—';
+    const costDisplay = dishTheoryCostDisplay(d, isOwner);
+    const profitDisplay = dishTheoryProfitDisplay(d, isOwner);
 
     let ingredientsHtml = '';
     if (Array.isArray(d.ingredients) && d.ingredients.length > 0) {
         ingredientsHtml = d.ingredients.map(ing => {
-            const costText = (isOwner && ing.ingredient_cost != null && Number.isFinite(Number(ing.ingredient_cost)))
-                ? ' <span style="color:var(--text-muted); font-size:0.7rem;">(' + I18N.fmtMoney(ing.ingredient_cost) + ')</span>'
-                : '';
+            let costText = '';
+            if (isOwner) {
+                if (ing.cost_known === false) {
+                    costText = ' <span style="color:var(--warning, #b45309); font-size:0.7rem;" title="来源: '
+                        + w2Escape(String(ing.cost_source || 'unpurchased')) + '">(未采购/估算)</span>';
+                } else if (ing.ingredient_cost != null && Number.isFinite(Number(ing.ingredient_cost))) {
+                    costText = ' <span style="color:var(--text-muted); font-size:0.7rem;">(' + I18N.fmtMoney(ing.ingredient_cost) + ')</span>';
+                }
+            }
             return '<span class="badge badge-neutral" style="font-size:0.75rem; background:var(--bg-subtle, #f1f5f9); color:var(--text-main); margin-right:4px; margin-bottom:4px; display:inline-block;">'
                 + w2Escape(ing.sku_name || ('食材#' + ing.sku_id)) + ': '
                 + w2Escape(String(ing.consumption_qty) + (ing.unit || ''))
@@ -633,18 +715,12 @@ function renderDishCardHtml(d) {
 function renderDishTableRowHtml(d) {
     const isActive = d.status === 'active';
     const isOwner = isOwnerRoleNow();
-    const hasMargin = isOwner && d.gross_margin_rate != null && Number.isFinite(Number(d.gross_margin_rate));
-    const marginRate = hasMargin ? Number(d.gross_margin_rate) : 0;
-    const marginBadgeClass = hasMargin ? marginClass(marginRate) : 'badge-neutral';
-    const marginBadgeHtml = hasMargin
-        ? '<span class="badge ' + marginBadgeClass + '">' + marginRate.toFixed(1) + '%</span>'
-        : '<span class="badge badge-neutral" style="color:var(--text-muted);">—</span>';
+    const marginBadgeHtml = dishTheoryMarginBadgeHtml(d, isOwner);
 
     const hasPrice = isOwner && d.price != null && Number.isFinite(Number(d.price));
-    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '—';
+    const priceDisplay = hasPrice ? I18N.fmtMoney(d.price) : '-';
 
-    const hasCost = isOwner && d.theoretical_cost != null && Number.isFinite(Number(d.theoretical_cost));
-    const costDisplay = hasCost ? I18N.fmtMoney(d.theoretical_cost) : '—';
+    const costDisplay = dishTheoryCostDisplay(d, isOwner);
 
     const ingSummary = (d.ingredients || []).map(ing => (ing.sku_name || ('食材#' + ing.sku_id)) + ' ' + ing.consumption_qty + ing.unit).join('、') || '-';
 
@@ -1079,7 +1155,7 @@ function openDishModal(dishId) {
             if (catInput) catInput.disabled = true;
             if (priceInput) {
                 priceInput.value = '';
-                priceInput.placeholder = '—';
+                priceInput.placeholder = '-';
                 priceInput.disabled = true;
             }
             if (descInput) descInput.disabled = true;
@@ -1088,10 +1164,10 @@ function openDishModal(dishId) {
             const costEl = document.getElementById('dishModalTheoryCost');
             const profitEl = document.getElementById('dishModalTheoryProfit');
             const marginEl = document.getElementById('dishModalTheoryMargin');
-            if (costEl) costEl.innerText = '—';
-            if (profitEl) profitEl.innerText = '—';
+            if (costEl) costEl.innerText = '-';
+            if (profitEl) profitEl.innerText = '-';
             if (marginEl) {
-                marginEl.innerText = '—';
+                marginEl.innerText = '-';
                 marginEl.className = 'badge badge-neutral';
             }
 
@@ -1106,8 +1182,8 @@ function openDishModal(dishId) {
             if (rowsBody) {
                 rowsBody.querySelectorAll('input, select').forEach(el => { el.disabled = true; });
                 rowsBody.querySelectorAll('button').forEach(btn => { btn.classList.add('hide'); });
-                rowsBody.querySelectorAll('.ing-item-cost').forEach(el => { el.innerText = '—'; });
-                rowsBody.querySelectorAll('.ing-ref-price').forEach(el => { el.innerText = '—'; });
+                rowsBody.querySelectorAll('.ing-item-cost').forEach(el => { el.innerText = '-'; });
+                rowsBody.querySelectorAll('.ing-ref-price').forEach(el => { el.innerText = '-'; });
             }
         } else {
             if (staffNotice) staffNotice.classList.add('hide');
@@ -1317,7 +1393,7 @@ window.syncRecoveryVisibility = syncRecoveryVisibility;
 // 新识别结果产生时在 applyRecognizedResult 清零）
 let lastFeedbackForCurrent = null;
 
-// ---- 挽回动作：重新解析（模型归因）——复用原图重跑，直接走既有重试链路 ----
+// ---- 挽回动作：重新解析（模型归因）--复用原图重跑，直接走既有重试链路 ----
 function onReparseClick() {
     const rid = currentReceiptId;
     if (!rid) return;
@@ -1406,7 +1482,7 @@ async function submitRotatedImage(receiptId, file) {
 }
 window.submitRotatedImage = submitRotatedImage;
 
-// ---- 挽回动作：重拍（输入归因）——埋点 → 二次确认 → 选新图换图重跑 ----
+// ---- 挽回动作：重拍（输入归因）--埋点 → 二次确认 → 选新图换图重跑 ----
 function onRetakeClick() {
     const rid = currentReceiptId;
     if (!rid) return;

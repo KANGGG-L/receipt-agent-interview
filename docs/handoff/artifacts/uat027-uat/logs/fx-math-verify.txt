@@ -1,0 +1,18 @@
+=== FX formula presence ===
+263:                r["total_hkd"] = round(float(r.get("total_amount") or 0.0) * rate, 2)
+266:                r["outstanding_amount"] = round(max(r["total_hkd"] - paid, 0.0), 2)
+271:                r["total_hkd"] = None
+277:            r["total_hkd"] = float(r.get("total_amount") or 0.0)
+361:                    pr["total_hkd"] = None
+367:                    pr["total_hkd"] = round(float(pr.get("total_amount") or 0.0) * rate, 2)
+370:                    pr["outstanding_amount"] = round(max(pr["total_hkd"] - paid, 0.0), 2)
+374:                pr["total_hkd"] = float(pr.get("total_amount") or 0.0)
+522:        "amount": r["total_hkd"] if r["total_hkd"] is not None else r["total_amount"],
+592:            sys_amt = r["total_hkd"] if r["total_hkd"] is not None else r["total_amount"]
+605:            sys_amt = r["total_hkd"] if r["total_hkd"] is not None else r["total_amount"]
+701:             "total_amount": r["total_hkd"] if r["total_hkd"] is not None else r["total_amount"],
+
+=== live snapshot math synthetic ===
+SGD rate 5.0 x amount 1234.5 → 6172.5
+
+=== git clean FX files vs HEAD (should be clean for UAT-027 non-edit) ===

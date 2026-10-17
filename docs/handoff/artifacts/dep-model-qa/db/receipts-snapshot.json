@@ -1,0 +1,321 @@
+{
+  "receipts": [
+    {
+      "id": 1,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 2,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 3,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 4,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 5,
+      "supplier_name": "華記行清潔用品有限公司",
+      "receipt_date": "2024-01-29",
+      "total_amount": 1149.0,
+      "status": "parsed_with_warnings",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 6,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 7,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 100.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 8,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "edited",
+      "doc_form": "printed_delivery_note",
+      "version": 2
+    },
+    {
+      "id": 9,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 10,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 100.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 11,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 100.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 12,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 100.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 13,
+      "supplier_name": "Vendor_A",
+      "receipt_date": "2026-10-17",
+      "total_amount": 80.0,
+      "status": "edited",
+      "doc_form": "manual_entry",
+      "version": 1
+    },
+    {
+      "id": 14,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "edited",
+      "doc_form": "printed_delivery_note",
+      "version": 2
+    },
+    {
+      "id": 15,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 16,
+      "supplier_name": "7-ELEVEN",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    },
+    {
+      "id": 17,
+      "supplier_name": "7-Eleven",
+      "receipt_date": "2016-10-01",
+      "total_amount": 13.0,
+      "status": "parsed",
+      "doc_form": "printed_delivery_note",
+      "version": 1
+    }
+  ],
+  "items_count": 25,
+  "sample_items": [
+    {
+      "receipt_id": 1,
+      "name": "維他檸檬茶500毫升裝",
+      "quantity": 1.0,
+      "unit": "瓶",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 2,
+      "name": "维他柠檬茶 500ml",
+      "quantity": 1.0,
+      "unit": "瓶",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 3,
+      "name": "維他檸檬茶500毫升裝",
+      "quantity": 1.0,
+      "unit": "瓶",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 4,
+      "name": "維他檸檬茶500毫升裝",
+      "quantity": 1.0,
+      "unit": "",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "梳打",
+      "quantity": 0.0,
+      "unit": "包",
+      "unit_price": 0.0,
+      "amount": 0.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "視粉",
+      "quantity": 0.0,
+      "unit": "包",
+      "unit_price": 0.0,
+      "amount": 0.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "漂白水",
+      "quantity": 10.0,
+      "unit": "桶",
+      "unit_price": 48.0,
+      "amount": 480.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "洗潔精",
+      "quantity": 8.0,
+      "unit": "桶",
+      "unit_price": 48.0,
+      "amount": 384.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "精鹽",
+      "quantity": 0.0,
+      "unit": "包",
+      "unit_price": 0.0,
+      "amount": 0.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "緣水",
+      "quantity": 0.0,
+      "unit": "桶",
+      "unit_price": 0.0,
+      "amount": 0.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "手套",
+      "quantity": 0.0,
+      "unit": "打",
+      "unit_price": 0.0,
+      "amount": 0.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "毛巾",
+      "quantity": 1.0,
+      "unit": "包",
+      "unit_price": 85.0,
+      "amount": 85.0
+    },
+    {
+      "receipt_id": 5,
+      "name": "喜士的",
+      "quantity": 20.0,
+      "unit": "P",
+      "unit_price": 10.0,
+      "amount": 200.0
+    },
+    {
+      "receipt_id": 6,
+      "name": "维他柠檬茶 500毫升",
+      "quantity": 1.0,
+      "unit": "瓶",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 7,
+      "name": "测试菜心",
+      "quantity": 4.0,
+      "unit": "斤",
+      "unit_price": 20.0,
+      "amount": 80.0
+    },
+    {
+      "receipt_id": 8,
+      "name": "維他檸檬茶 500毫升裝",
+      "quantity": 1.0,
+      "unit": "件",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 9,
+      "name": "維他檸檬茶500毫升裝",
+      "quantity": 1.0,
+      "unit": "",
+      "unit_price": 13.0,
+      "amount": 13.0
+    },
+    {
+      "receipt_id": 10,
+      "name": "测试菜心",
+      "quantity": 4.0,
+      "unit": "斤",
+      "unit_price": 20.0,
+      "amount": 80.0
+    },
+    {
+      "receipt_id": 11,
+      "name": "测试菜心",
+      "quantity": 4.0,
+      "unit": "斤",
+      "unit_price": 20.0,
+      "amount": 80.0
+    },
+    {
+      "receipt_id": 12,
+      "name": "测试菜心",
+      "quantity": 4.0,
+      "unit": "斤",
+      "unit_price": 20.0,
+      "amount": 80.0
+    }
+  ],
+  "receipts_n": 17
+}

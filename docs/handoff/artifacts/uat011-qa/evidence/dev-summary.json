@@ -1,0 +1,46 @@
+{
+  "verdict": "PASS",
+  "fail_count": 0,
+  "steps": [
+    {
+      "name": "seed_markers",
+      "pass": true
+    },
+    {
+      "name": "gt_button_label",
+      "pass": true
+    },
+    {
+      "name": "ac_single_click_posts",
+      "pass": true
+    },
+    {
+      "name": "ac_db_unchanged_after_gt",
+      "pass": true
+    },
+    {
+      "name": "ac_gt_file_confirmed",
+      "pass": true
+    },
+    {
+      "name": "ac_double_click_no_dup_business",
+      "pass": true
+    },
+    {
+      "name": "leave_eval_context_cleared",
+      "pass": true
+    },
+    {
+      "name": "ac_leave_eval_manual_save",
+      "pass": true
+    },
+    {
+      "name": "ac_manual_save_wrote_business_db",
+      "pass": true
+    },
+    {
+      "name": "neg_tenant_b_isolation",
+      "pass": true
+    }
+  ]
+}

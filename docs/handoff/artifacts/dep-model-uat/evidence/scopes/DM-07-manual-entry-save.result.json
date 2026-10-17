@@ -1,0 +1,19 @@
+{
+  "scope_id": "DM-07-manual-entry-save",
+  "source": "ENG-03 AC2 manual fill+save",
+  "triples_planned": [
+    "desk-staff",
+    "mob-staff",
+    "desk-owner"
+  ],
+  "attempts": 1,
+  "status": "PASS",
+  "checks": {
+    "manual_save_http": true,
+    "db_receipt": true
+  },
+  "evidence_paths": [
+    "evidence/scopes/DM-07-manual-entry-save.manual.json"
+  ],
+  "notes": []
+}

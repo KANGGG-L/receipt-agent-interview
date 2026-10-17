@@ -1,0 +1,26 @@
+{
+  "overall": "PASS",
+  "checks": [
+    {
+      "name": "1440_container_left_align",
+      "ok": true
+    },
+    {
+      "name": "1440_report_date_labels_nowrap",
+      "ok": true
+    },
+    {
+      "name": "390_no_doc_overflow",
+      "ok": true
+    },
+    {
+      "name": "layout_tokens_present",
+      "ok": true
+    },
+    {
+      "name": "no_unapproved_brand_expansion_claimed_complete",
+      "ok": true
+    }
+  ],
+  "shotCount": 8
+}

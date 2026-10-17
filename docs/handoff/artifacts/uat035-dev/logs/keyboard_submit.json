@@ -1,0 +1,29 @@
+{
+  "qty": "0",
+  "consumePost": {
+    "url": "http://127.0.0.1:15185/api/dishes/daily_consumption/batch",
+    "status": 200,
+    "body": {
+      "status": "success",
+      "msg": "成功记录 1 项餐品消耗",
+      "data": {
+        "date": "2026-10-17",
+        "consumption_ids": [
+          1
+        ],
+        "merged": false,
+        "quantity": 1,
+        "items": [
+          {
+            "dish_id": 1,
+            "consumption_id": 1,
+            "quantity": 1,
+            "total_cost": 0,
+            "merged": false
+          }
+        ]
+      }
+    }
+  },
+  "aria": "测试餐品A 当日消耗份数"
+}

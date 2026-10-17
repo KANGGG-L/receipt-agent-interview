@@ -1,0 +1,137 @@
+{
+  "generated_at": "2026-10-17 10:34:41 CST",
+  "card": "DEP-HIDDEN",
+  "verdict": "BLOCKED",
+  "reason": "Physical Page Visibility API did not flip document.hidden / fire visibilitychange under any attempted real tab-hide, window-minimize, or CDP lifecycle/emulation path in this X11/VNC cloud desktop. Per card: explicitly mark unverified; do NOT fake-fix product (no Object.defineProperty on document.hidden).",
+  "attempts_count": 9,
+  "attempts_achieving_hidden": 0,
+  "ports": {
+    "15010": "FREE",
+    "15431": "IN_USE"
+  },
+  "expected_from_original_case": {
+    "source": "demo/static/js/upload.js pollReceiptJob + S4-19 recommendation",
+    "JOB_POLL_INTERVAL_MS": 800,
+    "while_hidden_expected": "pause — no /api/job polls until visibilitychange to visible",
+    "on_resume_expected": "setTimeout(tick, intervalMs) continues polling at ~800ms",
+    "product_has_pauseWhileHidden": true,
+    "original_defect_S4_19": "docs/review-2026-10/S4-frontend-eng.md — originally did NOT pause when hidden; fix recommendation: pause on document.hidden"
+  },
+  "poll_interval_measurement": "NOT_RUN — requires real document.hidden; would compare /api/job request gaps hidden vs visible against JOB_POLL_INTERVAL_MS=800 and pause-while-hidden semantics",
+  "product_fake_fix": false,
+  "supportive_note": "upload.js already contains pauseWhileHidden (S4-19 direction). Supportive code presence is NOT claimed as real-hidden E2E PASS.",
+  "attempts": [
+    {
+      "attempt": 1,
+      "name": "playwright_second_page_bring_to_front",
+      "method": "Playwright page.bring_to_front (headed, ignore backgrounding flags)",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {}
+    },
+    {
+      "attempt": 2,
+      "name": "cdp_Emulation.setEmulatedVisibilityState",
+      "method": "CDP Emulation.setEmulatedVisibilityState hidden",
+      "achieved_document_hidden": false,
+      "visibilityState": null,
+      "visibilitychange_events": [],
+      "detail": {
+        "error": "CDPSession.send: Protocol error (Emulation.setEmulatedVisibilityState): 'Emulation.setEmulatedVisibilityState' wasn't found"
+      }
+    },
+    {
+      "attempt": 3,
+      "name": "cdp_Page.setWebLifecycleState_frozen",
+      "method": "CDP Page.setWebLifecycleState frozen",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {}
+    },
+    {
+      "attempt": 4,
+      "name": "cdp_Browser.setWindowBounds_minimized",
+      "method": "CDP Browser.setWindowBounds minimized",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {
+        "bounds_after": {
+          "bounds": {
+            "left": 40,
+            "top": 40,
+            "width": 1288,
+            "height": 805,
+            "windowState": "minimized"
+          }
+        }
+      }
+    },
+    {
+      "attempt": 5,
+      "name": "xdotool_windowminimize",
+      "method": "xdotool windowminimize on Chrome window",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {
+        "wid": "4194308"
+      }
+    },
+    {
+      "attempt": 6,
+      "name": "xdotool_set_desktop_1",
+      "method": "xdotool set_desktop 1 (other virtual desktop)",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {}
+    },
+    {
+      "attempt": 7,
+      "name": "system_chrome_Target.activateTarget_other",
+      "method": "Real Google Chrome CDP Target.activateTarget other tab/window",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {
+        "created": {
+          "targetId": "B00EF6FE352612250C563B90832E4C3E"
+        }
+      }
+    },
+    {
+      "attempt": 8,
+      "name": "system_chrome_Browser_minimized_confirmed",
+      "method": "Real Google Chrome Browser.setWindowBounds minimized (bounds confirmed)",
+      "achieved_document_hidden": false,
+      "visibilityState": "visible",
+      "visibilitychange_events": [],
+      "detail": {
+        "bounds_after": {
+          "bounds": {
+            "left": 50,
+            "top": 50,
+            "width": 1000,
+            "height": 700,
+            "windowState": "minimized"
+          }
+        }
+      }
+    },
+    {
+      "attempt": 9,
+      "name": "system_chrome_setEmulatedVisibilityState",
+      "method": "system Chrome Emulation.setEmulatedVisibilityState",
+      "achieved_document_hidden": false,
+      "visibilityState": null,
+      "visibilitychange_events": [],
+      "detail": {
+        "error": "CDPSession.send: Protocol error (Emulation.setEmulatedVisibilityState): 'Emulation.setEmulatedVisibilityState' wasn't found",
+        "note": "command absent from /json/protocol on this Chrome build"
+      }
+    }
+  ]
+}

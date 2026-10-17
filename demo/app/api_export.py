@@ -1440,7 +1440,13 @@ class ExportReq(BaseModel):
 
 @router.post("/api/export/preview")
 def preview_report(req: ExportReq, request: Request):
-    """在线获取报表预览数据：全量行、列头、总行数及关键汇总指标。"""
+    """在线获取报表预览数据：全量行、列头、总行数及关键汇总指标。
+
+    UAT-023 契约：headers / rows 均为简体源文案，行内业务名（品名、供应商等）
+    **不做**简繁转换（与 download 行数据同口径，便于预览 textContent 与 CSV 逐字对齐）。
+    表头的繁体展示由前端 DOM 转换层负责；前端须对业务身份列加 data-i18n-skip，
+    不得全局关闭 zh-Hant-HK 转换。DB 中的业务名称本接口只读、不回写。
+    """
     require_role("staff")(request)
     tenant_id = _tenant_id(request)
 

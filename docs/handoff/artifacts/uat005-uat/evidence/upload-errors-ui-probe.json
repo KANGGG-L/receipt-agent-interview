@@ -1,0 +1,142 @@
+{
+  "card": "UAT-005",
+  "script": "probe_upload_errors_ui.py",
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "showErrorCard_available",
+      "pass": true,
+      "detail": {
+        "available": true
+      }
+    },
+    {
+      "name": "ui_card_EMPTY_FILE",
+      "pass": true,
+      "detail": {
+        "title": "文件内容为空",
+        "badge": "文件无效",
+        "heading": "上传的文件是空的，无法识别",
+        "expect_title": "文件内容为空",
+        "expect_badge": "文件无效"
+      }
+    },
+    {
+      "name": "ui_card_INVALID_IMAGE",
+      "pass": true,
+      "detail": {
+        "title": "图片文件已损坏",
+        "badge": "图片损坏",
+        "heading": "这张照片打不开，可能文件已损坏",
+        "expect_title": "图片文件已损坏",
+        "expect_badge": "图片损坏"
+      }
+    },
+    {
+      "name": "ui_card_UNSUPPORTED_IMAGE_FORMAT",
+      "pass": true,
+      "detail": {
+        "title": "文件格式不支持",
+        "badge": "格式不支持",
+        "heading": "这种文件格式不支持",
+        "expect_title": "文件格式不支持",
+        "expect_badge": "格式不支持"
+      }
+    },
+    {
+      "name": "ui_card_FILE_TOO_LARGE",
+      "pass": true,
+      "detail": {
+        "title": "文件过大",
+        "badge": "超出大小限制",
+        "heading": "文件大小超过限制，无法上传",
+        "expect_title": "文件过大",
+        "expect_badge": "超出大小限制"
+      }
+    },
+    {
+      "name": "ui_card_ENGINE_TIMEOUT_not_file_issue",
+      "pass": true,
+      "detail": {
+        "title": "自动识别现在比较忙",
+        "badge": "不是照片的问题",
+        "heading": "自动识别现在很忙，这张单还没读完"
+      }
+    },
+    {
+      "name": "ui_upload_empty_png",
+      "pass": true,
+      "detail": {
+        "upload_resps": [
+          {
+            "status": 400,
+            "body": {
+              "status": "error",
+              "code": "EMPTY_FILE",
+              "msg": "上传的文件是空的，请重新选择有内容的照片再上传。"
+            },
+            "url": "http://127.0.0.1:15515/api/upload?treatment=true&async=true&force=false"
+          }
+        ],
+        "title": "文件内容为空",
+        "code": "EMPTY_FILE"
+      }
+    },
+    {
+      "name": "ui_upload_malformed_png",
+      "pass": true,
+      "detail": {
+        "upload_resps": [
+          {
+            "status": 400,
+            "body": {
+              "status": "error",
+              "code": "INVALID_IMAGE",
+              "msg": "这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。"
+            },
+            "url": "http://127.0.0.1:15515/api/upload?treatment=true&async=true&force=false"
+          }
+        ],
+        "title": "图片文件已损坏",
+        "code": "INVALID_IMAGE"
+      }
+    },
+    {
+      "name": "ui_upload_wrong_type",
+      "pass": true,
+      "detail": {
+        "upload_resps": [
+          {
+            "status": 400,
+            "body": {
+              "status": "error",
+              "code": "UNSUPPORTED_IMAGE_FORMAT",
+              "msg": "这种文件格式不支持。请上传手机拍的照片（JPG、PNG、HEIC 等）。"
+            },
+            "url": "http://127.0.0.1:15515/api/upload?treatment=true&async=true&force=false"
+          }
+        ],
+        "title": "文件格式不支持",
+        "code": "UNSUPPORTED_IMAGE_FORMAT"
+      }
+    },
+    {
+      "name": "screenshots_distinct",
+      "pass": true,
+      "detail": {
+        "count": 8,
+        "unique": 8
+      }
+    }
+  ],
+  "hashes": {
+    "error-EMPTY_FILE.png": "2587f7b5e4f0e911e44b89afe229b75f",
+    "error-INVALID_IMAGE.png": "ff21a8bf8beb5b30ffb92069508032b2",
+    "error-UNSUPPORTED_IMAGE_FORMAT.png": "504832c148b3d97cc8ab6d16c8e29566",
+    "error-FILE_TOO_LARGE.png": "68d27eace981a33df745cde85fd12f9a",
+    "error-ENGINE_TIMEOUT.png": "67429c5e054289f7636c6f944c1aff1a",
+    "upload-empty.png": "3cc6c68683ffd8266b06f347538c8708",
+    "upload-malformed.png": "082c46cf727e004188c837768f924fa4",
+    "upload-wrong-type.png": "4cc4c04dfcf8f393017488221b8de870"
+  }
+}

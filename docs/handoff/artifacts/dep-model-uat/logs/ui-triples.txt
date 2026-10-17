@@ -1,0 +1,14 @@
+=== ui triples begin 2026-10-17 10:22:03 CST ===
+=== UI desk-staff ===
+  -> FAIL supplier=None ai_badge=None
+=== UI mob-staff ===
+  -> PASS supplier=7-Eleven ai_badge=True
+=== UI desk-owner ===
+  -> PASS supplier=7-Eleven ai_badge=False
+UI SUMMARY {'desk-staff': 'FAIL', 'mob-staff': 'PASS', 'desk-owner': 'PASS'}
+=== ui triples exit=1 at 2026-10-17 10:26:44 CST ===
+=== desk-staff retry begin 2026-10-17 10:27:22 CST ===
+=== desk-staff attempt 1 ===
+  -> PASS supplier=7-Eleven ai_badge=True notes=[]
+UI SUMMARY {'desk-staff': 'PASS', 'mob-staff': 'PASS', 'desk-owner': 'PASS'}
+=== desk-staff retry exit=0 at 2026-10-17 10:27:34 CST ===

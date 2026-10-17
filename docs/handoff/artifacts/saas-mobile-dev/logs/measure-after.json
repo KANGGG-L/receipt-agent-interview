@@ -1,0 +1,86 @@
+{
+  "390": {
+    "inv": {
+      "tableY": 468,
+      "search": {
+        "w": 316,
+        "fullyInView": true,
+        "h": 44
+      },
+      "kpiH": 67,
+      "kpiCols": "116.656px 116.672px 116.656px",
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "filtersCollapsed": true
+    },
+    "invExp": {
+      "filtersOpen": true,
+      "tableY": 576
+    },
+    "cleared": "",
+    "arc": {
+      "archiveTableY": 748,
+      "todoH": 67,
+      "filterCardH": 363,
+      "fltKeyword": {
+        "w": 316,
+        "fullyInView": true
+      },
+      "filterGridDisplay": "none",
+      "advancedHidden": true
+    },
+    "arcExp": {
+      "advancedHidden": false,
+      "filterGridDisplay": "block",
+      "archiveTableY": 1440
+    },
+    "bottom": {
+      "lastBottom": -159,
+      "tabTop": 783,
+      "blocked": false,
+      "clearance": 942
+    }
+  },
+  "412": {
+    "inv": {
+      "tableY": 468,
+      "search": {
+        "w": 338,
+        "fullyInView": true,
+        "h": 44
+      },
+      "kpiH": 67,
+      "kpiCols": "124px 124px 124px",
+      "kpiCount": 3,
+      "kpiHidden": 0,
+      "filtersCollapsed": true
+    },
+    "invExp": {
+      "filtersOpen": true,
+      "tableY": 576
+    },
+    "cleared": "",
+    "arc": {
+      "archiveTableY": 748,
+      "todoH": 67,
+      "filterCardH": 363,
+      "fltKeyword": {
+        "w": 338,
+        "fullyInView": true
+      },
+      "filterGridDisplay": "none",
+      "advancedHidden": true
+    },
+    "arcExp": {
+      "advancedHidden": false,
+      "filterGridDisplay": "block",
+      "archiveTableY": 1440
+    },
+    "bottom": {
+      "lastBottom": -64,
+      "tabTop": 854,
+      "blocked": false,
+      "clearance": 918
+    }
+  }
+}

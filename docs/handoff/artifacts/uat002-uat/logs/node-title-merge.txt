@@ -1,0 +1,12 @@
+{
+  "todoPendingCount": "2",
+  "title": "点击筛选待处理单据。统计口径：归档待处理全量单据（包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种待处理状态）",
+  "label": "待处理（待办全量）",
+  "aria": "归档待处理全量单据：包含已上传、识别中、待核对、待核对（有疑问）、待老板审批共5种状态，共2张。点击筛选待处理单据",
+  "hasClickHint": true,
+  "hasStats": true,
+  "shimGone": true,
+  "labelOk": true,
+  "titleHasBoth": true
+}
+NODE_HARNESS_PASS=true

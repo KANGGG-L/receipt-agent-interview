@@ -1,0 +1,24 @@
+{
+  "card": "UAT-011",
+  "phase": "UAT",
+  "verdict": "PASS",
+  "port": 15611,
+  "steps_pass": 10,
+  "steps_total": 10,
+  "step_names": [
+    "seed_markers",
+    "gt_button_label",
+    "ac_single_click_posts",
+    "ac_db_unchanged_after_gt",
+    "ac_gt_file_confirmed",
+    "ac_double_click_no_dup_business",
+    "leave_eval_context_cleared",
+    "ac_leave_eval_manual_save",
+    "ac_manual_save_wrote_business_db",
+    "neg_tenant_b_isolation"
+  ],
+  "static_contract": "ALL_PASS",
+  "product_edits": "none",
+  "15010": "FREE_RESERVED",
+  "generated": "2026-10-17 19:37 Asia/Shanghai (CST)"
+}

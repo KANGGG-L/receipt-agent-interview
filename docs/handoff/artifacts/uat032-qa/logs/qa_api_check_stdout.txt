@@ -1,0 +1,1 @@
+{"verdict": "PASS", "passed": 31, "total": 31, "path": "docs/handoff/artifacts/uat032-qa/logs/selfcheck-evidence.json"}

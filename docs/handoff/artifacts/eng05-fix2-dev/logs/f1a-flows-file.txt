@@ -1,0 +1,43 @@
+===== f1a_flows 2026-10-17 08:50:47 CST =====
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 32 items
+
+demo/tests/test_f1a_flows.py::test_s3_04_not_configured_converts_once_without_admin_jargon[staff] PASSED [  3%]
+demo/tests/test_f1a_flows.py::test_s3_04_not_configured_converts_once_without_admin_jargon[owner] PASSED [  6%]
+demo/tests/test_f1a_flows.py::test_s3_04_admin_sees_where_to_check_but_staff_does_not PASSED [  9%]
+demo/tests/test_f1a_flows.py::test_s3_04_busy_stays_on_error_card_with_retry_and_manual PASSED [ 12%]
+demo/tests/test_f1a_flows.py::test_s3_04_not_configured_card_when_unknown_has_no_retry PASSED [ 15%]
+demo/tests/test_f1a_flows.py::test_s3_02_convert_failure_keeps_button_and_image_and_one_message PASSED [ 18%]
+demo/tests/test_f1a_flows.py::test_s3_02_archive_convert_uses_in_app_dialog_and_works_for_staff PASSED [ 21%]
+demo/tests/test_f1a_flows.py::test_s3_11_manual_entry_badge_and_no_image_text PASSED [ 25%]
+demo/tests/test_f1a_flows.py::test_s3_11_archive_detail_manual_receipt_shows_placeholder_not_broken_image PASSED [ 28%]
+demo/tests/test_f1a_flows.py::test_s3_24_title_has_single_badge_discard_is_text_button_payment_is_switch PASSED [ 31%]
+demo/tests/test_f1a_flows.py::test_s3_19_manual_total_defaults_to_items_sum_and_override_shows_difference PASSED [ 34%]
+demo/tests/test_f1a_flows.py::test_s3_05_blocking_issue_really_blocks_save_and_jumps_to_field PASSED [ 37%]
+demo/tests/test_f1a_flows.py::test_s3_05_manual_entry_must_choose_settlement PASSED [ 40%]
+demo/tests/test_f1a_flows.py::test_s3_19_settlement_preselected_from_supplier_habit PASSED [ 43%]
+demo/tests/test_f1a_flows.py::test_s3_20_approve_with_blocker_jumps_to_field_without_page_error PASSED [ 46%]
+demo/tests/test_f1a_flows.py::test_s1_p1_05_approve_on_unreviewed_parsed_receipt_explains PASSED [ 50%]
+demo/tests/test_f1a_flows.py::test_s3_10_prompt_names_match_real_button_names PASSED [ 53%]
+demo/tests/test_f1a_flows.py::test_s1_unit_conversion_missing_dialog_owner_jumps_to_settings_prefilled PASSED [ 56%]
+demo/tests/test_f1a_flows.py::test_s1_unit_conversion_missing_dialog_staff_asks_owner PASSED [ 59%]
+demo/tests/test_f1a_flows.py::test_s2_12_gate_text_is_plain_language PASSED [ 62%]
+demo/tests/test_f1a_flows.py::test_s2_12_structured_gate_issues_render_template PASSED [ 65%]
+demo/tests/test_f1a_flows.py::test_s2_12_review_form_uses_gate_issues_over_legacy_warnings PASSED [ 68%]
+demo/tests/test_f1a_flows.py::test_s1_p2_02_error_codes_map_to_plain_language PASSED [ 71%]
+demo/tests/test_f1a_flows.py::test_s3_07_flag_uses_in_app_dialog_with_reason PASSED [ 75%]
+demo/tests/test_f1a_flows.py::test_s3_07_discard_uses_in_app_dialog_and_owner_gets_undo PASSED [ 78%]
+demo/tests/test_f1a_flows.py::test_s3_07_staff_discard_does_not_promise_undo PASSED [ 81%]
+demo/tests/test_f1a_flows.py::test_s1_p1_11_owner_sees_reverse_button_on_approved_and_posts_payload PASSED [ 84%]
+demo/tests/test_f1a_flows.py::test_s1_p1_11_reverse_hidden_for_staff_and_for_unposted PASSED [ 87%]
+demo/tests/test_f1a_flows.py::test_s1_p1_03_flagged_receipt_staff_cannot_save_and_sees_why PASSED [ 90%]
+demo/tests/test_f1a_flows.py::test_sku_candidates_confirm_and_none_of_them PASSED [ 93%]
+demo/tests/test_f1a_flows.py::test_s3_10_no_bracket_prefixes_or_english_status_or_mixed_credit_terms PASSED [ 96%]
+demo/tests/test_f1a_flows.py::test_s3_17_logo_is_small_file_and_referenced PASSED [100%]
+
+======================== 32 passed in 61.37s (0:01:01) =========================
+f1a_flows exit=0

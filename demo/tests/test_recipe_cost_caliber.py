@@ -95,9 +95,11 @@ def test_theory_cost_caliber_consistent_across_detail_and_exports():
     ing_b = next(i for i in detail["ingredients"] if i["sku_id"] == sku_b)
     assert ing_b["ingredient_cost"] == 1.6
 
-    # 详情端点再次核对（读路径与列表同源）
-    detail2 = client.get(f"/api/dishes/{dish_id}", headers=_staff_headers()).json()["data"]
-    assert detail2["theoretical_cost"] == detail["theoretical_cost"]
+    # 详情端点再次核对（UAT-021：staff 脱敏 null；owner 与创建响应同源）
+    staff_detail = client.get(f"/api/dishes/{dish_id}", headers=_staff_headers()).json()["data"]
+    assert staff_detail["theoretical_cost"] is None
+    detail2 = client.get(f"/api/dishes/{dish_id}", headers=_owner_headers()).json()["data"]
+    assert detail2["theoretical_cost"] == detail["theoretical_cost"] == 13.6
 
     # 唯一实现直接调用：与详情一致
     s = db.get_session()
@@ -107,8 +109,11 @@ def test_theory_cost_caliber_consistent_across_detail_and_exports():
         s.close()
     assert theory == detail["theoretical_cost"] == 13.6
 
-    # 餐品 BOM 配方库展示层（/api/dishes 列表 theoretical_cost，index 由 _dish_to_dict 保证）
-    lst = client.get("/api/dishes", headers=_staff_headers()).json()["data"]
+    # 餐品 BOM 配方库展示层（成本口径用 owner；staff 侧确认脱敏）
+    staff_lst = client.get("/api/dishes", headers=_staff_headers()).json()["data"]
+    staff_items = [d for d in staff_lst if d["name"] == "口径一致测试煲"]
+    assert staff_items and staff_items[0]["theoretical_cost"] is None
+    lst = client.get("/api/dishes", headers=_owner_headers()).json()["data"]
     lib_items = [d for d in lst if d["name"] == "口径一致测试煲"]
     assert lib_items, lst
     assert lib_items[0]["theoretical_cost"] == detail["theoretical_cost"]

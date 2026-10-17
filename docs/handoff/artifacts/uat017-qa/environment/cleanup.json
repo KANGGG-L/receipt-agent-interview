@@ -1,0 +1,10 @@
+{
+  "port": 15240,
+  "uvicorn_stopped": true,
+  "at": "2026-10-17T04:27:23+0800",
+  "kept_logs": true,
+  "dbs_kept_for_evidence": [
+    "qa_pytest.db",
+    "qa_isolated_smoke.db"
+  ]
+}

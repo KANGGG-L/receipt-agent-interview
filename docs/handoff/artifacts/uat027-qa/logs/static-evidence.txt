@@ -1,0 +1,62 @@
+=== UAT-027 static evidence 2026-10-17 05:40:45 CST ===
+
+--- formatHkd ---
+1733:function formatHkd(price) {
+1737:        return I18N.fmtMoney(price, 'HKD');
+
+--- list/detail fmtMoney ---
+490:                ? I18N.fmtMoney(sku.last_unit_price)
+648:        ? I18N.fmtMoney(sku.last_unit_price)
+789:                    <td class="col-right">${amt != null ? w2Escape(I18N.fmtMoney(amt)) : '—'}</td>
+1339:            sumText.innerText = `检测到 ${activeItems.length} 项食材价格异常上涨，预估影响成本 ${I18N.fmtMoney(data.total_impact_amount)}`;
+1399:                    单价 ${I18N.fmtMoney(it.earliest_price)} -&gt; <strong style="color:#dc2626;">${I18N.fmtMoney(it.latest_price)}</strong>/${w2Escape(it.unit)} · 累计多支出 <strong style="color:var(--primary);">${I18N.fmtMoney(it.impact_amount)}</strong>
+
+--- bare $+toFixed remnants (should be empty for list price) ---
+(none)
+
+--- finance foreign path ---
+43:    if (r.currency && r.currency !== 'HKD') {
+67:    if (r && r.currency && r.currency !== 'HKD' && (r.fx_missing || r.total_hkd == null)) {
+167:        const isForeign = r.currency && r.currency !== 'HKD';
+179:        const origStr = typeof formatCurrency === 'function' ? formatCurrency(r.total_amount, r.currency) : `${r.currency} ${r.total_amount}`;
+189:            amountCell = `${I18N.fmtMoney(r.total_hkd)} <div style="font-size:0.72rem; color:var(--text-muted);">原币 ${w2Escape(origStr)}</div>`;
+
+--- FX math files mtime / no UAT-027 edits expected ---
+-rw-r--r-- 1 box box 40806 Oct 17 04:54 demo/app/api_finance.py
+-rw-r--r-- 1 box box 18790 Oct 17 04:54 demo/app/recon_store.py
+-rw-r--r-- 1 box box 71030 Oct 17 05:04 demo/static/js/dish_bom.js
+-rw-r--r-- 1 box box 34318 Oct 17 04:54 demo/static/js/finance.js
+-rw-r--r-- 1 box box 30697 Oct 17 04:54 demo/static/js/i18n/i18n.js
+
+--- git status on FX-related (info only) ---
+ M demo/static/js/dish_bom.js
+ M demo/static/js/i18n/i18n.js
+ M demo/static/js/inventory_board.js
+
+--- api_finance FX conversion snippet (unchanged contract) ---
+    snap = units_store.receipt_fx_map(tenant_id)
+    for r in rows:
+        rid = r.get("receipt_id")
+        r["id"] = rid
+        cur = r.get("currency") or "HKD"
+        if cur != "HKD":
+            has_snap = (rid in snap)
+            r["has_fx_snapshot"] = has_snap
+            if has_snap:
+                rate = snap[rid]
+                r["fx_snapshot_rate"] = rate
+                r["total_hkd"] = round(float(r.get("total_amount") or 0.0) * rate, 2)
+                r["fx_missing"] = False
+                paid = float(r.get("paid_amount") or 0.0)
+                r["outstanding_amount"] = round(max(r["total_hkd"] - paid, 0.0), 2)
+                r["payment_status"] = "paid" if r["outstanding_amount"] <= 0 else ("partial" if paid > 0 else "unpaid")
+            else:
+                # 缺 snapshot legacy 提示未知不硬标 HKD
+                r["fx_missing"] = True
+                r["total_hkd"] = None
+                r["outstanding_amount"] = 0.0
+                r["payment_status"] = "unpaid"
+        else:
+            r["has_fx_snapshot"] = True
+            r["fx_missing"] = False
+            r["total_hkd"] = float(r.get("total_amount") or 0.0)

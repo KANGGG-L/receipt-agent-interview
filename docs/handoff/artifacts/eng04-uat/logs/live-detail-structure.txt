@@ -1,0 +1,9 @@
+status success
+keys ['detail', 'experiment', 'guardrail_events', 'metrics', 'snapshots', 'status']
+experiment {'id': 1, 'name': 'ENG04_Synthetic_Experiment', 'status': 'draft'}
+metrics_none False
+detail_none False
+guardrail_events_type list
+snapshots_type list
+STRUCTURE_ACCEPTANCE PASS
+raw_prefix {"status": "success", "experiment": {"id": 1, "name": "ENG04_Synthetic_Experiment", "hypothesis": "ENG-04 UAT synthetic fixture for detail structure verification", "success_metric": "accuracy", "guardrail_metrics": [], "status": "draft", "target_percent": 50, "target_supplier_ids": [], "start_ts": null, "end_ts": null, "min_sample": 10, "conclusion": null, "conclusion_reason": null, "concluded_by": null, "concluded_at": null, "grey_snapshot": {}}, "metrics": {"experiment_id": 1, "control": {"n": 0, "n_reviewed": 0, "accuracy": null, "hallucination_rate": null, "edit_rate": null}, "treatment": {"n": 0, "n_reviewed": 0, "accuracy": null, "hallucination_rate": null, "edit_rate": null}, "tests": {"accuracy": null, "hallucination_rate": null, "edit_rate": null}, "low_confidence": true}, "detail": {"id": 1, "name": "ENG04_Synthetic_Experiment", "hypothesis": "ENG-04 UAT synthetic fixture for detail structure verification", "success_metric": "accuracy", "guardrail_metrics": [], "status": "dra

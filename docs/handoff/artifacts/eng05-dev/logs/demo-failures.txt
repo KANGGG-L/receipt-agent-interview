@@ -1,0 +1,70 @@
+1. demo.tests.test_api_dishes::test_dish_crud_and_bom_calculation
+   assert None == 16.2
+2. demo.tests.test_api_dishes::test_daily_consumption_batch_and_fifo_deduction
+   assert None == 650.0
+3. demo.tests.test_api_dishes::test_void_daily_consumption_and_rollback
+   assert None == 0.0
+4. demo.tests.test_api_dishes::test_zero_cost_and_estimated_batches_transparency
+   assert 409 == 200
+5. demo.tests.test_b2_permission_matrix::test_matrix_file_matches_code
+   AssertionError: docs/permission-matrix.md 与代码里的权限不一致，请运行 python demo/scripts/permission_scan.py --write
+6. demo.tests.test_canary_table_truncation::test_canary_table_no_truncation_and_no_duplicate_requests
+   playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 45000ms exceeded.
+7. demo.tests.test_daily_consumption_idempotent_merge::test_daily_consumption_second_submit_merges
+   assert None == 70.0
+8. demo.tests.test_dish_bom_versioning::test_bom_versioning_snapshot_lifecycle
+   assert None == 30.0
+9. demo.tests.test_evalset_gt_linkage::test_confirm_writes_shared_corpus_on_default_db
+   AssertionError: 确权联动必须回写 source_receipt_id
+10. demo.tests.test_f1b_ia_admin::test_admin_pages_no_horizontal_overflow_on_mobile
+   AssertionError: btnSubViewTelemetry
+11. demo.tests.test_golden_board_gt_filter::test_confirm_sample_promotes_source_receipt_to_golden
+   AssertionError: assert 0 == 1
+12. demo.tests.test_p0_rotation_redesign::test_ac_be_04_upload_endpoint_preserves_raw_image
+   AssertionError: assert 'error' == 'queued'
+13. demo.tests.test_param_wiring_upload_and_recon::test_upload_single_and_batch_share_same_grp_resolution
+   AssertionError: assert ['control'] == ['control', 'control']
+14. demo.tests.test_playwright_analytics_center_full_audit::test_analytics_center_every_component_audit
+   AssertionError: Telemetry event distribution table must have rows
+15. demo.tests.test_playwright_historical_canary_and_ab::test_playwright_historical_canary_and_ab_observatory
+   playwright._impl._errors.TimeoutError: Page.wait_for_selector: Timeout 8000ms exceeded.
+16. demo.tests.test_playwright_pvalue_select_switch::test_pvalue_experiment_select_switch
+   playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 15000ms exceeded.
+17. demo.tests.test_price_threshold_owner_api::test_threshold_change_moves_anomaly_and_summary_in_lockstep
+   AssertionError: {'summary_threshold': 10.0, 'summary_anomaly': True, 'inv_anomaly': False, 'inv_meta_threshold': None}
+18. demo.tests.test_receipt_detail_image_url::test_missing_file_detail_url_is_blanked_and_existing_kept
+   AssertionError: assert '/api/receipt...6e7675984bb4a' == ''
+19. demo.tests.test_receipt_detail_image_url::test_missing_file_detail_keeps_field_and_other_data
+   AssertionError: assert '/api/receipt...e5af84bf86803' == ''
+20. demo.tests.test_receipt_detail_image_url::test_non_web_missing_source_is_blanked
+   AssertionError: assert '/api/receipt...e5af84bf86803' == ''
+21. demo.tests.test_receipt_detail_image_url::test_absolute_pytest_path_judged_by_basename
+   AssertionError: assert '/api/receipt...a8864effcc7f2' == ''
+22. demo.tests.test_receipt_detail_image_url::test_detail_and_list_agree_on_reachability
+   AssertionError: assert '/api/receipt...6e7675984bb4a' == ''
+23. demo.tests.test_recipe_cost_caliber::test_theory_cost_caliber_consistent_across_detail_and_exports
+   assert None == 13.6
+24. demo.tests.test_recovery_actions::test_replace_image_invalid_content_400
+   AssertionError: assert 'INVALID_IMAGE' == 'UNSUPPORTED_IMAGE_FORMAT'
+25. demo.tests.test_review_i18n_08::test_ac6_migration_is_idempotent_and_keeps_assigned_rows
+   AssertionError: assert 6 == 5
+26. demo.tests.test_uat_005_upload_error_classification::test_uat005_empty_file_rejected_as_empty_file_with_zero_residue
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/empty.png'
+27. demo.tests.test_uat_005_upload_error_classification::test_uat005_malformed_image_rejected_as_invalid_image_with_zero_residue
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/malformed.png'
+28. demo.tests.test_uat_005_upload_error_classification::test_uat005_wrong_type_rejected_as_unsupported_format_with_zero_residue
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/wrong-type.txt'
+29. demo.tests.test_uat_005_upload_error_classification::test_uat005_oversize_file_rejected_as_file_too_large_with_zero_residue
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/oversize-synthetic.png'
+30. demo.tests.test_uat_005_upload_error_classification::test_uat005_valid_formats_and_9_formats_contract
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/receipt-hant.png'
+31. demo.tests.test_uat_005_upload_error_classification::test_uat005_valid_image_unconfigured_or_timeout_preserves_image_and_converts_manual
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/receipt-hant.png'
+32. demo.tests.test_uat_005_upload_error_classification::test_uat005_cross_tenant_isolation_and_tenant_b_unaffected
+   FileNotFoundError: [Errno 2] No such file or directory: '/Users/ethan/harness-tmp/receipt-grok-takeover-20261015/21-uat005-dev/fixtures/receipt-hant.jpg'
+33. demo.tests.test_upload_content_security::test_text_file_named_jpg_rejected
+   AssertionError: {'status': 'error', 'code': 'INVALID_IMAGE', 'msg': '这张照片打不开，可能文件已损坏，或不是真正的图片。请重新拍一张再上传。'}
+34. demo.tests.test_upload_content_security::test_fake_jpg_rejected_on_replace_image
+   AssertionError: assert 'INVALID_IMAGE' == 'UNSUPPORTED_IMAGE_FORMAT'
+35. demo.tests.test_upload_content_security::test_upload_batch_fake_file_recorded_per_file
+   AssertionError: assert 'INVALID_IMAGE' == 'UNSUPPORTED_IMAGE_FORMAT'

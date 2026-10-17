@@ -38,10 +38,10 @@ demo/evalsets/
 .pi-glla/
 .commandcode/
 
-# 本地运行/实验/QA 产物（绝不提交）
-artifacts/
-!artifacts/memory/
-!artifacts/memory/**
+# 本地运行/实验/QA 产物（绝不提交；仅仓库根目录）
+/artifacts/
+!/artifacts/memory/
+!/artifacts/memory/**
 work/
 # 根目录测试/调试产物（合成收据图与解析 JSON，人工抽检/调试写入，绝不提交）
 /receipt*.jpg
@@ -54,9 +54,9 @@ work/
 # OS
 .DS_Store
 
-artifacts/module-[a-f]/
-artifacts/e2e/*.png
-artifacts/e2e.tar.gz
+/artifacts/module-[a-f]/
+/artifacts/e2e/*.png
+/artifacts/e2e.tar.gz
 .codebuddy/
 
 # 端到端测试截图与临时转储（本地运行产物，绝不提交）
@@ -70,3 +70,24 @@ gui-test-screenshots/
 
 # 2026-10-13: 本地数据库备份目录（8.2MB，不入库；真备份在 /tmp）
 demo/backups/
+
+# Handoff phase runtime junk (never commit)
+docs/handoff/artifacts/**/venv/
+docs/handoff/artifacts/**/node_modules/
+docs/handoff/artifacts/**/uploads/
+docs/handoff/artifacts/**/.rag_chroma/
+docs/handoff/artifacts/**/rag_chroma/
+docs/handoff/artifacts/**/rag/
+docs/handoff/artifacts/**/artifacts_isolated/
+docs/handoff/artifacts/**/__pycache__/
+docs/handoff/artifacts/**/*.db
+docs/handoff/artifacts/**/*.db-wal
+docs/handoff/artifacts/**/*.db-shm
+docs/handoff/artifacts/**/*.pid
+docs/handoff/artifacts/**/*.lock
+docs/handoff/artifacts/**/chroma.sqlite3
+
+
+!docs/handoff/artifacts/
+!docs/handoff/artifacts/**
+

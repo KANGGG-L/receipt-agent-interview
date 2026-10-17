@@ -1,0 +1,32 @@
+{
+  "gate": "PASS",
+  "ux": {
+    "archiveNavOk": true,
+    "queueNavOk": true,
+    "archiveBadgeVisible": true,
+    "archiveRangeVisible": true,
+    "archivePagerVisible": true,
+    "archiveRows": 50,
+    "archiveBadgeText": "共 670 条记录",
+    "archiveRangeText": "显示 1–50",
+    "archiveLabelText": "1 / 14",
+    "queueBadgeVisible": true,
+    "queueRangeVisible": true,
+    "queuePagerVisible": true,
+    "queueRows": 50,
+    "queueBadgeText": "共 635 条",
+    "queueRangeText": "显示 1–50",
+    "queueLabelText": "1 / 13",
+    "pageShotsDiffer": true,
+    "pagerShotsDiffer": true,
+    "pagerDataAttrsDistinct": true,
+    "badgeCopyDistinct": true,
+    "pass": true
+  },
+  "shotMd5": {
+    "archivePage1": "d800b4efd4f4b511270449165962a7a2",
+    "archiveChrome": "d4f140cf89b4a03febd44426d7e9afbf",
+    "queuePage1": "03e015ae418ff114422e9ab714206944",
+    "queueChrome": "14fc9c57da2a4d80a8083151defb535b"
+  }
+}

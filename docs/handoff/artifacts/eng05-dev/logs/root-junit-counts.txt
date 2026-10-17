@@ -1,0 +1,4 @@
+tests=1292
+failures=12
+errors=0
+skipped=3

@@ -1,0 +1,50 @@
+=== isExportBusinessIdentityHeader ===
+// UAT-023：业务身份列（品名/供应商/部门名等）与 CSV 行数据同口径——后端原样输出、
+// 预览不得被 OpenCC 改字形。表头仍走 DOM 翻译；UI chrome 不全局关繁体。
+function isExportBusinessIdentityHeader(h) {
+    if (!h) return false;
+    // 部门身份列：部门 / 部门名称 / 归属部门 等（UAT-023 fix2：旧谓词漏掉「归属部门」）
+    return h.includes('品名') || h.includes('名称') || h.includes('说明')
+        || h.includes('备注') || h.includes('配方') || h.includes('建议')
+        || h.includes('供应商') || h.includes('往来')
+        || h.includes('部门') || h === '销售对象';
+}
+
+// 行 HTML 构建（预览渲染 / 虚拟滚动窗口 / 打印全量 三处共用，保证口径一致）
+function buildExportRowsHtml(rows, headers) {
+    let html = '';
+    rows.forEach(r => {
+        html += '<tr>';
+        r.forEach((cell, idx) => {
+            const h = headers[idx] || '';
+            const alignClass = exportColAlignClass(h);
+            const isTextDesc = (h.includes('品名') || h.includes('名称') || h.includes('说明') || h.includes('备注') || h.includes('配方') || h.includes('建议'));
+            const wrapClass = isTextDesc ? 'export-col-desc' : 'export-col-nowrap';
+            const preserveBiz = isExportBusinessIdentityHeader(h);
+
+            // 特殊样式高亮（统一为胶囊徽标）
+            // 已知债（A5，本次不修）：徽标判定靠单元格文本子串猜测（'异常'/'正常'…），
+            // 后端文案措辞变化会静默失效。正道是后端在 summary/单元格元数据里显式下发
+            // 语义标记（如 {text, tone}），待下一轮重构处理。
+            // 单元格值来自单据/供应商/食材名等 OCR 派生数据：判定语义词用原文，
+            // 写进 innerHTML 的形态用转义后的文本（先转义再包徽标，避免二次解码）
+            const cellText = (cell === null || cell === undefined) ? '-' : String(cell);
+            let cellContent = esc(cellText);
+            if (cellText.includes('异常') || cellText.includes('低库存') || cellText.includes('承压') || cellText.includes('跌价') || cellText.includes('逾期') || cellText.includes('预警') || cellText.includes('异动')) {
+                cellContent = `<span class="badge badge-danger">${cellContent}</span>`;
+            } else if (cellText.includes('已入账') || cellText.includes('正常') || cellText.includes('稳定') || cellText.includes('下降') || cellText.includes('已审批') || cellText.includes('充足') || cellText.includes('健康')) {
+                cellContent = `<span class="badge badge-success">${cellContent}</span>`;
+            }
+
+            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+            html += `<td class="${alignClass} ${wrapClass}"${skipAttr}>${cellContent}</td>`;
+        });
+        html += '</tr>';
+    });
+    return html;
+}
+
+=== predicate must include 部门 substring ===
+895:    // 部门身份列：部门 / 部门名称 / 归属部门 等（UAT-023 fix2：旧谓词漏掉「归属部门」）
+899:        || h.includes('部门') || h === '销售对象';
+928:            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';

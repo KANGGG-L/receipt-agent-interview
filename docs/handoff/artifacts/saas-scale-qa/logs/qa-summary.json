@@ -1,0 +1,140 @@
+{
+  "qaGate": "PASS",
+  "acceptancePass": true,
+  "allBudgetsPass": true,
+  "acceptance": {
+    "totalsAndRange": true,
+    "lastItemArchive": true,
+    "lastItemQueue": true,
+    "noLost": true,
+    "todo635": true,
+    "emptyStatesArchive": true,
+    "emptyStatesQueue": true,
+    "crossPageArchive": true,
+    "crossPageQueue": true,
+    "domCapped": true
+  },
+  "budgetResults": [
+    {
+      "name": "archiveDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "archiveRenderPage1Ms",
+      "actual": 81,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "archivePageNextMs",
+      "actual": 9,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "archiveGotoLastMs",
+      "actual": 4,
+      "max": 150,
+      "pass": true
+    },
+    {
+      "name": "archiveSearchMs",
+      "actual": 7,
+      "max": 250,
+      "pass": true
+    },
+    {
+      "name": "queueDomRowsPage1",
+      "actual": 50,
+      "max": 50,
+      "pass": true
+    },
+    {
+      "name": "queueRenderPage1Ms",
+      "actual": 4,
+      "max": 200,
+      "pass": true
+    },
+    {
+      "name": "queuePageNextMs",
+      "actual": 3,
+      "max": 100,
+      "pass": true
+    },
+    {
+      "name": "queueGotoLastMs",
+      "actual": 2,
+      "max": 150,
+      "pass": true
+    }
+  ],
+  "archive": {
+    "badge": "共 670 条记录",
+    "range": "显示 1–50",
+    "pageLabel": "1 / 14",
+    "rows": 50,
+    "total": 670,
+    "lastItemId": "900001",
+    "searchHits": {
+      "hitTotal": 39,
+      "domRows": 39,
+      "badge": "共 39 条记录",
+      "range": "显示 1–39"
+    },
+    "empty": {
+      "noFilter": {
+        "state": "no-filter-results",
+        "text": "未找到符合筛选条件的归档记录",
+        "badge": "共 0 条记录"
+      },
+      "emptyDb": {
+        "state": "empty-db",
+        "text": "暂无归档单据（空库）"
+      }
+    },
+    "crossPage": {
+      "editId": 900006,
+      "before": "uploaded",
+      "after": "edited",
+      "rowPresentOnReturn": true,
+      "rowHtmlHasEditedHint": true
+    },
+    "timings": {
+      "archiveRenderPage1Ms": 81,
+      "archivePageNextMs": 9,
+      "archiveGotoLastMs": 4,
+      "archiveSearchMs": 7
+    }
+  },
+  "queue": {
+    "count": "共 635 条",
+    "range": "显示 1–50",
+    "pageLabel": "1 / 13",
+    "rows": 50,
+    "total": 635,
+    "lastItemId": "900635",
+    "empty": {
+      "noFilter": {
+        "state": "no-filter-results",
+        "text": "当前队列暂无待处理单据"
+      },
+      "emptyDb": {
+        "state": "empty-db",
+        "text": "暂无单据（空库）"
+      }
+    },
+    "crossPage": {
+      "editId": 900004,
+      "status": "edited",
+      "rowPresent": true,
+      "rowHintsEdited": true
+    },
+    "timings": {
+      "queueRenderPage1Ms": 4,
+      "queuePageNextMs": 3,
+      "queueGotoLastMs": 2
+    }
+  }
+}

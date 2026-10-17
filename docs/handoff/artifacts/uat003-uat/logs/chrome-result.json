@@ -1,0 +1,50 @@
+{
+  "cellCount": 3,
+  "texts": [
+    "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+    "Synthetic_Oil",
+    "Synthetic_Rice"
+  ],
+  "titles": [
+    "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+    "Synthetic_Oil",
+    "Synthetic_Rice"
+  ],
+  "fulls": [
+    "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+    "Synthetic_Oil",
+    "Synthetic_Rice"
+  ],
+  "riceText": "Synthetic_Rice",
+  "oilText": "Synthetic_Oil",
+  "zhText": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+  "zhFull": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+  "zhTitle": "特级有机黑糯米_测测测测测测测测测测测测测测测测测测测测",
+  "visibleDistinct": true,
+  "riceVisibleFull": true,
+  "oilVisibleFull": true,
+  "titleMatches": true,
+  "dataFullMatches": true,
+  "notReplacedById": true,
+  "cssRice": {
+    "whiteSpace": "normal",
+    "overflow": "visible",
+    "wordBreak": "break-word",
+    "textOverflow": "clip"
+  },
+  "cssRiceText": {
+    "whiteSpace": "normal",
+    "overflow": "visible",
+    "wordBreak": "break-word",
+    "textOverflow": "clip"
+  },
+  "cssWrapNormal": true,
+  "cssOverflowVisible": true,
+  "riceClientW": 142,
+  "riceScrollW": 142,
+  "oilClientW": 142,
+  "oilScrollW": 142,
+  "riceHasSuffixInDOM": true,
+  "oilHasSuffixInDOM": true,
+  "pass": true
+}

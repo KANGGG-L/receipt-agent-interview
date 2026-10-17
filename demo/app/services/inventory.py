@@ -399,3 +399,98 @@ def reverse_receipt_inventory(receipt_id, who, reason="", tenant_id=None):
                 sku.last_unit_price = _up((prev[0].amount or 0) / prev[0].qty)
     s.flush()
     return written
+
+
+# ---------------------------------------------------------------------------
+# UAT019: shared stock-overdraw gate (SKU consume / dish daily batch)
+# Contract: ordinary write must NOT silently create negative stock.
+# Explicit allow_negative + non-empty override_reason → proceed (existing path).
+# No new business quantity caps; upper-limit adjudication remains open.
+# Do not loosen ReversalBlocked / already-consumed reverse 409 above.
+# ---------------------------------------------------------------------------
+
+def fmt_stock_qty(x):
+    """Human-readable qty for insufficient-stock messages (trim trailing zeros)."""
+    return ("%.4f" % float(x)).rstrip("0").rstrip(".") or "0"
+
+
+def collect_sku_shortfalls(session, needed_by_sku, tenant_id=None):
+    """Compare planned base-unit deductions to current_stock.
+
+    needed_by_sku: {sku_id: qty_in_sku_base_unit} (positive = amount to deduct).
+    Returns list of shortfall dicts when requested > stock + 1e-6.
+    """
+    shortfalls = []
+    for sku_id, qty_needed in (needed_by_sku or {}).items():
+        need = float(qty_needed or 0.0)
+        if need <= 0:
+            continue
+        sku = session.get(db._SkuRow, int(sku_id))
+        if sku is None:
+            continue
+        if tenant_id is not None and not db._tenant_ok(sku, tenant_id):
+            continue
+        stock = float(sku.current_stock or 0.0)
+        if need > stock + 1e-6:
+            unit = sku.base_unit or ""
+            shortfalls.append({
+                "sku_id": int(sku_id),
+                "name": sku.name or ("货品#%d" % int(sku_id)),
+                "unit": unit,
+                "current_stock": stock,
+                "requested": need,
+                "shortfall": round(need - stock, 4),
+            })
+    return shortfalls
+
+
+def can_force_negative_stock(allow_negative, override_reason):
+    """True only when both allow_negative and a non-empty reason are present."""
+    return bool(allow_negative) and bool((override_reason or "").strip())
+
+
+def insufficient_stock_response(shortfalls, allow_negative=False, override_reason=""):
+    """Build the existing 409 INSUFFICIENT_STOCK JSONResponse body + status.
+
+    Matches api_inventory._deduct_stock contract: can_override + reason_required.
+    """
+    from fastapi.responses import JSONResponse
+
+    if not shortfalls:
+        return None
+    first = shortfalls[0]
+    unit = first.get("unit") or ""
+    stock = float(first.get("current_stock") or 0.0)
+    requested = float(first.get("requested") or 0.0)
+    name = first.get("name") or ""
+    reason = (override_reason or "").strip()
+    need_reason = bool(allow_negative) and not reason
+    if name:
+        msg = "「%s」库存只有 %s %s，不够扣 %s %s。" % (
+            name, fmt_stock_qty(max(stock, 0.0)), unit,
+            fmt_stock_qty(requested), unit)
+    else:
+        msg = "库存只有 %s %s，不够扣 %s %s。" % (
+            fmt_stock_qty(max(stock, 0.0)), unit,
+            fmt_stock_qty(requested), unit)
+    if len(shortfalls) > 1:
+        msg += "（另有 %d 种食材也不够）" % (len(shortfalls) - 1)
+    if need_reason:
+        msg += "要继续扣的话，请写明原因。"
+    else:
+        msg += "请先核对数量；如果确实要扣，请确认后写明原因。"
+    return JSONResponse(status_code=409, content={
+        "status": "error",
+        "code": "INSUFFICIENT_STOCK",
+        "msg": msg,
+        "data": {
+            "current_stock": stock,
+            "requested": requested,
+            "unit": unit,
+            "sku_id": first.get("sku_id"),
+            "name": name,
+            "can_override": True,
+            "reason_required": True,
+            "shortfalls": shortfalls,
+        },
+    })

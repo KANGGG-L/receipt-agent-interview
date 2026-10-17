@@ -1,0 +1,15 @@
+{
+  "stage": "uat024-qa",
+  "port": 15295,
+  "pid": 164087,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat024-qa/environment/qa_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15295_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "browser_note": "Chrome headless via puppeteer-core; contexts closed",
+  "host_15010_untouched": true,
+  "timestamp_local": "2026-10-17 04:52:44 CST",
+  "notes": "Fresh port 15295 (avoided 15150-15290). Independent QA only; no git/checklist/UAT."
+}

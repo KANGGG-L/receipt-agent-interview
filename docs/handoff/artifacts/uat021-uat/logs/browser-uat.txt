@@ -1,0 +1,31 @@
+CHROME=/usr/bin/google-chrome
+FIXTURE={"sku_id":1,"dish_id":1,"dish_price":48,"sku_name":"UAT021料-招牌菜","dish_name":"UAT021招牌菜","owner_inv_price":0}
+PASS ui_staff_login_role | {"role":"staff","email":"staff@demo.hk","enabled":true,"isOwner":false}
+PASS ui_staff_inv_row_found | {"found":true,"priceText":"—","rowText":" UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 — 详情 ","hasDollarPrice":false,"nameHint":"UAT021料-招牌菜","stockHint":"0 斤","unitHint":null}
+PASS ui_staff_inv_price_cell_emdash | —
+PASS ui_staff_inv_no_dollar_price |  UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 — 详情 
+PASS browser_staff_inv_api_price_null | {"last_unit_price":null,"stock":0,"unit":"斤"}
+PASS browser_staff_inv_qty_unit_visible | 0斤
+PASS browser_staff_dish_api_prices_null | {"price":null,"gp":null,"gm":null}
+PASS browser_staff_sku_detail_masked
+PASS browser_staff_dish_detail_masked
+PASS browser_staff_version_price_null | null
+PASS browser_fake_header_blocked | {"sku":null,"dish":null,"ver":null}
+PASS ui_staff_dish_row_found | {"found":true,"text":" UAT021招牌菜默认—UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00","has48Money":false,"cellTexts":["UAT021招牌菜","默认","—","UAT021料-招牌菜 0.5斤","-        +    +5    +10","$0.00"],"isOwner":false}
+PASS ui_staff_dish_no_painted_48 |  UAT021招牌菜默认—UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00
+PASS ui_staff_isOwner_false
+PASS ui_owner_login_role | {"role":"owner","isOwner":true}
+PASS ui_owner_inv_row_found | {"found":true,"priceText":"$0.00","hasDollar":true,"rowText":" UAT021料-招牌菜 食材 0 斤 0.000 kg 0 斤 $0.00 详情 更多 ▾ "}
+PASS ui_owner_inv_price_cell_visible | $0.00
+PASS browser_owner_dish_api_price_48 | 48
+PASS browser_owner_dish_api_margin | gp=48 gm=100
+PASS browser_owner_dish_detail_price
+PASS browser_owner_version_price
+PASS browser_owner_sku_prices_visible
+PASS ui_owner_dish_row_found | {"found":true,"text":" UAT021招牌菜默认HK$48.00UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00","has48":true,"isOwner":true}
+PASS ui_owner_dish_painted_48 |  UAT021招牌菜默认HK$48.00UAT021料-招牌菜 0.5斤 - + +5 +10 $0.00
+PASS ui_owner_isOwner_true
+PASS ui_staff_inventory_nav_visible_not_hidden_as_auth | {"invVisible":true,"dishesChromeVisible":false,"scanVisible":true,"dishesSectionExists":true}
+PASS ui_staff_dishes_section_exists_api_is_source_of_truth | {"invVisible":true,"dishesChromeVisible":false,"scanVisible":true,"dishesSectionExists":true}
+INFO staff dishes chrome visible=false (product UX; API still redacts)
+=== BROWSER overall pass=27 fail=0 ===

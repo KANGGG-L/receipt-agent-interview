@@ -1,0 +1,21 @@
+{
+  "stage": "uat023-uat",
+  "port": 15270,
+  "pid": 151017,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "stop_exit_code": 0,
+  "port_free": true,
+  "port_released": "port_15270_released",
+  "pid_alive_after_stop": false,
+  "browser_tab_closed": true,
+  "browser_tabs_opened": 0,
+  "browser_note": "Chrome headless via puppeteer-core; contexts closed; no interactive GUI left open",
+  "host_15010_status": "not_present_ok",
+  "host_15010_untouched": true,
+  "orphan_listen_151xx": null,
+  "ss_listen_empty": true,
+  "reuseaddr_bind_ok": true,
+  "timestamp_local": "2026-10-17 04:41:00 CST",
+  "notes": "Fresh port 15270 (avoided 15150-15260; QA used 15260). Browser MANUAL_UI Hans→Hant→Hans found FAIL on 归属部门 OpenCC paint. No git/checklist write."
+}

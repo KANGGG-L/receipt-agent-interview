@@ -1,0 +1,14 @@
+INFO:     Started server process [303000]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15471 (Press CTRL+C to quit)
+INFO:     127.0.0.1:41190 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41192 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51154 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51156 - "GET /api/analytics/recovery-summary?tenant_id=all&date_range=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58612 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58614 - "GET /api/analytics/recovery-summary?tenant_id=all&date_range=24h HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [303000]

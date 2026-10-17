@@ -1,0 +1,874 @@
+{
+  "hans_1440_daily": {
+    "nameless": [
+      {
+        "role": "spinbutton",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": 0,
+        "htmlId": null,
+        "path": "generic/none/none/table/rowgroup/row/cell/spinbutton"
+      }
+    ],
+    "namelessCount": 1,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜索在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜索在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "spinbutton",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": 0,
+        "htmlId": null,
+        "path": "generic/none/none/table/rowgroup/row/cell/spinbutton"
+      }
+    ]
+  },
+  "hans_1440_bom": {
+    "nameless": [],
+    "namelessCount": 0,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜索在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜索在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": []
+  },
+  "hans_1440_export_margin": {
+    "nameless": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部餐品状态",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "按日逐单",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分类",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ],
+    "namelessCount": 3,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜索在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜索在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expStartDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expEndDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expDishStatus",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expCostGranularity",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expMarginPctMax",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "如 50",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expDishCategory",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部餐品状态",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "按日逐单",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分类",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ]
+  },
+  "hans_1440_export_consum": {
+    "nameless": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分类",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ],
+    "namelessCount": 1,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜索在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜索在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分类",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expStartDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expEndDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expCategory",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expOnlySuggested",
+        "tag": "INPUT",
+        "type": "checkbox",
+        "className": "",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分类",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ]
+  },
+  "hant_390_daily": {
+    "nameless": [
+      {
+        "role": "spinbutton",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": 0,
+        "htmlId": null,
+        "path": "generic/none/generic/table/rowgroup/row/cell/spinbutton"
+      }
+    ],
+    "namelessCount": 1,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜尋在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜尋在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "spinbutton",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": 0,
+        "htmlId": null,
+        "path": "generic/none/generic/table/rowgroup/row/cell/spinbutton"
+      }
+    ]
+  },
+  "hant_390_bom": {
+    "nameless": [],
+    "namelessCount": 0,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜尋在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜尋在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": []
+  },
+  "hant_390_export_margin": {
+    "nameless": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部餐品狀態",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "按日逐單",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分類",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ],
+    "namelessCount": 3,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜尋在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜尋在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expStartDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expEndDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expDishStatus",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expCostGranularity",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expMarginPctMax",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "如 50",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expDishCategory",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部餐品狀態",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "按日逐單",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      },
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分類",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ]
+  },
+  "hant_390_export_consum": {
+    "nameless": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分類",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ],
+    "namelessCount": 1,
+    "dom": [
+      {
+        "id": "dishConsumeSearchInput",
+        "tag": "INPUT",
+        "type": "text",
+        "className": "form-control",
+        "ariaLabel": "搜尋在售餐品...",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": "搜尋在售餐品...",
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishConsumeQty_1",
+        "tag": "INPUT",
+        "type": "number",
+        "className": "form-control dish-consume-qty-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishCategoryFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-128",
+        "ariaLabel": "餐品分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "dishStatusFilter",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control csp-s-129",
+        "ariaLabel": "全部分類",
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expStartDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expEndDate",
+        "tag": "INPUT",
+        "type": "date",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expCategory",
+        "tag": "SELECT",
+        "type": "select-one",
+        "className": "form-control export-control-input",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      },
+      {
+        "id": "expOnlySuggested",
+        "tag": "INPUT",
+        "type": "checkbox",
+        "className": "",
+        "ariaLabel": null,
+        "ariaLabelledby": null,
+        "labelFor": null,
+        "placeholder": null,
+        "title": null,
+        "nameAttr": null
+      }
+    ],
+    "interestingNamelessOrEmpty": [
+      {
+        "role": "combobox",
+        "name": "",
+        "ignored": false,
+        "description": "",
+        "value": "全部分類",
+        "htmlId": null,
+        "path": "main/generic/none/none/none/generic/none/combobox"
+      }
+    ]
+  }
+}

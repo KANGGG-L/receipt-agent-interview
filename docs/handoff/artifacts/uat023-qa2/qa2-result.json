@@ -1,0 +1,8 @@
+{
+  "gate": "PASS",
+  "passCount": 95,
+  "failedCount": 0,
+  "port": 15280,
+  "guishu_bumen_hant_preview_eq_csv_hans": true,
+  "guishu_bumen_data_i18n_skip": true
+}

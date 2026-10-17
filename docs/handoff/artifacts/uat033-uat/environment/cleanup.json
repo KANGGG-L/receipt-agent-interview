@@ -1,0 +1,22 @@
+{
+  "stage": "uat033-uat",
+  "port": 15175,
+  "pid": 81648,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat033-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15175_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_15010_untouched": true,
+  "avoided_ports": [
+    15165,
+    15155,
+    15010,
+    15130,
+    15140,
+    15450
+  ],
+  "timestamp_local": "2026-10-17 06:43:41 Asia/Shanghai (CST)",
+  "notes": "Independent UAT; fixture cleaned (AC3); checklist/ledger to flip on PASS."
+}

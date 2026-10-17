@@ -1,0 +1,13 @@
+{
+  "card": "UAT-005",
+  "phase": "uat005-dev",
+  "port": 15495,
+  "pytest_exit": 0,
+  "api_exit": 0,
+  "ui_exit": 0,
+  "api_verdict": "PASS",
+  "ui_verdict": "PASS",
+  "static_all_pass": true,
+  "product_edits": "none",
+  "verdict": "PASS"
+}

@@ -1,0 +1,16 @@
+INFO:     Started server process [291157]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15459 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53186 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53188 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53202 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53208 - "GET /api/receipts?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53216 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53222 - "GET /api/receipts?limit=5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53238 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53240 - "GET /api/dishes HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [291157]

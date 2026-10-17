@@ -1,0 +1,15 @@
+WARN create_dish: module 'app.db' has no attribute 'create_dish'
+{
+  "sku_id": 1,
+  "sku_name": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+  "xss_sku_id": 2,
+  "dept_id": 1,
+  "receipt_id": 1,
+  "dish_id": null,
+  "long_name": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+  "long_supplier": "鲜生农产供应商（特长名称说明）",
+  "long_dept": "后厨冷链中心（超长部门名称）",
+  "xss_name": "鸡翅<script>alert(1)</script>",
+  "db_name_matches": true,
+  "supplier_present": true
+}

@@ -1,0 +1,1 @@
+{"sku_hi": 1, "sku_zero": 2, "sku_null": 3, "sgd_receipt_id": 1, "prices": {"hi": 1234.5, "zero": 0.0, "null": null}, "vendors_in_prose": ["Vendor_A", "Vendor_B", "Vendor_SGD_UAT027"]}

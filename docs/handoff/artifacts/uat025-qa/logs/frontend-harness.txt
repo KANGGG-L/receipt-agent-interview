@@ -1,0 +1,13 @@
+[PASS] loadAiLeanInsights exists
+[PASS] reads I18N.getLocale
+[PASS] builds ?lang= URL
+[PASS] encodeURIComponent(lang)
+[PASS] uses insightsUrl variable
+[PASS] UAT-025 comment in JS
+[PASS] no bare apiFetch(/api/ai-insights) statement
+[PASS] api_admin ai_insights has lang param
+[PASS] sets review_locale via normalize_locale
+[PASS] UAT-025 docstring on endpoint
+[PASS] does not call run_review in ai_insights block
+
+11 PASS / 0 FAIL

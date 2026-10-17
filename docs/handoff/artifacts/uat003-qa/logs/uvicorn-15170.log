@@ -1,0 +1,16 @@
+INFO:     Started server process [111488]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15170 (Press CTRL+C to quit)
+INFO:     127.0.0.1:36148 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36152 - "GET /static/js/inventory_board.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36158 - "GET /static/css/style.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48704 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48708 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48724 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48726 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48736 - "GET /api/inventory/logs HTTP/1.1" 401 Unauthorized
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [111488]

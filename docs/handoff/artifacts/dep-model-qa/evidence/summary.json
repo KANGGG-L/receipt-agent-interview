@@ -1,0 +1,799 @@
+{
+  "card": "DEP-MODEL",
+  "stage": "QA",
+  "catalog_source": "INFERRED_FROM_ENG02_ENG03_PARTIAL (original UAG catalog not in cloud clone)",
+  "triples": [
+    {
+      "id": "desk-staff",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "role": "staff"
+    },
+    {
+      "id": "mob-staff",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "role": "staff"
+    },
+    {
+      "id": "desk-owner",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "role": "owner"
+    }
+  ],
+  "scopes": [
+    {
+      "scope_id": "DM-01-normal-auto-recognize",
+      "source": "ENG-02 AC1",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "job_status": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-01-normal-auto-recognize.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 1,
+        "job_id": "581bdac7889441d18ce08f002c097f4b",
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "581bdac7889441d18ce08f002c097f4b",
+              "receipt_id": 1,
+              "image_url": "/api/receipt/1/image?v=04ea2f20&sig=1d817e2b8a0a134000da38cc9d574866617c9be14ff6209a4891750c090dc659"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 12.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 14.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 16.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 18.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-Eleven",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 18.17
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-02-job-terminal-done",
+      "source": "ENG-02 AC2 / DEP-MODEL job done",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "job_status": true,
+        "supplier_name": true,
+        "date": true,
+        "total_amount": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-02-job-terminal-done.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 2,
+        "job_id": "efdd8a722e3644dba7cbe53e1c431d96",
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "efdd8a722e3644dba7cbe53e1c431d96",
+              "receipt_id": 2,
+              "image_url": "/api/receipt/2/image?v=28704f78&sig=3023a927eb5c255639d1a3a213cd9f032f0666697b704647d174530c54b8b71d"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 12.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-ELEVEN",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 12.07
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-03-prefill-header-fields",
+      "source": "ENG-02 AC2 prefill header",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "supplier_name": true,
+        "date": true,
+        "total_amount": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-03-prefill-header-fields.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 3,
+        "job_id": "829f99da7bdf474cbed92d0082426d4f",
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "829f99da7bdf474cbed92d0082426d4f",
+              "receipt_id": 3,
+              "image_url": "/api/receipt/3/image?v=c45140df&sig=ec2e93baed8087a06e5743eae0625f71783283fa546c832e71d929a8f7c3e9ad"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 12.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 14.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 16.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 18.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-Eleven",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 18.07
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-04-prefill-line-items",
+      "source": "ENG-02 AC2 line items",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "items": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-04-prefill-line-items.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 4,
+        "job_id": "e16bf3c20a034b20805d69b235d81bfe",
+        "result_summary": {
+          "supplier_name": "7-Eleven",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "e16bf3c20a034b20805d69b235d81bfe",
+              "receipt_id": 4,
+              "image_url": "/api/receipt/4/image?v=47e7d348&sig=348b37eba94304e939bc8b971ea16a84b9453021ab30303aae03fcd72be81b01"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-Eleven",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 10.07
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-05-second-image-heic-done",
+      "source": "real model on HEIC-derived JPEG (assets)",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "job_status": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-05-second-image-heic-done.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 5,
+        "job_id": "5a545c26c11e431e91f85d09f00589a0",
+        "result_summary": {
+          "supplier_name": "華記行清潔用品有限公司",
+          "date": "2024-01-29",
+          "total_amount": 1149.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 9
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "5a545c26c11e431e91f85d09f00589a0",
+              "receipt_id": 5,
+              "image_url": "/api/receipt/5/image?v=75de9a77&sig=da8f0eb60b8f6967b572c84855f0fee4f2440d8fd2919d18d690a715b9f542b5"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 12.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 14.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 16.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 18.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "華記行清潔用品有限公司",
+              "date": "2024-01-29",
+              "total_amount": 1149.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 9
+            },
+            "elapsed_s": 19.0
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-06-ai-prefill-badge-contract",
+      "source": "ENG-03 AC3 real AI prefill must show badge (UI later)",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "job_status": true,
+        "doc_form_not_manual": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-06-ai-prefill-badge-contract.job.json"
+      ],
+      "notes": [],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 6,
+        "job_id": "6fbecf491ae449379706eb397c96cbef",
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "6fbecf491ae449379706eb397c96cbef",
+              "receipt_id": 6,
+              "image_url": "/api/receipt/6/image?v=45a41dd8&sig=c8d591f9598f34e0201e69e7eb3090af02272807ae21e3dc1a08babaffff1624"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-ELEVEN",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 6.07
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-07-manual-entry-save",
+      "source": "ENG-03 AC2 manual fill+save",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 2,
+      "status": "PASS",
+      "checks": {
+        "manual_save_http": true,
+        "db_receipt": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-07-manual-entry-save.manual.json"
+      ],
+      "notes": [
+        "retry after harness receipt_date fix; prior_status=BLOCKED; prior_attempts=1"
+      ]
+    },
+    {
+      "scope_id": "DM-08-ai-then-human-save",
+      "source": "ENG-02/03 AI prefill then human edit save + DB",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 2,
+      "status": "PASS",
+      "checks": {
+        "save_http": true,
+        "db_receipt": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-08-ai-then-human-save.job.json",
+        "evidence/scopes/DM-08-ai-then-human-save.save.json"
+      ],
+      "notes": [
+        "retry after harness receipt_date fix; prior_status=BLOCKED; prior_attempts=1"
+      ],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 14,
+        "job_id": "56a9c7c48cef491a988296b0acd48153",
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "56a9c7c48cef491a988296b0acd48153",
+              "receipt_id": 14,
+              "image_url": "/api/receipt/14/image?v=6c23f498&sig=c7e7511bd8fe068b9e205066723179331fdfaf0dd00c261bd0a3b0bf6d73b481"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-ELEVEN",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 6.06
+          }
+        ]
+      }
+    },
+    {
+      "scope_id": "DM-09-original-assertions-711",
+      "source": "read original/assertions vs live job for sample_711",
+      "triples_planned": [
+        "desk-staff",
+        "mob-staff",
+        "desk-owner"
+      ],
+      "attempts": 1,
+      "status": "PASS",
+      "checks": {
+        "original_match_supplier": true,
+        "original_match_date": true,
+        "original_match_total": true
+      },
+      "evidence_paths": [
+        "evidence/scopes/DM-09-original-assertions-711.job.json",
+        "evidence/scopes/DM-09-original-assertions-711.assertions-compare.json"
+      ],
+      "notes": [
+        "original/assertions from demo/samples/20161001_711_thermal_receipt.json"
+      ],
+      "job_bundle_summary": {
+        "ok": true,
+        "attempt_count": 1,
+        "receipt_id": 9,
+        "job_id": "d3f19135fbf3456ba26f35444992e931",
+        "result_summary": {
+          "supplier_name": "7-ELEVEN",
+          "date": "2016-10-01",
+          "total_amount": 13.0,
+          "doc_form": "printed_delivery_note",
+          "items_n": 1
+        },
+        "attempts": [
+          {
+            "attempt": 1,
+            "upload_http": 200,
+            "upload": {
+              "status": "queued",
+              "job_id": "d3f19135fbf3456ba26f35444992e931",
+              "receipt_id": 9,
+              "image_url": "/api/receipt/9/image?v=08feec01&sig=2e270b386a4494696a173e1ac18fe2317fbe2e198bbf82d77373b9c629486402"
+            },
+            "job_status": "done",
+            "polls": [
+              {
+                "t": 0.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 2.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 4.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 6.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 8.0,
+                "http": 200,
+                "job_status": "running"
+              },
+              {
+                "t": 10.0,
+                "http": 200,
+                "job_status": "done"
+              }
+            ],
+            "error_msg": null,
+            "result_summary": {
+              "supplier_name": "7-ELEVEN",
+              "date": "2016-10-01",
+              "total_amount": 13.0,
+              "doc_form": "printed_delivery_note",
+              "items_n": 1
+            },
+            "elapsed_s": 10.06
+          }
+        ]
+      }
+    }
+  ],
+  "counts": {
+    "PASS": 9,
+    "FAIL": 0,
+    "BLOCKED": 0
+  }
+}

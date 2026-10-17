@@ -7,9 +7,9 @@
     <link rel="stylesheet" href="/static/css/index-head.css">
     <link rel="stylesheet" href="/static/css/ui-dialog.css" id="uiDialogStyle">
     <link rel="stylesheet" href="/static/css/csp-html-styles.css">
-<link rel="stylesheet" href="/static/css/style.css?v=20261011_i18n">
-    <link rel="stylesheet" href="/static/css/review-mobile.css?v=20261012_f1a">
-    <link rel="stylesheet" href="/static/css/f1b.css?v=20261012_f1b">
+<link rel="stylesheet" href="/static/css/style.css?v=20261017_saas_scale">
+    <link rel="stylesheet" href="/static/css/review-mobile.css?v=20261017_saas_scale">
+    <link rel="stylesheet" href="/static/css/f1b.css?v=20261017_saas_scale">
     <!-- i18n 必须先于页面内容与 main.js 加载：繁体模式下在首屏渲染前接管文本，避免简体闪现 -->
         <script src="/static/js/csp-bind.js"></script>
 <script src="/static/js/i18n/zh-hant-data.js?v=20261011_i18n"></script>
@@ -30,7 +30,7 @@
                     <img src="/static/images/logo_icon_64.png" class="brand-logo-img" width="28" height="28" alt="Logo"> <span data-i18n="app.brand">AI 智能库存系统</span>
                 </div>
                 <!-- demo：无密码 RBAC 角色切换（admin/owner/staff） -->
-                <div class="demo-role-switch">
+                <div class="demo-role-switch" id="demoRoleSwitch">
                     <label for="demoRoleSelect" data-i18n="role.label">当前角色</label>
                     <select id="demoRoleSelect">
                         <option value="admin" selected data-i18n="role.option.admin" class="csp-s-0">● 系统管理员</option>
@@ -39,6 +39,10 @@
                     </select>
                 </div>
                 <div class="demo-role-switch" id="langSwitch" data-i18n-switcher></div>
+                <!-- UAT-010：生产会话可见退出登录入口（AUTH_ENABLED=1 且已登录时由 common.js 显示） -->
+                <div class="demo-role-switch auth-logout-wrap" id="authLogoutWrap" style="display:none;">
+                    <button type="button" id="authLogoutBtn" class="btn btn-secondary auth-logout-btn" aria-label="退出登录">退出登录</button>
+                </div>
             </div>
 
             <nav class="sidebar-nav">
@@ -202,6 +206,17 @@
                                     <!-- 动态渲染队列 -->
                                 </tbody>
                             </table>
+                        </div>
+                        <div id="queuePagination" class="saas-scale-pager" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 4px 2px; min-height:38px;" data-saas-scale="queue-pager">
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <span id="queueFilteredCount" class="badge badge-secondary">共 0 条</span>
+                                <span id="queuePageRange" style="font-size:0.85rem; color:var(--text-muted);">显示 0–0</span>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <button type="button" id="queuePagePrev" class="btn btn-secondary btn-sm" style="min-height:38px;">上一页</button>
+                                <span id="queuePageLabel" style="font-size:0.85rem; min-width:4.5rem; text-align:center;">1 / 1</span>
+                                <button type="button" id="queuePageNext" class="btn btn-secondary btn-sm" style="min-height:38px;">下一页</button>
+                            </div>
                         </div>
                     </div>
 
@@ -615,7 +630,7 @@
                 </section>
 
                 <!-- TAB 2: 实时库存与价格走势 / 食材档案与库存工作台 -->
-                <section id="tab-inventory" class="tab-content">
+                <section id="tab-inventory" class="tab-content page-shell">
                     <!-- 极简 AI 发现胶囊条 (40px，平时收起/无异常隐藏，点击滑出紧凑卡片) -->
                     <div id="aiLeanBanner" class="ai-lean-banner hide">
                         <!-- WS5-4：老板看板「价格异动雷达」置顶区块（banner 内最靠前位置）。
@@ -660,10 +675,17 @@
                     <div class="card">
                         <div class="inv-toolbar">
                             <div class="inv-toolbar-filters">
-                                <!-- 搜索框 -->
-                                <div class="csp-s-77">
+                                <!-- 搜索框：移动端全宽可见（SAAS-MOBILE） -->
+                                <div class="csp-s-77 inv-search-wrap">
                                     <input type="text" id="invSearchInput" class="form-control csp-s-78" placeholder="搜索食材品名 / 代码..." data-csp-input="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onInventorySearchInput&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;prop&quot;,&quot;p&quot;:&quot;value&quot;}]}]">
                                 </div>
+                                <!-- 移动端：筛选展开 / 清除（桌面隐藏，筛选面板始终展开） -->
+                                <div class="inv-mobile-filter-bar" aria-label="移动端筛选操作">
+                                    <input type="checkbox" id="invMobileFilterToggleCb" class="inv-mobile-filter-cb" aria-controls="invMobileFiltersPanel">
+                                    <label for="invMobileFilterToggleCb" id="invMobileFilterToggle" class="btn btn-secondary inv-mobile-filter-toggle">筛选</label>
+                                    <button type="button" id="invMobileFilterClear" class="btn btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;resetInventoryFilters&quot;,&quot;a&quot;:[]}]">清除</button>
+                                </div>
+                                <div id="invMobileFiltersPanel" class="inv-filters-secondary">
                                 <!-- 分类筛选 -->
                                 <select id="invCategorySelect" class="form-control csp-s-79" aria-label="库存分类筛选" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onInventoryCategoryChange&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;prop&quot;,&quot;p&quot;:&quot;value&quot;}]}]">
                                     <option value="">全部分类</option>
@@ -688,6 +710,7 @@
                                     <input type="checkbox" id="invIncludeInactive" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onInventoryIncludeInactiveChange&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;prop&quot;,&quot;p&quot;:&quot;checked&quot;}]}]">
                                     显示已停用
                                 </label>
+                                </div>
                             </div>
 
                             <div class="inv-toolbar-actions csp-s-81">
@@ -714,7 +737,7 @@
                         </div>
 
                         <div class="table-container">
-                            <table id="inventoryTable" class="data-table csp-s-20">
+                            <table id="inventoryTable" class="data-table inventory-sku-table csp-s-20">
                                 <colgroup>
                                     <col class="csp-s-24">
                                     <col class="csp-s-21">
@@ -816,7 +839,7 @@
                                 </div>
                                 <div class="csp-s-104">
                                     <div class="csp-s-108">
-                                        <input type="text" id="dishConsumeSearchInput" class="form-control" placeholder="搜索在售餐品..." data-csp-input="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishConsumeEntryTable&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;prop&quot;,&quot;p&quot;:&quot;value&quot;}]}]">
+                                        <input type="text" id="dishConsumeSearchInput" class="form-control" placeholder="搜索在售餐品..." aria-label="搜索在售餐品" data-csp-input="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishConsumeEntryTable&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;prop&quot;,&quot;p&quot;:&quot;value&quot;}]}]">
                                     </div>
                                     <button type="button" class="btn btn-secondary csp-s-109" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;resetDishConsumeInputs&quot;,&quot;a&quot;:[]}]">清空份数</button>
                                     <button type="button" class="btn btn-secondary csp-s-109" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;loadDailyConsumption&quot;,&quot;a&quot;:[]}]">刷新</button>
@@ -945,10 +968,10 @@
                                     <div class="csp-s-127">
                                         <input type="text" id="dishSearchInput" class="form-control" placeholder="搜索餐品名称 / 描述..." data-csp-input="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishBomLibrary&quot;,&quot;a&quot;:[]}]">
                                     </div>
-                                    <select id="dishCategoryFilter" class="form-control csp-s-128" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishBomLibrary&quot;,&quot;a&quot;:[]}]">
+                                    <select id="dishCategoryFilter" class="form-control csp-s-128" aria-label="餐品分类筛选" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishBomLibrary&quot;,&quot;a&quot;:[]}]">
                                         <option value="">全部分类</option>
                                     </select>
-                                    <select id="dishStatusFilter" class="form-control csp-s-129" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishBomLibrary&quot;,&quot;a&quot;:[]}]">
+                                    <select id="dishStatusFilter" class="form-control csp-s-129" aria-label="餐品在售状态筛选" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;filterDishBomLibrary&quot;,&quot;a&quot;:[]}]">
                                         <option value="active" selected>仅在售</option>
                                         <option value="all">全部状态</option>
                                         <option value="inactive">仅已停用</option>
@@ -1047,12 +1070,12 @@
                 </section>
 
                 <!-- TAB 3: 供应商与收据归档 -->
-                <section id="tab-archive" class="tab-content">
+                <section id="tab-archive" class="tab-content page-shell">
 
                     <!-- ① 待办条（对齐「实时库存与价格」指标卡面板，可点击筛选，09 方案 M7） -->
                     <div id="todoBar" class="metrics-grid csp-s-136" data-arc-pane="docs">
-                        <div class="metric-card csp-s-73" role="button" tabindex="0" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;todoFilter&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;pending&quot;}]}]" title="点击筛选待审核单据">
-                            <div class="csp-s-74">待审核</div>
+                        <div class="metric-card csp-s-73" role="button" tabindex="0" data-todo-metric="pending" data-click-hint="点击筛选待处理单据" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;todoFilter&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;pending&quot;}]}]" title="点击筛选待处理单据">
+                            <div class="csp-s-74">待处理（待办全量）</div>
                             <div id="todoPendingNum" class="metric-value">0</div>
                         </div>
                         <div class="metric-card csp-s-73" role="button" tabindex="0" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;todoFilter&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;failed&quot;}]}]" title="点击筛选识别失败单据">
@@ -1288,6 +1311,16 @@
                                 </tbody>
                             </table>
                         </div>
+                        <div id="archivePagination" class="saas-scale-pager" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:10px 4px 2px; min-height:38px;" data-saas-scale="archive-pager">
+                            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                                <span id="archivePageRange" style="font-size:0.85rem; color:var(--text-muted);">显示 0–0</span>
+                            </div>
+                            <div style="display:flex; gap:8px; align-items:center;">
+                                <button type="button" id="archivePagePrev" class="btn btn-secondary btn-sm" style="min-height:38px;">上一页</button>
+                                <span id="archivePageLabel" style="font-size:0.85rem; min-width:4.5rem; text-align:center;">1 / 1</span>
+                                <button type="button" id="archivePageNext" class="btn btn-secondary btn-sm" style="min-height:38px;">下一页</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Wave 1 应付清单（03 章）：跨供应商全局视图 + 支付登记与月结对账（沿用 Wave 2） -->
@@ -1411,8 +1444,8 @@
                 </section>
 
                 <!-- 设置页：由 static/js/settings.js 渲染 -->
-                <section id="tab-today" class="tab-content" aria-label="今日待办"></section>
-                <section id="tab-settings" class="tab-content" aria-label="设置"></section>
+                <section id="tab-today" class="tab-content page-shell" aria-label="今日待办"></section>
+                <section id="tab-settings" class="tab-content page-shell" aria-label="设置"></section>
 
                 <!-- TAB 4: 部门花销报表 -->
                 <section id="tab-report" class="tab-content">
@@ -1452,13 +1485,13 @@
                             <span class="csp-s-201">部门花销报表</span>
                             <div class="csp-s-202">
                                 <div class="csp-s-203">
-                                    <div class="csp-s-161">
-                                        <label for="costReportMonth" class="csp-s-204">月份：</label>
+                                    <div class="csp-s-161 report-date-cluster">
+                                        <label for="costReportMonth" class="csp-s-204 report-date-label">月份：</label>
                                         <input type="month" id="costReportMonth" class="form-control csp-s-205" title="选择月份" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;onCostReportMonthChange&quot;,&quot;a&quot;:[]}]">
                                     </div>
                                     <span class="csp-s-206">|</span>
-                                    <div class="csp-s-161">
-                                        <label class="csp-s-204">起止日期：</label>
+                                    <div class="csp-s-161 report-date-cluster">
+                                        <label class="csp-s-204 report-date-label">起止日期：</label>
                                         <input type="date" id="costReportStartDate" class="form-control csp-s-207" title="开始日期">
                                         <span class="csp-s-208">-</span>
                                         <input type="date" id="costReportEndDate" class="form-control csp-s-207" title="结束日期">
@@ -4129,18 +4162,18 @@
         </div>
     </div>
 
-    <!-- Wave 2：发起对账 Modal（T7/M8，D4 周期 × 供应商） -->
-    <div id="reconCreateModal" class="modal-backdrop hide">
+    <!-- Wave 2：发起对账 Modal（T7/M8，D4 周期 × 供应商） — UAT-017：补 dialog 语义 -->
+    <div id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
         <div class="modal-card csp-s-625">
             <div class="modal-header">
-                <h3> 发起对账</h3>
-                <button class="modal-close-btn" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]">x</button>
+                <h3 id="reconCreateTitle">发起对账</h3>
+                <button type="button" class="modal-close-btn" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]" aria-label="关闭">x</button>
             </div>
             <div class="modal-body">
                 <div id="reconSupplierHint" class="csp-s-619"></div>
                 <div class="form-grid">
                     <div class="form-group">
-                        <label>对账周期类型</label>
+                        <label for="reconPeriodType">对账周期类型</label>
                         <select id="reconPeriodType" class="form-control" data-csp-change="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;reconPeriodTypeChanged&quot;,&quot;a&quot;:[]}]">
                             <option value="month">自然月</option>
                             <option value="3d">最近 3 天</option>
@@ -4149,17 +4182,17 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>开始日期</label>
+                        <label for="reconStart">开始日期</label>
                         <input type="date" id="reconStart" class="form-control">
                     </div>
                     <div class="form-group">
-                        <label>结束日期</label>
+                        <label for="reconEnd">结束日期</label>
                         <input type="date" id="reconEnd" class="form-control">
                     </div>
                 </div>
                 <div class="csp-s-623">
-                    <button class="btn btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]">取消</button>
-                    <button class="btn btn-primary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;submitReconCreate&quot;,&quot;a&quot;:[]}]"> 发起对账</button>
+                    <button type="button" id="btnCancelReconCreate" class="btn btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;closeModalById&quot;,&quot;a&quot;:[{&quot;t&quot;:&quot;lit&quot;,&quot;v&quot;:&quot;reconCreateModal&quot;}]}]">取消</button>
+                    <button type="button" id="btnSubmitReconCreate" class="btn btn-primary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;submitReconCreate&quot;,&quot;a&quot;:[]}]">发起对账</button>
                 </div>
             </div>
         </div>
@@ -5029,20 +5062,20 @@
     <script src="/static/js/common.js?v=20261013_f5b1"></script>
     <script src="/static/js/upload.js?v=20261013_f5b1"></script>
     <script src="/static/js/review_core.js?v=20261013_f5b1"></script>
-    <script src="/static/js/workbench_queue.js?v=20261013_f5b1"></script>
+    <script src="/static/js/workbench_queue.js?v=20261017_saas_scale"></script>
     <script src="/static/js/review_modal.js?v=20261013_f5b1"></script>
     <script src="/static/js/version_conflict.js?v=20261013_f5b1"></script>
     <script src="/static/js/photo_sider.js?v=20261013_f5b1"></script>
     <script src="/static/js/finance_ops.js?v=20261013_f5b1"></script>
     <script src="/static/js/supplier_archive.js?v=20261012_f3b6"></script>
-    <script src="/static/js/dish_consumption.js?v=20261012_f3b6"></script>
+    <script src="/static/js/dish_consumption.js?v=20261017_uat032"></script>
     <script src="/static/js/cost_report.js?v=20261013_f4b3"></script>
     <script src="/static/js/departments.js?v=20261013_f4b3"></script>
     <script src="/static/js/inventory_board.js?v=20261013_f4b3"></script>
-    <script src="/static/js/archive_list.js?v=20261013_f4b3"></script>
+    <script src="/static/js/archive_list.js?v=20261017_saas_scale"></script>
     <script src="/static/js/kpi_trend.js?v=20261013_f4b3"></script>
     <script src="/static/js/admin_observation.js?v=20261013_f4b3"></script>
-    <script src="/static/js/dish_bom.js?v=20261013_f4b3"></script>
+    <script src="/static/js/dish_bom.js?v=20261017_uat018"></script>
     <script src="/static/js/parsing_logs.js?v=20261013_f4b3"></script>
     <script src="/static/js/engine_admin.js?v=20261013_f4b3"></script>
     <script src="/static/js/review_ux.js?v=20261012_f1a"></script>

@@ -169,8 +169,9 @@ def test_threshold_change_moves_anomaly_and_summary_in_lockstep():
     def _snapshot(role="owner"):
         hist = client.get(f"/api/price_history/{sku}",
                           headers=_headers(role, tenant=tenant)).json()
+        # UAT-021：price_anomaly / meta.threshold 仅 owner 可见；staff 恒 False/None
         inv = client.get("/api/inventory",
-                         headers=_headers("staff", tenant=tenant)).json()
+                         headers=_headers("owner", tenant=tenant)).json()
         row = next(x for x in inv["data"] if x["id"] == sku)
         return {
             "summary_threshold": hist["summary"]["threshold_pct"],

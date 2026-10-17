@@ -1,0 +1,134 @@
+{
+  "card": "UAT-001",
+  "script": "probe_original_image_api.py",
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "tenant_b_baseline",
+      "pass": true,
+      "detail": {
+        "count": 1,
+        "rows": [
+          [
+            6,
+            "Vendor_B_Baseline",
+            "edited",
+            "",
+            1.0
+          ]
+        ]
+      }
+    },
+    {
+      "name": "edited_detail_signed_url",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "top_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a",
+        "data_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a",
+        "has_original_image": true
+      }
+    },
+    {
+      "name": "edited_image_http_200",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "bytes": 1949,
+        "magic": "89504e47"
+      }
+    },
+    {
+      "name": "manual_detail_empty_image",
+      "pass": true,
+      "detail": {
+        "status": 200,
+        "image_url": "",
+        "has_original_image": false
+      }
+    },
+    {
+      "name": "tampered_sig_403",
+      "pass": true,
+      "detail": {
+        "status": 403,
+        "body": {
+          "status": "error",
+          "code": "IMAGE_SIGNATURE_INVALID",
+          "msg": "单据 7 的原图链接签名无效或缺失"
+        }
+      }
+    },
+    {
+      "name": "missing_sig_403",
+      "pass": true,
+      "detail": {
+        "status": 403,
+        "body": {
+          "status": "error",
+          "code": "IMAGE_SIGNATURE_INVALID",
+          "msg": "单据 7 的原图链接签名无效或缺失"
+        }
+      }
+    },
+    {
+      "name": "refresh_recovers_signed_url",
+      "pass": true,
+      "detail": {
+        "fresh_url": "/api/receipt/7/image?v=uat001_edited_with_image&sig=a36fac427e633ea391f8bd01f1cbd6ace1b86ec629fa76481874f27c0c38fb70&tenant_id=uat001-a",
+        "img_status": 200,
+        "bytes": 1949
+      }
+    },
+    {
+      "name": "cross_tenant_detail_404",
+      "pass": true,
+      "detail": {
+        "status": 404
+      }
+    },
+    {
+      "name": "cross_tenant_image_403",
+      "pass": true,
+      "detail": {
+        "status": 403
+      }
+    },
+    {
+      "name": "tenant_b_unchanged",
+      "pass": true,
+      "detail": {
+        "before": {
+          "count": 1,
+          "rows": [
+            [
+              6,
+              "Vendor_B_Baseline",
+              "edited",
+              "",
+              1.0
+            ]
+          ]
+        },
+        "after": {
+          "count": 1,
+          "rows": [
+            [
+              6,
+              "Vendor_B_Baseline",
+              "edited",
+              "",
+              1.0
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "ids": {
+    "edited": 7,
+    "manual": 8,
+    "tenant_b": 6,
+    "image_name": "uat001_edited_with_image.png"
+  }
+}

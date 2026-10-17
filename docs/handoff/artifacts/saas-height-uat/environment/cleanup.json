@@ -1,0 +1,14 @@
+{
+  "stage": "saas-height-uat",
+  "port": 15050,
+  "pid": 60957,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/saas-height-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15050_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_note": "15050 for SAAS-HEIGHT UAT; avoided 15040/15420/15020-15030/15150-15800; 15010 reserved untouched",
+  "timestamp_local": "2026-10-17 06:13 Asia/Shanghai (CST)",
+  "notes": "Independent UAT only; no git/checklist. MANUAL_UI height/contrast/keyboard PASS."
+}

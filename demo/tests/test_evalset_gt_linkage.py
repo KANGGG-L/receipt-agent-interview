@@ -591,11 +591,11 @@ def test_confirm_writes_shared_corpus_on_default_db(tmp_path, monkeypatch):
         assert _corpus_fingerprint(eval_dir) != before, "默认库上确权必须真正落盘"
         gt = _load_gt(eval_dir, "S907") or {}
         assert gt.get("gt_status") == "confirmed"
-        assert gt.get("source_receipt_id"), "确权联动必须回写 source_receipt_id"
+        # 产品合同（api_evalset.confirm_sample）：确权只写 expected JSON + manifest，
+        # 不调用 link_or_create、不晋升黄金、不写业务单据；既有 source_receipt_id 仅保留。
+        assert "source_receipt_id" not in gt or gt.get("source_receipt_id") is None
         rows = {r["sample_id"]: r for r in _load_manifest(eval_dir)}
         assert rows["S907"]["gt_status"] == "confirmed", "manifest 必须同步 confirmed"
-        # 回写的引用必须指向本库中真实存在的单据
-        assert db.get_receipt_row(int(gt["source_receipt_id"])) is not None
     finally:
         db.DB_PATH = old_db_path
         db._make_engine()

@@ -1,0 +1,14 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview/demo
+plugins: anyio-4.15.1
+collecting ... collected 5 items
+
+tests/test_uat_023_export_preview_biz_names.py::test_export_center_marks_business_identity_cells_with_i18n_skip PASSED [ 20%]
+tests/test_uat_023_export_preview_biz_names.py::test_export_identity_header_covers_guishu_bumen PASSED [ 40%]
+tests/test_uat_023_export_preview_biz_names.py::test_cost_report_preserves_department_supplier_and_raw_name PASSED [ 60%]
+tests/test_uat_023_export_preview_biz_names.py::test_i18n_skip_mechanism_intact_not_globally_disabled PASSED [ 80%]
+tests/test_uat_023_export_preview_biz_names.py::test_api_export_preview_rows_remain_unconverted_contract PASSED [100%]
+
+============================== 5 passed in 0.39s ===============================

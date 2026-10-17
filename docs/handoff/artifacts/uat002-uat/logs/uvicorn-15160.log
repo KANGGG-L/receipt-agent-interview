@@ -1,0 +1,15 @@
+INFO:     Started server process [105470]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15160 (Press CTRL+C to quit)
+INFO:     127.0.0.1:40796 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40798 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40812 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48582 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48596 - "GET /static/js/supplier_archive.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48602 - "GET /static/js/terms.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56090 - "GET /static/js/supplier_archive.js HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105470]

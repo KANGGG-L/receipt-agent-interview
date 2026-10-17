@@ -1,0 +1,24 @@
+{
+  "stage": "uat035-uat",
+  "port": 15205,
+  "pid": 89690,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat035-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "host_15010_untouched": true,
+  "avoided_ports": [
+    15195,
+    15185,
+    15010,
+    15155,
+    15165,
+    15175,
+    15130,
+    15140,
+    15450
+  ],
+  "timestamp_local": "2026-10-17 06:54:21 Asia/Shanghai (CST)",
+  "notes": "Independent UAT PASS; dish deactivated; uvicorn stopped; checklist/ledger to flip."
+}

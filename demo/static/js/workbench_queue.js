@@ -18,6 +18,7 @@ function setWorkbenchQueueFilter(filter) {
             btn.classList.remove('active');
         }
     });
+    queueCurrentPage = 1;
     renderWorkbenchQueueTable();
 }
 window.setWorkbenchQueueFilter = setWorkbenchQueueFilter;
@@ -39,20 +40,107 @@ function restoreWorkbenchQueueFilter() {
 }
 window.restoreWorkbenchQueueFilter = restoreWorkbenchQueueFilter;
 
+// UAT-036：工作台（scan）指标请求世代号与失败态。
+let workbenchQueueLoadSeq = 0;
+let workbenchQueueKpiFailed = false;
+
+// SAAS-SCALE: client-side pagination for large workbench queues
+const QUEUE_PAGE_SIZE = 50;
+let queueCurrentPage = 1;
+let queueFilteredCache = [];
+
+function setQueuePage(page, opts) {
+    const total = queueFilteredCache.length;
+    const pages = Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE) || 1);
+    let p = Number(page) || 1;
+    if (p < 1) p = 1;
+    if (p > pages) p = pages;
+    queueCurrentPage = p;
+    renderWorkbenchQueueTable({ keepPage: true, ...(opts || {}) });
+}
+window.setQueuePage = setQueuePage;
+
+function updateQueuePaginationUI(total, from, to, page, pages) {
+    const rangeEl = document.getElementById('queuePageRange');
+    const prev = document.getElementById('queuePagePrev');
+    const next = document.getElementById('queuePageNext');
+    const pageLabel = document.getElementById('queuePageLabel');
+    const countEl = document.getElementById('queueFilteredCount');
+    if (countEl) countEl.textContent = '共 ' + total + ' 条';
+    if (rangeEl) {
+        if (total === 0) rangeEl.textContent = '显示 0–0';
+        else rangeEl.textContent = '显示 ' + from + '–' + to;
+    }
+    if (pageLabel) pageLabel.textContent = page + ' / ' + pages;
+    if (prev) prev.disabled = page <= 1 || total === 0;
+    if (next) next.disabled = page >= pages || total === 0;
+}
+
+function markWorkbenchQueueMetricsFailed() {
+    workbenchQueueKpiFailed = true;
+    ['qCountTodo', 'qCountReview', 'qCountApprove', 'qCountIssues'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = '—';
+    });
+    const badge = document.getElementById('workbenchQueueTotalBadge');
+    if (badge) badge.textContent = '加载失败';
+    let retry = document.getElementById('workbenchKpiRetry');
+    if (!retry) {
+        const host = document.getElementById('queueTabTodo')
+            ? document.getElementById('queueTabTodo').closest('.card, .panel, section, div')
+            : null;
+        retry = document.createElement('button');
+        retry.id = 'workbenchKpiRetry';
+        retry.type = 'button';
+        retry.className = 'btn btn-secondary';
+        retry.setAttribute('data-uat036', 'workbench-retry');
+        retry.textContent = '重试';
+        retry.style.minHeight = '38px';
+        retry.style.marginLeft = '8px';
+        retry.addEventListener('click', () => loadWorkbenchQueue(true));
+        const tabs = document.querySelector('.queue-tab') && document.querySelector('.queue-tab').parentNode;
+        if (tabs) tabs.appendChild(retry);
+        else if (host) host.appendChild(retry);
+        else document.body.appendChild(retry);
+    }
+    retry.classList.remove('hide');
+    const tbody = document.getElementById('workbenchQueueBody');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--danger,#b91c1c);">'
+            + '工作台队列加载失败，指标不可用（不是空队列）。'
+            + '</td></tr>';
+    }
+}
+
+function clearWorkbenchQueueMetricsFailed() {
+    workbenchQueueKpiFailed = false;
+    const retry = document.getElementById('workbenchKpiRetry');
+    if (retry) retry.classList.add('hide');
+}
+
 function loadWorkbenchQueue(forceRefresh = false) {
+    const mySeq = ++workbenchQueueLoadSeq;
     fetchReceiptListShared(!!forceRefresh)
         .then(ret => {
-            cachedWorkbenchQueueData = ret.data;
+            if (mySeq !== workbenchQueueLoadSeq) return;
+            clearWorkbenchQueueMetricsFailed();
+            cachedWorkbenchQueueData = ret.data || [];
+            queueCurrentPage = 1;
             updateWorkbenchQueueCounters();
             renderWorkbenchQueueTable();
         })
         .catch(err => {
+            if (mySeq !== workbenchQueueLoadSeq) return;
             console.error('加载工作台队列异常:', err);
+            markWorkbenchQueueMetricsFailed();
         });
 }
 window.loadWorkbenchQueue = loadWorkbenchQueue;
 
 function updateWorkbenchQueueCounters() {
+    // UAT-036：失败态下禁止用空数组把「—」刷成假 0。
+    if (workbenchQueueKpiFailed) return;
+    if (!Array.isArray(cachedWorkbenchQueueData)) return;
     const list = cachedWorkbenchQueueData.filter(r => !r.deleted_at);
     
     // AC-03-01: 角色计数严格按集合，approved 不入未完成队列
@@ -81,9 +169,13 @@ function updateWorkbenchQueueCounters() {
     }
 }
 
-function renderWorkbenchQueueTable() {
+function renderWorkbenchQueueTable(opts) {
+    opts = opts || {};
     const tbody = document.getElementById('workbenchQueueBody');
     if (!tbody) return;
+    // UAT-036：失败态已写好错误行，勿用空队列文案覆盖。
+    if (workbenchQueueKpiFailed) return;
+    if (!Array.isArray(cachedWorkbenchQueueData)) return;
 
     const list = cachedWorkbenchQueueData.filter(r => !r.deleted_at);
     let filtered = [];
@@ -100,15 +192,37 @@ function renderWorkbenchQueueTable() {
         filtered = list;
     }
 
-    if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">当前队列暂无待处理单据</td></tr>`;
+    if (!opts.keepPage) {
+        // Fresh filter/data: keep page only when explicitly paging
+        // (setWorkbenchQueueFilter already resets to 1)
+    }
+    queueFilteredCache = filtered;
+    const total = filtered.length;
+    const pages = Math.max(1, Math.ceil(total / QUEUE_PAGE_SIZE) || 1);
+    if (queueCurrentPage > pages) queueCurrentPage = pages;
+    if (queueCurrentPage < 1) queueCurrentPage = 1;
+    const page = queueCurrentPage;
+    const startIdx = total === 0 ? 0 : (page - 1) * QUEUE_PAGE_SIZE;
+    const endIdx = Math.min(startIdx + QUEUE_PAGE_SIZE, total);
+    const pageRows = filtered.slice(startIdx, endIdx);
+    const from = total === 0 ? 0 : startIdx + 1;
+    const to = endIdx;
+    updateQueuePaginationUI(total, from, to, page, pages);
+
+    const dbEmpty = list.length === 0;
+    if (total === 0) {
+        const msg = dbEmpty
+            ? '暂无单据（空库）'
+            : '当前队列暂无待处理单据';
+        const kind = dbEmpty ? 'empty-db' : 'no-filter-results';
+        tbody.innerHTML = `<tr data-empty-state="${kind}"><td colspan="8" style="text-align:center; padding:24px; color:var(--text-muted);">${msg}</td></tr>`;
         return;
     }
 
     const isOwner = (typeof currentRole !== 'undefined' && currentRole === 'owner');
 
     let html = '';
-    filtered.forEach(row => {
+    pageRows.forEach(row => {
         let statusBadge = '<span class="badge badge-secondary">待处理</span>';
         if (row.status === 'parsed') {
             statusBadge = '<span class="badge badge-info">待复核</span>';
@@ -351,3 +465,20 @@ function navigateNextOperableQueueItem(currentId, isManual = false) {
     openReceiptInWorkbench(nextItem.id, true);
 }
 
+
+(function bindQueuePaginationControls() {
+    function bind() {
+        const prev = document.getElementById('queuePagePrev');
+        const next = document.getElementById('queuePageNext');
+        if (prev && !prev.dataset.saasScaleBound) {
+            prev.dataset.saasScaleBound = '1';
+            prev.addEventListener('click', () => setQueuePage(queueCurrentPage - 1));
+        }
+        if (next && !next.dataset.saasScaleBound) {
+            next.dataset.saasScaleBound = '1';
+            next.addEventListener('click', () => setQueuePage(queueCurrentPage + 1));
+        }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind);
+    else bind();
+})();

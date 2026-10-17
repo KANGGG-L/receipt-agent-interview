@@ -1,0 +1,41 @@
+=== static citations (self-checked) ===
+--- demo/static/js/export_center.js:893 ---
+function isExportBusinessIdentityHeader(h) {
+    if (!h) return false;
+    return h.includes('品名') || h.includes('名称') || h.includes('说明')
+        || h.includes('备注') || h.includes('配方') || h.includes('建议')
+        || h.includes('供应商') || h.includes('往来')
+        || h === '部门' || h.includes('部门名称');
+}
+--- demo/static/js/export_center.js:902 ---
+function buildExportRowsHtml(rows, headers) {
+    let html = '';
+    rows.forEach(r => {
+        html += '<tr>';
+        r.forEach((cell, idx) => {
+            const h = headers[idx] || '';
+            const alignClass = exportColAlignClass(h);
+--- demo/static/js/export_center.js:927 ---
+            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+            html += `<td class="${alignClass} ${wrapClass}"${skipAttr}>${cellContent}</td>`;
+        });
+        html += '</tr>';
+    });
+    return html;
+}
+--- demo/static/js/i18n/i18n.js:292 ---
+    // UAT-023：业务品名/供应商等身份列靠 data-i18n-skip 豁免，勿在此全局关掉转换。
+    function isSkipElement(el) {
+        if (!el || el.nodeType !== 1) return false;
+        if (SKIP_TAGS[el.nodeName] === 1) return true;
+        if (!el.getAttribute) return false;
+        if (el.getAttribute('data-i18n-skip') !== null) return true;
+        if (el.getAttribute('translate') === 'no') return true;
+--- demo/app/api_export.py:1442 ---
+def preview_report(req: ExportReq, request: Request):
+    """在线获取报表预览数据：全量行、列头、总行数及关键汇总指标。
+
+    UAT-023 契约：headers / rows 均为简体源文案，行内业务名（品名、供应商等）
+    **不做**简繁转换（与 download 行数据同口径，便于预览 textContent 与 CSV 逐字对齐）。
+    表头的繁体展示由前端 DOM 转换层负责；前端须对业务身份列加 data-i18n-skip，
+    不得全局关闭 zh-Hant-HK 转换。DB 中的业务名称本接口只读、不回写。

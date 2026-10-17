@@ -51,6 +51,18 @@
 
     /* toast：垂直起点，与顶栏高度联动，页面可局部覆盖 */
     --toast-top: 64px;
+
+    /* SAAS-CONSISTENCY layout tokens (existing surfaces only; no new brand/semantic colors) */
+    --page-max-width: 1440px;
+    --page-inline-pad: 24px;
+    --page-block-gap: 16px;
+    --page-card-pad: 24px;
+    --toolbar-gap: 12px;
+    --toolbar-cluster-gap: 8px;
+    --toolbar-divider: var(--border-color);
+
+    /* SAAS-HEIGHT: interactive control minimum hit area */
+    --control-min-height: 38px;
 }
 
 /* 按界面语言选择 CJK 字体：简体与繁体（香港）字形不同，混用会出现同页字形不一致。
@@ -238,11 +250,11 @@ body {
 
 /* 主内容容器 */
 .main-container {
-    max-width: 1440px;
+    max-width: var(--page-max-width, 1440px);
     width: 100%;
     min-width: 0;
     margin: 24px auto;
-    padding: 0 24px;
+    padding: 0 var(--page-inline-pad, 24px);
     box-sizing: border-box;
 }
 
@@ -461,7 +473,7 @@ body {
     background: var(--bg-card);
     border-radius: var(--radius-card);
     border: 1px solid var(--border-color);
-    padding: 24px;
+    padding: var(--page-card-pad, 24px);
     box-shadow: var(--shadow);
     min-width: 0;
     max-width: 100%;
@@ -606,6 +618,11 @@ body {
     align-items: center;
     flex-wrap: wrap;
     padding: 4px 0;
+    /* UAT020: sit above .photo-sider-drawer (z-index:95) so rotate/crop receive real hits */
+    position: relative;
+    z-index: 110;
+    background: var(--bg-card);
+    border-radius: 8px;
 }
 
 .btn-tool {
@@ -677,6 +694,14 @@ body {
 }
 
 /* 裁剪框 Overlay - P1-3 显性化：加粗虚线 + 更强遮罩 + 圆角提示 */
+/* UAT020: preview surface above batch drawer so crop/slice drag is not intercepted */
+#imgViewerContainer,
+#imgViewerContainer.img-tools-hit-layer,
+.img-toolbar.img-tools-hit-layer {
+    position: relative;
+    z-index: 110;
+}
+
 .crop-overlay-box {
     position: absolute;
     border: 2.5px dashed var(--accent);
@@ -1291,47 +1316,54 @@ table.data-table.canary-samples-table tbody tr:hover td,
     background-attachment: local, local, scroll, scroll;
 }
 
-/* 库存表工具栏：筛选与操作分区，避免交叉换行 */
-.inv-toolbar {
+/* 库存表工具栏：筛选与操作分区，避免交叉换行（SAAS-CONSISTENCY tokens + saas-toolbar alias） */
+.inv-toolbar,
+.saas-toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: var(--toolbar-gap, 12px);
     align-items: center;
     justify-content: space-between;
     margin-bottom: 14px;
     padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #e5e7eb);
+    border-bottom: 1px solid var(--toolbar-divider, var(--border-color));
 }
-.inv-toolbar-filters {
+.inv-toolbar-filters,
+.saas-toolbar-filters {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--toolbar-cluster-gap, 8px);
     align-items: center;
     flex: 1;
     min-width: 260px;
 }
-.inv-toolbar-actions {
+.inv-toolbar-actions,
+.saas-toolbar-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--toolbar-cluster-gap, 8px);
     align-items: center;
     flex-shrink: 0;
     margin-left: auto;
 }
 @media (max-width: 980px) {
-    .inv-toolbar {
+    .inv-toolbar,
+    .saas-toolbar {
         flex-direction: column;
         align-items: stretch;
         gap: 10px;
     }
     .inv-toolbar-filters,
-    .inv-toolbar-actions {
+    .inv-toolbar-actions,
+    .saas-toolbar-filters,
+    .saas-toolbar-actions {
         width: 100%;
         min-width: 0;
     }
-    .inv-toolbar-actions {
+    .inv-toolbar-actions,
+    .saas-toolbar-actions {
         justify-content: flex-start;
         padding-top: 10px;
-        border-top: 1px solid var(--border-color, #e5e7eb);
+        border-top: 1px solid var(--toolbar-divider, var(--border-color));
     }
 }
 
@@ -2170,6 +2202,15 @@ table.data-table.receipt-item-table td {
 }
 .photo-sider-drawer.open {
     transform: translateX(0);          /* 滑入 */
+    /* UAT020: chrome / empty list flex area must not steal hits from elevated img tools.
+       Interactive header + photo rows re-enable pointer-events below. */
+    pointer-events: none;
+}
+.photo-sider-drawer.open .sider-header,
+.photo-sider-drawer.open .sider-header *,
+.photo-sider-drawer.open .photo-sider-item,
+.photo-sider-drawer.open .photo-sider-item * {
+    pointer-events: auto;
 }
 
 .sider-header {
@@ -2832,7 +2873,9 @@ table.data-table td.inv-name-cell {
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
-    word-break: break-all;
+    /* UAT-024：break-word 而非 break-all，避免 Rice/Oil 等短名在窄列逐字竖排 */
+    word-break: break-word;
+    overflow-wrap: anywhere;
     line-height: 1.35;
 }
 /* 品名 <strong> 在中文+拉丁+加粗混排时，水平横画会视觉粘合形成"穿过文字的横线"错觉
@@ -2893,9 +2936,11 @@ table.data-table td .inv-actions button {
     text-overflow: clip;
     white-space: nowrap;
 }
-/* 库存表去省略号：品名已改为可换行（.inv-name-text word-break），
+/* 库存表去省略号：品名已改为可换行（.inv-name-text word-break:break-word），
    分类/折算kg 保持单行但需可见且列宽充足，故覆盖通用 td 的 overflow:hidden/ellipsis
    同时为保证“价格走势”在窄视口下完整可见，min-width 收敛至 640（原860过宽导致操作列被横滚藏起） */
+/* UAT-024：桌面/宽屏保留 min-width:640 保证操作列完整；
+   <=640px 手机由 review-mobile.css 覆盖为 min-width:0 + 卡片行，避免 document 水平溢出 */
 #tab-inventory table.data-table {
     min-width: 640px;
 }
@@ -2919,7 +2964,9 @@ table.data-table td .inv-actions button {
     font-weight: 700;
     line-height: 1.3;
     white-space: normal;
-    word-break: break-all;
+    /* UAT-024：与 .inv-name-text 同源，短名不逐字竖排 */
+    word-break: break-word;
+    overflow-wrap: anywhere;
     overflow: visible;
     text-overflow: clip;
 }
@@ -2927,6 +2974,29 @@ table.data-table td .inv-actions button {
     font-size: 1.02rem;
     font-weight: 700;
     line-height: 1.3;
+}
+/* UAT-003：库存流水台账品名列 —— 覆盖 #tab-inventory td:nth-child(3) 的
+   white-space:nowrap，避免 Synthetic_Rice / Synthetic_Oil 被窄列裁成相同前缀。
+   选择器双 ID 提高优先级；原值经 title / data-full-name 可获取，主文案仍为业务名。 */
+#tab-inventory #inventoryLedgerTable td.inv-ledger-name-cell {
+    height: auto;
+    min-height: 66px;
+    overflow: visible;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    max-width: 16rem;
+    text-align: left;
+    vertical-align: middle;
+}
+#tab-inventory #inventoryLedgerTable .inv-ledger-name-text {
+    display: inline-block;
+    max-width: 100%;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.35;
 }
 #tab-inventory .inv-actions {
     justify-content: center;
@@ -6276,5 +6346,328 @@ textarea:focus-visible {
     .main-container {
         max-width: 100vw;
     }
+}
+
+
+/* ==========================================================================
+   SAAS-CONSISTENCY (2026-10-17): page shell / toolbar / date-label alignment
+   Layout tokens only; no new brand/semantic colors.
+   ========================================================================== */
+
+#tab-today,
+#tab-inventory,
+#tab-archive,
+#tab-settings {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+/* Override f1b .st-wrap 980px cap so today/settings match inventory/archive width */
+#tab-today > .st-wrap,
+#tab-settings > .st-wrap {
+    max-width: 100%;
+    width: 100%;
+    margin: 0;
+    box-sizing: border-box;
+}
+
+#tab-today .st-head,
+#tab-settings .st-head {
+    margin-bottom: var(--page-block-gap, 16px);
+}
+
+#tab-today .today-grid {
+    gap: var(--page-block-gap, 16px);
+}
+
+#tab-today .card.today-card,
+#tab-settings .card.st-card,
+#tab-inventory > .card,
+#tab-archive > .card {
+    margin-bottom: var(--page-block-gap, 16px);
+}
+
+/* Report / archive date labels must not letter-stack onto two lines */
+#tab-report .report-date-label,
+#tab-report .csp-s-204,
+#tab-report label[for="costReportMonth"],
+#tab-archive .archive-date-grid > div > label,
+#tab-archive .archive-date-grid .csp-s-155 {
+    white-space: nowrap;
+    flex-shrink: 0;
+    writing-mode: horizontal-tb;
+    word-break: keep-all;
+    overflow-wrap: normal;
+}
+
+#tab-report .csp-s-161,
+#tab-report .report-date-cluster {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--toolbar-cluster-gap, 8px);
+    min-width: 0;
+}
+
+#tab-report .csp-s-203 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--toolbar-cluster-gap, 8px);
+}
+
+#tab-report .card-title.csp-s-200 {
+    flex-wrap: wrap;
+    gap: var(--toolbar-gap, 12px);
+    align-items: flex-start;
+    justify-content: flex-start;
+}
+
+/* Title on its own row; filters+actions share a full-width toolbar row (no overlap) */
+#tab-report .card-title.csp-s-200 > .csp-s-201 {
+    flex: 1 1 100%;
+}
+#tab-report .card-title.csp-s-200 > .csp-s-202 {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--toolbar-gap, 12px);
+    align-items: center;
+    justify-content: space-between;
+    min-width: 0;
+}
+#tab-report .csp-s-203 {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+}
+#tab-report .csp-s-202 > .csp-s-42 {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--toolbar-cluster-gap, 8px);
+    align-items: center;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+#tab-report .csp-s-209 {
+    white-space: nowrap;
+}
+
+#tab-report input[type="date"],
+#tab-report input[type="month"],
+#tab-archive .archive-date-grid input[type="date"] {
+    flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+    .main-container {
+        padding-left: 12px;
+        padding-right: 12px;
+        max-width: 100vw;
+    }
+    #tab-today > .st-wrap,
+    #tab-settings > .st-wrap {
+        max-width: 100%;
+        margin: 0;
+    }
+    #tab-report .csp-s-161,
+    #tab-report .report-date-cluster {
+        flex-wrap: wrap;
+    }
+    #tab-report .report-date-label,
+    #tab-report .csp-s-204 {
+        white-space: nowrap;
+    }
+}
+
+/* ==========================================================================
+   SAAS-HEIGHT (2026-10-17): interactive control min-height contract (>=38px)
+   Overrides known undersized chips / filters / toggles / toast close / time
+   range / parsing-log filters / engine collapse. Keyboard focus-visible kept.
+   No new brand/semantic colors.
+   ========================================================================== */
+
+.chip,
+.export-chip,
+.dish-subtab-btn,
+.analytics-segment-btn,
+.archive-advanced-toggle,
+.fees-drawer-toggle,
+.btn-lean-toggle,
+.btn-lean-act,
+.engine-card-toggle-btn,
+.lang-switch-btn,
+.form-control-sm,
+.demo-role-switch select,
+.auth-logout-btn,
+.btn-sm,
+.btn-golden-ghost,
+.payment-mark-toggle,
+.upload-actions .btn,
+#btnStartRecognize,
+#archiveKpiRetry {
+    min-height: var(--control-min-height, 38px);
+    box-sizing: border-box;
+}
+
+.chip,
+.export-chip,
+.dish-subtab-btn,
+.analytics-segment-btn,
+.archive-advanced-toggle,
+.fees-drawer-toggle,
+.btn-lean-toggle,
+.btn-lean-act,
+.engine-card-toggle-btn,
+.lang-switch-btn,
+.btn-sm,
+.btn-golden-ghost {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.chip,
+.export-chip {
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    line-height: 1.2;
+}
+
+.archive-advanced-toggle {
+    padding: 8px 10px;
+    margin-left: 4px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: var(--primary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.archive-advanced-toggle:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.fees-drawer-toggle {
+    min-height: var(--control-min-height, 38px);
+    padding: 8px 14px;
+}
+
+.btn-lean-toggle,
+.btn-lean-act {
+    min-height: var(--control-min-height, 38px);
+    min-width: var(--control-min-height, 38px);
+    padding: 6px 10px;
+}
+
+.demo-role-switch select {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    padding: 8px 10px !important;
+    font-size: 0.88rem !important;
+    line-height: 1.2 !important;
+}
+
+.auth-logout-btn {
+    min-height: var(--control-min-height, 38px);
+    padding: 8px 10px;
+}
+
+.form-control-sm {
+    min-height: var(--control-min-height, 38px);
+    height: auto;
+    padding: 6px 10px;
+}
+
+.dish-subtab-btn {
+    min-height: var(--control-min-height, 38px);
+    padding: 8px 18px;
+}
+
+.analytics-segment-btn {
+    min-height: var(--control-min-height, 38px);
+}
+
+.engine-card-toggle-btn {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    padding: 6px 12px !important;
+}
+
+/* index-head.css forced 28px time-range buttons — lift to contract */
+#filterTimeRange .btn-group {
+    height: auto !important;
+    min-height: var(--control-min-height, 38px) !important;
+    align-items: center !important;
+}
+#filterTimeRange .btn {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    line-height: 1.2 !important;
+    padding: 6px 12px !important;
+    font-size: 0.85rem !important;
+}
+
+/* parsing-log filters were forced to 34px */
+.parsing-log-filter-control {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    line-height: 1.2 !important;
+    padding: 8px 10px !important;
+}
+.parsing-log-filter-btn {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    padding: 0 14px !important;
+}
+
+/* toast close hit area (was 20x20) */
+.app-toast-close {
+    width: var(--control-min-height, 38px) !important;
+    height: var(--control-min-height, 38px) !important;
+    min-width: var(--control-min-height, 38px);
+    min-height: var(--control-min-height, 38px);
+    line-height: 1 !important;
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+}
+
+.app-toast-action {
+    min-height: var(--control-min-height, 38px);
+    padding: 6px 8px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-golden-ghost {
+    min-height: var(--control-min-height, 38px) !important;
+    height: auto !important;
+    padding: 6px 12px !important;
+}
+
+/* Keep text contrast on sample controls (existing tokens; AA 4.5:1) */
+.chip {
+    color: var(--text-main);
+    background: #ffffff;
+    border-color: var(--border-color);
+}
+.chip.active {
+    color: #ffffff;
+    background: var(--primary);
+    border-color: var(--primary);
+}
+.lang-switch-btn {
+    color: var(--text-main, #1e2223);
+    border-color: #6b7280;
+    background: #fff;
+}
+.lang-switch-btn.active {
+    color: #fff;
+    background: var(--primary, #032425);
+    border-color: var(--primary, #032425);
 }
 

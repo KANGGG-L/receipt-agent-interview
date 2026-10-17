@@ -1,0 +1,1529 @@
+{
+  "port": 15290,
+  "pass": true,
+  "checks": [
+    {
+      "name": "inventory_stocktake/Hans: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鸡翅<script>alert(1)</script>",
+        "csv": "鸡翅<script>alert(1)</script>"
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[备注] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[备注] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[备注] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hans: identity[备注] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hans: synthetic long name painted",
+      "ok": true,
+      "detail": "SKU-0B9079F4|有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）|肉类|kg|20.5|1||||\nSKU-A094C698|鸡翅<script>alert(1)</script>|肉类|kg|3|0||||"
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[供应商名称] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[供应商名称] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[供应商电话] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[供应商电话] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[归属部门] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "后厨冷链中心（超长部门名称）",
+        "csv": "后厨冷链中心（超长部门名称）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[归属部门] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[商品品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: identity[商品品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hans: synthetic long name painted",
+      "ok": true,
+      "detail": "#1|2026-09-10|鲜生农产供应商（特长名称说明）||880|已入账|已付|后厨冷链中心（超长部门名称）|有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）|10|kg|88|880"
+    },
+    {
+      "name": "inventory_valuation/Hans: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_valuation/Hans: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_valuation/Hans: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鸡翅<script>alert(1)</script>",
+        "csv": "鸡翅<script>alert(1)</script>"
+      }
+    },
+    {
+      "name": "inventory_valuation/Hans: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "spend_summary/Hans: has-or-skip-identity",
+      "ok": true,
+      "detail": {
+        "reportId": "spend_summary/Hans",
+        "idxs": [],
+        "comparisons": [],
+        "pass": true,
+        "note": "no identity cols"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[往来供应商/经手] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[往来供应商/经手] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[往来供应商/经手] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[往来供应商/经手] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[操作备注] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[操作备注] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[操作备注] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hans: identity[操作备注] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "DB SKU long name present (Hans phase)",
+      "ok": true,
+      "detail": null
+    },
+    {
+      "name": "document locale is zh-Hant-HK",
+      "ok": true,
+      "detail": {
+        "lang": "zh-Hant-HK",
+        "dataLocale": "zh-Hant-HK"
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鸡翅<script>alert(1)</script>",
+        "csv": "鸡翅<script>alert(1)</script>"
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[备注] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[备注] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[备注] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: identity[备注] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/Hant: Hant painted headers translated vs Hans CSV",
+      "ok": true,
+      "detail": {
+        "pairs": [
+          [
+            "食材代码",
+            "食材代碼"
+          ],
+          [
+            "食材品名",
+            "食材品名"
+          ],
+          [
+            "分类",
+            "分類"
+          ],
+          [
+            "基本单位",
+            "基本單位"
+          ],
+          [
+            "系统账面库存",
+            "系統賬面庫存"
+          ],
+          [
+            "安全警戒线",
+            "安全警戒線"
+          ],
+          [
+            "实盘数量(现场手填)",
+            "實盤數量(現場手填)"
+          ],
+          [
+            "盘盈/盘亏差异",
+            "盤盈/盤虧差異"
+          ]
+        ],
+        "strong": [
+          [
+            "分类",
+            "分類"
+          ],
+          [
+            "备注",
+            "備註"
+          ]
+        ],
+        "anyDiff": true,
+        "allSameLen": true
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: CSV headers localized vs Hans",
+      "ok": true,
+      "detail": {
+        "hans": [
+          "食材代码",
+          "食材品名",
+          "分类",
+          "基本单位",
+          "系统账面库存"
+        ],
+        "hant": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "系統賬面庫存"
+        ]
+      }
+    },
+    {
+      "name": "inventory_stocktake/Hant: LONG_NAME preserved exact Hans",
+      "ok": true,
+      "detail": {
+        "preserved": true,
+        "wronglyConverted": false,
+        "sample": "SKU-0B9079F4|有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）|肉類|kg|20.5|1||||\nSKU-A094C698|鸡翅<script>alert(1)</script>|肉類|kg|3|0||||"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[供应商名称] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[供应商名称] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[供应商电话] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[供应商电话] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[归属部门] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "后厨冷链中心（超长部门名称）",
+        "csv": "后厨冷链中心（超长部门名称）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[归属部门] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[商品品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: identity[商品品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: Hant painted headers translated vs Hans CSV",
+      "ok": true,
+      "detail": {
+        "pairs": [
+          [
+            "收据ID",
+            "收據ID"
+          ],
+          [
+            "开单日期",
+            "開單日期"
+          ],
+          [
+            "供应商名称",
+            "供應商名稱"
+          ],
+          [
+            "供应商电话",
+            "供應商電話"
+          ],
+          [
+            "单据总额(元)",
+            "單據總額(元)"
+          ],
+          [
+            "单据状态",
+            "單據狀態"
+          ],
+          [
+            "付款状态",
+            "付款狀態"
+          ],
+          [
+            "归属部门",
+            "歸屬部門"
+          ]
+        ],
+        "strong": [
+          [
+            "供应商名称",
+            "供應商名稱"
+          ],
+          [
+            "供应商电话",
+            "供應商電話"
+          ],
+          [
+            "单据状态",
+            "單據狀態"
+          ],
+          [
+            "付款状态",
+            "付款狀態"
+          ],
+          [
+            "归属部门",
+            "歸屬部門"
+          ],
+          [
+            "行金额(元)",
+            "行金額(元)"
+          ]
+        ],
+        "anyDiff": true,
+        "allSameLen": true
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: CSV headers localized vs Hans",
+      "ok": true,
+      "detail": {
+        "hans": [
+          "收据ID",
+          "开单日期",
+          "供应商名称",
+          "供应商电话",
+          "单据总额(元)"
+        ],
+        "hant": [
+          "收據ID",
+          "開單日期",
+          "供應商名稱",
+          "供應商電話",
+          "單據總額(元)"
+        ]
+      }
+    },
+    {
+      "name": "receipts_itemized_ledger/Hant: LONG_NAME preserved exact Hans",
+      "ok": true,
+      "detail": {
+        "preserved": true,
+        "wronglyConverted": false,
+        "sample": "#1|2026-09-10|鲜生农产供应商（特长名称说明）||880|已入賬|已付|后厨冷链中心（超长部门名称）|有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）|10|kg|88|880"
+      }
+    },
+    {
+      "name": "inventory_valuation/Hant: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_valuation/Hant: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_valuation/Hant: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鸡翅<script>alert(1)</script>",
+        "csv": "鸡翅<script>alert(1)</script>"
+      }
+    },
+    {
+      "name": "inventory_valuation/Hant: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_valuation/Hant: Hant painted headers translated vs Hans CSV",
+      "ok": true,
+      "detail": {
+        "pairs": [
+          [
+            "食材代码",
+            "食材代碼"
+          ],
+          [
+            "食材品名",
+            "食材品名"
+          ],
+          [
+            "分类",
+            "分類"
+          ],
+          [
+            "基本单位",
+            "基本單位"
+          ],
+          [
+            "当前库存",
+            "當前庫存"
+          ],
+          [
+            "折算标准kg",
+            "折算標準kg"
+          ],
+          [
+            "最新进货单价(元)",
+            "最新進貨單價(元)"
+          ],
+          [
+            "库存货值估算(元)",
+            "庫存貨值估算(元)"
+          ]
+        ],
+        "strong": [
+          [
+            "分类",
+            "分類"
+          ],
+          [
+            "库存状态",
+            "庫存狀態"
+          ]
+        ],
+        "anyDiff": true,
+        "allSameLen": true
+      }
+    },
+    {
+      "name": "inventory_valuation/Hant: CSV headers localized vs Hans",
+      "ok": true,
+      "detail": {
+        "hans": [
+          "食材代码",
+          "食材品名",
+          "分类",
+          "基本单位",
+          "当前库存"
+        ],
+        "hant": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "當前庫存"
+        ]
+      }
+    },
+    {
+      "name": "spend_summary/Hant: has-or-skip-identity",
+      "ok": true,
+      "detail": {
+        "reportId": "spend_summary/Hant",
+        "idxs": [],
+        "comparisons": [],
+        "pass": true,
+        "note": "no identity cols"
+      }
+    },
+    {
+      "name": "spend_summary/Hant: Hant painted headers translated vs Hans CSV",
+      "ok": true,
+      "detail": {
+        "pairs": [
+          [
+            "花销维度",
+            "花銷維度"
+          ],
+          [
+            "核算对象",
+            "核算對象"
+          ],
+          [
+            "本期采购额(元)",
+            "本期採購額(元)"
+          ],
+          [
+            "上期对照额(元)",
+            "上期對照額(元)"
+          ],
+          [
+            "环比增减额(元)",
+            "環比增減額(元)"
+          ],
+          [
+            "环比变化率(%)",
+            "環比變化率(%)"
+          ],
+          [
+            "本期笔数",
+            "本期筆數"
+          ],
+          [
+            "趋势状态",
+            "趨勢狀態"
+          ]
+        ],
+        "strong": [
+          [
+            "趋势状态",
+            "趨勢狀態"
+          ]
+        ],
+        "anyDiff": true,
+        "allSameLen": true
+      }
+    },
+    {
+      "name": "spend_summary/Hant: CSV headers localized vs Hans",
+      "ok": true,
+      "detail": {
+        "hans": [
+          "花销维度",
+          "核算对象",
+          "本期采购额(元)",
+          "上期对照额(元)",
+          "环比增减额(元)"
+        ],
+        "hant": [
+          "花銷維度",
+          "核算對象",
+          "本期採購額(元)",
+          "上期對照額(元)",
+          "環比增減額(元)"
+        ]
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[往来供应商/经手] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[往来供应商/经手] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[往来供应商/经手] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鲜生农产供应商（特长名称说明）",
+        "csv": "鲜生农产供应商（特长名称说明）"
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[往来供应商/经手] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[操作备注] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[操作备注] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[操作备注] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: identity[操作备注] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stock_logs/Hant: Hant painted headers translated vs Hans CSV",
+      "ok": true,
+      "detail": {
+        "pairs": [
+          [
+            "流水编号",
+            "流水編號"
+          ],
+          [
+            "业务日期",
+            "業務日期"
+          ],
+          [
+            "业务类型",
+            "業務類型"
+          ],
+          [
+            "食材品名",
+            "食材品名"
+          ],
+          [
+            "变动数量",
+            "變動數量"
+          ],
+          [
+            "单位",
+            "單位"
+          ],
+          [
+            "变动金额(元)",
+            "變動金額(元)"
+          ],
+          [
+            "往来供应商/经手",
+            "往來供應商/經手"
+          ]
+        ],
+        "strong": [
+          [
+            "变动金额(元)",
+            "變動金額(元)"
+          ],
+          [
+            "往来供应商/经手",
+            "往來供應商/經手"
+          ],
+          [
+            "操作备注",
+            "操作備註"
+          ]
+        ],
+        "anyDiff": true,
+        "allSameLen": true
+      }
+    },
+    {
+      "name": "inventory_stock_logs/Hant: CSV headers localized vs Hans",
+      "ok": true,
+      "detail": {
+        "hans": [
+          "流水编号",
+          "业务日期",
+          "业务类型",
+          "食材品名",
+          "变动数量"
+        ],
+        "hant": [
+          "流水編號",
+          "業務日期",
+          "業務類型",
+          "食材品名",
+          "變動數量"
+        ]
+      }
+    },
+    {
+      "name": "I18N.convert still active under Hant (not globally disabled)",
+      "ok": true,
+      "detail": {
+        "hasI18N": true,
+        "exportCsv": "匯出 CSV",
+        "status": "已入賬",
+        "supplierHdr": "供應商名稱",
+        "locale": "zh-Hant-HK"
+      }
+    },
+    {
+      "name": "download button chrome converted in DOM",
+      "ok": true,
+      "detail": true
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[食材品名] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+        "csv": "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）"
+      }
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[食材品名] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[食材品名] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "鸡翅<script>alert(1)</script>",
+        "csv": "鸡翅<script>alert(1)</script>"
+      }
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[食材品名] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[备注] row0 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[备注] row0 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[备注] row1 preview==CSV",
+      "ok": true,
+      "detail": {
+        "preview": "",
+        "csv": ""
+      }
+    },
+    {
+      "name": "inventory_stocktake/HansAgain: identity[备注] row1 has data-i18n-skip",
+      "ok": true
+    },
+    {
+      "name": "HansAgain: LONG_NAME still exact",
+      "ok": true,
+      "detail": "SKU-0B9079F4|有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）|肉类|kg|20.5|1||||\nSKU-A094C698|鸡翅<script>alert(1)</script>|肉类|kg|3|0||||"
+    },
+    {
+      "name": "DB SKU name unchanged (API /skus unavailable; identity paint == seed)",
+      "ok": true,
+      "detail": "fallback to painted identity"
+    },
+    {
+      "name": "XSS name not injected as live script in preview DOM",
+      "ok": true,
+      "detail": {
+        "found": true,
+        "hasRaw": false,
+        "hasEsc": true,
+        "textHas": true
+      }
+    }
+  ],
+  "errors": [],
+  "reports": {
+    "inventory_stocktake": {
+      "hans": {
+        "painted": {
+          "headers": [
+            "食材代码",
+            "食材品名",
+            "分类",
+            "基本单位",
+            "系统账面库存",
+            "安全警戒线",
+            "实盘数量(现场手填)",
+            "盘盈/盘亏差异",
+            "盘点人员签字",
+            "备注"
+          ],
+          "rows": [
+            [
+              "SKU-0B9079F4",
+              "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+              "肉类",
+              "kg",
+              "20.5",
+              "1",
+              "",
+              "",
+              "",
+              ""
+            ],
+            [
+              "SKU-A094C698",
+              "鸡翅<script>alert(1)</script>",
+              "肉类",
+              "kg",
+              "3",
+              "0",
+              "",
+              "",
+              "",
+              ""
+            ]
+          ],
+          "skipFlags": [
+            [
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              true
+            ],
+            [
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              true
+            ]
+          ],
+          "locale": "zh-Hans",
+          "chromeSample": "导出 CSV (Excel)"
+        },
+        "csvHeaders": [
+          "食材代码",
+          "食材品名",
+          "分类",
+          "基本单位",
+          "系统账面库存",
+          "安全警戒线",
+          "实盘数量(现场手填)",
+          "盘盈/盘亏差异",
+          "盘点人员签字",
+          "备注"
+        ],
+        "csvN": 2
+      },
+      "hant": {
+        "paintedHeaders": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "系統賬面庫存",
+          "安全警戒線",
+          "實盤數量(現場手填)",
+          "盤盈/盤虧差異",
+          "盤點人員簽字",
+          "備註"
+        ],
+        "paintedN": 2,
+        "chromeSample": "匯出 CSV (Excel)",
+        "csvHantHeaders": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "系統賬面庫存",
+          "安全警戒線",
+          "實盤數量(現場手填)",
+          "盤盈/盤虧差異",
+          "盤點人員簽字",
+          "備註"
+        ]
+      },
+      "hansAgain": {
+        "headers": [
+          "食材代码",
+          "食材品名",
+          "分类",
+          "基本单位",
+          "系统账面库存",
+          "安全警戒线",
+          "实盘数量(现场手填)",
+          "盘盈/盘亏差异",
+          "盘点人员签字",
+          "备注"
+        ],
+        "n": 2
+      }
+    },
+    "receipts_itemized_ledger": {
+      "hans": {
+        "painted": {
+          "headers": [
+            "收据ID",
+            "开单日期",
+            "供应商名称",
+            "供应商电话",
+            "单据总额(元)",
+            "单据状态",
+            "付款状态",
+            "归属部门",
+            "商品品名",
+            "采购数量",
+            "单位",
+            "单价(元)",
+            "行金额(元)"
+          ],
+          "rows": [
+            [
+              "#1",
+              "2026-09-10",
+              "鲜生农产供应商（特长名称说明）",
+              "",
+              "880",
+              "已入账",
+              "已付",
+              "后厨冷链中心（超长部门名称）",
+              "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+              "10",
+              "kg",
+              "88",
+              "880"
+            ]
+          ],
+          "skipFlags": [
+            [
+              false,
+              false,
+              true,
+              true,
+              false,
+              false,
+              false,
+              true,
+              true,
+              false,
+              false,
+              false,
+              false
+            ]
+          ],
+          "locale": "zh-Hans",
+          "chromeSample": "导出 CSV (Excel)"
+        },
+        "csvHeaders": [
+          "收据ID",
+          "开单日期",
+          "供应商名称",
+          "供应商电话",
+          "单据总额(元)",
+          "单据状态",
+          "付款状态",
+          "归属部门",
+          "商品品名",
+          "采购数量",
+          "单位",
+          "单价(元)",
+          "行金额(元)"
+        ],
+        "csvN": 1
+      },
+      "hant": {
+        "paintedHeaders": [
+          "收據ID",
+          "開單日期",
+          "供應商名稱",
+          "供應商電話",
+          "單據總額(元)",
+          "單據狀態",
+          "付款狀態",
+          "歸屬部門",
+          "商品品名",
+          "採購數量",
+          "單位",
+          "單價(元)",
+          "行金額(元)"
+        ],
+        "paintedN": 1,
+        "chromeSample": "匯出 CSV (Excel)",
+        "csvHantHeaders": [
+          "收據ID",
+          "開單日期",
+          "供應商名稱",
+          "供應商電話",
+          "單據總額(元)",
+          "單據狀態",
+          "付款狀態",
+          "歸屬部門",
+          "商品品名",
+          "採購數量",
+          "單位",
+          "單價(元)",
+          "行金額(元)"
+        ]
+      }
+    },
+    "inventory_valuation": {
+      "hans": {
+        "painted": {
+          "headers": [
+            "食材代码",
+            "食材品名",
+            "分类",
+            "基本单位",
+            "当前库存",
+            "折算标准kg",
+            "最新进货单价(元)",
+            "库存货值估算(元)",
+            "安全警戒线",
+            "库存状态"
+          ],
+          "rows": [
+            [
+              "SKU-0B9079F4",
+              "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+              "肉类",
+              "kg",
+              "20.5",
+              "20.5",
+              "88",
+              "1804",
+              "1",
+              "正常"
+            ],
+            [
+              "SKU-A094C698",
+              "鸡翅<script>alert(1)</script>",
+              "肉类",
+              "kg",
+              "3",
+              "3",
+              "40",
+              "120",
+              "0",
+              "正常"
+            ]
+          ],
+          "skipFlags": [
+            [
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            [
+              false,
+              true,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
+          ],
+          "locale": "zh-Hans",
+          "chromeSample": "导出 CSV (Excel)"
+        },
+        "csvHeaders": [
+          "食材代码",
+          "食材品名",
+          "分类",
+          "基本单位",
+          "当前库存",
+          "折算标准kg",
+          "最新进货单价(元)",
+          "库存货值估算(元)",
+          "安全警戒线",
+          "库存状态"
+        ],
+        "csvN": 2
+      },
+      "hant": {
+        "paintedHeaders": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "當前庫存",
+          "折算標準kg",
+          "最新進貨單價(元)",
+          "庫存貨值估算(元)",
+          "安全警戒線",
+          "庫存狀態"
+        ],
+        "paintedN": 2,
+        "chromeSample": "匯出 CSV (Excel)",
+        "csvHantHeaders": [
+          "食材代碼",
+          "食材品名",
+          "分類",
+          "基本單位",
+          "當前庫存",
+          "折算標準kg",
+          "最新進貨單價(元)",
+          "庫存貨值估算(元)",
+          "安全警戒線",
+          "庫存狀態"
+        ]
+      }
+    },
+    "spend_summary": {
+      "hans": {
+        "painted": {
+          "headers": [
+            "花销维度",
+            "核算对象",
+            "本期采购额(元)",
+            "上期对照额(元)",
+            "环比增减额(元)",
+            "环比变化率(%)",
+            "本期笔数",
+            "趋势状态"
+          ],
+          "rows": [
+            [
+              "部门",
+              "后厨冷链中心（超长部门名称）",
+              "880",
+              "0",
+              "+880.00",
+              "100.0%",
+              "1",
+              "[新增]"
+            ],
+            [
+              "部门",
+              "未分配",
+              "0",
+              "0",
+              "0.00",
+              "0.0%",
+              "0",
+              "[持平]"
+            ],
+            [
+              "部门",
+              "合计",
+              "880",
+              "0",
+              "+880.00",
+              "100.0%",
+              "1",
+              "-"
+            ]
+          ],
+          "skipFlags": [
+            [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ],
+            [
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false,
+              false
+            ]
+          ],
+          "locale": "zh-Hans",
+          "chromeSample": "导出 CSV (Excel)"
+        },
+        "csvHeaders": [
+          "花销维度",
+          "核算对象",
+          "本期采购额(元)",
+          "上期对照额(元)",
+          "环比增减额(元)",
+          "环比变化率(%)",
+          "本期笔数",
+          "趋势状态"
+        ],
+        "csvN": 3
+      },
+      "hant": {
+        "paintedHeaders": [
+          "花銷維度",
+          "核算對象",
+          "本期採購額(元)",
+          "上期對照額(元)",
+          "環比增減額(元)",
+          "環比變化率(%)",
+          "本期筆數",
+          "趨勢狀態"
+        ],
+        "paintedN": 3,
+        "chromeSample": "匯出 CSV (Excel)",
+        "csvHantHeaders": [
+          "花銷維度",
+          "核算對象",
+          "本期採購額(元)",
+          "上期對照額(元)",
+          "環比增減額(元)",
+          "環比變化率(%)",
+          "本期筆數",
+          "趨勢狀態"
+        ]
+      }
+    },
+    "inventory_stock_logs": {
+      "hans": {
+        "painted": {
+          "headers": [
+            "流水编号",
+            "业务日期",
+            "业务类型",
+            "食材品名",
+            "变动数量",
+            "单位",
+            "变动金额(元)",
+            "往来供应商/经手",
+            "关联单据号",
+            "操作备注"
+          ],
+          "rows": [
+            [
+              "LOG-2",
+              "2026-09-12",
+              "餐品消耗",
+              "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+              "2",
+              "kg",
+              "176",
+              "鲜生农产供应商（特长名称说明）",
+              "#1",
+              ""
+            ],
+            [
+              "LOG-1",
+              "2026-09-10",
+              "采购入库",
+              "有机走地鸡胸肉（去皮去骨特长规格说明超长品名测试ABC）",
+              "10",
+              "kg",
+              "880",
+              "鲜生农产供应商（特长名称说明）",
+              "#1",
+              ""
+            ]
+          ],
+          "skipFlags": [
+            [
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              true
+            ],
+            [
+              false,
+              false,
+              false,
+              true,
+              false,
+              false,
+              false,
+              true,
+              false,
+              true
+            ]
+          ],
+          "locale": "zh-Hans",
+          "chromeSample": "导出 CSV (Excel)"
+        },
+        "csvHeaders": [
+          "流水编号",
+          "业务日期",
+          "业务类型",
+          "食材品名",
+          "变动数量",
+          "单位",
+          "变动金额(元)",
+          "往来供应商/经手",
+          "关联单据号",
+          "操作备注"
+        ],
+        "csvN": 2
+      },
+      "hant": {
+        "paintedHeaders": [
+          "流水編號",
+          "業務日期",
+          "業務類型",
+          "食材品名",
+          "變動數量",
+          "單位",
+          "變動金額(元)",
+          "往來供應商/經手",
+          "關聯單據號",
+          "操作備註"
+        ],
+        "paintedN": 2,
+        "chromeSample": "匯出 CSV (Excel)",
+        "csvHantHeaders": [
+          "流水編號",
+          "業務日期",
+          "業務類型",
+          "食材品名",
+          "變動數量",
+          "單位",
+          "變動金額(元)",
+          "往來供應商/經手",
+          "關聯單據號",
+          "操作備註"
+        ]
+      }
+    }
+  },
+  "locales": {
+    "hant_doc": {
+      "lang": "zh-Hant-HK",
+      "dataLocale": "zh-Hant-HK"
+    },
+    "convertProbe": {
+      "hasI18N": true,
+      "exportCsv": "匯出 CSV",
+      "status": "已入賬",
+      "supplierHdr": "供應商名稱",
+      "locale": "zh-Hant-HK"
+    }
+  },
+  "db": {
+    "before": null,
+    "mid": null,
+    "after": null
+  },
+  "screenshots": [
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/export-hans-landed.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-inventory_stocktake.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-receipts_itemized_ledger.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-inventory_valuation.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-spend_summary.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-inventory_stock_logs.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hant-inventory_stocktake.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hant-receipts_itemized_ledger.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hant-inventory_valuation.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hant-spend_summary.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hant-inventory_stock_logs.png",
+    "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-uat2/ui/preview-hans-again-stocktake.png"
+  ],
+  "failedCount": 0,
+  "passCount": 95,
+  "failed": []
+}

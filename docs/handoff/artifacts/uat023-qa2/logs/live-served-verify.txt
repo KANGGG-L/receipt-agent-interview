@@ -1,0 +1,4 @@
+893:function isExportBusinessIdentityHeader(h) {
+895:    // 部门身份列：部门 / 部门名称 / 归属部门 等（UAT-023 fix2：旧谓词漏掉「归属部门」）
+899:        || h.includes('部门') || h === '销售对象';
+912:            const preserveBiz = isExportBusinessIdentityHeader(h);

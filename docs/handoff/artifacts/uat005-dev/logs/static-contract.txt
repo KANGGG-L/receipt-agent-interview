@@ -1,0 +1,12 @@
+api_EMPTY_FILE=True
+api_INVALID_IMAGE=True
+api_UNSUPPORTED=True
+api_FILE_TOO_LARGE=True
+api_magic_unsupported_not_invalid=True
+upload_isFileIssue_route=True
+upload_file_card_empty=True
+upload_file_card_corrupt=True
+upload_file_card_unsupported=True
+upload_ENGINE_TIMEOUT_code=True
+upload_no_escapeHtml_filename=True
+ALL_PASS

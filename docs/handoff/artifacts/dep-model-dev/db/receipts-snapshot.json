@@ -1,0 +1,149 @@
+{
+  "receipts": [
+    {
+      "id": 1,
+      "status": "parsed",
+      "supplier_name": "7-ELEVEN",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 2,
+      "status": "parsed",
+      "supplier_name": "7-Eleven",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 3,
+      "status": "parsed",
+      "supplier_name": "7-ELEVEN",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 4,
+      "status": "parsed",
+      "supplier_name": "7-Eleven",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 5,
+      "status": "parsed",
+      "supplier_name": "華記行清潔用品有限公司",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 1149.0,
+      "receipt_date": "2024-01-29"
+    },
+    {
+      "id": 6,
+      "status": "parsed",
+      "supplier_name": "7-ELEVEN",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 7,
+      "status": "edited",
+      "supplier_name": "Vendor_A",
+      "doc_form": "manual_entry",
+      "total_amount": 100.0,
+      "receipt_date": "2026-10-17"
+    },
+    {
+      "id": 8,
+      "status": "error",
+      "supplier_name": "",
+      "doc_form": "",
+      "total_amount": 0.0,
+      "receipt_date": ""
+    },
+    {
+      "id": 9,
+      "status": "edited",
+      "supplier_name": "7-ELEVEN",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 10,
+      "status": "edited",
+      "supplier_name": "7-Eleven",
+      "doc_form": "",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 11,
+      "status": "edited",
+      "supplier_name": "Vendor_A",
+      "doc_form": "manual_entry",
+      "total_amount": 100.0,
+      "receipt_date": "2026-10-17"
+    },
+    {
+      "id": 12,
+      "status": "edited",
+      "supplier_name": "Vendor_A",
+      "doc_form": "manual_entry",
+      "total_amount": 80.0,
+      "receipt_date": "2026-10-17"
+    },
+    {
+      "id": 13,
+      "status": "edited",
+      "supplier_name": "7-Eleven",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 14,
+      "status": "edited",
+      "supplier_name": "7-Eleven",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    },
+    {
+      "id": 15,
+      "status": "error",
+      "supplier_name": "",
+      "doc_form": "",
+      "total_amount": 0.0,
+      "receipt_date": ""
+    },
+    {
+      "id": 16,
+      "status": "parsed",
+      "supplier_name": "7-ELEVEN",
+      "doc_form": "printed_delivery_note",
+      "total_amount": 13.0,
+      "receipt_date": "2016-10-01"
+    }
+  ],
+  "item_counts": {
+    "1": 1,
+    "2": 1,
+    "3": 1,
+    "4": 1,
+    "5": 4,
+    "6": 1,
+    "7": 1,
+    "9": 1,
+    "10": 1,
+    "11": 1,
+    "12": 1,
+    "13": 1,
+    "14": 1,
+    "16": 1
+  },
+  "n_receipts": 16
+}

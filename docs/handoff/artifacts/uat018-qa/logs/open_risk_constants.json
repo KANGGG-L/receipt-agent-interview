@@ -1,0 +1,6 @@
+{
+  "BOM_QTY_UPPER_LIMIT_STATUS": "open_risk_not_adjudicated",
+  "BOM_QTY_UPPER_LIMIT_SOURCE": null,
+  "BOM_QTY_UPPER_LIMIT_NOTE": "Finite extreme BOM qty (e.g. 999999999999) may still persist until an upper limit is adjudicated; rejects apply only to non-finite / <=0 values.",
+  "claims_b26_cap": false
+}

@@ -1,0 +1,31 @@
+[OK] source has cancel no-op
+[OK] source does not fake-logout before success
+[OK] requestAuthLogout exported
+[OK] performAuthLogout exported
+[OK] getAuthToken always null
+[OK] logout wrap visible when logged in
+[OK] demo role switch hidden when auth enabled
+[OK] cancel keeps AuthState.account
+[OK] cancel does not clear storage
+退出登录请求异常 Error: network down
+    at fetchImpl (/workspace/receipt-agent-interview/demo/tests/frontend_uat010_logout_harness.js:138:49)
+    at Object.fetch (/workspace/receipt-agent-interview/demo/tests/frontend_uat010_logout_harness.js:86:42)
+    at authWrappedFetch (common.js:538:16)
+    at performAuthLogout (common.js:779:5)
+    at evalmachine.<anonymous>:1:1
+    at Script.runInContext (node:vm:149:12)
+    at Object.runInContext (node:vm:301:6)
+    at s (/workspace/receipt-agent-interview/demo/tests/frontend_uat010_logout_harness.js:97:30)
+    at main (/workspace/receipt-agent-interview/demo/tests/frontend_uat010_logout_harness.js:141:11)
+    at Object.<anonymous> (/workspace/receipt-agent-interview/demo/tests/frontend_uat010_logout_harness.js:173:3)
+[OK] network fail keeps account
+[OK] network fail does not open login
+[OK] network fail toast
+[OK] network fail keeps storage key until success clear
+[OK] logout posts /api/auth/logout
+[OK] success clears account
+[OK] success clears storage credential key
+[OK] success shows login panel
+[OK] storageHasAuthCredentials false
+
+PASS 18 FAIL 0

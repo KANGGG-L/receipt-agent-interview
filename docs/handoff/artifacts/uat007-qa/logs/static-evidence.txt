@@ -1,0 +1,14 @@
+=== static evidence 2026-10-17 04:10:32 CST ===
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:629:             qty=body.quantity,
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:740: _OUTBOUND_LOG_KINDS = frozenset({"consume", "waste"})
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:745: def ledger_qty_signed(kind, qty):
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:758:     if k in _OUTBOUND_LOG_KINDS:
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:759:         return -abs(q)
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:826:             "qty": r.qty,
+/workspace/receipt-agent-interview/demo/app/api_inventory.py:827:             "qty_signed": ledger_qty_signed(r.kind, r.qty),
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:635: function invLedgerQtySigned(r) {
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:645: function invLedgerQtyText(r) {
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:649:     return (signed > 0 ? '+' : '') + signed;
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:701:                 const qtyText = invLedgerQtyText(r);
+/workspace/receipt-agent-interview/demo/static/js/inventory_board.js:717:                     <td class="col-right">${w2Escape(qtyText)}</td>
+OLD_PATTERN_ABSENT=true

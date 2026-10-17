@@ -1,0 +1,15 @@
+{
+  "stage": "uat020-uat",
+  "port": 15600,
+  "pid": 28998,
+  "db_path": "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat020-uat/environment/uat_isolated.db",
+  "stop_action": "STOPPED_OWNED_TEST_PROCESS",
+  "port_free": true,
+  "port_released": "port_15600_released",
+  "pid_alive_after_stop": false,
+  "reuseaddr_bind_ok": true,
+  "browser_note": "Chrome headless via puppeteer-core; contexts closed",
+  "host_15010_untouched": true,
+  "timestamp_local": "2026-10-17 05:27:49 CST",
+  "notes": "Fresh port 15600 (forbidden reuse of 15150-15550; QA used 15550). Independent UAT only; no git/checklist."
+}

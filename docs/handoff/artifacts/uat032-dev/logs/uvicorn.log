@@ -1,0 +1,31 @@
+INFO:     Started server process [260481]
+INFO:     Waiting for application startup.
+[memory_consistency] 记忆表与向量库不一致：孤儿向量=13、缺向量行=0、交集=0（记忆库=/workspace/receipt-agent-interview/docs/handoff/artifacts/uat032-dev/environment/uat032.db，向量库=/workspace/receipt-agent-interview/demo/.rag_chroma）；只读巡检，不自动修复，可查 GET /api/admin/memory-consistency。
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15132 (Press CTRL+C to quit)
+INFO:     127.0.0.1:44242 - "GET /api/health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44252 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44264 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44274 - "GET /api/receipt/1 HTTP/1.1" 200 OK
+/workspace/receipt-agent-interview/demo/app/services/rag.py:231: LangChainDeprecationWarning: The class `Chroma` was deprecated in LangChain 0.2.9 and will be removed in 1.0. An updated version of the class exists in the `langchain-chroma package and should be used instead. To use it run `pip install -U `langchain-chroma` and import as `from `langchain_chroma import Chroma``.
+  _vs_tenant[tid] = Chroma(
+INFO:     127.0.0.1:44288 - "POST /api/receipt/1/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44292 - "GET /api/inventory/skus/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44304 - "POST /api/inventory/skus HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44314 - "POST /api/save_edited HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44316 - "GET /api/receipt/2 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44328 - "POST /api/receipt/2/approve HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44344 - "POST /api/dishes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44354 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44362 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44368 - "GET /api/dishes/daily_consumption?date=2026-04-10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44376 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44392 - "POST /api/dishes/daily_consumption/batch HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44404 - "GET /api/dishes/daily_consumption?date=2026-04-10 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44412 - "GET /api/dishes/daily_consumption?date=2026-04-11 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44416 - "GET /api/inventory/skus/1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44422 - "GET /static/js/dish_consumption.js?v=20261017_uat032 HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [260481]

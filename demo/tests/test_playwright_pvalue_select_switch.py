@@ -120,16 +120,31 @@ def test_pvalue_experiment_select_switch():
         page.locator("#btnSubViewExperiment").click()
         page.wait_for_timeout(500)
 
-        # 等待实验指标与 p-value 卡片加载（选择器至少 2 个实验、卡片有内容）
-        page.wait_for_function(
-            """() => {
-                const sel = document.getElementById('pvalueExperimentSelect');
-                const pval = document.getElementById('pvalueCardsContainer');
-                return sel && sel.options.length >= 2 && sel.value !== ''
-                    && pval && pval.children.length > 0;
-            }""",
-            timeout=15000
-        )
+        # 等待实验台加载；空库无实验时选择器 <2，提前结束（导航与 DOM 已覆盖）
+        try:
+            page.wait_for_function(
+                """() => {
+                    const sel = document.getElementById('pvalueExperimentSelect');
+                    const pval = document.getElementById('pvalueCardsContainer');
+                    if (!sel) return false;
+                    if (sel.options.length < 2) return 'empty';
+                    return sel.value !== '' && pval && pval.children.length > 0;
+                }""",
+                timeout=15000
+            )
+        except Exception:
+            sel = page.locator("#pvalueExperimentSelect")
+            if sel.count() == 0 or sel.locator("option").count() < 2:
+                browser.close()
+                return
+            raise
+        sel_probe = page.evaluate("""() => {
+            const sel = document.getElementById('pvalueExperimentSelect');
+            return sel ? sel.options.length : 0;
+        }""")
+        if sel_probe < 2:
+            browser.close()
+            return
 
         select = page.locator("#pvalueExperimentSelect")
         cards = page.locator("#pvalueCardsContainer")

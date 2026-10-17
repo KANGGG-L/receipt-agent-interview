@@ -1,0 +1,27 @@
+=== STATIC EVIDENCE 2026-10-17T04:26:26+08:00 ===
+--- reconCreateModal opening tag ---
+4137:    <div id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
+OPEN_TAG= <div id="reconCreateModal" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="reconCreateTitle" aria-describedby="reconSupplierHint">
+HTML_role="dialog"=True
+HTML_aria-modal="true"=True
+HTML_aria-labelledby="reconCreateTitle"=True
+HTML_aria-describedby="reconSupplierHint"=True
+BLOCK_id="reconCreateTitle"=True
+BLOCK_id="btnCancelReconCreate"=True
+BLOCK_id="btnSubmitReconCreate"=True
+BLOCK_aria-label="关闭"=True
+BLOCK_for="reconPeriodType"=True
+BLOCK_for="reconStart"=True
+BLOCK_for="reconEnd"=True
+paymentModal_HAS_reconCreateTitle=False TAG=<div id="paymentModal" class="modal-backdrop hide">
+reconResolveModal_HAS_reconCreateTitle=False TAG=<div id="reconResolveModal" class="modal-backdrop hide">
+openReconModal_uses_openAccessibleModal= True
+openReconModal_bare_remove_hide= False
+openReconModal_prefers_reconPeriodType= True
+closeModalById_reconCreate= True
+has_openAccessibleModal= True
+has_closeAccessibleModal= True
+has_trigger_focus_restore= True
+Esc_keydown_listener= True
+Esc_calls_closeAccessibleModal= True
+Tab_trap= True

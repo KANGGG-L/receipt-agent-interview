@@ -1,0 +1,206 @@
+{
+  "390": {
+    "kb": [
+      {
+        "id": "demoRoleSelect",
+        "tag": "SELECT",
+        "focused": false,
+        "outline": "rgb(216, 13, 13) none 3px",
+        "canTab": true
+      },
+      {
+        "id": "lang-switch-btn active",
+        "tag": "BUTTON",
+        "focused": false,
+        "outline": "rgb(255, 255, 255) none 3px",
+        "canTab": true
+      },
+      {
+        "id": "chip",
+        "tag": "BUTTON",
+        "focused": true,
+        "outline": "rgb(30, 34, 35) solid 3px",
+        "canTab": true
+      },
+      {
+        "id": "archiveAdvancedToggle",
+        "tag": "SPAN",
+        "focused": true,
+        "outline": "rgb(37, 99, 235) solid 2px",
+        "canTab": true
+      },
+      {
+        "id": "btnLogRangeAll",
+        "tag": "BUTTON",
+        "focused": false,
+        "outline": "rgb(255, 255, 255) none 3px",
+        "canTab": true
+      }
+    ],
+    "kb2": {
+      "focused": true,
+      "tag": "BUTTON",
+      "outline": "rgb(37, 99, 235) solid 2px"
+    },
+    "contrast": [
+      {
+        "text": "餐品 BOM 配方库",
+        "fg": "#646464",
+        "bg": "#f3f2f1",
+        "label": "dish-subtab-btn",
+        "ratio": 5.292552366476872,
+        "pass": true
+      },
+      {
+        "text": "每日消耗录入",
+        "fg": "#ffffff",
+        "bg": "#032425",
+        "label": "dish-subtab-btn active",
+        "ratio": 16.368696309425587,
+        "pass": true
+      },
+      {
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "label": "chip",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "text": "繁體中文",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "label": "lang-switch-btn",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "text": "简体中文",
+        "fg": "#ffffff",
+        "bg": "#032425",
+        "label": "lang-switch-btn active",
+        "ratio": 16.368696309425587,
+        "pass": true
+      },
+      {
+        "label": "chip-idle",
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "label": "chip-active",
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "ratio": 16.05155227321887,
+        "pass": true
+      }
+    ]
+  },
+  "1440": {
+    "kb": [
+      {
+        "id": "demoRoleSelect",
+        "tag": "SELECT",
+        "focused": true,
+        "outline": "rgb(37, 99, 235) solid 2px",
+        "canTab": true
+      },
+      {
+        "id": "lang-switch-btn active",
+        "tag": "BUTTON",
+        "focused": true,
+        "outline": "rgb(37, 99, 235) solid 2px",
+        "canTab": true
+      },
+      {
+        "id": "chip",
+        "tag": "BUTTON",
+        "focused": true,
+        "outline": "rgb(30, 34, 35) solid 3px",
+        "canTab": true
+      },
+      {
+        "id": "archiveAdvancedToggle",
+        "tag": "SPAN",
+        "focused": true,
+        "outline": "rgb(37, 99, 235) solid 2px",
+        "canTab": true
+      },
+      {
+        "id": "btnLogRangeAll",
+        "tag": "BUTTON",
+        "focused": false,
+        "outline": "rgb(255, 255, 255) none 3px",
+        "canTab": true
+      }
+    ],
+    "kb2": {
+      "focused": true,
+      "tag": "BUTTON",
+      "outline": "rgb(37, 99, 235) solid 2px"
+    },
+    "contrast": [
+      {
+        "text": "餐品 BOM 配方库",
+        "fg": "#646464",
+        "bg": "#f3f2f1",
+        "label": "dish-subtab-btn",
+        "ratio": 5.292552366476872,
+        "pass": true
+      },
+      {
+        "text": "每日消耗录入",
+        "fg": "#ffffff",
+        "bg": "#032425",
+        "label": "dish-subtab-btn active",
+        "ratio": 16.368696309425587,
+        "pass": true
+      },
+      {
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "label": "chip",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "text": "繁體中文",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "label": "lang-switch-btn",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "text": "简体中文",
+        "fg": "#ffffff",
+        "bg": "#032425",
+        "label": "lang-switch-btn active",
+        "ratio": 16.368696309425587,
+        "pass": true
+      },
+      {
+        "label": "chip-idle",
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "ratio": 16.05155227321887,
+        "pass": true
+      },
+      {
+        "label": "chip-active",
+        "text": "全部",
+        "fg": "#1e2223",
+        "bg": "#ffffff",
+        "ratio": 16.05155227321887,
+        "pass": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,185 @@
+{
+  "generatedAt": "2026-10-16T22:33:24.299Z",
+  "archNav": {
+    "tabActive": true,
+    "btnActive": true,
+    "display": "block"
+  },
+  "queueNav": {
+    "tabActive": true,
+    "btnActive": true,
+    "display": "block"
+  },
+  "archiveChrome": {
+    "kind": "archive",
+    "badge": {
+      "id": "archiveRecordCount",
+      "present": true,
+      "text": "共 670 条记录",
+      "visible": true,
+      "w": 98,
+      "h": 26,
+      "top": -3110,
+      "left": 464,
+      "dataSaas": null
+    },
+    "range": {
+      "id": "archivePageRange",
+      "present": true,
+      "text": "显示 1–50",
+      "visible": true,
+      "w": 71,
+      "h": 20,
+      "top": 662,
+      "left": 289,
+      "dataSaas": null
+    },
+    "label": {
+      "id": "archivePageLabel",
+      "present": true,
+      "text": "1 / 14",
+      "visible": true,
+      "w": 38,
+      "h": 20,
+      "top": 696,
+      "left": 384,
+      "dataSaas": null
+    },
+    "pager": {
+      "id": "archivePagination",
+      "present": true,
+      "text": "显示 1–50 上一页 1 / 14 下一页",
+      "visible": true,
+      "w": 1098,
+      "h": 69,
+      "top": 660,
+      "left": 289,
+      "dataSaas": "archive-pager"
+    },
+    "prev": {
+      "id": "archivePagePrev",
+      "present": true,
+      "text": "上一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 684,
+      "left": 289,
+      "dataSaas": null
+    },
+    "next": {
+      "id": "archivePageNext",
+      "present": true,
+      "text": "下一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 684,
+      "left": 426,
+      "dataSaas": null
+    },
+    "rows": 50,
+    "tabTitle": "归档对账"
+  },
+  "queueChrome": {
+    "kind": "queue",
+    "badge": {
+      "id": "queueFilteredCount",
+      "present": true,
+      "text": "共 635 条",
+      "visible": true,
+      "w": 75,
+      "h": 26,
+      "top": 780,
+      "left": 289,
+      "dataSaas": null
+    },
+    "range": {
+      "id": "queuePageRange",
+      "present": true,
+      "text": "显示 1–50",
+      "visible": true,
+      "w": 71,
+      "h": 20,
+      "top": 781,
+      "left": 368,
+      "dataSaas": null
+    },
+    "label": {
+      "id": "queuePageLabel",
+      "present": true,
+      "text": "1 / 13",
+      "visible": true,
+      "w": 38,
+      "h": 20,
+      "top": 818,
+      "left": 384,
+      "dataSaas": null
+    },
+    "pager": {
+      "id": "queuePagination",
+      "present": true,
+      "text": "共 635 条 显示 1–50 上一页 1 / 13 下一页",
+      "visible": true,
+      "w": 1098,
+      "h": 72,
+      "top": 779,
+      "left": 289,
+      "dataSaas": "queue-pager"
+    },
+    "prev": {
+      "id": "queuePagePrev",
+      "present": true,
+      "text": "上一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 806,
+      "left": 289,
+      "dataSaas": null
+    },
+    "next": {
+      "id": "queuePageNext",
+      "present": true,
+      "text": "下一页",
+      "visible": true,
+      "w": 90,
+      "h": 45,
+      "top": 806,
+      "left": 426,
+      "dataSaas": null
+    },
+    "rows": 50,
+    "tabTitle": "识别复核"
+  },
+  "shotMd5": {
+    "archivePage1": "d800b4efd4f4b511270449165962a7a2",
+    "archiveChrome": "d4f140cf89b4a03febd44426d7e9afbf",
+    "queuePage1": "03e015ae418ff114422e9ab714206944",
+    "queueChrome": "14fc9c57da2a4d80a8083151defb535b"
+  },
+  "ux": {
+    "archiveNavOk": true,
+    "queueNavOk": true,
+    "archiveBadgeVisible": true,
+    "archiveRangeVisible": true,
+    "archivePagerVisible": true,
+    "archiveRows": 50,
+    "archiveBadgeText": "共 670 条记录",
+    "archiveRangeText": "显示 1–50",
+    "archiveLabelText": "1 / 14",
+    "queueBadgeVisible": true,
+    "queueRangeVisible": true,
+    "queuePagerVisible": true,
+    "queueRows": 50,
+    "queueBadgeText": "共 635 条",
+    "queueRangeText": "显示 1–50",
+    "queueLabelText": "1 / 13",
+    "pageShotsDiffer": true,
+    "pagerShotsDiffer": true,
+    "pagerDataAttrsDistinct": true,
+    "badgeCopyDistinct": true,
+    "pass": true
+  },
+  "gate": "PASS"
+}

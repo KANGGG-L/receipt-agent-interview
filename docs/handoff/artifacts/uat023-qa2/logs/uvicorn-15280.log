@@ -1,0 +1,770 @@
+INFO:     Started server process [156464]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:15280 (Press CTRL+C to quit)
+INFO:     127.0.0.1:34372 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34380 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60942 - "GET /static/js/export_center.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/css/style.css?v=739f399cfd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/css/review-mobile.css?v=6a70ead6c7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/css/f1b.css?v=fc87e23343 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/js/workbench_queue.js?v=cd789dedb0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/upload.js?v=967ecebdf6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/js/dish_consumption.js?v=64249a1721 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/supplier_archive.js?v=d9d357d02a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/cost_report.js?v=0120ce3a01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/inventory_board.js?v=4ea248bd28 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/js/archive_list.js?v=4dbffe12d8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/dish_bom.js?v=779daabbc3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:60986 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:60990 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60978 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60986 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60990 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60956 - "GET /api/reconciliation HTTP/1.1" 200 OK
+unhandled error on GET /api/ai-insights
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:60986 - "GET /api/ai-insights HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/applications.py", line 1216, in __call__
+    await super().__call__(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:60956 - "GET /api/export/reports HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/dishes/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/skus HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:60962 - "GET /?lang=zh-Hant-HK HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/css/f1b.css?v=fc87e23343 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/css/style.css?v=739f399cfd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/css/review-mobile.css?v=6a70ead6c7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/workbench_queue.js?v=cd789dedb0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/upload.js?v=967ecebdf6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/supplier_archive.js?v=d9d357d02a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/cost_report.js?v=0120ce3a01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/dish_consumption.js?v=64249a1721 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/inventory_board.js?v=4ea248bd28 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/archive_list.js?v=4dbffe12d8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/dish_bom.js?v=779daabbc3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:60990 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:60962 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60950 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60962 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60990 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+unhandled error on GET /api/ai-insights
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:60962 - "GET /api/ai-insights HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/applications.py", line 1216, in __call__
+    await super().__call__(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:60990 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/export/reports HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/dishes/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "POST /api/export/download HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/skus HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:53900 - "GET /?lang=zh-Hans HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/css/ui-dialog.css?v=3df2277d83 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/css/review-mobile.css?v=6a70ead6c7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/css/index-head.css?v=6f080b2e16 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/css/style.css?v=739f399cfd HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /static/css/f1b.css?v=fc87e23343 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/css/csp-html-styles.css?v=9bfa49f714 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/csp-bind.js?v=69e708aeb7 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/i18n/zh-hant-data.js?v=adc67f8a4a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/i18n/zh-hant-hk-glossary.js?v=05a77ba37b HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/i18n/locales/zh-Hant-HK.js?v=2654323868 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /static/js/i18n/locales/zh-Hans.js?v=edcd2b9e54 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/js/i18n/i18n.js?v=2bcccb8517 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/ui-dialog.js?v=50a6a6b623 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/terms.js?v=d8d79c1357 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/main.js?v=7da2dc3585 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/workbench_queue.js?v=cd789dedb0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /static/js/review_core.js?v=56da25b889 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/common.js?v=103eac5761 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/review_modal.js?v=0c0b283470 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/js/upload.js?v=967ecebdf6 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/images/logo_icon_64.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/version_conflict.js?v=c6d61787da HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/finance_ops.js?v=af46548b61 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/photo_sider.js?v=07275ce7a0 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/js/dish_consumption.js?v=64249a1721 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /static/js/supplier_archive.js?v=d9d357d02a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/inventory_board.js?v=4ea248bd28 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/cost_report.js?v=0120ce3a01 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/departments.js?v=777ad66f1f HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/archive_list.js?v=4dbffe12d8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/js/admin_observation.js?v=2abfaf85cf HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /static/js/kpi_trend.js?v=bfef8f8883 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /static/js/engine_admin.js?v=360734c29c HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/parsing_logs.js?v=e2e9b18fa8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /static/js/dish_bom.js?v=779daabbc3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /static/js/review_ux.js?v=4ecd246380 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:53900 - "POST /api/csp-report HTTP/1.1" 204 No Content
+INFO:     127.0.0.1:55418 - "GET /static/js/export_center.js?v=51cd5dd3f8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /static/js/settings.js?v=34f00d772a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /static/js/finance.js?v=8a1ad72ee8 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /api/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /api/dishes/daily_consumption?date=2026-10-17 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/receipts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /api/payables HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55406 - "GET /api/dishes?status=active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /api/inventory HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /api/inventory/price_threshold HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53900 - "GET /api/inventory?include_inactive=0 HTTP/1.1" 200 OK
+unhandled error on GET /api/ai-insights
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:55406 - "GET /api/ai-insights HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/protocols/http/h11_impl.py", line 411, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 63, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/applications.py", line 1216, in __call__
+    await super().__call__(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/workspace/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+    return await run_in_threadpool(
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+        _run_sync_endpoint, function=dependant.call, arguments=values
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+    result = context.run(func, *args)
+  File "/workspace/receipt-agent-interview/docs/handoff/artifacts/uat023-qa2/environment/venv/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+    return function(**arguments)
+  File "/workspace/receipt-agent-interview/demo/app/api_admin.py", line 2823, in ai_insights
+    from app.chains import review_chain
+  File "/workspace/receipt-agent-interview/demo/app/chains/review_chain.py", line 11, in <module>
+    from langchain_core.messages import HumanMessage, SystemMessage
+ModuleNotFoundError: No module named 'langchain_core'
+INFO:     127.0.0.1:53886 - "GET /api/inventory/logs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /api/inventory?stock=low HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/payments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /api/reconciliation HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55414 - "GET /api/export/reports HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53878 - "GET /api/departments HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /api/suppliers HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53886 - "GET /api/dishes/categories HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "POST /api/export/preview HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55418 - "GET /api/skus HTTP/1.1" 404 Not Found
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [156464]

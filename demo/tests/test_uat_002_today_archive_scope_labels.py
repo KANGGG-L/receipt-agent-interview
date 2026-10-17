@@ -91,8 +91,11 @@ def _run_node_harness(js_code: str):
     }}
 
     const cardPending = mockElement('metricCardPending');
+    cardPending.setAttribute('data-todo-metric', 'pending');
+    cardPending.setAttribute('data-click-hint', '点击筛选待处理单据');
+    cardPending.title = '点击筛选待处理单据';
     const labelPending = mockElement('labelPending');
-    labelPending.textContent = '待审核';
+    labelPending.textContent = '待处理（待办全量）';
     const numPending = mockElement('todoPendingNum');
     cardPending.children.push(labelPending, numPending);
     labelPending.parentElement = cardPending;
@@ -311,10 +314,16 @@ def test_03_scope_labels_and_hover_explanations_in_ui_components():
 
     # 归档待办数必须为 2
     assert str(res["todoPendingCount"]) == "2"
-    # 归档待办卡片标题/悬停必须包含 5 个状态的口径说明
+    # 归档待办卡片标题/悬停必须同时保留点击提示与 5 态口径说明（UAT-002 回归修复）
     title_archive = res["todoPendingCardTitle"]
+    assert "点击筛选" in title_archive, (
+        f"归档待办卡片 title 必须保留点击筛选提示，实际为: '{title_archive}'"
+    )
     assert "已上传" in title_archive and "待老板审批" in title_archive, (
         f"归档待办卡片 title 必须说明包含的状态集合，实际为: '{title_archive}'"
+    )
+    assert res.get("todoPendingLabelText") == "待处理（待办全量）", (
+        f"归档待办标签须以 HTML 源头为准，不得依赖 JS shim，实际为: '{res.get('todoPendingLabelText')}'"
     )
 
     # 待我审批数必须为 1
@@ -346,6 +355,21 @@ def test_04_terminology_consistency_for_edited_status():
     # 确认 admin_observation.js 中 it.status === 'edited' 不得使用「待审核」
     assert "statusBadge = '<span class=\"badge badge-warning\" style=\"font-size:0.72rem; padding:2px 6px;\">待审核</span>'" not in admin_content, (
         "admin_observation.js 仍硬编码使用「待审核」作为 edited 状态名，必须收敛为「待老板审批」！"
+    )
+
+    with open(os.path.join(REPO_ROOT, "demo", "templates", "index.html"), "r", encoding="utf-8") as f:
+        index_content = f.read()
+    # 待办条 pending 卡：源头标签与 title 不得残留「待审核」
+    assert 'data-todo-metric="pending"' in index_content
+    assert ">待处理（待办全量）<" in index_content
+    assert 'title="点击筛选待处理单据"' in index_content
+    # 队列按钮「待我审批」为角色第一人称同义（并列「待我复核」），非 edited 状态漂移
+    assert ">待我审批 (" in index_content or ">待我审批 (<" in index_content or '待我审批 (' in index_content
+
+    with open(os.path.join(REPO_ROOT, "demo", "static", "js", "supplier_archive.js"), "r", encoding="utf-8") as f:
+        archive_content = f.read()
+    assert "textContent.trim() === '待审核'" not in archive_content, (
+        "supplier_archive.js 不得保留焊死在「待审核」精确字符串上的 DOM shim"
     )
 
 

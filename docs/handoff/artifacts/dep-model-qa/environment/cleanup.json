@@ -1,0 +1,11 @@
+{
+  "cleaned_at": "2026-10-17 10:18:14 CST",
+  "ports_checked": [
+    15010,
+    15401
+  ],
+  "15010_status": "FREE_RESERVED",
+  "15401_stopped": true,
+  "15401_status": "STOPPED",
+  "note": "DEP-MODEL QA isolate stopped; 15010 left free/reserved. No git push."
+}

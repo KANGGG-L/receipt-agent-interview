@@ -1,0 +1,37 @@
+===== RUN 1 2026-10-17 08:50:33 CST =====
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+demo/tests/test_f1a_flows.py::test_s3_07_staff_discard_does_not_promise_undo PASSED [100%]
+
+============================== 1 passed in 4.16s ===============================
+RUN 1 exit=0
+===== RUN 2 2026-10-17 08:50:37 CST =====
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+demo/tests/test_f1a_flows.py::test_s3_07_staff_discard_does_not_promise_undo PASSED [100%]
+
+============================== 1 passed in 4.13s ===============================
+RUN 2 exit=0
+===== RUN 3 2026-10-17 08:50:42 CST =====
+============================= test session starts ==============================
+platform linux -- Python 3.13.5, pytest-9.1.1, pluggy-1.7.0 -- /workspace/receipt-agent-interview/docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /workspace/receipt-agent-interview
+plugins: anyio-4.15.1, langsmith-0.14.11
+collecting ... collected 1 item
+
+demo/tests/test_f1a_flows.py::test_s3_07_staff_discard_does_not_promise_undo PASSED [100%]
+
+============================== 1 passed in 4.12s ===============================
+RUN 3 exit=0
+ALL_X3_OK
