@@ -1,0 +1,277 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.7.0
+rootdir: /home/agentuser/receipt-agent-interview/demo
+plugins: anyio-4.15.1, asyncio-1.4.0, langsmith-0.14.11
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 9 items
+
+tests/test_fix_p1_red.py FEEEEEEEE                                       [100%]
+
+==================================== ERRORS ====================================
+_ ERROR at setup of TestFixD01ExtremeQtyRejected.test_stocktake_rejects_nan_inf _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01ExtremeQtyRejected.test_stocktake_accepts_normal_value _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01ExtremeQtyRejected.test_consume_rejects_out_of_range _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01ExtremeQtyRejected.test_waste_rejects_out_of_range _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01ExtremeQtyRejected.test_consume_accepts_normal_value _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01LogsSanitized.test_logs_200_with_poisoned_history _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+__ ERROR at setup of TestFixD01LogsSanitized.test_logs_payload_json_compliant __
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+_ ERROR at setup of TestFixD01LogsSanitized.test_poisoned_rows_cleanup_tool_exists_and_idempotent _
+
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+
+    @pytest.fixture
+    def sku_id_with_stock(owner_headers):
+        """建一个有库存的 SKU（经入库流水），返回 sku_id。"""
+        tn = "default"
+        name = "FIXD01-" + db.now_iso()[:19].replace(":", "").replace("-", "").replace("T", "")
+        sid, err = db.create_sku(name, base_unit="斤", tenant_id=tn)
+>       assert sid, err
+E       AssertionError: SKU_NAME_CONFLICT
+E       assert None
+
+tests/test_fix_p1_red.py:77: AssertionError
+=================================== FAILURES ===================================
+__________ TestFixD01ExtremeQtyRejected.test_stocktake_rejects_1e308 ___________
+
+self = <test_fix_p1_red.TestFixD01ExtremeQtyRejected object at 0x7e6fccbb3850>
+client = <starlette.testclient.TestClient object at 0x7e6fc2aed310>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792317952.default.583c121a86507b5e.8129df99142a71010f4a8d6e9ed9efdbc2c58d7738a8b27ce24db011e85f3c0a', 'Content-Type': 'application/json'}
+sku_id_with_stock = 5
+
+    def test_stocktake_rejects_1e308(self, client, owner_headers, sku_id_with_stock):
+        r = client.post("/api/inventory/%d/stocktake" % sku_id_with_stock,
+                        headers=owner_headers, json={"actual_qty": 1e308})
+>       assert r.status_code in (400, 422), r.text
+E       AssertionError: {"status":"success","msg":"盘点已记录","current_stock":1e+308,"data":{"current_stock":1e+308}}
+E       assert 200 in (400, 422)
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_fix_p1_red.py:104: AssertionError
+=============================== warnings summary ===============================
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py: 12 warnings
+  /home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+ERROR tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_nan_inf
+ERROR tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+ERROR tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_consume_rejects_out_of_range
+ERROR tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_waste_rejects_out_of_range
+ERROR tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_consume_accepts_normal_value
+ERROR tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_logs_200_with_poisoned_history
+ERROR tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_logs_payload_json_compliant
+ERROR tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_poisoned_rows_cleanup_tool_exists_and_idempotent
+=================== 1 failed, 24 warnings, 8 errors in 0.84s ===================

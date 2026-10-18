@@ -1,0 +1,16 @@
+{
+ "post_responses": {
+  "res": []
+ },
+ "toasts": {
+  "msgs": []
+ },
+ "modals_open": {
+  "modals": [
+   "outboundModal"
+  ]
+ },
+ "logs_after": {
+  "status": 200
+ }
+}

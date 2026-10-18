@@ -1,0 +1,34 @@
+{
+  "d01_stocktake_1e308": {
+    "status": 422,
+    "body": "{\"status\":\"error\",\"code\":\"STOCKTAKE_QTY_OUT_OF_RANGE\",\"msg\":\"数量超出有效范围：必须是有限数且绝对值不超过 1e9，请核对后重新输入。\"}"
+  },
+  "d01_consume_1e308": {
+    "status": 422,
+    "body": "{\"status\":\"error\",\"code\":\"CONSUMPTION_QTY_OUT_OF_RANGE\",\"msg\":\"数量超出有效范围：必须是有限数且绝对值不超过 1e9，请核对后重新输入。\"}"
+  },
+  "d01_waste_1e308": {
+    "status": 422,
+    "body": "{\"status\":\"error\",\"code\":\"CONSUMPTION_QTY_OUT_OF_RANGE\",\"msg\":\"数量超出有效范围：必须是有限数且绝对值不超过 1e9，请核对后重新输入。\"}"
+  },
+  "d01_logs_after_attempts": {
+    "status": 200,
+    "json_compliant": true
+  },
+  "d01_logs_with_legacy_poison": {
+    "status": 200,
+    "json_compliant": true
+  },
+  "d01_sanitize": {
+    "dry_affected": 1,
+    "run_cleaned": 1,
+    "backup_file": "receipt_20261018_084557_992463.db",
+    "idem_cleaned": 0,
+    "logs_after": 200,
+    "json_compliant": true
+  },
+  "d01_save_edited_1e308": {
+    "status": 422,
+    "body": "{\"status\":\"error\",\"code\":\"SETTLEMENT_REQUIRED\",\"msg\":\"请先选择这张单是「现结」还是「挂账」，再保存。\"}"
+  }
+}

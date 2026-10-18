@@ -1,0 +1,9 @@
+{
+ "normal_stocktake": {
+  "toast": "已完成盘点调整\n×"
+ },
+ "ledger_ui": {
+  "rows": 18,
+  "first": "2026-10-18\t盘点调整\tFIXD01-20261018063737-1\t-2\t斤\tHK$0.00\t\t-\t盘点盘亏核销\n2026-10-18\t盘点调整\tpoison-1e308\t0\t斤\tHK$0.00\t\t-\tpoisoned legacy row 1e308\n2026-10-18\t盘点调整\tp"
+ }
+}

@@ -1344,3 +1344,4 @@ QA 自行补了两项提权验证：未认证访问 401、伪造租户头 404，
 - 阶段小结（2026-10-18 00:5x）：本云端接手累计闭环 UAT-009/028/029 三张卡，45 卡 44 闭环（43 PASS + CLOSE-139 裁决 + DEP-HIDDEN BLOCKED）；待用户确认后 commit+push 本轮产物。
 - DEP-HIDDEN 真实验证 PASS（2026-10-18 02:0x，隔离 15891 AUTH=1：真实 CDP visibility 翻转，P1/P2/P3 三命题全过，无 mock 无改码，报告 artifacts/dep-hidden-verify-report.md）。BLOCK 解除，45/45 全闭环；CLOSE-139 最后 blocker 消除，amendment 待补。待用户确认 commit+push。
 - CLOSE-139 amendment 补写（2026-10-18 02:1x）：DEP-HIDDEN 从活跃 blocker 移除，裁决更新为 ADJUDICATED_NO_ACTIVE_BLOCKERS，文档 artifacts/close139-amendment-dep-hidden.md；checklist 同步。待 commit+push。
+- FIX-P1 修复卡三阶段闭环 [DONE]（2026-10-18）：D-01（极值 422+logs sanitize+毒化行清洗）/A-01（backdrop 回收）/B-001（日期行三视口）修复；DEV TDD 15p（A-01 判定测试脚本问题，产品 onSuccess 清空输入为设计）；QA（1515x）三缺陷不复现+回归 56v56；UAT（1512x）用户视角全过。附带产出 E2E 审计报告 docs/qa/browser-e2e-audit.md（4+1 worker 真实浏览器审查，P0=0/P1=3/P2=12/P3=11）。遗留登记：save_edited 1e308 500（money.py Decimal，独立问题）；OBS-2 手工单入口拒 credit_note；Toast 风暴/401 抢跑等 P2 待排。

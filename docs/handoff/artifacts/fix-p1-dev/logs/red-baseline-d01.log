@@ -1,0 +1,685 @@
+FF.FF.FFF                                                                [100%]
+=================================== FAILURES ===================================
+__________ TestFixD01ExtremeQtyRejected.test_stocktake_rejects_1e308 ___________
+
+self = <test_fix_p1_red.TestFixD01ExtremeQtyRejected object at 0x7c0b9872aa50>
+client = <starlette.testclient.TestClient object at 0x7c0b8e624610>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 1
+
+    def test_stocktake_rejects_1e308(self, client, owner_headers, sku_id_with_stock):
+        r = client.post("/api/inventory/%d/stocktake" % sku_id_with_stock,
+                        headers=owner_headers, json={"actual_qty": 1e308})
+>       assert r.status_code in (400, 422), r.text
+E       AssertionError: {"status":"success","msg":"盘点已记录","current_stock":1e+308,"data":{"current_stock":1e+308}}
+E       assert 200 in (400, 422)
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_fix_p1_red.py:108: AssertionError
+_________ TestFixD01ExtremeQtyRejected.test_stocktake_rejects_nan_inf __________
+
+self = <test_fix_p1_red.TestFixD01ExtremeQtyRejected object at 0x7c0b9872b690>
+client = <starlette.testclient.TestClient object at 0x7c0b8d3c4d50>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 2
+
+    def test_stocktake_rejects_nan_inf(self, client, owner_headers, sku_id_with_stock):
+        # JSON 里没有 NaN/Infinity 字面量可用（严格解析），用字符串 数字边界验证上界即可；
+        # 这里验证上界 1e9 + 1 被拒绝。
+        r = client.post("/api/inventory/%d/stocktake" % sku_id_with_stock,
+                        headers=owner_headers, json={"actual_qty": 1e10})
+>       assert r.status_code in (400, 422), r.text
+E       AssertionError: {"status":"success","msg":"盘点已记录","current_stock":10000000000.0,"data":{"current_stock":10000000000.0}}
+E       assert 200 in (400, 422)
+E        +  where 200 = <Response [200 OK]>.status_code
+
+tests/test_fix_p1_red.py:118: AssertionError
+________ TestFixD01ExtremeQtyRejected.test_consume_rejects_out_of_range ________
+
+self = <test_fix_p1_red.TestFixD01ExtremeQtyRejected object at 0x7c0b98730310>
+client = <starlette.testclient.TestClient object at 0x7c0b8d3f9590>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 4
+
+    def test_consume_rejects_out_of_range(self, client, owner_headers, sku_id_with_stock):
+        r = client.post("/api/inventory/%d/consume" % sku_id_with_stock,
+                        headers=owner_headers, json={"quantity": 1e308})
+>       assert r.status_code in (400, 422), r.text
+E       AssertionError: {"status":"error","code":"INSUFFICIENT_STOCK","msg":"库存只有 10 斤，不够扣 100000000000000001097906362944045541740492309677311846336810682903157585404911491537163328978494688899061249669721172515611590283743140088328307009198146046031271664502933027185697489699588559043338384466165001178426897626212945177628091195786707458122783970171784415105291802893207873272974885715430223118336 斤。请先核对数量；如果确实要扣，请确认后写明原因。","data":{"current_stock":10.0,"requested":1e+308,"unit":"斤","can_override":true,"reason_required":true}}
+E       assert 409 in (400, 422)
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/test_fix_p1_red.py:128: AssertionError
+_________ TestFixD01ExtremeQtyRejected.test_waste_rejects_out_of_range _________
+
+self = <test_fix_p1_red.TestFixD01ExtremeQtyRejected object at 0x7c0b98730910>
+client = <starlette.testclient.TestClient object at 0x7c0b8d386790>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 5
+
+    def test_waste_rejects_out_of_range(self, client, owner_headers, sku_id_with_stock):
+        r = client.post("/api/inventory/%d/waste" % sku_id_with_stock,
+                        headers=owner_headers, json={"quantity": 1e10})
+>       assert r.status_code in (400, 422), r.text
+E       AssertionError: {"status":"error","code":"INSUFFICIENT_STOCK","msg":"库存只有 10 斤，不够扣 10000000000 斤。请先核对数量；如果确实要扣，请确认后写明原因。","data":{"current_stock":10.0,"requested":10000000000.0,"unit":"斤","can_override":true,"reason_required":true}}
+E       assert 409 in (400, 422)
+E        +  where 409 = <Response [409 Conflict]>.status_code
+
+tests/test_fix_p1_red.py:133: AssertionError
+_________ TestFixD01LogsSanitized.test_logs_200_with_poisoned_history __________
+
+self = <test_fix_p1_red.TestFixD01LogsSanitized object at 0x7c0b98731710>
+client = <starlette.testclient.TestClient object at 0x7c0b8d3d1650>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 7
+
+    def test_logs_200_with_poisoned_history(self, client, owner_headers, sku_id_with_stock):
+        self._poison(sku_id_with_stock)
+>       r = client.get("/api/inventory/logs?sku_id=%d" % sku_id_with_stock,
+                       headers=owner_headers)
+
+tests/test_fix_p1_red.py:169: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1113: in get
+    return self.request(
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:457: in request
+    return super().request(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:980: in send
+    response = self._send_handling_auth(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:354: in handle_request
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:351: in handle_request
+    portal.call(self.app, scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../.venv-uat009/lib/python3.11/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:1216: in __call__
+    await super().__call__(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+app/web_assets.py:133: in __call__
+    await self.app(scope, receive, _send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py:79: in __call__
+    await responder(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py:104: in __call__
+    await self.app(scope, receive, self.send_with_compression)
+app/auth.py:583: in __call__
+    await self.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:2809: in app
+    await route.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1837: in handle
+    await self.original_router.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:2892: in handle
+    await included_router._handle_selected(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1863: in _handle_selected
+    await original_route.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1326: in handle
+    await effective_context.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:166: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:152: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:787: in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:195: in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:46: in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:198: in render
+    return json.dumps(
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x7c0b8d3d2250>
+o = {'status': 'success', 'data': [{'id': 13, 'sku_id': 7, 'name': 'poison-1e308', 'qty': 1e+308, ...}, {'id': 12, 'sku_id... 'qty': inf, ...}, {'id': 11, 'sku_id': 7, 'name': 'FIXD01-20261018060832-7', 'qty': 10.0, ...}], 'meta': {'count': 3}}
+_one_shot = True
+
+    def iterencode(self, o, _one_shot=False):
+        """Encode the given object and yield each string
+        representation as available.
+    
+        For example::
+    
+            for chunk in JSONEncoder().iterencode(bigobject):
+                mysocket.write(chunk)
+    
+        """
+        if self.check_circular:
+            markers = {}
+        else:
+            markers = None
+        if self.ensure_ascii:
+            _encoder = encode_basestring_ascii
+        else:
+            _encoder = encode_basestring
+    
+        def floatstr(o, allow_nan=self.allow_nan,
+                _repr=float.__repr__, _inf=INFINITY, _neginf=-INFINITY):
+            # Check for specials.  Note that this type of test is processor
+            # and/or platform-specific, so do tests which don't depend on the
+            # internals.
+    
+            if o != o:
+                text = 'NaN'
+            elif o == _inf:
+                text = 'Infinity'
+            elif o == _neginf:
+                text = '-Infinity'
+            else:
+                return _repr(o)
+    
+            if not allow_nan:
+                raise ValueError(
+                    "Out of range float values are not JSON compliant: " +
+                    repr(o))
+    
+            return text
+    
+    
+        if (_one_shot and c_make_encoder is not None
+                and self.indent is None):
+            _iterencode = c_make_encoder(
+                markers, self.default, _encoder, self.indent,
+                self.key_separator, self.item_separator, self.sort_keys,
+                self.skipkeys, self.allow_nan)
+        else:
+            _iterencode = _make_iterencode(
+                markers, self.default, _encoder, self.indent, floatstr,
+                self.key_separator, self.item_separator, self.sort_keys,
+                self.skipkeys, _one_shot)
+>       return _iterencode(o, 0)
+               ^^^^^^^^^^^^^^^^^
+E       ValueError: Out of range float values are not JSON compliant
+
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py:258: ValueError
+------------------------------ Captured log call -------------------------------
+ERROR    app.errors:errors.py:180 unhandled error on GET /api/inventory/logs
+Traceback (most recent call last):
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/home/agentuser/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 787, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 195, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 46, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 198, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+___________ TestFixD01LogsSanitized.test_logs_payload_json_compliant ___________
+
+self = <test_fix_p1_red.TestFixD01LogsSanitized object at 0x7c0b98731d10>
+client = <starlette.testclient.TestClient object at 0x7c0b8c787050>
+owner_headers = {'Authorization': 'Bearer boss@demo.hk.owner.1792318112.default.850bb092e8b8c2cb.63268033e0c59ec2cae87fd7510b929e5edb4e0d91b4a90e19fac1508cf32667', 'Content-Type': 'application/json'}
+sku_id_with_stock = 8
+
+    def test_logs_payload_json_compliant(self, client, owner_headers, sku_id_with_stock):
+        self._poison(sku_id_with_stock)
+>       r = client.get("/api/inventory/logs?sku_id=%d" % sku_id_with_stock,
+                       headers=owner_headers)
+
+tests/test_fix_p1_red.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1113: in get
+    return self.request(
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:457: in request
+    return super().request(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:797: in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:980: in send
+    response = self._send_handling_auth(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1008: in _send_handling_auth
+    response = self._send_handling_redirects(
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1043: in _send_handling_redirects
+    response = self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/httpx2/_client.py:1076: in _send_single_request
+    response = transport.handle_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:354: in handle_request
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/testclient.py:351: in handle_request
+    portal.call(self.app, scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/anyio/from_thread.py:340: in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+../.venv-uat009/lib/python3.11/site-packages/anyio/from_thread.py:265: in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:1216: in __call__
+    await super().__call__(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/applications.py:96: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py:186: in __call__
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py:164: in __call__
+    await self.app(scope, receive, _send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py:151: in __call__
+    await self.app(scope, receive, send)
+app/web_assets.py:133: in __call__
+    await self.app(scope, receive, _send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py:79: in __call__
+    await responder(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py:104: in __call__
+    await self.app(scope, receive, self.send_with_compression)
+app/auth.py:583: in __call__
+    await self.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/middleware/exceptions.py:63: in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py:18: in __call__
+    await self.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/routing.py:676: in __call__
+    await self.middleware_stack(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:2809: in app
+    await route.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1837: in handle
+    await self.original_router.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:2892: in handle
+    await included_router._handle_selected(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1863: in _handle_selected
+    await original_route.handle(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:1326: in handle
+    await effective_context.app(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:166: in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:53: in wrapped_app
+    raise exc
+../.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py:42: in wrapped_app
+    await app(scope, receive, sender)
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:152: in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py:787: in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:195: in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:46: in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/starlette/responses.py:198: in render
+    return json.dumps(
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py:238: in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py:200: in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <json.encoder.JSONEncoder object at 0x7c0b8ca07e90>
+o = {'status': 'success', 'data': [{'id': 16, 'sku_id': 8, 'name': 'poison-1e308', 'qty': 1e+308, ...}, {'id': 15, 'sku_id... 'qty': inf, ...}, {'id': 14, 'sku_id': 8, 'name': 'FIXD01-20261018060832-8', 'qty': 10.0, ...}], 'meta': {'count': 3}}
+_one_shot = True
+
+    def iterencode(self, o, _one_shot=False):
+        """Encode the given object and yield each string
+        representation as available.
+    
+        For example::
+    
+            for chunk in JSONEncoder().iterencode(bigobject):
+                mysocket.write(chunk)
+    
+        """
+        if self.check_circular:
+            markers = {}
+        else:
+            markers = None
+        if self.ensure_ascii:
+            _encoder = encode_basestring_ascii
+        else:
+            _encoder = encode_basestring
+    
+        def floatstr(o, allow_nan=self.allow_nan,
+                _repr=float.__repr__, _inf=INFINITY, _neginf=-INFINITY):
+            # Check for specials.  Note that this type of test is processor
+            # and/or platform-specific, so do tests which don't depend on the
+            # internals.
+    
+            if o != o:
+                text = 'NaN'
+            elif o == _inf:
+                text = 'Infinity'
+            elif o == _neginf:
+                text = '-Infinity'
+            else:
+                return _repr(o)
+    
+            if not allow_nan:
+                raise ValueError(
+                    "Out of range float values are not JSON compliant: " +
+                    repr(o))
+    
+            return text
+    
+    
+        if (_one_shot and c_make_encoder is not None
+                and self.indent is None):
+            _iterencode = c_make_encoder(
+                markers, self.default, _encoder, self.indent,
+                self.key_separator, self.item_separator, self.sort_keys,
+                self.skipkeys, self.allow_nan)
+        else:
+            _iterencode = _make_iterencode(
+                markers, self.default, _encoder, self.indent, floatstr,
+                self.key_separator, self.item_separator, self.sort_keys,
+                self.skipkeys, _one_shot)
+>       return _iterencode(o, 0)
+               ^^^^^^^^^^^^^^^^^
+E       ValueError: Out of range float values are not JSON compliant
+
+../../.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py:258: ValueError
+------------------------------ Captured log call -------------------------------
+ERROR    app.errors:errors.py:180 unhandled error on GET /api/inventory/logs
+Traceback (most recent call last):
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/demo/app/web_assets.py", line 133, in __call__
+    await self.app(scope, receive, _send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py", line 79, in __call__
+    await responder(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/gzip.py", line 104, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "/home/agentuser/receipt-agent-interview/demo/app/auth.py", line 583, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/routing.py", line 676, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 2809, in app
+    await route.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1837, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 2892, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1863, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 1326, in handle
+    await effective_context.app(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 166, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 152, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/routing.py", line 787, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 195, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 46, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/starlette/responses.py", line 198, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/agentuser/.local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/lib/python3.11/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant
+_ TestFixD01LogsSanitized.test_poisoned_rows_cleanup_tool_exists_and_idempotent _
+
+self = <test_fix_p1_red.TestFixD01LogsSanitized object at 0x7c0b98732310>
+sku_id_with_stock = 9
+
+    def test_poisoned_rows_cleanup_tool_exists_and_idempotent(self, sku_id_with_stock):
+        """一次性清洗工具：dry-run 不改数、实跑清零毒化值、幂等。"""
+        self._poison(sku_id_with_stock)
+>       from app.maintenance import sanitize_stock_logs, report  # noqa: F401  (import 路径以实现为准)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       ImportError: cannot import name 'sanitize_stock_logs' from 'app.maintenance' (/home/agentuser/receipt-agent-interview/demo/app/maintenance.py)
+
+tests/test_fix_p1_red.py:187: ImportError
+=============================== warnings summary ===============================
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py: 12 warnings
+  /home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_1e308
+FAILED tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_rejects_nan_inf
+FAILED tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_consume_rejects_out_of_range
+FAILED tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_waste_rejects_out_of_range
+FAILED tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_logs_200_with_poisoned_history
+FAILED tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_logs_payload_json_compliant
+FAILED tests/test_fix_p1_red.py::TestFixD01LogsSanitized::test_poisoned_rows_cleanup_tool_exists_and_idempotent
+7 failed, 2 passed, 24 warnings in 1.48s

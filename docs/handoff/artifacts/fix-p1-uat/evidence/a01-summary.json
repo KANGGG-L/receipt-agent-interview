@@ -1,0 +1,33 @@
+{
+ "modal_open": {
+  "modals": [
+   {
+    "id": "costTraceModal",
+    "cls": "modal-backdrop",
+    "rect": [
+     0,
+     0,
+     1440,
+     900
+    ],
+    "z": "1000",
+    "pe": "auto"
+   }
+  ]
+ },
+ "modal_closed": {
+  "cls": "modal-backdrop hide"
+ },
+ "input_after_submit": {
+  "val": "0"
+ },
+ "second_submit": {
+  "clicked": true,
+  "modals": [
+   "costTraceModal"
+  ]
+ },
+ "final_modals": {
+  "modals": []
+ }
+}

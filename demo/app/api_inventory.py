@@ -40,6 +40,7 @@ def _tenant_id(request: Request) -> str:
 
 # 单位换算走 services.unit_factors 单一事实源（SSOT）：与成本层同源同系数。
 from app.services import unit_factors
+from app.services.contract import sanitize_nan  # FIX-D01：logs 序列化有限化
 
 
 def _standard_kg(current_stock, base_unit, tenant_id=None):
@@ -475,6 +476,22 @@ class StocktakeBody(BaseModel):
     note: str = ""
 
 
+# FIX-D01：数量有限性 + 上界校验（1e308 盘点曾毒化库存与流水序列化）。
+# 上界 1e9 远超任何真实餐饮库存量级；inf/NaN 一并拒绝。
+_MAX_QTY = 1e9
+
+
+def _qty_out_of_range(v) -> bool:
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return True
+    return (fv != fv) or fv in (float("inf"), float("-inf")) or abs(fv) > _MAX_QTY
+
+
+_QTY_RANGE_MSG = "数量超出有效范围：必须是有限数且绝对值不超过 1e9，请核对后重新输入。"
+
+
 @router.post("/api/inventory/{sku_id}/stocktake")
 def stocktake(sku_id: int, body: StocktakeBody, request: Request):
     require_role("owner")(request)
@@ -485,6 +502,15 @@ def stocktake(sku_id: int, body: StocktakeBody, request: Request):
                 "status": "error",
                 "code": "INVALID_STOCKTAKE_QUANTITY",
                 "msg": "盘点实际库存不能为负数",
+            }
+        )
+    if _qty_out_of_range(body.actual_qty):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": "error",
+                "code": "STOCKTAKE_QTY_OUT_OF_RANGE",
+                "msg": _QTY_RANGE_MSG,
             }
         )
     tenant_id = _tenant_id(request)
@@ -583,6 +609,15 @@ def _deduct_stock(sku_id, body, request, kind):
                 "status": "error",
                 "code": "INVALID_CONSUMPTION_QUANTITY",
                 "msg": "%s数量必须大于 0，不可输入负数或零" % label,
+            }
+        )
+    if _qty_out_of_range(body.quantity):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "status": "error",
+                "code": "CONSUMPTION_QTY_OUT_OF_RANGE",
+                "msg": _QTY_RANGE_MSG,
             }
         )
     tenant_id = _tenant_id(request)
@@ -823,9 +858,17 @@ def inventory_logs(request: Request, sku_id: Optional[int] = None, kind: str = "
             continue
         data.append({
             "id": r.id, "sku_id": r.sku_id, "name": r.name,
-            "qty": r.qty,
-            "qty_signed": ledger_qty_signed(r.kind, r.qty),
-            "unit": r.unit, "amount": r.amount if can_see_prices else None,
+            # FIX-D01：历史毒化行（inf/NaN/超界浮点）不再让 json.dumps 崩 500。
+            # qty 超出有效域 → 置 None（「数据无效」语义），amount/qty_signed 同理，
+            # 有限值经 sanitize_nan 有限化后保证序列化合规。
+            "qty": (None if _qty_out_of_range(r.qty)
+                    else sanitize_nan(r.qty, default=0.0)),
+            "qty_signed": (None if (_qty_out_of_range(r.qty)
+                                    or _qty_out_of_range(ledger_qty_signed(r.kind, r.qty)))
+                           else sanitize_nan(ledger_qty_signed(r.kind, r.qty), default=0.0)),
+            "unit": r.unit,
+            "amount": (None if (not can_see_prices or _qty_out_of_range(r.amount))
+                       else sanitize_nan(r.amount, default=0.0)),
             "vendor": r.vendor, "date": d, "kind": r.kind,
             "note": r.note, "receipt_id": r.receipt_id,
             "created_at": r.created_at,

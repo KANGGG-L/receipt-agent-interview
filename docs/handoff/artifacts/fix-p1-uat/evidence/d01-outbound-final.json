@@ -1,0 +1,13 @@
+{
+ "toast": {
+  "txt": ""
+ },
+ "modals_open": {
+  "modals": [
+   "outboundModal"
+  ]
+ },
+ "logs_after": {
+  "status": 200
+ }
+}

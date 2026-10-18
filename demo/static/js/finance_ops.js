@@ -24,6 +24,7 @@ function closeModalById(id) {
     if (el) {
         if (typeof closeAccessibleModal === 'function') closeAccessibleModal(el);
         else el.classList.add('hide');
+        el.setAttribute('aria-hidden', 'true');
     }
 }
 window.closeModalById = closeModalById;
@@ -31,6 +32,7 @@ window.closeModalById = closeModalById;
 function openModalById(id) {
     const el = document.getElementById(id);
     if (el) {
+        el.removeAttribute('aria-hidden');
         if (typeof openAccessibleModal === 'function') openAccessibleModal(el);
         else el.classList.remove('hide');
     }

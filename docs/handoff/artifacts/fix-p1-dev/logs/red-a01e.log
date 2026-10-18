@@ -1,0 +1,45 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_____ TestFixA01ModalBackdrop.test_cost_trace_modal_close_releases_clicks ______
+
+self = <test_fix_p1_frontend_red.TestFixA01ModalBackdrop object at 0x755d5527cd50>
+page = <Page url='http://127.0.0.1:15210/'>
+server = <_playwright_server.ServerHandle object at 0x755d55373790>
+
+    def test_cost_trace_modal_close_releases_clicks(self, page, server):
+        """提交每日消耗 → FIFO 弹窗出现 → 关闭 → 同屏提交按钮恢复可点。"""
+        _seed_dish_with_sku(server)
+        page.goto(BASE_URL + "/")
+        page.wait_for_load_state("networkidle")
+        _login(page)
+        _goto_tab(page, "tab-dishes")
+        # 登录后补拉每日消耗面板（首屏 DOMContentLoaded 时未登录，/api/dishes 401 空手）
+        page.evaluate("typeof loadDailyConsumption === 'function' && loadDailyConsumption()")
+        # 需要至少一行份数 > 0；等待消耗录入表渲染（异步拉取 /api/dishes）
+        page.wait_for_selector(".dish-consume-qty-input", timeout=10000)
+        qty = page.locator(".dish-consume-qty-input").first
+        qty.fill("1")
+        btn = page.locator("#btnSubmitDailyConsumeBatch")
+        btn.click()
+        page.wait_for_timeout(2500)
+        # 弹窗应已出现
+        modal = page.locator("#costTraceModal")
+        assert modal.count() == 1
+        assert "hide" not in (modal.get_attribute("class") or ""), "提交后应打开 FIFO 溯源弹窗"
+        # 关闭（弹窗内关闭按钮）
+        modal.locator(".modal-close-btn").first.click()
+        page.wait_for_timeout(500)
+        # 关闭后：backdrop 已回收（hide），同屏提交按钮可点（无 interception）
+        assert "hide" in (modal.get_attribute("class") or ""), "关闭后 backdrop 必须 hide/移除"
+        btn.click(timeout=3000)
+        page.wait_for_timeout(1500)
+        # modal 可以再次被打开（证明第二次点击真的提交了）
+>       assert "hide" not in (modal.get_attribute("class") or "")
+E       AssertionError: assert 'hide' not in 'modal-backdrop hide'
+E         
+E         'hide' is contained here:
+E           modal-backdrop hide
+E         ?                ++++
+
+tests/test_fix_p1_frontend_red.py:143: AssertionError
+1 failed in 10.33s

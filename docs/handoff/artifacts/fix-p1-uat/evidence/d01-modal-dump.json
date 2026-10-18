@@ -1,0 +1,26 @@
+{
+ "stocktake_click": {
+  "clicked": true
+ },
+ "stocktake_modal": {
+  "modals": [
+   {
+    "id": "stocktakeModal",
+    "inputs": [
+     {
+      "id": "stocktakeQty",
+      "type": "number",
+      "ph": "输入实际盘点数量",
+      "vis": true
+     },
+     {
+      "id": "stocktakeNote",
+      "type": "text",
+      "ph": "如：周日晚盘点，有损耗",
+      "vis": true
+     }
+    ]
+   }
+  ]
+ }
+}

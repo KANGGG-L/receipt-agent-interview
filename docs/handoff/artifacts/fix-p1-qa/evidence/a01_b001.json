@@ -1,0 +1,89 @@
+{
+  "a01": {
+    "modal_class_open": "modal-backdrop",
+    "modal_rect_open": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 900,
+      "top": 0,
+      "right": 1440,
+      "bottom": 900,
+      "left": 0
+    },
+    "modal_class_closed": "modal-backdrop hide",
+    "second_click_ok": true,
+    "second_click_err": "",
+    "visible_backdrops_after_close": [
+      {
+        "id": "costTraceModal",
+        "display": "flex"
+      }
+    ]
+  },
+  "b001": {
+    "vp1440": {
+      "vw": 1440,
+      "inputs": [
+        {
+          "id": "costReportStartDate",
+          "x": 617,
+          "right": 774,
+          "width": 158,
+          "hit_self": true,
+          "visible": true
+        },
+        {
+          "id": "costReportEndDate",
+          "x": 797,
+          "right": 954,
+          "width": 158,
+          "hit_self": true,
+          "visible": true
+        }
+      ]
+    },
+    "vp768": {
+      "vw": 768,
+      "inputs": [
+        {
+          "id": "costReportStartDate",
+          "x": 371,
+          "right": 528,
+          "width": 157,
+          "hit_self": true,
+          "visible": true
+        },
+        {
+          "id": "costReportEndDate",
+          "x": 550,
+          "right": 707,
+          "width": 157,
+          "hit_self": true,
+          "visible": true
+        }
+      ]
+    },
+    "vp390": {
+      "vw": 390,
+      "inputs": [
+        {
+          "id": "costReportStartDate",
+          "x": 119,
+          "right": 316,
+          "width": 197,
+          "hit_self": true,
+          "visible": true
+        },
+        {
+          "id": "costReportEndDate",
+          "x": 45,
+          "right": 330,
+          "width": 285,
+          "hit_self": true,
+          "visible": true
+        }
+      ]
+    }
+  }
+}

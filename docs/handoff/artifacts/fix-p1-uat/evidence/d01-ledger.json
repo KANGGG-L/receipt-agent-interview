@@ -1,0 +1,11 @@
+{
+ "ledger": {
+  "rows": -1,
+  "skuOptions": 10,
+  "text": null
+ },
+ "logs_api": {
+  "status": 200,
+  "body": "{\"status\":\"success\",\"data\":[{\"id\":17,\"sku_id\":9,\"name\":\"poison-1e308\",\"qty\":null,\"qty_signed\":null,\"unit\":\"斤\",\"amount\":0.0,\"vendor\":\"\",\"date\":\"2026-10-18\",\"kind\":\"stocktake\",\"note\":\"poisoned legacy row 1e308\",\"receipt_id\":null,\"created_at\":\"2026-10-18T06:37:37\"},{\"id\":16,\"sku_id\":9,\"name\":\"poison\",\""
+ }
+}

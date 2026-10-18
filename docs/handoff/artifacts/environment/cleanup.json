@@ -1,0 +1,19 @@
+{
+  "task": "FIX-P1 dev closeout",
+  "date": "2026-10-18",
+  "cleanup": {
+    "test_servers": "module-scoped start_pinned_server fixtures stop() on teardown; no pinned server left on port 15210 (verified via connection refusal probe pattern used during session)",
+    "browser_tabs": "playwright browser closed in page fixture teardown; no orphan chrome tabs",
+    "temp_dirs": "pytest tempdata dirs (fixp1-a01-*) removed by fixture shutil.rmtree",
+    "xvfb": "DISPLAY=:25 reused for headless-chrome runs; Xvfb session left running (shared display, not owned by this task)",
+    "orphan_processes": "none spawned with background=true; no orphan uvicorn/pytest processes",
+    "db": "test DBs under /tmp/fix-p1-dev2/ and pytest tmp dirs only; repo receipt_demo.db untouched (read-only copy source)"
+  },
+  "untracked_artifacts": [
+    "docs/handoff/artifacts/fix-p1-dev-report.md",
+    "docs/handoff/artifacts/dev-result.json",
+    "docs/handoff/artifacts/environment/cleanup.json",
+    "demo/tests/test_fix_p1_red.py",
+    "demo/tests/test_fix_p1_frontend_red.py"
+  ]
+}

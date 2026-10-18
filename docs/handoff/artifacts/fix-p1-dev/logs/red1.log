@@ -1,0 +1,129 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.1.1, pluggy-1.7.0
+rootdir: /home/agentuser/receipt-agent-interview/demo
+plugins: anyio-4.15.1, asyncio-1.4.0, langsmith-0.14.11
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 1 item
+
+tests/test_fix_p1_red.py .                                               [100%]
+
+=============================== warnings summary ===============================
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:78: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py: 12 warnings
+  /home/agentuser/receipt-agent-interview/.venv-uat009/lib/python3.11/site-packages/fastapi/applications.py:4745: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:85: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:92: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:98: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:118: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:124: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:140: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:166: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:201: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:231: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:256: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+tests/test_fix_p1_red.py::TestFixD01ExtremeQtyRejected::test_stocktake_accepts_normal_value
+  /home/agentuser/receipt-agent-interview/demo/app/main.py:263: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 1 passed, 24 warnings in 0.78s ========================

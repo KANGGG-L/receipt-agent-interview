@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-18",
+  "items": [
+    {
+      "what": "uvicorn server port 15151",
+      "status": "stopped"
+    },
+    {
+      "what": "git worktree /tmp/fix-p1-qa/head-check",
+      "status": "removed"
+    },
+    {
+      "what": "Xvfb :26",
+      "status": "stopped"
+    },
+    {
+      "what": "temp dir /tmp/fix-p1-qa",
+      "status": "kept until OS tmp cleanup (evidence also archived in-repo)"
+    },
+    {
+      "what": "playwright chromium-1248 install to user cache (~120MB)",
+      "status": "kept (shared tooling, not repo)"
+    }
+  ],
+  "product_code_untouched": true
+}

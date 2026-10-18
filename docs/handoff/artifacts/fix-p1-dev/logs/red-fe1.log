@@ -1,0 +1,100 @@
+s.FF.F                                                                   [100%]
+=================================== FAILURES ===================================
+____ TestFixB001ReportDateCluster.test_date_cluster_fully_visible[768-1024] ____
+
+self = <test_fix_p1_frontend_red.TestFixB001ReportDateCluster object at 0x7539568fa150>
+page = <Page url='http://127.0.0.1:15210/'>, width = 768, height = 1024
+
+    @pytest.mark.parametrize("width,height", [(768, 1024), (1440, 900), (390, 844)])
+    def test_date_cluster_fully_visible(self, page, width, height):
+        page.set_viewport_size({"width": width, "height": height})
+        _goto_tab(page, 'tab-report')
+        page.wait_for_timeout(800)
+        info = page.evaluate("""
+            () => {
+                const out = [];
+                document.querySelectorAll('#tab-report .report-date-cluster input[type=date]').forEach(inp => {
+                    const r = inp.getBoundingClientRect();
+                    out.push({id: inp.id, x: r.x, right: r.right, width: r.width,
+                              visible: r.width > 0 && r.right <= window.innerWidth + 0.5
+                                       && r.x >= -0.5});
+                });
+                return {inputs: out, vw: window.innerWidth};
+            }
+        """)
+        assert info["inputs"], "未找到 #tab-report 日期输入框"
+        for inp in info["inputs"]:
+>           assert inp["right"] <= info["vw"] + 0.5, (
+                "%s 右缘 %s 超出视口 %s（FIX-B001 复现）" % (inp["id"], inp["right"], info["vw"]))
+E           AssertionError: costReportStartDate 右缘 780.5625 超出视口 768（FIX-B001 复现）
+E           assert 780.5625 <= (768 + 0.5)
+
+tests/test_fix_p1_frontend_red.py:151: AssertionError
+____ TestFixB001ReportDateCluster.test_date_cluster_fully_visible[1440-900] ____
+
+self = <test_fix_p1_frontend_red.TestFixB001ReportDateCluster object at 0x7539568f9f90>
+page = <Page url='http://127.0.0.1:15210/'>, width = 1440, height = 900
+
+    @pytest.mark.parametrize("width,height", [(768, 1024), (1440, 900), (390, 844)])
+    def test_date_cluster_fully_visible(self, page, width, height):
+        page.set_viewport_size({"width": width, "height": height})
+        _goto_tab(page, 'tab-report')
+        page.wait_for_timeout(800)
+        info = page.evaluate("""
+            () => {
+                const out = [];
+                document.querySelectorAll('#tab-report .report-date-cluster input[type=date]').forEach(inp => {
+                    const r = inp.getBoundingClientRect();
+                    out.push({id: inp.id, x: r.x, right: r.right, width: r.width,
+                              visible: r.width > 0 && r.right <= window.innerWidth + 0.5
+                                       && r.x >= -0.5});
+                });
+                return {inputs: out, vw: window.innerWidth};
+            }
+        """)
+        assert info["inputs"], "未找到 #tab-report 日期输入框"
+        for inp in info["inputs"]:
+>           assert inp["right"] <= info["vw"] + 0.5, (
+                "%s 右缘 %s 超出视口 %s（FIX-B001 复现）" % (inp["id"], inp["right"], info["vw"]))
+E           AssertionError: costReportEndDate 右缘 1461.25 超出视口 1440（FIX-B001 复现）
+E           assert 1461.25 <= (1440 + 0.5)
+
+tests/test_fix_p1_frontend_red.py:151: AssertionError
+________ TestFixB001ReportDateCluster.test_date_input_clickable_at_768 _________
+
+self = <test_fix_p1_frontend_red.TestFixB001ReportDateCluster object at 0x7539568fab10>
+page = <Page url='http://127.0.0.1:15210/'>
+
+    def test_date_input_clickable_at_768(self, page):
+        """768 视口下第二个日期框中心点命中的元素必须是它自己（未被遮挡/裁剪）。"""
+        page.set_viewport_size({"width": 768, "height": 1024})
+        _goto_tab(page, 'tab-report')
+        page.wait_for_timeout(800)
+        res = page.evaluate("""
+            () => {
+                const inputs = Array.from(
+                    document.querySelectorAll('#tab-report .report-date-cluster input[type=date]'));
+                return inputs.map(inp => {
+                    const r = inp.getBoundingClientRect();
+                    if (r.width === 0) return {id: inp.id, hit: 'zero-size'};
+                    const el = document.elementFromPoint(
+                        Math.min(r.x + r.width / 2, window.innerWidth - 1),
+                        r.y + r.height / 2);
+                    return {id: inp.id, hit: el ? (el === inp ? 'self' : el.tagName + '.' + el.className) : 'none'};
+                });
+            }
+        """)
+        for item in res:
+>           assert item["hit"] == "self", "%s 中心点命中 %s（被遮挡或裁剪）" % (item["id"], item["hit"])
+E           AssertionError: costReportEndDate 中心点命中 INPUT.form-control csp-s-207（被遮挡或裁剪）
+E           assert 'INPUT.form-control csp-s-207' == 'self'
+E             
+E             - self
+E             + INPUT.form-control csp-s-207
+
+tests/test_fix_p1_frontend_red.py:176: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_fix_p1_frontend_red.py::TestFixB001ReportDateCluster::test_date_cluster_fully_visible[768-1024]
+FAILED tests/test_fix_p1_frontend_red.py::TestFixB001ReportDateCluster::test_date_cluster_fully_visible[1440-900]
+FAILED tests/test_fix_p1_frontend_red.py::TestFixB001ReportDateCluster::test_date_input_clickable_at_768
+3 failed, 2 passed, 1 skipped in 11.07s

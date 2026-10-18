@@ -1,0 +1,4 @@
+s                                                                        [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/test_fix_p1_frontend_red.py:126: 无在售餐品可录消耗（数据前置缺失），本用例需含餐品的库
+1 skipped in 5.58s

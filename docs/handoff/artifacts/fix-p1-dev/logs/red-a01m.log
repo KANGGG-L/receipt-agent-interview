@@ -1,0 +1,96 @@
+DEBUG items: [{'id': '1', 'q': '1'}]
+DEBUG rows: [{'cls': 'dish-consume-row', 'qty': '1', 'id': '1'}]
+DEBUG resp: {"status":"success","msg":"成功记录 1 项餐品消耗","data":{"date":"2026-10-18","consumption_ids":[1],"merged":true,"quantity":2.0,"items":[{"dish_id":1,"consumption_id":1,"quantity":2.0,"total_cost":0.0,"merged
+DEBUG directcall: called
+DEBUG toasts: ['请至少输入一种餐品的售出份数（份数大于 0）×', '请至少输入一种餐品的售出份数（份数大于 0）×', '请至少输入一种餐品的售出份数（份数大于 0）', '×']
+DEBUG btn: {'disabled': False, 'text': '一键扣减库存并核算真实成本'}
+F
+=================================== FAILURES ===================================
+_____ TestFixA01ModalBackdrop.test_cost_trace_modal_close_releases_clicks ______
+
+self = <test_fix_p1_frontend_red.TestFixA01ModalBackdrop object at 0x7eaf8e6f4810>
+page = <Page url='http://127.0.0.1:15210/'>
+server = <_playwright_server.ServerHandle object at 0x7eaf8e7b9950>
+
+    def test_cost_trace_modal_close_releases_clicks(self, page, server):
+        """提交每日消耗 → FIFO 弹窗出现 → 关闭 → 同屏提交按钮恢复可点。"""
+        _seed_dish_with_sku(server)
+        page.goto(BASE_URL + "/")
+        page.wait_for_load_state("networkidle")
+        _login(page)
+        _goto_tab(page, "tab-dishes")
+        # 登录后补拉每日消耗面板（首屏 DOMContentLoaded 时未登录，/api/dishes 401 空手）
+        page.evaluate("typeof loadDailyConsumption === 'function' && loadDailyConsumption()")
+        # 需要至少一行份数 > 0；等待消耗录入表渲染（异步拉取 /api/dishes）
+        page.wait_for_selector(".dish-consume-qty-input", timeout=10000)
+        qty = page.locator(".dish-consume-qty-input").first
+        qty.fill("1")
+        # 触发 oninput 让行内份数状态被收集（fill 不触发 input 事件之外的逻辑）
+        page.evaluate(
+            "() => { const i = document.querySelector('.dish-consume-qty-input');"
+            " i.dispatchEvent(new Event('input', {bubbles: true})); }")
+        page.on("console", lambda m: print("CONSOLE:", m.type, m.text[:300]))
+        print("DEBUG items:", page.evaluate("() => { const rows=document.querySelectorAll('#dishConsumeEntryTableBody tr.dish-consume-row'); return Array.from(rows).map(tr=>({id: tr.getAttribute('data-dish-id'), q: document.getElementById('dishConsumeQty_'+tr.getAttribute('data-dish-id')).value})); }"))
+        print("DEBUG rows:", page.evaluate("() => Array.from(document.querySelectorAll('#dishConsumeEntryTableBody tr')).map(tr => ({cls: tr.className, qty: (tr.querySelector('.dish-consume-qty-input')||{}).value, id: tr.getAttribute('data-dish-id')}))"))
+        btn = page.locator("#btnSubmitDailyConsumeBatch")
+        btn.click()
+        page.wait_for_timeout(2500)
+        # 弹窗应已出现
+        modal = page.locator("#costTraceModal")
+        assert modal.count() == 1
+        assert "hide" not in (modal.get_attribute("class") or ""), "提交后应打开 FIFO 溯源弹窗"
+        # 关闭（弹窗内关闭按钮）
+        modal.locator(".modal-close-btn").first.click()
+        page.wait_for_timeout(500)
+        # 关闭后：backdrop 已回收（hide），同屏提交按钮可点（无 interception）
+        assert "hide" in (modal.get_attribute("class") or ""), "关闭后 backdrop 必须 hide/移除"
+        btn.click(timeout=3000)
+        print("DEBUG resp:", page.evaluate("() => fetch('/api/dishes/daily_consumption/batch', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date: document.getElementById('dishConsumptionDate').value, notes:'x', items:[{dish_id:1, quantity:1, notes:''}], request_id:'t'+Date.now()})}).then(r=>r.text()).then(t=>t.slice(0,200))"))
+        import time as _t; _t.sleep(2)
+        print("DEBUG directcall:", page.evaluate("() => { try { if (typeof window.submitDailyConsumptionBatch==='function') { window.submitDailyConsumptionBatch(); return 'called'; } return 'nofn:'+typeof window.submitDailyConsumptionBatch; } catch(e){ return 'err:'+e.message; } }"))
+        page.wait_for_timeout(2500)
+        import json as _json
+        print("DEBUG toasts:", page.evaluate("() => Array.from(document.querySelectorAll('.toast, [class*=toast]')).map(t=>t.textContent)"))
+        print("DEBUG btn:", page.evaluate("() => { const b=document.getElementById('btnSubmitDailyConsumeBatch'); return {disabled: b && b.disabled, text: b && b.innerText}; }"))
+        # modal 可以再次被打开（证明第二次点击真的提交了）；轮询等待异步 fetch 完成
+>       page.wait_for_function(
+            "() => { const m = document.getElementById('costTraceModal');"
+            " return m && !m.classList.contains('hide'); }", timeout=8000)
+
+tests/test_fix_p1_frontend_red.py:156: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../.venv-uat009/lib/python3.11/site-packages/playwright/sync_api/_generated.py:21235: in wait_for_function
+    self._sync(
+../.venv-uat009/lib/python3.11/site-packages/playwright/_impl/_page.py:1158: in wait_for_function
+    return await self._main_frame.wait_for_function(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../.venv-uat009/lib/python3.11/site-packages/playwright/_impl/_frame.py:945: in wait_for_function
+    await self._channel.send("waitForFunction", self._timeout, params)
+../.venv-uat009/lib/python3.11/site-packages/playwright/_impl/_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <playwright._impl._connection.Connection object at 0x7eaf8e6f4ed0>
+cb = <function Channel.send.<locals>.<lambda> at 0x7eaf8c52f560>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        parsed_st = _attach_api_call_information(
+            getattr(task, "__pw_stack__", None) or _capture_stack_trace(),
+            is_internal,
+            title,
+        )
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Page.wait_for_function: Timeout 8000ms exceeded.
+
+../.venv-uat009/lib/python3.11/site-packages/playwright/_impl/_connection.py:636: TimeoutError
+1 failed in 21.41s

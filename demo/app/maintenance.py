@@ -111,6 +111,104 @@ def sweep_parsing():
     return swept
 
 
+# ---------------------------------------------------------------------------
+# FIX-D01：历史毒化库存流水一次性清洗。
+#
+# 背景：1e308/inf 曾被 stocktake/consume 接受并写入 inventory_log，导致
+# GET /api/inventory/logs 的 json.dumps 抛 ValueError 永久 500。入库侧校验
+# （api_inventory._qty_out_of_range）已堵住新数据；本函数清洗存量。
+#
+# 纪律：先备份 → dry_run 只报告不动数 → 实跑幂等（清洗后再次执行 affected=0）。
+# 清洗策略：qty/amount 超出有效域（非有限或 |v| > 1e9，与 API 上界一致）→ 置 None。
+# ---------------------------------------------------------------------------
+
+_STOCK_LOG_MAX_QTY = 1e9
+
+
+def _stock_log_value_out_of_range(v) -> bool:
+    try:
+        fv = float(v)
+    except (TypeError, ValueError):
+        return True
+    return (fv != fv) or fv in (float("inf"), float("-inf")) or abs(fv) > _STOCK_LOG_MAX_QTY
+
+
+def sanitize_stock_logs(dry_run: bool = True) -> dict:
+    """清洗 inventory_log 表中的毒化数值行（qty/amount），返回清洗报告。
+
+    - dry_run=True：只统计受影响行数，不改任何数据；
+    - dry_run=False：执行前先做一次 DB 备份，然后把 qty/amount 超界行置 None；
+    - 幂等：清洗完成后重复执行 affected == 0。
+    """
+    session = db.get_session()
+    try:
+        rows = session.query(db._StockLogRow).all()
+        rows_total = len(rows)
+        affected_rows = []
+        for r in rows:
+            bad_qty = r.qty is not None and _stock_log_value_out_of_range(r.qty)
+            bad_amount = r.amount is not None and _stock_log_value_out_of_range(r.amount)
+            if bad_qty or bad_amount:
+                affected_rows.append((r, bad_qty, bad_amount))
+        affected = len(affected_rows)
+        cleaned_qty = sum(1 for _, b, _ in affected_rows if b)
+        cleaned_amount = sum(1 for _, _, b in affected_rows if b)
+        report = {
+            "table": "inventory_log",
+            "rows_total": rows_total,
+            "affected": affected,
+            "affected_non_null_qty": sum(1 for _, b, _ in affected_rows if b),
+            "cleaned_qty": cleaned_qty,
+            "cleaned_amount": cleaned_amount,
+            "dry_run": bool(dry_run),
+        }
+        if dry_run or not affected_rows:
+            session.rollback()
+            report["backup_file"] = None
+            report["cleaned"] = 0
+            return report
+
+        # 实跑前备份（失败则中止，绝不无备份清洗）
+        backup = run_backup()
+        if not backup.get("ok"):
+            session.rollback()
+            report["error"] = "backup_failed: %s" % backup.get("error")
+            report["cleaned"] = 0
+            return report
+        report["backup_file"] = backup.get("last_file")
+
+        cleaned = 0
+        for r, bad_qty, bad_amount in affected_rows:
+            if bad_qty:
+                r.qty = None
+            if bad_amount:
+                r.amount = None
+            cleaned += 1
+        session.commit()
+        # expire_on_commit=False + 进程内 ORM 身份映射：已加载的行对象若不失效，
+        # 后续会话读到的是内存里的旧毒化值（幂等假象）。清空实例后重查验证。
+        session.expire_all()
+        residual = 0
+        for r in session.query(db._StockLogRow).all():
+            if _stock_log_value_out_of_range(r.qty) or _stock_log_value_out_of_range(r.amount):
+                residual += 1
+        report["residual_after"] = residual
+        session.commit()
+        report["cleaned"] = cleaned
+        logger.warning("[fix-d01] sanitized poisoned stock logs: %d rows (backup=%s)",
+                       cleaned, report["backup_file"])
+        return report
+    except Exception as e:  # noqa: BLE001
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return {"table": "inventory_log", "rows_total": 0, "affected": 0,
+                "cleaned": 0, "dry_run": bool(dry_run), "error": str(e)}
+    finally:
+        session.close()
+
+
 def purge_jobs():
     from app.services import receipt_utils as ru
     return ru.purge_expired_jobs()

@@ -1,0 +1,77 @@
+{
+ "desktop": {
+  "vw": 1440,
+  "dates": [
+   {
+    "id": "costReportStartDate",
+    "right": 774,
+    "left": 616,
+    "width": 157,
+    "visible": true,
+    "hitSelf": true
+   },
+   {
+    "id": "costReportEndDate",
+    "right": 954,
+    "left": 796,
+    "width": 157,
+    "visible": true,
+    "hitSelf": true
+   }
+  ]
+ },
+ "desktop_fill": {
+  "costReportStartDate": true,
+  "costReportEndDate": true
+ },
+ "tablet": {
+  "vw": 768,
+  "dates": [
+   {
+    "id": "costReportStartDate",
+    "right": 527,
+    "left": 370,
+    "width": 157,
+    "visible": true,
+    "hitSelf": true
+   },
+   {
+    "id": "costReportEndDate",
+    "right": 707,
+    "left": 549,
+    "width": 157,
+    "visible": true,
+    "hitSelf": true
+   }
+  ]
+ },
+ "tablet_fill": {
+  "costReportStartDate": true,
+  "costReportEndDate": true
+ },
+ "mobile": {
+  "vw": 390,
+  "dates": [
+   {
+    "id": "costReportStartDate",
+    "right": 330,
+    "left": 118,
+    "width": 212,
+    "visible": true,
+    "hitSelf": true
+   },
+   {
+    "id": "costReportEndDate",
+    "right": 345,
+    "left": 45,
+    "width": 300,
+    "visible": true,
+    "hitSelf": true
+   }
+  ]
+ },
+ "mobile_fill": {
+  "costReportStartDate": true,
+  "costReportEndDate": true
+ }
+}

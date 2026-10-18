@@ -1,0 +1,8 @@
+{
+ "stopped": true,
+ "ports_152xx": "FREE (ss verified, 15210 zero listeners)",
+ "uvicorn_orphans": "NO_UVICORN",
+ "port_15010": "15010_NOT_LISTENING",
+ "note": "written by scheduler after verifying port/process state; worker report at artifacts/fix-p1-dev-report.md",
+ "checked_at_utc": "2026-10-18T01:00:00Z"
+}

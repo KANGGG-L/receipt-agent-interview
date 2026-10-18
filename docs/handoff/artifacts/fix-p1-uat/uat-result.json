@@ -1,0 +1,103 @@
+{
+ "role": "UAT (independent user-acceptance)",
+ "date": "2026-10-18",
+ "baseline": "HEAD ec0ecc6 + uncommitted FIX-P1 fixes",
+ "environment": {
+  "server": "uvicorn app.main:app @ http://127.0.0.1:15121",
+  "port": 15121,
+  "db": "/tmp/fix-p1-uat/receipt.db (independent fixture, not shared with DEV/QA)",
+  "auth": "AUTH_ENABLED=1 + 48-byte random DEMO_TOKEN_SECRET",
+  "browser": "real Chrome /usr/bin/google-chrome via Playwright (headless, Xvfb :27 self-started)",
+  "python": ".venv-uat009"
+ },
+ "items": [
+  {
+   "id": "FIX-D01 (orig E2E-D-01)",
+   "acceptance": "oversized qty rejected with human-readable error; inventory logs page opens under any data",
+   "tests": [
+    {
+     "step": "UI stocktake modal fill 1e308, submit",
+     "result": "rejected; toast: 盘点调整失败：数量超出有效范围：必须是有限数且绝对值不超过 1e9，请核对后重新输入。",
+     "evidence": "d01-05-filled-1e308.png, d01-06-after-submit.png, d01-modal-dump.json; server log POST /api/inventory/1/stocktake 422"
+    },
+    {
+     "step": "UI outbound (consume) 1e308: overdraw prompt (差 Infinity 斤) confirmed -> server rejects",
+     "result": "toast: 出库登记 - 日常用量没有成功：数量超出有效范围：必须是有限数且绝对值不超过 1e9…",
+     "evidence": "d01-overdraw-dialog.png, d01-outbound-final3.png, d01-outbound-final.json"
+    },
+    {
+     "step": "GET /api/inventory/logs (DB contains legacy qty=NULL/NaN poison rows seeded in fixture)",
+     "result": "HTTP 200, JSON compliant (qty null, no Infinity/NaN); ledger UI renders 18 rows",
+     "evidence": "d01-ledger.json, d01-ledger-final.png, d01-09-ledger.png"
+    },
+    {
+     "step": "normal stocktake 8 via UI",
+     "result": "toast: 已完成盘点调整 (regression OK)",
+     "evidence": "d01-normal-stocktake.png, d01-summary.json"
+    }
+   ],
+   "conclusion": "PASS"
+  },
+  {
+   "id": "FIX-A01 (orig E2E-A-1)",
+   "acceptance": "dish cost daily consumption -> submit -> trace modal opens -> close -> same-screen ops no longer blocked",
+   "tests": [
+    {
+     "step": "fill 份=1, submit; costTraceModal opens full-viewport (0,0,1440,900) z=1000 pointer-events=auto",
+     "result": "modal opens",
+     "evidence": "a01-02-modal-open.png, a01-summary.json"
+    },
+    {
+     "step": "close modal",
+     "result": "className becomes 'modal-backdrop hide'; zero residual backdrops after close",
+     "evidence": "a01-03-modal-closed.png"
+    },
+    {
+     "step": "real Playwright click on submit button after close (refills 份=1 per AI-01 design)",
+     "result": "click succeeds (no interception); modal reopens; closed again -> no residual",
+     "evidence": "a01-04-second-modal.png"
+    },
+    {
+     "step": "AI-01 (input cleared to 0 after success)",
+     "result": "maintained as designed (onSuccess explicit clear, dish_consumption.js); not a defect",
+     "evidence": "a01-summary.json input_after_submit=0"
+    }
+   ],
+   "conclusion": "PASS"
+  },
+  {
+   "id": "FIX-B001 (orig E2E-B-001)",
+   "acceptance": "report date range visible and selectable at mobile/tablet/desktop",
+   "tests": [
+    {
+     "step": "1440x900",
+     "result": "costReportStartDate right=774, costReportEndDate right=954 (<1440); elementFromPoint hits self; fill OK",
+     "evidence": "b001-desktop.png, b001-summary.json"
+    },
+    {
+     "step": "768x1024 (original defect viewport)",
+     "result": "right=527/707 (<768, orig defect 781/1213 clipped); visible, hitSelf=true, fill OK",
+     "evidence": "b001-tablet.png"
+    },
+    {
+     "step": "390x844",
+     "result": "right=330/345 (<390, wrapped); visible, hitSelf=true, fill OK",
+     "evidence": "b001-mobile.png"
+    }
+   ],
+   "conclusion": "PASS"
+  }
+ ],
+ "regression": {
+  "suite": "pytest tests/test_fix_p1_red.py tests/test_fix_p1_frontend_red.py",
+  "result": "15 passed, 24 warnings, 0 failed",
+  "log": "logs/pytest-fix-p1.log"
+ },
+ "not_tested": [
+  "AI 真实识别全链路（无引擎密钥）",
+  "多租户隔离（单租户环境）",
+  "iOS 真机",
+  "save_edited 1e308 500（范围外既有问题，QA 已记录，不在 FIX-P1 三条验收范围）"
+ ],
+ "conclusion": "PASS"
+}

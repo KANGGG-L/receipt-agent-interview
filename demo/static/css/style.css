@@ -6411,6 +6411,23 @@ textarea:focus-visible {
     min-width: 0;
 }
 
+/* FIX-B001：起止日期行在窄视口允许换行；日期输入弹性收缩，绝不溢出视口。
+   125px 定宽在 <=1024px 收缩为弹性基准，768 视口两框均可完整可见可点。 */
+#tab-report .report-date-cluster input[type="date"],
+#tab-report .report-date-cluster input[type="month"] {
+    flex: 1 1 125px;
+    min-width: 0;
+    max-width: 100%;
+    width: auto;
+}
+
+@media (max-width: 1024px) {
+    #tab-report .csp-s-161,
+    #tab-report .report-date-cluster {
+        flex-wrap: wrap;
+    }
+}
+
 #tab-report .csp-s-203 {
     display: flex;
     flex-wrap: wrap;

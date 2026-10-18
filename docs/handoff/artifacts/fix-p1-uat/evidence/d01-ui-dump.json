@@ -1,0 +1,14 @@
+{
+ "inv_dom": {
+  "tables": 2,
+  "qtyInputs": [
+   {
+    "id": "invPriceThresholdInput",
+    "cls": "form-control csp-s-90",
+    "ph": "10",
+    "min": "0.1"
+   }
+  ],
+  "rows": 26
+ }
+}

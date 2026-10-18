@@ -865,7 +865,24 @@ function renderDishConsumeEntryTable(dishes) {
             + '</tr>';
     });
 
+    // FIX-A01 关联体验：重渲染前保留用户已录入但未提交的份数（loadDailyConsumption
+    // 在提交成功后重拉本表；保留语义与本函数「只重绘不改值」的直觉一致，避免
+    // 用户在异步刷新窗口内输入的份数被静默清零——此前二次提交被误判为空输入）。
+    const _prevQty = {};
+    tbody.querySelectorAll('tr.dish-consume-row').forEach(tr => {
+        const _id = tr.getAttribute('data-dish-id');
+        const _inp = tr.querySelector('.dish-consume-qty-input');
+        if (_id && _inp) _prevQty[_id] = _inp.value;
+    });
+
     tbody.innerHTML = html;
+    Object.keys(_prevQty).forEach(_id => {
+        const _inp = document.getElementById('dishConsumeQty_' + _id);
+        if (_inp && _inp.value === '0' && _prevQty[_id] !== '0') {
+            _inp.value = _prevQty[_id];
+            onDishConsumeQtyInput(parseInt(_id, 10), _prevQty[_id]);
+        }
+    });
     updateDishConsumeSummary();
 }
 

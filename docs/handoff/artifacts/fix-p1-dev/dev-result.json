@@ -1,0 +1,20 @@
+{
+ "card": "FIX-P1 (D-01/A-01/B-001)",
+ "head": "ec0ecc6 + uncommitted fixes",
+ "conclusion": "DEV_DONE",
+ "tests": {
+  "test_fix_p1_red.py": "9 passed",
+  "test_fix_p1_frontend_red.py": "6 passed",
+  "combined": "15 passed, 0 failed"
+ },
+ "a01_verdict": "测试脚本问题（产品 onSuccess 显式清空输入为预期行为）；测试已在二次提交前重填 qty 并注明",
+ "files_changed": [
+  "demo/app/api_inventory.py",
+  "demo/app/maintenance.py",
+  "demo/static/css/style.css",
+  "demo/static/js/finance_ops.js",
+  "demo/static/js/dish_consumption.js",
+  "demo/tests/test_fix_p1_red.py",
+  "demo/tests/test_fix_p1_frontend_red.py"
+ ]
+}

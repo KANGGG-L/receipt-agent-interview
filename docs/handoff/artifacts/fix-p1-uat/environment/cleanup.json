@@ -1,0 +1,34 @@
+{
+ "date": "2026-10-18",
+ "role": "UAT fix-p1 (independent acceptance)",
+ "resources": [
+  {
+   "kind": "uvicorn server",
+   "detail": "app.main:app @ 127.0.0.1:15121 (allowed isolation band 1512x)",
+   "action": "stopped after acceptance"
+  },
+  {
+   "kind": "xvfb",
+   "detail": "Xvfb :27 (self-started)",
+   "action": "stopped after acceptance"
+  },
+  {
+   "kind": "db_fixture",
+   "detail": "/tmp/fix-p1-uat/receipt.db + secret.txt + server.log + evidence copies (independent, not reused from DEV/QA)",
+   "action": "left under /tmp/fix-p1-uat (ephemeral, outside repo); nothing written into product DB"
+  },
+  {
+   "kind": "repo_deliverables",
+   "detail": "docs/handoff/artifacts/fix-p1-uat/ (uat-result.json, evidence/, logs/, environment/cleanup.json) and docs/handoff/artifacts/fix-p1-uat-report.md",
+   "action": "kept as deliverables"
+  }
+ ],
+ "product_code_modified": false,
+ "test_code_modified": false,
+ "ports_used": [
+  15121
+ ],
+ "x_displays_used": [
+  ":27"
+ ]
+}

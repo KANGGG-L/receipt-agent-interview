@@ -1,0 +1,26 @@
+{
+  "task": "FIX-P1 dev closeout",
+  "date": "2026-10-18",
+  "conclusion": "DEV_DONE",
+  "verdicts": {
+    "FIX-D01": "pass_backend_9_tests",
+    "FIX-B001": "pass_3_viewports",
+    "FIX-A01": "pass_residual_assert_resolved"
+  },
+  "a01_root_cause": "product clears qty inputs in onSuccess after successful submit (dish_consumption.js, 'clear only after success'); second click was rejected for zero qty. Judged as test-script issue, not product defect; re-render preserve logic (_prevQty) kept as defense for unsubmitted values.",
+  "tests": {
+    "test_fix_p1_red.py": "9 passed",
+    "test_fix_p1_frontend_red.py": "6 passed",
+    "combined": "15 passed, 24 warnings"
+  },
+  "changed_files": [
+    "demo/app/api_inventory.py",
+    "demo/app/maintenance.py",
+    "demo/static/css/style.css",
+    "demo/static/js/dish_consumption.js",
+    "demo/static/js/finance_ops.js",
+    "demo/tests/test_fix_p1_red.py",
+    "demo/tests/test_fix_p1_frontend_red.py"
+  ],
+  "report": "docs/handoff/artifacts/fix-p1-dev-report.md"
+}

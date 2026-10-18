@@ -1,0 +1,52 @@
+{
+  "task": "FIX-P1 independent QA (UAT-QA, subagent)",
+  "date": "2026-10-18",
+  "env": {
+    "repo": "/home/agentuser/receipt-agent-interview (HEAD ec0ecc6 + uncommitted FIX-P1 fixes)",
+    "python_venv": ".venv-uat009",
+    "browser": "/usr/bin/google-chrome (Playwright, Xvfb :26)",
+    "server": "http://127.0.0.1:15151 (uvicorn, isolated)",
+    "db": "/tmp/fix-p1-qa/live.db",
+    "auth": "AUTH_ENABLED=1 + random 48-byte DEMO_TOKEN_SECRET"
+  },
+  "verdicts": {
+    "FIX-D01": "PASS_NOT_REPRODUCED",
+    "FIX-A01": "PASS_NOT_REPRODUCED",
+    "FIX-B001": "PASS_NOT_REPRODUCED",
+    "AI-01_recheck": "CONFIRMED_expected_behaviour"
+  },
+  "details": {
+    "d01": {
+      "stocktake_1e308": 422,
+      "consume_1e308": 422,
+      "waste_1e308": 422,
+      "logs_after_attempts": 200,
+      "logs_with_legacy_inf_row": 200,
+      "json_compliant": true,
+      "sanitize_dry_affected": 1,
+      "sanitize_cleaned": 1,
+      "sanitize_backup": "receipt_20261018_084557_992463.db",
+      "sanitize_idempotent_second_run_cleaned": 0,
+      "save_edited_1e308": "500 INTERNAL_ERROR (pre-existing money.py Decimal quantize InvalidOperation, unchanged from HEAD, no DB write, no poison rows; dev scope covered stocktake/consume/waste only)"
+    },
+    "a01": {
+      "modal_opens_after_submit": true,
+      "modal_class_after_close": "modal-backdrop hide",
+      "second_click_on_submit_ok": true,
+      "note": "one costTraceModal with display:flex remained in :not(.hide) probe list because it was re-opened by the successful second click at probe time; final screenshot a01-03 shows closed state"
+    },
+    "b001": {
+      "vp1440": "both date inputs visible+hit_self, right<=954",
+      "vp768": "right 528/707 < 768, visible+clickable",
+      "vp390": "visible+clickable"
+    },
+    "ai01": "dish_consumption.js onSuccess lines 1093-1095 '仅在成功后清空输入框' inputs.forEach(inp=>{inp.value=0}) is explicit product intent; second submit with zero qty correctly rejected; dev re-fill in test is a test-script fix, judgement upheld"
+  },
+  "tests": {
+    "test_fix_p1_red.py": "9 passed",
+    "test_fix_p1_frontend_red.py": "6 passed (DISPLAY=:26 required)",
+    "combined": "15 passed",
+    "regression": "56 passed on fixed tree vs 56 passed on pristine HEAD worktree (no new failures); 24 warnings pre-existing deprecations"
+  },
+  "conclusion": "PASS"
+}
