@@ -1,2 +1,0 @@
-{"overall": "FAIL", "fatal": "Timeout 60000ms exceeded while waiting for event \"response\""}
-real_probe_exit=1

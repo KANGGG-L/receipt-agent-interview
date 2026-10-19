@@ -1,2 +1,0 @@
-DEMO_EXIT=0 ELAPSED_SEC=957
-junit tests=2194 failures=0 errors=0 skipped=19 time=952.312

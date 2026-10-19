@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""数据中心 13 项新 Filter 行为回归（EXPORT_CENTER_FILTERS_PLAN §1-§9）。
+"""数据中心 13 项新 Filter 行为回归（需求口径见 EXPORT_CENTER_TABLE_REFACTOR_NEEDS_ANALYSIS §8.2）。
 
 覆盖：
 - receipts_itemized_ledger: keyword（单号 #id / 裸 id / 供应商 / 品名）、

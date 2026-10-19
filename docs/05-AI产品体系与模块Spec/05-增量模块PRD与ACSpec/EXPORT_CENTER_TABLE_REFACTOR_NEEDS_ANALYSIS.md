@@ -4,7 +4,7 @@
 - 文档性质：重构前置需求分析（第一性原理判定），非实现规格
 - 负责角色：产品 / 需求分析
 - 关联文档：`EXPORT_CENTER_PRD_AC_SPEC.md`（现行 14 报表规格）、`demo/app/api_export.py`、`demo/static/js/export_center.js`、`demo/templates/index.html`（tab-export）
-- 实施状态：[IMPLEMENTED]（2026-10-06，14→8 落地，见同目录 EXPORT_CENTER_REFACTOR_CHANGELOG.md）
+- 实施状态：[IMPLEMENTED]（2026-10-06，14→8 落地，变更明细见 `git log --oneline -- demo/app/api_export.py`）
 - 分析日期：2026-10-06
 
 ---
@@ -207,7 +207,7 @@
 
 ### 8.2 P0 / P1 已落地 Filter 清单
 
-依据第一性原则与生产场景需求，P0 与 P1 阶段共落地 16 项新 Filter 登记项（去重后 15 个登记名，`amount_range` 在采购入账台账与期间花销汇总表复用），全部遵循“后端统一计算过滤、前端白名单收敛渲染、三端出口（预览/CSV/打印）口径一致”的原则。详细技术设计与测试用例参见 [`EXPORT_CENTER_FILTERS_PLAN.md`](./EXPORT_CENTER_FILTERS_PLAN.md)。
+依据第一性原则与生产场景需求，P0 与 P1 阶段共落地 16 项新 Filter 登记项（去重后 15 个登记名，`amount_range` 在采购入账台账与期间花销汇总表复用），全部遵循“后端统一计算过滤、前端白名单收敛渲染、三端出口（预览/CSV/打印）口径一致”的原则。逐项参数与测试口径见本节表格与 `demo/tests/test_export_center_filters.py`。
 
 | 报表名称 | 报表标识 | 新增 Filter 登记名 | 参数形式 | 控件类型 | 过滤语义与处理口径 |
 |---|---|---|---|---|---|

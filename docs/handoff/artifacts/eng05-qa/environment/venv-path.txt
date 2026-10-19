@@ -1,2 +1,0 @@
-PY=docs/handoff/artifacts/eng05-qa/environment/venv/bin/python
-docs/handoff/artifacts/eng05-qa/environment/venv/bin/python

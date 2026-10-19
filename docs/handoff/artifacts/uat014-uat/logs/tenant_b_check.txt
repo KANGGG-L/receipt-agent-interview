@@ -1,1 +1,0 @@
-tenant_b_exit=0

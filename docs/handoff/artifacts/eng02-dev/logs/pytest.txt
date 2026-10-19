@@ -1,3 +1,0 @@
-...                                                                      [100%]
-3 passed in 11.46s
-pytest_exit=0
