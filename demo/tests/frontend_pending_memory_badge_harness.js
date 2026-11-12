@@ -136,9 +136,18 @@ try { vm.runInNewContext(src, sandbox, { filename: 'main.js' }); }
 catch (e) { console.log('load note:', e.message); }
 // F4 S4-11：main.js 按域拆分，沙箱按 index.html 加载链追加全部域文件
 // （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
-require('./f4_load_domains.js').loadF4Domains(
+const F4_LOADER = require('./f4_load_domains.js');
+const overrides = {};
+[process.argv[2], process.argv[3]].forEach(p => {
+    if (!p) return;
+    const b = path.basename(p);
+    if (F4_LOADER.F4_DOMAIN_FILES.indexOf(b) !== -1) {
+        overrides[b] = p;
+    }
+});
+F4_LOADER.loadF4Domains(
     (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
-    { warn: m => console.log(m) });
+    { overrides, warn: m => console.log(m) });
 
 const { loadPendingMemoryBadge, openPendingMemoryQueue, submitArcFeedback } = sandbox;
 

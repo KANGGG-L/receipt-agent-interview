@@ -8,7 +8,19 @@
 修复：写入路径（`rag.ingest_memory` 的 notes/sample、`rag.approve_pending_to_memory`
 的自由文本分支）在**落库前 + 写向量前**对记忆语料做确定性脱敏，复用
 `ai_registry.tools.pii_masker.v1_0_0`（不另写正则实现）。开关 `memory_pii_mask_enabled`
-缺省 False = 逐字节零行为变化。
+缺省 True（W-ISO-2 改判落地；变更史唯一登记在 rag.py 的 MEMORY_PII_MASK_KEY
+上方注释块）。
+故默认写入即脱敏。
+只有显式关掉本键的部署才逐字节零行为变化（那是关掉态，不是现行缺省态）。
+
+本文件的用例名与这段 docstring 由 2026-10-20 P0 收口波（F-C）改写：改名前用例叫
+`test_default_is_disabled_and_does_not_alter_write`，与它自己 body 里的
+`assert ... get_bool(...) is True` 互相矛盾（W-ISO-2 改判之前该名与行为一致，改判后只剩
+名字在说反话），现名
+`test_default_enabled_masks_write_and_explicit_off_is_byte_identical`。
+旧 docstring 写的是「False = 逐字节零行为变化」，那是 W-ISO-2 改判前的口径，同样说反话。
+这类「表述与代码缺省各说各话」的漂移现由
+demo/tests/test_memory_pii_mask_default_ssot.py 的 tests 域判据机器钉住。
 
 判别式断言（反证记录见交付报告，脚本见
 ~/harness-tmp/receipt-vendormemory-takeover/w9_mutation_counterproof.py）：
@@ -103,7 +115,7 @@ def test_switch_off_is_byte_identical():
     assert sample_docs == [f"供应商 {vendor} 的已确认进货明细：\n{PII_TEXT}"], sample_docs
 
 
-def test_default_is_disabled_and_does_not_alter_write():
+def test_default_enabled_masks_write_and_explicit_off_is_byte_identical():
     """W-ISO-2 规格：未显式设置时开关缺省为 True（最小化原则），写入默认脱敏；显式关闭时不修改写入。"""
     _db = _fresh_db()
     # 1. 验证新规格默认值为 True，且默认写入会执行脱敏

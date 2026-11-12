@@ -15,7 +15,9 @@ dashscope 三档与 `EmbeddingIdentity`，但 `rag.py` 里**还留着一份重�
 2. 缺省档（环境变量未设）行为与接线前**逐值一致**：独立复刻旧算法逐值比对，且全程
    零网络（socket 层自校准陷阱，避免「0 连接」其实是陷阱没生效）；
 3. `_tenant_collection_name()` 拼上 `embedding.identity.collection_suffix()`（含全局桶），
-   三档后缀互不相同，切档即换集合名；
+   三档后缀互不相同，切档即换集合名；T9（G5 / D7）起租户桶名在 `_vendor_memory` 之后还带
+   `sha1(tid)[:12]` 消歧摘要（归一 + 截断不再承担消歧），单射性的成组用例在
+   `tests/test_rag_dir_follows_db_path.py` 的 T9 段；
 4. **名字与实际生效档一致**：`_store()` 传的是探测/回落**之后**那个对象的 identity，
    所以探测失败回落到 hash 时，集合名也必须带 hash 后缀（否则 256 维会写进名为
    1024 维的集合）；
@@ -42,6 +44,11 @@ dashscope 三档与 `EmbeddingIdentity`，但 `rag.py` 里**还留着一份重�
 的静态断言钉住，防「校准搬到 tmp 之后判据其实指向了一个随便的目录」这种新的假绿。
 
 远端档一律用假的 HTTP 响应对象，不联网、不读真实凭据。
+
+第 1 组的 hashlib 口径（T9 / D7 同批变更）：旧判据「rag.py 出现 hashlib 即回流」只是
+嵌入算法的**代理指标**；T9 要求 `sha1(tid)[:12]` 消歧摘要，hashlib 于是合法出现在 rag.py。
+判据随之收紧到它真正要防的东西（sha256 痕迹 / Embeddings 子类 / hashlib 的宿主函数），
+详见该用例 docstring —— T9 本体的单射与端到端判据不在此处重复。
 
 反证：把 `_tenant_collection_name` 的 identity 后缀去掉（或让 `_store` 用请求档而非
 实际生效档拼名）→ 第 3/4/5 组用例必须失败；把 `_store` 里的档位解析移回缓存判断之前
@@ -161,16 +168,54 @@ class _CapturingChroma:
 
 # ------------------------------------------------- 1. 只剩一份嵌入实现
 
+_HASHLIB_ALLOWED_HOST = "_tenant_collection_name"
+
+
+def _hashlib_uses(tree):
+    """rag.py 里全部 `hashlib.<attr>` 用法，按**所在顶层函数**归类。
+
+    why 按宿主函数而不是只看「有没有 import hashlib」：本守卫要判的是「hashlib 有没有被
+    用来再长一份嵌入哈希」，宿主函数名才是判据（`_tenant_collection_name` 拿它算 tid 的
+    消歧摘要 ≠ 嵌入算法）。函数体外的用法归到 "<module>"，同样要被抓到。
+    """
+    top_funcs = [n for n in tree.body
+                 if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    uses = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id == "hashlib"):
+            continue
+        host = "<module>"
+        for fn in top_funcs:
+            if fn.lineno <= node.lineno <= getattr(fn, "end_lineno", fn.lineno):
+                host = getattr(fn, "name", "<module>")
+                break
+        uses.append((host, "hashlib." + node.attr))
+    return uses
+
+
 def test_rag_no_longer_defines_its_own_embeddings():
     """rag.py 不得再有第二份嵌入实现（①类缺陷：同一根因多份实现只改一份）。
 
     判据取 AST（代码事实）而不只做字符串匹配：注释里提一句历史是正常的，但**代码里**
-    不得再有该名字、不得再 import hashlib / 调用 sha256（哈希算法的实现痕迹）。两条
-    一起给，字符串判据负责「grep 可见的干净」，AST 判据负责「注释改回去也躲不过」。
+    不得再有该名字、不得再出现 sha256 嵌入哈希的实现痕迹。两条一起给，字符串判据负责
+    「grep 可见的干净」，AST 判据负责「注释改回去也躲不过」。
+
+    hashlib 的口径变更（T9 / D7 同批）：旧判据是「rag.py 里出现 hashlib 就算回流」，那是
+    拿 import 名当**嵌入算法**的代理指标。T9 的租户摘要必须是 sha1(tid)（规格写死），
+    于是 hashlib 会合法地出现在 `rag.py`。代理指标随之收紧成**它真正要防的东西**：
+    - `sha256`（`embeddings.HashEmbeddings` 的桶哈希用的就是它）在 rag.py 出现 → 回流；
+    - `Embeddings` 子类 / `_CharNGramEmbeddings` 名字 → 回流；
+    - hashlib 的用法若出现，**宿主只能是 `_tenant_collection_name`、方法只能是 sha1**
+      （写进别的函数、或换成 sha256 都判红）。
+    回滚 `_tenant_collection_name` 的摘要（rag.py 不再用 hashlib）时本用例不受影响 ——
+    T9 本体的判据在 `tests/test_rag_dir_follows_db_path.py` 与
+    `tests/test_memory_vector_consistency.py` 的 T9 段，不在此处重复。
     """
     src = _rag_source()
     assert "_CharNGramEmbeddings" not in src, "rag.py 仍留有重复的嵌入实现"
-    assert "hashlib" not in src, "rag.py 仍留着 char-ngram 哈希的实现痕迹（hashlib）"
+    assert "sha256" not in src, \
+        "rag.py 又出现了 char-ngram 哈希的桶函数痕迹（sha256）—— 嵌入哈希只此一份，在 embeddings 模块"
     assert not hasattr(rag, "_CharNGramEmbeddings"), "模块上仍挂着重复的嵌入实现"
 
     tree = ast.parse(src)
@@ -187,10 +232,12 @@ def test_rag_no_longer_defines_its_own_embeddings():
         if isinstance(node, (ast.ClassDef, ast.FunctionDef))
     ]
     assert "_CharNGramEmbeddings" not in defined
-    assert not [n for n in ast.walk(tree)
-                if isinstance(n, (ast.Import, ast.ImportFrom))
-                and any(alias.name == "hashlib" for alias in n.names)], \
-        "rag.py 不应再 import hashlib（哈希实现已收敛到 embeddings 模块）"
+
+    illegal_hosts = sorted({(host, use) for host, use in _hashlib_uses(tree)
+                            if not (host == _HASHLIB_ALLOWED_HOST and use == "hashlib.sha1")})
+    assert not illegal_hosts, (
+        "rag.py 的 hashlib 只能用于 `_tenant_collection_name` 的 sha1(tid) 消歧摘要；"
+        "出现在别处（或换成别的哈希）即等于又长出一份哈希实现：%r" % illegal_hosts)
 
 
 def test_embedding_provider_returns_embeddings_module_object():
@@ -250,16 +297,32 @@ def test_default_tier_opens_no_socket_and_no_request(monkeypatch):
 
 # ------------------------------------------------- 3. collection 名带 identity（②）
 
+# T9（G5 / D7）的消歧摘要规格：sha1(tid) 的前 12 个十六进制字符。
+# why 在测试里独立算而不是调 `_tenant_collection_name` 的产物：拿被测函数的输出去比
+# 它的输出是恒真判据（上一轮审核点名的「守卫自己恒真」形态）；这里的期望值来自
+# 计划 §3-T9 的原文（「安全字符归一 + sha1(tid)[:12] 后缀」），与实现相互独立。
+_TID_DIGEST_LEN = 12
+
+
+def _tid_digest(tid: str) -> str:
+    return hashlib.sha1(str(tid).encode("utf-8")).hexdigest()[:_TID_DIGEST_LEN]
+
+
 def test_tenant_collection_name_carries_identity_suffix():
-    """② 租户集合名 = tenant_<tid>_vendor_memory_<identity 后缀>。"""
+    """② 租户集合名 = tenant_<归一 tid>_vendor_memory_<sha1(tid)[:12]>_<identity 后缀>。
+
+    摘要段的位置在 `_vendor_memory` **之后**、identity 后缀之前：命名约定的唯一消费方
+    `memory_consistency._collection_tenant` 用非贪婪正则停在第一个 `_vendor_memory` 反推
+    租户（第 6 组用例守这条往返），摘要放进 tid 段会让租户视角巡检匹配不到集合。
+    """
     suffix = emb.HashEmbeddings().identity.collection_suffix()
     name = rag._tenant_collection_name("t1")
-    assert name == "tenant_t1_vendor_memory_%s" % suffix
+    assert name == "tenant_t1_vendor_memory_%s_%s" % (_tid_digest("t1"), suffix)
     assert name.endswith("_" + suffix)
     assert name != "tenant_t1_vendor_memory", "缺 identity 后缀会让切档混写同一集合"
     assert rag._tenant_collection_name("t1") != rag._tenant_collection_name("t2")
 
-    # 安全清洗与截断（沿用原行为）
+    # 安全清洗与可读段截断（T9 后截断只影响可读性，消歧由摘要段负责）
     assert rag._tenant_collection_name("a.b").startswith("tenant_a_b_vendor_memory_")
     long_tid = "x" * 80
     assert rag._tenant_collection_name(long_tid).startswith(
@@ -414,7 +477,10 @@ def test_real_store_creates_identity_suffixed_collections():
     global_name = rag._store(None)._collection.name
     suffix = rag._embedding_provider().identity.collection_suffix()
 
-    assert tenant_name == "tenant_wire_t1_vendor_memory_%s" % suffix
+    # T9（G5）后真 Chroma 落地名同样带 sha1(tid)[:12] 消歧摘要（期望值独立算出，
+    # 见 `_tid_digest` 上方说明）
+    assert tenant_name == "tenant_wire_t1_vendor_memory_%s_%s" % (
+        _tid_digest("wire_t1"), suffix)
     assert global_name == "vendor_memory_%s" % suffix
     assert tenant_name != global_name
 

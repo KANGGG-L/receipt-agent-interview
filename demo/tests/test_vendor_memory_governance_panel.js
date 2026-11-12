@@ -34,8 +34,19 @@ const indexHtml = fs.readFileSync(indexPath, 'utf8');
 // F4 S4-11 起 main.js 按域拆分：源码级扫描断言作用于「main.js + 全部域文件」联合全文
 // （与浏览器实际加载的代码集合同构），不再钉「必须在 main.js」。
 const F4_LOADER = require('./f4_load_domains.js');
+const overrides = {};
+[process.argv[2], process.argv[3]].forEach(p => {
+    if (!p) return;
+    const b = path.basename(p);
+    if (F4_LOADER.F4_DOMAIN_FILES.indexOf(b) !== -1) {
+        overrides[b] = p;
+    }
+});
 const srcAll = [src].concat(
-    F4_LOADER.F4_DOMAIN_FILES.map(name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8'))
+    F4_LOADER.F4_DOMAIN_FILES.map(name => {
+        const p = overrides[name] || path.join(__dirname, '..', 'static', 'js', name);
+        return fs.readFileSync(p, 'utf8');
+    })
 ).join('\n');
 
 
@@ -151,10 +162,10 @@ catch (e) { console.log('load note:', e.message); }
 // （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
 require('./f4_load_domains.js').loadF4Domains(
     (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
-    { warn: m => console.log(m) });
+    { overrides, warn: m => console.log(m) });
 
 const { vendorMemoryRowHtml, renderVendorMemoryGovernance,
-        loadVendorMemoryGovernance, deleteVendorMemory } = sandbox;
+        loadVendorMemoryGovernance, deleteVendorMemory, editVendorMemory } = sandbox;
 
 // 从一段渲染产物里取某个 data-field 单元格的文本（到下一个 < 为止）
 function fieldText(html, field) {
@@ -169,6 +180,10 @@ function fieldAttr(html, field, attr) {
 }
 function delBtnHtml(html) {
     const m = /<button[^>]*class="vm-del"[^>]*>[\s\S]*?<\/button>/.exec(String(html));
+    return m ? m[0] : null;
+}
+function editBtnHtml(html) {
+    const m = /<button[^>]*class="vm-edit"[^>]*>[\s\S]*?<\/button>/.exec(String(html));
     return m ? m[0] : null;
 }
 const tick = () => new Promise(r => setTimeout(r, 20));
@@ -189,9 +204,11 @@ async function main() {
         typeof vendorMemoryRowHtml === 'function'
         && typeof renderVendorMemoryGovernance === 'function'
         && typeof loadVendorMemoryGovernance === 'function'
-        && typeof deleteVendorMemory === 'function',
+        && typeof deleteVendorMemory === 'function'
+        && typeof editVendorMemory === 'function',
         'row=' + typeof vendorMemoryRowHtml + ' render=' + typeof renderVendorMemoryGovernance
-        + ' load=' + typeof loadVendorMemoryGovernance + ' del=' + typeof deleteVendorMemory);
+        + ' load=' + typeof loadVendorMemoryGovernance + ' del=' + typeof deleteVendorMemory
+        + ' edit=' + typeof editVendorMemory);
 
     // ---- 1. 逐字段渲染且与注入数据一致（数值原样，前端不重算）----
     const rowHtml = vendorMemoryRowHtml(ROW_A);
@@ -232,6 +249,13 @@ async function main() {
         !!btn && btn.indexOf('data-memory-id="mid-aaaa"') !== -1, 'btn=' + btn);
     ok('删除动作: 按钮点击调用 deleteVendorMemory（唯一删除逻辑入口）',
         !!btn && btn.indexOf('deleteVendorMemory(') !== -1, 'btn=' + btn);
+
+    // 编辑动作接线：每行的编辑按钮指向正确的 memory_id 且调用 editVendorMemory
+    const ebtn = editBtnHtml(rowHtml);
+    ok('编辑动作: 每行渲染编辑按钮且携带该条 memory_id',
+        !!ebtn && ebtn.indexOf('data-memory-id="mid-aaaa"') !== -1, 'ebtn=' + ebtn);
+    ok('编辑动作: 按钮点击调用 editVendorMemory（唯一编辑逻辑入口）',
+        !!ebtn && ebtn.indexOf('editVendorMemory(') !== -1, 'ebtn=' + ebtn);
 
     // ---- 2. 有数据 / 空数据 / 错误态 渲染 ----
     listRows = [ROW_A, ROW_B];
@@ -356,7 +380,7 @@ async function main() {
         tags.length > 0 && unstyled.length === 0,
         '无样式的标签=' + JSON.stringify(unstyled.map(t => t.cls)));
     for (const cls of ['vm-head', 'vm-row', 'vm-cell', 'vm-hcell', 'vm-action',
-                       'vm-del', 'vm-empty', 'vm-error']) {
+                       'vm-del', 'vm-edit', 'vm-empty', 'vm-error']) {
         ok('样式消费方: 渲染产物里真实出现 ' + cls, renderedCls.has(cls),
             '缺失=' + cls + ' 已有=' + JSON.stringify([...renderedCls]));
     }
@@ -371,6 +395,9 @@ async function main() {
     ok('接线: 删除动作复用 P1-T1 端点（源码里 DELETE 到 /api/memory/）',
         srcAll.indexOf("'/api/memory/' + encodeURIComponent(mid)") !== -1,
         '未看到删除端点的唯一调用形态');
+    ok('接线: 编辑动作复用 P1-T5 端点（源码里 PATCH 到 /api/memory/）',
+        srcAll.indexOf("'/api/memory/' + encodeURIComponent(mid)") !== -1 && srcAll.indexOf("method: 'PATCH'") !== -1,
+        '未看到编辑端点的唯一调用形态');
 
     // ---- 7. 红线：无未捕获异常 ----
     ok('全程 console.error 为 0', consoleErrors.length === 0,

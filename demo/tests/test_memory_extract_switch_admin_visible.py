@@ -138,13 +138,13 @@ def test_main_js_wires_load_collect_reset():
         "自校准失败：不存在的 id/键竟然也被判成已接线 —— 上面的断言是恒真的"
 
 
-def test_key_registered_and_default_still_off():
-    """键必须登记（否则 PUT 被「未知配置键」挡下）且缺省仍为 False（不得默默打开）。"""
+def test_key_registered_and_default_now_on():
+    """键必须登记（否则 PUT 被「未知配置键」挡下）且 P2 缺省为 True（飞轮常开）。"""
     from app.services import settings_service
 
     assert KEY in settings_service.SETTINGS_DEFAULTS, "未登记的键会被 PUT 以「未知配置键」挡下"
-    assert settings_service.SETTINGS_DEFAULTS[KEY] is False, \
-        "抽取必须缺省关闭（打开即真发模型调用，属运营决策，不得为了数字默认开启）"
+    assert settings_service.SETTINGS_DEFAULTS[KEY] is True, \
+        "P2 阶段抽取必须缺省开启（飞轮激活，有修正时自动抽入待审候选队列）"
 
 
 def test_backend_consumer_exists_outside_tests():

@@ -355,8 +355,10 @@ def test_01_credit_note_two_valid_variants_ui_and_backend():
     assert detail1["doc_form"] == "credit_note"
     assert detail1["items"][0]["amount"] == -10.0
 
-    # 审核入账
-    app1 = client.post(f"/api/receipt/{rid1}/approve", json={"version": 1}, headers=OWNER_A)
+    # 审核入账：L04 起贷项单必须由 owner 显式确认业务动作（不按负号猜）。
+    app1 = client.post(f"/api/receipt/{rid1}/approve",
+                       json={"version": 1, "business_action": "financial_credit"},
+                       headers=OWNER_A)
     assert app1.status_code == 200, f"Variant 1 approve failed: {app1.text}"
 
     # 变体 2: 负 qty
@@ -386,7 +388,9 @@ def test_01_credit_note_two_valid_variants_ui_and_backend():
     assert detail2["items"][0]["quantity"] == -1.0
     assert detail2["items"][0]["amount"] == -10.0
 
-    app2 = client.post(f"/api/receipt/{rid2}/approve", json={"version": 1}, headers=OWNER_A)
+    app2 = client.post(f"/api/receipt/{rid2}/approve",
+                       json={"version": 1, "business_action": "financial_credit"},
+                       headers=OWNER_A)
     assert app2.status_code == 200, f"Variant 2 approve failed: {app2.text}"
 
 

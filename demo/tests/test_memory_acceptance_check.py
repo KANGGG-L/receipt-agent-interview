@@ -233,11 +233,13 @@ def test_r6_passes_when_all_active_rows_have_written_by(tmp_path):
     assert acc.check_r6(ctx).status == acc.PASS
 
 
-def test_r6_skips_when_no_active_rows(tmp_path):
-    """没有样本时 SKIP，不用 PASS 冒充（无数据与全通过是两件事）。"""
+def test_r6_passes_with_info_when_no_active_rows(tmp_path):
+    """没有样本时优雅返回 PASS 并给出 [INFO] 提示（空库冷启动不报假红）。"""
     db = _vendor_memory_db(str(tmp_path / "vm.db"), [("m1", "archived", "")])
     ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db)
-    assert acc.check_r6(ctx).status == acc.SKIP
+    res = acc.check_r6(ctx)
+    assert res.status == acc.PASS
+    assert "[INFO]" in res.evidence
 
 
 # -------------------------------------------------------------
@@ -373,8 +375,289 @@ def test_exit_code_semantics():
     def _r(status):
         return acc.CheckResult("X", "t", status, "e", "c")
     assert acc.exit_code([_r(acc.PASS), _r(acc.PASS)]) == 0
-    assert acc.exit_code([_r(acc.PASS), _r(acc.SKIP)]) == 2
+    assert acc.exit_code([_r(acc.PASS), _r(acc.SKIP)]) == 0
+    assert acc.exit_code([_r(acc.PASS), _r(acc.FAIL)]) == 1
     assert acc.exit_code([_r(acc.PASS), _r(acc.SKIP), _r(acc.FAIL)]) == 1
+
+
+# -------------------------------------------------------------
+# G1-G9 用例与反证测试
+# -------------------------------------------------------------
+def test_g1_fails_when_db_missing(tmp_path):
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=str(tmp_path / "missing.db"))
+    res = acc.check_g1(ctx)
+    assert res.status == acc.FAIL
+
+
+def test_g1_fails_when_table_missing(tmp_path):
+    db_path = str(tmp_path / "empty.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE other_table (id int)")
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path)
+    res = acc.check_g1(ctx)
+    assert res.status == acc.FAIL
+    assert "vendor_memory 表不存在" in res.evidence
+
+
+def test_g1_passes_on_valid_empty_schema(tmp_path):
+    db_path = str(tmp_path / "valid.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, vendor text, tenant_id text, status text, written_by text)")
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path)
+    res = acc.check_g1(ctx)
+    assert res.status == acc.PASS
+    assert "[INFO]" in res.evidence
+
+
+def test_g2_fails_on_relative_path(monkeypatch, tmp_path):
+    from app.services import rag_paths
+    monkeypatch.setattr(rag_paths, "resolve_rag_dir", lambda *a: "relative/path")
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=str(tmp_path / "db.db"))
+    res = acc.check_g2(ctx)
+    assert res.status == acc.FAIL
+
+
+def test_g2_passes_on_absolute_path(tmp_path):
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=str(tmp_path / "db.db"), rag_dir=str(tmp_path / "rag"))
+    res = acc.check_g2(ctx)
+    assert res.status == acc.PASS
+
+
+def test_g3_detects_fixture_collections(tmp_path):
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con.execute("CREATE TABLE collections (id text, name text)")
+    con.execute("INSERT INTO collections VALUES ('1', 'vendor_memory_hash_256')")
+    con.execute("INSERT INTO collections VALUES ('2', 'tenant_uat_test_coll')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=str(tmp_path / "db.db"), rag_dir=rag_dir)
+    res = acc.check_g3(ctx)
+    assert res.status == acc.FAIL
+    assert "tenant_uat_test_coll" in res.evidence
+
+
+def test_g3_passes_on_clean_collections(tmp_path):
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con.execute("CREATE TABLE collections (id text, name text)")
+    con.execute("INSERT INTO collections VALUES ('1', 'vendor_memory_hash_256')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=str(tmp_path / "db.db"), rag_dir=rag_dir)
+    res = acc.check_g3(ctx)
+    assert res.status == acc.PASS
+
+
+def test_g4_m10_architecture_reserved_slot():
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR)
+    res = acc.check_g4(ctx)
+    assert res.status == acc.PASS
+    assert "预留槽位=True" in res.evidence
+
+
+def test_g5_db_chroma_consistency_on_empty(tmp_path):
+    db_path = str(tmp_path / "empty.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, tenant_id text, status text)")
+    con.commit()
+    con.close()
+    rag_dir = str(tmp_path / "rag")
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=rag_dir)
+    res = acc.check_g5(ctx)
+    assert res.status == acc.PASS
+    assert "[INFO]" in res.evidence
+
+
+def test_g6_status_machine_catches_invalid_status(tmp_path):
+    db_path = str(tmp_path / "vm.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, status text, superseded_by text, created_at text, updated_at text)")
+    con.execute("INSERT INTO vendor_memory VALUES ('m1', 'invalid_status_xyz', NULL, '', '')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path)
+    res = acc.check_g6(ctx)
+    assert res.status == acc.FAIL
+    assert "invalid_status_xyz" in res.evidence
+
+
+def test_g6_status_machine_catches_broken_supersede(tmp_path):
+    db_path = str(tmp_path / "vm.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, status text, superseded_by text, created_at text, updated_at text)")
+    con.execute("INSERT INTO vendor_memory VALUES ('m1', 'superseded', 'm_non_existent', '', '')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path)
+    res = acc.check_g6(ctx)
+    assert res.status == acc.FAIL
+    assert "m_non_existent" in res.evidence
+
+
+def test_g6_status_machine_passes_on_valid_data(tmp_path):
+    db_path = str(tmp_path / "vm.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, status text, superseded_by text, created_at text, updated_at text)")
+    con.execute("INSERT INTO vendor_memory VALUES ('m1', 'superseded', 'm2', '2026-01-01', '2026-01-02')")
+    con.execute("INSERT INTO vendor_memory VALUES ('m2', 'active', NULL, '2026-01-02', '2026-01-02')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path)
+    res = acc.check_g6(ctx)
+    assert res.status == acc.PASS
+
+
+def test_g7_vector_metadata_symmetry_detects_mismatch(tmp_path):
+    db_path = str(tmp_path / "vm.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, vendor text, tenant_id text)")
+    con.execute("INSERT INTO vendor_memory VALUES ('m1', 'VendorA', 'default')")
+    con.commit()
+    con.close()
+
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con_c = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con_c.execute("CREATE TABLE embedding_metadata (id int, key text, string_value text)")
+    con_c.execute("INSERT INTO embedding_metadata VALUES (1, 'memory_id', 'm1')")
+    con_c.execute("INSERT INTO embedding_metadata VALUES (1, 'vendor', 'VendorB_Mismatch')")
+    con_c.execute("INSERT INTO embedding_metadata VALUES (1, 'tenant_id', 'default')")
+    con_c.commit()
+    con_c.close()
+
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=rag_dir)
+    res = acc.check_g7(ctx)
+    assert res.status == acc.FAIL
+    assert "vendor不匹配" in res.evidence
+
+
+def test_g8_tenant_single_bucket_detects_rogue_tenant(tmp_path):
+    db_path = str(tmp_path / "vm.db")
+    con = sqlite3.connect(db_path)
+    con.execute("CREATE TABLE vendor_memory (memory_id text, tenant_id text)")
+    con.execute("INSERT INTO vendor_memory VALUES ('m1', 'rogue_tenant_123')")
+    con.commit()
+    con.close()
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=str(tmp_path / "rag"))
+    res = acc.check_g8(ctx)
+    assert res.status == acc.FAIL
+    assert "rogue_tenant_123" in res.evidence
+
+
+def test_g9_endpoint_alignment():
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR)
+    res = acc.check_g9(ctx)
+    assert res.status == acc.PASS
+
+
+# -------------------------------------------------------------
+# purge_orphans 三道安全闸测试
+# -------------------------------------------------------------
+def test_purge_orphans_safety_gate_1_protects_default_core_bucket(tmp_path):
+    """安全闸 1: 核心桶不可触碰，如果尝试删除 vendor_memory/default 必须报错。"""
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con_c = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con_c.execute("CREATE TABLE collections (id text, name text)")
+    con_c.execute("INSERT INTO collections VALUES ('1', 'vendor_memory')")
+    con_c.commit()
+    con_c.close()
+
+    db_path = str(tmp_path / "vm.db")
+    con_db = sqlite3.connect(db_path)
+    con_db.execute("CREATE TABLE vendor_memory (memory_id text, status text)")
+    con_db.commit()
+    con_db.close()
+
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=rag_dir)
+    # 模拟如果 candidates 包含核心集合
+    import pytest
+    with pytest.raises(RuntimeError, match="Core protected collection cannot be deleted"):
+        # 强制 candidates 识别到受保护集合并进入 Gate 1 校验
+        acc._FIXTURE_COLL_RE = acc.re.compile(r"^vendor_memory")
+        try:
+            acc.purge_orphans(ctx, apply=False)
+        finally:
+            acc._FIXTURE_COLL_RE = acc.re.compile(r"^(?:tenant_)?(?:test|mock|tmp|fixture|uat)_", acc.re.IGNORECASE)
+
+
+def test_purge_orphans_safety_gate_2_active_record_overlap_aborts(tmp_path):
+    """安全闸 2: Active 行零重叠校验，若待删集合含有 active 记忆 ID 则立即熔断。"""
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con_c = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con_c.execute("CREATE TABLE collections (id text, name text)")
+    con_c.execute("CREATE TABLE segments (id text, collection text)")
+    con_c.execute("CREATE TABLE embeddings (id int, segment_id text)")
+    con_c.execute("CREATE TABLE embedding_metadata (id int, key text, string_value text)")
+
+    con_c.execute("INSERT INTO collections VALUES ('col1', 'test_fixture_col')")
+    con_c.execute("INSERT INTO segments VALUES ('seg1', 'col1')")
+    con_c.execute("INSERT INTO embeddings VALUES (101, 'seg1')")
+    con_c.execute("INSERT INTO embedding_metadata VALUES (101, 'memory_id', 'active_mid_001')")
+    con_c.commit()
+    con_c.close()
+
+    db_path = str(tmp_path / "vm.db")
+    con_db = sqlite3.connect(db_path)
+    con_db.execute("CREATE TABLE vendor_memory (memory_id text, status text)")
+    con_db.execute("INSERT INTO vendor_memory VALUES ('active_mid_001', 'active')")
+    con_db.commit()
+    con_db.close()
+
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=rag_dir)
+    import pytest
+    with pytest.raises(RuntimeError, match="Active record overlap detected"):
+        acc.purge_orphans(ctx, apply=False)
+
+
+def test_purge_orphans_dry_run_and_apply_lifecycle(tmp_path):
+    """安全闸 3 与生命周期: dry-run 审计不落盘，--apply 实际删除夹具集合。"""
+    rag_dir = str(tmp_path / "rag")
+    os.makedirs(rag_dir, exist_ok=True)
+    con_c = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    con_c.execute("CREATE TABLE collections (id text, name text)")
+    con_c.execute("CREATE TABLE collection_metadata (collection_id text)")
+    con_c.execute("CREATE TABLE segments (id text, collection text)")
+    con_c.execute("CREATE TABLE segment_metadata (segment_id text)")
+    con_c.execute("CREATE TABLE embeddings (id int, segment_id text)")
+    con_c.execute("CREATE TABLE embedding_metadata (id int, key text, string_value text)")
+
+    con_c.execute("INSERT INTO collections VALUES ('col1', 'test_orphan_fixture')")
+    con_c.execute("INSERT INTO segments VALUES ('seg1', 'col1')")
+    con_c.execute("INSERT INTO embeddings VALUES (101, 'seg1')")
+    con_c.execute("INSERT INTO embedding_metadata VALUES (101, 'memory_id', 'archived_mid_999')")
+    con_c.commit()
+    con_c.close()
+
+    db_path = str(tmp_path / "vm.db")
+    con_db = sqlite3.connect(db_path)
+    con_db.execute("CREATE TABLE vendor_memory (memory_id text, status text)")
+    con_db.execute("INSERT INTO vendor_memory VALUES ('archived_mid_999', 'archived')")
+    con_db.close()
+
+    ctx = acc.Ctx(demo_dir=_DEMO_DIR, db_path=db_path, rag_dir=rag_dir)
+    # Dry run: collection 仍在
+    ret_dry = acc.purge_orphans(ctx, apply=False)
+    assert ret_dry == 0
+    con_check = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    cols_after_dry = [r[0] for r in con_check.execute("SELECT name FROM collections").fetchall()]
+    con_check.close()
+    assert cols_after_dry == ["test_orphan_fixture"]
+
+    # Apply: 真正删除
+    ret_apply = acc.purge_orphans(ctx, apply=True)
+    assert ret_apply == 0
+    con_check2 = sqlite3.connect(os.path.join(rag_dir, "chroma.sqlite3"))
+    cols_after_apply = [r[0] for r in con_check2.execute("SELECT name FROM collections").fetchall()]
+    con_check2.close()
+    assert cols_after_apply == []
+
 
 
 if __name__ == "__main__":

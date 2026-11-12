@@ -36,8 +36,19 @@ const indexHtml = fs.readFileSync(indexPath, 'utf8');
 // F4 S4-11 起 main.js 按域拆分：源码级扫描断言作用于「main.js + 全部域文件」联合全文
 // （与浏览器实际加载的代码集合同构），不再钉「必须在 main.js」。
 const F4_LOADER = require('./f4_load_domains.js');
+const overrides = {};
+[process.argv[2], process.argv[3]].forEach(p => {
+    if (!p) return;
+    const b = path.basename(p);
+    if (F4_LOADER.F4_DOMAIN_FILES.indexOf(b) !== -1) {
+        overrides[b] = p;
+    }
+});
 const srcAll = [src].concat(
-    F4_LOADER.F4_DOMAIN_FILES.map(name => fs.readFileSync(path.join(__dirname, '..', 'static', 'js', name), 'utf8'))
+    F4_LOADER.F4_DOMAIN_FILES.map(name => {
+        const p = overrides[name] || path.join(__dirname, '..', 'static', 'js', name);
+        return fs.readFileSync(p, 'utf8');
+    })
 ).join('\n');
 
 
@@ -135,7 +146,7 @@ catch (e) { console.log('load note:', e.message); }
 // （demo/tests/f4_load_domains.js 共享加载器；overrides 可按文件名指定突变体路径做反证）。
 require('./f4_load_domains.js').loadF4Domains(
     (dsrc, name) => vm.runInNewContext(dsrc, sandbox, { filename: name }),
-    { warn: m => console.log(m) });
+    { overrides, warn: m => console.log(m) });
 
 const { memoryMetricRateHtml, memoryMetricsRowsHtml, memoryMetricsSwitchHtml,
         renderMemoryMetrics, loadMemoryMetrics } = sandbox;

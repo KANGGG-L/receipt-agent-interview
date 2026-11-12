@@ -13,7 +13,9 @@
 
 本文件钉四件事：
 1. 两个不同 cwd（仓库根与 `demo/`）下分别 import，`rag.PERSIST_DIR` 与
-   `memory_consistency._resolve_rag_dir()` 都解析为**同一绝对路径** `<demo>/.rag_chroma`；
+   `memory_consistency._resolve_rag_dir()` 都解析为**同一绝对路径**；「什么都不设」时该
+   路径就是 `<demo>/.rag_chroma`，「`DB_PATH` 外置到同一个临时库」时该路径就是那个库的
+   sibling（P0-T1/G1 起，外置 DB 会派生向量目录，见 `rag_paths` 模块 docstring）；
 2. 显式 `RAG_DIR` 覆盖仍优先、且两处都尊重它（测试隔离依赖它，不得被破坏）；
 3. 两处**共用同一实现**（不是「两份复刻恰好相等」）：替换唯一实现后巡检结果随之改变；
 4. 全仓生产代码（`demo/app/**`）不得再出现 cwd 相对缺省口径的字符串常量
@@ -23,6 +25,13 @@
 --------------------
 探针子进程把 `DB_PATH` 指向临时库：`import app.services.rag` 会连带 `app.db`，其
 import 期迁移块会按 `DB_PATH` 执行 ALTER，绝不能让 `DB_PATH` 落回 live。
+
+why 缺省那一档必须改用「轻量探针」（只 import `rag_paths` + `memory_consistency`）：
+P0-T1 加了「随外置 `DB_PATH` 派生」一档之后，「`DB_PATH` 指向临时库」与「什么都不设」
+不再等价 —— 前者派生出 sibling 目录。而「什么都不设」若仍 import `rag`，`app.db` 会按
+缺省 `DB_PATH`（= live 库）跑 import 期迁移，直接违反「不得写 live」。`rag_paths` 只
+import os、`memory_consistency` 只 import stdlib + `rag_paths`，两者都不装配 ORM，因此
+缺省档用轻量探针既安全又是同一份实现；`rag.PERSIST_DIR` 的派生值另用外置 DB 的形态验证。
 
 缺省解析必然指向生产向量库 `<demo>/.rag_chroma`（这正是修复后的设计），因此**不能**
 用「live 向量库 md5 前后不变」作零写入证据：本仓多波次并行时，别的进程可能在这段窗口
@@ -59,15 +68,45 @@ _PROBE = (
 )
 
 
-def _resolve_in_subprocess(cwd, rag_dir_env, tag):
-    """在 cwd 下 import 两侧解析入口，返回探测结果 dict。
+# 轻量探针：只 import `rag_paths` 与 `memory_consistency`（两者都只依赖 stdlib），
+# 因此不会装配 ORM、不会按 DB_PATH 跑 import 期迁移 —— 用于「什么都不设」的缺省档。
+_PROBE_LIGHT = (
+    "import json, sys, os;"
+    "sys.path.insert(0, sys.argv[1]);"
+    "from app.services import rag_paths;"
+    "from app.services import memory_consistency as mc;"
+    "print(json.dumps({'rp': rag_paths.resolve_rag_dir(),"
+    " 'mc': mc._resolve_rag_dir(),"
+    " 'default': rag_paths.default_rag_dir(),"
+    " 'cwd': os.getcwd()}))"
+)
 
-    - `rag_dir_env=None` 表示**移除** `RAG_DIR`（验证缺省口径）；
-    - `DB_PATH` 恒指向临时库（见模块 docstring 的红线说明）。
+
+def _base_env(tag, db_path):
+    """探针环境：始终清掉 `CHROMA_PATH`（新增的最高优先级键，不能让宿主环境左右结论）。
+
+    `db_path=None` 表示移除 `DB_PATH`；给值则指向该（临时）库。
     """
     env = dict(os.environ)
-    env["DB_PATH"] = os.path.join(
-        tempfile.mkdtemp(prefix="ak1_db_%s_" % tag), "resolve.db")
+    env.pop("CHROMA_PATH", None)
+    if db_path is None:
+        env.pop("DB_PATH", None)
+    else:
+        env["DB_PATH"] = db_path
+    return env
+
+
+def _resolve_in_subprocess(cwd, rag_dir_env, tag, db_path="tmp"):
+    """在 cwd 下 import 两侧解析入口（含 `rag`），返回探测结果 dict。
+
+    - `rag_dir_env=None` 表示**移除** `RAG_DIR`；给值则设为该目录；
+    - `db_path`：`"tmp"` = 每次新建临时库（保持「import rag 不得迁移动 live」这条红线）；
+      给字符串 = 用这个固定库（跨 cwd 比对派生值时必须同一个库）；`None` = 移除 `DB_PATH`
+      （此时**不得**用本函数，会按缺省指向 live 库跑迁移 —— 缺省档请用 `_resolve_light`）。
+    """
+    if db_path == "tmp":
+        db_path = os.path.join(tempfile.mkdtemp(prefix="ak1_db_%s_" % tag), "resolve.db")
+    env = _base_env(tag, db_path)
     if rag_dir_env is None:
         env.pop("RAG_DIR", None)
     else:
@@ -77,6 +116,24 @@ def _resolve_in_subprocess(cwd, rag_dir_env, tag):
         cwd=cwd, env=env, capture_output=True, text=True, timeout=180)
     assert proc.returncode == 0, \
         "子进程失败(cwd=%s): %s" % (cwd, proc.stderr[-2000:])
+    return json.loads(proc.stdout.strip().splitlines()[-1])
+
+
+def _resolve_light_in_subprocess(cwd, tag, db_path=None, rag_dir_env=None,
+                                 chroma_path_env=None):
+    """轻量探针（不 import `rag` / `app.db`）：安全地验证「什么都不设」的缺省口径。"""
+    env = _base_env(tag, db_path)
+    if rag_dir_env is None:
+        env.pop("RAG_DIR", None)
+    else:
+        env["RAG_DIR"] = rag_dir_env
+    if chroma_path_env is not None:
+        env["CHROMA_PATH"] = chroma_path_env
+    proc = subprocess.run(
+        [sys.executable, "-c", _PROBE_LIGHT, _DEMO_DIR],
+        cwd=cwd, env=env, capture_output=True, text=True, timeout=180)
+    assert proc.returncode == 0, \
+        "轻量子进程失败(cwd=%s): %s" % (cwd, proc.stderr[-2000:])
     return json.loads(proc.stdout.strip().splitlines()[-1])
 
 
@@ -90,21 +147,39 @@ def _assert_no_chroma_opened(out):
 # (a) 两个不同 cwd 下 import → 同一绝对路径
 # -------------------------------------------------------------
 def test_default_resolves_to_same_abs_path_from_two_cwds():
-    root_out = _resolve_in_subprocess(_REPO_ROOT, None, "root")
-    demo_out = _resolve_in_subprocess(_DEMO_DIR, None, "demo")
+    # a-1：「什么都不设」的缺省档 —— 轻量探针（不装配 ORM，避免按缺省 DB_PATH 迁移 live 库）
+    root_light = _resolve_light_in_subprocess(_REPO_ROOT, "root")
+    demo_light = _resolve_light_in_subprocess(_DEMO_DIR, "demo")
 
-    assert root_out["rag"] == demo_out["rag"] == _EXPECTED_DEFAULT, \
-        "rag.PERSIST_DIR 缺省必须与 cwd 无关且等于 <demo>/.rag_chroma：root=%r demo=%r" % (
-            root_out["rag"], demo_out["rag"])
-    assert root_out["mc"] == demo_out["mc"] == _EXPECTED_DEFAULT, \
-        "巡检工具的缺省解析必须与 rag 一致：root=%r demo=%r" % (
-            root_out["mc"], demo_out["mc"])
-    assert root_out["default"] == _EXPECTED_DEFAULT
-    assert os.path.isabs(root_out["rag"]) and os.path.isabs(root_out["mc"]), \
+    assert root_light["rp"] == demo_light["rp"] == _EXPECTED_DEFAULT, \
+        "rag_paths 缺省必须与 cwd 无关且等于 <demo>/.rag_chroma：root=%r demo=%r" % (
+            root_light["rp"], demo_light["rp"])
+    assert root_light["mc"] == demo_light["mc"] == _EXPECTED_DEFAULT, \
+        "巡检工具的缺省解析必须与 rag_paths 一致：root=%r demo=%r" % (
+            root_light["mc"], demo_light["mc"])
+    assert root_light["default"] == _EXPECTED_DEFAULT
+    assert os.path.isabs(root_light["rp"]) and os.path.isabs(root_light["mc"]), \
         "缺省必须是绝对路径（否则仍然依赖 cwd）"
+    # 子进程确实换了 cwd（否则两个"不同 cwd"是假的）
+    assert os.path.realpath(root_light["cwd"]) != os.path.realpath(demo_light["cwd"])
 
-    _assert_no_chroma_opened(root_out)
-    _assert_no_chroma_opened(demo_out)
+    # a-2：`rag.PERSIST_DIR` 同样与 cwd 无关 —— 用**同一个**外置临时库在两个 cwd 各 import
+    # 一次（P0-T1 后外置 DB 会派生 sibling，所以比对必须固定 DB_PATH；`rag_paths` 只
+    # import os，本形态不写 live 库，迁移也只落在临时库）。
+    shared_db = os.path.join(tempfile.mkdtemp(prefix="ak1_shared_db_"), "resolve.db")
+    expected_derived = os.path.abspath(
+        os.path.join(os.path.dirname(shared_db), "resolve.rag_chroma"))
+    root_out = _resolve_in_subprocess(_REPO_ROOT, None, "root", db_path=shared_db)
+    demo_out = _resolve_in_subprocess(_DEMO_DIR, None, "demo", db_path=shared_db)
+
+    for out in (root_out, demo_out):
+        assert out["rag"] == expected_derived, \
+            "rag.PERSIST_DIR 必须与 cwd 无关、并随外置 DB_PATH 派生：%r" % (out["rag"],)
+        assert out["mc"] == expected_derived, \
+            "巡检工具必须与 rag 同源：%r" % (out["mc"],)
+        assert out["rag"] != _EXPECTED_DEFAULT, \
+            "DB 外置时向量仍指生产目录＝G1 污染通道未堵"
+        _assert_no_chroma_opened(out)
 
 
 # -------------------------------------------------------------
@@ -143,6 +218,7 @@ def test_both_modules_share_one_implementation(monkeypatch):
 
     monkeypatch.delenv("RAG_DIR", raising=False)
     monkeypatch.delenv("DB_PATH", raising=False)
+    monkeypatch.delenv("CHROMA_PATH", raising=False)
     assert mc._resolve_rag_dir() == rag_paths.default_rag_dir() == _EXPECTED_DEFAULT
 
     monkeypatch.setattr(rag_paths, "resolve_rag_dir",

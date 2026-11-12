@@ -20,9 +20,11 @@ app.auth 的判定函数，而不是放开这里的全局开关。
 库」（判为泄漏，强制隔离救回），判据与记录逻辑见 `_classify_db_path` / 夹具本体。
 
 向量库落盘隔离（P0-T2）：`_isolate_rag_dir` 把 `RAG_DIR` 与 `rag.PERSIST_DIR`
-指向 tmp_path 并清 `rag._vs` / `rag._vs_tenant`。why：rag.PERSIST_DIR 缺省是 cwd
-相对路径 "./.rag_chroma"，只隔离 DB 时「DB 进临时库、向量进 live 向量库」——
-live 向量库里那批 vendor 为测试夹具名的孤儿即由此而来。
+指向 tmp_path 并清 `rag._vs` / `rag._vs_tenant`。why：该缺省落点曾是 cwd 相对路径
+"./.rag_chroma"（P8a-R7 起改由 `rag_paths.resolve_rag_dir()` 按应用根定位），只隔离
+DB 时「DB 进临时库、向量进 live 向量库」—— live 向量库里那批 vendor 为测试夹具名的
+孤儿即由此而来。该夹具同时删掉 `CHROMA_PATH`：`rag_paths.resolve_rag_dir()` 里它的
+优先级高于 `RAG_DIR`，宿主环境残留该键时会越级压过夹具设的落点（P0 收口波 T3）。
 
 产物目录落盘隔离（Q3-M4）：`_isolate_artifacts_dir` 把 `ARTIFACTS_DIR` 指向本轮
 tmp_path。why：`_finalize` 每完成一次识别就向仓库内
@@ -435,7 +437,14 @@ def _isolate_rag_dir(tmp_path, monkeypatch):
     串扰（同名 collection 残留）。
 
     只处理已经加载的 rag 模块（含 demo.app.services.rag 这类别名实例）；尚未 import 时
-    设置 env 即足够 —— rag.py 在 import 时读 RAG_DIR。
+    设置 env 即足够 —— rag.py 在 import 时按 `rag_paths.resolve_rag_dir()` 取落点。
+
+    why 连 `CHROMA_PATH` 一起删（P0 收口波 T3）：`resolve_rag_dir()` 的优先级是
+    显式参数 > `CHROMA_PATH` > `RAG_DIR` > 随外置 DB_PATH 派生 > 缺省。本夹具只
+    `setenv("RAG_DIR")` 时，宿主 shell / CI 里残留的 `CHROMA_PATH` 会**越级压过**夹具
+    设的值：任何在夹具覆盖不到的窗口里 import 的 rag（或别名模块）都会把
+    `PERSIST_DIR` 解析成那个残留目录，隔离再次只做一半（G1 同族）。删掉它才让
+    「夹具设的 RAG_DIR 一定生效」这句话成立；`RAG_DIR` 的既有语义不变。
 
     收尾不把 PERSIST_DIR 还原成进入时的值：缺省值可能就是 live 路径，还原会给「用例
     结束后仍可能调用 rag 的代码」留一个写 live 向量库的窗口（与 DB 夹具 leak 分支同理）。
@@ -445,6 +454,8 @@ def _isolate_rag_dir(tmp_path, monkeypatch):
     rag_dir.mkdir(parents=True, exist_ok=True)
     target = str(rag_dir)
     monkeypatch.setenv("RAG_DIR", target)
+    # 高优先级的新键必须先清掉，否则上面那行 setenv 会被越级（见上方 docstring）。
+    monkeypatch.delenv("CHROMA_PATH", raising=False)
 
     _sync_rag_dir(_loaded_rag_modules(), target)
     yield
