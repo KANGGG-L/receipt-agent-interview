@@ -3967,7 +3967,39 @@ function renderMemoryMetrics(payload) {
         box.innerHTML = html;
         return;
     }
-    box.innerHTML = html + memoryMetricsRowsHtml(body.metrics);
+    box.innerHTML = html + memoryMetricsRowsHtml(body.metrics) + memoryMetricsV3Html(body.metrics) + memoryOpsHtml(body.ops);
+}
+
+// M05：后台任务/同步状态区（未知/无数据/错误分列——不把取不到折成 0；开关关闭是明确状态而非缺失）
+const MM_OPS_STYLE = 'margin-top:10px; padding-top:8px;'
+    + ' border-top:1px solid var(--border-color,#e5e7eb); font-size:0.78rem;'
+    + ' color:var(--text-muted,#6b7280);';
+const MM_OPS_ERR_STYLE = 'color:#b91c1c;';
+function memoryOpsHtml(ops) {
+    const o = ops || {};
+    let html = '<div class="mm-ops" style="' + MM_OPS_STYLE + '">';
+    html += '<span data-ops="title">后台任务与同步</span>：';
+    if (o.task_error) {
+        html += '<span class="ops-error-note" data-ops="error" style="' + MM_OPS_ERR_STYLE
+            + '">读取失败（' + escapeHtml(String(o.task_error)) + '）</span>';
+    } else if (o.tasks_enabled === null || o.tasks_enabled === undefined) {
+        html += '<span data-ops="unknown">未知</span>';
+    } else if (o.tasks_enabled === false) {
+        html += '<span data-ops="disabled">同步开关未开启（后台任务不运行）</span>';
+    } else {
+        const st = o.task_stats || {};
+        const parts = ['pending', 'running', 'done', 'dead_letter'].map(function (k) {
+            const v = st[k];
+            return k + '=' + (v === undefined ? '未知' : String(v));
+        });
+        html += '<span data-ops="stats">开关开启；' + parts.join('，') + '</span>';
+        if (Number(st.dead_letter) > 0) {
+            html += ' <span class="ops-error-note" data-ops="dead-letter" style="'
+                + MM_OPS_ERR_STYLE + '">存在死信任务，请检查后台日志</span>';
+        }
+    }
+    html += '</div>';
+    return html;
 }
 
 function loadMemoryMetrics() {
@@ -3977,6 +4009,147 @@ function loadMemoryMetrics() {
         .then(res => res.json())
         .then(body => renderMemoryMetrics(body))
         .catch(() => renderMemoryMetrics({ status: 'error', msg: '网络错误', memory_enabled: null }));
+}
+
+/* =============================================================
+   M05 operations/observability（终审补强）
+   - 技术 admin：GET /api/admin/operations/technical（错误/重试/读写失败计数/持久 sync backlog/process 基线）
+   - owner：GET /api/admin/operations/owner（商业记忆候选/编辑；渲染在 admin_observation.js）
+   - process reset：POST /api/admin/operations/process-reset（清零进程级计数并记录基线）
+   共享三态渲染 opsStateHtml/_opsRow 定义在 admin_observation.js（本文件复用，不重复定义）；
+   unknown / no_data / error 与 ok 分开，绝不把读不到的数据渲染成 0%。
+   ============================================================= */
+
+// v3 消费面：coverage / injection_rate(production+eval) / effect_ab；null 一律「无数据/未知」，不画 0%。
+function memoryMetricsV3Html(metrics) {
+    const v3 = (metrics && metrics.memory_metrics_v2) || {};
+    if (v3.schema_version !== 'v3') {
+        return '<div class="ops-v3" data-metric="metrics_v3" style="' + OPS_V3_STYLE + '">'
+            + opsStateHtml('unknown', '', '', '未知（后端未给出 v3 指标结构）') + '</div>';
+    }
+    const cov = v3.coverage || {};
+    const inj = v3.injection_rate || {};
+    const prod = inj.production || {};
+    const evalArm = inj.eval_arm || {};
+    const ab = v3.effect_ab || {};
+    const covRate = memoryMetricRateHtml(cov.coverage_rate_pct, cov.determinable_receipts,
+        '无数据（无可确定供应商）');
+    const prodHtml = prod.rate_pct == null
+        ? opsStateHtml('unknown', '', '', '未知（' + escapeHtml(prod.unknown_reason || '无真实评测证据') + '）')
+        : memoryMetricRateHtml(prod.rate_pct, 1, '无数据');
+    const evalHtml = evalArm.rate_pct == null
+        ? opsStateHtml('unknown', '', '', '未知（' + escapeHtml(evalArm.unknown_reason || '无真实评测证据') + '）')
+        : memoryMetricRateHtml(evalArm.rate_pct, 1, '无数据');
+    const deltaHtml = (ab.sample_size_total == null || Number(ab.sample_size_total) === 0)
+        ? opsStateHtml('no_data', '', '无数据（无样本）')
+        : escapeHtml((Number(ab.delta_pp) > 0 ? '+' : '') + Number(ab.delta_pp || 0).toFixed(2)
+            + 'pp（样本 ' + Number(ab.sample_size_total) + '）');
+    return '<div class="ops-v3" data-metric="metrics_v3" style="' + OPS_V3_STYLE + '">'
+        + '<strong>v3 指标</strong>：覆盖 ' + covRate
+        + '（' + (Number(cov.eligible_receipts) || 0) + ' / ' + (Number(cov.determinable_receipts) || 0) + '）'
+        + ' ｜ 生产注入 ' + prodHtml
+        + ' ｜ 评测臂注入 ' + evalHtml
+        + ' ｜ 修改率差 ' + deltaHtml
+        + '<div style="' + OPS_MUTED_STYLE + '">production 与 eval_arm 条件不同，分列展示、不可混读。</div>'
+        + '</div>';
+}
+
+function _failureCountsText(block) {
+    const counts = block && block.counts ? block.counts : {};
+    const parts = Object.keys(counts).map(k => escapeHtml(k) + '=' + Number(counts[k] || 0));
+    return parts.length ? parts.join('，') : '全阶段为 0';
+}
+
+function operationsPanelHtml(payload, role) {
+    const body = payload || {};
+    if (body.status !== 'success') {
+        return '<div class="ops-error" style="' + OPS_STATE_STYLES.error + '" data-ops="error">'
+            + '运维数据读取失败：' + escapeHtml(body.msg || '未知错误') + '</div>';
+    }
+    if (role === 'owner') {
+        if (typeof ownerOperationsPanelHtml === 'function') return ownerOperationsPanelHtml(body);
+        return '<div class="ops-error" style="' + OPS_STATE_STYLES.error + '">角色不匹配</div>';
+    }
+    // 技术 admin 视图：错误与重试
+    const proc = body.process || {};
+    const readF = body.read_failures || {};
+    const writeF = body.write_failures || {};
+    const sync = body.sync_backlog || {};
+    const tasks = body.tasks || {};
+    const errs = body.errors || {};
+    let html = '<div class="ops-section" data-ops-role="technical">';
+    html += _opsRow('进程基线', proc.started_at ? 'ok' : 'unknown',
+        '启动 ' + escapeHtml(_fmtDateTime(proc.started_at))
+        + (proc.baseline_reset_at ? '；重置 ' + escapeHtml(_fmtDateTime(proc.baseline_reset_at)) : '；尚未重置'),
+        '', '未知');
+    html += _opsRow('读失败计数', readF.state, '共 ' + Number(readF.total || 0) + ' 次（'
+        + _failureCountsText(readF) + '）', '无数据（本进程零失败）');
+    html += _opsRow('写失败计数', writeF.state, '共 ' + Number(writeF.total || 0) + ' 次（'
+        + _failureCountsText(writeF) + '）', '无数据（本进程零失败）');
+    const syncStats = sync.stats || {};
+    html += _opsRow('同步 backlog', sync.state,
+        'pending=' + Number(syncStats.pending || 0) + '，running=' + Number(syncStats.running || 0)
+        + '，dead_letter=' + Number(syncStats.dead_letter || 0),
+        '无数据（暂无同步任务）');
+    html += _opsRow('后台任务', tasks.state,
+        '开关=' + (tasks.enabled === true ? '开启' : (tasks.enabled === false ? '关闭' : '未知')),
+        '', '未知');
+    html += _opsRow('死信/重试', errs.state,
+        Number((errs.dead_letter || []).length) + ' 条死信（重试上限 ' + Number(errs.retry_limit || 0) + '）',
+        '无数据（无死信）');
+    (errs.dead_letter || []).slice(0, 10).forEach(it => {
+        html += '<div class="ops-item" style="' + OPS_MUTED_STYLE + '">#' + escapeHtml(String(it.id))
+            + ' ' + escapeHtml(it.kind || '-') + '（attempt=' + Number(it.attempt || 0) + '）：'
+            + escapeHtml(it.last_error || '-') + '</div>';
+    });
+    return html + '</div>';
+}
+
+function _opsRole() {
+    try { return localStorage.getItem('demo_role'); } catch (e) { return null; }
+}
+
+function renderOperationsPanel(payload, role) {
+    const box = document.getElementById('operationsPanel');
+    if (!box) return;
+    box.innerHTML = operationsPanelHtml(payload, role);
+}
+
+function loadOperationsPanel() {
+    const role = _opsRole();
+    const url = role === 'admin' ? '/api/admin/operations/technical'
+        : (role === 'owner' ? '/api/admin/operations/owner' : null);
+    if (!url) {
+        renderOperationsPanel({ status: 'success', role: 'none' }, 'none');
+        const box = document.getElementById('operationsPanel');
+        if (box) box.innerHTML = '<div class="ops-state ops-unknown" data-state="unknown" style="'
+            + OPS_STATE_STYLES.unknown + '">未知（当前角色无运维视图权限）</div>';
+        return;
+    }
+    apiFetch(url)
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([status, body]) => {
+            if (status !== 200 || !body || body.status !== 'success') {
+                renderOperationsPanel({ status: 'error', msg: (body && (body.msg || body.detail)) || ('HTTP ' + status) }, role);
+                return;
+            }
+            renderOperationsPanel(body, role);
+        })
+        .catch(() => renderOperationsPanel({ status: 'error', msg: '网络错误' }, role));
+}
+
+function resetOperationsBaseline() {
+    if (_opsRole() !== 'admin') return;
+    apiFetch('/api/admin/operations/process-reset', { method: 'POST' })
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([status, body]) => {
+            if (status !== 200 || !body || body.status !== 'success') {
+                renderOperationsPanel({ status: 'error', msg: (body && (body.msg || body.detail)) || ('HTTP ' + status) }, 'admin');
+                return;
+            }
+            loadOperationsPanel();
+        })
+        .catch(() => renderOperationsPanel({ status: 'error', msg: '网络错误' }, 'admin'));
 }
 
 /* =============================================================
@@ -4005,9 +4178,11 @@ const VM_STYLE_ROW = 'display:flex; align-items:center; gap:10px; padding:7px 0;
 const VM_STYLE_CELL = 'flex:1 1 90px; min-width:70px; word-break:break-word;'
     + ' color:var(--text-main,#1f2937);';
 const VM_STYLE_HCELL = 'flex:1 1 90px; min-width:70px; font-weight:600;';
-const VM_STYLE_ACTION = 'flex:0 0 64px; text-align:right;';
+const VM_STYLE_ACTION = 'flex:0 0 120px; text-align:right; display:flex; gap:6px; justify-content:flex-end;';
 const VM_STYLE_DEL = 'padding:2px 10px; font-size:0.78rem; border-radius:4px; cursor:pointer;'
     + ' border:1px solid #fca5a5; background:#fef2f2; color:#b91c1c;';
+const VM_STYLE_EDIT = 'padding:2px 10px; font-size:0.78rem; border-radius:4px; cursor:pointer;'
+    + ' border:1px solid #93c5fd; background:#eff6ff; color:#1d4ed8;';
 const VM_STYLE_EMPTY = 'padding:14px 0; font-size:0.85rem; color:var(--text-muted,#9ca3af);'
     + ' font-style:italic;';
 const VM_STYLE_ERROR = 'margin-top:8px; padding:6px 8px; border-radius:4px; font-size:0.8rem;'
@@ -4045,6 +4220,10 @@ function vendorMemoryRowHtml(row) {
     const r = row || {};
     const mid = (r.memory_id === null || r.memory_id === undefined) ? '' : String(r.memory_id);
     const vendorName = (r.vendor === null || r.vendor === undefined) ? '' : String(r.vendor);
+    const factKey = (r.fact_key === null || r.fact_key === undefined) ? '' : String(r.fact_key);
+    const factVal = (r.fact_value === null || r.fact_value === undefined) ? '' : String(r.fact_value);
+    const notes = (r.notes === null || r.notes === undefined) ? '' : String(r.notes);
+    const isActive = (r.status === 'active' || r.status === null || r.status === undefined || r.status === '');
     return '<div class="vm-row" style="' + VM_STYLE_ROW + '" data-memory-id="' + escapeHtml(mid) + '">'
         + vendorMemoryCellHtml('vendor', vendorName)
         + vendorMemoryCellHtml('fact_kind', r.fact_kind)
@@ -4057,6 +4236,14 @@ function vendorMemoryRowHtml(row) {
         + escapeHtml(r.status === null || r.status === undefined ? '' : String(r.status)) + '">'
         + escapeHtml(vendorMemoryStatusLabel(r.status)) + '</span>'
         + '<span class="vm-action" style="' + VM_STYLE_ACTION + '">'
+        + (isActive ? '<button type="button" class="vm-edit" style="' + VM_STYLE_EDIT + '"'
+        + ' data-memory-id="' + escapeHtml(mid) + '"'
+        + ' data-vendor="' + escapeHtml(vendorName) + '"'
+        + ' data-fact-key="' + escapeHtml(factKey) + '"'
+        + ' data-fact-value="' + escapeHtml(factVal) + '"'
+        + ' data-notes="' + escapeHtml(notes) + '"'
+        + " onclick=\"editVendorMemory(this.getAttribute('data-memory-id'), this.getAttribute('data-vendor'), this.getAttribute('data-fact-key'), this.getAttribute('data-fact-value'), this.getAttribute('data-notes'))\""
+        + '>编辑</button>' : '')
         + '<button type="button" class="vm-del" style="' + VM_STYLE_DEL + '"'
         + ' data-memory-id="' + escapeHtml(mid) + '"'
         + ' data-vendor="' + escapeHtml(vendorName) + '"'
@@ -4140,6 +4327,88 @@ async function deleteVendorMemory(memoryId, vendor) {
             showToast('删除失败（网络错误）', 'error');
             return false;
         });
+}
+
+// 编辑单条已生效记忆：调用 PATCH /api/memory/{memory_id}（supersede 状态机）
+async function editVendorMemory(memoryId, vendor, factKey, factValue, notes) {
+    const mid = (memoryId === null || memoryId === undefined) ? '' : String(memoryId).trim();
+    if (!mid) return Promise.resolve(false);
+
+    const modalId = 'vm_edit_modal_' + Date.now();
+    const overlay = document.createElement('div');
+    overlay.id = modalId;
+    overlay.style.cssText = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; z-index:9999;';
+
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#fff; border-radius:8px; padding:20px; width:440px; max-width:90%; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:0.9rem;';
+
+    dialog.innerHTML = '<h3 style="margin-top:0; margin-bottom:12px; font-size:1.1rem; color:#1f2937;">编辑已生效记忆</h3>'
+        + '<div style="margin-bottom:10px;"><label style="font-weight:600; display:block; margin-bottom:4px; color:#4b5563;">供应商（不可修改）</label>'
+        + '<input type="text" disabled value="' + escapeHtml(vendor || '') + '" style="width:100%; padding:6px 8px; border:1px solid #d1d5db; background:#f3f4f6; border-radius:4px; box-sizing:border-box; color:#6b7280;"></div>'
+        + '<div style="margin-bottom:10px;"><label style="font-weight:600; display:block; margin-bottom:4px; color:#4b5563;">事实键 (fact_key)</label>'
+        + '<input type="text" id="' + modalId + '_key" value="' + escapeHtml(factKey || '') + '" maxlength="200" style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box;"></div>'
+        + '<div style="margin-bottom:10px;"><label style="font-weight:600; display:block; margin-bottom:4px; color:#4b5563;">事实值 (fact_value)</label>'
+        + '<input type="text" id="' + modalId + '_val" value="' + escapeHtml(factValue || '') + '" maxlength="1000" style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box;"></div>'
+        + '<div style="margin-bottom:16px;"><label style="font-weight:600; display:block; margin-bottom:4px; color:#4b5563;">备注 (notes)</label>'
+        + '<textarea id="' + modalId + '_notes" maxlength="2000" rows="3" style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; box-sizing:border-box; resize:vertical;">' + escapeHtml(notes || '') + '</textarea></div>'
+        + '<div style="display:flex; justify-content:flex-end; gap:8px;">'
+        + '<button type="button" id="' + modalId + '_cancel" style="padding:6px 14px; border:1px solid #d1d5db; background:#fff; border-radius:4px; cursor:pointer;">取消</button>'
+        + '<button type="button" id="' + modalId + '_submit" style="padding:6px 14px; border:1px solid #2563eb; background:#2563eb; color:#fff; border-radius:4px; cursor:pointer;">保存</button>'
+        + '</div>';
+
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+
+    const close = () => { overlay.remove(); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    const cancelBtn = document.getElementById(modalId + '_cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', close);
+
+    const submitBtn = document.getElementById(modalId + '_submit');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', () => {
+            const keyEl = document.getElementById(modalId + '_key');
+            const valEl = document.getElementById(modalId + '_val');
+            const notesEl = document.getElementById(modalId + '_notes');
+
+            const newKey = keyEl ? keyEl.value.trim() : '';
+            const newVal = valEl ? valEl.value.trim() : '';
+            const newNotes = notesEl ? notesEl.value.trim() : '';
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '保存中...';
+
+            apiFetch('/api/memory/' + encodeURIComponent(mid), {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fact_key: newKey || undefined,
+                    fact_value: newVal,
+                    notes: newNotes,
+                }),
+            })
+            .then(res => res.json())
+            .then(body => {
+                if (body && body.status === 'success') {
+                    showToast('已更新该条记忆', 'success');
+                    close();
+                    return loadVendorMemoryGovernance();
+                }
+                const msg = (body && body.msg) || '保存失败';
+                showToast(msg, 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '保存';
+            })
+            .catch(err => {
+                console.warn('[vendor-memory-governance] 编辑记忆失败：', err);
+                showToast('保存失败（网络错误）', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '保存';
+            });
+        });
+    }
+    return Promise.resolve(true);
 }
 
 // 辅助：转义 HTML

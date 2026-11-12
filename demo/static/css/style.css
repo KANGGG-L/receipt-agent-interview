@@ -6688,3 +6688,34 @@ textarea:focus-visible {
     border-color: var(--primary, #032425);
 }
 
+
+/* S09 订阅与账单 */
+.billing-status-card {
+    padding: 14px 16px;
+    margin: 12px 0;
+    border-radius: 8px;
+    background: #f6f8fb;
+    border: 1px solid #e3e8ef;
+    line-height: 1.7;
+}
+.billing-block {
+    margin: 18px 0;
+    padding: 14px 16px;
+    border: 1px solid #eef1f5;
+    border-radius: 8px;
+}
+.billing-block h3 {
+    margin: 0 0 10px;
+    font-size: 15px;
+}
+.billing-result {
+    margin-top: 10px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+    color: #334155;
+}
+.billing-history-note {
+    margin-top: 16px;
+    color: #64748b;
+    font-size: 13px;
+}

@@ -70,6 +70,143 @@ function initVendorHintSelect() {
 }
 
 // -------------------------------------------------------------
+// U04：客户端任务引用（刷新/重登找回）与身份隔离
+// 每次上传/批量任务把 receipt_id / job_id / request_key / 文件名 / 状态
+// 连同写入时的 tenant + account 一起持久化到 localStorage。恢复只读当前
+// 身份键：他人草稿在本地不可见；403 失效时草稿保留但本次会话隔离不恢复。
+// -------------------------------------------------------------
+const CLIENT_TASK_REF_PREFIX = 'finsaro_client_task_ref_v1';
+// 需要恢复的队列状态：处理中 / 失败 / 待复核（已保存项无需再恢复）
+const CLIENT_TASK_RESTORE_STATUSES = ['uploading', 'pending', 'error', 'parsed', 'parsed_with_warnings', 'flagged'];
+// 会话内隔离标记：403 后本页不再自动恢复；刷新/重登（身份确认后）可再试
+let _clientTasksIsolated = false;
+
+/** 当前身份：tenant 复用 demo_tenant_id，account 取服务端 /me 回显的登录邮箱。
+ *  未登录（演示态）account 固定 anonymous——不再猜测其他账号身份，避免跨身份恢复。 */
+function resolveClientIdentity() {
+    let tenant = 'default';
+    try { tenant = localStorage.getItem('demo_tenant_id') || 'default'; } catch (e) { tenant = 'default'; }
+    let account = '';
+    try {
+        if (typeof AuthState !== 'undefined' && AuthState && AuthState.account
+            && AuthState.account.email) {
+            account = String(AuthState.account.email);
+        }
+    } catch (e) { /* AuthState 未加载/极旧环境：按匿名身份 */ }
+    return { tenant: String(tenant), account: account || 'anonymous' };
+}
+
+/** 按身份隔离的 localStorage 键（不同 tenant/account 各用各的桶） */
+function identityScopedStorageKey(prefix, identity) {
+    const id = identity || resolveClientIdentity();
+    return prefix + ':' + encodeURIComponent(id.tenant) + ':' + encodeURIComponent(id.account);
+}
+
+function clientTaskStorageKey(identity) {
+    return identityScopedStorageKey(CLIENT_TASK_REF_PREFIX, identity);
+}
+
+function isClientTaskRefOwnedBy(ref, identity) {
+    if (!ref) return false;
+    const id = identity || resolveClientIdentity();
+    return String(ref.tenant || '') === String(id.tenant)
+        && String(ref.account || '') === String(id.account);
+}
+
+function loadClientTaskRefs(identity) {
+    const id = identity || resolveClientIdentity();
+    try {
+        const raw = localStorage.getItem(clientTaskStorageKey(id));
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter(ref => isClientTaskRefOwnedBy(ref, id));
+    } catch (e) { return []; }
+}
+
+function saveClientTaskRefs(refs, identity) {
+    const id = identity || resolveClientIdentity();
+    try {
+        localStorage.setItem(clientTaskStorageKey(id), JSON.stringify(refs || []));
+    } catch (e) { /* 隐私模式等：仅本次会话可用，不影响上传 */ }
+}
+
+/** 构造一条 client task ref（字段与任务卡一致） */
+function buildClientTaskRef(opts) {
+    const o = opts || {};
+    const id = resolveClientIdentity();
+    return {
+        receipt_id: (o.receipt_id != null && o.receipt_id !== '') ? o.receipt_id : null,
+        job_id: o.job_id || null,
+        request_key: o.request_key || null,
+        file_name: o.file_name || null,
+        status: o.status || 'uploading',
+        tenant: id.tenant,
+        account: id.account,
+        image_url: o.image_url || null,
+        updated_at: new Date().toISOString(),
+    };
+}
+
+/** 幂等 upsert：同 request_key 或同 receipt_id 视为同一任务，避免重复条目 */
+function upsertClientTaskRef(entry, identity) {
+    const id = identity || resolveClientIdentity();
+    if (!entry || (!entry.request_key && entry.receipt_id == null && !entry.job_id)) return null;
+    const ref = Object.assign({}, entry, {
+        tenant: id.tenant,
+        account: id.account,
+        updated_at: new Date().toISOString(),
+    });
+    const refs = loadClientTaskRefs(id).filter(r => {
+        if (ref.request_key && r.request_key === ref.request_key) return false;
+        if (ref.receipt_id != null && String(r.receipt_id) === String(ref.receipt_id)) return false;
+        return true;
+    });
+    refs.push(ref);
+    saveClientTaskRefs(refs, id);
+    return ref;
+}
+
+/** 移除已放弃/已删除的任务引用（match 支持 receipt_id / request_key / job_id） */
+function removeClientTaskRef(match, identity) {
+    const id = identity || resolveClientIdentity();
+    const m = (match && typeof match === 'object') ? match : { receipt_id: match };
+    const kept = loadClientTaskRefs(id).filter(r => {
+        if (m.request_key && r.request_key === m.request_key) return false;
+        if (m.receipt_id != null && String(r.receipt_id) === String(m.receipt_id)) return false;
+        if (m.job_id && r.job_id === m.job_id) return false;
+        return true;
+    });
+    saveClientTaskRefs(kept, id);
+}
+
+/** 可恢复队列：当前身份 + 未隔离 + 处理中/失败/待复核状态 */
+function listRestorableClientTaskRefs(identity) {
+    if (_clientTasksIsolated) return [];
+    return loadClientTaskRefs(identity).filter(ref => CLIENT_TASK_RESTORE_STATUSES.indexOf(ref.status) !== -1);
+}
+
+/** 把当前照片的最新状态回写到 client task ref（单张与批量共用） */
+function updateClientTaskRefForPhoto(photo, statusOverride) {
+    if (!photo) return null;
+    const requestKey = photo.requestKey || photo._uploadRequestKey || null;
+    const receiptId = photo.receiptId != null ? photo.receiptId : null;
+    const jobId = photo.jobId || null;
+    if (receiptId == null && !jobId && !requestKey) return null;
+    return upsertClientTaskRef(buildClientTaskRef({
+        receipt_id: receiptId,
+        job_id: jobId,
+        request_key: requestKey,
+        file_name: photo.fileName || (photo.file && photo.file.name) || null,
+        status: statusOverride || photo.status || null,
+        image_url: photo.imageUrl || null,
+    }));
+}
+
+function markClientTasksIsolated() { _clientTasksIsolated = true; }
+function isClientTasksIsolated() { return _clientTasksIsolated; }
+function resetClientTasksIsolation() { _clientTasksIsolated = false; }
+
+// -------------------------------------------------------------
 // 2. 收据图片选择与本地实时预览
 // -------------------------------------------------------------
 
@@ -888,6 +1025,18 @@ function triggerAnalysisNow(forceFlag = false) {
     // B3：上传前手选的供应商作为识别先验（vendor_hint）。未选择时传空串，
     // 与后端 Form("") 缺省同口径 = 行为与接线前完全一致。
     formData.append('vendor_hint', getVendorHintValue());
+    // U04：操作幂等键——同一文件对象的每次网络层重试/重发复用同 key（服务端回放
+    // 同一 receipt_id，不重复建单）；换文件即换 key。会话内存级（刷新页面=新会话新键，
+    // 刷新后的重传属新操作——服务端仍以内容提示重复候选，不自动合并）。
+    if (!selectedFile._uploadRequestKey) {
+        try {
+            selectedFile._uploadRequestKey = 'ui-' + Date.now() + '-'
+                + Math.random().toString(36).slice(2, 10);
+        } catch (e) { /* 只读 File 对象挂键失败的极旧浏览器：退化为无 key（旧行为） */ }
+    }
+    if (selectedFile._uploadRequestKey) {
+        formData.append('request_key', selectedFile._uploadRequestKey);
+    }
 
     const useTreatment = document.getElementById('chkTreatment').checked;
 
@@ -912,6 +1061,16 @@ function triggerAnalysisNow(forceFlag = false) {
     .then(ret => {
         if (gen !== singleUploadGen) return;   // 已被更新的上传替换
         if (ret.status === 'queued') {
+            // U04：入队即落 client task ref（receipt_id/job_id/request_key/文件名/状态），
+            // 刷新后按当前身份恢复「处理中」，并用同一 request_key 重试回放同一单据。
+            const queuedPhoto = getActivePhoto();
+            if (queuedPhoto) {
+                if (ret.receipt_id) queuedPhoto.receiptId = ret.receipt_id;
+                queuedPhoto.jobId = ret.job_id || null;
+                queuedPhoto.requestKey = selectedFile._uploadRequestKey || null;
+                queuedPhoto.fileName = selectedFile.name || queuedPhoto.fileName || null;
+                updateClientTaskRefForPhoto(queuedPhoto);
+            }
             // 单张路径：服务端已转 JPEG 则切换预览；否则保持 HEIC 常驻提示
             if (ret.image_url && isBrowserDisplayableImageUrl(ret.image_url)) {
                 const ph = getActivePhoto();
@@ -971,6 +1130,7 @@ function triggerAnalysisNow(forceFlag = false) {
                 }
                 ph.status = 'error';
                 ph.errorMsg = ret.msg || '识别失败';
+                updateClientTaskRefForPhoto(ph);
                 renderSider();
                 setMainPreview(ph, selectedFile);
             } else if (ph) {
@@ -1029,6 +1189,8 @@ function triggerAnalysisNow(forceFlag = false) {
                 photo.imageUrl = ret.image_url;
             }
             if (Array.isArray(ret.quality_warnings)) photo.qualityWarnings = ret.quality_warnings;
+            // U04：成功 → 任务引用转为「待复核」，刷新后仍可找回
+            updateClientTaskRefForPhoto(photo, 'parsed');
             renderSider();
             // 解析完成即自动写库（无“全部保存”入口）
             autoSaveParsedPhoto(BatchUploader.activeIndex);
@@ -1442,17 +1604,45 @@ function reuploadFromErrorCard() {
 }
 window.reuploadFromErrorCard = reuploadFromErrorCard;
 
+// L09：转手工 payload（expected_version + request_key）。旧客户端/详情未加载时
+// 先 GET detail 取 version；取不到就省略 expected_version，仍由服务端兼容旧口径。
+function _convertManualPayload(receiptId) {
+    const cached = (currentReceiptId === receiptId && currentReceiptData
+                    && currentReceiptData.version != null)
+        ? Promise.resolve(currentReceiptData.version)
+        : apiFetch(`/api/receipt/${receiptId}`)
+            .then(res => res.json().catch(() => null))
+            .then(ret => (ret && ret.data && ret.data.version != null) ? ret.data.version : null)
+            .catch(() => null);
+    return cached.then(v => {
+        const body = { request_key: 'convert_manual:' + receiptId + ':' + (v == null ? 'na' : v) };
+        if (v != null) body.expected_version = v;
+        return body;
+    });
+}
+
 // opts.toastText：转手工成功后的唯一一条提示；失败只更新错误卡，不再另弹 toast
 function convertManualFromErrorCard(opts) {
     const o = (opts && typeof opts === 'object' && !(opts instanceof Event)) ? opts : {};
     if (lastErrorReceiptId) {
         const receiptId = lastErrorReceiptId;
 
-        apiFetch(`/api/receipt/${receiptId}/convert_manual`, { method: 'POST' })
+        _convertManualPayload(receiptId)
+        .then(body => apiFetch(`/api/receipt/${receiptId}/convert_manual`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        }))
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             const loading = document.getElementById('loadingCard');
             if (loading) loading.classList.add('hide');
+            if (httpStatus === 409 && ret && ret.code === 'VERSION_CONFLICT') {
+                // 409 保本地草稿：不重置表单/不清错误卡，只提示刷新后重试。
+                showErrorCard('这张单刚被别人改过，你这边填写的内容先保留着。请刷新页面看到最新内容后，再点「转手工录入」。',
+                    receiptId, 'VERSION_CONFLICT', { plain: true });
+                return;
+            }
             if (!ret || ret.status !== 'success') {
                 const why = (typeof TERMS !== 'undefined')
                     ? TERMS.humanizeCode(ret && ret.code, ret && ret.msg) : '没能转成手工录入，请稍后再试';
@@ -1590,6 +1780,8 @@ function applyRecognizedResult(ret, fallbackReceiptId) {
         if (ret.image_url) photo.imageUrl = ret.image_url;
         if (Array.isArray(ret.quality_warnings)) photo.qualityWarnings = ret.quality_warnings;
         photo.errorMsg = null;
+        // U04：重试/转手工成功 → 任务引用转为「待复核」
+        updateClientTaskRefForPhoto(photo, 'parsed');
         renderSider();
         // 解析完成即自动写库（无“全部保存”入口）
         autoSaveParsedPhoto(findPhotoIndex(photo));

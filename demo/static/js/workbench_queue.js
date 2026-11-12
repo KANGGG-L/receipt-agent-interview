@@ -40,6 +40,79 @@ function restoreWorkbenchQueueFilter() {
 }
 window.restoreWorkbenchQueueFilter = restoreWorkbenchQueueFilter;
 
+// -------------------------------------------------------------
+// U04：工作台队列快照（刷新/慢加载找回）
+// 服务端列表返回后按当前 tenant/account 存一份精简快照；刷新时先渲染快照，
+// 慢加载期间队列仍可见。恢复只读当前身份键——他人账号的快照不可见；
+// 拉取失败（含 403）不清快照，留待重新登录后按原身份恢复。
+// -------------------------------------------------------------
+const WORKBENCH_SNAPSHOT_PREFIX = 'finsaro_workbench_queue_snapshot_v1';
+const WORKBENCH_SNAPSHOT_LIMIT = 200;
+
+function workbenchSnapshotIdentity() {
+    if (typeof resolveClientIdentity === 'function') return resolveClientIdentity();
+    return { tenant: 'default', account: 'anonymous' };
+}
+
+function workbenchSnapshotStorageKey() {
+    if (typeof identityScopedStorageKey === 'function') {
+        return identityScopedStorageKey(WORKBENCH_SNAPSHOT_PREFIX);
+    }
+    return WORKBENCH_SNAPSHOT_PREFIX;
+}
+
+function persistWorkbenchQueueSnapshot(rows) {
+    try {
+        if (!Array.isArray(rows)) return;
+        const identity = workbenchSnapshotIdentity();
+        const items = rows
+            .filter(r => r && !r.deleted_at)
+            .slice(0, WORKBENCH_SNAPSHOT_LIMIT)
+            .map(r => ({
+                id: r.id,
+                supplier_name: r.supplier_name || '',
+                receipt_date: r.receipt_date || null,
+                created_at: r.created_at || null,
+                total_amount: r.total_amount != null ? r.total_amount : null,
+                status: r.status || null,
+                image_url: r.image_url || null,
+                math_warnings: Array.isArray(r.math_warnings) ? r.math_warnings : [],
+                quality_warnings: Array.isArray(r.quality_warnings) ? r.quality_warnings : [],
+                tenant: identity.tenant,
+                account: identity.account,
+            }));
+        localStorage.setItem(workbenchSnapshotStorageKey(), JSON.stringify({
+            v: 1, at: Date.now(), items: items
+        }));
+    } catch (e) { /* 隐私模式：跳过快照，不影响队列加载 */ }
+}
+
+function loadWorkbenchQueueSnapshot() {
+    try {
+        const raw = localStorage.getItem(workbenchSnapshotStorageKey());
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.v !== 1 || !Array.isArray(parsed.items)) return null;
+        const identity = workbenchSnapshotIdentity();
+        const items = parsed.items.filter(r => r
+            && String(r.tenant || '') === identity.tenant
+            && String(r.account || '') === identity.account);
+        return items.length > 0 ? items : null;
+    } catch (e) { return null; }
+}
+
+// 慢加载兜底：服务端结果尚未回来时用快照先渲染队列
+function restoreWorkbenchQueueSnapshot() {
+    if (Array.isArray(cachedWorkbenchQueueData) && cachedWorkbenchQueueData.length > 0) return false;
+    if (workbenchQueueKpiFailed) return false;
+    const items = loadWorkbenchQueueSnapshot();
+    if (!items) return false;
+    cachedWorkbenchQueueData = items;
+    renderWorkbenchQueueTable();
+    updateWorkbenchQueueCounters();
+    return true;
+}
+
 // UAT-036：工作台（scan）指标请求世代号与失败态。
 let workbenchQueueLoadSeq = 0;
 let workbenchQueueKpiFailed = false;
@@ -125,6 +198,7 @@ function loadWorkbenchQueue(forceRefresh = false) {
             if (mySeq !== workbenchQueueLoadSeq) return;
             clearWorkbenchQueueMetricsFailed();
             cachedWorkbenchQueueData = ret.data || [];
+            persistWorkbenchQueueSnapshot(cachedWorkbenchQueueData);
             queueCurrentPage = 1;
             updateWorkbenchQueueCounters();
             renderWorkbenchQueueTable();

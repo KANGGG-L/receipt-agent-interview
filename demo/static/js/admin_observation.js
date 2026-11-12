@@ -394,6 +394,104 @@ if (typeof window !== 'undefined') {
     window.closeGreySampleModal = closeGreySampleModal;
 }
 
+/* =============================================================
+   M05 operations/observability：共享三态渲染 + owner 商业视图
+   三态（unknown / no_data / error）与 ok 分开；未知/无数据绝不渲染成 0%。
+   技术 admin 视图（engine_admin.js）复用这里的 opsStateHtml/_opsRow。
+   owner 视图只读 GET /api/admin/operations/owner（商业记忆候选/编辑），
+   与技术视图权限互斥；非 owner 不发请求并隐藏卡片。
+   ============================================================= */
+const OPS_STATE_STYLES = {
+    ok: 'color:var(--text-main,#1f2937);',
+    no_data: 'color:var(--text-muted,#9ca3af); font-style:italic;',
+    unknown: 'background:#fef3c7; color:#92400e; padding:1px 6px; border-radius:3px;',
+    error: 'background:#fee2e2; color:#b91c1c; padding:1px 6px; border-radius:3px;',
+};
+const OPS_ROW_STYLE = 'display:flex; flex-wrap:wrap; gap:8px; padding:5px 0;'
+    + ' border-bottom:1px solid var(--border-color,#eef2f7); font-size:0.8rem;';
+const OPS_LABEL_STYLE = 'min-width:150px; color:var(--text-main,#1f2937);';
+const OPS_MUTED_STYLE = 'font-size:0.75rem; color:var(--text-muted,#6b7280);';
+const OPS_V3_STYLE = 'margin-top:8px; padding:6px 8px; border-radius:4px;'
+    + ' background:#f8fafc; font-size:0.78rem; line-height:1.5;';
+
+function opsStateHtml(state, valueHtml, noDataText, unknownText, errorText) {
+    const s = String(state || 'unknown');
+    const style = OPS_STATE_STYLES[s] || OPS_STATE_STYLES.unknown;
+    let text;
+    if (s === 'error') text = errorText || '错误';
+    else if (s === 'no_data') text = noDataText || '无数据';
+    else if (s === 'unknown') text = unknownText || '未知';
+    else text = valueHtml || '正常';
+    return '<span class="ops-state ops-' + s + '" data-state="' + s + '" style="' + style + '">'
+        + text + '</span>';
+}
+
+function _opsRow(label, state, valueHtml, noDataText, unknownText, errorText) {
+    return '<div class="ops-row" style="' + OPS_ROW_STYLE + '">'
+        + '<span class="ops-label" style="' + OPS_LABEL_STYLE + '">' + w2Escape(label) + '</span>'
+        + opsStateHtml(state, valueHtml, noDataText, unknownText, errorText)
+        + '</div>';
+}
+
+function ownerOperationsPanelHtml(payload) {
+    const body = payload || {};
+    if (body.status !== 'success') {
+        return '<div class="ops-error" style="' + OPS_STATE_STYLES.error + '" data-ops="error">'
+            + '运维数据读取失败：' + w2Escape(body.msg || '未知错误') + '</div>';
+    }
+    if (body.role !== 'owner') {
+        return '<div class="ops-error" style="' + OPS_STATE_STYLES.error + '">角色不匹配</div>';
+    }
+    const cand = body.memory_candidates || {};
+    const edits = body.edits || {};
+    let html = '<div class="ops-section" data-ops-role="owner">';
+    html += _opsRow('商业记忆候选', cand.state,
+        Number((cand.items || []).length) + ' 条待确认', '无数据（暂无待确认候选）');
+    (cand.items || []).slice(0, 10).forEach(it => {
+        html += '<div class="ops-item" style="' + OPS_MUTED_STYLE + '">'
+            + w2Escape(it.vendor || '-') + '：' + w2Escape(it.content || '-') + '</div>';
+    });
+    html += _opsRow('近期编辑', edits.state,
+        Number((edits.items || []).length) + ' 张单据', '无数据（暂无编辑单据）');
+    (edits.items || []).slice(0, 10).forEach(it => {
+        html += '<div class="ops-item" style="' + OPS_MUTED_STYLE + '">#'
+            + w2Escape(String(it.receipt_id)) + ' ' + w2Escape(it.supplier_name || '-')
+            + ' · ' + w2Escape(_fmtDateTime(it.updated_at)) + '</div>';
+    });
+    return html + '</div>';
+}
+
+function renderOwnerOperationsPanel(payload) {
+    const box = document.getElementById('ownerOperationsPanel');
+    if (box) box.innerHTML = ownerOperationsPanelHtml(payload);
+}
+
+function loadOwnerOperationsPanel() {
+    const card = document.getElementById('ownerOperationsCard');
+    const role = (() => { try { return localStorage.getItem('demo_role'); } catch (e) { return null; } })();
+    if (role !== 'owner') {
+        if (card) card.classList.add('hide');
+        return;
+    }
+    if (card) card.classList.remove('hide');
+    apiFetch('/api/admin/operations/owner')
+        .then(res => Promise.all([res.status, res.json().catch(() => null)]))
+        .then(([status, body]) => {
+            if (status !== 200 || !body || body.status !== 'success') {
+                renderOwnerOperationsPanel({ status: 'error',
+                    msg: (body && (body.msg || body.detail)) || ('HTTP ' + status) });
+                return;
+            }
+            renderOwnerOperationsPanel(body);
+        })
+        .catch(() => renderOwnerOperationsPanel({ status: 'error', msg: '网络错误' }));
+}
+if (typeof window !== 'undefined') {
+    window.opsStateHtml = opsStateHtml;
+    window.ownerOperationsPanelHtml = ownerOperationsPanelHtml;
+    window.loadOwnerOperationsPanel = loadOwnerOperationsPanel;
+}
+
 // 历史灰度发布与放量履历
 function loadCanaryHistory() {
     const tbody = document.getElementById('adminCanaryHistoryBody');
@@ -821,6 +919,7 @@ function loadAnalyticsBoard(tenantId) {
         loadGoldenBoard();
         loadGTEvalsetStats();
         loadPendingMemoryBadge();
+        loadOwnerOperationsPanel();
     }
 }
 window.loadAnalyticsBoard = loadAnalyticsBoard;
@@ -895,6 +994,7 @@ function switchAnalyticsSubView(targetViewId) {
         if (typeof loadGoldenBoard === 'function') loadGoldenBoard();
         if (typeof loadGTEvalsetStats === 'function') loadGTEvalsetStats();
         if (typeof loadPendingMemoryBadge === 'function') loadPendingMemoryBadge();
+        if (typeof loadOwnerOperationsPanel === 'function') loadOwnerOperationsPanel();
     }
 }
 window.switchAnalyticsSubView = switchAnalyticsSubView;

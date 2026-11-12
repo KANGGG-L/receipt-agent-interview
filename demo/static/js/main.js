@@ -91,11 +91,12 @@ let availableUnits = [
 
  document.addEventListener('DOMContentLoaded', () => {
      initDemoRoleSwitch();       // demo：无密码 RBAC 角色下拉
-     probeAuthAndEnter(false);   // P1-12: 启动鉴权探测（401 → 登录面板；AUTH_ENABLED=0 直通）
+     // P1-12: 启动鉴权探测（401 → 登录面板；AUTH_ENABLED=0 直通）
+     const _authEnter = (typeof probeAuthAndEnter === 'function')
+         ? probeAuthAndEnter(false) : Promise.resolve();
      initTabs();
      populateReceiptStatusFilter();  // 归档「单据状态」筛选下拉由 RECEIPT_STATUSES 生成
      initUpload();
-    restoreBatchFromManifest(); // 刷新浏览器不丢失解析进度（从 manifest 恢复单据及解析状态）
     initFocalZoomAndCrop();
     initVendorHintSelect();     // 上传前可选供应商：恢复该设备上次选择
     updateGlobalDatalistUnits();
@@ -118,6 +119,18 @@ let availableUnits = [
     if (typeof initGlobalKeyboardShortcuts === 'function') initGlobalKeyboardShortcuts();
     if (typeof restoreWorkbenchQueueFilter === 'function') restoreWorkbenchQueueFilter();
     if (typeof loadWorkbenchQueue === 'function') loadWorkbenchQueue();
+
+    // U04：恢复排在身份探测之后——任务引用/manifest/队列快照都按 tenant+account
+    // 分桶，未确认账号就把「匿名桶」当成本人队列会跨身份恢复。
+    Promise.resolve(_authEnter).catch(() => {}).then(() => {
+        // U04：刷新恢复统一入口（与登录成功共用一个编排，避免重复恢复）
+        if (typeof restoreClientTasksForCurrentIdentity === 'function') {
+            restoreClientTasksForCurrentIdentity();
+            return;
+        }
+        if (typeof restoreWorkbenchQueueSnapshot === 'function') restoreWorkbenchQueueSnapshot();
+        restoreBatchFromManifest(); // 刷新浏览器不丢失解析进度（从 manifest 恢复单据及解析状态）
+    });
 
 });
 

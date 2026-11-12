@@ -629,12 +629,27 @@ function convertReceiptFromArchive(receiptId) {
 }
 
 function _postConvertFromArchive(rid) {
-    apiFetch(`/api/receipt/${rid}/convert_manual`, { method: 'POST' })
+    // L09：先取详情 version 再提交（旧客户端兼容口径），并带稳定 request_key 幂等。
+    apiFetch(`/api/receipt/${rid}`)
+        .then(res => res.json().catch(() => null))
+        .then(ret => {
+            const v = (ret && ret.data && ret.data.version != null) ? ret.data.version : null;
+            const body = { request_key: `archive_convert:${rid}:${v == null ? 'na' : v}` };
+            if (v != null) body.expected_version = v;
+            return apiFetch(`/api/receipt/${rid}/convert_manual`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+        })
+        .catch(() => apiFetch(`/api/receipt/${rid}/convert_manual`, { method: 'POST' }))
         .then(res => Promise.all([res.status, res.json().catch(() => null)]))
         .then(([httpStatus, ret]) => {
             if (ret && ret.status === 'success') {
                 showToast(`单据 #${rid} 已转为手工录入，点进详情就能修改，原图已保留`, 'success');
                 loadReceiptsHistory();   // 刷新归档列表（状态变为 edited）
+            } else if (httpStatus === 409 && ret && ret.code === 'VERSION_CONFLICT') {
+                showToast('这张单刚被别人改过，你这边的内容先保留着。请刷新后再转手工录入', 'error', 7000);
             } else {
                 showToast('没能转成手工录入：' + TERMS.humanizeCode(ret && ret.code, ret && ret.msg) + '。原图已保留，可以再点一次「转手工」', 'error', 7000);
             }

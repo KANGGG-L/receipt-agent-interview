@@ -897,6 +897,11 @@ function probeAuthAndEnter(reloadData) {
                 loadFinancePanel();     // Wave 1：付款域提醒（红点/横幅）
                 showToast('登录成功', 'success');
             }
+            // U04：登录成功/身份切换时解除 403 会话隔离并按当前身份恢复本地草稿，
+            // 同页重登不必整页刷新；force=reloadData 会清掉上一账号的内存批次。
+            if (typeof restoreClientTasksForCurrentIdentity === 'function') {
+                restoreClientTasksForCurrentIdentity(!!reloadData);
+            }
         })
         .catch(() => {
             // 网络异常不阻断进入（后端不可用时各面板会自行报错）
@@ -963,10 +968,14 @@ function initTabs() {
             if (targetId === 'tab-export') {
                 if (typeof initExportCenter === 'function') initExportCenter();
             }
+            if (targetId === 'tab-billing') {
+                if (typeof loadBillingPanel === 'function') loadBillingPanel();
+            }
             if (targetId === 'tab-engine') {
                 loadAdminEngineConfig();
                 loadAdminSettings();   // T10：系统配置（阈值规则 + 预处理纠偏开关）
                 loadMemoryMetrics();   // P2-T5：记忆度量看板（admin 只读，四项指标 + 总开关状态）
+                loadOperationsPanel(); // M05：运维可观测（admin=技术错误/重试，owner=商业记忆候选/编辑）
                 loadVendorMemoryGovernance();   // P8/AC2：已生效记忆治理区（只读 + 调已有删除端点）
                 initEngineSubViewOnTabEnter();
             }
@@ -1423,6 +1432,8 @@ window.setRole = function(role) {
 // 店员隐藏部门花销报表（cost_report 为 owner 域接口，避免进入即 403 弹窗）
 function applyRoleVisibility(role) {
     const isAdmin = role === 'admin';
+    // 计费入口按 capability 单独探测（S09）：餐厅 owner 不自动获得计费权限。
+    if (typeof window.probeBillingAccess === 'function') window.probeBillingAccess();
     ['adminSidebarSection', 'adminEngineBtn', 'analyticsBoardBtn'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';

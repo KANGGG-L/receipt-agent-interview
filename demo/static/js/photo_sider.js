@@ -41,20 +41,42 @@ function mapServerStatus(serverStatus) {
     return 'parsed';
 }
 
+// U04：manifest 按 tenant + account 分桶——恢复只读当前身份键，别人（或
+// 换登录账号后）的批次草稿在本地不可见。注意与 client task ref 分键存储：
+// 两者语义不同（UI 批次快照 vs 任务引用日志），共用键会互相覆盖。
+function manifestStorageKey() {
+    if (typeof identityScopedStorageKey === 'function') {
+        return identityScopedStorageKey(MANIFEST_KEY);
+    }
+    return MANIFEST_KEY;
+}
+
+function manifestIdentity() {
+    if (typeof resolveClientIdentity === 'function') return resolveClientIdentity();
+    return { tenant: 'default', account: 'anonymous' };
+}
+
 function persistManifest() {
     try {
         if (typeof BatchUploader === 'undefined' || !Array.isArray(BatchUploader.photos)) return;
+        const identity = manifestIdentity();
         const validItems = [];
         BatchUploader.photos.forEach(photo => {
-            if (photo && photo.receiptId) {
-                validItems.push({
-                    localId: photo.localId,
-                    fileName: photo.fileName || (photo.file ? photo.file.name : null) || `receipt_${photo.receiptId}.jpg`,
-                    receiptId: photo.receiptId,
-                    jobId: photo.jobId || null,
-                    status: photo.status || 'parsed'
-                });
-            }
+            if (!photo) return;
+            const requestKey = photo.requestKey || photo._uploadRequestKey || null;
+            // U04：入队/失败/待复核的任务都要落盘，不要求已有 receipt_id
+            if (!photo.receiptId && !photo.jobId && !requestKey) return;
+            validItems.push({
+                localId: photo.localId,
+                fileName: photo.fileName || (photo.file ? photo.file.name : null) || `receipt_${photo.receiptId || 'pending'}.jpg`,
+                receiptId: photo.receiptId || null,
+                jobId: photo.jobId || null,
+                requestKey: requestKey,
+                imageUrl: photo.imageUrl || null,
+                status: photo.status || 'parsed',
+                tenant: identity.tenant,
+                account: identity.account,
+            });
         });
         if (validItems.length === 0) {
             clearManifest();
@@ -63,10 +85,11 @@ function persistManifest() {
         const activePhoto = getActivePhoto();
         const manifestData = {
             v: 1,
+            identity: identity,
             lastActiveLocalId: activePhoto ? activePhoto.localId : null,
             items: validItems
         };
-        localStorage.setItem(MANIFEST_KEY, JSON.stringify(manifestData));
+        localStorage.setItem(manifestStorageKey(), JSON.stringify(manifestData));
     } catch (e) {
         console.warn('persistManifest 写入异常:', e);
     }
@@ -74,11 +97,20 @@ function persistManifest() {
 
 function loadManifest() {
     try {
-        const str = localStorage.getItem(MANIFEST_KEY);
+        const str = localStorage.getItem(manifestStorageKey());
         if (!str) return null;
         const parsed = JSON.parse(str);
         if (parsed && parsed.v === 1 && Array.isArray(parsed.items)) {
-            return parsed;
+            const identity = manifestIdentity();
+            const items = parsed.items.filter(item => {
+                if (!item) return false;
+                if (typeof isClientTaskRefOwnedBy === 'function'
+                    && item.tenant && item.account
+                    && !isClientTaskRefOwnedBy(item, identity)) return false;
+                return true;
+            });
+            if (items.length === 0) return null;
+            return Object.assign({}, parsed, { items: items });
         }
         return null;
     } catch (e) {
@@ -88,60 +120,171 @@ function loadManifest() {
 
 function clearManifest() {
     try {
-        localStorage.removeItem(MANIFEST_KEY);
+        localStorage.removeItem(manifestStorageKey());
     } catch (e) {}
 }
 
-async function restoreBatchFromManifest() {
-    const manifest = loadManifest();
-    if (!manifest || !manifest.items || manifest.items.length === 0) return;
-
-    const items = manifest.items.filter(item => item && item.receiptId);
-    if (items.length === 0) {
-        clearManifest();
-        return;
+// U04：从持久化引用重建照片对象。detail 取不到（慢加载/断网/无 AI）时
+// 仍保留 ref 里的服务端 image_url 与原状态，保证原图不丢。
+function buildRestoredPhotoFromRef(item, detail) {
+    if (!item) return null;
+    if (typeof isClientTaskRefOwnedBy === 'function'
+        && item.tenant && item.account
+        && !isClientTaskRefOwnedBy(item)) return null;
+    const refStatus = item.status || 'error';
+    const photo = {
+        localId: item.localId || `local-restored-${item.receiptId || item.jobId || item.requestKey || Date.now()}`,
+        fileName: item.fileName || `receipt_${item.receiptId || 'pending'}.jpg`,
+        file: null,
+        originalFile: null,
+        objectUrl: null,
+        croppedObjectUrl: null,
+        cropped: false,
+        status: refStatus,
+        receiptId: item.receiptId != null ? item.receiptId : null,
+        jobId: item.jobId || null,
+        requestKey: item.requestKey || null,
+        imageUrl: item.imageUrl || null,
+        data: null,
+        errorMsg: null,
+        pollToken: { cancelled: false },
+    };
+    if (detail) {
+        photo.status = mapServerStatus(detail.status);
+        if (detail.id != null || detail.receipt_id != null) {
+            photo.receiptId = detail.id != null ? detail.id : detail.receipt_id;
+        }
+        if (detail.image_url) photo.imageUrl = detail.image_url;
+        photo.data = detail;
+        if (detail.status === 'error') {
+            photo.errorMsg = (detail.ai_prefill && detail.ai_prefill.ocr_error) || '识别失败';
+        }
+        return photo;
     }
+    if (photo.status === 'uploading' && photo.jobId) {
+        // 处理中：继续轮询 job；原图用 ref 中的 image_url 保底展示
+        return photo;
+    }
+    // 待复核/失败但详情没取回：保留图，落可重试的失败态（不展示空表单）
+    photo.status = 'error';
+    photo.errorMsg = '刷新后未能取回这张单的最新内容，请点「重试」重新读取（原图已保留）';
+    return photo;
+}
+
+// 当前身份的可恢复批次条目；manifest 缺失时回落到 client task ref 队列
+function loadRestorableManifestItems() {
+    const manifest = loadManifest();
+    if (manifest && Array.isArray(manifest.items) && manifest.items.length > 0) {
+        return manifest.items;
+    }
+    if (typeof listRestorableClientTaskRefs === 'function') {
+        return listRestorableClientTaskRefs().map(ref => ({
+            localId: `local-ref-${ref.receipt_id || ref.job_id || ref.request_key}`,
+            fileName: ref.file_name || `receipt_${ref.receipt_id || 'pending'}.jpg`,
+            receiptId: ref.receipt_id != null ? ref.receipt_id : null,
+            jobId: ref.job_id || null,
+            requestKey: ref.request_key || null,
+            imageUrl: ref.image_url || null,
+            status: ref.status || 'error',
+            tenant: ref.tenant,
+            account: ref.account,
+        }));
+    }
+    return [];
+}
+
+// U04：身份确认/切换（登录成功、同页重登/换号）后的恢复编排。
+// 刷新时由 main.js 在身份探测完成后调用；登录成功由 common.js 的
+// probeAuthAndEnter 以 force=true 调用——先解除 403 会话隔离，再按当前身份键
+// 恢复队列快照与批次 manifest。身份键变化或强制重登时清空内存中的上一账号
+// 照片，避免同页换号后旧草稿继续显示（localStorage 已按身份分桶）。
+let _clientTasksRestoreKey = null;
+let _clientTasksRestorePromise = null;
+
+function clearInMemoryBatchForIdentitySwitch() {
+    if (typeof BatchUploader === 'undefined' || !BatchUploader) return;
+    BatchUploader.photos = [];
+    BatchUploader.activeIndex = 0;
+    BatchUploader.siderOpen = false;
+    if (BatchUploader.selected && BatchUploader.selected.clear) BatchUploader.selected.clear();
+    if (typeof updateSiderVisibility === 'function') updateSiderVisibility();
+    const toggleCount = document.getElementById('siderToggleCount');
+    if (toggleCount) toggleCount.innerText = '0';
+}
+
+function restoreClientTasksForCurrentIdentity(force) {
+    const identity = manifestIdentity();
+    const key = identity.tenant + '\u0000' + identity.account;
+    const previousKey = _clientTasksRestoreKey;
+    if (!force && _clientTasksRestoreKey === key && _clientTasksRestorePromise) {
+        return _clientTasksRestorePromise;
+    }
+    _clientTasksRestoreKey = key;
+    if (typeof resetClientTasksIsolation === 'function') resetClientTasksIsolation();
+    if (force || (previousKey !== null && previousKey !== key)) {
+        clearInMemoryBatchForIdentitySwitch();
+    }
+    if (typeof restoreWorkbenchQueueSnapshot === 'function') restoreWorkbenchQueueSnapshot();
+    _clientTasksRestorePromise = Promise.resolve(restoreBatchFromManifest());
+    return _clientTasksRestorePromise;
+}
+
+async function restoreBatchFromManifest() {
+    const items = loadRestorableManifestItems();
+    if (!items || items.length === 0) return;
+    const manifest = loadManifest() || {};
+    if (typeof isClientTasksIsolated === 'function' && isClientTasksIsolated()) return;
 
     const restoredPhotos = [];
-    let isUnauthorized = false;
+    let isAuthInvalid = false;
 
     for (const item of items) {
         try {
-            const res = await apiFetch(`/api/receipt/${item.receiptId}`);
-            if (res.status === 401) {
-                isUnauthorized = true;
-                break;
+            if (item.receiptId) {
+                const res = await apiFetch(`/api/receipt/${item.receiptId}`);
+                if (res.status === 401 || res.status === 403) {
+                    isAuthInvalid = true;
+                    break;
+                }
+                if (res.status === 404) {
+                    // 已删除/无权访问的单据：从恢复队列与任务引用中剔除，不再反复找回
+                    if (typeof removeClientTaskRef === 'function') {
+                        removeClientTaskRef({
+                            receipt_id: item.receiptId,
+                            request_key: item.requestKey || null,
+                            job_id: item.jobId || null,
+                        });
+                    }
+                    continue;
+                }
+                if (res.ok) {
+                    const ret = await res.json();
+                    const detail = (ret && ret.status === 'success') ? ret.data : null;
+                    const photo = buildRestoredPhotoFromRef(item, detail);
+                    if (photo) {
+                        if (detail && detail.supplier_name && !item.fileName) {
+                            photo.fileName = `${detail.supplier_name}.jpg`;
+                        }
+                        restoredPhotos.push(photo);
+                    }
+                    continue;
+                }
             }
-            if (!res.ok) continue; // 404 等忽略
-            const ret = await res.json();
-            if (ret.status === 'success' && ret.data) {
-                const detail = ret.data;
-                const serverStatus = mapServerStatus(detail.status);
-                const photo = {
-                    localId: item.localId || `local-restored-${item.receiptId}`,
-                    fileName: item.fileName || (detail.supplier_name ? `${detail.supplier_name}.jpg` : `单据 #${item.receiptId}.jpg`),
-                    file: null,
-                    originalFile: null,
-                    objectUrl: null,
-                    croppedObjectUrl: null,
-                    cropped: false,
-                    status: serverStatus,
-                    receiptId: ret.receipt_id || item.receiptId,
-                    jobId: item.jobId || null,
-                    imageUrl: ret.image_url || null,
-                    data: detail,
-                    errorMsg: detail.status === 'error' ? (detail.ai_prefill?.ocr_error || '识别失败') : null,
-                    pollToken: { cancelled: false }
-                };
-                restoredPhotos.push(photo);
-            }
+            // 只有 job/request_key，或详情暂不可用（慢加载/断网/无 AI）：用 ref 重建并保图
+            const photo = buildRestoredPhotoFromRef(item, null);
+            if (photo) restoredPhotos.push(photo);
         } catch (e) {
-            console.warn(`恢复单据 #${item.receiptId} 异常:`, e);
+            console.warn('恢复单据引用异常:', e);
+            const photo = buildRestoredPhotoFromRef(item, null);
+            if (photo) restoredPhotos.push(photo);
         }
     }
 
-    if (isUnauthorized) {
-        clearManifest();
+    if (isAuthInvalid) {
+        // U04：403/401 失效——manifest/client ref 原样保留（当前账号的非敏感草稿不丢），
+        // 本次会话隔离不恢复；重新登录后仍按当前身份键再恢复，不会流向其他账号。
+        if (typeof markClientTasksIsolated === 'function') markClientTasksIsolated();
+        showToast('登录状态已失效，未完成的本地草稿已保留，重新登录后再恢复', 'warning');
         return;
     }
 
@@ -180,7 +323,9 @@ async function restoreBatchFromManifest() {
                     if (settled.status === 'success' || settled.status === 'parsed') {
                         photo.status = 'parsed';
                         photo.data = settled.data;
+                        if (settled.receipt_id) photo.receiptId = settled.receipt_id;
                         if (settled.image_url) photo.imageUrl = settled.image_url;
+                        if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'parsed');
                         renderSider();
                         if (curIdx >= 0) autoSaveParsedPhoto(curIdx);
                         if (curIdx >= 0 && BatchUploader.activeIndex === curIdx) {
@@ -189,6 +334,8 @@ async function restoreBatchFromManifest() {
                     } else if (settled.status === 'error') {
                         photo.status = 'error';
                         photo.errorMsg = settled.msg || '识别失败';
+                        if (settled.receipt_id) photo.receiptId = settled.receipt_id;
+                        if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'error');
                         renderSider();
                         if (curIdx >= 0 && BatchUploader.activeIndex === curIdx) {
                             showErrorCard(photo.errorMsg, photo.receiptId);
@@ -205,6 +352,7 @@ async function restoreBatchFromManifest() {
             } else {
                 photo.status = 'error';
                 photo.errorMsg = '解析打断，请点击重试';
+                if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'error');
             }
         } else if (photo.status === 'error') {
             unfinishedCount++;
@@ -516,6 +664,19 @@ function uploadSinglePhoto(idx) {
     }
 }
 
+// U04：逐张操作键——同文件网络重试复用同一 key（服务端回放同 receipt_id）；
+// 换文件（重新拍照/裁剪/旋转烤入）即换 key，避免同 key 异内容触发 409。
+function ensurePhotoUploadRequestKey(photo) {
+    if (!photo) return null;
+    if (!photo._uploadRequestKey || (photo._requestKeyFile && photo._requestKeyFile !== photo.file)) {
+        photo._uploadRequestKey = 'ui-b-' + Date.now() + '-'
+            + Math.random().toString(36).slice(2, 10);
+    }
+    photo._requestKeyFile = photo.file;
+    photo.requestKey = photo._uploadRequestKey;
+    return photo._uploadRequestKey;
+}
+
 function uploadBatch(batchPhotos) {
     // Wave 3（T9）：批量解析改为逐张 async=true Job + 轮询——后端管线进程内锁串行执行，
     // 前端每完成一张即渐进提示（D32 逻辑不变），无需等待整批同步返回。
@@ -545,12 +706,19 @@ function uploadBatch(batchPhotos) {
         const formData = new FormData();
         formData.append('receipt', photo.file);
         formData.append('force', photo.force ? 'true' : 'false');
+        // U04：逐张任务各自持有 request_key——同 key 网络重试回放同 receipt_id，
+        // 不同文件各用各的 key（不自动合并）；刷新后可凭 ref 续轮询/重试。
+        const batchKey = ensurePhotoUploadRequestKey(photo);
+        if (!photo.fileName && photo.file) photo.fileName = photo.file.name;
+        if (batchKey) formData.append('request_key', batchKey);
 
         apiFetch(`/api/upload?treatment=${useTreatment}&async=true&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(ret => {
                 if (ret.status === 'queued') {
                     if (ret.receipt_id) photo.receiptId = ret.receipt_id;
+                    photo.jobId = ret.job_id || null;
+                    if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'uploading');
                     applyServerPreviewIfAny(photo, ret.image_url);
                     offerDuplicateAction(ret);
                     pollReceiptJob(ret.job_id, settled => settle(photo, settled), {
@@ -590,6 +758,7 @@ function uploadBatch(batchPhotos) {
             photo.errorMsg = null;
             captureResultVersion(ret);   // P1-13: version 回写 photo.data
             if (Array.isArray(ret.quality_warnings)) photo.qualityWarnings = ret.quality_warnings;
+            if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'parsed');
             renderSider();
             // 解析完成即自动写库（无“全部保存”入口）
             autoSaveParsedPhoto(idx);
@@ -611,6 +780,7 @@ function uploadBatch(batchPhotos) {
             // P0-1 极模糊批量路径：留存 quality_warnings 供切换照片时置顶
             if (Array.isArray(ret.quality_warnings)) photo.qualityWarnings = ret.quality_warnings;
             else if (ret && ret.code === 'IMAGE_QUALITY_ERROR') photo.qualityWarnings = ['image_blur'];
+            if (typeof updateClientTaskRefForPhoto === 'function') updateClientTaskRefForPhoto(photo, 'error');
             renderSider();
             if (BatchUploader.activeIndex === idx) {
                 setMainPreview(photo);
@@ -1085,6 +1255,14 @@ function removePhotoFromSider(idx) {
     // 释放 object URL
     try { URL.revokeObjectURL(photo.objectUrl); } catch(e) {}
     if (photo.pollToken) photo.pollToken.cancelled = true;   // Q28: 作废在途轮询（P1-14 丢弃结果）
+    // U04：移除任务引用，避免刷新后把已删除的照片又恢复出来
+    if (typeof removeClientTaskRef === 'function') {
+        removeClientTaskRef({
+            receipt_id: photo.receiptId,
+            request_key: photo.requestKey || photo._uploadRequestKey || null,
+            job_id: photo.jobId || null,
+        });
+    }
 
     // 删除数组项 + 修正 activeIndex
     BatchUploader.photos.splice(idx, 1);
@@ -1270,6 +1448,10 @@ function retryPhotoFromSider(idx) {
         const formData = new FormData();
         formData.append('files', photo.file);
         formData.append('force', photo.force ? 'true' : 'false');
+        // U04：操作幂等键——同文件对象网络重试复用同 key（服务端回放同 receipt_id）；
+        // 换文件即换 key（避免同 key 异内容 409）
+        const retryKey = ensurePhotoUploadRequestKey(photo);
+        if (retryKey) formData.append('request_keys', retryKey);
         showLoadingCard();
         startBatchTimer();
         apiFetch(`/api/upload_batch?treatment=${useTreatment}&force=${photo.force ? 'true' : 'false'}`, { method: 'POST', body: formData })

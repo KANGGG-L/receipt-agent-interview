@@ -197,6 +197,8 @@ function computePayStats(receipts) {
 function loadFinancePanel() {
     // 店员不发财务域请求（payments/reconciliation 为 owner 域），红点/横幅提醒属老板视角
     if (isStaffRoleNow()) return;
+    // U03：信用工作台（owner 域；独立加载不阻塞主面板）
+    if (typeof loadCreditWorkbench === 'function') loadCreditWorkbench();
     // 全局视图：供应商 + 应付清单 + 全量单据并拉（契约①③）
     Promise.all([
         apiFetch('/api/suppliers').then(res => res.json()),
@@ -738,6 +740,23 @@ function openImportStatementModal() {
     }
     openModalById('importStatementModal');
 }
+
+// U03：月结对账单专用入口（owner；最小可见入口，复用既有 import-statement 流程）
+function openMonthlyStatementEntry() {
+    const allowed = (typeof financeCanOperate === 'function')
+        ? financeCanOperate() : isOwnerRoleNow();
+    if (!allowed) {
+        showToast('权限不足：只有老板可以处理供应商对账单（月结）。', 'error');
+        return;
+    }
+    const supplierId = _selectedFinanceSupplierId();
+    if (!supplierId) {
+        showToast('请先选择供应商，再打开月结对账单。', 'warning');
+        return;
+    }
+    openImportStatementModal();
+}
+window.openMonthlyStatementEntry = openMonthlyStatementEntry;
 
 function _collectImportStatementLines() {
     const rows = document.querySelectorAll('#importStatementLines tr.import-statement-line');

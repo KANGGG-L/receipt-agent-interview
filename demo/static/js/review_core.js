@@ -2755,6 +2755,14 @@ async function discardCurrentReceipt() {
         if (idx >= 0) {
             if (photo.pollToken) photo.pollToken.cancelled = true;
             try { URL.revokeObjectURL(photo.objectUrl); } catch(e) {}
+            // U04：放弃单据 → 移除任务引用，刷新后不再恢复这张已放弃的单
+            if (typeof removeClientTaskRef === 'function') {
+                removeClientTaskRef({
+                    receipt_id: photo.receiptId,
+                    request_key: photo.requestKey || photo._uploadRequestKey || null,
+                    job_id: photo.jobId || null,
+                });
+            }
             BatchUploader.photos.splice(idx, 1);
 
             if (BatchUploader.photos.length === 0) {
@@ -3381,7 +3389,12 @@ function submitSaveEdited(openNext = false) {
         }
 
         // 清除本地草稿缓存
-        try { localStorage.removeItem(`receipt_draft_${currentReceiptId}`); } catch(e){}
+        try {
+            const draftKey = (typeof reviewDraftStorageKey === 'function')
+                ? reviewDraftStorageKey(currentReceiptId)
+                : `receipt_draft_${currentReceiptId}`;
+            localStorage.removeItem(draftKey);
+        } catch(e){}
 
         // 立即同步内存中的队列条目状态与表单属性
         if (Array.isArray(cachedWorkbenchQueueData)) {

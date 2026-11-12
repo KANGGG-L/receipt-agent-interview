@@ -81,6 +81,11 @@
                     <span class="icon"></span>
                     <span>设置</span>
                 </button>
+                <!-- S09：计费入口按 billing capability 单独显示（餐厅 owner 不自动获得） -->
+                <button class="sidebar-btn billing-only" id="billingNavBtn" data-target="tab-billing" data-title="订阅与账单" style="display:none">
+                    <span class="icon"></span>
+                    <span>订阅与账单</span>
+                </button>
                 <div class="sidebar-section-title admin-only" id="adminSidebarSection" data-i18n="nav.adminSection">系统与算法工程</div>
                 <button class="sidebar-btn admin-only" id="adminEngineBtn" data-target="tab-engine" data-title="系统与引擎配置" data-i18n-attr="data-title:nav.engine">
                     <span class="icon"></span>
@@ -1324,7 +1329,7 @@
                     </div>
 
                     <!-- Wave 1 应付清单（03 章）：跨供应商全局视图 + 支付登记与月结对账（沿用 Wave 2） -->
-                    <div class="card csp-s-172" id="payablesCard" data-arc-pane="payables">
+                    <div class="card owner-only csp-s-172" id="payablesCard" data-arc-pane="payables">
                         <div class="card-title">
                             <span> 应付清单与对账</span>
                             <div class="csp-s-81">
@@ -1360,6 +1365,8 @@
                         <!-- 顶部汇总：未付总额 / 逾期数 / 7 天内到期数 -->
                         <div id="financeSummary" class="csp-s-175"></div>
 
+                        <!-- U03：供应商信用工作台（owner 显式抵扣/退款；D-03：不自动抵） -->
+                        <div id="creditWorkbenchArea" class="csp-s-176b"></div>
                         <!-- 应付清单：默认列全部供应商挂账单（03 章二） -->
                         <div id="payablesArea" class="csp-s-176">
                             <div class="table-container csp-s-177">
@@ -1388,6 +1395,7 @@
                             <button class="btn btn-primary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;openPaymentModal&quot;,&quot;a&quot;:[]}]"> 登记支付</button>
                             <button class="btn btn-secondary" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;openReconModal&quot;,&quot;a&quot;:[]}]"> 发起对账</button>
                             <button type="button" id="btnImportStatement" class="btn btn-secondary owner-only csp-s-180" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;openImportStatementModal&quot;,&quot;a&quot;:[]}]">导入对账单</button>
+                            <button type="button" id="btnMonthlyStatement" class="btn btn-secondary owner-only csp-s-180" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;openMonthlyStatementEntry&quot;,&quot;a&quot;:[]}]">月结对账单</button>
                         </div>
 
                         <!-- 支付履历 -->
@@ -2772,8 +2780,8 @@
                                 <div class="card-title csp-s-313"><span>LLM 抽取（把人工修正沉淀成候选事实）</span></div>
                                 <div class="form-group">
                                     <label class="csp-s-314">
-                                        <input type="checkbox" id="setMemoryExtractEnabled" class="csp-s-315">
-                                        <span>启用 LLM 抽取：打开后，用户在复核时修正过的字段会被抽成候选事实，进入「待确认队列」（不会直接生效，需人工确认后才写入记忆）。默认关闭：打开后每张有修正的单据在保存/入账时会多发一次模型调用（增加成本与耗时）；抽取失败一律不阻断保存。</span>
+                                        <input type="checkbox" id="setMemoryExtractEnabled" class="form-check-input csp-s-315">
+                                        <span>启用 LLM 抽取：用户在复核时修正过的字段会被抽成候选事实，进入「待确认队列」（不会直接生效，需人工确认后才写入记忆）。默认开启：有修正的单据在保存/入账时自动抽取并记入真实成本；抽取失败一律不阻断保存。管理台可随时在此一键关闭。</span>
                                     </label>
                                 </div>
 
@@ -2782,6 +2790,18 @@
                                     <div class="card-title"><span>供应商记忆度量看板（只读）</span></div>
                                     <div id="memoryMetricsPanel">
                                         <div class="csp-s-317">度量加载中...</div>
+                                    </div>
+                                </div>
+
+                                <!-- M05 运维可观测：技术 admin 看错误/重试，owner 看商业记忆候选/编辑 -->
+                                <div class="card csp-s-316">
+                                    <div class="card-title csp-s-318">
+                                        <span>运维可观测（按角色分离）</span>
+                                        <button type="button" class="btn btn-secondary csp-s-319" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;loadOperationsPanel&quot;,&quot;a&quot;:[]}]">刷新</button>
+                                        <button type="button" class="btn btn-secondary csp-s-319" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;resetOperationsBaseline&quot;,&quot;a&quot;:[]}]">重置进程基线</button>
+                                    </div>
+                                    <div id="operationsPanel">
+                                        <div class="csp-s-317">加载中...</div>
                                     </div>
                                 </div>
 
@@ -3420,6 +3440,16 @@
                                 <div class="csp-s-446">
                                     确权闭环：低置信回流 / 灰测样本进入候选池 → 在 GT 抽检确权台人工核对 → 晋升为黄金基准集样本 → 供基准回归与评测消费。<br>
                                     基准集确权进度：<span id="gtEvalsetStats" class="csp-s-447">加载中</span>
+                                </div>
+                            </div>
+                            <!-- M05 owner 商业视图：记忆候选与编辑（技术 admin 不可见；非 owner 由 JS 隐藏） -->
+                            <div class="card" id="ownerOperationsCard">
+                                <div class="card-title csp-s-318">
+                                    <span>商业记忆候选与近期编辑（owner）</span>
+                                    <button type="button" class="btn btn-secondary csp-s-319" data-csp-click="[{&quot;op&quot;:&quot;call&quot;,&quot;f&quot;:&quot;loadOwnerOperationsPanel&quot;,&quot;a&quot;:[]}]">刷新</button>
+                                </div>
+                                <div id="ownerOperationsPanel">
+                                    <div class="csp-s-317">加载中...</div>
                                 </div>
                             </div>
                             <!-- 黄金基准集看板板块（动态样本库，可增删样本） -->
@@ -5053,6 +5083,75 @@
         </div>
     </div>
 
+    <!-- S09：订阅与账单（billing capability 专属；价格占位一律 $***） -->
+    <section id="tab-billing" class="tab-content">
+        <div class="page-shell">
+            <h2>订阅与账单</h2>
+            <div id="billingStatusCard" class="billing-status-card">正在加载订阅状态…</div>
+            <div id="billingPermissionMsg" class="hide"></div>
+
+            <div class="billing-block">
+                <h3>试用</h3>
+                <div class="form-group">
+                    <label for="billingCouponCode">试用券编号</label>
+                    <input id="billingCouponCode" class="form-control" placeholder="输入平台发放的试用券编号">
+                </div>
+                <button id="btnRedeemCoupon" class="btn btn-primary">兑换试用</button>
+            </div>
+
+            <div class="billing-block">
+                <h3>套餐与续费</h3>
+                <p>套餐价格：<strong id="billingPriceDisplay">$***</strong>（价格未签发时不展示数值）</p>
+                <button id="btnCreateCheckout" class="btn btn-primary">续费 / 升级套餐</button>
+                <button id="btnCancelSubscription" class="btn btn-secondary">取消订阅</button>
+            </div>
+
+            <div class="billing-block">
+                <h3>订单查询</h3>
+                <div class="form-group">
+                    <label for="billingOrderNo">订单号</label>
+                    <input id="billingOrderNo" class="form-control" placeholder="如 ORD-...">
+                </div>
+                <button id="btnLookupOrder" class="btn btn-secondary">查询订单</button>
+                <div id="billingOrderResult" class="billing-result"></div>
+            </div>
+
+            <div class="billing-block">
+                <h3>人工登记收款（首期无支付网关）</h3>
+                <div class="form-group">
+                    <label for="billingManualAmount">金额（分）</label>
+                    <input id="billingManualAmount" class="form-control" inputmode="numeric" placeholder="与订单金额一致">
+                </div>
+                <div class="form-group">
+                    <label for="billingManualCurrency">币种</label>
+                    <input id="billingManualCurrency" class="form-control" value="HKD" placeholder="如 HKD">
+                </div>
+                <div class="form-group">
+                    <label for="billingManualInvoice">发票号</label>
+                    <input id="billingManualInvoice" class="form-control" placeholder="人工收款凭证编号">
+                </div>
+                <button id="btnManualPayment" class="btn btn-primary">登记收款</button>
+            </div>
+
+            <div class="billing-block">
+                <h3>退款</h3>
+                <div class="form-group">
+                    <label for="billingRefundAmount">退款金额（分）</label>
+                    <input id="billingRefundAmount" class="form-control" inputmode="numeric" placeholder="不得超过该笔已付金额">
+                </div>
+                <div class="form-group">
+                    <label for="billingRefundReason">申请原因</label>
+                    <input id="billingRefundReason" class="form-control" placeholder="说明退款原因">
+                </div>
+                <button id="btnRequestRefund" class="btn btn-secondary">提交退款申请</button>
+                <button id="btnRefreshRefunds" class="btn btn-secondary">刷新退款状态</button>
+                <div id="billingRefundList" class="billing-result"></div>
+            </div>
+
+            <p class="billing-history-note">订阅到期或欠费只影响新的 AI 识别；历史单据、手工录入、导出与对账入口保持可用，取消订阅不会删除历史数据。</p>
+        </div>
+    </section>
+
     <!-- 全局轻量 Toast 提示容器 (渐进提示/轻提示，不打断操作) -->
     <div id="toastContainer" class="toast-container" role="status" aria-live="polite" aria-atomic="false"></div>
 
@@ -5082,5 +5181,6 @@
     <script src="/static/js/export_center.js?v=20261011_i18n"></script>
     <script src="/static/js/settings.js?v=20261012_f1b"></script>
     <script src="/static/js/finance.js?v=20261012_f1b"></script>
+    <script src="/static/js/billing.js?v=20261026_s09"></script>
 </body>
 </html>
