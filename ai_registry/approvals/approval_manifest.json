@@ -1,0 +1,54 @@
+{
+  "schema_version": "v1",
+  "description": "资产准入批准清单：按 (scene, version) 记录是否准入、依据与证据。真实 meta 报告缺凭据时 meta_report_status 必须留 blocked，不得伪造 trustworthy。资产 metadata 中的 status/admission 字样不被本清单改写。",
+  "approvals": [
+    {
+      "scene": "extract",
+      "version": "v1_2_0_sku_clean",
+      "admitted": true,
+      "status": "admitted_with_caveat",
+      "approved_by": "existing_metadata_admission(S2-24)",
+      "approved_at": "2026-08-21",
+      "basis": "ai_registry/prompts/extract/metadata.json 的 versions.v1_2_0_sku_clean.admission（黄金样本 accuracy 98.2 / CER 1.8，达到 >=95 / <=4.0 门槛）",
+      "evidence": {
+        "meta_report": null,
+        "meta_report_status": "blocked",
+        "blocked_reason": "真实 audit 元评测（run_meta_eval --judge audit）尚未取得 evaluator_trustworthy=true 的报告；缺凭据时留 blocked，不伪造",
+        "consumer_ids": [
+          "extract_chain"
+        ]
+      },
+      "caveat": "沿用既有已批准资产，不因 meta 报告 blocked 而重新打开生产注入；补齐真实报告后才算完整准入。"
+    },
+    {
+      "scene": "memory",
+      "version": "v1_1_0_extract",
+      "admitted": false,
+      "status": "blocked",
+      "blocked_reason": "版本在 metadata 中仍为 draft，且无人工审批与真实 audit 元评测报告；不得以 metadata 字样冒充准入",
+      "evidence": {
+        "meta_report": null,
+        "meta_report_status": "blocked",
+        "blocked_reason": "缺真实 meta 报告/人工审批凭据",
+        "consumer_ids": [
+          "memory_extract"
+        ]
+      }
+    },
+    {
+      "scene": "memory",
+      "version": "v1_1_0_consolidate",
+      "admitted": false,
+      "status": "blocked",
+      "blocked_reason": "版本在 metadata 中仍为 draft；按需路径也须批准后才可在生产默认注入",
+      "evidence": {
+        "meta_report": null,
+        "meta_report_status": "blocked",
+        "blocked_reason": "缺真实 meta 报告/人工审批凭据",
+        "consumer_ids": [
+          "memory_consolidate"
+        ]
+      }
+    }
+  ]
+}

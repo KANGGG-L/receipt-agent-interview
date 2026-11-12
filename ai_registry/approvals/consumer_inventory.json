@@ -1,0 +1,42 @@
+{
+  "schema_version": "v1",
+  "description": "AI 资产消费方清单：谁在生产/按需消费哪个钉住版本；准入证据见 approval_manifest.json（本文件不携带任何 admitted 字样）。",
+  "consumers": [
+    {
+      "consumer_id": "extract_chain",
+      "asset_type": "prompt",
+      "scene": "extract",
+      "pinned_version": "v1_2_0_sku_clean",
+      "mode": "production",
+      "paths": [
+        "demo/app/chains/extract_chain.py"
+      ],
+      "manual_path": "识别失败时仍可人工录入/复核保存；手工路径不依赖该提示词",
+      "notes": "线上准入版本：既有 metadata admission（S2-24）已批准，真实 meta 报告仍 blocked（见 manifest evidence）。"
+    },
+    {
+      "consumer_id": "memory_extract",
+      "asset_type": "prompt",
+      "scene": "memory",
+      "pinned_version": "v1_1_0_extract",
+      "mode": "production",
+      "paths": [
+        "demo/app/services/memory_extract.py"
+      ],
+      "manual_path": "save_edited / approve 的人工保存与审批始终可用；抽取产物只进 pending 人审队列，不是主链路",
+      "notes": "版本在 metadata 仍为 draft 且无人工审批/真实 audit 元评测报告：生产消费被准入闸拒绝，手工路径保留。"
+    },
+    {
+      "consumer_id": "memory_consolidate",
+      "asset_type": "prompt",
+      "scene": "memory",
+      "pinned_version": "v1_1_0_consolidate",
+      "mode": "on_demand",
+      "paths": [
+        "demo/app/services/memory_consolidate.py"
+      ],
+      "manual_path": "规则判定与人工审批不依赖该提示词；仅在显式注入 llm 时才使用",
+      "notes": "按需/可注入路径，不是生产默认注入；同样按钉住版本加载。"
+    }
+  ]
+}
