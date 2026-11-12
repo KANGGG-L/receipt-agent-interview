@@ -253,6 +253,13 @@ def start() -> bool:
     _thread.start()
     with _state_lock:
         _state["scheduler_running"] = True
+    # M03：持久任务 worker（独立线程；自身再做禁用/幂等判定）
+    try:
+        from app import background_tasks
+        background_tasks.start_worker()
+    except Exception as e:  # noqa: BLE001 worker 起不来不拖垮 maintenance 调度器
+        import logging
+        logging.getLogger("maintenance").error("[M03] durable task worker 启动失败: %s", e)
     return True
 
 

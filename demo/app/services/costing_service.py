@@ -38,8 +38,15 @@ class CostingService:
         unit: str,
         date: Optional[str] = None,
         receipt_id: Optional[int] = None,
+        line_uuid: Optional[str] = None,
     ):
-        """记录入库批次（写入 inventory_batches 表）。"""
+        """记录入库批次（写入 inventory_batches 表）。
+
+        L02 幂等键分层（ADR02 / v9 line_batch_source）：
+        - 带 line_uuid：按 (receipt_id, line_uuid) 幂等——同单同 SKU 多行各建独立批次
+          （关闭 Q02「第二行被吞」反例）；重复提交返回同批次。
+        - 无 line_uuid（历史调用方/盘点/手动入库）：保持旧 (receipt_id, sku_id) 幂等不变。
+        """
         if session is None:
             raise ValueError("session is required")
         if not sku_id or qty <= 0:
@@ -50,18 +57,24 @@ class CostingService:
         unit_cost = round(float(unit_price), 4)
         initial_qty = round(float(qty), 4)
 
-        # 检查是否已存在同收据同 SKU 的批次（保证幂等）
         if receipt_id is not None:
-            existing = session.query(db._InventoryBatchRow).filter_by(
-                receipt_id=int(receipt_id),
-                sku_id=int(sku_id),
-            ).first()
+            if line_uuid:
+                existing = session.query(db._InventoryBatchRow).filter_by(
+                    receipt_id=int(receipt_id),
+                    line_uuid=str(line_uuid),
+                ).first()
+            else:
+                existing = session.query(db._InventoryBatchRow).filter_by(
+                    receipt_id=int(receipt_id),
+                    sku_id=int(sku_id),
+                ).first()
             if existing:
                 return existing
 
         batch = db._InventoryBatchRow(
             sku_id=int(sku_id),
             receipt_id=int(receipt_id) if receipt_id is not None else None,
+            line_uuid=str(line_uuid) if line_uuid else None,
             inbound_date=inbound_date,
             unit_cost=unit_cost,
             initial_qty=initial_qty,

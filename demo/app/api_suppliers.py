@@ -2,6 +2,7 @@
 """供应商端点：列表/搜索/CRUD/合并/删除 + 部门 CRUD + 成本报表。"""
 
 import logging
+import re
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -89,6 +90,17 @@ class SupplierBody(BaseModel):
     settlement_pref: Optional[str] = None
     payment_terms_days: Optional[int] = None
     active: Optional[int] = None
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value):
+        if value is not None:
+            s = str(value)
+            if re.search(r'[\x00-\x1f\x7f-\x9f]', s):
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+            if len(s) > 200:
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+        return value
 
     @field_validator("settlement_pref")
     @classmethod
@@ -234,6 +246,19 @@ def _actor(request: Request) -> str:
 class MergeBody(BaseModel):
     keep_id: int
     drop_id: int
+    primary_name: Optional[str] = None
+    alias_name: Optional[str] = None
+
+    @field_validator("primary_name", "alias_name")
+    @classmethod
+    def _validate_merge_names(cls, value):
+        if value is not None:
+            s = str(value)
+            if re.search(r'[\x00-\x1f\x7f-\x9f]', s):
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+            if len(s) > 200:
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+        return value
 
 
 @router.post("/api/suppliers/merge")

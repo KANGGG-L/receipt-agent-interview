@@ -30,6 +30,7 @@ from app import web_assets
 from app.auth import EarlyAuthMiddleware
 from app.api_admin import router as admin_router
 from app.api_auth import router as auth_router
+from app.api_billing import router as billing_router
 from app.api_dishes import router as dishes_router
 from app.api_evalset import router as evalset_router
 from app.api_export import router as export_router
@@ -57,6 +58,7 @@ app.include_router(evalset_router)
 app.include_router(memory_router)
 app.include_router(export_router)
 app.include_router(settings_router)
+app.include_router(billing_router)
 
 
 @app.exception_handler(DomainError)

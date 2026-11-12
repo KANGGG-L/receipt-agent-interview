@@ -181,19 +181,24 @@ def recovery_summary(
     s = db.get_session()
     try:
         all_rows = s.query(db._UserEventRow).all()
-        # 收集系统中存在的所有租户 ID（去重排序）
+        # I03 scope 锚定：全租户枚举仅在 resolve_tenant_filter 许可跨租户时进行
+        # （v2 下=持 technical_aggregate_read 平台能力）；锚定到单租户的调用者
+        # 只能看到自己的租户标识，不得借本端点枚举系统租户清单。
         found_tenants = set()
-        for r in all_rows:
-            if getattr(r, "tenant_id", None):
-                found_tenants.add(r.tenant_id)
-        try:
-            for r in s.query(db._ReceiptRow.tenant_id).distinct():
-                if r[0]:
-                    found_tenants.add(r[0])
-        except Exception:
-            pass
-        if not found_tenants:
-            found_tenants.add("default")
+        if effective_tenant:
+            found_tenants.add(effective_tenant)
+        else:
+            for r in all_rows:
+                if getattr(r, "tenant_id", None):
+                    found_tenants.add(r.tenant_id)
+            try:
+                for r in s.query(db._ReceiptRow.tenant_id).distinct():
+                    if r[0]:
+                        found_tenants.add(r[0])
+            except Exception:
+                pass
+            if not found_tenants:
+                found_tenants.add("default")
         available_tenants = sorted(list(found_tenants))
 
         # 按租户过滤

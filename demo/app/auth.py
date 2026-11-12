@@ -241,6 +241,12 @@ def parse_token_full(token: str):
     why 从右侧切分：email 本身含点（xx@demo.hk），role/exp/tenant/jti 都不含点，
     故 rsplit(".", 4) 从右侧切四段可把点安全地留在 email 段内。
     账号特征三要素（role / tenant / 存在于 ACCOUNTS）必须与签名载荷完全一致。
+
+    I01 会话版本门（IDENTITY_V2_ENABLED=1 时生效）：token 无独立 iat 载荷，
+    签发时间按 exp−TTL 推算；账号在 session_auth_version 有记录且 updated_at
+    晚于签发时间即拒（membership 撤销等场景旧 Bearer 401 重登）。同秒内签发与
+    递增的边界按「签发时间 >= updated_at 有效」处理（秒级粒度，见 identity_store）。
+    无版本记录的账号（演示账号/未撤销过）不受影响。
     """
     try:
         payload, sig = token.rsplit(".", 1)
@@ -248,6 +254,13 @@ def parse_token_full(token: str):
         if hmac.compare_digest(_sign(payload), sig) and int(exp) > int(time.time()):
             acct = ACCOUNTS.get(email)
             if acct and acct[1] == role and acct[2] == tenant and not is_revoked(jti):
+                if _identity_v2_enabled():
+                    try:
+                        from app import identity_store
+                        if not identity_store.token_version_ok(email, int(exp) - _TOKEN_TTL):
+                            return None
+                    except Exception:  # noqa: BLE001 版本存储不可用时按旧口径放行（I01 兼容合同）
+                        pass
                 return {"email": email, "role": role, "tenant": tenant,
                         "exp": int(exp), "jti": jti}
     except (ValueError, TypeError, IndexError, AttributeError):
@@ -457,14 +470,35 @@ def _forbidden_detail(cur: str, need: str) -> str:
     return f"权限不足：这个操作需要{need_label}或更高权限，你现在是{cur_label}。请联系{need_label}来操作。"
 
 
+def _identity_v2_enabled():
+    """I01 身份 v2 开关（IDENTITY_V2_ENABLED，默认关）：动态读取，便于灰度与测试。"""
+    try:
+        from app import identity_store
+        return identity_store.identity_v2_enabled()
+    except Exception:  # noqa: BLE001 开关层异常按关闭处理，保持旧行为
+        return False
+
+
 def require_role(role: str):
-    """FastAPI 依赖：请求者角色层级 >= 目标角色。403 文案人话统一（含当前角色与所需角色指引）。"""
+    """FastAPI 依赖：请求者角色层级 >= 目标角色。403 文案人话统一（含当前角色与所需角色指引）。
+
+    I01（IDENTITY_V2_ENABLED=1）：商户业务角色（owner/staff）不再走 rank 继承，
+    改由 tenant_memberships 显式判定（identity_store.has_business_role，D-02：
+    平台 admin 不默认具备商户业务角色，无 default tenant fallback）。演示态
+    （source=header，AUTH_ENABLED=0）与 admin 平台判定不受影响；开关关闭时
+    行为与历史版本逐字节一致（104 项既有测试的兼容合同）。
+    """
     def _dep(request: Request):
         account = resolve_account(request)
         cur = account.get("role")
         if cur is None:
             _reject_anonymous()
-        if ROLE_RANK.get(cur, 0) < ROLE_RANK.get(role, 99):
+        if role != "admin" and _identity_v2_enabled() and account.get("source") != "header":
+            from app import identity_store
+            if not identity_store.has_business_role(
+                    account.get("email"), account.get("tenant"), role):
+                raise HTTPException(status_code=403, detail=_forbidden_detail(cur, role))
+        elif ROLE_RANK.get(cur, 0) < ROLE_RANK.get(role, 99):
             raise HTTPException(status_code=403, detail=_forbidden_detail(cur, role))
         try:
             request.state.account = account
@@ -482,6 +516,32 @@ def require_admin(request: Request):
     if cur != "admin":
         raise HTTPException(status_code=403, detail=_forbidden_detail(cur, "admin"))
     request.state.account = account
+    return account
+
+
+def require_merchant_owner(request: Request):
+    """商户 owner 显式判定（U03 退款/抵扣写端点专用，不走 rank 继承）。
+
+    D-02：平台 admin 不默认具备商户业务角色——admin/staff 一律 403，不能被
+    `require_role("owner")` 的 rank 继承放行。I01 v2 开关开启且身份来自令牌时，
+    还要求 tenant_memberships 里存在显式 owner membership（与 identity_store
+    同口径；演示态 X-Role 身份无 membership 表，维持显式 owner 即可）。
+    """
+    account = resolve_account(request)
+    cur = account.get("role")
+    if cur is None:
+        _reject_anonymous()
+    if cur != "owner":
+        raise HTTPException(status_code=403, detail=_forbidden_detail(cur, "owner"))
+    if _identity_v2_enabled() and account.get("source") != "header":
+        from app import identity_store
+        if not identity_store.has_business_role(
+                account.get("email"), account.get("tenant"), "owner"):
+            raise HTTPException(status_code=403, detail=_forbidden_detail(cur, "owner"))
+    try:
+        request.state.account = account
+    except AttributeError:
+        pass
     return account
 
 
@@ -516,6 +576,8 @@ _WHITELIST_EXACT = frozenset({"/api/auth/login", "/api/auth/me", "/api/auth/logo
 _WHITELIST_PATTERNS = (
     re.compile(r"^/api/receipt/.+/image$"),
     re.compile(r"^/api/payment/voucher/.+$"),
+    # 计费渠道回调：无登录态，靠原 body HMAC + 时间窗 + merchant/env 绑定验签。
+    re.compile(r"^/api/billing/webhook/.+$"),
 )
 
 

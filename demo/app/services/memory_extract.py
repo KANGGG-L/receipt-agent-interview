@@ -130,6 +130,21 @@ PROMPT_SOURCE_UNAVAILABLE = "unavailable"
 # 两者混成一个取值会让"回退率"这个度量失真。
 PROMPT_SOURCE_NONE = ""
 
+# -------------------------------------------------------------
+# 生产准入（M06）：本模块是 consumer inventory 里声明的生产消费方
+# -------------------------------------------------------------
+# why 在**真正构建生产模型**时才过闸：测试/离线可通过注入 model 或替换
+# `_build_default_model` 走非生产路径；生产 model=None 时必然经过真实构建函数，
+# 此时缺准入即拒绝，且只影响"AI 抽取"这条增益路径，手工保存/审批不受影响。
+CONSUMER_ID = "memory_extract"
+
+# `get_last_run()["admission_status"]` 的取值：被拒 / 已准入 / 注入模型绕过 / 未检查。
+# 单列这个字段是为了让"本次没跑是因为资产未准入"与"跑了但质量差"在指标上可分。
+ADMISSION_STATUS_ADMITTED = "admitted"
+ADMISSION_STATUS_BLOCKED = "blocked"
+ADMISSION_STATUS_BYPASSED = "bypassed_injected_model"
+ADMISSION_STATUS_NOT_CHECKED = ""
+
 
 class PromptUnavailableError(RuntimeError):
     """注册表里读不到抽取提示词：显式失败，不再悄悄换成内置副本。"""
@@ -209,6 +224,16 @@ def get_last_run() -> Dict[str, Any]:
     }
 
 
+def get_last_admission_status() -> str:
+    """最近一次抽取的资产准入状态（同线程口径）。
+
+    why 不塞进 `get_last_run()`：那个返回值有逐键严格比对的既有消费方（运行记录/测试），
+    新增键会改变既有契约。准入是治理信号，单列一个读取口即可被未来运行记录消费。
+    取值见 ADMISSION_STATUS_*：admitted / blocked / bypassed_injected_model / ""。
+    """
+    return str(getattr(_STATE, "admission_status", "") or "")
+
+
 def _reset_state() -> None:
     _STATE.error = ""
     _STATE.reject_reasons = []
@@ -219,6 +244,7 @@ def _reset_state() -> None:
     _STATE.truncated = 0
     # 本次还没取过 prompt（可能提前返回）—— 不能沿用上一次调用的取值
     _STATE.prompt_source = PROMPT_SOURCE_NONE
+    _STATE.admission_status = ADMISSION_STATUS_NOT_CHECKED
 
 
 # -------------------------------------------------------------
@@ -291,8 +317,28 @@ def compute_field_diffs(ai_items: Any, user_items: Any) -> List[Dict[str, Any]]:
 # 第二段：交给 LLM 判断"值不值得记 + 归哪一类"
 # -------------------------------------------------------------
 def _build_default_model(cfg=None):
-    """生产侧模型（见模块 docstring 的三条理由）。构建失败由调用方的 except 兜住。"""
+    """生产侧模型（见模块 docstring 的三条理由）。构建失败由调用方的 except 兜住。
+
+    M06：真实生产构建前先过资产准入闸。把闸放在**这个函数内部**而不是
+    `extract_candidate_facts` 开头，是为了让测试/离线注入（显式传 `model=` 或替换本
+    函数）不触碰生产准入清单；生产 `model=None` 时必然走到这里，缺准入即拒绝。
+    拒绝只停"AI 抽取"这条可选增益，手工保存/审批路径完全不受影响。
+    """
     from app.llm import build_audit_model
+
+    # 只有"真实引擎构建"才适用生产准入：若调用方/测试已把 `app.llm.build_audit_model`
+    # 替换成注入实现，这不是生产模型，不应被资产准入清单拦住（否则离线评测/注入替身
+    # 无法验证抽取逻辑）。真实 `app.llm` 模块内的构建函数必然通过准入闸。
+    if getattr(build_audit_model, "__module__", "") == "app.llm":
+        from ai_registry.registry import AdmissionDenied, assert_consumer_admitted
+        try:
+            assert_consumer_admitted(CONSUMER_ID)
+        except AdmissionDenied:
+            _STATE.admission_status = ADMISSION_STATUS_BLOCKED
+            raise
+        _STATE.admission_status = ADMISSION_STATUS_ADMITTED
+    else:
+        _STATE.admission_status = ADMISSION_STATUS_BYPASSED
     return build_audit_model(cfg=cfg)
 
 
@@ -415,7 +461,29 @@ def extract_candidate_facts(ai_items: Any, user_items: Any,
             logger.warning("[memory_extract] %s", _STATE.error)
             return []
 
-        m = model if model is not None else _build_default_model(cfg)
+        # M06：生产 model=None 时由 _build_default_model 过准入闸；显式注入模型属于
+        # 测试/离线/复盘路径，不触碰生产准入，但要在运行状态里标明"绕过"，避免被误读。
+        if model is not None:
+            _STATE.admission_status = ADMISSION_STATUS_BYPASSED
+            m = model
+        else:
+            from ai_registry.registry import AdmissionDenied
+            try:
+                m = _build_default_model(cfg)
+            except AdmissionDenied as e:
+                # 资产未准入是**治理拒绝**，不是抽取异常：单列 admission_status 与可读
+                # 错误，且只停 AI 抽取；手工保存/审批链路完全继续（见模块 docstring）。
+                _STATE.admission_status = ADMISSION_STATUS_BLOCKED
+                _STATE.error = (
+                    "AI 资产准入拒绝（consumer=%s）：%s；手工保存/审批路径不受影响"
+                    % (CONSUMER_ID, e))
+                logger.warning("[memory_extract] %s", _STATE.error)
+                return []
+        try:
+            from app.services.llm_logger import set_llm_leg_and_attempt
+            set_llm_leg_and_attempt(leg="memory_extract")
+        except Exception:
+            pass
         from langchain_core.messages import HumanMessage, SystemMessage
 
         # W-SEC-1 写侧防护（不可与裸拼共存）：diffs 里是用户修正的自由文本（供应商

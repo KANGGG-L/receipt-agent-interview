@@ -179,20 +179,59 @@ from ai_registry.registry import ai_registry
 EVIDENCE_PROMPT_VERSION = "v1_3_0_evidence"
 
 
+class PromptAdmissionBlocked(RuntimeError):
+    """M06：生产识别 prompt 未过资产准入，拒绝 AI 抽取（手工录入/复核路径保留）。"""
+
+
+# 当前 SYSTEM_PROMPT 对应的钉住版本；动态复查时用它判断版本未漂移。
+SYSTEM_PROMPT_VERSION = ""
+# 首次加载被拒时保留可读原因（模块常量仍为空串，build_prompt 会显式拒绝）。
+PROMPT_BLOCKED_REASON = ""
+
+_EXTRACT_CONSUMER_ID = "extract_chain"
+
+
+def _assert_extract_prompt_admitted(version=None):
+    """生产 prompt 载入前置闸：撤销/缺准入即抛 PromptAdmissionBlocked 并留 blocked 日志。
+
+    只在**载入生产识别 prompt**时调用；`load_prompt_with_evidence` 的灰测/评测入口
+    由调用方自行决定是否属生产路径，不在本闸内。被拒不回落别的版本——静默回落到
+    active 会让"撤销批准后仍继续识别"，正是本项要修的绕过。
+    """
+    from ai_registry.registry import AdmissionDenied, assert_consumer_admitted
+    try:
+        return assert_consumer_admitted(_EXTRACT_CONSUMER_ID, "extract", version)
+    except AdmissionDenied as e:
+        logging.getLogger("extract_chain").warning(
+            "[ADMISSION] extract_chain prompt 载入被拒（blocked）：%s；"
+            "AI 识别停止，手工录入/复核路径保留", e)
+        raise PromptAdmissionBlocked(str(e))
+
+
 def _resolve_extract_system_prompt() -> str:
-    """识别主链路系统提示词选择：默认 active；EXTRACT_PROMPT_VERSION 显式指定时按版本加载。
+    """识别主链路系统提示词选择：默认钉住已准入版本；显式版本同样必须过准入。
 
     灰测换 prompt 的唯一运行时开关（评测走 run_eval --prompt 同款显式版本机制）。
-    指定版本不存在时回落 active，不阻断。
+    显式版本若未获准入/与 inventory 钉住版本不一致，直接拒绝，**不再回落 active**
+    （静默回落会让撤销批准后的生产识别继续运行）。
     """
+    global SYSTEM_PROMPT_VERSION
     ver = os.environ.get("EXTRACT_PROMPT_VERSION", "").strip()
     if ver:
+        # EXTRACT_PROMPT_VERSION 是显式灰测/评测开关：允许按其版本文件加载，但真正的
+        # 生产调用会在 `build_prompt` / `extract_receipt` 用当前版本**再次**过准入闸；
+        # 若该版本不在 inventory 钉住范围内，那次调用必然被拒绝，不会静默用 draft 跑。
         try:
-            return ai_registry.get_prompt("extract", ver)
-        except Exception:
+            text = ai_registry.get_prompt("extract", ver)
+        except Exception as e:
             logging.getLogger("extract_chain").warning(
-                f"[PROMPT] EXTRACT_PROMPT_VERSION={ver} 加载失败，回落 active")
-    return ai_registry.get_prompt("extract")
+                f"[PROMPT] EXTRACT_PROMPT_VERSION={ver} 读取失败，回落已准入 active：{e}")
+        else:
+            SYSTEM_PROMPT_VERSION = ver
+            return text
+    decision = _assert_extract_prompt_admitted()
+    SYSTEM_PROMPT_VERSION = str(decision.get("version") or "")
+    return ai_registry.get_prompt("extract", SYSTEM_PROMPT_VERSION)
 
 
 def load_prompt_with_evidence() -> str:
@@ -203,7 +242,15 @@ def load_prompt_with_evidence() -> str:
     return ai_registry.get_prompt("extract", EVIDENCE_PROMPT_VERSION)
 
 
-SYSTEM_PROMPT = _resolve_extract_system_prompt()
+try:
+    SYSTEM_PROMPT = _resolve_extract_system_prompt()
+except PromptAdmissionBlocked as _admission_err:
+    # 首次加载硬闸：被拒时模块仍可导入（手工/复核路径不受影响），但任何 AI 识别
+    # 入口都必须显式失败，绝不带着空 prompt/旧 prompt 继续跑。
+    SYSTEM_PROMPT = ""
+    PROMPT_BLOCKED_REASON = str(_admission_err)
+    logging.getLogger("extract_chain").error(
+        "[ADMISSION] 首次载入识别 prompt 被拒（blocked）：%s", PROMPT_BLOCKED_REASON)
 PARSE_SYSTEM_PROMPT = ai_registry.get_prompt("parse", "v2_2_0_structured_json")
 CORRECT_SYSTEM_PROMPT = ai_registry.get_prompt("correct", "v1_0_0")
 
@@ -373,7 +420,14 @@ def _extract_vendor_from_raw(raw_vlm: str) -> str:
 
 
 def build_prompt(image_path: str, vendor_context: str = "") -> list:
-    """组装识别 prompt：系统指令 + <vendor_context>（XML 数据沙箱注入）+ 图片 (Gap 8)。"""
+    """组装识别 prompt：系统指令 + <vendor_context>（XML 数据沙箱注入）+ 图片 (Gap 8)。
+
+    M06：每次组装前复查准入（manifest 可在运行期撤回），未准入/无 prompt 直接拒绝；
+    手工录入/复核不经过本函数，故不受影响。
+    """
+    if not SYSTEM_PROMPT:
+        raise PromptAdmissionBlocked(PROMPT_BLOCKED_REASON or "识别 prompt 未获准入")
+    _assert_extract_prompt_admitted(SYSTEM_PROMPT_VERSION or None)
     human_parts = []
     if vendor_context:
         human_parts.append({
@@ -440,6 +494,34 @@ def _image_decode_error_result(error, priors, rag_ms, model, config, use_grey) -
     }
 
 
+def _prompt_admission_error_result(error, model, config, use_grey) -> dict:
+    """M06：prompt 未准入的确定性失败结果（不建模型、不读图、不发调用）。
+
+    与 decode 失败同构（data=None/error 可读/deterministic_error=True），保证上层
+    按"确定性失败"结束重试并落 error；手工录入/复核路径不经过识别链路，继续可用。
+    """
+    return {
+        "data": None,
+        "raw": "",
+        "error": "AI 识别 prompt 未获准入（blocked）：%s；请走手工录入/复核路径" % error,
+        "error_category": "admission",
+        "deterministic_error": True,
+        "elapsed_ms": 0.0,
+        "extract_ms": 0.0,
+        "rag_ms": 0.0,
+        "engine": getattr(model, "kind", "unknown"),
+        "vendor_context": "",
+        "parse_llm": {"enabled": _parse_enabled(config, use_grey),
+                      "model": "", "elapsed_ms": 0},
+        "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "vlm_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "parse_token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+        "cost_hkd": 0.0,
+        "cost_estimated": 0,
+        "cost_estimated_reason": "",
+    }
+
+
 def extract_receipt(image_path: str, vendor_hint: str = "",
                     model=None, config=None, retry_feedback: str = "",
                     use_grey: bool = False, vendor_prior: str = "",
@@ -460,6 +542,17 @@ def extract_receipt(image_path: str, vendor_hint: str = "",
     vendor_context 为三通道（hint/parse/retry）带来源标注的先验合并（去重 + 截断 4000），
     供 supervisor 透传落库 rag_context。
     """
+    # M06 首道硬闸：在 RAG 检索与模型构建之前复查准入。撤销 manifest 后这里立即
+    # 确定性失败，不建模型、不发起任何外呼；手工录入/复核不经过识别链路。
+    try:
+        if not SYSTEM_PROMPT:
+            raise PromptAdmissionBlocked(PROMPT_BLOCKED_REASON or "识别 prompt 未获准入")
+        _assert_extract_prompt_admitted(SYSTEM_PROMPT_VERSION or None)
+    except PromptAdmissionBlocked as admission_err:
+        logging.getLogger("extract_chain").error(
+            "[ADMISSION] AI 识别被拒（blocked），转手工路径：%s", admission_err)
+        return _prompt_admission_error_result(admission_err, model, config, use_grey)
+
     canary = generate_canary_token() if enable_canary else ""
     priors = []  # [(tag, 检索原文)] 各通道先验，统一沙箱注入并合并落库
     rag_ms = 0.0  # 分段计时：RAG 检索耗时（hint + parse 两通道）

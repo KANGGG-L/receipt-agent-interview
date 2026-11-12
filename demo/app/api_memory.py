@@ -20,9 +20,11 @@
 import json
 import threading
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, ConfigDict
 
 from app import db
 from app.auth import require_admin, resolve_tenant
@@ -344,3 +346,175 @@ def revive_memory(memory_id: str, request: Request):
     _safe_audit(who, "vendor_memory_revive", f"vendor_memory:{memory_id}",
                 "archived", "active")
     return {"status": "success", "data": result}
+
+
+class EditMemoryBody(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    fact_key: Optional[str] = None
+    fact_value: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.patch("/api/memory/{memory_id}")
+def edit_memory_by_id(memory_id: str, body: EditMemoryBody, request: Request):
+    """P1-T5 (G2, D2已决) 记忆编辑即 supersede（保留不可变历史链，向量对称删旧补新）。
+
+    安全与约束：
+    - require_admin: 仅超管权限（非 admin 返回 403）；
+    - 租户隔离: 目标记忆属于其他租户或不存在，统一返回 HTTP 404（消除存在性 Oracle 探测）；
+    - 状态机校验: 仅 active 状态允许编辑，非 active（archived / superseded）返回 HTTP 409；
+    - 字段白名单: 仅允许更新 fact_key, fact_value, notes，禁止篡改 vendor, tenant_id 等；
+    - 向量对称同步: archive_memory_vectors 删旧向量，restore_memory_vectors 补新向量；
+    - 审计留痕: 记录 vendor_memory_edit 审计日志。
+    """
+    require_admin(request)
+    tenant_id = _tenant_id(request)
+    who = _actor(request)
+
+    # EC-08：未提供任何待更新字段或全为 None
+    if body.fact_key is None and body.fact_value is None and body.notes is None:
+        return JSONResponse(status_code=422, content={
+            "status": "error", "code": "VALIDATION_ERROR",
+            "msg": "未提供任何待更新字段"
+        })
+
+    # 字段格式与长度校验
+    if body.fact_key is not None:
+        if not str(body.fact_key).strip():
+            return JSONResponse(status_code=422, content={
+                "status": "error", "code": "VALIDATION_ERROR",
+                "msg": "fact_key 不能为空或纯空白"
+            })
+        if len(str(body.fact_key)) > 200:
+            return JSONResponse(status_code=422, content={
+                "status": "error", "code": "VALIDATION_ERROR",
+                "msg": "fact_key 长度不能超过 200 字符"
+            })
+
+    if body.fact_value is not None and len(str(body.fact_value)) > 1000:
+        return JSONResponse(status_code=422, content={
+            "status": "error", "code": "VALIDATION_ERROR",
+            "msg": "fact_value 长度不能超过 1000 字符"
+        })
+
+    if body.notes is not None and len(str(body.notes)) > 2000:
+        return JSONResponse(status_code=422, content={
+            "status": "error", "code": "VALIDATION_ERROR",
+            "msg": "notes 长度不能超过 2000 字符"
+        })
+
+    # DB 事务更新（旧行 superseded + 新行 active）
+    try:
+        res = db.supersede_vendor_memory(
+            memory_id=memory_id,
+            tenant_id=tenant_id,
+            fact_key=body.fact_key,
+            fact_value=body.fact_value,
+            notes=body.notes,
+            who=who,
+        )
+    except Exception as e:
+        logger.error("[memory] supersede 事务执行失败 mid=%s: %s", memory_id, e)
+        return JSONResponse(status_code=500, content={
+            "status": "error", "code": "SUPERSEDE_FAILED",
+            "msg": "数据库写入失败，请稍后重试。"
+        })
+
+    if not res.get("found"):
+        return JSONResponse(status_code=404, content={
+            "status": "error", "code": "MEMORY_NOT_FOUND",
+            "msg": "找不到这条记忆，可能已被删除。请刷新页面。"
+        })
+
+    if not res.get("active"):
+        return JSONResponse(status_code=409, content={
+            "status": "error", "code": "MEMORY_NOT_ACTIVE",
+            "msg": "该记忆非生效状态（已归档或已失效），无法编辑。"
+        })
+
+    old_mid = res["old_memory_id"]
+    new_mid = res["new_memory_id"]
+    vendor = res.get("vendor", "")
+
+    # 向量层对称同步：删旧写新
+    vector_sync_err = None
+    try:
+        memory_store.archive_memory_vectors(tenant_id, [old_mid], vendor=vendor, reason="superseded")
+    except Exception as e:
+        vector_sync_err = e
+        logger.warning("[memory] 编辑旧向量级联删除异常 old_mid=%s: %s", old_mid, e)
+        memory_store._note_write_failure(memory_store.WRITE_STAGE_VECTOR_SYNC, e, vendor=vendor, tenant_id=tenant_id)
+
+    try:
+        restore_ok = memory_store.restore_memory_vectors(tenant_id, new_mid, vendor=vendor)
+    except Exception as e:
+        restore_ok = False
+        vector_sync_err = e
+        logger.warning("[memory] 编辑新向量补写异常 new_mid=%s: %s", new_mid, e)
+        memory_store._note_write_failure(memory_store.WRITE_STAGE_VECTOR_SYNC, e, vendor=vendor, tenant_id=tenant_id)
+    if restore_ok is False and vector_sync_err is None:
+        # M04（Q06 关闭）：ensure_memory_vectors 契约是不抛，返回 False = 未补写
+        # （向量库不可用降级/闸门拒绝）。False 是明确的失败信号，不得当作成功吞掉。
+        vector_sync_err = RuntimeError("ensure_memory_vectors returned False")
+        memory_store._note_write_failure(
+            memory_store.WRITE_STAGE_VECTOR_SYNC, vector_sync_err,
+            vendor=vendor, tenant_id=tenant_id)
+
+    # 审计留痕
+    _safe_audit(
+        who, "vendor_memory_edit", f"vendor_memory:{old_mid}",
+        json.dumps({"old_memory_id": old_mid}, ensure_ascii=False),
+        json.dumps({
+            "new_memory_id": new_mid,
+            "fact_key": body.fact_key,
+            "fact_value": body.fact_value,
+            "notes": body.notes,
+        }, ensure_ascii=False),
+    )
+
+    if vector_sync_err is not None:
+        # M04/SP06：DB supersede 已提交（不可谎报失败），向量同步未完成 →
+        # 200 + status='partial' + operation_id + vector_status='sync_failed'；
+        # 旧值保持移出读资格（不恢复旧 active 绕过 supersede），补偿可重试。
+        import uuid as _uuid
+        _operation_id = _uuid.uuid4().hex
+        logger.warning(
+            "[memory] 向量同步部分完成 operation_id=%s old=%s new=%s err=%s",
+            _operation_id, old_mid, new_mid, vector_sync_err)
+        # M04 闭环：补偿任务入 outbox（幂等键含 operation_id，不会重复补偿）；
+        # worker 重试 ensure/delete 直到对称或 dead_letter。开关关时仅留告警（可手动重试）。
+        try:
+            from app import task_store as _task_store
+            if _task_store.enabled():
+                _task_store.enqueue(
+                    "memory_vector_sync", str(new_mid), 1, "compensate:%s" % _operation_id,
+                    payload={"old_memory_id": old_mid, "new_memory_id": new_mid,
+                             "vendor": vendor, "operation_id": _operation_id},
+                    tenant_id=tenant_id)
+        except Exception as _te:  # noqa: BLE001 补偿入队失败不掩盖 partial 本身
+            logger.error("[memory] 补偿任务入队失败 operation_id=%s: %s", _operation_id, _te)
+        return {
+            "status": "partial",
+            "code": "VECTOR_SYNC_PENDING",
+            "operation_id": _operation_id,
+            "msg": "记忆内容已更新，但向量索引同步未完成；内容已按新值生效，索引会自动补偿重试。",
+            "data": {
+                "action": "superseded",
+                "old_memory_id": old_mid,
+                "new_memory_id": new_mid,
+                "vendor": vendor,
+                "status": "active",
+                "vector_status": "sync_failed",
+            }
+        }
+
+    return {
+        "status": "success",
+        "data": {
+            "action": "superseded",
+            "old_memory_id": old_mid,
+            "new_memory_id": new_mid,
+            "vendor": vendor,
+            "status": "active"
+        }
+    }

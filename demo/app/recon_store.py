@@ -179,6 +179,9 @@ def compute_payables(tenant_id, today: Optional[str] = None) -> dict:
     idx = supplier_index(tid, suppliers)
     rows = db.list_receipt_rows(tenant_id=tid)
     alloc = allocation_map(tid)
+    # L06：信用抵扣分配并入未付计算（owner 显式选择；未分配贷项不在此列——G05/D-03）
+    from app.credit_store import credit_allocation_map as _credit_alloc_map
+    credit_alloc = _credit_alloc_map(tid)
     snap = units_store.receipt_fx_map(tid)
     rate_map = {x["currency"]: x["rate"] for x in units_store.get_fx_rates(tid)}
 
@@ -206,8 +209,27 @@ def compute_payables(tenant_id, today: Optional[str] = None) -> dict:
             continue
         if r.status != "approved":
             continue
+        # L05（Q05/G05 关闭）：贷项（负票面）不进付款分配数学——
+        # min(alloc, total) 对负 total 翻转成「负 paid + 标 paid」的假付款事实。
+        # 贷项事实归信用台账（credit_documents，L04 发行/L06 owner 分配）：
+        # 未分配贷项保持未分配（不静默抵款、不标 paid），应付保持 gross。
+        if (total or 0.0) < 0:
+            sup = sup_by_id.get(sid)
+            payables.append({
+                "receipt_id": r.id, "supplier_id": sid,
+                "supplier_name": sup.name if sup else (r.supplier_name or ""),
+                "receipt_date": r.receipt_date or "", "due_date": None,
+                "currency": units_store.norm_currency(getattr(r, "currency", None)),
+                "total_amount": float(r.total_amount or 0.0),
+                "total_hkd": total, "paid_amount": 0.0,
+                "outstanding_amount": 0.0, "payment_status": "credit_unallocated",
+                "is_overdue": False, "overdue_days": 0,
+                "fx_missing": total is None})
+            continue
         legacy_paid = bool(r.payment_id and r.paid_at)
-        paid = total if (legacy_paid and r.id not in alloc) else min(alloc.get(r.id, 0.0), total or 0.0)
+        _alloc_paid = alloc.get(r.id, 0.0) + credit_alloc.get(r.id, 0.0)
+        paid = total if (legacy_paid and r.id not in alloc and r.id not in credit_alloc) \
+            else min(_alloc_paid, total or 0.0)
         outstanding = round(max((total or 0.0) - (paid or 0.0), 0.0), 2)
         sup = sup_by_id.get(sid)
         due = _due_date(r, getattr(sup, "payment_terms_days", None))

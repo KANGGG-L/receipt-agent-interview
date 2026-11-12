@@ -7,6 +7,9 @@
 - 嵌入档由 `RAG_EMBEDDING_PROVIDER` 决定（app/services/embeddings.py 唯一实现：
   hash 缺省 / siliconflow bge-m3 / dashscope），collection 名带该档 identity 后缀，
   切档即新建集合而非混写（维度不同，混写会报错或静默错配）
+- 租户桶名（T9 / G5）：`tenant_<归一tid>_vendor_memory_<sha1(tid)[:12]>_<identity 后缀>`，
+  摘要段保证 tid → 名字**单射**（归一与截断只决定可读段，不再承担消歧）；default / 空
+  租户走全局桶 `vendor_memory_<identity 后缀>`，基础名不变。口径见 `_tenant_collection_name`
 - 召回（P3-T6）：**混合召回**——精确/别名腿（scope 收窄后的该供应商记忆行）+ 关键词腿
   （BM25 近似，`services/memory_recall.py` 唯一实现）+ 向量腿（Chroma 相似度），三腿
   候选合并去重后由 `memory_recall.rerank` 按「腿基础分 + 该腿相关度 + 精确命中 + 治理
@@ -14,9 +17,11 @@
   （settings 键 `memory_recall_weights`，缺省见 `memory_recall.DEFAULT_WEIGHTS`）
 """
 
+import hashlib
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -71,6 +76,11 @@ def get_retrieve_failure_counts() -> dict:
     降级次数，不得当作历史累计或跨实例指标使用。阶段名取 RETRIEVE_STAGE_* 常量。
     """
     return dict(_RETRIEVE_FAILURE_COUNTS)
+
+
+def reset_retrieve_failure_counts() -> None:
+    """清空读路径降级计数（M05 process reset：重启基线的显式等价动作）。"""
+    _RETRIEVE_FAILURE_COUNTS.clear()
 
 
 def _note_retrieve_failure(stage: str, exc: BaseException,
@@ -167,18 +177,46 @@ _vs: Optional[Chroma] = None
 _vs_tenant: dict[str, Chroma] = {}
 
 
+# collection 名的租户段参数（T9 / G5，唯一实现就是下面的 `_tenant_collection_name`）：
+# - 可读段上限 64：只用于**让名字人类可读**，消歧不靠它（靠 `_TID_DIGEST_LEN` 的摘要）。
+#   旧实现把「截断 64」当消歧手段，于是第 65 个字符之后的差异被抹平 → 两个不同租户
+#   得到同一个集合名（跨租户互读，L2/G5）。
+# - 摘要长度 12：sha1(tid) 的前 12 个十六进制字符（48 bit）。
+_TID_READABLE_MAXLEN = 64
+_TID_DIGEST_LEN = 12
+
+
 def _tenant_collection_name(tenant_id: str, identity=None) -> str:
-    """collection 名：基础名 + 当前生效嵌入档的 identity 后缀。
+    """collection 名：基础名 + 租户消歧摘要 + 当前生效嵌入档的 identity 后缀。
 
     why 必须带 identity：不同 provider 的向量维度与语义空间都不同（hash 256 维 /
     bge-m3 1024 维），写进同一个 collection 会直接维度报错或静默语义错配（gap M1）。
     后缀取自 `embeddings.EmbeddingIdentity.collection_suffix()`（provider:model:dim
     的集合名安全形态），本模块**不另抄一份档位→维度表**。
 
-    基础名：tenant_id 为空 / default 时是全局桶 `vendor_memory`，否则
-    `tenant_<tid>_vendor_memory`（tid 里非 `[a-zA-Z0-9_-]` 的字符替换为 `_` 并截断 64）。
-    全局桶同样带后缀 —— 否则「默认租户切档」仍会把两种维度的向量写进同一集合，
-    而这正是本波次要消除的错配面（存量向量已按 D5 清退，故历史名不带后缀亦无数据失联）。
+    基础名（T9 / G5 单射化，D7 拍板随 T2 同批）：
+    - tenant_id 为空 / `default` → 全局桶 `vendor_memory_<identity 后缀>`，**基础名不改**
+      （live 现存 12 条向量全在该桶，改名会让它们无谓失联）；
+    - 其余租户 → `tenant_<归一tid>_vendor_memory_<sha1(tid)[:12]>_<identity 后缀>`。
+      `归一tid` = 非 `[a-zA-Z0-9_-]` 替换为 `_` 后截断 64（仅决定可读性）。
+
+    why 摘要段落在 `_vendor_memory` **之后**、identity 后缀之前（而不是拼在 tid 尾巴上）：
+    命名约定的唯一消费方 `memory_consistency._collection_tenant()` 用非贪婪正则
+    `^tenant_(?P<tid>.+?)_vendor_memory(?:_[a-z0-9_]+)?$` 反推租户，并靠这个反推值做
+    「按租户收窄巡检范围」（`_read_store` 里 `s["tenant_id"] == str(tenant_id)` 是精确匹配）。
+    摘要放进 tid 段会让反推得到 `t2_<摘要>` —— 租户视角巡检再也匹配不到任何 collection，
+    于是把该租户整批 active 行**误报成缺向量**（假结论比没结论更危险，且该文件属 W-A 波）。
+    放在 identity 后缀位（同一个 `[a-z0-9_]+` 捕获组里）则反推仍得原 tid，消费方零改动。
+
+    单射性（同名 ⟹ 同 tid）：两个名字相等要求「可读段 + 摘要段 + identity 后缀」逐段相等，
+    而摘要取自**未归一的原始 tid**，故 `a.b` 与 `a_b`（旧实现同名）不再是同一个桶；超长
+    tid 的第 65 个字符之后被截掉也仍由摘要区分。sha1 截到 12 位是刻意的取舍：碰撞概率
+    ~2^-48，而集合名仍需可读。
+
+    迁移代价（诚实记账）：本改动使**现存租户桶**的向量按旧名失联 —— live 向量目录在 T2
+    清退后只剩 default 桶（12 条向量 / 6 个 mid），default 桶基础名不变，故当前 live 无
+    失联数据；重建/改名由主 agent 在集成后按 D7 亲自执行。历史无后缀名
+    （`tenant_t2_vendor_memory`）仍被巡检识别（只作 legacy 读，不再由本函数产生）。
 
     identity 入参：
     - 传 `EmbeddingIdentity` → 按其拼名（`_store` 走这条路，且传的是**实际生效档**）；
@@ -191,10 +229,11 @@ def _tenant_collection_name(tenant_id: str, identity=None) -> str:
     tid = str(tenant_id or "default").strip() or "default"
     if tid == "default":
         return f"vendor_memory_{suffix}"
+    # 消歧摘要取自未归一的 tid：归一与截断都只影响可读段，不参与判定
+    digest = hashlib.sha1(tid.encode("utf-8")).hexdigest()[:_TID_DIGEST_LEN]
     # 安全：仅允许字母数字下划线与中划线，其余替换
-    import re
-    tid = re.sub(r"[^a-zA-Z0-9_-]", "_", tid)[:64]
-    return f"tenant_{tid}_vendor_memory_{suffix}"
+    readable = re.sub(r"[^a-zA-Z0-9_-]", "_", tid)[:_TID_READABLE_MAXLEN]
+    return f"tenant_{readable}_vendor_memory_{digest}_{suffix}"
 
 
 def _store(tenant_id: Optional[str] = None):
@@ -269,6 +308,11 @@ def _persist_memory_row(vendor, notes, sample, tid, kind, ref, mid, ts,
             source_kind=kind, source_ref=ref, memory_id=mid, created_at=ts,
             supplier_id=supplier_id, fact_row=payload)
     except Exception as e:
+        try:
+            from app.services.memory_store import _note_write_failure, WRITE_STAGE_INGEST
+            _note_write_failure(WRITE_STAGE_INGEST, e, vendor=vendor, tenant_id=tid)
+        except Exception as _audit_err:
+            logger.debug("[rag] note_write_failure recording failed: %s", _audit_err)
         logger.error(
             "[rag] vendor memory persist failed, vector write skipped "
             "(orphan vector avoided) vendor=%s tenant=%s memory_id=%s: %s",
@@ -404,6 +448,12 @@ def ensure_memory_vectors(tenant_id, memory_id, vendor=None) -> bool:
     **任何分支都不抛异常** —— 调用方（恢复动作）的状态变更已经提交，向量层故障不得把它
     升级成失败。降级逐处 warning 留痕，不静默。
     """
+    if vendor is not None:
+        clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor)).strip()
+        if len(clean_vendor) > 200:
+            logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+            clean_vendor = clean_vendor[:200]
+        vendor = clean_vendor or None
     tid = str(tenant_id or "default").strip() or "default"
     mid = str(memory_id or "").strip()
     if not mid:
@@ -482,12 +532,19 @@ def ingest_memory(vendor: str, items_text: str, notes: str = "",
     透传当前操作者，使「每条生效记忆可追溯到写入者」无缺口；不传（None/空串）时
     该列保持 NULL，与既有调用方（离线脚本/测试直调）行为完全一致。
     """
+    if vendor is not None:
+        clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor)).strip()
+        if len(clean_vendor) > 200:
+            logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+            clean_vendor = clean_vendor[:200]
+        vendor = clean_vendor or None
     tid = str(tenant_id or "default").strip() or "default"
     kind = str(source_kind or ("approve" if receipt_id is not None else "manual"))
     ref = json.dumps([str(receipt_id)]) if receipt_id is not None else "[]"
     mid = uuid.uuid4().hex
     ts = datetime.now().isoformat()
-    # W-9：记忆语料 PII 最小化 —— 开关关闭（缺省）时逐字节原样返回，零行为变化；
+    # W-9：记忆语料 PII 最小化 —— 显式关掉本键时逐字节原样返回、零行为变化（那是关掉态，
+    # 不是现行缺省态；本键的现行缺省与变更史唯一登记在本模块 MEMORY_PII_MASK_KEY 上方）。
     # 开启时在**落库前 + 写向量前**脱敏 notes / sample（单点实现，两条落点同源）。
     # 只作用于记忆语料，不改动单据本身的 receipts / receipt_items。
     notes = _mask_memory_text(notes, field="notes", vendor=vendor)
@@ -530,8 +587,8 @@ def ingest_memory(vendor: str, items_text: str, notes: str = "",
                     details={"vendor": vendor, "receipt_id": receipt_id, "snippets": _all_snips},
                     tenant_id=tid,
                 )
-            except Exception:
-                pass
+            except Exception as _audit_err:
+                logger.debug("[rag] security audit logging failed: %s", _audit_err)
             return vendor
     except Exception as _e:
         logger.warning("[rag] 记忆写入审查执行异常(fail-safe): %s", _e)
@@ -694,9 +751,32 @@ def memory_enabled() -> bool:
         return True
 
 
-# 记忆语料 PII 脱敏开关（W-9）：settings 键 memory_pii_mask_enabled，缺省 False。
-# 缺省关闭 = 与接线前行为逐字节一致（不改动既有写入内容）；开启后写入路径在**落库前 +
-# 写向量前**对 notes/sample 做确定性脱敏。
+# 记忆语料 PII 脱敏开关：settings 键 memory_pii_mask_enabled，缺省 True。
+# 缺省即「写入路径在**落库前 + 写向量前**对 notes/sample 做确定性脱敏」；管理台显式关掉
+# 本键时才逐字节原样返回（那是关掉态，不是现行缺省态）。
+
+# 缺省值变更史（唯一登记处；本文件其他处与 settings_service.py 只写现行缺省并指向本块）：
+# - W-9 引入本键时缺省 False（台账日期 2026-09-24，本仓落库 commit 2e42ea3）—— 当时口径
+#   是「本波只提供能力并证明其生效，不默认打开」，故缺省态与接线前逐字节一致。
+# - W-ISO-2 把缺省改判为 True（2026-10-03，commit 057f3c6；要求原文见 docs/issues/
+#   2026-09-27-security-hardening-commercial-plan.md:124），依据是个人信息保护最小化
+#   （PDPO / GDPR）：notes/sample 会被长期保存并反复注入 prompt。同波把下方
+#   `_pii_mask_enabled` 的 get_bool 兜底与读取失败兜底一并改为 True。
+# - 该波改了 SETTINGS_DEFAULTS 表内注释与 `_pii_mask_enabled` 的 docstring，但漏改了本块与
+#   `_pii_masker_tool` 的 docstring、settings_service 模块 docstring 的收口清单，于是
+#   2026-10-20 复核时树上是「注释说 False / 代码是 True」的缺省值漂移（本轮 P0·T4 纠偏）。
+# - 结论：False 只是引入期的保守缺省，**不是现行设计意图**；现行意图是缺省开启脱敏。
+#   注释与代码的缺省一致性由 demo/tests/test_memory_pii_mask_default_ssot.py 只读钉住。
+#   兑现该声明的用例（2026-10-20 G-C 波在 /tmp 突变体上逐条实测；判据本体见该文件）：
+#   - 表述说反：test_comment_default_statements_agree_with_code（两个生产文件）与
+#     test_tests_domain_default_statements_agree_with_code（tests 两域）逐点翻红；
+#   - 7 个正面表态锚点（含本块）被换成词表外措辞或被删空：
+#     test_anchor_positions_state_the_code_default 的对应参数化用例翻红，判别力自证见
+#     test_anchor_statement_rewording_or_deletion_flips_the_anchor_red；
+#   - 代码侧缺省漂移：test_settings_default_for_key_is_true 与
+#     test_rag_hardcoded_fallbacks_match_settings_default 翻红。
+#   限定（G-C 实测守卫放行，别当无限定保证）：锚点之外用词表认不出的措辞写的错表述、
+#   以及锚点之外整块表述被删空，都不在本判据面内。改缺省须同批改表、改本块、过该用例。
 MEMORY_PII_MASK_KEY = "memory_pii_mask_enabled"
 
 # 脱敏工具实例（唯一实现 = ai_registry.tools.pii_masker.v1_0_0）；惰性构造一次并复用。
@@ -706,8 +786,10 @@ _pii_masker = None
 def _pii_masker_tool():
     """PII 脱敏工具实例（**不另写一套正则实现**，直接复用 ai_registry 既有工具）。
 
-    惰性 import + 缓存：脱敏只在开关开启时用到，未开启的部署（缺省）不加载 ai_registry，
-    也不引入 import 期副作用（与 extract_chain / api_receipts 的 ai_registry 惰性加载同款）。
+    惰性 import + 缓存：只有开关开着才构造工具实例。本键缺省 True（变更史见本模块
+    MEMORY_PII_MASK_KEY 上方注释块），故正常部署在首次写记忆时就会加载 ai_registry；
+    显式关掉本键的部署不会加载，也不引入 import 期副作用（与 extract_chain /
+    api_receipts 的 ai_registry 惰性加载同款）。
     """
     global _pii_masker
     if _pii_masker is None:
@@ -719,7 +801,12 @@ def _pii_masker_tool():
 def _pii_mask_enabled() -> bool:
     """记忆语料 PII 脱敏开关：settings 键 memory_pii_mask_enabled（缺省 True，W-ISO-2）。
 
-    遵循个人信息保护最小化原则，缺省开启；读取失败亦视为开启。
+    遵循个人信息保护最小化原则，缺省开启；读取失败亦视为开启。变更史（以及「False 为何不再
+    是设计意图」）唯一登记在本模块 MEMORY_PII_MASK_KEY 上方的注释块。
+
+    下方 get_bool 的显式兜底与 except 分支的 return 是同一取值的第二、第三份字面量
+    （get_bool 收到显式 default 就不再查 SETTINGS_DEFAULTS），由
+    demo/tests/test_memory_pii_mask_default_ssot.py 断言三者逐项相等；改缺省须同批三处一起改。
     """
     try:
         from app.services import settings_service
@@ -760,8 +847,8 @@ def _mask_memory_text(text, *, field: str, vendor=None) -> str:
                 source_module="rag_memory",
                 details={"field": field, "vendor": vendor, "counts": hits}
             )
-        except Exception:
-            pass
+        except Exception as _audit_err:
+            logger.debug("[rag] pii audit logging failed: %s", _audit_err)
     return masked
 
 
@@ -1085,6 +1172,12 @@ def retrieve_context(vendor: str, top_k: int = 3, *,
     # 租户归一与写侧（ingest_memory / start_recognition_job）同口径：None/空串 →
     # default。不归一的话 None 会在 DB 侧被折成 default、在 _store 侧却走全局
     # collection，读写落到不同桶。
+    if vendor is not None:
+        clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor)).strip()
+        if len(clean_vendor) > 200:
+            logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+            clean_vendor = clean_vendor[:200]
+        vendor = clean_vendor or None
     tid = str(tenant_id or "default").strip() or "default"
     try:
         b = budget or MemoryBudget.from_settings()
@@ -1250,6 +1343,12 @@ def ingest_feedback_memory(vendor: str, comment: str, quality_warnings=None,
     既有 upsert 链路生效（approve_pending_to_memory）。单次点踩依旧不沉淀。
     返回蒸馏内容文本（保持既有调用方契约）。
     """
+    if vendor is not None:
+        clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor)).strip()
+        if len(clean_vendor) > 200:
+            logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+            clean_vendor = clean_vendor[:200]
+        vendor = clean_vendor or None
     tid = str(tenant_id or "default").strip() or "default"
     qw = quality_warnings or []
     content = f"供应商 {vendor} 反馈纠偏：{comment}".strip()
@@ -1408,6 +1507,11 @@ def _register_alias_from_approved_fact(fact, tid, vendor, mid, who):
             _audit_alias_skip(tid, sid, vendor, raw, value, err, mid_s,
                               len(candidates), who)
     except Exception as e:
+        try:
+            from app.services.memory_store import _note_write_failure, WRITE_STAGE_INGEST
+            _note_write_failure(WRITE_STAGE_INGEST, e, vendor=vendor, tenant_id=tid)
+        except Exception as _audit_err:
+            logger.debug("[rag] note_write_failure recording failed: %s", _audit_err)
         logger.error(
             "[rag] alias→vendor_sku_alias 登记失败（不阻断 approve）vendor=%s "
             "key=%s: %s", vendor, getattr(fact, "fact_key", None), e)
@@ -1482,6 +1586,12 @@ def approve_pending_to_memory(vendor: str, content: str, tenant_id: str = "defau
     P8a-R8：与 ingest_memory 同口径 —— 幂等去重命中（stored_new=False）时不再直接
     return，交由 `_sync_memory_vectors(reusing=True)` 先查后补（DB 有行 ⇒ 向量存在）。
     """
+    if vendor is not None:
+        clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor)).strip()
+        if len(clean_vendor) > 200:
+            logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+            clean_vendor = clean_vendor[:200]
+        vendor = clean_vendor or None
     tid = str(tenant_id or "default").strip() or "default"
     kind = str(source_kind or "").strip() or "feedback_distilled"
     ref = json.dumps([str(r) for r in (source_receipt_ids or [])])
@@ -1512,7 +1622,8 @@ def approve_pending_to_memory(vendor: str, content: str, tenant_id: str = "defau
         vector_content = content
     else:
         mid = uuid.uuid4().hex
-        # W-9：自由文本分支的记忆语料 PII 最小化 —— 开关关闭（缺省）时逐字节原样返回；
+        # W-9：自由文本分支的记忆语料 PII 最小化 —— 显式关掉本键时逐字节原样返回（那是关掉
+        # 态，不是现行缺省态；本键的现行缺省与变更史唯一登记在 MEMORY_PII_MASK_KEY 上方）。
         # 开启时在**落库前 + 写向量前**脱敏 content（DB notes 与向量 page_content 同源）。
         # 返回值仍是原始 content（非记忆语料，保持既有调用方契约）。
         vector_content = _mask_memory_text(content, field="notes", vendor=vendor)

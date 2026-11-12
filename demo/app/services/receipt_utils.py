@@ -53,6 +53,102 @@ JOBS = {}
 HUMAN_FINAL_STATUSES = ("edited", "approved", "flagged", "reversed")
 JOBS_LOCK = threading.Lock()
 
+# M03：识别 Job 的持久终态。JOBS 仍是进程内快队列；recognition_jobs 是它的落库副本。
+# 状态映射：内存 queued/running/done/error ↔ DB pending/running/succeeded/failed。
+# 重启后 JOBS 为空，get_job 回读 DB；terminal 行只更新 finished_at/updated_at，
+# created_at/started_at（原起点）永不被超时清洗或恢复流程改写。
+_JOB_TO_DB_STATUS = {"queued": "pending", "running": "running",
+                     "done": "succeeded", "error": "failed"}
+_JOB_FROM_DB_STATUS = {"pending": "queued", "running": "running",
+                       "succeeded": "done", "failed": "error"}
+
+
+def _job_db_write_allowed():
+    """库路径被 Job 线程切换时禁止落库（与 db._guard_job_db_write 同口径）。"""
+    try:
+        return db.job_db_path_mismatch() is None
+    except Exception:  # noqa: BLE001 闸门自身异常按允许处理，持久化不得阻断 Job
+        return True
+
+
+def _persist_job(job_id, create=False):
+    """把当前 JOBS 快照写入 recognition_jobs；失败只告警，绝不影响 Job 收口。"""
+    if not _job_db_write_allowed():
+        return
+    with JOBS_LOCK:
+        job = dict(JOBS.get(job_id) or {})
+    if not job:
+        return
+    status = _JOB_TO_DB_STATUS.get(job.get("job_status"), "running")
+    now = db.now_iso()
+    try:
+        payload = json.dumps(job, ensure_ascii=False, default=str)
+    except Exception:  # noqa: BLE001 结果含不可序列化对象时降级为最小快照
+        payload = json.dumps({"job_id": job_id, "receipt_id": job.get("receipt_id"),
+                              "job_status": job.get("job_status"),
+                              "tenant_id": job.get("tenant_id")},
+                             ensure_ascii=False, default=str)
+    finished = now if status in ("succeeded", "failed") else None
+    s = db.get_session()
+    try:
+        from sqlalchemy import text as _t
+        if create:
+            s.execute(_t(
+                "INSERT OR IGNORE INTO recognition_jobs"
+                " (job_id, receipt_id, tenant_id, status, attempt, job_json,"
+                "  created_at, started_at, finished_at, updated_at)"
+                " VALUES (:j, :r, :t, :s, 1, :p, :c, :c, :f, :u)"),
+                {"j": job_id, "r": job.get("receipt_id"),
+                 "t": str(job.get("tenant_id") or "default"), "s": status,
+                 "p": payload, "c": now, "f": finished, "u": now})
+        else:
+            s.execute(_t(
+                "UPDATE recognition_jobs SET status=:s, job_json=:p,"
+                " finished_at=coalesce(finished_at, :f), updated_at=:u"
+                " WHERE job_id=:j"),
+                {"s": status, "p": payload, "f": finished, "u": now, "j": job_id})
+        s.commit()
+    except Exception as e:  # noqa: BLE001 持久化故障不得把识别 Job 打崩
+        try:
+            s.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        logging.getLogger("receipt_utils").warning(
+            "识别 Job %s 持久化失败（继续内存态）: %s", job_id, e)
+    finally:
+        s.close()
+
+
+def _load_persisted_job(job_id):
+    """从 recognition_jobs 恢复 Job 快照（进程重启后 JOBS 为空时使用）。"""
+    s = db.get_session()
+    try:
+        from sqlalchemy import text as _t
+        row = s.execute(_t(
+            "SELECT job_json, status, tenant_id, created_at, started_at,"
+            " finished_at FROM recognition_jobs WHERE job_id=:j"),
+            {"j": str(job_id)}).fetchone()
+    except Exception as e:  # noqa: BLE001
+        logging.getLogger("receipt_utils").warning(
+            "读取持久化识别 Job %s 失败: %s", job_id, e)
+        return {}
+    finally:
+        s.close()
+    if row is None:
+        return {}
+    try:
+        job = json.loads(row[0] or "{}")
+    except Exception:  # noqa: BLE001
+        job = {}
+    job["job_id"] = str(job_id)
+    job["job_status"] = _JOB_FROM_DB_STATUS.get(row[1], "running")
+    job["tenant_id"] = row[2]
+    # 原起点以落库值为准；terminal 行不因重启/清洗回到 pending
+    job["created_at"] = row[3]
+    job["started_at"] = row[4]
+    job["finished_at"] = row[5]
+    return job
+
 
 def _track_internal(event_type, receipt_id=None, properties=None, tenant_id=None):
     """埋点内部封装：Job 线程内无 request context，直写 user_event，失败静默。
@@ -124,6 +220,8 @@ def _db_path_switched(job_id, stage):
             "error_code": "db_path_changed",
             "error_msg": msg,
         })
+    # 库已切换：_persist_job 的闸门会跳过写入（不污染新库）
+    _persist_job(job_id)
     return True
 
 
@@ -223,11 +321,21 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
     if _qw_json is not None:
         update_kw["quality_warnings_json"] = _qw_json
     db.update_receipt(receipt_id, **update_kw)
+    # L09：捕获本次 Job 的 parse 基线版本——回写时以它做 CAS，转手工/换图/重跑
+    # 造成的版本推进都会让旧 Job 的写回失效（不得覆盖新版本）。
+    _expected_parse_version = None
+    try:
+        _ver_row = db.get_receipt_row(receipt_id)
+        if _ver_row is not None:
+            _expected_parse_version = int(_ver_row.version or 1)
+    except Exception:
+        _expected_parse_version = None
 
     with JOBS_LOCK:
         JOBS[job_id] = {"job_id": job_id, "job_status": "queued",
                         "receipt_id": receipt_id, "started_ts": time.time(),
                         "image_guard": image_guard, "tenant_id": _tenant}
+    _persist_job(job_id, create=True)
     _track_internal("ocr_parse_started", receipt_id, {"job_id": job_id})
 
     def _run():
@@ -241,6 +349,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 job_id, bind_err)
         with JOBS_LOCK:
             JOBS[job_id]["job_status"] = "running"
+        _persist_job(job_id)
 
         try:
             # 线程启动到真正开工之间库可能已被切换：提前放弃，省掉无谓的引擎调用
@@ -340,6 +449,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "error_msg": result.get("user_error") or _humanize_job_error(result),
                         "error_code": result.get("error_code") or "RECOGNITION_FAILED",
                     })
+                _persist_job(job_id)
                 _track_internal("ocr_error", receipt_id, {
                     "job_id": job_id, "status": "error",
                     "elapsed_ms": _job_elapsed_ms(job_id),
@@ -352,6 +462,10 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
 
             if _db_path_switched(job_id, "before_save"):
                 return
+            # L09：parse 基线版本随 result 透传（不改 save_parsed_data 签名，兼容既有
+            # 三参打桩/直接调用）。save_parsed_data 读不到时为 None，走旧行为。
+            if isinstance(result, dict):
+                result["_expected_parse_version"] = _expected_parse_version
             detail = save_parsed_data(receipt_id, data, result)
             # 极端窄窗（save 内部被切换）：写库已被 db 层拦下，不能把空壳结果报成 done
             if _db_path_switched(job_id, "after_save"):
@@ -395,6 +509,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                         "vendor_hint_origin": result.get("vendor_hint_origin") or "",
                     },
                 })
+            _persist_job(job_id)
             # R4：看板口径修复。该事件此前只带 Job 生命周期的 status="done"，
             # 而看板（api_admin.recognition_summary）直接按事件条数计 parse_success，
             # 于是门禁失败、仅"带警告通过"的单据在看板维度仍是干净成功（P14 的
@@ -424,6 +539,7 @@ def start_recognition_job(image_path, vendor_hint="", receipt_id=None,
                 JOBS[job_id].update({"job_status": "error",
                                      "error_msg": human_job_error(e),
                                      "error_detail": str(e)[:500]})
+            _persist_job(job_id)
             _track_internal("ocr_error", receipt_id, {
                 "job_id": job_id, "status": "error",
                 "elapsed_ms": _job_elapsed_ms(job_id),
@@ -573,7 +689,8 @@ def _mark_job_failed(receipt_id):
     """识别失败置 error；单据若已被人工接管（保存/标记/入账）则保持原状态，不被迟到失败覆盖。"""
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id)
-        if row is not None and (row.status in HUMAN_FINAL_STATUSES or row.deleted_at):
+        if row is not None and (row.status in HUMAN_FINAL_STATUSES or row.deleted_at
+                                or getattr(row, "reversed_at", None)):
             return
         db.update_receipt(receipt_id, status="error")
 
@@ -606,9 +723,15 @@ def purge_expired_jobs(now=None, ttl=JOB_TTL_SECONDS) -> int:
 
 
 def get_job(job_id, tenant_id=None):
-    """取 Job；传入 tenant_id 时只返回本租户的 Job（别家的一律当作不存在）。"""
+    """取 Job；传入 tenant_id 时只返回本租户的 Job（别家的一律当作不存在）。
+
+    进程重启后内存 JOBS 为空，此时从 recognition_jobs 回读持久终态：
+    succeeded/failed 原样返回，绝不会被洗回 pending。
+    """
     with JOBS_LOCK:
         job = dict(JOBS.get(job_id, {}))
+    if not job:
+        job = _load_persisted_job(job_id)
     if not job:
         return None
     if tenant_id is not None and job.get("tenant_id") not in (None, str(tenant_id)):
@@ -753,9 +876,19 @@ def save_parsed_data(receipt_id, data, result):
         # 状态保护与迟到 Job 隔离 (AC-02-05 / INV-04):
         # 若单据已被软删除、已被手工保存 (edited)、已转手工 (manual_entry) 或已审批 (approved)，
         # 迟到的识别结果绝不覆盖人工数据。
-        if _ctx_row.deleted_at is not None:
+        if _ctx_row.deleted_at is not None or getattr(_ctx_row, "reversed_at", None):
             return build_detail(_ctx_row)
         if _ctx_row.status in HUMAN_FINAL_STATUSES or (_ctx_row.doc_form or "") == "manual_entry":
+            return build_detail(_ctx_row)
+        # L09 CAS：以 Job 启动时的 parse 版本为准。转手工/换图/重跑/保存等推进过
+        # version 后，旧 Job 的迟到结果一律不写回（旧结果不得覆盖新版本）。
+        _expected_version = result.get("_expected_parse_version") if isinstance(result, dict) else None
+        if _expected_version is not None:
+            try:
+                _expected_version = int(_expected_version)
+            except (TypeError, ValueError):
+                _expected_version = None
+        if _expected_version is not None and int(_ctx_row.version or 1) != _expected_version:
             return build_detail(_ctx_row)
 
         _tenant_ctx = (getattr(_ctx_row, "tenant_id", "") or "").strip() or None
@@ -879,9 +1012,14 @@ def save_parsed_data(receipt_id, data, result):
         _final_status = str(result.get("status") or "").strip() or "parsed"
         if _final_status not in ("parsed", "parsed_with_warnings", "flagged"):
             _final_status = "parsed"
+        # L09：成功写回时推进一次版本，使同批其他旧 Job 的 CAS 基线立即失效。
+        _version_kw = {}
+        if _expected_version is not None:
+            _version_kw["version"] = (_ctx_row.version or 1) + 1
         db.update_receipt(
             receipt_id,
             status=_final_status,
+            **_version_kw,
             supplier_name=data.vendor,
             receipt_date=data.date,
             sheet_name=(data.date or "")[:7],
@@ -918,6 +1056,20 @@ def save_parsed_data(receipt_id, data, result):
         # 否则重新识别改写供应商名后锚点仍指向旧档案（名/id 互相矛盾）。
         _refresh_receipt_supplier_anchor(receipt_id, data.vendor, _tenant_ctx)
         db.set_receipt_items(receipt_id, items_raw)
+        # M02：首见 AI 快照（首次可见即冻结 AI 原版 + 字段字典版本 + 逐行 line_uuid）。
+        # 幂等：重复识别不覆盖首见；失败仅告警，不阻断识别主链路。
+        try:
+            if not db.has_review_event(receipt_id, "ai_first_visible"):
+                from app.services import review_metrics as _rm
+                _snap = _rm.build_snapshot(
+                    data.model_dump(), db.get_receipt_items(receipt_id))
+                if _snap is not None:
+                    db.append_review_event(
+                        receipt_id, "ai_first_visible", actor="ai",
+                        payload=_snap, tenant_id=_tenant_ctx, actor_role="system")
+        except Exception as _snap_e:
+            logging.getLogger("receipt_utils").warning(
+                "[M02] 首见 AI 快照落库失败(不阻断): %s", _snap_e)
         return build_detail(db.get_receipt_row(receipt_id))
 
 

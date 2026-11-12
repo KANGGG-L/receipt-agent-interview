@@ -23,7 +23,8 @@
 - rag 记忆总开关 → memory_enabled（app/services/rag.py 的 memory_enabled
   与 retrieve_context 入口短路，C1；读原始值，不走 get_bool）；
 - rag 记忆语料 PII 脱敏 → memory_pii_mask_enabled（app/services/rag.py 的
-  _mask_memory_text，W-9；缺省 False = 零行为变化，开启后写入路径落库前脱敏 notes/sample）；
+  _mask_memory_text，W-9 引入、W-ISO-2 改判为缺省 True；现行缺省为开启，落库前脱敏
+  notes/sample；变更史唯一登记在 app/services/rag.py 的 MEMORY_PII_MASK_KEY 上方注释块）；
 - api_receipts 模糊拦截 → blur_laplacian_threshold（app/api_receipts.py:213）；
 - models 反馈蒸馏与价格异动 → feedback_distill_threshold（db.should_distill_vendor_memory）
   / price_anomaly_threshold_pct（app/services/price_anomaly.py）；
@@ -64,6 +65,12 @@ SETTINGS_DEFAULTS = {
     # 刻意不默认开启 —— TTL 一开，存量记忆会在某个时刻集体停止注入，属于
     # 「默认值即行为变更」，必须由管理台显式设置。
     "memory_ttl_days": 0,
+    # P2-T20（D9已决）：TTL 按 kind 分级体系。
+    # 价格区间波动频繁，超期必须失效；包装规格按季度调整；别名与版式属于长期稳定先验，不过期。
+    "memory_ttl_days_price_range": 90,
+    "memory_ttl_days_unit": 180,
+    "memory_ttl_days_alias": 0,
+    "memory_ttl_days_layout": 0,
     # 每 (vendor, tenant) 的 active 记忆容量上限（W-4 / M2 消费：
     # db._evict_vendor_memory_over_capacity，写入侧 upsert_vendor_memory 触发）。
     # 缺省 200 = 宽松但有界：远超正常单供应商的记忆条数，故任何既有用例（远未达上限）
@@ -92,11 +99,10 @@ SETTINGS_DEFAULTS = {
     # 不猜（纯新上传且无从确定供应商时保持现状，避免错误供应商污染）。
     "memory_first_round_inject_enabled": False,
     # LLM 抽取开关（P3-T2/K3 消费：api_receipts._memory_extract_enabled）。
-    # 缺省 False = 与接线前行为逐字节一致（零行为变化）：抽取在写请求（复核保存 /
-    # 入账）路径上发一次外部模型调用（审核腿），缺省不额外消耗额度、也不改变既有
-    # 端点耗时。要靠「用户修正 → 规则级先验」把记忆反馈闭环接上时，由管理台显式开启
-    # （PUT /api/admin/settings）；关闭时两处触发都直接返回，不建模型、不发调用。
-    "memory_extract_enabled": False,
+    # P2-T12（D5已决）：缺省由 False 改为 True，飞轮抽取常开。
+    # 用户在复核时修正过的字段会被抽成候选事实，进入「待确认队列」（status='pending'）；
+    # 管理台可通过 setMemoryExtractEnabled 一键回关；关闭时直接返回，不建模型、不发调用。
+    "memory_extract_enabled": True,
     # 记忆语料 PII 脱敏开关（W-9 / W-ISO-2 消费：rag._mask_memory_text）。
     # 缺省 True（遵循个人信息保护最小化原则，落库与写向量前脱敏 notes/sample）。
     # why 需要这一档：记忆语料的 notes/sample 直接落 OCR 明细文本，可能含员工姓名/
@@ -106,6 +112,8 @@ SETTINGS_DEFAULTS = {
     # 做确定性脱敏（复用 ai_registry.tools.pii_masker.v1_0_0，不另写正则实现），并按命中
     # 的 PII 类型计数 + logger.info 留痕（不打印原文）。
     # 脱敏只作用于记忆语料，不改动单据本身（receipts/receipt_items）。
+    # 本键缺省值经历过一次改判，变更史唯一登记在 app/services/rag.py 的 MEMORY_PII_MASK_KEY
+    # 上方注释块；本表只写现行缺省，避免同一份变更史在两处各写一份、日后各说各话。
     "memory_pii_mask_enabled": True,
     # FR-9 连续点踩蒸馏阈值（原 models.FEEDBACK_DISTILL_THRESHOLD=3）
     "feedback_distill_threshold": 3,

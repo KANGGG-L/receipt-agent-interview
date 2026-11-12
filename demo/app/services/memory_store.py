@@ -32,6 +32,49 @@ from app import db
 
 logger = logging.getLogger(__name__)
 
+# 写入路径各阶段降级与失败常量（T7 G8）
+WRITE_STAGE_INGEST = "ingest"                  # 直接写记忆失败
+WRITE_STAGE_APPROVE = "approve"                # 审批人审队列落库失败
+WRITE_STAGE_PENDING_ENQUEUE = "pending_enqueue"# 候选事实入队失败
+WRITE_STAGE_SUPERSEDE = "supersede"            # 编辑或同键冲突取代状态机更新失败
+WRITE_STAGE_VECTOR_SYNC = "vector_sync"        # 向量层对称级联增删失败
+
+ALL_WRITE_STAGES = (
+    WRITE_STAGE_INGEST,
+    WRITE_STAGE_APPROVE,
+    WRITE_STAGE_PENDING_ENQUEUE,
+    WRITE_STAGE_SUPERSEDE,
+    WRITE_STAGE_VECTOR_SYNC,
+)
+
+# 写入路径降级计数：{阶段名: 次数}。进程级、不持久化，进程重启归零。
+_WRITE_FAILURE_COUNTS: dict = {stage: 0 for stage in ALL_WRITE_STAGES}
+
+
+def get_write_failure_counts() -> dict:
+    """返回写入路径各阶段降级次数快照字典副本。
+
+    明确契约：进程级计数器，不持久化，进程重启归零。
+    """
+    return dict(_WRITE_FAILURE_COUNTS)
+
+
+def reset_write_failure_counts() -> None:
+    """清空写入路径失败计数（M05 process reset：重启基线的显式等价动作）。"""
+    for _stage in ALL_WRITE_STAGES:
+        _WRITE_FAILURE_COUNTS[_stage] = 0
+
+
+def _note_write_failure(stage: str, exc: BaseException,
+                        vendor=None, tenant_id=None) -> None:
+    """写路径某阶段降级/失败：计数 +1 并打 warning 日志。"""
+    st = str(stage or "").strip() or "unknown"
+    _WRITE_FAILURE_COUNTS[st] = _WRITE_FAILURE_COUNTS.get(st, 0) + 1
+    logger.warning(
+        "[WARN] 记忆写入降级/失败 (stage=%s vendor=%s tenant=%s): %s: %s",
+        st, vendor, tenant_id, type(exc).__name__, exc
+    )
+
 
 class MemoryVectorDeleteError(RuntimeError):
     """FP-2c：删除路径的向量级联失败（on_error="raise" 时抛出）。
@@ -80,6 +123,7 @@ def delete_memory_vectors(tenant_id, memory_ids, on_error="degrade"):
         try:
             rag._store(tenant_id)._collection.delete(where={"memory_id": mid})
         except Exception as e:
+            _note_write_failure(WRITE_STAGE_VECTOR_SYNC, e, tenant_id=tenant_id)
             if on_error == "raise":
                 failures.append((mid, f"{type(e).__name__}: {e}"))
                 continue
@@ -192,6 +236,7 @@ def restore_memory_vectors(tenant_id, memory_id, vendor=None):
     try:
         return rag.ensure_memory_vectors(tenant_id, memory_id, vendor=vendor)
     except Exception as e:
+        _note_write_failure(WRITE_STAGE_VECTOR_SYNC, e, vendor=vendor, tenant_id=tenant_id)
         # ensure_memory_vectors 的契约是不抛；这里兜底是为了"实现漂移"时不把恢复动作
         # 拖成失败（状态已提交），同时避免异常被静默吞掉（本仓③类缺陷）。
         logger.warning(

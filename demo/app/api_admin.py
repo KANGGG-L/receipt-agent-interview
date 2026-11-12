@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import re
 from app import db
-from app.auth import require_admin, require_role, resolve_tenant
+from app.auth import require_admin, require_role, resolve_tenant, resolve_account
 from app.services.engine_config_diff import engine_config_field_diff
 from app.services.security_guard import mask_secret_key
 
@@ -135,12 +135,32 @@ def _tenant_id(request: Request) -> str:
 
 def resolve_tenant_filter(request: Request, query_value=None):
     """观测域租户过滤键（原 api_admin/api_phase2 两处内联块收敛）：
-    Query 参数优先 → X-Tenant-Id 头 → 剔除空白；'all'/空 → None（全租户聚合）。"""
+    Query 参数优先 → X-Tenant-Id 头 → 剔除空白；'all'/空 → None（全租户聚合）。
+
+    I03 scope 锚定（test_scope_query_cannot_expand）：IDENTITY_V2_ENABLED=1 时，
+    塌缩到全租户聚合（None）要求调用者持 technical_aggregate_read 平台能力
+    （capabilities_for 判定）；不具备者一律锚定回调用者自身租户——默认身份
+    scope 不可由 query 参数（tenant_id=all / 缺省）或请求头扩大。开关关闭时
+    行为与历史版本一致（None）。
+    """
     t = query_value if query_value is not None else (
         request.headers.get("X-Tenant-Id") or request.headers.get("x-tenant-id"))
     if t:
         t = t.strip()
-    return t if (t and t != "all") else None
+    if t and t != "all":
+        return t
+    try:
+        from app import identity_store
+        if identity_store.identity_v2_enabled():
+            from app.auth import resolve_account, resolve_tenant
+            acct = resolve_account(request) or {}
+            email = acct.get("email")
+            caps = identity_store.capabilities_for(email, acct.get("tenant")) if email else set()
+            if "technical_aggregate_read" not in caps:
+                return resolve_tenant(request)
+    except Exception:  # noqa: BLE001 开关/能力层异常按历史行为处理（require_admin 已在前）
+        pass
+    return None
 
 
 class EngineConfigBody(BaseModel):
@@ -2247,6 +2267,186 @@ def _collect_retrieve_failures() -> dict:
     return {"counts": counts, "process_scoped": True, "note": _RETRIEVE_FAILURES_NOTE}
 
 
+_WRITE_FAILURES_NOTE = (
+    "注意：这是进程级计数器，进程重启即归零，不持久化，"
+    "只反映本进程内写入侧异常与降级次数。"
+)
+
+
+def _collect_write_failures() -> dict:
+    """写路径静默降级与异常计数快照（只读上报）。"""
+    try:
+        from app.services import memory_store
+        counts = memory_store.get_write_failure_counts()
+    except Exception as e:
+        logging.getLogger("api_admin").warning("读取写路径失败计数失败: %s", e)
+        return {"counts": {}, "process_scoped": True,
+                "note": _WRITE_FAILURES_NOTE,
+                "error": "写路径失败计数读取失败: %s" % e}
+    return {"counts": counts, "process_scoped": True, "note": _WRITE_FAILURES_NOTE}
+
+
+# -------------------------------------------------------------
+# M05 operations/observability：process reset / 读写失败计数 / 持久 sync backlog
+# -------------------------------------------------------------
+_PROCESS_STARTED_AT = datetime.now().isoformat(timespec="seconds")
+_PROCESS_BASELINE = {"reset_at": None, "reset_by": None}
+
+
+def _process_snapshot() -> dict:
+    """进程基线：计数器为进程级，重启即归零；reset 是重启的显式等价动作。"""
+    uptime = 0
+    try:
+        uptime = int((datetime.now() - datetime.fromisoformat(_PROCESS_STARTED_AT)).total_seconds())
+    except Exception:  # noqa: BLE001
+        pass
+    return {
+        "started_at": _PROCESS_STARTED_AT,
+        "baseline_reset_at": _PROCESS_BASELINE["reset_at"],
+        "baseline_reset_by": _PROCESS_BASELINE["reset_by"],
+        "uptime_seconds": uptime,
+        "counter_scope": "process",
+        "restart_resets_counters": True,
+    }
+
+
+def _ops_state(error=None, empty=False, unknown=False):
+    """三态+正常：unknown（读不到）/ no_data（读到但无数据）/ error / ok。
+
+    绝不能把 unknown / no_data / error 折成 0（0 会被读成「有数据且结果为坏」）。
+    """
+    if error:
+        return "error"
+    if unknown:
+        return "unknown"
+    if empty:
+        return "no_data"
+    return "ok"
+
+
+def _failure_block(counts, error=None):
+    total = sum(int(v or 0) for v in (counts or {}).values())
+    return {"state": _ops_state(error=error, empty=(total == 0 and not error)),
+            "counts": counts or {}, "total": total,
+            "error": error, "process_scoped": True}
+
+
+def _sync_backlog_block():
+    """持久 sync backlog：读 durable_tasks（跨重启仍在），无行=no_data 而非 0 假象。"""
+    try:
+        from app import task_store as _ts
+        stats = _ts.stats_by_kind("memory_vector_sync")
+        return {"state": _ops_state(empty=(stats.get("total", 0) == 0)),
+                "kind": "memory_vector_sync", "stats": stats,
+                "persistent": True, "error": None}
+    except Exception as e:  # noqa: BLE001
+        return {"state": "error", "kind": "memory_vector_sync", "stats": None,
+                "persistent": True, "error": str(e)[:200]}
+
+
+def _technical_operations_payload(request):
+    from app import task_store as _ts
+    try:
+        enabled = _ts.enabled()
+        task_stats = _ts.stats()
+        task_error = None
+    except Exception as e:  # noqa: BLE001
+        enabled, task_stats, task_error = None, None, str(e)[:200]
+    try:
+        dead = _ts.dead_letter_tasks(limit=20)
+    except Exception as e:  # noqa: BLE001
+        dead = []
+        task_error = task_error or str(e)[:200]
+    _read = _collect_retrieve_failures()
+    _write = _collect_write_failures()
+    read_block = _failure_block(_read.get("counts"), error=_read.get("error"))
+    write_block = _failure_block(_write.get("counts"), error=_write.get("error"))
+    return {
+        "status": "success", "role": "technical",
+        "process": _process_snapshot(),
+        "read_failures": read_block,
+        "write_failures": write_block,
+        "sync_backlog": _sync_backlog_block(),
+        "tasks": {"state": _ops_state(error=task_error, unknown=(enabled is None)),
+                  "enabled": enabled, "stats": task_stats, "error": task_error},
+        "errors": {"state": _ops_state(error=task_error, empty=(not dead)),
+                   "dead_letter": dead, "retry_limit": 5},
+    }
+
+
+def _owner_operations_payload(request):
+    tenant = _tenant_id(request)
+    try:
+        pending = db.list_pending_memory(status="pending", tenant_id=tenant)
+        pending_state = _ops_state(empty=(not pending))
+    except Exception as e:  # noqa: BLE001
+        pending, pending_state = [], "error"
+        logging.getLogger("api_admin").warning("读取 owner 记忆候选失败: %s", e)
+    edited = []
+    try:
+        s = db.get_session()
+        try:
+            from sqlalchemy import text as _t
+            rows = s.execute(_t(
+                "SELECT id, supplier_name, status, updated_at FROM receipts"
+                " WHERE tenant_id=:t AND status='edited' AND deleted_at IS NULL"
+                " ORDER BY id DESC LIMIT 20"), {"t": tenant}).fetchall()
+            edited = [{"receipt_id": int(r[0]), "supplier_name": r[1] or "",
+                       "status": r[2], "updated_at": r[3]} for r in rows]
+        finally:
+            s.close()
+        edited_state = _ops_state(empty=(not edited))
+    except Exception as e:  # noqa: BLE001
+        edited_state = "error"
+        logging.getLogger("api_admin").warning("读取 owner 编辑清单失败: %s", e)
+    return {
+        "status": "success", "role": "owner",
+        "memory_candidates": {"state": pending_state, "items": pending},
+        "edits": {"state": edited_state, "items": edited},
+    }
+
+
+def _require_exact_owner(request):
+    """owner 视图只给 owner（平台 admin 不继承商户业务视图，D-02 分离）。"""
+    account = resolve_account(request) or {}
+    if account.get("role") != "owner":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="权限不足：该视图仅商户 owner 可见。")
+    request.state.account = account
+    return account
+
+
+@router.get("/api/admin/operations/technical")
+def operations_technical(request: Request):
+    """技术 admin 视图：错误、重试、读写失败计数、持久 sync backlog、process 基线。"""
+    require_admin(request)
+    return _technical_operations_payload(request)
+
+
+@router.get("/api/admin/operations/owner")
+def operations_owner(request: Request):
+    """owner 商业视图：记忆候选与编辑清单；与 technical 视图互不可见。"""
+    _require_exact_owner(request)
+    return _owner_operations_payload(request)
+
+
+@router.post("/api/admin/operations/process-reset")
+def operations_process_reset(request: Request):
+    """process reset：清零进程级读写失败计数并写入基线（等价重启后的观测起点）。"""
+    account = require_admin(request)
+    from app.services import rag, memory_store
+    rag.reset_retrieve_failure_counts()
+    memory_store.reset_write_failure_counts()
+    now = datetime.now().isoformat(timespec="seconds")
+    _PROCESS_BASELINE["reset_at"] = now
+    _PROCESS_BASELINE["reset_by"] = (account or {}).get("email") or "admin"
+    return {"status": "success", "data": {
+        "process": _process_snapshot(),
+        "read_failures": _failure_block(rag.get_retrieve_failure_counts()),
+        "write_failures": _failure_block(memory_store.get_write_failure_counts()),
+    }}
+
+
 @router.get("/api/admin/memory-metrics")
 def memory_metrics_dashboard(request: Request):
     """记忆度量看板（只读）：记忆命中率 / SKU 匹配率 / 有-无记忆修改率 / 字段级未采纳率。
@@ -2278,6 +2478,15 @@ def memory_metrics_dashboard(request: Request):
         logging.getLogger("api_admin").warning("读取 memory_enabled 失败: %s", e)
         memory_on = None
     retrieve_failures = _collect_retrieve_failures()
+    write_failures = _collect_write_failures()
+    # M05：后台任务/同步状态摘要（未知/无数据/错误分列——不把取不到折成 0）
+    ops = {"tasks_enabled": None, "task_stats": None, "task_error": None}
+    try:
+        from app import task_store as _ts
+        ops["tasks_enabled"] = _ts.enabled()
+        ops["task_stats"] = _ts.stats()
+    except Exception as e:
+        ops["task_error"] = str(e)[:200]
     try:
         mod = _load_memory_metrics_module()
         mod.DB = db.DB_PATH
@@ -2290,9 +2499,11 @@ def memory_metrics_dashboard(request: Request):
             "status": "error", "code": "METRICS_FAILED",
             "msg": "记忆统计取数失败，请稍后再试。",
             "memory_enabled": memory_on, "metrics": None,
-            "retrieve_failures": retrieve_failures}
+            "retrieve_failures": retrieve_failures,
+            "write_failures": write_failures, "ops": ops}
     return {"status": "success", "memory_enabled": memory_on, "metrics": metrics,
-            "retrieve_failures": retrieve_failures}
+            "retrieve_failures": retrieve_failures,
+            "write_failures": write_failures, "ops": ops}
 
 
 # -------------------------------------------------------------

@@ -12,7 +12,8 @@ from app import db
 logger = logging.getLogger(__name__)
 
 
-def apply_receipt_to_inventory(row, tenant_id=None):
+def apply_receipt_to_inventory(row, tenant_id=None, business_action=None,
+                               return_batch_id=None):
     """approve 入账：把收据明细写入 SKU 库存（幂等，仅 approved 状态）。
 
     - 匹配到 SKU → 累加 current_stock + 记录价格历史
@@ -49,6 +50,28 @@ def apply_receipt_to_inventory(row, tenant_id=None):
         _match_sku, _normalize_sku_name, canonical_sku_name)
 
     _tenant = tenant_id or getattr(row, "tenant_id", None) or None
+    # L03/L04 过账动作分流（P03 合同 §2）：doc_form 图像形态 ≠ 业务动作。
+    # 优先级：approve 显式传入（body 确认）> 单据已落库的 owner 确认 > doc_form
+    # 保守推断（推断不落库，不冒充 owner 确认）。
+    _action = ((business_action or "").strip()
+               or (getattr(row, "business_action", None) or "").strip())
+    if not _action:
+        if (getattr(row, "doc_form", "") or "") == "monthly_statement":
+            _action = "statement"
+        else:
+            _action = "purchase"
+    if _action == "statement":
+        logger.info("[inventory] receipt %s 月结对照凭证：NO_PHYSICAL_POSTING（不入实物库存）",
+                    row.id)
+        return {"posted": False, "action": "statement",
+                "reason": "NO_PHYSICAL_POSTING"}
+    if _action == "financial_credit":
+        # L04：纯金额贷项——零实物移动、不生成负 payment；贷方余额事实由 approve
+        # 事务写 credit_documents/credit_entries（P03 §2：stock_delta=0）。
+        logger.info("[inventory] receipt %s 纯金额贷项：NO_PHYSICAL_POSTING（贷方余额入信用账）",
+                    row.id)
+        return {"posted": False, "action": "financial_credit",
+                "reason": "NO_PHYSICAL_POSTING"}
     # P2-T2：供应商锚点（别名表按供应商建键）。行上已锚定直接用；未锚定按供应商名
     # 解析一次（唯一解析实现 db.resolve_supplier_id，解析不出留 None → 不登记别名）。
     _supplier_id = getattr(row, "supplier_id", None)
@@ -72,6 +95,11 @@ def apply_receipt_to_inventory(row, tenant_id=None):
     _alias_protected = 0      # 既有别名指向被保护、未改指的次数
 
     items = db.get_receipt_items(row.id)
+    # L04 physical_return：owner 指定来源批次的实物退货（事务内复核防并发抢退）。
+    # 正退货量 → 负移动：按原批次成本（批次行本身）反向消耗指定批次；贷方余额事实
+    # 由 approve 事务另行落 credit_documents（与实物流分开，P03 §2/ADR01/03）。
+    if _action == "physical_return":
+        return _post_physical_return(row, items, _tenant, return_batch_id)
     # 预检必须在写任何流水之前完成：币种汇率、单位换算有一项不满足就整张单拒绝入账，
     # 不会出现前几行已入库、后几行失败的部分入账。
     planned = precheck_receipt_for_inventory(row, items, _tenant, _supplier_id)
@@ -192,6 +220,7 @@ def apply_receipt_to_inventory(row, tenant_id=None):
             amount=_amount, vendor=row.supplier_name,
             date=row.receipt_date or "", receipt_id=row.id, kind="in",
             note=_note, tenant_id=_tenant,
+            line_uuid=(it.get("line_uuid") or None),
         )
     # P2-T2：别名登记结果汇总留痕。`NO_SUPPLIER` 是**正常**情形（该单据的供应商没有
     # 档案，别名表按供应商建键故无从登记）→ info；其余原因（INVALID_SKU / CONFLICT /
@@ -316,6 +345,74 @@ class ReversalBlocked(Exception):
         self.details = details or []
 
 
+class ReturnSourceInsufficient(Exception):
+    """来源批次可退量不足（并发抢退）；approve 预校验后在事务内复核时抛出。"""
+
+    def __init__(self, msg, details=None):
+        super().__init__(msg)
+        self.msg = msg
+        self.details = details or []
+
+
+def _post_physical_return(row, items, tenant_id, return_batch_id):
+    """L04 physical_return 过账：正退货量 → 指定来源批次的负移动（原批次成本）。
+
+    必须在 db.atomic()（approve ambient 事务）内调用：
+    - 逐非 void 行：锚定 SKU、单位=基本单位（换算退货未开通，approve 预校验已挡）；
+    - 指定批次存在且属于行 SKU；事务内复核 remaining >= 行量（并发抢退 → 409 语义异常）；
+    - 批次 remaining 扣减（耗尽关批）、SKU current_stock 扣减、写 kind='return' 负流水
+      （带 line_uuid，reverse 可反转恢复）。
+    不写任何采购/应付事实；credit 由 approve 落 credit_documents。
+    """
+    from app import money as _money
+    tid = str(tenant_id or "default")
+    if not return_batch_id:
+        raise ValueError("physical_return 需要 return_batch_id")
+    s = db.get_session()  # ambient 事务会话
+    batch = s.get(db._InventoryBatchRow, int(return_batch_id))
+    if batch is None:
+        raise ReturnSourceInsufficient("来源批次不存在，无法退货")
+    sku = s.get(db._SkuRow, int(batch.sku_id))
+    base_unit = (getattr(sku, "base_unit", "") or "").strip()
+    written = []
+    for it in items:
+        if it.get("is_void"):
+            continue
+        qty = _money.qty(it.get("quantity"))
+        if qty is None or qty <= 0:
+            raise ValueError("physical_return 行数量必须为正（负号方向由过账决定）")
+        if not it.get("sku_id") or int(it["sku_id"]) != int(batch.sku_id):
+            raise ValueError("退货行 SKU 与来源批次不一致")
+        unit = (it.get("unit") or "").strip()
+        if base_unit and unit and base_unit.lower() != unit.lower():
+            raise ValueError("退货量纲换算尚未开通：请按基本单位 %s 录入" % base_unit)
+        # 事务内复核（并发抢退 → ReturnSourceInsufficient → approve 整体回滚/409 映射）
+        if float(batch.remaining_qty or 0) + 1e-9 < float(qty):
+            raise ReturnSourceInsufficient(
+                "来源批次可退数量不足：该批还剩 %s%s，本次要退 %s%s" % (
+                    fmt_stock_qty(batch.remaining_qty), base_unit,
+                    fmt_stock_qty(qty), base_unit))
+        batch.remaining_qty = _money.qty(float(batch.remaining_qty or 0) - float(qty))
+        if batch.remaining_qty <= 0:
+            batch.remaining_qty = 0.0
+            batch.is_closed = 1
+        if sku is not None:
+            sku.current_stock = _money.qty((sku.current_stock or 0) - float(qty))
+        amount = _money.money(-(it.get("amount") or 0))
+        s.add(db._StockLogRow(
+            sku_id=batch.sku_id, name=it.get("name") or "", qty=-float(qty),
+            unit=unit or base_unit, amount=amount, vendor=getattr(row, "supplier_name", ""),
+            date=getattr(row, "receipt_date", "") or "", receipt_id=int(row.id),
+            kind="return", note="实物退货（来源批次 #%s）" % return_batch_id,
+            line_uuid=it.get("line_uuid"), source_batch_id=int(return_batch_id),
+            created_at=db.now_iso(), tenant_id=tid))
+        written.append({"sku_id": batch.sku_id, "qty": -float(qty),
+                        "batch_id": int(return_batch_id),
+                        "line_uuid": it.get("line_uuid")})
+    s.flush()
+    return {"posted": True, "action": "physical_return", "movements": written}
+
+
 def reverse_receipt_inventory(receipt_id, who, reason="", tenant_id=None):
     """冲销一张已入账单据对库存的影响（必须在 db.atomic() 里调用）。
 
@@ -382,6 +479,40 @@ def reverse_receipt_inventory(receipt_id, who, reason="", tenant_id=None):
             created_at=db.now_iso(), tenant_id=tid))
         written.append({"sku_id": l.sku_id, "name": l.name, "qty": -float(l.qty or 0),
                         "unit": l.unit, "original_log_id": l.id})
+    # L04：退货单冲销 = 恢复来源批次与库存（kind='return' 反转；追加事实不删历史）。
+    # 恢复上界守恒：批次 remaining 不超过 initial（防重复冲销/数据漂移虚增）。
+    return_logs = [l for l in logs if l.kind == "return" and l.sku_id]
+    for l in return_logs:
+        sku = s.get(db._SkuRow, int(l.sku_id))
+        if sku is not None:
+            sku.current_stock = _q((sku.current_stock or 0) + abs(float(l.qty or 0)))
+        batch = None
+        if getattr(l, "source_batch_id", None):
+            batch = s.get(db._InventoryBatchRow, int(l.source_batch_id))
+        if batch is None and l.line_uuid:
+            batch = s.query(db._InventoryBatchRow).filter_by(
+                receipt_id=int(receipt_id), line_uuid=l.line_uuid).first()
+        if batch is None:
+            batch = s.query(db._InventoryBatchRow).filter_by(
+                receipt_id=int(receipt_id), sku_id=int(l.sku_id)).first()
+        if batch is None:
+            raise ReversalBlocked(
+                "退货单的来源批次已不存在，无法冲销恢复。请先在库存页人工核对后再处理。", [])
+        batch.remaining_qty = _q((batch.remaining_qty or 0) + abs(float(l.qty or 0)))
+        if (batch.initial_qty or 0) > 0 and batch.remaining_qty > (batch.initial_qty or 0):
+            batch.remaining_qty = _q(batch.initial_qty)
+        if (batch.remaining_qty or 0) > 0:
+            batch.is_closed = 0
+        s.add(db._StockLogRow(
+            sku_id=l.sku_id, name=l.name, qty=abs(float(l.qty or 0)), unit=l.unit,
+            amount=abs(float(l.amount or 0)), vendor=l.vendor, date=db.now_iso()[:10],
+            receipt_id=int(receipt_id), kind="reversal",
+            note=f"冲销退货 #{receipt_id}（恢复来源批次，原流水 #{l.id}）"
+                 + (f"：{reason}" if reason else ""),
+            created_at=db.now_iso(), tenant_id=tid))
+        written.append({"sku_id": l.sku_id, "name": l.name,
+                        "qty": abs(float(l.qty or 0)), "unit": l.unit,
+                        "original_log_id": l.id, "restored_batch": True})
     for sku_id, batches in batches_by_sku.items():
         for b in batches:
             b.remaining_qty = 0.0

@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app import db, recon_store
-from app.auth import require_role, resolve_tenant
+from app.auth import require_merchant_owner, require_role, resolve_tenant
 from app.services.receipt_utils import (
     verify_voucher_image_signature, voucher_image_signature,
 )
@@ -237,6 +237,138 @@ def list_payments(request: Request, supplier_id: int = None):
         if not sup:
             return {"status": "success", "data": []}
         data = [p for p in data if p.get("supplier_id") == supplier_id]
+    return {"status": "success", "data": data}
+
+
+class CreditRefundBody(BaseModel):
+    action: str  # request / receive / cancel / fail
+    amount_minor: Optional[int] = None  # request 时必填
+    refund_id: Optional[int] = None     # receive/cancel/fail 时必填
+    idempotency_key: Optional[str] = None
+    evidence: Optional[str] = None      # receive 时必填（收到证据）
+
+
+@router.post("/api/supplier-credits/{credit_id}/refunds")
+def supplier_credit_refund(credit_id: int, body: CreditRefundBody, request: Request):
+    """L07：供应商退款——pending 占用/登记收到/取消释放/失败释放（D-03/ADR03）。"""
+    require_merchant_owner(request)
+    tenant_id = _tenant_id(request)
+    account = getattr(request.state, "account", {}) or {}
+    from app.services.supplier_credit import request_refund, settle_refund, CreditError
+    try:
+        if body.action == "request":
+            if not body.amount_minor:
+                return JSONResponse(status_code=422, content={
+                    "status": "error", "code": "VALIDATION_ERROR",
+                    "msg": "退款请求必须提供金额（amount_minor，分）。"})
+            result = request_refund(tenant_id, credit_id, body.amount_minor,
+                                    actor=account.get("email", "unknown"),
+                                    idempotency_key=body.idempotency_key)
+        else:
+            if not body.refund_id:
+                return JSONResponse(status_code=422, content={
+                    "status": "error", "code": "VALIDATION_ERROR",
+                    "msg": "退款终结必须提供 refund_id。"})
+            result = settle_refund(tenant_id, credit_id, body.refund_id, body.action,
+                                   actor=account.get("email", "unknown"),
+                                   evidence=body.evidence or "")
+    except CreditError as e:
+        return JSONResponse(status_code=e.status, content={
+            "status": "error", "code": e.code, "msg": e.msg, "data": e.data})
+    return {"status": "success", "data": result}
+
+
+class CreditAllocateBody(BaseModel):
+    version: Optional[int] = None
+    idempotency_key: str
+    targets: Optional[list] = None  # [{receipt_id, amount_minor}]；reversal_of 时不填
+    reversal_of: Optional[int] = None  # 提供时=撤销该笔抵扣（追加 reversal）
+
+
+@router.post("/api/supplier-credits/{credit_id}/allocations")
+def allocate_supplier_credit(credit_id: int, body: CreditAllocateBody, request: Request):
+    """L06：owner 显式抵扣（部分/多目标）或撤销（reversal_of）。D-03 契约。"""
+    require_merchant_owner(request)
+    tenant_id = _tenant_id(request)
+    account = getattr(request.state, "account", {}) or {}
+    from app.services.supplier_credit import allocate_credit, reverse_allocation, CreditError
+    try:
+        if body.reversal_of is not None:
+            result = reverse_allocation(tenant_id, credit_id, body.reversal_of,
+                                        actor=account.get("email", "unknown"))
+        else:
+            result = allocate_credit(tenant_id, credit_id, body.targets,
+                                     actor=account.get("email", "unknown"),
+                                     actor_role=account.get("role") or "",
+                                     idempotency_key=body.idempotency_key,
+                                     expected_credit_version=body.version)
+    except CreditError as e:
+        return JSONResponse(status_code=e.status, content={
+            "status": "error", "code": e.code, "msg": e.msg, "data": e.data})
+    return {"status": "success", "data": result}
+
+
+@router.get("/api/supplier-credits")
+def list_supplier_credit_balances(request: Request):
+    """U03：全部有信用余额的供应商汇总（owner 域；金额 minor，前端原样展示不折算）。"""
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    from sqlalchemy import text as _text
+    from app import credit_store
+    rows = []
+    with credit_store._engine().connect() as conn:
+        srows = conn.execute(_text(
+            "SELECT DISTINCT d.supplier_id, sp.name FROM credit_documents d"
+            " LEFT JOIN suppliers sp ON sp.id = d.supplier_id"
+            " WHERE d.tenant_id=:t AND d.state='active' ORDER BY d.supplier_id"),
+            {"t": str(tenant_id)}).fetchall()
+        for sid, name in srows:
+            bal = credit_store.credit_balances(tenant_id, int(sid))
+            rows.append({"supplier_id": int(sid), "supplier_name": name or "",
+                         "face_total_minor": bal["face_total_minor"],
+                         "available_minor": bal["available_minor"],
+                         "document_count": bal["document_count"]})
+    return {"status": "success", "data": rows}
+
+
+@router.get("/api/supplier-credits/{supplier_id}")
+def get_supplier_credit_balance(supplier_id: int, request: Request):
+    """L05：供应商贷方余额（正面额/已分配/退款占用/可用），owner 域只读。
+
+    信用事实来自信用台账（credit_documents/entries，L04 发行），与采购应付分账；
+    未分配贷项不并入应付、不标 paid（G05/D-03）。
+
+    U03：同一端点附带该供应商的抵扣流水与退款请求（只读，供工作台选择/撤销/登记），
+    不新增账目语义，写入仍只走 allocations / refunds 两个既有端点。
+    """
+    require_role("owner")(request)
+    tenant_id = _tenant_id(request)
+    from sqlalchemy import text as _text
+    from app import credit_store
+    data = credit_store.credit_balances(tenant_id, supplier_id)
+    with credit_store._engine().connect() as conn:
+        alloc_rows = conn.execute(_text(
+            "SELECT a.id, a.credit_id, a.target_receipt_id, a.amount_minor,"
+            " a.reversal_of, a.created_at,"
+            " (SELECT COUNT(1) FROM credit_allocations r"
+            "   WHERE r.reversal_of=a.id AND r.tenant_id=a.tenant_id) AS reversed_count"
+            " FROM credit_allocations a JOIN credit_documents d ON d.id=a.credit_id"
+            " WHERE a.tenant_id=:t AND d.supplier_id=:s ORDER BY a.id DESC"),
+            {"t": str(tenant_id), "s": int(supplier_id)}).fetchall()
+        refund_rows = conn.execute(_text(
+            "SELECT r.id, r.credit_id, r.state, r.received_evidence, r.created_at"
+            " FROM supplier_refunds r JOIN credit_documents d ON d.id=r.credit_id"
+            " WHERE r.tenant_id=:t AND d.supplier_id=:s ORDER BY r.id DESC"),
+            {"t": str(tenant_id), "s": int(supplier_id)}).fetchall()
+    data["allocations"] = [{
+        "id": int(a[0]), "credit_id": int(a[1]), "target_receipt_id": int(a[2]),
+        "amount_minor": int(a[3]), "reversal_of": a[4], "created_at": a[5],
+        "active": a[4] is None and int(a[6] or 0) == 0,
+    } for a in alloc_rows]
+    data["refunds"] = [{
+        "refund_id": int(r[0]), "credit_id": int(r[1]), "state": r[2],
+        "received_evidence": r[3] or "", "created_at": r[4],
+    } for r in refund_rows]
     return {"status": "success", "data": data}
 
 

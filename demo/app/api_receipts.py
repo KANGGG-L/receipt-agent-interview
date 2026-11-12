@@ -19,7 +19,7 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app import db
 _APPROVE_LOCK = db.receipt_write_lock  # QA-Lock-Split §13：统一单据写锁（实例在 db 层，Job 回写共用）
@@ -38,6 +38,57 @@ from app.services.receipt_utils import (
 def _tenant_id(request: Request) -> str:
     """Gap E2 租户键：委托 app.auth.resolve_tenant（生产态由身份派生，开发态读 X-Tenant-Id）。"""
     return resolve_tenant(request)
+
+
+def _billing_ai_gate(request: Request, request_key="", request_hash=""):
+    """S03 新 AI 权益门：只在开关开启时介入；历史/导出/手工路径不调用本函数。
+
+    返回 None 表示放行；否则返回 402 人话错误。request_key 非空时同时建立预留，
+    重复点击/网络重试按同 key 回放，不因到期锁死已受理的 inflight 任务。
+    """
+    from app.billing import entitlements
+    if not entitlements.gate_enabled():
+        return None
+    try:
+        decision = entitlements.authorize_new_ai(_tenant_id(request), request_key,
+                                                 request_hash)
+    except Exception as exc:  # noqa: BLE001 计费域冲突等按人话返回
+        code = getattr(exc, "code", "AI_ENTITLEMENT_ERROR")
+        msg = getattr(exc, "msg", "这次识别没有开始，请刷新页面后再试。")
+        return JSONResponse(status_code=getattr(exc, "status_code", 409),
+                            content={"status": "error", "code": code, "msg": msg})
+    if decision.get("allow_new_ai"):
+        return None
+    return JSONResponse(
+        status_code=402,
+        content={"status": "error",
+                 "code": decision.get("code") or "AI_ENTITLEMENT_REQUIRED",
+                 "msg": decision.get("msg") or
+                 "试用已结束或套餐还没生效，暂时不能发起新的 AI 识别；"
+                 "手工录入和历史单据仍可正常使用。"})
+
+
+def _billing_consume(request: Request, request_key):
+    if not request_key:
+        return
+    from app.billing import entitlements
+    if entitlements.gate_enabled():
+        try:
+            entitlements.consume(_tenant_id(request), request_key)
+        except Exception:  # noqa: BLE001 预留状态记录失败不影响已受理的 AI 任务
+            pass
+
+
+def _billing_release(request: Request, request_key):
+    if not request_key:
+        return
+    from app.billing import entitlements
+    if entitlements.gate_enabled():
+        try:
+            entitlements.release(_tenant_id(request), request_key)
+        except Exception:  # noqa: BLE001
+            pass
+
 
 
 def _supplement_payment_mark(receipt_row) -> str:
@@ -139,6 +190,25 @@ def _cleanup_unreferenced_preview_cache(image_path) -> bool:
     if image_web.preview_stem(image_path) in referenced:
         return False
     return image_web.remove_preview_cache(image_path)
+
+
+def _convert_request_replayed(row, request_key):
+    """L09：转手工操作键幂等判定——同单据同 request_key 已落过 convert_manual 审计
+    即视为重放（网络重试），不再二次推进 version/审计。"""
+    key = str(request_key or "").strip()
+    if not key:
+        return False
+    try:
+        logs = json.loads(getattr(row, "audit_logs_json", None) or "[]")
+    except Exception:
+        return False
+    for entry in logs if isinstance(logs, list) else []:
+        if not isinstance(entry, dict) or entry.get("action") != "convert_manual":
+            continue
+        details = entry.get("details")
+        if isinstance(details, dict) and str(details.get("request_key") or "") == key:
+            return True
+    return False
 
 
 def _version_error(payload_version, row, action):
@@ -810,6 +880,24 @@ def _vendor_hint_from_row(row, tenant_id=None) -> str:
     return name
 
 
+def _record_upload_operation(request_key, content_hash, receipt_id, tenant_id):
+    """U04：上传操作登记（幂等回放依据；无 key 不登记，行为不变）。"""
+    request_key = str(request_key or "").strip()
+    if not request_key:
+        return
+    from sqlalchemy import text as _text
+    s = db.get_session()
+    try:
+        s.execute(_text(
+            "INSERT OR IGNORE INTO upload_operations (tenant_id, request_key,"
+            " content_hash, receipt_id, created_at) VALUES (:t,:k,:h,:r,:ts)"),
+            {"t": str(tenant_id), "k": request_key, "h": str(content_hash or ""),
+             "r": int(receipt_id), "ts": db.now_iso()})
+        s.commit()
+    finally:
+        s.close()
+
+
 @router.post("/api/upload")
 def upload_receipt(
     request: Request,
@@ -818,27 +906,77 @@ def upload_receipt(
     async_: str = Form("true"),
     vendor_hint: str = Form(""),
     force: str = Form("false"),  # true → 用户已确认继续，跳过极模糊硬拦截
+    request_key: str = Form(""),  # U04：客户端操作键（同 key 重试同 ID，防网络重试重复建单）
 ):
     require_role("staff")(request)
     account = getattr(request.state, "account", {})
+
+    # U04 上传操作幂等（ADR05）：同 key 同内容 → 回放原 receipt_id（不重复建单、
+    # 不重复识别）；同 key 异内容 → 409。键在内容校验前裁决（重试不需要重传完整
+    # 内容也成立，但文件已随请求到达，用其 hash 复核一致性）。
+    _tenant = _tenant_id(request)
+    _req_key = str(request_key or "").strip()
+    if _req_key:
+        import hashlib as _hl
+        _data = receipt.file.read()
+        receipt.file.seek(0)
+        _chash = _hl.sha256(_data).hexdigest()
+        from sqlalchemy import text as _text
+        _s = db.get_session()
+        try:
+            _prior = _s.execute(_text(
+                "SELECT content_hash, receipt_id FROM upload_operations"
+                " WHERE tenant_id=:t AND request_key=:k"),
+                {"t": _tenant, "k": _req_key}).fetchone()
+        finally:
+            _s.close()
+        if _prior:
+            if _prior[0] == _chash:
+                _row = db.get_receipt_row(int(_prior[1]), tenant_id=_tenant)
+                if _row is not None:
+                    return {
+                        "status": "success", "code": "UPLOAD_IDEMPOTENT_REPLAY",
+                        "receipt_id": int(_prior[1]),
+                        "msg": "这张图刚才已经提交过了（同一操作重试），没有重复建单。",
+                    }
+            else:
+                return _receipt_error(
+                    409, "IDEMPOTENCY_REUSED",
+                    "同一操作键已用于另一张图片。请刷新页面后重新上传。")
+
+    # S03：新 AI 权益门（仅新识别；重放/手工/历史/导出不走这里）。放在落盘前，
+    # 到期时直接人话拒绝，不产生无主图片。
+    _billing_gate = _billing_ai_gate(request, _req_key,
+                                     _chash if _req_key else "")
+    if _billing_gate is not None:
+        return _billing_gate
 
     # 图片质量预检：空文件或极端过小文件拦截
     # W-SEC-3：内容校验（magic/体积/像素/结构）失败 → 400，不落任何字节
     try:
         image_path = _save_upload(receipt)
     except UploadRejected as e:
+        # 内容校验失败 = 未发起 AI：释放预留，避免永久 reserved。
+        _billing_release(request, _req_key)
         return _upload_rejected_response(e)
     file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
     if file_size < 30:
         if os.path.exists(image_path):
             os.remove(image_path)
+        _billing_release(request, _req_key)
         return _image_quality_reject(
             "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
             ["image_empty_or_corrupted"])
 
     # 无密钥时不要把图删掉再排队。同步告诉店员转手工，原图留在这张单上。
     if _recognition_engine_unconfigured():
-        return _unconfigured_recognition_response(image_path, request)
+        _resp = _unconfigured_recognition_response(image_path, request)
+        if _resp.get("receipt_id"):
+            _record_upload_operation(_req_key, _chash if _req_key else None,
+                                     _resp["receipt_id"], _tenant)
+        # 没有发起 AI：释放预留，避免把「转手工」当成 inflight AI。
+        _billing_release(request, _req_key)
+        return _resp
 
     # P0-1 极模糊前置拦截：Laplacian 方差低于阈值默认 400 快速失败（<1s，不进识别管线）
     # 若 force=true（用户已确认继续），仅记录 warning，不阻断
@@ -854,6 +992,7 @@ def upload_receipt(
                     os.remove(image_path)
                 except Exception:
                     pass
+            _billing_release(request, _req_key)
             return _image_quality_reject(
                 "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
                 ["image_blur"],
@@ -887,6 +1026,8 @@ def upload_receipt(
             image_guard_json=json.dumps(image_guard, ensure_ascii=False),
             quality_warnings_json=json.dumps(quality_warnings, ensure_ascii=False),
         )
+        _record_upload_operation(_req_key, _chash if _req_key else None, receipt_id, _tenant)
+        _billing_release(request, _req_key)
         who = account.get("email", "unknown")
         db.append_audit_log(
             receipt_id, who, "image_guard_intercept", "status", "uploaded", "flagged"
@@ -958,7 +1099,8 @@ def upload_receipt(
         vendor_hint_origin=_hint_origin,
         quality_warnings=quality_warnings,
         raw_image_path=raw_image_path)
-
+    _record_upload_operation(_req_key, _chash if _req_key else None, receipt_id, _tenant)
+    _billing_consume(request, _req_key)
     image_url = public_image_url(receipt_id, raw_image_path, _tenant_id(request))
     # 灰测分组标签（与批量上传同一口径，见 _resolve_treatment）
     grp = "treatment" if _resolve_treatment(request, treatment).lower() == "true" else "control"
@@ -997,6 +1139,7 @@ def upload_batch(
     files: list[UploadFile] = File(...),
     treatment: str = Form("true"),
     force: str = Form("false"),
+    request_keys: str = Form(""),  # U04：逗号分隔操作键列表，与 files 顺序对齐（缺省=无键旧行为）
 ):
     """批量上传（不做手选供应商先验，显式标记为范围外）。
 
@@ -1027,7 +1170,52 @@ def upload_batch(
     seen_hashes = set()
     results = []
     queue_pos = 0
-    for f in files:
+    # U04：批量操作键解析（逗号分隔，与 files 对齐；缺省/数量不齐=按无键处理，旧行为）
+    _batch_keys = [k.strip() for k in str(request_keys or "").split(",") if k.strip()]
+    if len(_batch_keys) != len(files):
+        _batch_keys = []
+    # S03：批量新 AI 同样过权益门（整批拒绝，避免半批扣权益、半批失败）。
+    _billing_gate = _billing_ai_gate(request)
+    if _billing_gate is not None:
+        return _billing_gate
+    for _f_idx, f in enumerate(files):
+        _b_req_key = _batch_keys[_f_idx] if _batch_keys else ""
+        _b_hash = None
+        if _b_req_key:
+            import hashlib as _hl
+            _b_data = f.file.read()
+            f.file.seek(0)
+            _b_hash = _hl.sha256(_b_data).hexdigest()
+            from sqlalchemy import text as _text
+            _s = db.get_session()
+            try:
+                _prior = _s.execute(_text(
+                    "SELECT content_hash, receipt_id FROM upload_operations"
+                    " WHERE tenant_id=:t AND request_key=:k"),
+                    {"t": _tenant_id(request), "k": _b_req_key}).fetchone()
+            finally:
+                _s.close()
+            if _prior:
+                if _prior[0] == _b_hash:
+                    _row = db.get_receipt_row(int(_prior[1]), tenant_id=_tenant_id(request))
+                    if _row is not None:
+                        results.append({
+                            "status": "queued",
+                            "code": "UPLOAD_IDEMPOTENT_REPLAY",
+                            "receipt_id": int(_prior[1]),
+                            "job_id": None,
+                            "msg": "该图已提交（操作重试），未重复建单。",
+                            "image_url": public_image_url(int(_prior[1]), _row.image_path,
+                                                          _tenant_id(request)),
+                        })
+                        continue
+                else:
+                    results.append({
+                        "status": "error", "code": "IDEMPOTENCY_REUSED",
+                        "msg": "同一操作键已用于另一张图片。",
+                        "image_url": None,
+                    })
+                    continue
         # W-SEC-3：批量同单张口径——内容校验失败按文件逐条记 400 错误，其余继续
         try:
             image_path = _save_upload(f)
@@ -1129,6 +1317,8 @@ def upload_batch(
         job_id, receipt_id = _safe_start_recognition_job(
             pipeline_image_path, tenant_id=_tenant_id(request), image_guard=image_guard,
             quality_warnings=photo_warnings, raw_image_path=raw_image_path)
+        if _b_req_key:
+            _record_upload_operation(_b_req_key, _b_hash, receipt_id, _tenant_id(request))
         # 埋点与单张上传同口径（漏斗按 receipt_id 去重；批量此前完全不上报 upload 事件，
         # 灰测分组标签也随之丢失）
         _track_event(account, getattr(request.state, "session_id", job_id),
@@ -1354,6 +1544,17 @@ class SaveEditedBody(BaseModel):
     # True=店员已确认，照常保存。
     confirm_mismatch: Optional[bool] = None
 
+    @field_validator("supplier_name")
+    @classmethod
+    def _validate_supplier_name(cls, value):
+        if value is not None:
+            s = str(value)
+            if re.search(r'[\x00-\x1f\x7f-\x9f]', s):
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+            if len(s) > 200:
+                raise ValueError("供应商名称不能超过200个字符且不能包含非法控制字符")
+        return value
+
 
 def _math_gate(*, doc_form, vendor, date, items, total, service_fee=0.0, tax_amount=0.0,
                discount_amount=0.0, delivery_fee=0.0, deposit_amount=0.0,
@@ -1451,14 +1652,14 @@ MEMORY_EXTRACT_SETTINGS_KEY = "memory_extract_enabled"
 
 
 def _memory_extract_enabled() -> bool:
-    """抽取开关（settings 键 memory_extract_enabled，缺省 False = 零行为变化）。
+    """抽取开关（settings 键 memory_extract_enabled，P2-T12 缺省改为 True 飞轮常开）。
 
-    为什么缺省关闭：抽取在写请求（复核保存 / 入账）路径上发一次外部模型调用，缺省不额外
-    消耗额度、也不改变既有端点耗时 —— 与 vendor_precheck_enabled（P2-T6）同口径。
-    为什么读不到设置时按关闭处理：宁可这次不抽，也不在不确定状态下发外呼。
+    为什么改缺省为 True：P2 激活飞轮抽取，用户在复核时修正过的字段自动抽成候选事实，
+    进入 pending 人审队列（不直接生效，需人工审核批准）；
+    若运维在管理台显式关闭，则现读 settings 直接短路返回 False，不发外呼。
     """
     try:
-        return bool(settings_service.get_bool(MEMORY_EXTRACT_SETTINGS_KEY, False))
+        return bool(settings_service.get_bool(MEMORY_EXTRACT_SETTINGS_KEY))
     except Exception as e:
         logging.getLogger("api_receipts").warning(
             "[memory_extract] 开关读取失败，按关闭处理: %s", e)
@@ -1565,6 +1766,72 @@ def _ai_prefill_corrected_fields(row, items_raw, body) -> bool:
     return False
 
 
+def _extract_injected_memory_ids(rag_ctx_str: str, vendor: str, tenant_id: str) -> Optional[list]:
+    """从 receipts.rag_context_json 提取本次单据注入的记忆 ID 集合（T6 G3 D3已决）。"""
+    if not rag_ctx_str or not str(rag_ctx_str).strip():
+        return None
+    s = str(rag_ctx_str).strip()
+    mids = []
+
+    # 1. JSON 格式协议
+    try:
+        data = json.loads(s)
+        if isinstance(data, dict):
+            for k in ("injected_memory_ids", "memory_ids", "mids"):
+                val = data.get(k)
+                if isinstance(val, list):
+                    mids.extend([str(x).strip() for x in val if x and str(x).strip()])
+        elif isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and "memory_id" in item:
+                    mids.append(str(item["memory_id"]).strip())
+                elif isinstance(item, str) and item.strip():
+                    mids.append(item.strip())
+    except Exception:
+        pass
+
+    # 2. 嵌入标记提取 (UUID / mid:xxxx / <!-- mid:xxxx --> / mem_xxxx)
+    if not mids:
+        found = re.findall(r'(?:mid[:=]|memory_id[\'"]?[:=]\s*[\'"]?|\bmem_)([a-zA-Z0-9_\-]+)', s)
+        if found:
+            mids.extend([f.strip() for f in found if f.strip()])
+        uuid_matches = re.findall(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', s)
+        if uuid_matches:
+            mids.extend([u.strip() for u in uuid_matches if u.strip()])
+
+    # 3. 文本反查同商 active 记忆规则
+    if not mids and vendor and ("[prior:memory]" in s or "别名：" in s or "单位习惯：" in s or "价格区间：" in s):
+        try:
+            active_mems = db.list_vendor_memory(vendor=vendor, tenant_id=tenant_id, include_archived=False)
+            for m in active_mems:
+                fk = str(m.get("fact_key") or "").strip()
+                fv = str(m.get("fact_value") or "").strip()
+                notes = str(m.get("notes") or "").strip()
+                mid = str(m.get("memory_id") or "").strip()
+                if not mid:
+                    continue
+                key_tail = fk.partition(":")[-1].strip() if ":" in fk else fk
+                fk_alias = fk.replace("alias:", "别名：").replace("unit:", "单位习惯：").replace("price_range:", "价格区间：").replace("layout:", "排版习惯：")
+                matched = False
+                if fk and fk in s:
+                    matched = True
+                elif fk_alias and fk_alias in s:
+                    matched = True
+                elif key_tail and len(key_tail) >= 2 and key_tail in s:
+                    matched = True
+                elif fv and fv in s:
+                    matched = True
+                elif notes and len(notes) >= 2 and notes in s:
+                    matched = True
+                if matched:
+                    mids.append(mid)
+        except Exception:
+            pass
+
+    unique_mids = list(dict.fromkeys([m for m in mids if m]))
+    return unique_mids if unique_mids else None
+
+
 def _pending_fact_content(fact, decision=None) -> str:
     """候选事实 (+ 整合判定) → 人工闸里可读的一行（也是 approve 后落 notes 的文本）。
 
@@ -1644,6 +1911,87 @@ def _persist_extract_run(receipt_id, row, tenant_id, supplier_id, trigger,
             "[memory_extract] 运行记录落库失败（不影响保存/入账主流程）"
             "receipt_id=%s trigger=%s：%s: %s",
             receipt_id, trigger, type(e).__name__, e)
+
+
+def _check_memory_fact_quality(fact, tenant_id="default"):
+    """P2-T12 配套①：质量闸判决（Quality Gate）。
+
+    在候选写入 pending_memory 之前，拦截 LOW 质量事实：
+    - 边缘 alias：通过 _normalize_sku_name 归一后完全相同，或首尾残差 <= 16 字符；
+    - 伪区间 price_range：min == max 或区间颠倒，或 (max - min) / ((min + max)/2) < 0.05；
+    - 无差异 unit：候选单位与对应 SKU 的 base_unit 一致。
+
+    返回 (ok: bool, reason: str)。
+    """
+    kind = getattr(fact, "kind", None)
+    key = str(getattr(fact, "fact_key", "") or "")
+    val = str(getattr(fact, "value", "") or "")
+
+    if kind == memory_facts.KIND_ALIAS:
+        from app.services.receipt_utils import _normalize_sku_name
+        raw = key.split(":", 1)[1] if ":" in key else key
+        canon = val
+        raw_n, canon_n = _normalize_sku_name(raw), _normalize_sku_name(canon)
+        if not raw_n or not canon_n:
+            return True, "ok"
+        if raw_n == canon_n:
+            return False, "alias:归一后相同"
+        if canon_n.startswith(raw_n):
+            residual = canon_n[len(raw_n):]
+        elif canon_n.endswith(raw_n):
+            residual = canon_n[: len(canon_n) - len(raw_n)]
+        elif raw_n.startswith(canon_n):
+            residual = raw_n[len(canon_n):]
+        elif raw_n.endswith(canon_n):
+            residual = raw_n[: len(raw_n) - len(canon_n)]
+        else:
+            residual = None
+        if residual is not None and len(residual) <= 16:
+            return False, f"alias:归一后仅首/尾续接，残差 {len(residual)}<=16"
+        return True, "ok"
+
+    elif kind == memory_facts.KIND_PRICE_RANGE:
+        import re
+        m = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*[-~—]\s*(-?\d+(?:\.\d+)?)\s*$", val)
+        if not m:
+            return True, "ok"
+        lo, hi = float(m.group(1)), float(m.group(2))
+        if hi < lo:
+            return False, f"price_range:上界 {hi} 小于下界 {lo}（区间颠倒）"
+        if lo == hi:
+            return False, f"price_range:min==max={lo}（名为区间实为单点）"
+        median = (lo + hi) / 2.0
+        ratio = (hi - lo) / median if median else 1.0
+        if ratio < 0.05:
+            return False, f"price_range:区间宽度/中位价 {ratio:.4f} < 0.05（近单点）"
+        return True, "ok"
+
+    elif kind == memory_facts.KIND_UNIT:
+        rest = key[len("unit:"):] if key.startswith("unit:") else key
+        resolved = False
+        base_unit = None
+        if rest.startswith("#"):
+            try:
+                sku = db.get_sku(int(rest[1:]), tenant_id=tenant_id)
+                if sku and sku.base_unit:
+                    base_unit = str(sku.base_unit).strip()
+                    resolved = True
+            except Exception:
+                pass
+        elif rest:
+            try:
+                sku = db.find_sku_by_name(rest, tenant_id=tenant_id)
+                if sku and sku.base_unit:
+                    base_unit = str(sku.base_unit).strip()
+                    resolved = True
+            except Exception:
+                pass
+        unit = val.strip()
+        if resolved and base_unit and unit == base_unit:
+            return False, f"unit:与 SKU 基准单位「{base_unit}」相同"
+        return True, "ok"
+
+    return True, "ok"
 
 
 def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
@@ -1745,6 +2093,12 @@ def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
                 memory_extract.PROMPT_SOURCE_NONE, "")
             return None
 
+        try:
+            from app.services.llm_logger import set_llm_context
+            set_llm_context(receipt_id=receipt_id, tenant_id=tenant_id, leg="memory_extract")
+        except Exception as _ctx_err:
+            log.warning("[memory_extract] 设置 LLM 上下文失败: %s", _ctx_err)
+
         cfg = db.get_engine_config()
         facts = memory_extract.extract_candidate_facts(
             ai_items, user_items, str(supplier_id), tenant_id,
@@ -1785,6 +2139,18 @@ def _extract_and_enqueue_memory_facts(receipt_id, row, tenant_id,
                 _record_refused_candidate(
                     vendor, tenant_id, receipt_id, reason, fact=fact,
                     content=_pending_fact_content(fact),
+                    source_kind=fact.source_kind)
+                continue
+            # ③b P2-T12 配套①：质量闸接入 (Quality Gate) 拦截 LOW 质量事实
+            ok_q, reason_q = _check_memory_fact_quality(fact, tenant_id)
+            if not ok_q:
+                stats["rejected"] += 1
+                log.warning(
+                    "[memory_extract] 候选被质量闸拦截（不入队）receipt_id=%s "
+                    "kind=%s key=%s：%s", receipt_id, fact.kind, fact.fact_key, reason_q)
+                _record_refused_candidate(
+                    vendor, tenant_id, receipt_id, "quality_gate: low_information",
+                    fact=fact, content=_pending_fact_content(fact),
                     source_kind=fact.source_kind)
                 continue
             # ④ 与既有同 (tenant, supplier, fact_key) 事实定动作
@@ -2013,6 +2379,40 @@ def save_edited(body: SaveEditedBody, request: Request):
                 math_warnings_json=json.dumps(_math_warnings, ensure_ascii=False),
             )
             db.set_receipt_items(rid, items_raw, tenant_id=tenant_id)
+            # M02：不可变复核事件（G04/A028）——店员手工保存=修改事实，审批不消失。
+            # auto_save（识别结果同步保存，未经人工复核）不算编辑事实。
+            if not is_auto:
+                db.append_review_event(
+                    rid, "saved", who, tenant_id=tenant_id, actor_role="staff",
+                    payload={"action": action_type,
+                             "version": body.version + 1 if body.version is not None else 1})
+                # M02：submitted 事件 + 按 line_uuid slots 并集算三组 FER（事实源）。
+                # 无首见快照（手工单/识别失败）→ comparable=False（uncomparable，不造假）。
+                try:
+                    from app.services import review_metrics as _rm
+                    _snaps = [e for e in db.list_review_events(rid, tenant_id=tenant_id)
+                              if e["event_kind"] == "ai_first_visible"]
+                    _fer = _rm.compute_fer(
+                        _snaps[0]["payload"] if _snaps else None,
+                        {"supplier_name": body.supplier_name or "",
+                         "receipt_date": body.date or "",
+                         "total_amount": float(body.total_amount or 0)},
+                        db.get_receipt_items(rid, tenant_id=tenant_id),
+                        {"service_fee": float(body.service_fee or 0),
+                         "tax_amount": float(body.tax_amount or 0),
+                         "discount_amount": float(body.discount_amount or 0),
+                         "delivery_fee": float(body.delivery_fee or 0),
+                         "deposit_amount": float(body.deposit_amount or 0),
+                         "rounding_adjustment": float(body.rounding_adjustment or 0)})
+                    db.append_review_event(
+                        rid, "submitted", who, tenant_id=tenant_id, actor_role="staff",
+                        payload={"action": action_type,
+                                 "version": body.version + 1 if body.version is not None else 1,
+                                 "fer": _fer})
+                except Exception as _fer_e:
+                    import logging as _logging
+                    _logging.getLogger("api_receipts").warning(
+                        f"[M02] submitted FER 落库失败(不阻断): {_fer_e}")
 
     # 字段级审计：仅编辑既有单据时才对比 old/new（新建手工单无历史可比，auto_save 不记 manual diff）
     if not is_auto and body.receipt_id is not None and row is not None:
@@ -2037,8 +2437,13 @@ def save_edited(body: SaveEditedBody, request: Request):
         # 失败不阻断保存。
         if _ai_prefill_corrected_fields(row, items_raw, body):
             try:
+                injected_mids = _extract_injected_memory_ids(
+                    getattr(row, "rag_context_json", None),
+                    row.supplier_name or "",
+                    tenant_id=tenant_id,
+                )
                 db.apply_vendor_memory_override_penalty(
-                    row.supplier_name or "", tenant_id=tenant_id)
+                    row.supplier_name or "", tenant_id=tenant_id, memory_ids=injected_mids)
             except Exception as _e:
                 import logging as _logging
                 _logging.getLogger("api_receipts").warning(
@@ -2123,9 +2528,17 @@ def save_edited(body: SaveEditedBody, request: Request):
     # 主链路自动回写）没有"人的修正"，且它跑在后台 Job 线程里，不该在那里发外呼。
     # 无字段差异时本调用直接返回（不建模型、不发模型调用），故对无改动保存零成本。
     if not is_auto and body.receipt_id is not None:
-        _extract_and_enqueue_memory_facts(
-            rid, row, tenant_id, _ai_prefill_items(row), items_raw,
-            trigger="save_edited")
+        # M03：抽取与业务提交解耦——开关开时事务内入队（outbox），保存即回业务结果；
+        # 抽取由后台 worker 按 source version 执行（幂等、崩溃可恢复）。开关关=同步执行（旧行为）。
+        from app import task_store as _task_store
+        if _task_store.enabled():
+            _task_store.enqueue("memory_extract", str(rid), row.version, "extract",
+                                payload={"trigger": "save_edited"},
+                                tenant_id=tenant_id)
+        else:
+            _extract_and_enqueue_memory_facts(
+                rid, row, tenant_id, _ai_prefill_items(row), items_raw,
+                trigger="save_edited")
     return {"status": "success", "id": rid, "receipt_id": rid, "version": row.version,
             "math_blockers": _math_warnings, "status_after": row.status}
 
@@ -2135,6 +2548,15 @@ def save_edited(body: SaveEditedBody, request: Request):
 # -------------------------------------------------------------
 class ApproveBody(BaseModel):
     version: Optional[int] = None
+    # L04：owner 显式过账动作确认（P03 合同 §2——不按票面符号猜）。
+    # purchase / physical_return / financial_credit / statement / draft_correction。
+    business_action: Optional[str] = None
+    # L04 physical_return：来源批次（owner 指定原批次反向消耗；P03 §2/ADR01）。
+    return_batch_id: Optional[int] = None
+
+
+_L04_ACTION_VALUES = ("purchase", "physical_return", "financial_credit",
+                      "statement", "draft_correction")
 
 
 @router.post("/api/receipt/{receipt_id}/approve")
@@ -2179,6 +2601,84 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
             return _receipt_error(
                 422, "APPROVAL_BLOCKED",
                 "缺少供应商名称，无法入账。请先填写真实的供应商名称。")
+
+        # L04 贷项/退货动作确认门（P03 合同 §2/E3：不按金额负号或数量正负猜业务动作）。
+        # 贷项单（credit_note）在 owner 显式确认 business_action 前一律 needs_classification：
+        # 422 拒批、保图保草稿不变，待 owner 选「纯金额贷项」或「实物退货（需来源）」。
+        if body.business_action is not None and \
+                body.business_action not in _L04_ACTION_VALUES:
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "过账动作无效：请选择 purchase / physical_return / financial_credit /"
+                " statement / draft_correction 之一。")
+        if body.business_action == "draft_correction":
+            # fail-closed：草稿更正通道在后续增量开通；开通前显式拒绝。
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "草稿更正的入账通道尚未开通。这张单已保留为待处理。")
+
+        # L04 physical_return 预校验（在事务外做只读判定，事务内再复核一次防并发）：
+        # 必须指定来源批次；行必须已锚定 SKU 且量纲为基本单位；来源批次可退量充足
+        # （不足 → 409 RETURN_SOURCE_INSUFFICIENT，P03 §1）。
+        if body.business_action == "physical_return":
+            if not body.return_batch_id:
+                return _receipt_error(
+                    422, "LINK_REQUIRED",
+                    "实物退货必须指定来源批次（从哪一批退回）。请在批次明细中选择来源后再入账。")
+            _ret_items = [i for i in db.get_receipt_items(receipt_id, tenant_id=tenant_id)
+                          if not i.get("is_void")]
+            if not _ret_items:
+                return _receipt_error(422, "APPROVAL_BLOCKED", "这张退货单没有有效明细行。")
+            from app.services.inventory import fmt_stock_qty as _stock_fmt
+            _ret_batch = db.get_session().get(db._InventoryBatchRow, int(body.return_batch_id))
+            if _ret_batch is None:
+                return _receipt_error(
+                    422, "LINK_REQUIRED", "指定的来源批次不存在，无法退货。请重新选择来源批次。")
+            _need_by_sku = {}
+            for _it in _ret_items:
+                if not _it.get("sku_id"):
+                    return _receipt_error(
+                        422, "LINK_REQUIRED",
+                        "退货明细行「%s」还没有锚定到具体货品（SKU），无法指定来源批次。"
+                        "请先在明细中确认货品。" % (_it.get("name") or "",))
+                _need_by_sku[int(_it["sku_id"])] = _need_by_sku.get(
+                    int(_it["sku_id"]), 0.0) + float(_it.get("quantity") or 0)
+            if int(_ret_batch.sku_id) not in _need_by_sku:
+                return _receipt_error(
+                    422, "LINK_REQUIRED",
+                    "来源批次不属于这张退货单的货品，无法退货。请重新选择来源批次。")
+            _b_sku = db.get_session().get(db._SkuRow, int(_ret_batch.sku_id))
+            _base_unit = (getattr(_b_sku, "base_unit", "") or "").strip()
+            _it_unit = (_ret_items[0].get("unit") or "").strip()
+            if _base_unit and _it_unit and _base_unit.lower() != _it_unit.lower():
+                return _receipt_error(
+                    422, "APPROVAL_BLOCKED",
+                    "退货量纲（%s）与货品基本单位（%s）不一致的换算退货尚未开通，"
+                    "请先按基本单位录入退货数量。" % (_it_unit, _base_unit))
+            _ret_qty = _need_by_sku[int(_ret_batch.sku_id)]
+            if float(_ret_batch.remaining_qty or 0) + 1e-9 < _ret_qty:
+                return _receipt_error(
+                    409, "RETURN_SOURCE_INSUFFICIENT",
+                    "来源批次可退数量不足：该批还剩 %s%s，本次要退 %s%s。"
+                    "请减少退货数量或选择其他来源批次。" % (
+                        _stock_fmt(_ret_batch.remaining_qty), _base_unit,
+                        _stock_fmt(_ret_qty), _base_unit))
+
+        # L04：过账动作裁决（唯一计算点，全程复用）：
+        # owner 显式（body 或既有落库）> doc_form 推断（月结=statement；贷项单已被
+        # 上方门禁挡下，到此必有显式动作；其余推断为 purchase，推断不落库冒充确认）。
+        _action = ((body.business_action or "").strip()
+                   or (getattr(row, "business_action", None) or "").strip()
+                   or ("statement" if (getattr(row, "doc_form", "") or "")
+                       == "monthly_statement" else "purchase"))
+        _inferred_action = (getattr(row, "business_action", None) or "").strip() or \
+            body.business_action or None
+        if (_inferred_action is None
+                and (getattr(row, "doc_form", "") or "") == "credit_note"):
+            return _receipt_error(
+                422, "APPROVAL_BLOCKED",
+                "这张是贷项单：请先确认它的业务动作（纯金额贷项=financial_credit，"
+                "实物退货=physical_return 并指定来源批次），再入账。")
 
         import re
         from datetime import datetime
@@ -2230,15 +2730,77 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
 
         # 所有写入（供应商自动建档、SKU 建档/别名、库存流水、批次、单据状态、审计）
         # 在同一个事务里，一次提交；任何一步失败整体回滚，进程中途崩溃也不会留下半套数据。
-        from app.services.inventory import apply_receipt_to_inventory
-        with db.atomic():
-            if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) is None:
-                db.create_supplier(row.supplier_name, tenant_id=tenant_id)
-            apply_receipt_to_inventory(row, tenant_id=tenant_id)
-            db.update_receipt(receipt_id, status="approved", version=row.version + 1)
-            db.append_audit_log(
-                receipt_id, who, "approve_receipt", "status", old_status, "approved",
-                details=("未经店员复核，由老板直接入账" if needs_review else None))
+        from app.services.inventory import (
+            apply_receipt_to_inventory, ReturnSourceInsufficient)
+        try:
+            with db.atomic():
+                if row.supplier_name and db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) is None:
+                    db.create_supplier(row.supplier_name, tenant_id=tenant_id)
+                # P2-T1/L06：把锚定的权威 supplier_id 回写单据（此前只建档案不回写，
+                # receipts.supplier_id 悬空 → 信用抵扣/应付归属只能按名字回退推断）。
+                _sup_row = db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) \
+                    if row.supplier_name else None
+                if _sup_row is not None and getattr(row, "supplier_id", None) != _sup_row.id:
+                    db.update_receipt(receipt_id, supplier_id=_sup_row.id)
+                apply_receipt_to_inventory(row, tenant_id=tenant_id, business_action=_action,
+                                           return_batch_id=body.return_batch_id)
+                # L03：过账操作记录（v7 posting_headers；(tenant,request_hash) 唯一）。
+                # 与状态/库存同一 ambient 事务——故障整体回滚，operation unique 跨 worker 裁决。
+                from sqlalchemy import text as _text
+                db.get_session().execute(
+                    _text("INSERT OR IGNORE INTO posting_headers (tenant_id, receipt_id,"
+                          " receipt_version, action, status, actor, actor_role, request_hash,"
+                          " created_at) VALUES (:t, :r, :v, :a, 'committed', :who, :role,"
+                          " :h, :ts)"),
+                    {"t": tenant_id, "r": int(receipt_id), "v": int(row.version),
+                     "a": _action, "who": who or "unknown",
+                     "role": (account or {}).get("role") or "",
+                     "h": "%d:%d:%s" % (int(receipt_id), int(row.version), _action),
+                     "ts": db.now_iso()})
+                if _action in ("financial_credit", "physical_return"):
+                    # L04：贷方余额事实（P03 §2/ADR03）——正面额 credit_document + issued 条目
+                    # （纯金额贷项与实物退货都与实物流分开），与采购付款账/平台订阅账完全分表；
+                    # 未分配贷项不静默记 paid。
+                    from app import money as _l04money
+                    _sup_id = db.resolve_supplier_id(row.supplier_name, tenant_id=tenant_id)
+                    if not _sup_id:
+                        raise RuntimeError(
+                            "贷项缺少供应商锚点，拒绝入账（fail-closed）")
+                    _face = _l04money.to_minor(abs(float(row.total_amount or 0)))
+                    _cur = (getattr(row, "currency", "") or "HKD").strip() or "HKD"
+                    _ts = db.now_iso()
+                    _res = db.get_session().execute(
+                        _text("INSERT INTO credit_documents (tenant_id, supplier_id,"
+                              " face_minor, currency, original_receipt_id, source, state,"
+                              " version, created_at) VALUES (:t, :s, :f, :c, :r,"
+                              " :src, 'active', 1, :ts)"),
+                        {"t": tenant_id, "s": int(_sup_id), "f": _face, "c": _cur,
+                         "r": int(receipt_id), "src": _action, "ts": _ts})
+                    _credit_id = _res.lastrowid
+                    db.get_session().execute(
+                        _text("INSERT INTO credit_entries (tenant_id, credit_id,"
+                              " event_kind, amount_minor, created_at)"
+                              " VALUES (:t, :cid, 'issued', :f, :ts)"),
+                        {"t": tenant_id, "cid": int(_credit_id), "f": _face, "ts": _ts})
+                # L04：owner 确认的过账动作随审批落库（审计留痕走 append_audit_log 下方既有通道）
+                db.update_receipt(receipt_id, status="approved", version=row.version + 1,
+                                  business_action=_action)
+                # M02：approved 事件（不可变事实源；parsed→submitted 墙钟的终点锚）
+                db.append_review_event(receipt_id, "approved", who, tenant_id=tenant_id,
+                                       actor_role=(account or {}).get("role") or "",
+                                       payload={"version": row.version + 1,
+                                                "action": _action})
+                db.append_audit_log(
+                    receipt_id, who, "approve_receipt", "status", old_status, "approved",
+                    details=("未经店员复核，由老板直接入账" if needs_review else None))
+        except ReturnSourceInsufficient as _rsi:
+            # 事务已整体回滚；映射 P03 契约码 409 RETURN_SOURCE_INSUFFICIENT
+            return _receipt_error(409, "RETURN_SOURCE_INSUFFICIENT",
+                                   getattr(_rsi, "msg", None) or str(_rsi))
+        except ValueError as _ve:
+            # 过账前置校验失败（量纲/来源不一致等）：整体回滚 + 422
+            return _receipt_error(422, "APPROVAL_BLOCKED",
+                                   str(_ve) or "退货过账校验未通过。")
         row = db.get_receipt_row(receipt_id, tenant_id=tenant_id)
     # 回写 VendorMemory（只认正向信号：老板批准）
     # T3 Gap B1：透传 tenant_id 与触发 receipt_id（source_ref 可回溯）
@@ -2285,10 +2847,17 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
         logging.getLogger("api_receipts").warning(f"[WARN] 记录审批 AI 决策失败: {e}")
     # P3-T2（K3）触发点之二：入账。放在供应商自动建档（上方）之后 —— 锚点解析按
     # vendor 名回退时，这里才能查得到刚建的档案；无字段差异时本调用直接返回。
-    _extract_and_enqueue_memory_facts(
-        receipt_id, row, _tenant_id(request), _ai_prefill_items(row),
-        db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request)),
-        trigger="approve")
+    # M03：开关开时入队（outbox，approve 事务已提交则任务在）；关=同步执行（旧行为）。
+    from app import task_store as _task_store
+    if _task_store.enabled():
+        _task_store.enqueue("memory_extract", str(receipt_id), row.version, "extract",
+                            payload={"trigger": "approve"},
+                            tenant_id=_tenant_id(request))
+    else:
+        _extract_and_enqueue_memory_facts(
+            receipt_id, row, _tenant_id(request), _ai_prefill_items(row),
+            db.get_receipt_items(receipt_id, tenant_id=_tenant_id(request)),
+            trigger="approve")
     # 埋点（规范事件 #8 receipt_approved，北极星终态）：e2e 耗时
     try:
         from datetime import datetime as _dt
@@ -2545,7 +3114,7 @@ def unflag_receipt(receipt_id: int, request: Request, body: Optional[FlagBody] =
 
 
 @router.post("/api/receipt/{receipt_id}/retry")
-def retry_receipt(receipt_id: int, request: Request):
+def retry_receipt(receipt_id: int, request: Request, expected_version: Optional[int] = None):
     require_role("staff")(request)
     # QA-Lock-Inventory：门判定与 Job 创建原子化（统一单据写锁），并补软删守卫
     # （修复前已弃单可重跑识别——G2 因合成行缺原图被 400 掩盖，结构性存在）。
@@ -2559,6 +3128,16 @@ def retry_receipt(receipt_id: int, request: Request):
                 content={"status": "error", "code": "RECEIPT_DISCARDED",
                          "msg": "该单据已放弃并进入回收站，不能重跑识别。"},
                 status_code=409)
+        # L09：冻结（已冲销）不得重跑；可选乐观锁版本防旧页面覆盖。
+        if getattr(row, "reversed_at", None):
+            return JSONResponse(
+                content={"status": "error", "code": "INVALID_STATUS",
+                         "msg": "该单据已冲销，不能重跑识别。"},
+                status_code=409)
+        if expected_version is not None:
+            ver_err = _version_error(expected_version, row, "重跑识别")
+            if ver_err is not None:
+                return ver_err
         gate = _assert_retryable(row, action="重试", verb="重跑识别")
         if gate is not None:
             return gate
@@ -2578,11 +3157,17 @@ def retry_receipt(receipt_id: int, request: Request):
         image_guard = None
         if _missing_image_guard_record(row):
             image_guard = _safe_run_image_guard(row.image_path, tenant_id=_tenant_id(request))
+        # S03：重试 = 新 AI 任务，过权益门；手工/历史入口不经过这里。
+        _retry_key = "retry:%s:%s" % (receipt_id, row.version)
+        _billing_gate = _billing_ai_gate(request, _retry_key)
+        if _billing_gate is not None:
+            return _billing_gate
         job_id, _ = _safe_start_recognition_job(
             row.image_path, receipt_id=receipt_id,
             vendor_hint=_vendor_hint_from_row(row, _tenant_id(request)),
             tenant_id=_tenant_id(request),
             image_guard=image_guard)
+        _billing_consume(request, _retry_key)
         return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
             "version": row.version}
 
@@ -2593,6 +3178,7 @@ async def replace_receipt_image(
     request: Request,
     receipt: UploadFile = File(...),
     force: str = Form("false"),  # true → 用户已确认继续，跳过极模糊硬拦截
+    expected_version: str = Form(""),  # L09：可选乐观锁（缺省兼容旧客户端）
 ):
     """挽回动作「重拍」：新图替换原图并重跑识别（原单据保留，区别于批次换图新建单据）。
 
@@ -2623,19 +3209,36 @@ async def replace_receipt_image(
             content={"status": "error", "code": "RECEIPT_DISCARDED",
                      "msg": "该单据已放弃并进入回收站，不能换图重跑。"},
             status_code=409)
+    if getattr(row, "reversed_at", None):
+        return JSONResponse(
+            content={"status": "error", "code": "INVALID_STATUS",
+                     "msg": "该单据已冲销，不能换图重跑。"},
+            status_code=409)
+    if str(expected_version or "").strip():
+        ver_err = _version_error(expected_version, row, "换图重跑")
+        if ver_err is not None:
+            return ver_err
     gate = _assert_retryable(row, action="换图重跑", verb="重拍")
     if gate is not None:
         return gate
+
+    # S03：换图重跑也是新 AI 任务，必须过权益门（否则到期后可用换图绕开）。
+    _replace_key = "replace:%s:%s" % (receipt_id, row.version)
+    _billing_gate = _billing_ai_gate(request, _replace_key)
+    if _billing_gate is not None:
+        return _billing_gate
 
     # ---- ② 锁外重 I/O（与 /api/upload 同源的画质拦截；W-SEC-3/W-SEC-2 口径不变）----
     try:
         image_path = _save_upload(receipt)
     except UploadRejected as e:
+        _billing_release(request, _replace_key)
         return _upload_rejected_response(e)
     file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
     if file_size < 30:
         if os.path.exists(image_path):
             os.remove(image_path)
+        _billing_release(request, _replace_key)
         return _image_quality_reject(
             "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试（图片损坏或体积过小）",
             ["image_empty_or_corrupted"])
@@ -2648,6 +3251,7 @@ async def replace_receipt_image(
                     os.remove(image_path)
                 except Exception:
                     pass
+            _billing_release(request, _replace_key)
             return _image_quality_reject(
                 "图像模糊/过暗，请到更亮处重拍，无需打字，点框选裁剪重试",
                 ["image_blur"],
@@ -2655,21 +3259,35 @@ async def replace_receipt_image(
     image_guard = _safe_run_image_guard(image_path, tenant_id=_tenant_id(request))
 
     # ---- ③ 锁内短临界区：二次复核 + 行写 + 审计 + Job 创建 ----
+    _new_version = None
     with _APPROVE_LOCK:
         row2 = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
         if row2 is None:
             _discard_new_file()
+            _billing_release(request, _replace_key)
             return JSONResponse(content={"status": "error", "code": "RECEIPT_NOT_FOUND", "msg": _NOT_FOUND_MSG},
                                 status_code=404)
-        if row2.deleted_at:
+        if row2.deleted_at or getattr(row2, "reversed_at", None):
             _discard_new_file()
+            _billing_release(request, _replace_key)
             return JSONResponse(
-                content={"status": "error", "code": "RECEIPT_DISCARDED",
-                         "msg": "该单据已放弃并进入回收站，不能换图重跑。"},
+                content={"status": "error",
+                         "code": "RECEIPT_DISCARDED" if row2.deleted_at else "INVALID_STATUS",
+                         "msg": "该单据已放弃并进入回收站，不能换图重跑。" if row2.deleted_at
+                                else "该单据已冲销，不能换图重跑。"},
                 status_code=409)
+        # L09 TOCTOU：expected_version 必须在锁内复核——锁外预检到进入临界区之间
+        # 单据可能已被他人改过，此时必须 409 且不改状态/图片。
+        if str(expected_version or "").strip():
+            ver_err2 = _version_error(expected_version, row2, "换图重跑")
+            if ver_err2 is not None:
+                _discard_new_file()
+                _billing_release(request, _replace_key)
+                return ver_err2
         gate2 = _assert_retryable(row2, action="换图重跑", verb="重拍")
         if gate2 is not None:
             _discard_new_file()
+            _billing_release(request, _replace_key)
             return gate2
 
         old_image_path = row2.image_path or ""
@@ -2704,6 +3322,7 @@ async def replace_receipt_image(
             db.append_audit_log(
                 receipt_id, who, "image_guard_intercept", "status", row2.status, "flagged"
             )
+            _billing_release(request, _replace_key)
             return {
                 "status": "flagged",
                 "receipt_id": receipt_id,
@@ -2715,13 +3334,17 @@ async def replace_receipt_image(
                        "请对照原图手工录入，或请老板先看一下"
             }
 
-        # 换图落库（旧图文件保留不删，可审计）+ 审计；W5 预览缓存定向清理
-        db.update_receipt(receipt_id, image_path=image_path)
+        # 换图落库（旧图文件保留不删，可审计）+ 审计；W5 预览缓存定向清理。
+        # L09：换图成功必须推进 version（恰一增量）——旧 Job 以换图前的版本为
+        # parse 基线，CAS 在锁内不匹配即拒绝写回，旧结果不得覆盖新图结果。
+        _new_version = (row2.version or 1) + 1
+        with db.atomic():
+            db.update_receipt(receipt_id, image_path=image_path, version=_new_version)
+            db.append_audit_log(receipt_id, who, "replace_image", "image_path",
+                                old_image_name, new_image_name)
         old_src = _resolve_upload_file(old_image_path)
         if old_src is not None:
             _cleanup_unreferenced_preview_cache(str(old_src))
-        db.append_audit_log(receipt_id, who, "replace_image", "image_path",
-                            old_image_name, new_image_name)
         # P2-T6/W-SEC-2：vendor_hint 从换图前的行派生；image_guard 随 job 透传
         job_id, _ = _safe_start_recognition_job(
             image_path, receipt_id=receipt_id,
@@ -2729,19 +3352,47 @@ async def replace_receipt_image(
             tenant_id=_tenant_id(request),
             image_guard=image_guard,
             quality_warnings=qw)
+        _billing_consume(request, _replace_key)
     _track_event(account, getattr(request.state, "session_id", ""),
                  "image_replaced", receipt_id=receipt_id,
                  properties={"old_image": old_image_name, "trigger": "retake"},
                  tenant_id=_tenant_id(request))
     return {"status": "queued", "job_id": job_id, "receipt_id": receipt_id,
-            "version": row2.version,
+            "version": _new_version or row2.version,
             "image_url": public_image_url(receipt_id, image_path, _tenant_id(request))}
 
 
 @router.post("/api/receipt/{receipt_id}/convert_manual")
-def convert_manual(receipt_id: int, request: Request):
+async def convert_manual(receipt_id: int, request: Request):
     # 店员是识别失败后的第一责任人，转手工是保留原图的逃生通道，需 staff 即可（只改形态与状态，不入账）
     require_role("staff")(request)
+    # L09：body 可选 {expected_version, request_key}。旧客户端不带 body 仍按原行为兼容；
+    # 带了 expected_version 就走乐观锁（不一致 409，前端保留本地草稿）。
+    body = {}
+    try:
+        _raw = await request.json()
+        if isinstance(_raw, dict):
+            body = _raw
+    except Exception:
+        body = {}
+    _expected_version = body.get("expected_version")
+    _request_key = str(body.get("request_key") or "").strip()
+
+    def _success_payload():
+        row_now = db.get_receipt_row(receipt_id)
+        has_image = bool(row_now.image_path)
+        img_url = public_image_url(row_now.id, row_now.image_path,
+                                   _tenant_id(request)) if has_image else ""
+        detail = build_detail(row_now)
+        detail["image_url"] = img_url
+        detail["has_original_image"] = has_image
+        return {"status": "success", "receipt_id": receipt_id,
+                "image_url": img_url,
+                "has_original_image": has_image,
+                "version": row_now.version,
+                "data": detail,
+                "msg": f"单据 #{receipt_id} 已转为手工录入，请补全明细后保存"}
+
     # QA-Lock-Inventory：状态改写入锁 + 补软删守卫（G3 实证：已弃单被转手工 200）。
     with _APPROVE_LOCK:
         row = db.get_receipt_row(receipt_id, tenant_id=_tenant_id(request))
@@ -2753,25 +3404,43 @@ def convert_manual(receipt_id: int, request: Request):
                 content={"status": "error", "code": "RECEIPT_DISCARDED",
                          "msg": "该单据已放弃并进入回收站，不能转手工录入。"},
                 status_code=409)
+        if getattr(row, "reversed_at", None):
+            return JSONResponse(
+                content={"status": "error", "code": "INVALID_STATUS",
+                         "msg": "该单据已冲销，不能转手工录入。"},
+                status_code=409)
+        # L09 幂等：同 request_key 重放 → 原样返回成功，不再推进 version/审计。
+        if _convert_request_replayed(row, _request_key):
+            return _success_payload()
+        # L09：可选乐观锁（先于状态判定，旧页面用过期版本时明确报 VERSION_CONFLICT）。
+        # 旧客户端不带 expected_version 时保持兼容；带了就严格比对。
+        if _expected_version is not None:
+            ver_err = _version_error(_expected_version, row, "转手工录入")
+            if ver_err is not None:
+                return ver_err
         old_status = row.status
         if old_status not in ("uploaded", "parsing", "parsed", "parsed_with_warnings", "error"):
             return JSONResponse(
-                content={"status": "error",
+                content={"status": "error", "code": "INVALID_STATUS",
                          "msg": "这张单现在的状态不能转手工录入。只有识别中断、识别失败或还没保存的单据才能转。"},
                 status_code=409)
-        db.update_receipt(receipt_id, status="edited", doc_form="manual_entry")
-        row = db.get_receipt_row(receipt_id)
-        has_image = bool(row.image_path)
-        img_url = public_image_url(row.id, row.image_path, _tenant_id(request)) if has_image else ""
-        detail = build_detail(row)
-        detail["image_url"] = img_url
-        detail["has_original_image"] = has_image
-        return {"status": "success", "receipt_id": receipt_id,
-                "image_url": img_url,
-                "has_original_image": has_image,
-                "version": row.version,
-                "data": detail,
-                "msg": f"单据 #{receipt_id} 已转为手工录入，请补全明细后保存"}
+        # L09/G09：状态变更纳入版本与责任审计——version 恰一增量、审计条目恰一增量
+        # （审计 Q07_manual_state_change_audited 反例关闭：此前 version/audit 双零）。
+        # update_receipt 的 version 为字面赋值：传 row.version+1 即恰一增量。
+        _actor = (request.state.account or {}).get("email", "staff")
+        _new_version = (row.version or 1) + 1
+        with db.atomic():
+            db.update_receipt(receipt_id, status="edited", doc_form="manual_entry",
+                              version=_new_version)
+            db.append_audit_log(receipt_id, _actor, "convert_manual", "status",
+                                old_status, "edited",
+                                details={"request_key": _request_key,
+                                         "note": "转手工录入（保留原图）"})
+            db.append_review_event(receipt_id, "manual_converted", _actor,
+                                   tenant_id=_tenant_id(request),
+                                   payload={"old_status": old_status,
+                                            "request_key": _request_key})
+        return _success_payload()
 
 
 @router.post("/api/receipt/{receipt_id}/discard")

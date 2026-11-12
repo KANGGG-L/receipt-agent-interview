@@ -26,7 +26,10 @@ live 向量库（`demo/.rag_chroma`、`<repo>/.rag_chroma`）在验收口径上�
 severity high）：`_resolve_rag_dir` 直接委托纯 stdlib 的
 `app/services/rag_paths.py` 这一份唯一实现，与 `rag.PERSIST_DIR` 同源 —— 只改 `rag.py`
 会让巡检在非 `demo/` cwd 下按另一条相对路径找库、给出「一致 / 缺失」的假结论。
-- `RAG_DIR` 缺省 `<demo>/.rag_chroma`（应用根基准的绝对路径，任意 cwd 一致）；
+- 向量目录的优先级（`rag_paths.resolve_rag_dir`）：显式参数 > `CHROMA_PATH` > `RAG_DIR`
+  > 随外置 `DB_PATH` 派生 > 缺省 `<demo>/.rag_chroma`（应用根基准的绝对路径，任意 cwd 一致）；
+  与 `rag.PERSIST_DIR` 同源，故「DB 外置而向量仍落生产库」的那段错位（G1）在巡检里同样
+  会被看出来，而不是被巡检自己的第二份口径掩盖掉；
 - `DB_PATH` 缺省 `<demo>/receipt_demo.db`，且 `DB_PATH` 写成 `./receipt_demo.db`
   或 `receipt_demo.db` 时同样按缺省处理（≈ `app/db.py:47-53`）；DB 缺省未在本批收敛，
   仍在此复刻一份，由测试与 `db._default_db_path` 对拍以防漂移。
@@ -93,12 +96,17 @@ _SQL_COLLECTIONS = "SELECT name FROM collections"
 
 
 def _resolve_rag_dir(rag_dir=None):
-    """向量库落盘目录：显式参数 > 环境变量 RAG_DIR > 缺省 `<demo>/.rag_chroma`（绝对路径）。
+    """向量库落盘目录：**完全委托** `rag_paths.resolve_rag_dir`（唯一实现）。
+
+    优先级即该函数的口径：显式参数 > `CHROMA_PATH` > `RAG_DIR` > 随外置 `DB_PATH` 派生 >
+    缺省 `<demo>/.rag_chroma`（绝对路径）。
 
     P8a-R7：直接委托 `app.services.rag_paths.resolve_rag_dir` —— 与 `rag.PERSIST_DIR`
     **共用同一实现**。此前这里复刻了一份 cwd 相对口径（P6·X2 的 D1，severity high）：
     只改 `rag.py` 的话，巡检会在非 `demo/` cwd 下按另一条相对路径找库，给出「一致 /
-    缺失」的**假结论**（比不巡检更危险）。
+    缺失」的**假结论**（比不巡检更危险）。T1（G1）新增的「随 DB 派生」一档同样只加在
+    `rag_paths` 一处：本函数不得跟着写第二份判据，否则「DB 外置」形态下写入方与巡检方
+    又会各算各的目录。
     """
     return rag_paths.resolve_rag_dir(rag_dir)
 

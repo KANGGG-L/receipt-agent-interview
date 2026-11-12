@@ -132,6 +132,10 @@ def _validation_item_msg(err: dict) -> str:
         return "提交的内容格式不对，请刷新页面后再试一次。"
     if typ.startswith("bool"):
         return f"{who}只能选「是」或「否」，请检查后重新选择。"
+    if typ.startswith("value_error") and ctx.get("error"):
+        custom = str(ctx["error"]).strip()
+        if custom:
+            return custom
     return f"{who}填写的内容不对，请检查后重新填写。"
 
 

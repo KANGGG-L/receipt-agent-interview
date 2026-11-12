@@ -77,3 +77,188 @@ def money_sum(values) -> float:
 def unit_price(value) -> float:
     """单价保留 4 位（进货单价常有 3 位小数，如 3.125），避免过早舍入失真。"""
     return float(_to_decimal(value).quantize(_QTY, rounding=ROUND_HALF_UP))
+
+
+# =============================================================
+# L01 严格层（P03 合同 §5 / ADR04）：新账本事实专用
+# -------------------------------------------------------------
+# 与上方兼容层的分工：money()/qty() 等宽松口径继续服务旧 FLOAT 投影与展示聚合，
+# 不得删除或改语义（既有调用方行为契约）。新账本（posting/credit/task，v7+ 表）
+# 的一切金额/数量写入必须走本严格层：minor/scaled 整数、类型化异常（422 族）、
+# fail-closed——非法值绝不静默归 0。
+# 数量缩放对齐既有 4 位小数口径（_QTY）：QTY_SCALE_DEFAULT = 10000。
+# =============================================================
+
+from decimal import Decimal as _Dec  # noqa: E402  （严格层集中别名列示）
+
+QTY_SCALE_DEFAULT = 10000  # 对齐 _QTY 4 位小数口径
+MINOR_SCALE = _CENT
+_MONEY_MAX_ABS = 10 ** 13
+_QTY_MAX_ABS_SCALED = 10 ** 15
+_SUPPORTED_CURRENCIES = ("HKD",)
+
+
+class MoneyInvalid(ValueError):
+    """NaN/Inf/非数值/格式非法（调用方映射 422 VALIDATION_ERROR 族）。"""
+
+
+class MoneyOverflow(ValueError):
+    """数值超出安全上限（防御录入错误/攻击性大数）。"""
+
+
+class MoneyUnitMismatch(ValueError):
+    """币种/量纲不匹配且无已批换算口径（P03 §5：不臆造汇率）。"""
+
+
+def _strict_decimal(value):
+    if isinstance(value, bool):
+        raise MoneyInvalid("bool is not a numeric value")
+    if isinstance(value, _Dec):
+        d = value
+    elif isinstance(value, int):
+        d = _Dec(value)
+    elif isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise MoneyInvalid("non-finite number")
+        d = _Dec(repr(value))
+    elif isinstance(value, str):
+        s = value.strip()
+        if not s:
+            raise MoneyInvalid("empty numeric string")
+        try:
+            d = _Dec(s)
+        except InvalidOperation:
+            raise MoneyInvalid("unparseable numeric string: %r" % value[:32])
+    else:
+        raise MoneyInvalid("unsupported type %s" % type(value).__name__)
+    if not d.is_finite():
+        raise MoneyInvalid("non-finite decimal")
+    return d
+
+
+def to_minor(value, currency="HKD"):
+    """严格金额 → minor 整数（分）。ROUND_HALF_UP；0.005 类半分边界确定性且幂等。"""
+    if currency not in _SUPPORTED_CURRENCIES:
+        raise MoneyUnitMismatch(
+            "unsupported currency %r without approved fx snapshot" % (currency,))
+    d = _strict_decimal(value)
+    minor = int((d * 100).quantize(_Dec("1"), rounding=ROUND_HALF_UP))
+    if abs(minor) > _MONEY_MAX_ABS:
+        raise MoneyOverflow("amount out of safe range: %d" % minor)
+    return minor
+
+
+def from_minor(minor, currency="HKD"):
+    """minor → Decimal 元（展示层唯一反向；不回写权威账）。"""
+    if not isinstance(minor, int) or isinstance(minor, bool):
+        raise MoneyInvalid("minor must be int")
+    if currency not in _SUPPORTED_CURRENCIES:
+        raise MoneyUnitMismatch("unsupported currency %r" % (currency,))
+    return (Decimal(minor) / 100).quantize(_CENT)
+
+
+def to_qty_scaled(value, scale=QTY_SCALE_DEFAULT):
+    """严格数量 → scaled 整数（默认 ×10000，对齐 _QTY 4 位小数）；往返精确。"""
+    if not isinstance(scale, int) or isinstance(scale, bool) or scale <= 0:
+        raise MoneyInvalid("scale must be positive int")
+    d = _strict_decimal(value)
+    scaled = int((d * scale).quantize(_Dec("1"), rounding=ROUND_HALF_UP))
+    if abs(scaled) > _QTY_MAX_ABS_SCALED:
+        raise MoneyOverflow("quantity out of safe range: %d" % scaled)
+    return scaled
+
+
+def from_qty_scaled(scaled, scale=QTY_SCALE_DEFAULT):
+    """scaled 整数 → Decimal 数量（精确还原）。"""
+    if not isinstance(scaled, int) or isinstance(scaled, bool):
+        raise MoneyInvalid("scaled must be int")
+    return (Decimal(scaled) / scale)
+
+
+BUCKET_ORDER = (
+    "goods_capitalized",    # 商品资本化（进 cogs_basis）
+    "deposit_refundable",   # 可退押金：独立资产/往来桶（RP-2），不入 cogs_basis
+    "period_delivery",      # 期间费用-运费（分摊 RP-1）
+    "period_service",       # 期间费用-服务费（RP-1）
+    "period_tax",           # 税（RP-1）
+    "discount_offset",      # 折扣冲减
+    "rounding_offset",      # 抹零冲减 + 尾差落点
+    "unattributed",         # RP-1 未批分摊承载（requires_policy）
+)
+DEPOSIT_BUCKET = "deposit_refundable"
+COGS_BASIS_BUCKETS = ("goods_capitalized",)
+_RULE_CURRENT_ARITHMETIC = "current_arithmetic"
+_RULE_REQUIRES_POLICY = "requires_policy"
+_RULE_DEPOSIT_ASSET = "deposit_asset"
+
+
+def compute_face_total(items_subtotal, delivery=0, service=0, tax=0, deposit=0,
+                       discount=0, rounding=0, currency="HKD"):
+    """票面总额（现行算术基线 v2_1_0 口径，minor 整数）：
+    items + 运 + 服 + 税 + 押金 − 折扣 − 抹零。任何入参非法/溢出抛 422 族异常。"""
+    minors = [to_minor(v, currency) for v in (
+        items_subtotal, delivery, service, tax, deposit, discount, rounding)]
+    total = minors[0] + minors[1] + minors[2] + minors[3] + minors[4] - minors[5] - minors[6]
+    if abs(total) > _MONEY_MAX_ABS:
+        raise MoneyOverflow("face total out of safe range: %d" % total)
+    return total
+
+
+def allocate_fee_buckets(items_subtotal, delivery=0, service=0, tax=0, deposit=0,
+                         discount=0, rounding=0, currency="HKD"):
+    """票面 → 固定桶序归集。恒等式：sum(buckets.values()) == compute_face_total(...)。
+
+    尾差确定性：整数直取桶天然守恒；若出现非零尾差（未来扩展调整项），固定落
+    rounding_offset，可复算。可退押金独立成桶，不并入任何 cogs/毛利基。
+    """
+    keys = ("items", "delivery", "service", "tax", "deposit", "discount", "rounding")
+    m = dict(zip(keys, to_minor_all(
+        (items_subtotal, delivery, service, tax, deposit, discount, rounding), currency)))
+    buckets = {name: 0 for name in BUCKET_ORDER}
+    buckets["goods_capitalized"] = m["items"]
+    buckets[DEPOSIT_BUCKET] = m["deposit"]
+    buckets["period_delivery"] = m["delivery"]
+    buckets["period_service"] = m["service"]
+    buckets["period_tax"] = m["tax"]
+    buckets["discount_offset"] = -m["discount"]
+    buckets["rounding_offset"] = -m["rounding"]
+    face = compute_face_total(items_subtotal, delivery, service, tax, deposit,
+                              discount, rounding, currency)
+    tail = face - sum(buckets.values())
+    if tail != 0:
+        buckets["rounding_offset"] += tail
+    return buckets
+
+
+def to_minor_all(values, currency="HKD"):
+    """批量严格换算（任一非法即整体抛错，保证调用方零写）。"""
+    return [to_minor(v, currency) for v in values]
+
+
+def cogs_basis(buckets):
+    """成本基：商品资本化桶之和；押金/期间费用/未批归集不入基（押金不虚增毛利）。"""
+    return sum(buckets.get(name, 0) for name in COGS_BASIS_BUCKETS)
+
+
+def explain_fees(items_subtotal, delivery=0, service=0, tax=0, deposit=0,
+                 discount=0, rounding=0, currency="HKD"):
+    """费用解释样本（对账/UI 解释/测试三方共用：逐桶金额+规则标记）。"""
+    buckets = allocate_fee_buckets(items_subtotal, delivery, service, tax, deposit,
+                                   discount, rounding, currency)
+    rules = {
+        "goods_capitalized": _RULE_CURRENT_ARITHMETIC,
+        DEPOSIT_BUCKET: _RULE_DEPOSIT_ASSET,       # RP-2：独立资产，不入 cogs_basis
+        "period_delivery": _RULE_REQUIRES_POLICY,  # RP-1：分摊规则未批
+        "period_service": _RULE_REQUIRES_POLICY,
+        "period_tax": _RULE_REQUIRES_POLICY,
+        "discount_offset": _RULE_CURRENT_ARITHMETIC,
+        "rounding_offset": _RULE_CURRENT_ARITHMETIC,
+        "unattributed": _RULE_REQUIRES_POLICY,
+    }
+    return {
+        "buckets": buckets,
+        "face_total": sum(buckets.values()),
+        "cogs_basis": cogs_basis(buckets),
+        "rules": rules,
+        "policy_refs": {"RP-1": "fee attribution split", "RP-2": "deposit refund rules"},
+    }

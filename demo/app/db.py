@@ -34,6 +34,7 @@ import json
 import logging
 import math as _math
 import os
+import re
 import threading
 
 # QA-Lock-Split §13：单据行写路径的统一写锁实例。api_receipts（11 个端点）与
@@ -129,6 +130,7 @@ _GuardrailEventRow = None
 _DishRow = _DishIngredientRow = _InventoryBatchRow = _DailyConsumptionRow = _DailyConsumptionDetailRow = None
 _DishRecipeVersionRow = None
 _LlmCallLogRow = LLMCallLogRow = None
+_ReviewEventRow = None
 _EngineConfigHistoryRow = None
 _SecurityEventRow = None
 
@@ -186,6 +188,7 @@ def _make_engine():
     global _DishRow, _DishIngredientRow, _InventoryBatchRow, _DailyConsumptionRow, _DailyConsumptionDetailRow
     global _DishRecipeVersionRow
     global _LlmCallLogRow, LLMCallLogRow
+    global _ReviewEventRow
     global _EngineConfigHistoryRow
     global _SecurityEventRow
     global _PriceAnomalyAckRow
@@ -259,6 +262,9 @@ def _make_engine():
         reversed_at = Column(String, nullable=True)
         reversed_by = Column(String, nullable=True)
         reverse_reason = Column(Text, nullable=True)
+        # L03/v10：owner 确认的过账动作（P03 合同 §2）；NULL=未显式确认，过账期按
+        # doc_form 推断（推断不落库）。图像形态（doc_form）与业务动作分离。
+        business_action = Column(String(32), nullable=True)
         # Gap E2：租户隔离键（多租户贯穿业务主表）
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -290,6 +296,8 @@ def _make_engine():
         is_void = Column(Integer, default=0)                # 划线作废（Gap 6 / D-P1-4）
         actual_qty = Column(Float, nullable=True)           # 手写实收数量（Gap 6）
         evidence_json = Column(Text, nullable=True)         # 字段级证据（Gap E1 / T7）：{page, bbox 归一化, raw_text}
+        # L02/v7：稳定行标识（明细保存不换、过账逐行批次幂等键）；历史行 NULL。
+        line_uuid = Column(String(64), nullable=True)
         # Gap E2：租户隔离键（随所属单据）
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -326,6 +334,10 @@ def _make_engine():
         kind = Column(String, default="in")                # in/consume/waste/stocktake
         note = Column(String, default="")
         created_at = Column(String, default="")
+        # L02/v9：流水来源行标识（对账可追）；历史/盘点流水 NULL。
+        line_uuid = Column(String(64), nullable=True)
+        # L04/v11：return 负移动的来源批次（reverse 恢复与对账追踪）。
+        source_batch_id = Column(Integer, nullable=True)
         # Gap E2：租户隔离键
         tenant_id = Column(String(64), default="default", index=True)
 
@@ -819,6 +831,18 @@ def _make_engine():
         ai_candidate_json = Column(Text, default="{}")
         note = Column(Text, default="")
 
+    class ReviewEventRow(Base):
+        """M02/v12：不可变复核事件（append-only；G04/A028——审批不抹修改事实）。"""
+        __tablename__ = "review_events"
+        id = Column(Integer, primary_key=True, autoincrement=True)
+        receipt_id = Column(Integer, index=True, nullable=False)
+        event_kind = Column(String(24), nullable=False)   # saved/auto_saved/approved/submitted/reversed
+        actor = Column(String(120), default="")
+        actor_role = Column(String(32), default="")
+        payload_json = Column(Text, nullable=True)
+        created_at = Column(String, default="")
+        tenant_id = Column(String(64), default="default", index=True)
+
     class InventoryBatchRow(Base):
         """库存批次池（FIFO 成本溯源）。"""
         __tablename__ = "inventory_batches"
@@ -834,6 +858,8 @@ def _make_engine():
         is_closed = Column(Integer, default=0)             # 0=open, 1=closed/exhausted
         is_estimated = Column(Integer, default=0)          # 0=actual, 1=estimated
         created_at = Column(String, default="")
+        # L02/v9：批次来源行标识（(receipt,line) 幂等键）；历史/盘点批次 NULL。
+        line_uuid = Column(String(64), nullable=True)
         __table_args__ = (Index("idx_sku_batch", "sku_id", "is_closed", "inbound_date", "id"),)
 
     class DailyConsumptionRow(Base):
@@ -1485,6 +1511,7 @@ def _make_engine():
     _GuardrailEventRow = GuardrailEventRow
     _DishRow, _DishIngredientRow = DishRow, DishIngredientRow
     _DishRecipeVersionRow = DishRecipeVersionRow
+    _ReviewEventRow = ReviewEventRow
     _InventoryBatchRow = InventoryBatchRow
     _DailyConsumptionRow, _DailyConsumptionDetailRow = DailyConsumptionRow, DailyConsumptionDetailRow
     _SecurityEventRow = SecurityEventRow
@@ -1732,6 +1759,527 @@ def _migrate_v6_sku_merge_source_provenance(engine):
         _apply_migration_ddl(engine, ddl)
 
 
+def _migrate_v7_posting_credit_task_expand(engine):
+    """P04 兼容扩展（expand-only，P03 合同 §2/§5 + ADR02/03/05）：
+
+    - 仅新建账本表与索引、给 receipt_items 追加可空 line_uuid；不改/删既有列，
+      失败由 MigrationError 中止启动，旧 schema 保持可用（DDL 逐条幂等）。
+    - posting_headers.(tenant_id, request_hash) 唯一 = 过账 operation unique；
+      durable_tasks.(kind, aggregate_id, aggregate_version, purpose) 唯一 = 任务幂等。
+    - receipt_items.line_uuid 对历史行保持 NULL（历史无稳定ID不按数组位置猜），
+      由后续保存/编辑逐行赋值；唯一索引允许多个 NULL。
+    """
+    for ddl in (
+        # 过账头：一次业务过账动作一行（request_hash 幂等 + CAS 版本引用）
+        "CREATE TABLE IF NOT EXISTS posting_headers ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " receipt_id INTEGER NOT NULL,"
+        " receipt_version INTEGER,"
+        " action VARCHAR(32) NOT NULL,"
+        " status VARCHAR(32) NOT NULL,"
+        " reversal_of INTEGER,"
+        " actor VARCHAR(120),"
+        " actor_role VARCHAR(32),"
+        " request_hash VARCHAR(64) NOT NULL,"
+        " idempotency_key VARCHAR(64),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_posting_headers_tenant_request_hash"
+        " ON posting_headers (tenant_id, request_hash)",
+        "CREATE INDEX IF NOT EXISTS ix_posting_headers_tenant_receipt"
+        " ON posting_headers (tenant_id, receipt_id)",
+        # 库存移动：以来源行为事实（qty_scaled/amount_minor 为 minor/scaled 整数）
+        "CREATE TABLE IF NOT EXISTS stock_movements ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " posting_id INTEGER NOT NULL,"
+        " source_line_uuid VARCHAR(64),"
+        " sku_id INTEGER NOT NULL,"
+        " qty_scaled INTEGER NOT NULL,"
+        " unit VARCHAR(24),"
+        " amount_minor INTEGER,"
+        " source_batch INTEGER,"
+        " reversal_of INTEGER,"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_tenant_posting"
+        " ON stock_movements (tenant_id, posting_id)",
+        "CREATE INDEX IF NOT EXISTS ix_stock_movements_tenant_sku"
+        " ON stock_movements (tenant_id, sku_id)",
+        # 批次分配：一次移动可摊到多个批次（FIFO 消耗/退货来源）
+        "CREATE TABLE IF NOT EXISTS batch_allocations ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " movement_id INTEGER NOT NULL,"
+        " batch_id INTEGER NOT NULL,"
+        " qty_scaled INTEGER NOT NULL,"
+        " cost_minor INTEGER,"
+        " kind VARCHAR(16) NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_batch_allocations_movement"
+        " ON batch_allocations (tenant_id, movement_id)",
+        "CREATE INDEX IF NOT EXISTS ix_batch_allocations_batch"
+        " ON batch_allocations (tenant_id, batch_id)",
+        # 供应商信用：正面额票据 + 条目流水（issued/allocated/refund_pending/.../reversal）
+        "CREATE TABLE IF NOT EXISTS credit_documents ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " supplier_id INTEGER NOT NULL,"
+        " face_minor INTEGER NOT NULL,"
+        " currency VARCHAR(8) NOT NULL,"
+        " original_receipt_id INTEGER,"
+        " source VARCHAR(32),"
+        " evidence TEXT,"
+        " state VARCHAR(24) NOT NULL,"
+        " version INTEGER NOT NULL DEFAULT 1,"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_credit_documents_tenant_supplier"
+        " ON credit_documents (tenant_id, supplier_id)",
+        "CREATE TABLE IF NOT EXISTS credit_entries ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " credit_id INTEGER NOT NULL,"
+        " event_kind VARCHAR(24) NOT NULL,"
+        " amount_minor INTEGER NOT NULL,"
+        " reverses_event_id INTEGER,"
+        " idempotency_key VARCHAR(64),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_credit_entries_tenant_credit"
+        " ON credit_entries (tenant_id, credit_id)",
+        # owner 显式分配：一张信用可部分/多目标抵扣（P03 §2：不静默自动抵）
+        "CREATE TABLE IF NOT EXISTS credit_allocations ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " credit_id INTEGER NOT NULL,"
+        " target_receipt_id INTEGER NOT NULL,"
+        " amount_minor INTEGER NOT NULL,"
+        " currency VARCHAR(8) NOT NULL,"
+        " rate_snapshot VARCHAR(64),"
+        " reversal_of INTEGER,"
+        " idempotency_key VARCHAR(64),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_credit_allocations_tenant_credit"
+        " ON credit_allocations (tenant_id, credit_id)",
+        "CREATE INDEX IF NOT EXISTS ix_credit_allocations_tenant_target"
+        " ON credit_allocations (tenant_id, target_receipt_id)",
+        # 供应商退款：pending 先占用，失败/取消释放（received_evidence 才算已收）
+        "CREATE TABLE IF NOT EXISTS supplier_refunds ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " credit_id INTEGER NOT NULL,"
+        " state VARCHAR(24) NOT NULL,"
+        " received_evidence TEXT,"
+        " version INTEGER NOT NULL DEFAULT 1,"
+        " idempotency_key VARCHAR(64),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_supplier_refunds_tenant_credit"
+        " ON supplier_refunds (tenant_id, credit_id)",
+        # 持久后台任务：DB lease + attempt + 唯一 (kind, aggregate, version, purpose)
+        "CREATE TABLE IF NOT EXISTS durable_tasks ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64),"
+        " kind VARCHAR(48) NOT NULL,"
+        " aggregate_id VARCHAR(120) NOT NULL,"
+        " aggregate_version INTEGER,"
+        " purpose VARCHAR(48) NOT NULL DEFAULT '',"
+        " payload_ref TEXT,"
+        " status VARCHAR(24) NOT NULL DEFAULT 'pending',"
+        " attempt INTEGER NOT NULL DEFAULT 0,"
+        " next_retry_at VARCHAR,"
+        " lease_owner VARCHAR(120),"
+        " lease_expires_at VARCHAR,"
+        " last_error TEXT,"
+        " created_at VARCHAR NOT NULL,"
+        " updated_at VARCHAR NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_durable_tasks_kind_aggregate"
+        " ON durable_tasks (kind, aggregate_id, aggregate_version, purpose)",
+        "CREATE INDEX IF NOT EXISTS ix_durable_tasks_status_retry"
+        " ON durable_tasks (status, next_retry_at)",
+        # 明细行稳定ID：expand 追加可空列，历史行 NULL，后续编辑逐行赋值
+        "ALTER TABLE receipt_items ADD COLUMN line_uuid VARCHAR",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_receipt_items_receipt_line_uuid"
+        " ON receipt_items (receipt_id, line_uuid)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v8_identity_memberships(engine):
+    """I01 持久身份/租户 membership（expand-only，ADR06 / D-02 / I01 规格 v1）：
+
+    - accounts/tenant_memberships/platform_roles/billing_memberships：商户业务角色
+      只来自 tenant_memberships 显式行；platform_admin 独立表，无 rank 继承。
+    - session_auth_version：账号级会话版本；递增后旧令牌（签发早于 updated_at）401 重登。
+    - invite_tokens：受控开户一次性邀请，库里只存 sha256（明文仅返回一次）。
+    - 全部新表+索引，不改既有列；失败由 MigrationError 中止启动。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS accounts ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " email VARCHAR(190) NOT NULL UNIQUE,"
+        " credential_hash VARCHAR(255),"
+        " display_name VARCHAR(120),"
+        " disabled INTEGER NOT NULL DEFAULT 0,"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS tenant_memberships ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " account_id INTEGER NOT NULL,"
+        " role VARCHAR(16) NOT NULL,"
+        " status VARCHAR(16) NOT NULL DEFAULT 'active',"
+        " created_at VARCHAR NOT NULL,"
+        " revoked_at VARCHAR)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_tenant_memberships_tenant_account"
+        " ON tenant_memberships (tenant_id, account_id)",
+        "CREATE INDEX IF NOT EXISTS ix_tenant_memberships_account"
+        " ON tenant_memberships (account_id, status)",
+        "CREATE TABLE IF NOT EXISTS platform_roles ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " account_id INTEGER NOT NULL UNIQUE,"
+        " role VARCHAR(24) NOT NULL,"
+        " status VARCHAR(16) NOT NULL DEFAULT 'active',"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS billing_memberships ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " account_id INTEGER NOT NULL,"
+        " role VARCHAR(24) NOT NULL,"
+        " status VARCHAR(16) NOT NULL DEFAULT 'active',"
+        " created_at VARCHAR NOT NULL,"
+        " revoked_at VARCHAR)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_memberships_tenant_account"
+        " ON billing_memberships (tenant_id, account_id)",
+        "CREATE TABLE IF NOT EXISTS session_auth_version ("
+        " account_id INTEGER PRIMARY KEY,"
+        " version INTEGER NOT NULL DEFAULT 1,"
+        " updated_at INTEGER NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS invite_tokens ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " token_hash VARCHAR(64) NOT NULL UNIQUE,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " role VARCHAR(16) NOT NULL,"
+        " expires_at INTEGER NOT NULL,"
+        " consumed_at INTEGER,"
+        " consumed_email VARCHAR(190),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_invite_tokens_tenant"
+        " ON invite_tokens (tenant_id, role)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v9_line_batch_source(engine):
+    """L02 稳定来源行贯穿（expand-only，ADR02）：
+
+    - inventory_batches.line_uuid：批次级来源行标识；去 (receipt_id, sku_id) 过宽幂等——
+      同单同 SKU 两行各建独立批次（Q02 反例关闭）。
+    - inventory_log.line_uuid：流水行来源标识（对账可追）。
+    - 历史行 NULL：按旧口径理解，不按数组位置猜。
+    """
+    for ddl in (
+        "ALTER TABLE inventory_batches ADD COLUMN line_uuid VARCHAR",
+        "ALTER TABLE inventory_log ADD COLUMN line_uuid VARCHAR",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_batches_receipt_line"
+        " ON inventory_batches (receipt_id, line_uuid)",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_log_receipt_line"
+        " ON inventory_log (receipt_id, line_uuid)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v10_business_action(engine):
+    """L03/L04：单据业务动作列（expand-only，P03 合同 §2）。
+
+    - receipts.business_action：owner 确认的过账动作（purchase/physical_return/
+      financial_credit/statement/draft_correction）；NULL=尚未显式确认，过账期按
+      doc_form 推断（推断不落库，不冒充 owner 确认）。doc_form 图像形态与业务
+      动作自此分离。
+    """
+    for ddl in (
+        "ALTER TABLE receipts ADD COLUMN business_action VARCHAR",
+        "CREATE INDEX IF NOT EXISTS idx_receipts_business_action"
+        " ON receipts (tenant_id, business_action)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v11_return_source_batch(engine):
+    """L04：退货流水的来源批次结构化引用（expand-only）。
+
+    inventory_log.source_batch_id：kind='return' 的负移动指向被反向消耗的来源批次，
+    reverse 恢复/对账按此追踪（不再从票面或批次归属推断）。
+    """
+    for ddl in (
+        "ALTER TABLE inventory_log ADD COLUMN source_batch_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_inventory_log_source_batch"
+        " ON inventory_log (source_batch_id)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v15_upload_operation_dedup(engine):
+    """U04：上传操作幂等表（expand-only，ADR05——同 key 重试同 ID，不重复建单）。
+
+    (tenant_id, request_key) 唯一；content_hash 记录首次内容——同 key 同内容回放原
+    receipt_id，同 key 异内容 409 IDEMPOTENCY_REUSED。同内容无 key/异 key 不自动合并
+    （重复候选提示归交互层）。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS upload_operations ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " request_key VARCHAR(96) NOT NULL,"
+        " content_hash VARCHAR(64) NOT NULL,"
+        " receipt_id INTEGER NOT NULL,"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_upload_operations_key"
+        " ON upload_operations (tenant_id, request_key)",
+        "CREATE INDEX IF NOT EXISTS ix_upload_operations_hash"
+        " ON upload_operations (tenant_id, content_hash)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v14_billing_model(engine):
+    """S02 订阅/支付/inbox 模型（expand-only，ADR07；D06 未签发=fail-closed 不产生事实）。
+
+    表全部空建：政策未签发前无任何事实写入（fail-closed 由 S01 契约保证）。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS billing_orders ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " order_no VARCHAR(64) NOT NULL UNIQUE,"
+        " kind VARCHAR(24) NOT NULL,"           # subscription / topup 预留
+        " plan_ref VARCHAR(64),"
+        " amount_minor INTEGER NOT NULL,"
+        " currency VARCHAR(8) NOT NULL,"
+        " status VARCHAR(24) NOT NULL,"          # created/paid/cancelled/expired
+        " idempotency_key VARCHAR(64),"
+        " provider VARCHAR(32),"
+        " created_at VARCHAR NOT NULL,"
+        " updated_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_billing_orders_tenant_status"
+        " ON billing_orders (tenant_id, status)",
+        "CREATE TABLE IF NOT EXISTS payment_attempts ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " order_id INTEGER NOT NULL,"
+        " provider VARCHAR(32) NOT NULL,"
+        " provider_payment_id VARCHAR(96),"
+        " amount_minor INTEGER NOT NULL,"
+        " currency VARCHAR(8) NOT NULL,"
+        " status VARCHAR(24) NOT NULL,"          # pending/succeeded/failed/cancelled/unknown
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_payment_attempts_order"
+        " ON payment_attempts (order_id, status)",
+        "CREATE TABLE IF NOT EXISTS provider_inbox ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " provider VARCHAR(32) NOT NULL,"
+        " environment VARCHAR(16) NOT NULL,"     # sandbox / live
+        " event_id VARCHAR(96) NOT NULL,"
+        " payload_digest VARCHAR(64),"
+        " received_at VARCHAR NOT NULL,"
+        " processed_status VARCHAR(16) NOT NULL DEFAULT 'pending')",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_provider_inbox_event"
+        " ON provider_inbox (provider, environment, event_id)",
+        "CREATE TABLE IF NOT EXISTS billing_events ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64),"
+        " order_id INTEGER,"
+        " provider_payment_id VARCHAR(96),"
+        " fact_kind VARCHAR(32) NOT NULL,"       # payment_succeeded/refund_succeeded/...
+        " object_version INTEGER NOT NULL DEFAULT 1,"
+        " payload_digest VARCHAR(64),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_events_dedup"
+        " ON billing_events (provider_payment_id, fact_kind, object_version)",
+        "CREATE TABLE IF NOT EXISTS subscriptions ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL UNIQUE,"
+        " state VARCHAR(24) NOT NULL,"           # trialing/trial_expired/pending_payment/active/past_due/cancel_scheduled/terminated
+        " plan_ref VARCHAR(64),"
+        " policy_ref VARCHAR(96),"
+        " current_period_id INTEGER,"
+        " created_at VARCHAR NOT NULL,"
+        " updated_at VARCHAR NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS subscription_periods ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " subscription_id INTEGER NOT NULL,"
+        " starts_at VARCHAR NOT NULL,"
+        " ends_at VARCHAR NOT NULL,"
+        " verified_payment_id INTEGER,"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS entitlement_snapshots ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " allow_new_ai INTEGER NOT NULL,"
+        " basis VARCHAR(32) NOT NULL,"           # verified_period / active_trial / policy
+        " policy_ref VARCHAR(96),"
+        " created_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_entitlement_snapshots_tenant"
+        " ON entitlement_snapshots (tenant_id, created_at)",
+        "CREATE TABLE IF NOT EXISTS refund_requests ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " order_id INTEGER NOT NULL,"
+        " payment_attempt_id INTEGER,"
+        " state VARCHAR(24) NOT NULL,"           # requested/processing/succeeded/failed/cancelled
+        " amount_minor INTEGER NOT NULL,"
+        " requested_by VARCHAR(120),"
+        " created_at VARCHAR NOT NULL)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v13_credit_alloc_request_hash(engine):
+    """L06：抵扣分配的请求指纹（幂等裁决：同 key 同 hash 回放 / 异 hash 409）。"""
+    for ddl in (
+        "ALTER TABLE credit_allocations ADD COLUMN request_hash VARCHAR",
+        "CREATE INDEX IF NOT EXISTS idx_credit_alloc_idem_key"
+        " ON credit_allocations (tenant_id, credit_id, idempotency_key)",
+        "ALTER TABLE supplier_refunds ADD COLUMN request_hash VARCHAR",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v12_review_events(engine):
+    """M02：不可变复核事件表（expand-only；append-only 契约，不 UPDATE/DELETE）。
+
+    saved=店员手工修改事实（approve 不消失，Q04 关闭）；approved/submitted/reversed
+    为后续 M02/M05 事件口径的持久事实源。历史单据无事件（回算归 MR05，不按位置猜）。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS review_events ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " receipt_id INTEGER NOT NULL,"
+        " event_kind VARCHAR(24) NOT NULL,"
+        " actor VARCHAR(120),"
+        " actor_role VARCHAR(32),"
+        " payload_json TEXT,"
+        " created_at VARCHAR NOT NULL,"
+        " tenant_id VARCHAR(64) DEFAULT 'default')",
+        "CREATE INDEX IF NOT EXISTS idx_review_events_receipt_kind"
+        " ON review_events (receipt_id, event_kind)",
+        "CREATE INDEX IF NOT EXISTS idx_review_events_tenant_kind"
+        " ON review_events (tenant_id, event_kind)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v16_billing_lifecycle(engine):
+    """S03–S08 计费生命周期 expand-only 迁移：coupon、预留、对账/退款/周期补充列。
+
+    只新增表/列/索引，不改写既有财务事实；旧库空跑等价、新库由 create_all + v14
+    建出基础表后由本版补列（重复列静默跳过）。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS billing_coupons ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " coupon_code VARCHAR(64) NOT NULL UNIQUE,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " trial_days INTEGER NOT NULL,"
+        " status VARCHAR(16) NOT NULL DEFAULT 'issued',"
+        " created_by VARCHAR(120),"
+        " created_at VARCHAR NOT NULL,"
+        " expires_at VARCHAR,"
+        " redeemed_at VARCHAR,"
+        " redeemed_by VARCHAR(120))",
+        "CREATE INDEX IF NOT EXISTS ix_billing_coupons_tenant"
+        " ON billing_coupons (tenant_id, status)",
+        "CREATE TABLE IF NOT EXISTS entitlement_reservations ("
+        " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        " tenant_id VARCHAR(64) NOT NULL,"
+        " request_key VARCHAR(96) NOT NULL,"
+        " request_hash VARCHAR(64),"
+        " state VARCHAR(16) NOT NULL DEFAULT 'reserved',"
+        " basis VARCHAR(32),"
+        " subscription_state VARCHAR(24),"
+        " policy_ref VARCHAR(96),"
+        " created_at VARCHAR NOT NULL,"
+        " updated_at VARCHAR NOT NULL)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_entitlement_reservations_key"
+        " ON entitlement_reservations (tenant_id, request_key)",
+        "ALTER TABLE billing_orders ADD COLUMN request_hash VARCHAR(64)",
+        "ALTER TABLE billing_orders ADD COLUMN period_days INTEGER",
+        "ALTER TABLE billing_orders ADD COLUMN paid_at VARCHAR",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_billing_orders_idem"
+        " ON billing_orders (tenant_id, idempotency_key)",
+        "ALTER TABLE payment_attempts ADD COLUMN request_key VARCHAR(96)",
+        "ALTER TABLE payment_attempts ADD COLUMN request_hash VARCHAR(64)",
+        "ALTER TABLE payment_attempts ADD COLUMN checkout_id VARCHAR(96)",
+        "ALTER TABLE payment_attempts ADD COLUMN updated_at VARCHAR",
+        "ALTER TABLE payment_attempts ADD COLUMN reconciled_at VARCHAR",
+        "ALTER TABLE payment_attempts ADD COLUMN reconcile_count INTEGER DEFAULT 0",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_payment_attempts_request"
+        " ON payment_attempts (order_id, request_key)",
+        "CREATE INDEX IF NOT EXISTS ix_payment_attempts_reconcile"
+        " ON payment_attempts (status, reconciled_at)",
+        "ALTER TABLE provider_inbox ADD COLUMN payload_json TEXT",
+        "ALTER TABLE provider_inbox ADD COLUMN fact_kind VARCHAR(32)",
+        "ALTER TABLE provider_inbox ADD COLUMN order_no VARCHAR(64)",
+        "ALTER TABLE provider_inbox ADD COLUMN provider_payment_id VARCHAR(96)",
+        "ALTER TABLE billing_events ADD COLUMN amount_minor INTEGER",
+        "ALTER TABLE billing_events ADD COLUMN currency VARCHAR(8)",
+        "ALTER TABLE billing_events ADD COLUMN event_id VARCHAR(96)",
+        "ALTER TABLE subscriptions ADD COLUMN trial_started_at VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN trial_ends_at VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN cancel_at VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN cancelled_at VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN terminated_at VARCHAR",
+        "ALTER TABLE subscriptions ADD COLUMN past_due_since VARCHAR",
+        "ALTER TABLE subscription_periods ADD COLUMN kind VARCHAR(16) DEFAULT 'paid'",
+        "ALTER TABLE subscription_periods ADD COLUMN state VARCHAR(16) DEFAULT 'active'",
+        "ALTER TABLE subscription_periods ADD COLUMN order_id INTEGER",
+        "ALTER TABLE subscription_periods ADD COLUMN provider_payment_id VARCHAR(96)",
+        "ALTER TABLE refund_requests ADD COLUMN tenant_id VARCHAR(64)",
+        "ALTER TABLE refund_requests ADD COLUMN request_key VARCHAR(96)",
+        "ALTER TABLE refund_requests ADD COLUMN request_hash VARCHAR(64)",
+        "ALTER TABLE refund_requests ADD COLUMN reason VARCHAR",
+        "ALTER TABLE refund_requests ADD COLUMN provider VARCHAR(32)",
+        "ALTER TABLE refund_requests ADD COLUMN provider_request_key VARCHAR(96)",
+        "ALTER TABLE refund_requests ADD COLUMN provider_refund_id VARCHAR(96)",
+        "ALTER TABLE refund_requests ADD COLUMN approved_by VARCHAR(120)",
+        "ALTER TABLE refund_requests ADD COLUMN updated_at VARCHAR",
+        "ALTER TABLE refund_requests ADD COLUMN processed_at VARCHAR",
+        "ALTER TABLE refund_requests ADD COLUMN error_code VARCHAR(64)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_refund_requests_key"
+        " ON refund_requests (tenant_id, request_key)",
+        "CREATE INDEX IF NOT EXISTS ix_refund_requests_order_state"
+        " ON refund_requests (order_id, state)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v17_billing_event_payload(engine):
+    """S08/S10：计费事件审计载荷（人工收款发票号/操作人），不含卡号/密钥。"""
+    for ddl in (
+        "ALTER TABLE billing_events ADD COLUMN payload_json TEXT",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
+def _migrate_v18_recognition_jobs(engine):
+    """识别 Job 持久化（M03）：进程重启后终态仍可查，不被洗回 pending。
+
+    只新建表与索引，不改既有列。created_at/started_at 是「原起点」：后续只更新
+    status/finished_at/updated_at，任何超时清洗都不得改写它们。
+    """
+    for ddl in (
+        "CREATE TABLE IF NOT EXISTS recognition_jobs ("
+        " job_id VARCHAR(64) PRIMARY KEY,"
+        " receipt_id INTEGER,"
+        " tenant_id VARCHAR(64) NOT NULL DEFAULT 'default',"
+        " status VARCHAR(24) NOT NULL DEFAULT 'pending',"
+        " attempt INTEGER NOT NULL DEFAULT 1,"
+        " job_json TEXT,"
+        " created_at VARCHAR NOT NULL,"
+        " started_at VARCHAR NOT NULL,"
+        " finished_at VARCHAR,"
+        " updated_at VARCHAR NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS ix_recognition_jobs_receipt"
+        " ON recognition_jobs (tenant_id, receipt_id)",
+        "CREATE INDEX IF NOT EXISTS ix_recognition_jobs_status"
+        " ON recognition_jobs (status)",
+    ):
+        _apply_migration_ddl(engine, ddl)
+
+
 SCHEMA_MIGRATIONS = [
     (1, "baseline_inline_schema", None),
     (2, "receipt_lifecycle_columns", _migrate_v2_receipt_lifecycle_columns),
@@ -1739,6 +2287,18 @@ SCHEMA_MIGRATIONS = [
     (4, "receipt_list_indexes", _migrate_v4_receipt_list_indexes),
     (5, "drop_legacy_cli_engines", _migrate_v5_drop_legacy_cli_engines),
     (6, "sku_merge_source_provenance", _migrate_v6_sku_merge_source_provenance),
+    (7, "posting_credit_task_expand", _migrate_v7_posting_credit_task_expand),
+    (8, "identity_memberships", _migrate_v8_identity_memberships),
+    (9, "line_batch_source", _migrate_v9_line_batch_source),
+    (10, "business_action", _migrate_v10_business_action),
+    (11, "return_source_batch", _migrate_v11_return_source_batch),
+    (12, "review_events", _migrate_v12_review_events),
+    (13, "credit_alloc_request_hash", _migrate_v13_credit_alloc_request_hash),
+    (14, "billing_model", _migrate_v14_billing_model),
+    (15, "upload_operation_dedup", _migrate_v15_upload_operation_dedup),
+    (16, "billing_lifecycle", _migrate_v16_billing_lifecycle),
+    (17, "billing_event_payload", _migrate_v17_billing_event_payload),
+    (18, "recognition_jobs", _migrate_v18_recognition_jobs),
 ]
 
 
@@ -3000,6 +3560,34 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
             rc = s.get(_ReceiptRow, int(receipt_id))
             tenant_id = getattr(rc, "tenant_id", None) if rc is not None else None
         from app.services.contract import normalize_evidence
+        # L02 稳定行身份：先读旧行建立「内容指纹 → line_uuid」池，再整体替换。
+        # - 新列表显式携带既有 line_uuid → 认领该行（U03 前端编辑链路的正式通道）；
+        # - 未携带者按内容指纹（name/sku/qty/单价/金额/单位/void/actual 归一后）匹配旧行 → 沿用其身份；
+        # - 无匹配 → 新 uuid4（=删除+新增语义）。历史 NULL 行被匹配时同样获得新 uuid。
+        # 不按数组位置猜（ADR02）；未变行跨保存身份稳定。
+        import uuid as _uuid
+        existing_rows = s.query(_ItemRow).filter(_ItemRow.receipt_id == int(receipt_id)).all()
+
+        def _fp(d):
+            return (
+                str(d.get("name") or ""),
+                int(d["sku_id"]) if d.get("sku_id") else None,
+                _money.qty(d["quantity"]) if d.get("quantity") is not None else None,
+                _money.unit_price(d["unit_price"]) if d.get("unit_price") is not None else None,
+                _money.money(d["amount"]) if d.get("amount") is not None else None,
+                str(d.get("unit") or ""),
+                _money.optional_qty(d.get("actual_qty"), strict=False),
+            )
+
+        available = {}
+        for old in existing_rows:
+            old_fp = _fp({
+                "name": old.name, "sku_id": old.sku_id, "quantity": old.quantity,
+                "unit_price": old.unit_price, "amount": old.amount, "unit": old.unit,
+                "actual_qty": old.actual_qty,
+            })
+            available.setdefault(old_fp, []).append(old)
+        claimed = set()
         s.query(_ItemRow).filter(_ItemRow.receipt_id == int(receipt_id)).delete()
         for it in items:
             row = dict(it)
@@ -3022,6 +3610,30 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
                 row["quantity"] = _money.qty(row["quantity"])
             # Gap E1 / T7：字段级证据（可选）——归一后落 evidence_json，非法降级 NULL 不阻断
             evidence = normalize_evidence(row.pop("evidence", None))
+            # L02 行身份裁决（显式 uuid 优先，其次指纹认领，最后新建）
+            line_uuid = str(row.pop("line_uuid", None) or "").strip() or None
+            fp = _fp({"name": row.get("name"), "sku_id": row.get("sku_id"),
+                      "quantity": row.get("quantity"), "unit_price": row.get("unit_price"),
+                      "amount": row.get("amount"), "unit": row.get("unit"),
+                      "actual_qty": actual_qty})
+            pool = available.get(fp) or []
+            picked = None
+            if line_uuid:
+                for cand in pool:
+                    if cand.id not in claimed and (cand.line_uuid or "") == line_uuid:
+                        picked = cand
+                        break
+            if picked is None:
+                for cand in pool:
+                    if cand.id not in claimed:
+                        picked = cand
+                        break
+            if picked is not None:
+                claimed.add(picked.id)
+                if not line_uuid:
+                    line_uuid = picked.line_uuid or _uuid.uuid4().hex
+            else:
+                line_uuid = line_uuid or _uuid.uuid4().hex
             s.add(_ItemRow(
                 receipt_id=int(receipt_id),
                 raw_name=raw_name,
@@ -3032,10 +3644,69 @@ def set_receipt_items(receipt_id, items, tenant_id=None):
                 actual_qty=actual_qty,
                 evidence_json=(json.dumps(evidence, ensure_ascii=False)
                                if evidence else None),
+                line_uuid=line_uuid,
                 tenant_id=str(tenant_id or "default"),
                 **row,
             ))
         s.commit()
+    finally:
+        s.close()
+
+
+def append_review_event(receipt_id, event_kind, actor="", payload=None,
+                        tenant_id=None, actor_role=""):
+    """M02：追加一条不可变复核事件（append-only；不 UPDATE/DELETE）。
+
+    在 db.atomic() 块内经 get_session() 自动并入 ambient 事务；块外独立提交。
+    """
+    if _ReviewEventRow is None:
+        raise RuntimeError("review_events 未初始化（迁移未执行？）")
+    s = get_session()
+    try:
+        s.add(_ReviewEventRow(
+            receipt_id=int(receipt_id), event_kind=str(event_kind),
+            actor=str(actor or ""), actor_role=str(actor_role or ""),
+            payload_json=(json.dumps(payload, ensure_ascii=False)
+                          if payload else None),
+            created_at=now_iso(),
+            tenant_id=str(tenant_id or "default")))
+        s.commit()
+    finally:
+        s.close()
+
+
+def has_review_event(receipt_id, event_kind):
+    """M02：该单据是否已存在某类不可变复核事件（幂等判据，只读）。"""
+    s = get_session()
+    try:
+        return s.query(_ReviewEventRow).filter(
+            _ReviewEventRow.receipt_id == int(receipt_id),
+            _ReviewEventRow.event_kind == str(event_kind)).first() is not None
+    finally:
+        s.close()
+
+
+def list_review_events(receipt_id, tenant_id=None):
+    """M02：按 id 升序读某单据的不可变复核事件（append-only 事实源，只读）。"""
+    s = get_session()
+    try:
+        q = scoped(s.query(_ReviewEventRow), _ReviewEventRow, tenant_id).filter(
+            _ReviewEventRow.receipt_id == int(receipt_id))
+        rows = q.order_by(_ReviewEventRow.id.asc()).all()
+        out = []
+        for r in rows:
+            try:
+                payload = json.loads(r.payload_json) if r.payload_json else None
+            except (TypeError, ValueError):
+                payload = None
+            out.append({
+                "id": r.id, "receipt_id": r.receipt_id,
+                "event_kind": r.event_kind, "actor": r.actor or "",
+                "actor_role": r.actor_role or "",
+                "payload": payload, "created_at": r.created_at,
+                "tenant_id": r.tenant_id or "default",
+            })
+        return out
     finally:
         s.close()
 
@@ -3332,6 +4003,8 @@ def _row_to_item(r):
         "is_void": bool(getattr(r, "is_void", 0) or 0),
         "actual_qty": getattr(r, "actual_qty", None),
         "evidence": evidence,
+        # L02：稳定行标识贯穿读侧（过账批次幂等键 (receipt,line) 的来源）
+        "line_uuid": getattr(r, "line_uuid", None),
     }
 
 
@@ -3474,8 +4147,11 @@ def find_sku_by_name(name, tenant_id=None):
 
 
 def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
-                    kind, note="", tenant_id="default"):
-    """写库存流水 + 更新 SKU 当前库存 + 挂载入库/消耗批次处理钩子。"""
+                    kind, note="", tenant_id="default", line_uuid=None):
+    """写库存流水 + 更新 SKU 当前库存 + 挂载入库/消耗批次处理钩子。
+
+    L02：line_uuid 为来源行标识（可空——历史调用方/盘点不变）；kind="in" 时
+    透传给批次幂等键（(receipt,line) 取代过宽的 (receipt,sku)），并落流水行。"""
     qty = _money.qty(qty)
     amount = _money.money(amount)
     s = get_session()
@@ -3514,10 +4190,12 @@ def apply_stock_log(sku_id, name, qty, unit, amount, vendor, date, receipt_id,
                     unit=unit or (sku.base_unit if sku else ""),
                     date=date or now_iso()[:10],
                     receipt_id=receipt_id,
+                    line_uuid=line_uuid,
                 )
         s.add(_StockLogRow(sku_id=sku_id, name=name, qty=qty, unit=unit, amount=log_amount,
                            vendor=vendor, date=date, receipt_id=receipt_id,
                            kind=kind, note=note, created_at=now_iso(),
+                           line_uuid=str(line_uuid) if line_uuid else None,
                            tenant_id=str(tenant_id or "default")))
         s.commit()
     finally:
@@ -4787,7 +5465,11 @@ def _memory_anchor_for_write(vendor, tenant_id, supplier_id=None):
     这一次没命中，属正常；写侧未命中意味着这一行**永久**失去锚点 —— 除重写或回填外
     无从修复，只能靠这条日志被发现（I2「降级可接受、静默不行」同一条纪律）。
     """
-    vid = str(vendor or "").strip()
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor.strip()
     tid = str(tenant_id or "default").strip() or "default"
     if supplier_id is not None:
         sid = None
@@ -5096,7 +5778,11 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
                  缺省 None → 完全不碰这五列（遗留调用方零行为变化）。
     返回 (memory_id, is_new)：is_new=False 表示命中幂等去重。
     """
-    vid = str(vendor or "")
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor
     tid = str(tenant_id).strip() if tenant_id else "default"
     tid = tid or "default"
     mid = str(memory_id).strip() if memory_id else uuid.uuid4().hex
@@ -5150,6 +5836,13 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
                 logger.warning("[memory] source_ref merge on dedup hit failed: %s", e)
                 s.rollback()
             return (dup.memory_id, False)
+        eff_valid_to = str(valid_to).strip() if valid_to else ""
+        if not eff_valid_to and fact_row and isinstance(fact_row, dict):
+            k = str(fact_row.get("fact_kind") or "").strip().lower()
+            ttl_k = memory_ttl_days(k)
+            if ttl_k and ttl_k > 0:
+                base_dt = _parse_iso_dt(created) or datetime.now()
+                eff_valid_to = (base_dt + timedelta(days=ttl_k)).isoformat(timespec="seconds")
         row = _VendorMemoryRow(
             memory_id=mid,
             vendor=vid,
@@ -5172,7 +5865,7 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
             status="active",
             fact_key=fkey,
             superseded_by=None,
-            valid_to=str(valid_to).strip() if valid_to else "",
+            valid_to=eff_valid_to,
             # P2-T1：主体锚点（调用方给的权威 id 优先，否则按名解析，都拿不到为 None，
             # 读侧回退按 vendor 名匹配）
             supplier_id=sid,
@@ -5199,27 +5892,38 @@ def upsert_vendor_memory(vendor, notes, sample, tenant_id="default",
     return (mid, True)
 
 
-def memory_ttl_days():
-    """记忆 TTL（settings 实时读取，缺省 0 = 不过期）。
+def memory_ttl_days(kind: str = ""):
+    """记忆 TTL（settings 实时读取，P2-T20 支持按 kind 分级）。
 
-    0 表示"不设过期"（迁移前行为零变化）：TTL 是治理策略，默认打开会让既有记忆
-    在某天集体消失，属于「默认值即行为变更」，必须由管理台显式设置。
+    分级策略：
+    - price_range: 90 天
+    - unit: 180 天
+    - alias: 0 天（不过期）
+    - layout: 0 天（不过期）
+    - 空或其它: 回退 memory_ttl_days（缺省 0 = 不过期）。
 
-    过期判据有两条并用（见 _memory_row_expired）：
-    1. valid_to 非空且已过 —— 单行的显式失效期（save_memory_fact 按 TTL 写入）；
-    2. created_at + TTL 已过 —— 覆盖 TTL 上线前写入、valid_to 为空的存量行。
-    只有第 1 条会让"上线前写入的行"永久免于 TTL，故两条都必须有。
+    Fail-Open 纪律：若 settings 读取出现任何异常，统一回退为 0（不过期），并输出 warning 警示。
     """
+    kind_s = str(kind or "").strip().lower()
     try:
         from app.services import settings_service
+        if kind_s:
+            key = f"memory_ttl_days_{kind_s}"
+            if key in settings_service.SETTINGS_DEFAULTS:
+                return settings_service.get_int(key, settings_service.SETTINGS_DEFAULTS[key])
         return settings_service.get_int("memory_ttl_days", 0)
     except Exception as e:
         # P20-D9（I2 口径）：回退值 0（不过期）本身是刻意兜底，但**静默**会让
         # "TTL 配置读不出来"与"本来就设了 0"在库里完全同形 —— 治理策略失效而无人可见。
         logger.warning(
-            "memory_ttl_days 读取失败，本次按 0（不过期）处理："
-            "异常=%s: %s", type(e).__name__, e)
+            "memory_ttl_days 读取失败，本次按 0（不过期）fail-open 处理："
+            "kind=%s 异常=%s: %s", kind_s, type(e).__name__, e)
         return 0
+
+
+def memory_ttl_days_for_kind(kind: str = "") -> int:
+    """公开别名，与 memory_ttl_days(kind) 等价。"""
+    return memory_ttl_days(kind)
 
 
 def _parse_iso_dt(value):
@@ -5237,22 +5941,40 @@ def _parse_iso_dt(value):
         return None
 
 
-def _memory_row_expired(row, now_dt=None, ttl_days=None):
+def _memory_row_expired(row, now_dt=None, ttl_days=None, kind_ttls=None):
     """判断一条 vendor_memory 行是否已过期（不参与注入）。
 
-    - ttl_days 由调用方传入（一次读取，避免逐行读 settings）；
-    - valid_to / created_at 无法解析时按"未过期"处理：宁可注入一条时间戳脏的
-      记忆，也不因为格式问题静默丢掉整批记忆（丢记忆没有日志、无法察觉）。
+    - 优先检查显式 valid_to：若非空且 now > valid_to 则判定过期；
+    - 若 valid_to 为空（历史遗留行）：根据行对应的 fact_kind 查分级 TTL，若已过 created_at + ttl_days 则过期；
+    - 无法解析或异常时按未过期 (False) fail-open 兜底处理。
     """
-    now = now_dt or datetime.now()
-    vt = _parse_iso_dt(getattr(row, "valid_to", "") or "")
-    if vt is not None and now > vt:
-        return True
-    if ttl_days and ttl_days > 0:
-        created = _parse_iso_dt(getattr(row, "created_at", "") or "")
-        if created is not None and now > created + timedelta(days=ttl_days):
+    try:
+        now = now_dt or datetime.now()
+        vt_raw = getattr(row, "valid_to", "") or ""
+        vt = _parse_iso_dt(vt_raw)
+        if vt is not None and now > vt:
             return True
-    return False
+        if vt is not None:
+            # 显式 valid_to 且未过期
+            return False
+
+        # valid_to 为空：走基于 created_at 的动态判定
+        kind = str(getattr(row, "fact_kind", "") or "").strip().lower()
+        if kind_ttls and kind in kind_ttls:
+            ttl = kind_ttls[kind]
+        elif ttl_days is not None and not kind:
+            ttl = ttl_days
+        else:
+            ttl = memory_ttl_days(kind)
+
+        if ttl and ttl > 0:
+            created = _parse_iso_dt(getattr(row, "created_at", "") or "")
+            if created is not None and now > created + timedelta(days=ttl):
+                return True
+        return False
+    except Exception as e:
+        logger.warning("[db] 记忆过期判定异常，按未过期 fail-open 处理: %s", e)
+        return False
 
 
 def _filter_memory_rows_for_read(rows, ttl_days=None, now_dt=None):
@@ -5260,18 +5982,18 @@ def _filter_memory_rows_for_read(rows, ttl_days=None, now_dt=None):
 
     调用方传入的 rows 必须是 rowid DESC（最新在前）序 —— 首见即最新，去重因此
     只需一个 seen 集合，不必排序。
-
-    为什么去重放在读侧（supersede 已保证同键只有一条 active）：supersede 是两次
-    DB 操作（先插新行、再置旧行），中途失败会留下两条同键 active 行；vector/DB
-    也可能被外部脚本直写。读侧去重是第二道防线 —— "同 key 只注入最新一条"这条
-    承诺不依赖写侧每次都对。fact_key 为空的遗留行不参与去重（保持追加式语义）。
     """
-    ttl = memory_ttl_days() if ttl_days is None else ttl_days
     now = now_dt or datetime.now()
+    kind_ttls = {
+        "price_range": memory_ttl_days("price_range"),
+        "unit": memory_ttl_days("unit"),
+        "alias": memory_ttl_days("alias"),
+        "layout": memory_ttl_days("layout"),
+    }
     out = []
     seen = set()
     for r in rows:
-        if _memory_row_expired(r, now_dt=now, ttl_days=ttl):
+        if _memory_row_expired(r, now_dt=now, ttl_days=ttl_days, kind_ttls=kind_ttls):
             continue
         fkey = str(getattr(r, "fact_key", "") or "").strip()
         if fkey:
@@ -5398,7 +6120,11 @@ def save_memory_fact(tenant_id, vendor, fact_key, notes="", sample="",
                 "is_new": 本次是否真的新增了行（False = 内容幂等去重命中）}。
     """
     payload = _memory_fact_row(fact)
-    vid = str(vendor or "")
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor
     tid = str(tenant_id or "default").strip() or "default"
     key = str(fact_key or payload.get("fact_key") or "").strip()
     if not key:
@@ -5410,7 +6136,8 @@ def save_memory_fact(tenant_id, vendor, fact_key, notes="", sample="",
     eff_source_ref = str(payload.get("source_ref") or source_ref)
     eff_supplier_id = payload.get("supplier_id") or None
     created = now_iso()
-    ttl = memory_ttl_days()
+    fact_k = str(payload.get("fact_kind") or getattr(fact, "kind", "") or "").strip().lower()
+    ttl = memory_ttl_days(fact_k)
     # 显式失效期优先于 TTL：调用方明确给了有效期末尾，就不该被策略值改写成"更晚失效"
     valid_to = str(payload.get("valid_to") or "").strip()
     if not valid_to and ttl and ttl > 0:
@@ -5750,7 +6477,11 @@ def enqueue_pending_memory(vendor, content, tenant_id="default",
         raise ValueError(
             "enqueue_pending_memory 的 status 只允许 'pending' / 'rejected'，实得 %r"
             "（人工批准必须经 review_pending_memory 流转）" % (status,))
-    vid = str(vendor or "")
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor
     tid = str(tenant_id or "default").strip() or "default"
     refs = json.dumps([str(r) for r in (source_receipt_ids or [])],
                       ensure_ascii=False)
@@ -6087,12 +6818,17 @@ def list_memory_extract_runs(tenant_id=None, receipt_id=None, trigger=None,
         s.close()
 
 
-def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
+def apply_vendor_memory_override_penalty(vendor, tenant_id="default", memory_ids=None):
     """T8 非对称衰减（淘汰快）：用户覆写 → 该供应商活跃记忆扣分。
 
     步长取 settings 键 'memory_decay_override_penalty'（缺省 -0.12）；
     扣分后低于归档阈值（键 'memory_archive_threshold'，缺省 0.5）的行自动
     置 archived，停止注入。返回受影响的行数。
+
+    memory_ids (T6 G3 D3已决):
+      - 传入非空列表时：精准扣分，仅匹配 memory_id in (memory_ids) 的 active 规则；
+      - 传入 None 或空列表时：触发降级分支，对该供应商下全部 active 规则扣分，
+        并记录 logger.warning 说明降级后果。
 
     R11-AR1：本次真的发生 active -> archived 迁移的行，会交给
     `services.memory_store.archive_memory_vectors` 级联删掉其向量 —— 归档与删除在
@@ -6108,17 +6844,32 @@ def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
         threshold = settings_service.get_float("memory_archive_threshold", 0.5)
     except Exception:
         penalty, threshold = 0.12, 0.5
-    vid = str(vendor or "")
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor
     tid = str(tenant_id or "default").strip() or "default"
     if not vid:
         return 0
+
+    target_mids = [str(m).strip() for m in (memory_ids or []) if m and str(m).strip()]
+    if not target_mids:
+        logger.warning(
+            "[WARN] 记忆衰减扣分未提供 memory_ids 锚点，降级为整商 active 规则扣分: vendor=%s tenant=%s",
+            vid, tid
+        )
+
     s = get_session()
     try:
-        rows = s.query(_VendorMemoryRow).filter(
+        q = s.query(_VendorMemoryRow).filter(
             _VendorMemoryRow.vendor == vid,
             _VendorMemoryRow.tenant_id == tid,
             _VendorMemoryRow.status == "active",
-        ).all()
+        )
+        if target_mids:
+            q = q.filter(_VendorMemoryRow.memory_id.in_(target_mids))
+        rows = q.all()
         archived_mids = []   # R11-AR1：本次真的 active -> archived 的 memory_id
         for r in rows:
             cur = float(r.decay_score if r.decay_score is not None else 1.0)
@@ -6129,11 +6880,6 @@ def apply_vendor_memory_override_penalty(vendor, tenant_id="default"):
                 archived_mids.append(str(r.memory_id))
             r.updated_at = now_iso()
         s.commit()
-        # R11-AR1：归档与向量层对称 —— 删除路径有级联（memory_store.delete_memory），
-        # 归档此前没有，于是每归档一次就在向量库留一枚孤儿（巡检 orphan_mids 立刻报）。
-        # 只对本次真发生 active -> archived 迁移的行调用：行一旦归档，本查询（status ==
-        # "active"）就取不到它，故重复调用不会重复删向量（幂等）。级联失败只告警 ——
-        # 衰减结果与调用方（单据保存）不受影响，向量残留由巡检可查。
         if archived_mids:
             try:
                 from app.services import memory_store
@@ -6232,7 +6978,11 @@ def _evict_vendor_memory_over_capacity(vendor, tenant_id, keep_memory_id=None,
     """
     if _VendorMemoryRow is None:
         return []
-    vid = str(vendor or "")
+    clean_vendor = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', str(vendor or '')).strip()
+    if len(clean_vendor) > 200:
+        logger.warning("[WARN] 供应商名称超长截断（防止脏行固化）: 原始长度=%d, 截断后=%r", len(clean_vendor), clean_vendor[:200])
+        clean_vendor = clean_vendor[:200]
+    vid = clean_vendor
     tid = str(tenant_id or "default").strip() or "default"
     if not vid:
         return []
@@ -6382,6 +7132,149 @@ def revive_vendor_memory(memory_id, tenant_id=None):
         return info
     finally:
         s.close()
+
+
+def supersede_vendor_memory(memory_id, tenant_id="default", *,
+                            fact_key=None, fact_value=None, notes=None,
+                            who="admin"):
+    """P1-T5 (G2, D2已决) 编辑即 supersede 状态机事务。
+
+    原子事务：
+    1. 查询旧行，校验存在性与租户匹配（跨租户/不存在 -> found=False）；
+    2. 校验旧行状态必须为 active（非 active -> found=True, active=False, status=old.status）；
+    3. 生成 new_mid，插入新行：
+       - 继承旧行的 vendor, tenant_id, supplier_id, sample, source_kind, source_ref, trust_level 等
+       - 新行的 fact_key, fact_value, notes 优先使用传入参数，未提供则继承旧行
+       - status = 'active', version = 1, decay_score = 0.7 (memory_initial_decay_score())
+       - written_by = who, created_at = now, updated_at = now
+    4. 更新旧行：status = 'superseded', superseded_by = new_mid, updated_at = now
+    5. 提交事务并返回新旧行信息。
+    """
+    if _VendorMemoryRow is None:
+        return {"found": False}
+    mid = str(memory_id).strip() if memory_id is not None else ""
+    tid = str(tenant_id or "default").strip() or "default"
+    if not mid:
+        return {"found": False}
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorMemoryRow), _VendorMemoryRow, tid)
+        old = q.filter(_VendorMemoryRow.memory_id == mid).first()
+        if old is None:
+            return {"found": False}
+        if (old.status or "active") != "active":
+            return {"found": True, "active": False, "status": old.status or "unknown"}
+
+        now = now_iso()
+        new_mid = uuid.uuid4().hex
+
+        new_key = str(fact_key).strip() if fact_key is not None else (old.fact_key or "")
+        new_val = str(fact_value).strip() if fact_value is not None else (old.fact_value or "")
+        new_notes = str(notes).strip() if notes is not None else (old.notes or "")
+
+        new_kind = old.fact_kind
+        if not new_kind and new_key and ":" in new_key:
+            new_kind = new_key.split(":")[0].strip()
+
+        new_row = _VendorMemoryRow(
+            memory_id=new_mid,
+            vendor=old.vendor,
+            tenant_id=old.tenant_id,
+            supplier_id=old.supplier_id,
+            fact_kind=new_kind,
+            fact_key=new_key,
+            fact_value=new_val,
+            notes=new_notes,
+            sample=old.sample or "",
+            version=1,
+            source_kind=old.source_kind or "manual",
+            source_ref=old.source_ref or "[]",
+            created_at=now,
+            updated_at=now,
+            hit_count=0,
+            last_hit_at="",
+            decay_score=memory_initial_decay_score(),  # 0.7 起始分
+            status="active",
+            superseded_by=None,
+            valid_to=old.valid_to or "",
+            trust_level=old.trust_level,
+            written_by=who,
+        )
+        s.add(new_row)
+
+        old.status = "superseded"
+        old.superseded_by = new_mid
+        old.updated_at = now
+
+        s.commit()
+        return {
+            "found": True,
+            "active": True,
+            "action": "superseded",
+            "old_memory_id": mid,
+            "new_memory_id": new_mid,
+            "vendor": old.vendor,
+            "status": "active",
+            "tenant_id": tid,
+        }
+    except Exception as e:
+        s.rollback()
+        try:
+            from app.services.memory_store import _note_write_failure, WRITE_STAGE_SUPERSEDE
+            _note_write_failure(WRITE_STAGE_SUPERSEDE, e, tenant_id=tid)
+        except Exception:
+            pass
+        raise
+    finally:
+        s.close()
+
+
+def get_vendor_memory_by_id(memory_id, tenant_id=None):
+    """按 memory_id 精确查询记忆完整字段（治理端点复用）。"""
+    if _VendorMemoryRow is None:
+        return None
+    mid = str(memory_id).strip() if memory_id is not None else ""
+    if not mid:
+        return None
+    s = get_session()
+    try:
+        q = scoped(s.query(_VendorMemoryRow), _VendorMemoryRow, tenant_id)
+        row = q.filter(_VendorMemoryRow.memory_id == mid).first()
+        if row is None:
+            return None
+        return {
+            "memory_id": str(row.memory_id),
+            "vendor": row.vendor or "",
+            "tenant_id": row.tenant_id or "default",
+            "notes": row.notes or "",
+            "sample": row.sample or "",
+            "version": int(row.version or 1),
+            "source_kind": row.source_kind or "manual",
+            "source_ref": row.source_ref or "[]",
+            "created_at": row.created_at or "",
+            "updated_at": row.updated_at or "",
+            "hit_count": int(row.hit_count or 0),
+            "last_hit_at": row.last_hit_at or "",
+            "decay_score": float(row.decay_score if row.decay_score is not None else 0.0),
+            "status": row.status or "active",
+            "fact_key": row.fact_key or "",
+            "superseded_by": row.superseded_by or "",
+            "valid_to": row.valid_to or "",
+            "supplier_id": row.supplier_id,
+            "fact_kind": row.fact_kind,
+            "fact_value": row.fact_value,
+            "trust_level": row.trust_level,
+            "valid_from": row.valid_from or "",
+            "written_by": row.written_by or "",
+        }
+    finally:
+        s.close()
+
+
+def ingest_memory(*args, **kwargs):
+    """写入侧防御性代理。"""
+    from app.services import rag
+    return rag.ingest_memory(*args, **kwargs)
 
 
 # -------------------------------------------------------------
