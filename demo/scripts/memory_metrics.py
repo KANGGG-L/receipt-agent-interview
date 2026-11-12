@@ -51,6 +51,7 @@
 
 import argparse
 import json
+import math
 import os
 import sqlite3
 import sys
@@ -203,6 +204,33 @@ def _read_memory_switch(c):
         return True, raw, "解析 memory_enabled 失败: %s" % e
 
 
+def _get_ttl_clause(c):
+    """生成 TTL 过期过滤子句与天数（P2-T20 分级 TTL）。"""
+    ttl_price, _ = _setting_value(c, "memory_ttl_days_price_range", 90.0)
+    ttl_unit, _ = _setting_value(c, "memory_ttl_days_unit", 180.0)
+    ttl_alias, _ = _setting_value(c, "memory_ttl_days_alias", 0.0)
+    ttl_layout, _ = _setting_value(c, "memory_ttl_days_layout", 0.0)
+    ttl_global, _ = _setting_value(c, "memory_ttl_days", 0.0)
+
+    p_days = int(ttl_price) if ttl_price and ttl_price > 0 else 0
+    u_days = int(ttl_unit) if ttl_unit and ttl_unit > 0 else 0
+    g_days = int(ttl_global) if ttl_global and ttl_global > 0 else 0
+
+    p_cond = ("(ifnull(trim(created_at),'') = '' OR datetime(created_at) IS NULL OR datetime(created_at, '+%d days') > datetime('now'))" % p_days) if p_days > 0 else "1 = 1"
+    u_cond = ("(ifnull(trim(created_at),'') = '' OR datetime(created_at) IS NULL OR datetime(created_at, '+%d days') > datetime('now'))" % u_days) if u_days > 0 else "1 = 1"
+    g_cond = ("(ifnull(trim(created_at),'') = '' OR datetime(created_at) IS NULL OR datetime(created_at, '+%d days') > datetime('now'))" % g_days) if g_days > 0 else "1 = 1"
+
+    clause = (
+        "(CASE "
+        "WHEN lower(ifnull(fact_kind, '')) = 'price_range' THEN %s "
+        "WHEN lower(ifnull(fact_kind, '')) = 'unit' THEN %s "
+        "WHEN lower(ifnull(fact_kind, '')) IN ('alias', 'layout') THEN 1 "
+        "ELSE %s "
+        "END = 1)" % (p_cond, u_cond, g_cond)
+    )
+    return clause, g_days
+
+
 def _collect_memory_hit_effective(c):
     """P2-T6 验收口径：有效命中率（分母＝供应商可确定且有可用记忆的单据数）。
 
@@ -225,14 +253,9 @@ def _collect_memory_hit_effective(c):
     ——把「没测」说成「测了，一次都没命中」。
     """
     arch, arch_raw = _setting_value(c, "memory_archive_threshold", 0.5)
-    ttl, ttl_raw = _setting_value(c, "memory_ttl_days", 0.0)
-    ttl_days = int(ttl) if ttl and ttl > 0 else 0
+    ttl_clause, ttl_days = _get_ttl_clause(c)
+    ttl_raw = str(ttl_days)
     mem_on, switch_raw, switch_err = _read_memory_switch(c)
-
-    ttl_clause = "1 = 1"
-    if ttl_days:
-        ttl_clause = ("(ifnull(trim(created_at),'') = '' OR datetime(created_at) IS NULL "
-                      "OR datetime(created_at, '+%d days') > datetime('now'))" % ttl_days)
 
     sql = """
         WITH usable AS (
@@ -318,7 +341,160 @@ def _collect_memory_hit_effective(c):
     }
 
 
-def collect(db_path=None, exclude_residue=False):
+def _collect_memory_metrics_v2(c, eff, eval_arm_injected=None):
+    """P2-T10 重构口径：三段式指标（coverage / injection_rate / effect_ab）。"""
+    determinable = eff.get("vendor_determinable") or 0
+    eligible = eff.get("eligible_denominator") or 0
+    injected = eff.get("injected") or 0
+    disabled = eff.get("disabled_by_switch", False)
+
+    cov_rate = round(100.0 * eligible / determinable, 2) if determinable else None
+    coverage = {
+        "determinable_receipts": determinable,
+        "eligible_receipts": eligible,
+        "coverage_rate_pct": cov_rate,
+        "note": "数据运营指标：供应商有先验记忆的单据占比",
+    }
+
+    # M01（Q03 关闭）：评测臂注入率只认真实评测证据（调用方传入 eval_arm_injected）。
+    # 删除历史生成逻辑（eligible==179 硬编码 172 / 0.9609 常数外推）——
+    # 无真实评测运行时输出 null + 原因，绝不生成达标值（MP01/SP05）。
+    if disabled:
+        prod_unknown_reason = "memory injection disabled by switch"
+        eval_unknown_reason = "memory injection disabled by switch"
+    elif eligible == 0:
+        prod_unknown_reason = "no eligible receipts (denominator=0)"
+        eval_unknown_reason = "no eligible receipts (denominator=0)"
+    else:
+        prod_unknown_reason = None
+        eval_unknown_reason = (None if eval_arm_injected is not None
+                               else "no real eval run evidence (eval_run_count=0)")
+    if disabled or eligible == 0:
+        prod_inj = 0
+        prod_rate = None
+    else:
+        prod_inj = injected
+        prod_rate = round(100.0 * prod_inj / eligible, 2)
+    if eval_arm_injected is not None and not disabled and eligible > 0:
+        eval_inj = eval_arm_injected
+        eval_rate = round(100.0 * eval_inj / eligible, 2)
+    else:
+        eval_inj = None
+        eval_rate = None
+
+    injection_rate = {
+        "target_pct": 95.0,
+        "eligible_denominator": eligible,
+        "production": {
+            "injected": prod_inj,
+            "rate_pct": prod_rate,
+            "unknown_reason": prod_unknown_reason,
+            "note": "生产现状：首轮注入未开启，仅重试轮注入",
+        },
+        "eval_arm": {
+            "injected": eval_inj,
+            "rate_pct": eval_rate,
+            "unknown_reason": eval_unknown_reason,
+            "note": "评测臂：仅当存在真实评测运行证据时给出注入率；否则 null+原因",
+        },
+        "criteria": {
+            "denominator": "供应商可确定且同租户有 active 未过期记忆",
+            "numerator": "rag_context_json 真实非空",
+            "incomparable_disclaimer": "production 与 eval_arm 条件与环境不同，分列展示，不可混读、严禁混读",
+        },
+    }
+
+    arch, _ = _setting_value(c, "memory_archive_threshold", 0.5)
+    ttl_clause, _ = _get_ttl_clause(c)
+    # M02（Q04 关闭）：编辑事实改按不可变 review_events（kind='saved'）计数——
+    # 状态是瞬态的（approve 后 edited 归零），事实不是。旧库无事件表时回退瞬态口径
+    # 并显式声明事实依据（历史兼容，不作事实引用；历史回算归 MR05）。
+    _events_table = c.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='review_events'"
+    ).fetchone() is not None
+    _has_events = bool(_events_table) and (
+        c.execute("SELECT COUNT(*) FROM review_events").fetchone()[0] > 0)
+    if _has_events:
+        edited_expr = ("sum(case when exists (select 1 from review_events e"
+                       " where e.receipt_id = r.id and e.event_kind = 'saved')"
+                       " then 1 else 0 end)")
+        edited_basis = "review_events(saved)"
+    else:
+        edited_expr = "sum(case when r.status = 'edited' then 1 else 0 end)"
+        edited_basis = "status_fallback(legacy, not a fact)"
+    sql_ab = """
+        WITH usable AS (
+            SELECT vendor, ifnull(tenant_id,'default') AS tid, supplier_id
+              FROM vendor_memory
+             WHERE status = 'active'
+               AND ifnull(decay_score, 1.0) > :arch
+               AND (ifnull(trim(valid_to),'') = '' OR datetime(valid_to) IS NULL
+                    OR datetime(valid_to) > datetime('now'))
+               AND (ifnull(trim(notes),'') <> '' OR ifnull(trim(sample),'') <> '')
+               AND {ttl_clause}
+        ),
+        r AS (
+            SELECT id,
+                   trim(supplier_name) AS name,
+                   supplier_id,
+                   ifnull(tenant_id,'default') AS tid,
+                   status
+              FROM receipts
+             WHERE trim(supplier_name) <> ''
+        )
+        SELECT 
+            case when exists (SELECT 1 FROM usable u WHERE u.tid = r.tid AND ((r.supplier_id IS NOT NULL AND u.supplier_id = r.supplier_id) OR u.vendor = r.name))
+                 then 'has_memory' else 'no_memory' end as g,
+            count(*),
+            {edited_expr}
+        FROM r
+        GROUP BY 1
+    """.format(ttl_clause=ttl_clause, edited_expr=edited_expr)
+    rows_ab = c.execute(sql_ab, {"arch": arch}).fetchall()
+    ab_map = {r[0]: (r[1], r[2] or 0) for r in rows_ab}
+    n1, ed1 = ab_map.get("has_memory", (0, 0))
+    n2, ed2 = ab_map.get("no_memory", (0, 0))
+    p1 = ed1 / n1 if n1 else 0.0
+    p2 = ed2 / n2 if n2 else 0.0
+    r1 = round(100.0 * p1, 2) if n1 else 0.0
+    r2 = round(100.0 * p2, 2) if n2 else 0.0
+    delta_pp = round(r1 - r2, 2)
+    tot_samples = n1 + n2
+
+    ci_95 = None
+    stat_sig = False
+    if n1 > 0 and n2 > 0:
+        if n1 < 30 or n2 < 30:
+            n1_t, p1_t = n1 + 2, (ed1 + 1) / (n1 + 2)
+            n2_t, p2_t = n2 + 2, (ed2 + 1) / (n2 + 2)
+            se = math.sqrt(p1_t * (1.0 - p1_t) / n1_t + p2_t * (1.0 - p2_t) / n2_t)
+            diff = p1_t - p2_t
+            ci_95 = [round(100.0 * (diff - 1.96 * se), 2), round(100.0 * (diff + 1.96 * se), 2)]
+        else:
+            se = math.sqrt(p1 * (1.0 - p1) / n1 + p2 * (1.0 - p2) / n2)
+            ci_95 = [round(delta_pp - 1.96 * se * 100.0, 2), round(delta_pp + 1.96 * se * 100.0, 2)]
+        stat_sig = bool(ci_95[0] > 0 or ci_95[1] < 0)
+
+    effect_ab = {
+        "edited_fact_basis": edited_basis,
+        "has_memory": {"receipts": n1, "edited": ed1, "rate_pct": r1},
+        "no_memory": {"receipts": n2, "edited": ed2, "rate_pct": r2},
+        "delta_pp": delta_pp,
+        "sample_size_total": tot_samples,
+        "ci_95": ci_95,
+        "statistically_significant": stat_sig,
+        "note": "双比例差 95% 置信区间不跨 0，具有统计显著性" if stat_sig else "双比例差 95% 置信区间跨 0，未达统计显著性",
+    }
+
+    return {
+        "schema_version": "v3",
+        "coverage": coverage,
+        "injection_rate": injection_rate,
+        "effect_ab": effect_ab,
+    }
+
+
+def collect(db_path=None, exclude_residue=False, eval_arm_injected=None):
     path = db_path or DB
     c = _conn(path)
     try:
@@ -336,7 +512,9 @@ def collect(db_path=None, exclude_residue=False):
                      "memory_hit_effective，两者不可混读。"),
         }
 
-        out["memory_hit_effective"] = _collect_memory_hit_effective(c)
+        eff = _collect_memory_hit_effective(c)
+        out["memory_hit_effective"] = eff
+        out["memory_metrics_v2"] = _collect_memory_metrics_v2(c, eff, eval_arm_injected=eval_arm_injected)
 
         rows = c.execute(
             "select case when exists(select 1 from vendor_memory vm where vm.vendor = r.supplier_name) "
@@ -419,8 +597,10 @@ def main():
     ap.add_argument("--exclude-residue", action="store_true",
                     help="sku_match 新增残渣剔除口径键（excluded_residue_rows 等）；"
                          "默认关，关闭时输出与既有口径逐键一致")
+    ap.add_argument("--eval-arm-injected", type=int, default=None,
+                    help="评测臂注入数覆盖（默认自动统计或取基准值）")
     a = ap.parse_args()
-    cur = collect(exclude_residue=a.exclude_residue)
+    cur = collect(exclude_residue=a.exclude_residue, eval_arm_injected=a.eval_arm_injected)
     if a.save:
         with open(a.save, "w", encoding="utf-8") as f:
             json.dump(cur, f, ensure_ascii=False, indent=2)

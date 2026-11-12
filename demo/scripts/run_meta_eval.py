@@ -69,6 +69,12 @@ META_EVAL_AUDIT_TIMEOUT_SECONDS = 120
 
 REQUIRED_ITEM_FIELDS = ("id", "source", "input", "expected_verdict", "why")
 
+# 报告状态（M06）：真实 meta 报告缺凭据时只能记 blocked，不得用 0.0 率或任何数字
+# 冒充"已测量"。`estimable=False` 表示本次没有可用判定、不能估值。
+REPORT_STATUS_OK = "ok"
+REPORT_STATUS_FAILED = "failed"
+REPORT_STATUS_BLOCKED = "blocked"
+
 
 # -------------------------------------------------------------
 # 元评测集加载与结构校验
@@ -186,11 +192,42 @@ def audit_judge(receipt_input, cfg=None):
 # -------------------------------------------------------------
 # 元评测主流程
 # -------------------------------------------------------------
+def collect_asset_versions():
+    """报告引用的资产版本（M06）：从 consumer inventory + approval manifest 现读。
+
+    why 报告必须带版本：没有版本号的"trustworthy=true"无法证明评的是哪一份资产，也就
+    无法被 approval manifest 引用。读取失败时返回 `{"_error": ...}`，不编造版本。
+    """
+    try:
+        from ai_registry.registry import consumer_admission_report
+        report = consumer_admission_report()
+    except Exception as e:  # 只读失败要可见，但不得阻止离线 mock 元评测
+        return {"_error": "%s: %s" % (type(e).__name__, e)}
+    return {
+        c.get("consumer_id"): {
+            "scene": c.get("scene"),
+            "version": c.get("version"),
+            "pinned_version": c.get("pinned_version"),
+            "status": c.get("status"),
+            "admitted": bool(c.get("admitted")),
+            "meta_report_status": (c.get("evidence") or {}).get("meta_report_status"),
+        }
+        for c in (report.get("consumers") or [])
+    }
+
+
 def run_meta_eval(judge, items):
     """用注入的 judge 跑元评测，返回可信度报告。
 
     judge: callable(receipt_input) -> {"verdict": VERDICT_*|None, "why": str}
     防偷看约定：只传 item["input"]，judge 收不到 expected_verdict/why 等答案字段。
+
+    状态语义（M06）：
+      - ok：有判定结果且两类 100% 命中；
+      - failed：确实测过，但不达 100%；
+      - blocked：**没有任何可用判定**（如真实 audit 模型缺凭据/全部调用失败）。
+        blocked 时 correct_rate / wrong_rate 置 None（不是 0.0），且 estimable=False —
+        "未测"不得被读成"测了但 0 分"，更不得被 approval manifest 引用为达标证据。
     """
     per_item = []
     n_correct_total = 0
@@ -217,20 +254,40 @@ def run_meta_eval(judge, items):
             "why_expected": item["why"],
             "why_judged": judged.get("why", ""),
         })
-    correct_rate = (n_correct_hit / n_correct_total) if n_correct_total else 0.0
-    wrong_rate = (n_wrong_hit / n_wrong_total) if n_wrong_total else 0.0
+    measured = [r for r in per_item if r["judged"] is not None]
+    estimable = bool(measured)
+    if estimable:
+        correct_rate = (n_correct_hit / n_correct_total) if n_correct_total else 0.0
+        wrong_rate = (n_wrong_hit / n_wrong_total) if n_wrong_total else 0.0
+    else:
+        # 全部判定为 None（模型构建失败/缺凭据/调用失败）：留 None，不写 0.0。
+        correct_rate = wrong_rate = None
     # 准入规则：两类判定率都必须 100%，且两类样本都非空
     trustworthy = (
-        bool(n_correct_total) and bool(n_wrong_total)
+        estimable and bool(n_correct_total) and bool(n_wrong_total)
         and correct_rate == 1.0 and wrong_rate == 1.0
     )
+    if not estimable:
+        status = REPORT_STATUS_BLOCKED
+        blocked_reason = "无任何可用判定（真实 audit 模型缺凭据/调用全失败）；未测不估值"
+    elif trustworthy:
+        status = REPORT_STATUS_OK
+        blocked_reason = ""
+    else:
+        status = REPORT_STATUS_FAILED
+        blocked_reason = ""
     return {
         "evaluator_trustworthy": trustworthy,
+        "status": status,
+        "estimable": estimable,
+        "blocked_reason": blocked_reason,
+        "asset_versions": collect_asset_versions(),
         "total": len(items),
         "n_absolutely_correct": n_correct_total,
         "n_absolutely_wrong": n_wrong_total,
-        "correct_rate": round(correct_rate, 4),
-        "wrong_rate": round(wrong_rate, 4),
+        "correct_rate": None if correct_rate is None else round(correct_rate, 4),
+        "wrong_rate": None if wrong_rate is None else round(wrong_rate, 4),
+        "n_measured": len(measured),
         "miss_count": sum(1 for r in per_item if not r["hit"]),
         "per_item": per_item,
     }
@@ -275,8 +332,11 @@ def main(argv=None):
     print(f"judge={args.judge}  items={report['total']} "
           f"(absolutely_correct={report['n_absolutely_correct']}, "
           f"absolutely_wrong={report['n_absolutely_wrong']})")
-    print(f"判对率(correct_rate)={report['correct_rate']}  "
-          f"判错率(wrong_rate)={report['wrong_rate']}  miss={report['miss_count']}")
+    print(f"status={report.get('status')}  estimable={report.get('estimable')}  "
+          f"判对率(correct_rate)={report.get('correct_rate')}  "
+          f"判错率(wrong_rate)={report.get('wrong_rate')}  miss={report['miss_count']}")
+    if report.get("status") == REPORT_STATUS_BLOCKED:
+        print(f"  BLOCKED：{report.get('blocked_reason')}（不伪造报告、不估值）")
     for r in report["per_item"]:
         if not r["hit"]:
             print(f"  MISS {r['id']}: expected={r['expected']} judged={r['judged']} ({r['why_judged']})")

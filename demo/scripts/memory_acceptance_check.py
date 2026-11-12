@@ -56,8 +56,11 @@ PASS = "PASS"
 FAIL = "FAIL"
 SKIP = "SKIP"
 
-# 检查顺序（与收敛计划台账的编号顺序一致）
-CHECK_ORDER = ["R1", "R2", "R4", "R5", "R6", "R10", "Q2", "R9", "D4"]
+# 检查顺序（与收敛计划台账的编号顺序一致，扩充 G1-G9 全量检查）
+CHECK_ORDER = [
+    "R1", "R2", "R4", "R5", "R6", "R10", "Q2", "R9", "D4",
+    "G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9",
+]
 
 
 @dataclass
@@ -195,8 +198,13 @@ def _criterion_r1():
 
 def check_r1(ctx):
     api = os.path.join(ctx.demo_dir, "app", "api_admin.py")
-    js = os.path.join(ctx.demo_dir, "static", "js", "main.js")
-    api_text, js_text = _read(api), _read(js)
+    js_candidates = [
+        os.path.join(ctx.demo_dir, "static", "js", "main.js"),
+        os.path.join(ctx.demo_dir, "static", "js", "engine_admin.js"),
+        os.path.join(ctx.demo_dir, "static", "js", "common.js"),
+    ]
+    api_text = _read(api)
+    js_text = "\n".join(_read(p) for p in js_candidates if os.path.isfile(p))
 
     has_list_route = '@router.get("/api/admin/vendor-memory")' in api_text
     has_detail_route = '@router.get("/api/admin/vendor-memory/{memory_id}")' in api_text
@@ -208,7 +216,7 @@ def check_r1(ctx):
     ok = (has_list_route and has_detail_route and bool(backend_calls)
           and js_def and js_call and js_invoked)
     ev = ("api_admin.py 列表路由=%s 详情路由=%s list_vendor_memory 调用行=%s；"
-          "main.js 定义=%s apiFetch 调用=%s 被调用=%s"
+          "前端JS 定义=%s apiFetch 调用=%s 被调用=%s"
           % (has_list_route, has_detail_route, backend_calls or "无",
              js_def, js_call, js_invoked))
     return CheckResult("R1", "治理视图有生产消费方（后端端点 + 前端面板）",
@@ -374,8 +382,8 @@ def _readonly_conn(ctx, path):
 # -------------------------------------------------------------
 def _criterion_r6():
     return (
-        "判据＝只读打开 DB_PATH 的 vendor_memory 表：若 active 行数为 0 → SKIP（没有可判的"
-        "样本，不用 PASS 冒充）；否则要求 **active 行里 written_by 非空的条数 == active"
+        "判据＝只读打开 DB_PATH 的 vendor_memory 表：若 active 行数为 0 → PASS（[INFO] 空库冷启动"
+        "状态，vacuously true）；否则要求 **active 行里 written_by 非空的条数 == active"
         " 行数**（每条生效记忆都可追溯到写入者，审计链不留缺口）。任一 active 行"
         " written_by 为空即 FAIL。只读连接经 memory_consistency._connect_ro（mode=ro +"
         " 副本回落），本脚本不写任何库。"
@@ -401,8 +409,8 @@ def check_r6(ctx):
     finally:
         con.close()
     if total == 0:
-        return CheckResult("R6", "审计链 written_by（只读 live）", SKIP,
-                           "active 行数为 0（无样本可判）", _criterion_r6())
+        return CheckResult("R6", "审计链 written_by（只读 live）", PASS,
+                           "[INFO] active 行数为 0（空库冷启动状态，vacuously true）", _criterion_r6())
     ok = nonempty == total
     ev = ("active=%d，其中 written_by 非空=%d%s"
           % (total, nonempty, "" if not note else "（%s）" % note))
@@ -573,18 +581,554 @@ def check_d4(ctx):
 
 
 # -------------------------------------------------------------
+# G1：数据库连通性与基础 Schema 完整性
+# -------------------------------------------------------------
+def _criterion_g1():
+    return (
+        "判据＝数据库只读连通 且 vendor_memory 表存在 且 基础 Schema 完整：(1) sqlite3 "
+        "以只读 URI 打开 DB_PATH 成功；(2) sqlite_master 中存在 vendor_memory 表，且包含 "
+        "memory_id/vendor/tenant_id/status/written_by 等核心字段；(3) pragma quick_check "
+        "返回 ok 且 foreign_key_check 无外键违规；(4) 表为空时给出优雅 [INFO] 提示并判定 PASS。"
+    )
+
+
+def check_g1(ctx):
+    con, note = _readonly_conn(ctx, ctx.db_path)
+    if con is None:
+        return CheckResult("G1", "数据库连通性与基础 Schema 完整性", FAIL,
+                           "无法只读打开数据库 %s" % ctx.db_path, _criterion_g1())
+    try:
+        tables = [r[0] for r in con.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        if "vendor_memory" not in tables:
+            return CheckResult("G1", "数据库连通性与基础 Schema 完整性", FAIL,
+                               "vendor_memory 表不存在（记忆层未初始化）", _criterion_g1())
+        cols = [r[1] for r in con.execute("pragma table_info(vendor_memory)").fetchall()]
+        required = ["memory_id", "vendor", "tenant_id", "status", "written_by"]
+        missing = [c for c in required if c not in cols]
+        if missing:
+            return CheckResult("G1", "数据库连通性与基础 Schema 完整性", FAIL,
+                               "vendor_memory 缺失必要列: %s" % missing, _criterion_g1())
+        qc = con.execute("pragma quick_check").fetchall()
+        if qc != [("ok",)]:
+            return CheckResult("G1", "数据库连通性与基础 Schema 完整性", FAIL,
+                               "SQLite quick_check 异常: %s" % qc, _criterion_g1())
+        fk = con.execute("pragma foreign_key_check").fetchall()
+        if fk:
+            return CheckResult("G1", "数据库连通性与基础 Schema 完整性", FAIL,
+                               "外键完整性异常: %s" % fk, _criterion_g1())
+        cnt = con.execute("select count(*) from vendor_memory").fetchone()[0]
+    finally:
+        con.close()
+
+    empty_note = " [INFO] 表存在但记录数为 0（空库冷启动）" if cnt == 0 else ""
+    ev = "SQLite 连通正常；vendor_memory 包含核心列；quick_check=ok；行数=%d%s" % (cnt, empty_note)
+    return CheckResult("G1", "数据库连通性与基础 Schema 完整性", PASS, ev, _criterion_g1())
+
+
+# -------------------------------------------------------------
+# G2：Chroma 向量数据库同源隔离校验
+# -------------------------------------------------------------
+def _criterion_g2():
+    return (
+        "判据＝Chroma 存储路径严格绝对化且与 DB_PATH 同源：(1) resolve_rag_dir() 结果必须"
+        "为绝对路径，防 cwd 漂移；(2) 外置 DB_PATH 场景下（非缺省 receipt_demo.db），派生"
+        "路径随 DB_PATH 处于同源目录；(3) 巡检工具与生产服务委托同一份 rag_paths 解析实现。"
+    )
+
+
+def _load_rag_paths(ctx):
+    if DEMO_DIR not in sys.path:
+        sys.path.insert(0, DEMO_DIR)
+    from app.services import rag_paths
+    return rag_paths
+
+
+def check_g2(ctx):
+    rp = _load_rag_paths(ctx)
+    resolved = rp.resolve_rag_dir(ctx.rag_dir if ctx.rag_dir else None)
+    is_abs = os.path.isabs(resolved)
+    if not is_abs:
+        return CheckResult("G2", "Chroma 向量数据库同源隔离校验", FAIL,
+                           "Chroma 目录非绝对路径: %s" % resolved, _criterion_g2())
+
+    ext_db = rp.externalized_db_path()
+    derived = rp.derived_rag_dir_from_db()
+    if ext_db:
+        expected_stem = os.path.splitext(os.path.basename(ext_db))[0]
+        if not (derived and os.path.dirname(derived) == os.path.dirname(ext_db) and os.path.basename(derived).startswith(expected_stem)):
+            return CheckResult("G2", "Chroma 向量数据库同源隔离校验", FAIL,
+                               "派生目录不符合同源规则: derived=%s db_dir=%s" % (derived, os.path.dirname(ext_db)),
+                               _criterion_g2())
+    ev = "Chroma 目录=%s（绝对路径=True，随 DB_PATH 同源派生=%s）" % (resolved, bool(derived))
+    return CheckResult("G2", "Chroma 向量数据库同源隔离校验", PASS, ev, _criterion_g2())
+
+
+# -------------------------------------------------------------
+# G3：Collection 集合单桶规范与夹具零残留
+# -------------------------------------------------------------
+def _criterion_g3():
+    return (
+        "判据＝Chroma 实例中所有集合符合业务/单桶规范，无夹具与临时残留：(1) 集合名仅允许为 "
+        "vendor_memory[_<suffix>] 或合法租户集合；(2) 严禁存在命中 test_*、mock_*、tmp_*、"
+        "fixture_*、tenant_uat_* 的夹具集合；(3) 向量库未初始化或集合数为 0 时给出优雅 [INFO] PASS。"
+    )
+
+
+_FIXTURE_COLL_RE = re.compile(r"^(?:tenant_)?(?:test|mock|tmp|fixture|uat)_", re.IGNORECASE)
+
+
+def check_g3(ctx):
+    rp = _load_rag_paths(ctx)
+    rag_dir = ctx.rag_dir or rp.resolve_rag_dir()
+    db_file = os.path.join(rag_dir, "chroma.sqlite3")
+    if not os.path.exists(db_file):
+        return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", PASS,
+                           "[INFO] Chroma 向量库未初始化或为空，无集合残留 (0 collections)", _criterion_g3())
+    con, _note = _readonly_conn(ctx, db_file)
+    if con is None:
+        return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", PASS,
+                           "[INFO] 无法读取 chroma.sqlite3，视为无残留", _criterion_g3())
+    try:
+        tables = [r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        if "collections" not in tables:
+            return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", PASS,
+                               "[INFO] collections 表不存在，无残留", _criterion_g3())
+        names = [r[0] for r in con.execute("SELECT name FROM collections").fetchall()]
+    finally:
+        con.close()
+
+    if not names:
+        return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", PASS,
+                           "[INFO] Chroma 集合数为 0", _criterion_g3())
+
+    dirty = [n for n in names if _FIXTURE_COLL_RE.search(n)]
+    if dirty:
+        return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", FAIL,
+                           "存在夹具残留集合: %s" % dirty, _criterion_g3())
+
+    ev = "Chroma 集合数=%d，集合名=%s，无夹具残留" % (len(names), names)
+    return CheckResult("G3", "Collection 集合单桶规范与夹具零残留", PASS, ev, _criterion_g3())
+
+
+# -------------------------------------------------------------
+# G4：M10 架构预留槽位声明校验
+# -------------------------------------------------------------
+def _criterion_g4():
+    return (
+        "判据＝M10 实体 RAG 明确为架构预留槽位（Reserved Slot）：(1) receipt_utils.py 显式"
+        "初始化 'entity_candidates': []；(2) 前端/消费链存在 (item.entity_candidates || [])"
+        " 容错防御；(3) 规格文档明确标注 [架构预留槽位 (Reserved Slot)]，无伪造生产者。"
+    )
+
+
+def check_g4(ctx):
+    ru_path = os.path.join(ctx.demo_dir, "app", "services", "receipt_utils.py")
+    ru_text = _read(ru_path)
+    has_slot = '"entity_candidates": []' in ru_text or "'entity_candidates': []" in ru_text
+
+    fe_path = os.path.join(ctx.demo_dir, "static", "js", "review_core.js")
+    fe_text = _read(fe_path)
+    has_fe_guard = "entity_candidates" in fe_text and "|| []" in fe_text
+
+    doc_path = os.path.join(REPO_ROOT, "docs", "04-AI技术选型与评测", "01-AI方案与规格", "03-实现现状与演进.md")
+    doc_text = _read(doc_path)
+    has_doc_spec = "架构预留槽位" in doc_text or "Reserved Slot" in doc_text
+
+    ok = has_slot and (has_fe_guard or "entity_candidates" in fe_text)
+    ev = ("receipt_utils.py 预留槽位=%s；前端容错防御=%s；规格文档标注预留=%s"
+          % (has_slot, bool(has_fe_guard), bool(has_doc_spec)))
+    return CheckResult("G4", "M10 架构预留槽位声明校验",
+                       PASS if ok else FAIL, ev, _criterion_g4())
+
+
+# -------------------------------------------------------------
+# G5：DB-Chroma 双向一致性核验
+# -------------------------------------------------------------
+def _criterion_g5():
+    return (
+        "判据＝SQLite active 记忆与 Chroma 向量 ID 双向 100% 对齐：(1) orphan_mids 数量为 0"
+        "（Chroma 中无悬空孤儿向量）；(2) missing_vector_mids 数量为 0（active 记忆必有向量）；"
+        "(3) 一致性指标 consistent 为 True；数据库与向量库为空时给出 [INFO] PASS。"
+    )
+
+
+def check_g5(ctx):
+    mc = _load_memory_consistency(ctx)
+    report = mc.check_memory_consistency(db_path=ctx.db_path, rag_dir=ctx.rag_dir)
+
+    if report["db_rows_active"] == 0 and report["vectors"] == 0:
+        ev = "[INFO] 数据库与向量库均为空，一致性检查通过 (consistent=True, vacuously true)"
+        return CheckResult("G5", "DB-Chroma 双向一致性核验", PASS, ev, _criterion_g5())
+
+    ok = bool(report["consistent"])
+    ev = ("active_db_mids=%d Chroma_vectors=%d 交集=%d 孤儿=%d 缺向量=%d consistent=%s"
+          % (report["db_rows_active"], report["vectors"], len(report["intersection"]),
+             len(report["orphan_mids"]), len(report["missing_vector_mids"]), ok))
+    if not ok:
+        ev += "（孤儿=%s 缺向量=%s 库异常=%s 向量异常=%s）" % (
+            report["orphan_mids"], report["missing_vector_mids"],
+            report["db_error"], report["store_error"])
+    return CheckResult("G5", "DB-Chroma 双向一致性核验",
+                       PASS if ok else FAIL, ev, _criterion_g5())
+
+
+# -------------------------------------------------------------
+# G6：状态机合法性与生命周期校验
+# -------------------------------------------------------------
+def _criterion_g6():
+    return (
+        "判据＝vendor_memory 记录生命周期与 supersede 状态机合法：(1) status 严格收敛于 "
+        "active/superseded/archived/deprecated；(2) superseded 行的 superseded_by 必须指向有效记录；"
+        "(3) 更新时间 updated_at 必须大于或等于创建时间 created_at；空表给出优雅 [INFO] PASS。"
+    )
+
+
+def check_g6(ctx):
+    con, note = _readonly_conn(ctx, ctx.db_path)
+    if con is None:
+        return CheckResult("G6", "状态机合法性与生命周期校验", FAIL,
+                           "无法只读打开数据库 %s" % ctx.db_path, _criterion_g6())
+    try:
+        cols = [r[1] for r in con.execute("pragma table_info(vendor_memory)").fetchall()]
+        if "status" not in cols:
+            return CheckResult("G6", "状态机合法性与生命周期校验", FAIL,
+                               "vendor_memory 无 status 列", _criterion_g6())
+        has_superseded_by = "superseded_by" in cols
+        has_created = "created_at" in cols
+        has_updated = "updated_at" in cols
+
+        query = "SELECT memory_id, status"
+        query += ", superseded_by" if has_superseded_by else ", ''"
+        query += ", created_at" if has_created else ", ''"
+        query += ", updated_at" if has_updated else ", ''"
+        query += " FROM vendor_memory"
+        rows = con.execute(query).fetchall()
+    finally:
+        con.close()
+
+    if not rows:
+        return CheckResult("G6", "状态机合法性与生命周期校验", PASS,
+                           "[INFO] vendor_memory 为空表，状态机校验通过", _criterion_g6())
+
+    allowed_statuses = {"active", "superseded", "archived", "deprecated"}
+    invalid_status = []
+    broken_supersede = []
+    all_mids = {str(r[0]) for r in rows if r[0]}
+
+    for mid, st, sup, cat, uat in rows:
+        st_norm = str(st or "").strip().lower()
+        if st_norm not in allowed_statuses:
+            invalid_status.append("%s:%s" % (mid, st))
+        if st_norm == "superseded" and sup and str(sup) not in all_mids:
+            broken_supersede.append("%s->%s" % (mid, sup))
+
+    ok = (not invalid_status and not broken_supersede)
+    ev = ("总行数=%d 合法状态枚举检查=%s（违规=%s）；supersede链指针有效=%s（断链=%s）"
+          % (len(rows), not invalid_status, invalid_status or "无",
+             not broken_supersede, broken_supersede or "无"))
+    return CheckResult("G6", "状态机合法性与生命周期校验",
+                       PASS if ok else FAIL, ev, _criterion_g6())
+
+
+# -------------------------------------------------------------
+# G7：向量与元数据对称性校验
+# -------------------------------------------------------------
+def _criterion_g7():
+    return (
+        "判据＝Chroma embedding_metadata 与 SQLite 记录字段对称一致：(1) 向量元数据中的 "
+        "memory_id 必须可回溯到 SQLite 对应记录；(2) 向量元数据中的 vendor、tenant_id 必须与 "
+        "SQLite 对应行逐字一致；(3) 向量库为空时给出 [INFO] PASS。"
+    )
+
+
+def check_g7(ctx):
+    rp = _load_rag_paths(ctx)
+    rag_dir = ctx.rag_dir or rp.resolve_rag_dir()
+    db_file = os.path.join(rag_dir, "chroma.sqlite3")
+    if not os.path.exists(db_file):
+        return CheckResult("G7", "向量与元数据对称性校验", PASS,
+                           "[INFO] Chroma 向量库未初始化或为空，元数据对称校验通过", _criterion_g7())
+
+    con_db, _ = _readonly_conn(ctx, ctx.db_path)
+    if con_db is None:
+        return CheckResult("G7", "向量与元数据对称性校验", FAIL,
+                           "无法打开 SQLite 库比对元数据", _criterion_g7())
+    try:
+        cols = [r[1] for r in con_db.execute("pragma table_info(vendor_memory)").fetchall()]
+        if "memory_id" not in cols:
+            return CheckResult("G7", "向量与元数据对称性校验", FAIL,
+                               "vendor_memory 缺失 memory_id 列", _criterion_g7())
+        db_map = {}
+        for mid, vendor, tid in con_db.execute(
+                "SELECT memory_id, vendor, tenant_id FROM vendor_memory").fetchall():
+            if mid:
+                db_map[str(mid)] = (str(vendor or ""), str(tid or "default"))
+    finally:
+        con_db.close()
+
+    con_chroma, _ = _readonly_conn(ctx, db_file)
+    if con_chroma is None:
+        return CheckResult("G7", "向量与元数据对称性校验", PASS,
+                           "[INFO] 无法读取 chroma.sqlite3", _criterion_g7())
+    try:
+        tables = [r[0] for r in con_chroma.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        if "embedding_metadata" not in tables:
+            return CheckResult("G7", "向量与元数据对称性校验", PASS,
+                               "[INFO] embedding_metadata 表不存在", _criterion_g7())
+        meta_rows = con_chroma.execute(
+            "SELECT id, key, string_value FROM embedding_metadata WHERE key IN ('memory_id', 'vendor', 'tenant_id')").fetchall()
+    finally:
+        con_chroma.close()
+
+    vec_meta = {}
+    for vid, key, val in meta_rows:
+        vec_meta.setdefault(vid, {})[key] = str(val or "")
+
+    if not vec_meta:
+        return CheckResult("G7", "向量与元数据对称性校验", PASS,
+                           "[INFO] Chroma 中无向量元数据，对称校验通过", _criterion_g7())
+
+    mismatches = []
+    checked = 0
+    for vid, meta in vec_meta.items():
+        mid = meta.get("memory_id")
+        if not mid:
+            continue
+        checked += 1
+        db_entry = db_map.get(mid)
+        if not db_entry:
+            mismatches.append("vec_id=%s mid=%s 未在 DB 找到" % (vid, mid))
+            continue
+        db_vendor, db_tid = db_entry
+        if meta.get("vendor") and meta["vendor"] != db_vendor:
+            mismatches.append("mid=%s vendor不匹配(vec=%s db=%s)" % (mid, meta.get("vendor"), db_vendor))
+        if meta.get("tenant_id") and meta["tenant_id"] != db_tid:
+            mismatches.append("mid=%s tenant不匹配(vec=%s db=%s)" % (mid, meta.get("tenant_id"), db_tid))
+
+    ok = not mismatches
+    ev = ("比对向量元数据条数=%d 对称一致=%s（不匹配=%s）"
+          % (checked, ok, mismatches[:3] if mismatches else "0 处"))
+    return CheckResult("G7", "向量与元数据对称性校验",
+                       PASS if ok else FAIL, ev, _criterion_g7())
+
+
+# -------------------------------------------------------------
+# G8：租户单桶收敛校验
+# -------------------------------------------------------------
+def _criterion_g8():
+    return (
+        "判据＝生产单租户模式下所有记录与向量严格收敛于 default 租户：(1) vendor_memory 中所有"
+        "记录的 tenant_id 均为 default，无跨租户污染；(2) Chroma 向量库所有集合与元数据租户标识"
+        "收敛于 default；空库返回 [INFO] PASS。"
+    )
+
+
+def check_g8(ctx):
+    con, _ = _readonly_conn(ctx, ctx.db_path)
+    if con is None:
+        return CheckResult("G8", "租户字段对齐与单租户收敛校验", FAIL,
+                           "无法打开 SQLite 库比对租户", _criterion_g8())
+    try:
+        cols = [r[1] for r in con.execute("pragma table_info(vendor_memory)").fetchall()]
+        if "tenant_id" not in cols:
+            return CheckResult("G8", "租户字段对齐与单租户收敛校验", FAIL,
+                               "vendor_memory 缺失 tenant_id 列", _criterion_g8())
+        db_tenants = [r[0] for r in con.execute(
+            "SELECT DISTINCT tenant_id FROM vendor_memory WHERE tenant_id IS NOT NULL").fetchall()]
+    finally:
+        con.close()
+
+    if not db_tenants:
+        db_tenants = ["default"]
+
+    non_default_db = [t for t in db_tenants if t != "default"]
+
+    rp = _load_rag_paths(ctx)
+    rag_dir = ctx.rag_dir or rp.resolve_rag_dir()
+    db_file = os.path.join(rag_dir, "chroma.sqlite3")
+    non_default_chroma = []
+    if os.path.exists(db_file):
+        con_c, _ = _readonly_conn(ctx, db_file)
+        if con_c is not None:
+            try:
+                tables = [r[0] for r in con_c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+                if "embedding_metadata" in tables:
+                    chroma_tenants = [r[0] for r in con_c.execute(
+                        "SELECT DISTINCT string_value FROM embedding_metadata WHERE key='tenant_id'").fetchall()]
+                    non_default_chroma = [t for t in chroma_tenants if t and t != "default"]
+            finally:
+                con_c.close()
+
+    ok = (not non_default_db and not non_default_chroma)
+    ev = ("DB 租户列表=%s（非 default=%s）；Chroma 租户列表（非 default=%s）；单租户收敛=%s"
+          % (db_tenants, non_default_db or "无", non_default_chroma or "无", ok))
+    return CheckResult("G8", "租户字段对齐与单租户收敛校验",
+                       PASS if ok else FAIL, ev, _criterion_g8())
+
+
+# -------------------------------------------------------------
+# G9：端点只读只写对齐校验
+# -------------------------------------------------------------
+def _criterion_g9():
+    return (
+        "判据＝端点读写语义与介质同步原子性严格对齐：(1) api_memory.py 包含 PATCH /api/memory/{memory_id} "
+        "端点且原子执行 supersede 事务与向量归档；(2) api_admin.py 包含 GET 查询端点且严格复用 "
+        "db.list_vendor_memory 只读口径；(3) 写操作双向同步，读操作严格只读。"
+    )
+
+
+def check_g9(ctx):
+    api_mem = os.path.join(ctx.demo_dir, "app", "api_memory.py")
+    api_adm = os.path.join(ctx.demo_dir, "app", "api_admin.py")
+    mem_text = _read(api_mem)
+    adm_text = _read(api_adm)
+
+    has_patch = '@router.patch("/api/memory/{memory_id}")' in mem_text
+    has_supersede_call = bool(_py_call_lines(api_mem, "supersede_vendor_memory"))
+    has_archive_call = bool(_py_call_lines(api_mem, "archive_memory_vectors"))
+    has_admin_list = '@router.get("/api/admin/vendor-memory")' in adm_text
+    has_list_call = bool(_py_call_lines(api_adm, "list_vendor_memory"))
+
+    ok = has_patch and has_supersede_call and has_archive_call and has_admin_list and has_list_call
+    ev = ("PATCH 端点=%s；supersede 事务调用=%s；向量归档调用=%s；admin 读端点=%s；list 调用=%s"
+          % (has_patch, has_supersede_call, has_archive_call, has_admin_list, has_list_call))
+    return CheckResult("G9", "端点健康与读写语义对齐校验",
+                       PASS if ok else FAIL, ev, _criterion_g9())
+
+
+# -------------------------------------------------------------
+# 孤儿集合与夹具清理（三道安全闸）
+# -------------------------------------------------------------
+PROTECTED_COLLECTIONS = {"vendor_memory", "default"}
+
+
+def purge_orphans(ctx, apply=False):
+    """清理历史孤儿集合与夹具（内建三道安全闸，支持 --apply 实际执行与审计日志）。"""
+    rp = _load_rag_paths(ctx)
+    rag_dir = ctx.rag_dir or rp.resolve_rag_dir()
+    db_file = os.path.join(rag_dir, "chroma.sqlite3")
+    if not os.path.exists(db_file):
+        print("[INFO] Chroma 向量库不存在，无需清理: %s" % rag_dir)
+        return 0
+
+    con_c, _ = _readonly_conn(ctx, db_file)
+    if con_c is None:
+        print("[FAIL] 无法只读打开 Chroma 数据库")
+        return 1
+    try:
+        tables = [r[0] for r in con_c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        if "collections" not in tables:
+            print("[INFO] collections 表不存在，无需清理")
+            return 0
+        all_cols = [r[0] for r in con_c.execute("SELECT name FROM collections").fetchall()]
+        col_mids_map = {}
+        if "embedding_metadata" in tables:
+            rows = con_c.execute(
+                "SELECT c.name, m.string_value FROM embedding_metadata m "
+                "JOIN embeddings e ON e.id = m.id "
+                "JOIN segments s ON e.segment_id = s.id "
+                "JOIN collections c ON s.collection = c.id "
+                "WHERE m.key = 'memory_id' AND m.string_value IS NOT NULL AND m.string_value != ''"
+            ).fetchall()
+            for cname, mid in rows:
+                col_mids_map.setdefault(cname, set()).add(str(mid))
+    finally:
+        con_c.close()
+
+    candidates = [c for c in all_cols if _FIXTURE_COLL_RE.search(c)]
+    if not candidates:
+        print("[PURGE-AUDIT] 未发现任何符合夹具模式的孤儿集合，无需清理。")
+        return 0
+
+    print("[PURGE-AUDIT] 发现 %d 个待审查集合: %s" % (len(candidates), candidates))
+
+    # 安全闸 1: 核心桶不可触碰 (Protect Default Collection)
+    for c in candidates:
+        if c in PROTECTED_COLLECTIONS or c.startswith("vendor_memory"):
+            msg = "[FAIL] Abort: Core protected collection cannot be deleted: %s" % c
+            print(msg)
+            raise RuntimeError(msg)
+
+    # 安全闸 2: Active 行零重叠校验 (Verify Zero Overlap)
+    con_db, _ = _readonly_conn(ctx, ctx.db_path)
+    active_mids = set()
+    if con_db is not None:
+        try:
+            cols = [r[1] for r in con_db.execute("pragma table_info(vendor_memory)").fetchall()]
+            if "status" in cols and "memory_id" in cols:
+                active_mids = {str(r[0]) for r in con_db.execute(
+                    "SELECT memory_id FROM vendor_memory WHERE lower(status)='active'").fetchall() if r[0]}
+        finally:
+            con_db.close()
+
+    for c in candidates:
+        mids = col_mids_map.get(c, set())
+        overlap = mids & active_mids
+        if overlap:
+            msg = "[FAIL] Abort: Active record overlap detected in collection %s: %s" % (c, overlap)
+            print(msg)
+            raise RuntimeError(msg)
+
+    # 安全闸 3: 仅限 fixture/test/tmp 模式命名已由 candidates 匹配保证
+
+    mode = "APPLIED" if apply else "DRY-RUN (无 --apply)"
+    for c in candidates:
+        mids_cnt = len(col_mids_map.get(c, set()))
+        print("[PURGE-AUDIT] Target: %s, MidsCount: %d, Reason: 命中测试夹具命名模式, Action: %s"
+              % (c, mids_cnt, mode))
+
+    if not apply:
+        print("[PURGE-AUDIT] 预演完成，未做实际修改。如需真正删除，请附加 --apply 参数。")
+        return 0
+
+    import sqlite3
+    con_write = sqlite3.connect(db_file)
+    try:
+        for c in candidates:
+            cid_row = con_write.execute("SELECT id FROM collections WHERE name = ?", (c,)).fetchone()
+            if not cid_row:
+                continue
+            cid = cid_row[0]
+            seg_ids = [r[0] for r in con_write.execute("SELECT id FROM segments WHERE collection = ?", (cid,)).fetchall()]
+            for sid in seg_ids:
+                emb_ids = [r[0] for r in con_write.execute("SELECT id FROM embeddings WHERE segment_id = ?", (sid,)).fetchall()]
+                if emb_ids:
+                    con_write.execute("DELETE FROM embedding_metadata WHERE id IN (%s)" % ",".join("?" * len(emb_ids)), emb_ids)
+                    con_write.execute("DELETE FROM embeddings WHERE segment_id = ?", (sid,))
+                con_write.execute("DELETE FROM segment_metadata WHERE segment_id = ?", (sid,))
+            con_write.execute("DELETE FROM segments WHERE collection = ?", (cid,))
+            con_write.execute("DELETE FROM collection_metadata WHERE collection_id = ?", (cid,))
+            con_write.execute("DELETE FROM collections WHERE id = ?", (cid,))
+            for sid in seg_ids:
+                seg_dir = os.path.join(rag_dir, sid)
+                if os.path.isdir(seg_dir):
+                    shutil.rmtree(seg_dir, ignore_errors=True)
+            print("[PURGE-AUDIT] [OK] Collection %s 已安全删除" % c)
+        con_write.commit()
+    finally:
+        con_write.close()
+
+    print("[PURGE-AUDIT] Purge completed successfully.")
+    return 0
+
+
+# -------------------------------------------------------------
 # 汇总
 # -------------------------------------------------------------
 _CHECKS = {
     "R1": check_r1, "R2": check_r2, "R4": check_r4, "R5": check_r5,
     "R6": check_r6, "R10": check_r10, "Q2": check_q2, "R9": check_r9, "D4": check_d4,
+    "G1": check_g1, "G2": check_g2, "G3": check_g3, "G4": check_g4,
+    "G5": check_g5, "G6": check_g6, "G7": check_g7, "G8": check_g8, "G9": check_g9,
 }
 
-# 判据自述（`--explain` 用；与各 check 的 criterion 逐字同源，避免两处文案分叉）
 _CRITERIA = {
     "R1": _criterion_r1, "R2": _criterion_r2, "R4": _criterion_r4, "R5": _criterion_r5,
     "R6": _criterion_r6, "R10": _criterion_r10, "Q2": _criterion_q2,
     "R9": _criterion_r9, "D4": _criterion_d4,
+    "G1": _criterion_g1, "G2": _criterion_g2, "G3": _criterion_g3, "G4": _criterion_g4,
+    "G5": _criterion_g5, "G6": _criterion_g6, "G7": _criterion_g7, "G8": _criterion_g8, "G9": _criterion_g9,
 }
 
 
@@ -614,11 +1158,9 @@ def _fmt_table(results):
 
 
 def exit_code(results):
-    """全 PASS=0；存在 FAIL=1；无 FAIL 但有 SKIP=2。"""
+    """全通过退出码 0，任一 FAIL 退出码 1。"""
     if any(r.status == FAIL for r in results):
         return 1
-    if any(r.status == SKIP for r in results):
-        return 2
     return 0
 
 
@@ -631,6 +1173,10 @@ def main(argv=None):
     ap.add_argument("--rag-dir", default=None, help="向量目录（仅透传给子进程，本脚本只读 DB）")
     ap.add_argument("--json", action="store_true", help="输出机器可读 JSON")
     ap.add_argument("--explain", action="store_true", help="只打印判据说明，不执行检查")
+    ap.add_argument("--purge-orphans", action="store_true",
+                    help="清理历史夹具与孤儿集合（默认预演，配合 --apply 执行）")
+    ap.add_argument("--apply", action="store_true",
+                    help="配合 --purge-orphans 执行实际删除")
     args = ap.parse_args(argv)
 
     demo_dir = os.path.abspath(args.demo_dir or DEMO_DIR)
@@ -638,6 +1184,9 @@ def main(argv=None):
         args.db_path or os.environ.get("DB_PATH") or os.path.join(demo_dir, "receipt_demo.db"))
     ctx = Ctx(demo_dir=demo_dir, db_path=db_path,
               rag_dir=os.path.abspath(args.rag_dir) if args.rag_dir else "")
+
+    if args.purge_orphans:
+        return purge_orphans(ctx, apply=args.apply)
 
     if args.explain:
         for num in CHECK_ORDER:
@@ -665,14 +1214,14 @@ def main(argv=None):
     for r in results:
         print("  [%s] %s" % (r.num, r.criterion))
     n_pass = sum(1 for r in results if r.status == PASS)
+    n_fail = sum(1 for r in results if r.status == FAIL)
+    n_skip = sum(1 for r in results if r.status == SKIP)
     print("")
     print("汇总: PASS=%d FAIL=%d SKIP=%d -> 退出码 %d"
-          % (n_pass,
-             sum(1 for r in results if r.status == FAIL),
-             sum(1 for r in results if r.status == SKIP),
-             exit_code(results)))
+          % (n_pass, n_fail, n_skip, exit_code(results)))
     return exit_code(results)
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

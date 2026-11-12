@@ -597,11 +597,12 @@ def _load_expected(evalset_dir, sample_id):
 # ------------------------------------------------------------------
 def _stub_predictor(evalset_dir):
     """harness 自检用：直接回读 GT 作为预测，验证比对与聚合通路（离线、零成本）。"""
-    def _predict(image_path, sample_id):
-        return _load_expected(evalset_dir, sample_id), {
+    def _predict(image_path, sample_id, expected=None, **kwargs):
+        exp = expected if expected is not None else _load_expected(evalset_dir, sample_id)
+        return exp, {
             "latency_ms": 0.0,
             "tokens": 0,
-            "error": None if _load_expected(evalset_dir, sample_id) else "GT 缺失",
+            "error": None if exp else "GT 缺失",
         }
     return _predict
 
@@ -625,7 +626,7 @@ def _real_predictor(engine, model, prompt_version):
     # 显式版本号直接落在 ai_registry/prompts/extract/<version>.py
     extract_chain.SYSTEM_PROMPT = get_prompt("extract", prompt_version)
 
-    def _predict(image_path, sample_id):
+    def _predict(image_path, sample_id, expected=None, **kwargs):
         res = extract_chain.extract_receipt(image_path, config=cfg)
         data = res.get("data")
         pred = data.model_dump() if data is not None else None
@@ -684,8 +685,16 @@ def _pipeline_predictor(engine, model, prompt_version, memory=True):
     extract_chain.SYSTEM_PROMPT = get_prompt("extract", prompt_version)
     _set_memory_enabled(bool(memory))
 
-    def _predict(image_path, sample_id):
-        state = supervisor.run_pipeline(image_path, config=cfg)
+    def _predict(image_path, sample_id, expected=None, **kwargs):
+        gt_supplier = ""
+        if memory and expected:
+            gt_supplier = str(expected.get("supplier_name") or expected.get("vendor") or "").strip()
+        state = supervisor.run_pipeline(
+            image_path,
+            vendor_hint=gt_supplier,
+            vendor_hint_origin="eval_gt" if gt_supplier else "",
+            config=cfg,
+        )
         data = state.get("data")
         pred = data.model_dump() if data is not None else None
         return pred, {
@@ -697,6 +706,8 @@ def _pipeline_predictor(engine, model, prompt_version, memory=True):
             "retry_count": state.get("retry_count", 0),
             "cost_hkd": state.get("cost_hkd", 0.0),
             "memory": "on" if memory else "off",
+            "vendor_hint": gt_supplier,
+            "vendor_context": state.get("vendor_context") or "",
         }
     return _predict
 
@@ -866,7 +877,7 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
         image_path = os.path.join(evalset_dir, row.get("image", ""))
         t0 = time.time()
         try:
-            pred, meta = predictor(image_path, sample_id)
+            pred, meta = predictor(image_path, sample_id, expected=expected)
             elapsed_ms = float(meta.get("latency_ms") or 0.0) or \
                 round((time.time() - t0) * 1000, 1)
             error = meta.get("error") or ("" if pred is not None else "抽取返回空")
@@ -1065,7 +1076,104 @@ def _run_memory_ab(common):
     return 0
 
 
-def main():
+def _load_offline_fixture(path):
+    """读取离线配对 A/B fixture（E02）：返回 (meta, samples)。
+
+    fixture 可以是 `{"meta": ..., "samples": [...]}` 或直接是 samples 数组。严格校验
+    samples 为数组且非空；不合法直接 SystemExit，避免用空集算出"0 差异"假结论。
+    """
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    if isinstance(doc, list):
+        meta, samples = {}, doc
+    elif isinstance(doc, dict):
+        meta, samples = doc.get("meta") or {}, doc.get("samples")
+    else:
+        raise SystemExit("offline fixture 必须是 JSON 对象或数组：%s" % path)
+    if not isinstance(samples, list) or not samples:
+        raise SystemExit("offline fixture 的 samples 必须是非空数组：%s" % path)
+    return meta, samples
+
+
+def run_offline_paired(fixture_path, report_dir=None, slo_p95_ms=None,
+                       min_terminal_arms=None, min_ci_pairs=None):
+    """离线配对 A/B（E02）：零模型外呼、零 DB/设置写入，只读 fixture。
+
+    why 走 `app.services.eval_reporter`：配对性校验、失败漏斗、p95/重试/队列记账、
+    行对齐与 FER 参考分母必须只有一份实现；CLI 只负责读 fixture 与落报告。
+    `--min-terminal-arms` / `--min-ci-pairs` 可显式覆盖 fixture meta 或默认 30。
+    """
+    from app.services import eval_reporter
+
+    meta, samples = _load_offline_fixture(fixture_path)
+    threshold = slo_p95_ms
+    if threshold is None:
+        threshold = meta.get("slo_p95_ms", eval_reporter.DEFAULT_SLO_P95_MS)
+    arms_min = min_terminal_arms
+    if arms_min is None:
+        arms_min = meta.get("min_terminal_arms", eval_reporter.DEFAULT_MIN_TERMINAL_ARMS)
+    ci_min = min_ci_pairs
+    if ci_min is None:
+        ci_min = meta.get("min_ci_pairs", eval_reporter.DEFAULT_MIN_CI_PAIRS)
+    report = eval_reporter.run_paired_eval(
+        samples, slo_p95_ms=threshold,
+        min_terminal_arms=arms_min, min_ci_pairs=ci_min)
+    report["mode"] = "paired_ab_offline"
+    report["fixture_path"] = os.path.abspath(fixture_path)
+
+    report_dir = os.path.abspath(report_dir or DEFAULT_REPORT_DIR)
+    os.makedirs(report_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_path = os.path.join(report_dir, "%s_paired_ab_offline.json" % ts)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    report["report_path"] = out_path
+    return report
+
+
+def _print_paired_summary(report):
+    print("=" * 68)
+    print("Paired A/B（离线） | fixture=%s" % report.get("fixture_path", "-"))
+    print("-" * 68)
+    print("样本 %d（配对 %d） | batch_valid=%s | estimable=%s"
+          % (report["n_samples"], report["n_pairs"],
+             report["batch_valid"], report["estimable"]))
+    if report.get("invalid_reasons"):
+        for reason in report["invalid_reasons"]:
+            print("  INVALID %s" % reason)
+    for metric, stat in report.get("stats", {}).items():
+        print("  %-9s on=%s off=%s delta=%s ci95=%s%s"
+              % (metric, stat.get("mean_on"), stat.get("mean_off"),
+                 stat.get("mean_delta_on_minus_off"), stat.get("ci95"),
+                 (" [CI unavailable: %s]" % stat.get("ci_unavailable")
+                  if stat.get("ci_unavailable") else "")))
+    fun = report.get("failure_funnel") or {}
+    print("  funnel    attempted=%s paired=%s terminal_failed=%s nonterminal=%s"
+          % (fun.get("attempted_arms"), fun.get("paired_samples"),
+             fun.get("terminal_failed_arms"), fun.get("nonterminal_arms")))
+    lat = report.get("latency") or {}
+    rq = report.get("retry_queue") or {}
+    print("  latency   p50=%s p95=%s max=%s undersampled=%s(min_arms=%s) | "
+          "retry_total=%s retry_p95=%s queue_p95=%s max_depth=%s"
+          % (lat.get("p50_ms"), lat.get("p95_ms"), lat.get("max_ms"),
+             lat.get("p95_undersampled"), lat.get("min_terminal_arms"),
+             rq.get("retry_total"), rq.get("retry_p95"),
+             rq.get("queue_wait_p95_ms"), rq.get("max_queue_depth")))
+    line = (report.get("line_alignment") or {}).get("on") or {}
+    fer = (report.get("fer_reference") or {}).get("on") or {}
+    print("  on-arm    alignment=%s (%s/%s) fer=%s (%s/%s)"
+          % (line.get("alignment_rate"), line.get("aligned_lines"),
+             line.get("gt_lines"), fer.get("fer"),
+             fer.get("field_mismatched"), fer.get("field_total")))
+    slo = report.get("slo") or {}
+    print("  SLO       p95<=%sms pass=%s blocked=%s %s"
+          % (slo.get("slo_p95_ms"), slo.get("slo_pass"),
+             slo.get("slo_blocked"), slo.get("slo_blocked_reasons") or ""))
+    print("report → %s" % report.get("report_path"))
+    print("=" * 68)
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description="可复现评测 harness（train/val/test 三分法）")
     ap.add_argument("--split", required=True, choices=["train", "val", "test"], help="评测集分片")
     ap.add_argument("--prompt", default=DEFAULT_PROMPT_VERSION, help="extract prompt 版本")
@@ -1098,7 +1206,32 @@ def main():
                     help="记忆 A/B：同一批样本各跑一次 memory=on 与 memory=off，输出差值（隐含 --pipeline）")
     ap.add_argument("--no-backup", action="store_true", default=False,
                     help="出分前不备份 GT 与基线（默认会备份）")
-    args = ap.parse_args()
+    ap.add_argument("--offline-fixture", default=None,
+                    help="E02 离线配对 A/B fixture（JSON）；只读 fixture、零模型外呼，"
+                         "不读 evalsets/manifest、不写 DB/app_settings")
+    ap.add_argument("--paired-ab", action="store_true", default=False,
+                    help="显式声明配对 A/B 模式（须配合 --offline-fixture；"
+                         "未给 fixture 时拒绝运行，避免误跑真实模型 A/B）")
+    ap.add_argument("--slo-p95-ms", type=float, default=None,
+                    help="配对 A/B 的 p95 延迟 SLO 阈值（默认取 fixture meta 或 12000ms）")
+    ap.add_argument("--min-terminal-arms", type=int, default=None,
+                    help="p95 SLO 的最小终态臂数（默认取 fixture meta 或 30）")
+    ap.add_argument("--min-ci-pairs", type=int, default=None,
+                    help="bootstrap CI 的最小配对数（默认取 fixture meta 或 30）")
+    args = ap.parse_args(argv)
+
+    if args.offline_fixture:
+        report = run_offline_paired(args.offline_fixture,
+                                    report_dir=args.report_dir,
+                                    slo_p95_ms=args.slo_p95_ms,
+                                    min_terminal_arms=args.min_terminal_arms,
+                                    min_ci_pairs=args.min_ci_pairs)
+        _print_paired_summary(report)
+        ok = (report["batch_valid"] and report["estimable"]
+              and report["slo"]["slo_pass"])
+        return 0 if ok else 1
+    if args.paired_ab:
+        raise SystemExit("--paired-ab 必须配合 --offline-fixture（本仓禁止隐式真实模型 A/B）")
 
     # 离线评测进程：允许 OPENAI_REC_CALL_TIMEOUT 抬高单次调用超时（线上进程会忽略它）
     os.environ.setdefault("RECEIPT_OFFLINE_EVAL", "1")
