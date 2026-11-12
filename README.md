@@ -1,5 +1,9 @@
 # 香港餐饮进货收据识别与库存管理系统
 
+> **当前范围基线（2026-10-27）**：独立 RBAC 验证与平台收费、套餐、试用/订阅及商业额度不纳当前功能或发布验收；身份与租户安全、老板审批、采购应付/贷项/退款、模型成本和样本覆盖继续。现行基线见 [当前设计范围](docs/2026-10-27-current-design-scope.md)，当前实现入口见 [demo/README.md](demo/README.md)。该次调整仅改说明，不代表源码已删除或停用；仓库内历史测试数字及 PASS/FAIL 均为当时快照，不构成当前通过证据。
+>
+> **文档分层**：`docs/01`–`docs/07`、`docs/issues` 与根级规范文件为作品集与现行说明；其中的历史数字、脚本路径与结论只代表当时版本，不作当前实现依据。2026-11 已清理一次性报告与执行计划目录（`docs/09`、`docs/qa`、`docs/review-2026-10`、`docs/superpowers`），其当时的结论如需追溯请查 git 历史。文档导航见 [docs/README.md](docs/README.md)。
+
 > **订货收据 → 实时库存 → 运营成本**，面向香港餐饮（F&B）市场。
 > AI 多模态识别收据 + 确定性代码引擎混合架构，人工复核（Human-in-the-Loop）把关。
 > 本文档介绍该系统中「收据识别与库存」部分的落地实现。
@@ -99,15 +103,14 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 ### 3.3 平台能力
 
-- **三层 RBAC**：admin / owner / staff，无密码下拉切换，权限即时生效
-- **引擎可插拔**：百炼 DashScope Qwen 系（识别腿）/ SiliconFlow GLM-4.5V（审核腿）/ 任意 OpenAI 兼容接口（自填 base_url + api_key + 模型名）；历史注记：opencode CLI / CodeBuddy CLI 两个本机 CLI 引擎已于 2026-09-02 弃用
+- **引擎可插拔**：百炼 DashScope Qwen 系（识别腿）/ SiliconFlow GLM-4.5V（审核腿）/ 任意 OpenAI 兼容接口（自填 base_url + api_key + 模型名）；历史注记：opencode CLI / CodeBuddy CLI 两个本机 CLI 引擎已于 2026-09-02 弃用，相关类、二进制常量与常驻进程 transport 已从代码中删除（见 `demo/app/llm.py` 文件头）
 - **灰度发布**：分组测试按概率 0-100% 随机分配，常规与灰测组引擎完全隔离；支持按单据/按供应商分配
 - **解析 LLM**：VLM 识别后可选交给 LLM 规范化（可开关，常规/灰测独立）
 - **AI 复盘**：价格异动检测 + 供应商洞察 + 采购建议
 
 ### 3.4 测试体系
 
-- **确定性单测**：契约门禁/算术门禁/RBAC/乐观锁/幂等入库/租户隔离/记忆治理 —— 根 `tests/` 全量回归 **512 passed + 1 条件 skip**，确定性部分秒级；`demo/tests/` 套件另行维护，另含 1 个活体 E2E 用例（需本地服务与 playwright，已实测通过）
+- **历史测试基线（非本轮通过证据）**：契约门禁/算术门禁/乐观锁/幂等入库/租户隔离/记忆治理 —— 根 `tests/` 全量回归 **512 passed + 1 条件 skip**，确定性部分秒级；`demo/tests/` 套件另行维护，另含 1 个活体 E2E 用例（需本地服务与 playwright，已实测通过）
 - **完整业务流**：上传→识别→复核→审批→库存→成本→复盘→对账→支付 全链路
 - **黄金样本（历史导入口径）**：57 张真实香港收据 + 人工标注，可导入平台做回归（该批为早期导入口径；后续评测语料已升级为下述评测集三分法）
 - **实测数据（历史导入口径）**：导入黄金样本后形成 55 SKU / 5 供应商 / 成本 5.9 万 的完整环境（为导入批次快照，非实时数据）
@@ -132,7 +135,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 - **多租户隔离**：`tenant_id` 贯穿 7 张业务主表 + `vendor_memory`（幂等迁移 + 索引），`db.scoped()` 统一过滤，跨租户查询返回空（有专项单测）
 - **记忆治理与预算**：每条 VendorMemory 带 `memory_id / version / source_kind / source_ref / decay_score / status`，读取侧 `MemoryBudget`（条数/token 双预算）控制注入，命中可回溯到触发单据
 - **registry SSOT 收敛**：生产链路所有 Prompt/Tool 一律经 `ai_registry.registry` 加载，镜像注册表退役，metadata 与目录实体自洽（有 SSOT 专项单测）
-- **评测集三分法与抽检台**：真实语料去标识落 `demo/evalsets/`（train/val/test 分层，语料不入库）；GT 由异构模型生成候选，抽检工作台（复用店员复核界面）人工逐张确认，`run_eval --require-confirmed` 保证对外数字只出自人工确认过的 test 集；评测默认只测「单次抽取」，加 `--pipeline` 走与线上同一条完整流程（门禁、记忆注入、部署配置），`--memory-ab` 同批样本各跑记忆开/关度量记忆收益；GT 与冻结基线出分前自动备份（`scripts/eval_assets_backup.py`），重冻结必须写原因，GT 变少会被拒绝
+- **评测集三分法与抽检台**：真实语料去标识落 `demo/evalsets/`（train/val/test 分层，语料不入库）；GT 由异构模型生成候选，抽检工作台（复用店员复核界面）人工逐张确认，`run_eval --require-confirmed` 保证对外数字只出自人工确认过的 test 集；评测默认只测「单次抽取」，加 `--pipeline` 走与线上同一条完整流程（门禁、记忆注入、部署配置），`--memory-ab` 同批样本各跑记忆开/关度量记忆收益；GT 与冻结基线出分前自动备份（`demo/scripts/eval_assets_backup.py`），重冻结必须写原因，GT 变少会被拒绝
 - **元评测（评估器可信度自检）**：25 条已确证二元样本固化 `meta_eval_set.json`，`run_meta_eval.py` 在引擎/模型/Prompt 变更上线前自检评估器（判对 100% / 判错 100% 才可信）
 - **低置信自动回流**：低置信/门禁拒绝/用户修改/审核分歧四类线上信号自动入队为评测候选，promote 后进入评测集——「线上失败 → 评测集 → 下一轮评测」通路打通，候选采纳仍需人工确认
 
@@ -152,7 +155,7 @@ upload → VLM 识别 → 契约门禁 → 算术门禁 → 交叉审核 → Ven
 
 - **识别链路**：40s~4min 走通全流程（免费模型），多引擎可切换
 - **可信度**：三层门禁（契约/算术/人工）拦截错误，AI 只预填、人工背书
-- **可测性**：全量回归（根 `tests/`）512 passed + 1 条件 skip + 163 张真实语料评测集三分法回归（test 33 张，本地不入库）
+- **可测性（历史基线快照，非当前通过证据）**：全量回归（根 `tests/`）512 passed + 1 条件 skip + 163 张真实语料评测集三分法回归（test 33 张，本地不入库）；当前通过情况须以本机 `pytest` 实跑结果为准
 
 ## 五、Workflow 详解与实现
 
@@ -223,15 +226,15 @@ run_pipeline(image_path, config)
 
 ### 5.4 模型引擎怎么做到可插拔
 
-`app/llm.py` —— 三个 `BaseChatModel` 子类，统一 LangChain 接口：
+`app/llm.py` —— 两个 `BaseChatModel` 子类，统一 LangChain 接口：
 
 | 引擎 | 类 | 特点 |
 | :--- | :--- | :--- |
-| 百炼 DashScope（识别腿） | `OpenAIChatModel` | OpenAI 兼容通道，默认模型 qwen3.5-omni-flash |
+| 百炼 DashScope（识别腿） | `OpenAIChatModel` / `QwenChatModel` | OpenAI 兼容通道，默认模型 qwen3.5-omni-flash；模型名以 qwen 开头且显式声明非 openai 引擎时走 DashScope 原生 SDK |
 | SiliconFlow（审核腿） | `OpenAIChatModel` | OpenAI 兼容通道，默认模型 zai-org/GLM-4.5V，与识别腿跨厂商异构（Gap A3） |
 | OpenAI 兼容 | `OpenAIChatModel` | 任意网关，base_url + api_key + model，支持多模态 |
-| opencode CLI（已弃用） | `OpencodeChatModel` | 本机 CLI，历史候选；已于 2026-09-02 弃用，类仅保留存量兼容 |
-| CodeBuddy CLI（已弃用） | `CodeBuddyChatModel` | 本机 CLI，历史候选；已于 2026-09-02 弃用，类仅保留存量兼容 |
+
+> 历史注记：`OpencodeChatModel` / `CodeBuddyChatModel` 两个本机 CLI 引擎已于 2026-09-02 弃用，相关类、枚举、二进制常量与 `app/engine_runtime.py` transport 均已删除，当前代码中不存在这两个类。
 
 `build_recognition_model(cfg, use_grey)` 工厂按 `EngineConfig` 路由到对应引擎——
 识别管线只依赖 `BaseChatModel` 接口，**换引擎不改管线代码**。
@@ -265,7 +268,7 @@ admin 配置：grey_enabled + grey_percent(0-100) + grey_assign_mode
 
 ```
 demo/app/
-├── llm.py                 # 三个 BaseChatModel 子类 + 模型工厂（引擎可插拔）
+├── llm.py                 # 两个 BaseChatModel 子类 + 模型工厂（引擎可插拔）
 ├── chains/
 │   ├── supervisor.py      # 识别管线编排：线性流程 + 重试阶梯 + 灰测分配
 │   ├── extract_chain.py   # VLM 读图 → 结构化（RAG 注入 + 可选解析 LLM）
@@ -277,8 +280,8 @@ demo/app/
 │   ├── rag.py             # VendorMemory RAG（Chroma，按供应商记忆）
 │   ├── inventory.py       # approve 幂等入账 + SKU 匹配/建档
 │   └── receipt_utils.py   # AI 结果 ↔ 前端契约桥接 + 异步 Job
-├── api_*.py               # 98 个 API 端点（匹配完整版前端契约）
-├── auth.py                # 三层 RBAC + HMAC token（admin/owner/staff）
+├── api_*.py               # 各业务域 API 端点（以 app 路由注册为准，匹配完整版前端契约）
+├── auth.py                # 登录会话与请求身份
 └── db.py                  # SQLite + SQLAlchemy（轻量幂等迁移：租户/治理/评测资产）
 ```
 
@@ -290,7 +293,7 @@ cp .env.example .env        # 复制配置模板；识别服务密钥默认是�
 pip install -r requirements.txt   # 想完全复现验证环境：pip install -r requirements.lock
 
 ./demo.sh run               # 启动 http://127.0.0.1:15010
-./demo.sh test              # 快速单测子集（test_demo.py）；根 tests/ 全量 512 passed+1 条件 skip，见「测试体系」
+./demo.sh test              # 快速单测子集（test_demo.py）；全量回归用 python -m pytest tests/（历史基线见「测试体系」）
 ./demo.sh workflow          # 完整业务流测试
 ./demo.sh smoke <图路径>     # 单图冒烟
 ```
@@ -300,8 +303,8 @@ pip install -r requirements.txt   # 想完全复现验证环境：pip install -r
 ## 七、技术栈
 
 - **LangChain**：模型层抽象（多模态封装/可插拔引擎/Chroma 向量检索）+ 确定性编排
-- **FastAPI + SQLite**：98 个 API 端点匹配完整版前端契约
-- **多模型通道**：百炼 DashScope（识别腿 qwen3.5-omni-flash）、SiliconFlow（审核腿 GLM-4.5V）、OpenAI 兼容；历史注记：opencode / CodeBuddy 两个本机 CLI 引擎曾作为选型候选评估，已于 2026-09-02 弃用
+- **FastAPI + SQLite**：按业务域拆分的 API 端点匹配完整版前端契约（数量以 `demo/app/api_*.py` 路由注册为准）
+- **多模型通道**：百炼 DashScope（识别腿 qwen3.5-omni-flash）、SiliconFlow（审核腿 GLM-4.5V）、OpenAI 兼容；历史注记：opencode / CodeBuddy 两个本机 CLI 引擎曾作为选型候选评估，已于 2026-09-02 弃用并从代码中移除
 - **Pydantic**：输出契约门禁（拒绝 schema 外字段）
 - **前端**：完整版产品 UI（纯静态，4 Tab）
 
@@ -309,17 +312,23 @@ pip install -r requirements.txt   # 想完全复现验证环境：pip install -r
 
 ```
 receipt-agent-interview/
-├── README.md              # 本文件（系统说明）
-├── agent_memory.md        # 项目记忆（AI 资产工程化治理规范等，可提交）
-├── .gitignore             # 忽略密钥/运行时数据
+├── README.md              # 本文件（系统说明与当前范围基线）
+├── agent_memory.md        # 项目约定与 AI 资产治理规范（历史会话指令已标注归档）
+├── requirements-dev.txt   # 根 tests/ 与 demo/tests/ 共用的测试依赖
+├── .gitignore             # 忽略密钥、运行时数据与本地工具状态
 ├── tests/                 # 根级测试（租户隔离/记忆治理/SSOT/门禁/E2E）
+├── docs/                  # 作品集与历史档案；范围基线及导航见 docs/README.md
 ├── ai_registry/           # AI 资产唯一来源：prompts/skills/tools/mcp + 版本化 + 评测中心
 │   ├── prompts/           # 各域 Prompt（SemVer 独立文件 + metadata）
 │   ├── skills/            # Skills（带 eval.json 能力矩阵）
-│   ├── tools/             # 确定性工具（算术门禁/品名剥离等 12 个）
+│   ├── tools/             # 确定性工具（算术门禁/品名剥离等 13 个）
 │   ├── mcp/               # MCP servers 与 configs
 │   ├── canary/            # 灰度路由与 A/B 评估
+│   ├── playbook/          # Prompt 迭代与 Gap 补全经验库
+│   ├── approvals/         # 资产准入记录
 │   └── benchmarks/        # 资产评测矩阵与历史记录
+├── artifacts/             # 本地运行时日志（不入库）
+├── assets/                # 收据原图素材
 └── demo/                  # 单店落地实现
     ├── app/               # FastAPI + LangChain 后端
     │   ├── chains/        # 识别/审核/复盘链
@@ -327,8 +336,10 @@ receipt-agent-interview/
     │   └── api_*.py       # 各业务域 API（含 api_evalset.py 评测集/抽检台）
     ├── templates/         # 前端 HTML
     ├── static/            # 前端 CSS/JS/图片
-    ├── scripts/           # 黄金样本导入 + 评测脚本（build_evalset/run_eval/
-    │                      #   run_meta_eval/gen_gt_candidates）
+    ├── scripts/           # 样本导入、评测、元评测、治理与运维脚本（以目录内文件为准）
     ├── tests/             # 单测 + workflow 测试
     └── demo.sh            # 一键命令
 ```
+
+> 根目录 `scripts/` 为空目录，所有脚本统一放在 `demo/scripts/`；历史文档中出现的裸
+> `scripts/xxx.py` 路径为当时快照，请以 `demo/scripts/` 下的实际文件为准。

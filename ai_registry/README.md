@@ -52,7 +52,7 @@ ai_registry/
 │   └── configs/                   # MCP 配置文件与环境变量映射
 │
 ├── plugins/                       # 5. 扩展插件库 (Plugin Architecture)
-│   ├── vlm_engines/               # 多模态引擎插件 (OpenAI 兼容, Ollama 等；Opencode/CodeBuddy 为已弃用历史引擎)
+│   ├── vlm_engines/               # 多模态引擎插件 (OpenAI 兼容 / Ollama；本机 CLI 引擎已删除)
 │   ├── notification/              # 异动通知插件 (WhatsApp/Telegram/Email)
 │   └── pos_connectors/            # POS 销项数据打通插件 (Eats365, StoreHub)
 │
@@ -151,7 +151,7 @@ python -m ai_registry.eval_reporter --diff --type prompt --name extract --v1 v1_
 
 - **安全边界类**：提示注入防御、契约 `extra=forbid` 门禁、算术门禁的放宽或绕过；
 - **拒答逻辑类**：画质拦截、「转手工」逃生通道、置信度阈值下调导致的放行扩大；
-- **付费相关类**：付款标记（`payment_marked`）判定、结算方式、金额字段的自动改写。
+- **采购付款与金额相关类**：付款标记（`payment_marked`）判定、结算方式、金额字段的自动改写。
 
 上述三类变更即使命中再多样本、再过多少轮评测，也必须保留人工确认环节；
 自动化只能做到「备好人点一下就能批准」，不能做到「替人批准」。

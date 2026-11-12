@@ -1,7 +1,9 @@
 # 香港餐饮进货收据识别系统 · 单店落地实现
 
 > 香港餐饮进货收据识别与库存管理系统的**单店落地版本**：完整产品前端 + LangChain 编排的后端。
-> 聚焦核心闭环：**三层 RBAC、灰测（模型可插拔 + 交叉审核）、VendorMemory RAG**。
+> 聚焦核心闭环：**角色与审批分离、灰测（模型可插拔 + 交叉审核）、VendorMemory RAG**。
+>
+> **范围口径（2026-10-27）**：独立 RBAC 验证与平台收费 / 套餐 / 试用订阅 / 商业额度不纳当前功能或发布验收；下文的角色说明描述现有代码行为，不代表 RBAC 矩阵仍是当前验收项。现行基线见 [当前设计范围](../docs/2026-10-27-current-design-scope.md)，仓库级说明见 [根 README](../README.md)。本文的端点数、测试通过数、导入样本数均为历史快照，以当前代码与本机实跑结果为准。
 
 ## 一、30 秒讲法
 
@@ -87,7 +89,7 @@ upload ──► [预处理：EXIF 扶正 + 正交 90/180/270 自动纠正（`pr
 **前端 = 完整版界面**（`templates/index.html` + `static/`，纯静态无服务端渲染），
 4 个 Tab（收据识别 / 实时库存 / 供应商归档+对账 / 部门花销报表）全部可用。
 
-**后端 = LangChain 实现**：98 个 API 端点匹配完整版前端契约，核心 AI 链路用
+**后端 = LangChain 实现**：按业务域拆分的 `api_*.py` 端点匹配完整版前端契约（数量以路由注册为准），核心 AI 链路用
 LangChain 模型封装 + 确定性线性编排；平台化部分（多租户隔离 / 幂等迁移 / 评测台与
 GT 抽检台 / 记忆治理与预算）均已落地（详见根 [README](../README.md) 3.6 节）。
 
@@ -131,6 +133,8 @@ demo/
 └── tests/                   # 确定性单测 + workflow/评测/租户隔离/记忆治理测试
 ```
 
+> `app/` 下实际含 14 个 `api_*.py` 及多个 `services/` 子模块，上图只列核心文件；完整清单以目录内容为准。
+
 ## 四、运行
 
 ```bash
@@ -169,6 +173,8 @@ pip install -r requirements.txt   # 想完全复现验证环境：pip install -r
 - 面向单店的最小闭环（多租户隔离已落地，`tenant_id` 贯穿业务主表）；后续可平滑扩展 ERP 集成
 
 ## 六、现场演示脚本
+
+> 命令与 §四 一致，此处给的是面试现场的操作顺序，不是另一套启动方式。
 
 ```bash
 ./demo.sh run                      # 启动完整服务（http://127.0.0.1:15010）
@@ -223,18 +229,20 @@ admin 的引擎/模型配置经 `/api/admin/engine-config` 暴露，
 - **AI 链路**：真实模型（DashScope qwen3.5-omni-flash）跑通，40s~4min
 - **黄金样本（历史导入口径）**：57 张真实单据 + 人工标注，导入平台做回归；现行评测走 7.5 节评测集三分法
 
-## 八、测试
+### 7.5 回归测试
 
 确定性逻辑（契约门禁/算术门禁/RBAC/入库/乐观锁/租户隔离/记忆治理）有 pytest 覆盖，不依赖 LLM、秒级：
 
 ```bash
-python -m pytest tests/            # 全量：225 passed + 1 条件 skip（评测用例，需 --run-eval 且语料存在）
-./demo.sh test                     # 快速子集（test_demo.py，30 passed）
+python -m pytest tests/            # demo/tests/ 全量；通过数随仓库演进而变，以本机实跑为准
+./demo.sh test                     # 快速子集（tests/test_demo.py）
 ```
 
 识别/审核/复盘链用真实免费模型验证（耗时，不走单测）；完整业务流用 `./demo.sh workflow`。
 
-### 7.5 评测集与 GT 抽检台（Wave B 落地）
+> 历史快照：早期版本曾记录「225 passed + 1 条件 skip」（评测用例需 `--run-eval` 且语料存在），不作为当前通过证据。
+
+### 7.6 评测集与 GT 抽检台（Wave B 落地）
 
 - **构建**：`python scripts/build_evalset.py` 把真实语料（仅存本地 `evalsets/`，不入库）去标识、分层抽样为 train/val/test 三 split；`python -m pytest tests/ --run-eval` 在有语料的机器上追加评测用例
 - **GT 候选**：`python scripts/gen_gt_candidates.py` 用异构模型（百炼 Qwen 系）生成候选 GT（`gt_status=draft`，`gt_source_model` 照实记录），人工在抽检台逐张确认（`gt_status=confirmed`）；`run_eval.py --require-confirmed` 保证出分只依赖人工确认过的 GT
@@ -246,7 +254,7 @@ python -m pytest tests/            # 全量：225 passed + 1 条件 skip（评�
 2. **GT schema v2 + 工作台复用**：候选 GT 从自由表单改为对齐 `ReceiptData` 契约，抽检台复用店员真实复核界面（Side-by-Side 组件），确认路径与生产复核一致
 3. **动态费用与手写注记**：费用区（服务费/税额/杂费）与手写注记行改按需动态添加行，对齐复核界面同款标准
 
-## 九、已知取舍
+## 八、已知取舍
 
 - **审核偶发 unparseable → graceful skip**：审核 Agent 失败不阻塞主链路（「审核不阻断」原则）；
   生产期用条件审 + 重试
@@ -259,7 +267,7 @@ python -m pytest tests/            # 全量：225 passed + 1 条件 skip（评�
   作废行不计总额/门禁/入库。决策记录见
   `docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md` §11
 
-## 十、埋点与反馈
+## 九、埋点与反馈
 
 全链路埋点对齐 `step7-指标体系` 的 11 个规范事件并补齐缺口（完整设计见
 [`docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md`](../docs/05-AI产品体系与模块Spec/03-治理运维与AB实验Spec/11-组件Spec-全链路埋点与体验反馈体系.md)）：

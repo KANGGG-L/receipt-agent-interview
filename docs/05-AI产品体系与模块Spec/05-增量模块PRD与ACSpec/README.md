@@ -12,4 +12,4 @@
 | [EXPORT_CENTER_PRD_AC_SPEC.md](EXPORT_CENTER_PRD_AC_SPEC.md) | 统一报表与数据导出中心 PRD 与验收准则（v2.0.0：3 个使用者组 × 8 张报表、UTF-8 BOM 防乱码导出、A4 盘点打印；报表清单以需求分析第 7 节为准） |
 | [EXPORT_CENTER_TABLE_REFACTOR_NEEDS_ANALYSIS.md](EXPORT_CENTER_TABLE_REFACTOR_NEEDS_ANALYSIS.md) | 数据中心表格整理与重构需求分析：14 → 8 张报表的第一性原理判定矩阵、缺陷清单与生产场景重设计（现行报表清单事实源） |
 
-> 对应的真机复验报告见 [`docs/09-测试与UAT报告/test_report_qa_round2.md`](../../09-测试与UAT报告/test_report_qa_round2.md)（QA Round 2）。
+> QA Round 2 真机复验报告原归档于 `docs/09-测试与UAT报告/`，该一次性 UAT 报告已于 2026-11 清理退役（原始记录见 git 历史）；当前验收口径以本目录的 AC Spec 与 `demo/tests/` 为准。

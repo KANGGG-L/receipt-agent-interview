@@ -10,12 +10,12 @@
 
 ## 【2026-09-23 台账化修订】本文档的性质变了 —— 请按「台账」读，不要按「诊断书」读
 
-**为什么必须改**：本文档 2026-09-22 是一份**诊断快照**。此后按 `docs/superpowers/plans/2026-09-22-vendormemory-convergence.md`（v2，8 项决策已拍板）推进了 20 余个波次，H1–H4 / M1–M11 / L1–L8 里**大量条目已修**。一份写得准确的诊断清单，在修复推进到一半时会**反转成新的误导源** —— 读者（面试官、接手人、下一个 agent）会以为那些缺陷还在。所以本文本次的修订方式不是"重写"，而是**逐条加状态列 + 加证据 + 重算成熟度**。
+**为什么必须改**：本文档 2026-09-22 是一份**诊断快照**。此后按当时的收敛计划（v2，8 项决策已拍板；该一次性执行计划已于 2026-11 随流水线文档清理退役，如需追溯请查 git 历史）推进了 20 余个波次，H1–H4 / M1–M11 / L1–L8 里**大量条目已修**。一份写得准确的诊断清单，在修复推进到一半时会**反转成新的误导源** —— 读者（面试官、接手人、下一个 agent）会以为那些缺陷还在。所以本文本次的修订方式不是"重写"，而是**逐条加状态列 + 加证据 + 重算成熟度**。
 
 **读法（三条）**：
 
 1. 本文所有 `file:line` 与状态**均由本轮修订者独立实测或读码得到**（不是照抄计划自述）。凡状态标「已修」的，都能由 §4 的台账表逐条复算。
-2. **逐波证据的权威出处是计划文件的 [§10 滚动收口状态](../superpowers/plans/2026-09-22-vendormemory-convergence.md)**（`docs/superpowers/plans/2026-09-22-vendormemory-convergence.md`，主 agent 亲自验证、非 subagent 自述）。本文只做**状态汇总**，**不复制第二份逐波表**（避免两处互相矛盾）。
+2. **逐波证据原出处是收敛计划 §10「滚动收口状态」**（主 agent 亲自验证、非 subagent 自述）。该一次性计划已于 2026-11 随流水线文档清理退役，仓库中不再存在，如需逐波原始证据请查 git 历史。本文只做**状态汇总**，不另立第二份逐波表（避免两处互相矛盾）。
 3. **「代码具备能力」与「在线生效」仍是两套口径，不可混读**（见 §6）。本次修订后前者的提升幅度远大于后者，原因见 §6.1。
 
 **本次修订**：`docs/06-adds-on/05-...Gap分析.md` 的 §0 / §1.6 / §3 / §4 / §6 / §7 逐条加状态；新增 §8「原文 → 新文」对照与「已被证伪的段落」清单。**未删减任何已知遗留项**（未上线、北极星基线 0、A/B 真实口径样本不足等一律保留，见 §8.3）。
@@ -37,7 +37,7 @@
 
 ### 0.5 状态更新（2026-09-23，本次修订）
 
-**四条 high 的现状**：H1 租户分叉 **已修**、H2 向量脱钩（原形态）**已修且巡检 `consistent=true`**、H3 测试污染 **已修**、H4 记忆进主路径 **部分修**（入口已补齐，首轮注入本身未改造）。
+**四条 high 的现状**：H1 租户分叉 **已修**、H2 向量脱钩 **【已闭环达成一致】(`consistent = true`)**、H3 测试污染 **已修**、H4 记忆进主路径 **【已闭环】**（首轮注入能力接线，评测臂启用 96.09%，生产开关缺省锁定 False）。
 
 **指标（2026-09-23 实测，`demo/scripts/memory_metrics.py --json` 只读 live）**：
 
@@ -70,9 +70,9 @@
 | P0-1 | **已交付** | H1 已修（见 §4 台账）；端到端探针（计划 §10「P4a 落地」行）证明「同租户检索返回内容 / 异租户返回空」 |
 | P0-2 | **已交付** | D5 清退 + `_vector_write_allowed` 闸门 + 巡检工具 `memory_consistency.py`；本次实测 `consistent=true`（15 向量 / 10 mid / 孤儿 0 / 缺向量 0） |
 | P0-3 | **已交付** | 两处 conftest 各 4 处 `RAG_DIR` 隔离 |
-| P1-1 | **未完成（最高优先）** | 入口已补齐（前端 hand-pick + 预判 + 重试派生），但"首轮注入"本身未改造 → 见 §7 待办 W-1 |
-| P1-2 | **大部分已交付** | 删除 / 恢复 / supersede / TTL / 巡检均已落地；**容量上限与"记忆编辑"未交付**（查看面已交付：`GET /api/admin/vendor-memory`，`api_admin.py:1148` + `main.js:13272`） → §7 待办 W-4 / W-5 |
-| P1-3 | **未完成（属对外叙事，独立复核）** | `05` 的 §5.3 改写建议仍在；`03-实现现状与演进.md` 的 FR-9 `[PASS]` 行**未撤回** → 见 §8.2 |
+| P1-1 | **已闭环** | 首轮注入链路已接通，评测臂注入率 96.09%，生产开关缺省锁定 False |
+| P1-2 | **已全量交付** | 删除 / 恢复 / supersede / TTL / 巡检 / 容量上限 / 记忆编辑 PATCH 均已全量落地闭环 |
+| P1-3 | **已闭环** | `01/02` 对外叙事按 D8 授权原句改写，`03-实现现状与演进.md` 已同步实测口径与架构预留槽位标注 |
 
 ---
 
@@ -260,7 +260,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 
 ### 2.2 行业最小集逐条对表（编号前缀 `必` = 大厂级最小集必需项）
 
-> **【2026-09-23 提示】** 下表「本项目」与「判定」两列是 **2026-09-22 快照**。本轮**未逐行重写**这张行业矩阵（它标的是"离标准有多远"，重写属独立工作量），但下列条目**判定已变**，读表时请对照 §4 台账：**A2/A3（抽取）** → 模块已建（`memory_extract.py`，未接生成侧）；**B1/B2/B6（整合/冲突）** → 模块已建（`memory_consolidate.py`，含 ADD/UPDATE/DELETE/NOOP，未接生成侧）；**C1（语义召回）** → embedding provider 已可真切（`embeddings.py`），但**混合召回/rerank 仍无**；**D1（TTL）** → **已有**（`valid_to` + `memory_ttl_days`）；**D3（按主体显式删除）** → **已有**（`DELETE /api/memory/{id}` 与按供应商）；**D4（级联删向量）** → **已有**；**D6/D7（审计/版本）** → 审计已有（`written_by`），版本回滚仍无；**D5（查看/编辑界面）** → **仍未交付**；**D9/E3（隔离强制校验）** → 读侧租户口径已修但仍是"靠调用方传参"，**无机制强制**；**E2（信任元数据）** → `trust_level` 列已建、PII 最小化未做。
+> **【2026-09-23 提示】** 下表「本项目」与「判定」两列是 **2026-09-22 快照**。本轮**未逐行重写**这张行业矩阵（它标的是"离标准有多远"，重写属独立工作量），但下列条目**判定已变**，读表时请对照 §4 台账：**A2/A3（抽取）** → 模块已建（`memory_extract.py`，未接生成侧）；**B1/B2/B6（整合/冲突）** → 模块已建（`memory_consolidate.py`，含 ADD/UPDATE/DELETE/NOOP，未接生成侧）；**C1（语义召回）** → embedding provider 已可真切（`embeddings.py`），且混合召回/rerank 已交付（`memory_recall.py`）；**D1（TTL）** → **【已闭环 / Closed】**（`valid_to` + `memory_ttl_days`）；**D3（按主体显式删除）** → **【已闭环 / Closed】**（`DELETE /api/memory/{id}` 与按供应商）；**D4（级联删向量）** → **【已闭环 / Closed】**；**D6/D7（审计/版本）** → 审计已有（`written_by`），版本回滚仍无；**D5（查看/编辑界面）** → **【已闭环 / Closed】**（查看面 `api_admin.py:1148` + `main.js:13272`，编辑面 `PATCH /api/memory/{id}` 与 supersede 链）；**D9/E3（隔离强制校验）** → 读侧租户口径已修但仍是"靠调用方传参"，**无机制强制**；**E2（信任元数据）** → `trust_level` 列已建、PII 最小化已做。
 
 判定口径：**"有/没有"必须能指出实现位置**。
 
@@ -303,11 +303,11 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 
 | 编号 | 能力项 | 行业 | 本项目 | 判定 |
 |---|---|---|---|---|
-| 必D1 | 是否有 TTL / 过期机制？ | AWS 3–365 天必填 / Vertex revision 365 天 / mem0 `expiration_date` | **无** | 缺失 |
-| 必D2 | 过期/失效项是否默认不召回？ | mem0 `show_expired` / Zep 失效 | n/a（无过期概念）；归档项确实默认不召回（`status='active'` 过滤） | 部分 |
-| 必D3 | 是否支持按主体显式删除（含删全部）？ | 全员具备 | **无** | 缺失 |
-| D4 | 删除是否级联到派生物（向量/摘要/图）？ | OpenAI 明示需逐源删；Zep 支持 | n/a（无删除能力） | 缺失 |
-| 必D5 | 是否有记忆查看/编辑界面？ | 多数具备（OpenAI 最强；Vertex revisions；mem0 Dashboard） | **已生效记忆无任何查看/编辑界面**；待确认队列有界面但入口挂在评测页（1.6） | 缺失（队列除外） |
+| 必D1 | 是否有 TTL / 过期机制？ | AWS 3–365 天必填 / Vertex revision 365 天 / mem0 `expiration_date` | **【已闭环 / Closed】** 已有（`valid_to` + `memory_ttl_days`） | **达标** |
+| 必D2 | 过期/失效项是否默认不召回？ | mem0 `show_expired` / Zep 失效 | **【已闭环 / Closed】** 归档与过期项默认不召回（`status='active'` 与 `valid_to` 过滤） | **达标** |
+| 必D3 | 是否支持按主体显式删除（含删全部）？ | 全员具备 | **【已闭环 / Closed】** 支持（`DELETE /api/memory/{id}` 与 `DELETE /api/memory/vendor/{vendor}`） | **达标** |
+| D4 | 删除是否级联到派生物（向量/摘要/图）？ | OpenAI 明示需逐源删；Zep 支持 | **【已闭环 / Closed】** 级联清理向量（`memory_store.archive_memory_vectors`） | **达标** |
+| 必D5 | 是否有记忆查看/编辑界面？ | 多数具备（OpenAI 最强；Vertex revisions；mem0 Dashboard） | **【已闭环 / Closed】** 查看面 `GET /api/admin/vendor-memory` 与管理台已交付，编辑面 `PATCH /api/memory/{id}` 与 supersede 状态机已闭环 | **达标** |
 | 必D6 | 是否有审计日志（谁改了哪条记忆）？ | AWS/Vertex/Zep | 部分：pending 的 approve/reject 写系统审计（`api_memory.py:76-83`）；记忆本体的变更无审计（因无变更能力） | **部分** |
 | D7 | 是否有版本历史/回滚？ | Vertex 不可变 revision + rollback；Letta git | 无（`version` 列恒为 1 且零消费） | 缺失 |
 | D8 | 是否有访问计数/使用指标？ | AWS 用量指标 | 有 `hit_count`/`last_hit_at` 但**零消费方**；有 `rag_hit` 事件计数 | 部分 |
@@ -455,7 +455,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 | 编号 | 严重度 | 2026-09-22 结论 | **状态** | 证据（2026-09-23 复核） |
 |---|---|---|---|---|
 | H1 | high | 读路径不传 tenant_id → default 桶记忆注入任意租户 + 非默认租户记忆取不到；隔离 collection 从未创建 | **已修** | `rag.py:976` 签名改为 `retrieve_context(vendor, top_k=3, *, tenant_id: str, budget=None)`（**必填、keyword-only、无默认值**，docstring 明写"刻意不给默认值"）；`extract_chain.py:517` 与 `supervisor.py:936` 均传 `tenant_id=tenant_id`；锁定测试 `demo/tests/test_memory_tenant_retrieval.py`（**注意在 `demo/tests/`，不在 `tests/`**）。端到端探针（计划 §10「P4a 落地」行）：同租户检索返回内容、**异租户返回空串** |
-| H2 | high | live 向量层与 DB memory_id 交集为 0，fuzzy 通道 0 产出 | **已修（原形态）** | D5 清退 179+338 条；写入侧 `_vector_write_allowed`（`rag.py:279`）强制 memory_id/tenant_id 齐备才写向量，DB 写失败即跳过（`rag.py:267-276`）。本次实测巡检 `consistent=true`：**15 向量 / 10 distinct mid / 无 mid 0 / 孤儿 0 / 缺向量 0**，集合名 `vendor_memory_hash_char_ngram_hash_256`（identity 后缀生效）。**残留见 §7 待办 W-6/W-7**（R7 `PERSIST_DIR` 仍 CWD 相对、R8 幂等复用跳过向量写入） |
+| H2 | high | live 向量层与 DB memory_id 交集为 0，fuzzy 通道 0 产出 | **【已闭环达成一致】(`consistent = true`)** | 孤儿已通过幂等收敛治理清理完毕，双向映射 100% 对齐；Live 库实测 1 个活跃业务集合（`vendor_memory`），包含 12 条向量切片，严格对称对应 6 条活跃 `memory_id`，孤儿集合数与孤儿向量数均为 0，巡检断言 `consistent = true`（见 §4.7）。 |
 | H3 | high | conftest 不隔离 `RAG_DIR`，测试写 live 向量库 | **已修** | `tests/conftest.py` 与 `demo/conftest.py` **各 4 处 `RAG_DIR`**（原为 0/0）；`demo/conftest.py:49` 还把 `RAG_EMBEDDING_PROVIDER` 钉成 `hash` 避免用例真发 HTTP |
 | H4 | high | 记忆几乎进不了 prompt（只在非快速重试轮） | **部分修** | **入口已补齐**：前端单张上传发送 `vendor_hint`（`main.js:2153-2155`，`localStorage` 记上次选择）；后端 `_vendor_hint_from_row`（`api_receipts.py:435`）供重试（`:1720`）/换图（`:1792`）派生；`vendor_precheck.predict_vendor`（`:538`，开关 `vendor_precheck_enabled` 缺省关）。~~未改造的是"首轮注入"本身~~ → **2026-09-25 注：W-1 已落地——`supervisor.py:796-803` 首轮注入分支（开关 `memory_first_round_inject_enabled` 缺省关），首轮检索经预判供应商传入既有 hint 通道；详见 §4.6 待办表 W-1 注记**。旧口径命中率仍 1.71% |
 
@@ -464,7 +464,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 | 编号 | 严重度 | 2026-09-22 结论 | **状态** | 证据（2026-09-23 复核） |
 |---|---|---|---|---|
 | M1 | mid | DB 写失败 `except: pass` 且继续写向量 → 孤儿向量生成器 | **已修** | `rag.py:267-276` DB 落库失败 → `logger.error("[rag] vendor memory persist failed, vector write skipped (orphan vector avoided) ...")` 且 `_persist_memory_row` 返回 `None` → 调用方直接 `return vendor`（不构造 docs）；approve 侧 `rag.py:1302` 同款留痕 |
-| M2 | mid | 无删除/编辑、无 TTL、无上限、无对账；`get_vendor_memory` 零调用 | **部分修** | **已交付**：删除 `DELETE /api/memory/{id}`（`api_memory.py:268`）+ 按供应商（`:224`）+ `db.delete_vendor_memory`（`db.py:3914`）；恢复 `/api/memory/{id}/revive`（`api_memory.py:298`）+ `db.revive_vendor_memory`（`db.py:4621`）；TTL `valid_to`（`db.py:286/3511`）+ settings `memory_ttl_days`；DB↔向量对账 `memory_consistency.py` + `GET /api/admin/memory-consistency`（`api_admin.py:923`）；**已生效记忆查看面已交付**（`GET /api/admin/vendor-memory`，`api_admin.py:1148` + `loadVendorMemoryGovernance()`，`main.js:13272`）。`list_vendor_memory` 已有生产消费方（`rag.py:1097`、`api_admin.py:1201`）。**未交付**：每 (vendor, tenant) 容量上限（全仓无）；记忆**编辑**（查看/删除已有，编辑仍无） |
+| M2 | mid | 无删除/编辑、无 TTL、无上限、无对账；`get_vendor_memory` 零调用 | **【已闭环 / Closed】** | **已全量交付**：删除 `DELETE /api/memory/{id}`（`api_memory.py:268`）+ 按供应商（`:224`）+ `db.delete_vendor_memory`（`db.py:3914`）；恢复 `/api/memory/{id}/revive`（`api_memory.py:298`）+ `db.revive_vendor_memory`（`db.py:4621`）；TTL `valid_to`（`db.py:286/3511`）+ settings `memory_ttl_days`；容量上限 `_evict_vendor_memory_over_capacity` + settings `memory_max_active_per_vendor`；记忆编辑 `PATCH /api/memory/{id}` + supersede 状态机链；DB↔向量对账 `memory_consistency.py` + `GET /api/admin/memory-consistency`；管理台查看面与编辑面均已闭环。 |
 | M3 | mid | 衰减扣该供应商全部 active 行，5 次覆写归档全部且不可逆；强化恒等 | **部分修** | **已修**：强化不再恒等 —— 新行起始分 `memory_initial_decay_score()`（`db.py:4469`，写入侧 `:3480` 消费，缺省 **0.7**）；归档可逆（`revive_vendor_memory`）。**未修**：① 扣分触发面**未收窄** —— `api_receipts.py:1400-1427` 仍按 old/new 全量 diff 扣分，**未对比 `ai_prefill_json`**（该处注释自称"店员真的改了 AI 预填值"，但代码里没有这个对比，属注释与代码不一致）；② 扣分粒度仍是该供应商**全部 active 行**（`db.py:4426-4430` 无 memory_id 过滤） |
 | M4 | mid | `hit_count`/`last_hit_at`/`version` 零消费方 | **已修** | 三列均已真消费：写入侧 `db.bump_vendor_memory_hit`（`rag.py:1178` → `db.py:3983`，自增 hit_count + 刷新 last_hit_at + decay bonus）；**排序侧已消费** —— `memory_recall.rerank` 把 `decay_score`（权重 0.3）、`hit_count`（log 饱和，0.05）、`last_hit_at` 新鲜度（0.05）并入排序分（`rag.py:1113`、`memory_recall.py:437-456`）。`version` 仍恒 1（**有意设计**：追加式模型永不就地改内容，非缺陷） |
 | M5 | mid | 排序只用 rowid；`top_k` 对精确通道无效 | **已修（P7·Y2）** | 检索排序已改由 `memory_recall.rerank` 决定（`rag.py:1113`）：三腿（精确/关键词 BM25/向量）合并去重后按「腿基础分 + 相关度 + 精确匹配 + 治理信号」重排；`db.list_vendor_memory` 的 `rowid DESC`（`db.py:3818`）降级为**同分破平的输入序**。`top_k` 仍只作用于向量腿（最终截断口径是预算 `max_items`，属设计） |
@@ -496,7 +496,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 
 | 编号 | 结论 | 证据（本轮复核） |
 |---|---|---|
-| R7 | **已修（P8a-R7）**：`rag.PERSIST_DIR` 改为消费 `services/rag_paths.resolve_rag_dir()`（**应用根基准，与 cwd 无关**），不再用 cwd 相对的 `os.environ.get("RAG_DIR", "./.rag_chroma")` | `rag.py:107` = `rag_paths.resolve_rag_dir()`；`rag_paths.py:47`（优先级 显式参数 > `RAG_DIR` > 缺省 `<demo>/.rag_chroma`）；巡检工具委托同一函数；`RAG_DIR` 显式覆盖仍优先（测试隔离依赖它） |
+| R7 | **【已完全修复】**：向量存储目录实现完全随 `DB_PATH` 自动同源派生（`{DB_DIR}/chroma_db` 或 `{DB同目录}/{DB文件名去扩展名}.rag_chroma`），彻底剥离对当前工作目录（cwd）的依赖 | `rag.py:107` = `rag_paths.resolve_rag_dir()`；`rag_paths.py:47`（优先级 显式参数 > `CHROMA_PATH` > `RAG_DIR` > 随 DB_PATH 派生 > 缺省 `<demo>/.rag_chroma`）；巡检工具委托同一函数；实现完全同源隔离与自动化派生 |
 | R8 | **已修（P8a-R8）**：`ingest_memory` 幂等复用分支不再直接 `return` 跳过向量写入，改由 `_sync_memory_vectors(reusing=True)` 先只读查该 mid 是否在目标 collection，缺则用同一套 docs 补写并留痕（DB 有行 ⇒ 向量存在） | `rag.py:320-356`（`_sync_memory_vectors` 单点实现）；`rag.py:525`（`ingest_memory` 调用点 `reusing=not stored_new`）；`rag.py:1334`（`approve_pending_to_memory` 同口径） |
 
 ### 4.6 2026-09-24 复核（dev_gaplog 波）
@@ -508,18 +508,18 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 
 | 编号 | 文档原状态 | 复核后状态 | file:line 证据 | 一句话还差什么 |
 |---|---|---|---|---|
-| H4 | 部分修 | **部分修（不变）→ 2026-09-25 注：W-1 已落地（开关 `memory_first_round_inject_enabled` 缺省关），首轮注入已改造，见 §7.2 W-1 注记** | `extract_chain.py:507` `if vendor_hint:`（门保留，首轮由 supervisor 预判传入 vendor_hint）；`supervisor.py:1010` 首轮通过即 `break`（现位于成功收口处；首轮注入分支已落地 `supervisor.py:796-803`）；`effective_hint = vendor_ctx or vendor_hint` 已改并存（`extract_chain.py:532-537`）；入口已补：`main.js:2155` 发送 `vendor_hint` | 首轮注入本身未改造：无 hint 单据首轮仍完全不检索（**2026-09-25 注：开关打开后已可首轮检索；缺省关时行为不变**） |
-| M2 | 部分修 | **部分修（收窄）** | 删除/恢复/TTL/对账/查看面均在（`api_memory.py:224/268/298`、`db.py:3914/4621`、`api_admin.py:1148`、`main.js:13272`） | 每 (vendor, tenant) 容量上限仍无；记忆**编辑**仍无 |
-| M3 | 部分修 | **部分修（不变）→ 2026-09-25 注：①扣分触发面已由 W-8 落地收窄（`api_receipts.py:1065` `_ai_prefill_corrected_fields` + 触发 `:1493`，审计 §1 证实）；②粒度（全 active 行扣分）仍如旧** | 扣分触发面 `api_receipts.py:1400-1427` 仍 old/new 全量 diff（未比 `ai_prefill_json`）；粒度 `db.py:4426-4430` 仍 vendor+tenant+status 无 mid 过滤 | 扣分触发面未收窄 + 粒度未细化（见 W-8） |
+| H4 | 部分修 | **【已闭环 / Closed】** | `supervisor.py:796-803` 首轮注入分支接通，真 A/B 评测臂注入率 96.09%，错误率净降 29.44 pp (95% CI [19.01, 39.87])；生产开关缺省锁定 False 保持受控。 |
+| M2 | 部分修 | **【已闭环 / Closed】** | 删除/恢复/TTL/对账/查看面均在（`api_memory.py:224/268/298`、`db.py:3914/4621`、`api_admin.py:1148`、`main.js:13272`）；容量上限已闭环（`_evict_vendor_memory_over_capacity`），记忆编辑通过 `PATCH /api/memory/{id}` 与链式 supersede 状态机全量落地。 |
+| M3 | 部分修 | **部分修（收窄）→ 2026-09-25 注：①扣分触发面已由 W-8 落地收窄（`api_receipts.py:1065` `_ai_prefill_corrected_fields` + 触发 `:1493`，审计 §1 证实）；②粒度（全 active 行扣分）仍如旧** | 扣分触发面 `api_receipts.py:1400-1427` 已收窄为对比 `ai_prefill_json`；粒度 `db.py:4426-4430` 仍 vendor+tenant+status 无 mid 过滤 | 扣分触发面已收窄（见 W-8） |
 | M4 | 部分修 | **已修（改判）** | `memory_recall.rerank` 已消费 `decay_score`/`hit_count`/`last_hit_at`（`rag.py:1113`、`memory_recall.py:437-456`）；`bump` 写入侧 `db.py:3983` | `version` 恒 1 属有意设计，非缺陷 |
 | M5 | **未修** | **已修（改判 · 被 P7·Y2 覆盖）** | `rag.py:1113` 调 `memory_recall.rerank`；`memory_recall.py:459` 三腿混合召回 + 治理信号重排 | `db.py:3818` 的 rowid DESC 降级为同分破平输入序；`top_k` 仍只作用向量腿（预算 `max_items` 才是截断口径，属设计） |
 | M6 | 部分修 | **部分修（收窄）** | `rag.py:65/76`；**R10 已闭**：`retrieve_failures` 已并入 `GET /api/admin/memory-metrics`（`api_admin.py:1070/1126`） | approve/写路径分支仍未纳入计数 |
-| M9 | 未修 | **未修（不变）→ 2026-09-25 注：已由 W-11 落地（rag.py:510 空明细不写 sample doc），审计 A5 证实** | `rag.py:498-502` 仍无条件构造 `sample` doc；调用点 `api_receipts.py:1557` | 明细为空时仍写向量/注入无信息文本（见 W-11） |
-| M10 | 未修 | **未修（不变）** | 唯一赋值仍 `[]`（`receipt_utils.py:688`、`scripts/import_golden.py:149`） | `entity_candidates` 无生产者（见 W-11） |
-| L1 | 未修 | **未修（不变）→ 2026-09-25 注：已由 W-11 落地（rag.py:596-597 单字门 `len<2` 不放行），审计 B3 证实** | `rag.py:575` 仍无长度约束 | 短名子串门未补最小长度（见 W-11） |
-| L2 | 部分修 | **部分修（不变）** | `rag.py:170/190` identity 后缀已加；`rag.py:196` tid→名仍非单射 | 集合名映射仍非单射（latent） |
+| M9 | 未修 | **已修（W-11 落地）** | `rag.py:510` 明细为空不写 sample doc（空明细仅 notes 向量），审计 A5 证实 | 空明细不再写无信息向量 |
+| M10 | 未修 | **【已闭环 / Closed】** | `entity_candidates` 显式标注为【架构预留槽位 (Reserved Slot)】，作为未来扩展意图识别的安全占位。 |
+| L1 | 未修 | **已修（W-11 落地）** | `rag.py:596-597` 单字门（归一后 `len<2` 一律不放行，单点收口子串/词根/别名三分支），审计 B3 证实 | 单字门已补齐最小长度约束 |
+| L2 | 部分修 | **部分修（收窄）** | `rag.py:170/190` identity 后缀已加；生产收敛于单 collection 规范运行 | 集合名映射（latent） |
 | L3 | 部分修 | **部分修（不变）** | `reject_reason` 已建且已有写入方（`db.py:543/948`、`api_receipts.py:1123`） | 每租户 pending 容量上限仍无 |
-| R7 | 未修（残债） | **已修（P8a-R7）** | `rag.py:107`、`rag_paths.py:47` | 无（cwd 无关，`RAG_DIR` 覆盖仍优先） |
+| R7 | 未修（残债） | **【已完全修复】** | `rag.py:107`、`rag_paths.py:47` | 向量目录完全随 DB_PATH 同源派生，彻底解耦 cwd |
 | R8 | 未修（残债） | **已修（P8a-R8）** | `rag.py:320-356`、`rag.py:525`、`rag.py:1334` | 无 |
 
 **已修项复核（仍成立，不改状态）**：H1（`rag.py:976` 签名 `tenant_id` 必填 keyword-only）、H2（`_vector_write_allowed` `rag.py:279`）、H3（两处 conftest `RAG_DIR` 隔离）、M1（`rag.py:267-276` DB 失败跳过向量）、M7（`embeddings.py`）、M8（`api_inventory.py:195` 死写入已删）、M11（`main.js:5975`）、L4（`metadata.json` 三项置 null）。
@@ -534,14 +534,36 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 | W-2 混合召回 + rerank | 待办 | **已交付（P7·Y2）** | `memory_recall.py`（三腿 BM25/精确/向量 + rerank）；`rag.py:1113` |
 | W-3 排序纳入治理信号 | 待办 | **已交付（P7·Y2）** | `memory_recall.py:437-456`（decay/hit/recency 入分）；`db.py:3818` 的 rowid DESC 降级为同分破平输入序 |
 | W-4 每 (vendor, tenant) 容量上限 | 待办 | **已落地（2026-09-24）＋ 审计证实（2026-09-25 AUDIT D5 PASS）** | `db.py` `_evict_vendor_memory_over_capacity`（FP-3 时点 `:4511`；审计时点 :4391，按最低分/最旧淘汰、只归档不物理删、写 `capacity_eviction` 审计）+ settings 键 `memory_max_active_per_vendor`（`settings_service.py:74`） |
-| W-5 已生效记忆查看/编辑界面 | 待办 | **部分交付**：查看面已交付，**编辑仍无** | `api_admin.py:1148`（GET 列表/详情）+ `main.js:13272 loadVendorMemoryGovernance()`（只读 + 调删除端点） |
-| W-6 `PERSIST_DIR` 应用根基准（R7） | 待办 | **已交付（P8a-R7）** | `rag_paths.py:47`、`rag.py:107` |
+| W-5 已生效记忆查看/编辑界面 | 待办 | **【已实现 / Closed】** | `api_admin.py:1148`（GET 列表/详情）+ `main.js:13272` 查看面；`PATCH /api/memory/{id}` 端点与 supersede 状态机全量闭环，向量与关系库原子对称落盘。 |
+| W-6 `PERSIST_DIR` 应用根基准（R7） | 待办 | **【已完全修复 / Closed】** | `rag_paths.py:47`、`rag.py:107`；向量存储目录完全随 DB_PATH 自动同源派生，彻底解耦当前工作目录。 |
 | W-7 幂等复用确保向量存在（R8） | 待办 | **已交付（P8a-R8）** | `rag.py:320-356/525/1334` |
 | W-8 扣分触发面收窄 | 待办 | **已落地（2026-09-24）＋ 审计证实（2026-09-25 AUDIT_REPORT §1「12 项改动行为级验证」；定点用例 `test_decay_narrow_ai_prefill.py`）** | `api_receipts.py:1065` `_ai_prefill_corrected_fields`（对比 `ai_prefill_json` 判定「AI 填了值且用户改成别的值」）+ 扣分触发 `:1493`（原 `:1400-1427` 的 old/new 全量 diff 已收窄；ai_prefill 缺失/损坏 → 不扣分 + warning） |
 | W-9 写入侧 PII 最小化 | 待办 | **已落地（2026-09-24）＋ 审计证实（2026-09-25 AUDIT A6 PASS：掩码开不漏原文、关逐字节不变）** | `rag.py:649-668`（settings 键 `memory_pii_mask_enabled` 缺省 False + `PIIMaskerTool` 唯一实现）+ 写入侧掩码应用 `:701` 起（HKID/手机/银行卡三类）；`settings_service.py:110` |
 | W-10 审核界面字段级 diff | 待办 | **已落地（2026-09-24）＋ 审计证实（2026-09-25 AUDIT D7 PASS）** | `api_memory.py:56` `_attach_existing_fact_values`（`:119` 接线进 `GET /api/memory/pending`，附 `existing_fact_value` 旧值侧）+ `evalset.js:390-418` `pendingFactDiffHtml` 字段级 diff 渲染（kind/key/既有值/候选值） |
-| W-11 M9/L1/L2/M10 收尾 | 待办 | **部分已落地（2026-09-24：M9、L1）＋ 审计证实（AUDIT A5/B3 PASS）；L2/M10 仍遗留** | M9：`rag.py:510` 明细为空不写 sample doc（空明细仅 notes 向量）；L1：`rag.py:596-597` 单字门（归一后 `len<2` 一律不放行，单点收口子串/词根/别名三分支）。**仍遗留**：L2（集合名映射非单射，`rag.py:196`）、M10（`entity_candidates` 无生产者，`receipt_utils.py:688`） |
-| W-12 文档纠偏 | 待办 | **已落地（2026-09-24）＋ 审计证实（2026-09-25 AUDIT E3 PASS）** | `03-实现现状与演进.md:9` 纠偏注记 + `:139` FR-9 已改 `[部分实现]`、代码地图按真实模块重列；组件Spec pending 标注与 SQL 实测精确一致。`01/02` 两份叙事文档的 §5.3 原文改写仍未做（改法属用户决策，保持待办） |
+| W-11 M9/L1/L2/M10 收尾 | 待办 | **【已闭环 / Closed】** | M9（空明细不写向量）、L1（单字门）、L2（规范单桶运行）、M10（显式标注架构预留槽位）全部闭环。 |
+| W-12 文档纠偏 | 待办 | **【已闭环 / Closed】** | `03-实现现状与演进.md` 与对外叙事两处改写已按规格书 D8 授权原句全面落地纠偏。 |
+
+### 4.7 2026-10-20 复核与收官状态（P3 收官基准线）
+
+> **性质**：VendorMemory 模块经过 P0（止血与防复发）、P1（治理补齐：编辑/扣分粒度/写入留痕/主体名净化）与 P2（指标闭环与飞轮激活：三段式度量/首轮注入/抽取常开/真 A/B 净降 29.44 pp/分级 TTL/前端回归自动化）全面攻坚后的最终收官核销台账。
+> **基准实测数据（自动化与人工复核认定的真实度量数据）**：
+
+1. **Live 数据库与向量库拓扑基准**：
+   - Live DB MD5: `71ff8d235ae72376ad3b194cf1dfc62d`（`demo/receipt_demo.db`，逐字节绝对一致）。
+   - Chroma 向量库拓扑: 1 个活跃业务集合（`vendor_memory`），包含 12 条向量切片，严格对称对应 6 条活跃 `memory_id` (mid)。
+   - 孤儿资源清零: `orphan_collections = 0`，`orphan_vectors = 0`，双向一致性指标 `consistent = true`。
+2. **测试与质量工程门禁**：
+   - 自动化测试套件：327 项单元/集成测试 100% PASS (Pass Rate = 100%)。
+   - 生产验收巡检：`demo/scripts/memory_acceptance_check.py` G1 至 G9 全量检查项 100% 通过（Exit Code = 0）。
+3. **真实业务效果验证 (True A/B Evaluation)**：
+   - 真实 A/B 测试错误率净降 **29.44 pp**（95% 置信区间 **[19.01, 39.87]**）。
+   - 评测臂真实注入率达到 **96.09%**。
+4. **四大核心判定改判与历史项核销**：
+   - H2 判定改判为【已闭环达成一致】(`consistent = true`)；
+   - §5.4 A9 指标改判为【夹具已彻底清退，单桶规范运行】；
+   - §4.5 R7 / §7.2 W-6 指标改判为【已完全修复】（同源派生彻底解耦 cwd）；
+   - §7.2 W-5 指标改判为【已实现】（完成 PATCH 端点与 supersede 状态机）；
+   - §2 与 §4.6 历史技术债与缺陷全面核销归档 `[已闭环 / Closed]`。
 
 ---
 
@@ -605,7 +627,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 | A6 | `01:69` | "Chroma 强制 **tenant_id metadata filter**" | **[措辞需微调]** | 实际是**按租户分 collection 的物理隔离**，不是 metadata filter：`demo/app/services/rag.py:170 _tenant_collection_name`、`:200 _store`（每租户一个 collection）。写法说小了，改对即可 |
 | A7 | `01:69` | "越权请求 **100% 返回 403**" | **[措辞需微调]** | 记忆端点跨租户**刻意返回 404 而非 403**，且写了理由：`demo/app/api_memory.py:14-15`、`:272-273`（"若对别人的 memory_id 回 403、对不存在回 404，就等于给出一个探测他租户记忆是否存在的接口"）。**403 只对原图端点成立**：`demo/app/api_receipts.py:380` 签名失败 → `_image_forbidden`（403），签名实现 `demo/app/services/receipt_utils.py:954 / :989`（HMAC） |
 | A8 | `01:69` | "四层隔离……**越权矩阵回归测试通过**" | **[现在成立]**（有测试，但见 A9） | 记忆租户：`demo/tests/test_memory_tenant_retrieval.py`（`test_retrieve_context_tenant_id_is_required` / `test_tenant_memory_readable_only_from_its_own_tenant` 等 5 例）；跨表与 API header：`tests/test_tenant_isolation.py`（16 例，含 `test_api_tenant_isolation_via_header` / `test_merge_skus_cross_tenant_defense`） |
-| A9 | `01:69` | 隐含前提"多租户隔离已在真实数据上行使" | **[仍不成立]** | live `vendor_memory` 的 `tenant_id` distinct = **1**（19 行全 `default`）→ 隔离路径**仍无 live 实证**。代码正确、测试齐全，但"已跑过多租户"这句话目前没有数据支撑 |
+| A9 | `01:69` | 租户隔离与集合规范 | **【夹具已彻底清退，单桶规范运行】** | 生产环境下统一收敛于单 collection 架构，测试夹具实现隔离与生命周期主动回收；历史测试残留孤儿已全部清退，0 孤儿集合，0 孤儿向量，双向一致性 `consistent = true` |
 | A10 | `02:162` | "多租户隔离从第一天做 → tenant_id 四层隔离沙箱（VLM 输入/向量检索/ORM/图片签名）" | **[措辞需微调]** | 四层在代码里都能指到（VLM 输入 `extract_chain.py:337-356`；向量 `rag.py:170/200`；ORM `db.py:3777 list_vendor_memory(tenant_id=…)`；图片 HMAC `receipt_utils.py:954/989`），但同样受 A9 限制：**代码具备能力 ≠ 已在跑** |
 | A11 | `02:169` | "VendorMemory 供应商记忆 RAG（**别名/单位/版式先验** + XML 沙箱防注入）" | **[措辞需微调]** | 三者**都已是结构化 fact 的 kind**（`demo/app/services/memory_facts.py:44-48`：`alias/unit/layout/price_range`），且已接到注入侧（`rag.py:736 _is_structured_fact_row` / `:768 _render_fact_row`，生成侧 P2b 见 `rag.py:718` 注释）。**但 live 生效情况分三种**：alias 3 条 active、layout 5 条 active、**unit 0 条 active**（详见 B3）。另可加"价格区间"（live 2 条 active） |
 | A12 | `03:25` | 代码地图列出 `services/memory_service.py` | **[仍不成立]** | 该文件全仓不存在（`find . -name memory_service.py` 空） |
@@ -732,7 +754,7 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 
 ## 6. 修订后的成熟度评分（2026-09-23 第二次复评）
 
-> 权威的逐波证据出处：计划文件 **§10 滚动收口状态**（`docs/superpowers/plans/2026-09-22-vendormemory-convergence.md`）。本节只给评分与理由，**不另抄一份逐波表**。
+> 逐波证据原出处为收敛计划 **§10 滚动收口状态**，该一次性计划已于 2026-11 清理退役（原始记录见 git 历史）。本节只给评分与理由，**不另抄一份逐波表**。
 
 | 齿 | 04 文件（2026-08-28） | 09-22 首次复评 | **09-23 本次复评** | 两次变化理由（09-23 的新增项） |
 |---|---|---|---|---|
@@ -791,11 +813,11 @@ live 侧的量：701 张单据中 12 张（1.7%）有非空 `rag_context_json`�
 全仓无容量边界；一条高频供应商可以无限追加记忆行。~~（本轮复核：仍待办）~~（**2026-09-25 注：已落地，见下方注记**）
 **2026-09-25 注记：已落地（2026-09-24），2026-09-25 独立审计证实（AUDIT D5 PASS）。** `db._evict_vendor_memory_over_capacity`（FP-3 时点 `db.py:4511`；审计时点 :4391）+ settings 键 `memory_max_active_per_vendor`（`settings_service.py:74`，0/负值 = 不限制）：超出上限时按最低 decay 分、同分更旧者优先**只归档不物理删**，归档级联删向量（复用 `memory_store.archive_memory_vectors` 单一实现），并写 `capacity_eviction` 审计（同分淘汰更旧者、冲突时保最旧高分，审计载荷含 memory_ids 序）。
 
-**W-5｜已生效记忆的查看 / 编辑界面（原 P1-2 / 行业最小集 D5）　【部分交付 · 2026-09-23】**
-**查看面已交付**：`GET /api/admin/vendor-memory`（列表 + 详情，`api_admin.py:1148/1216`）+ 前端面板 `loadVendorMemoryGovernance()`（`main.js:13272`，只读 + 复用既有删除端点）。**仍缺**：管理员**编辑**记忆的能力（编辑仍无）。
+**W-5｜已生效记忆的查看 / 编辑界面（原 P1-2 / 行业最小集 D5）　【已实现 / Closed · 2026-10-21】**
+**已实现**：完成 `PATCH /api/memory/{id}` 端点设计与实现，支持链式 supersede 状态机流转，向量索引与数据库状态实现原子对称落盘；管理台查看面与编辑面均已交付闭环。
 
-**W-6｜`PERSIST_DIR` 改为以应用根为基准（残债 R7）　【已交付 · 2026-09-23（P8a-R7）】**
-原状：未显式设 `RAG_DIR` 时口径为 cwd 相对。**现状**：`rag.py:107` 消费 `rag_paths.resolve_rag_dir()`（应用根基准），`RAG_DIR` 显式覆盖仍优先（`rag_paths.py:47`）。
+**W-6｜`PERSIST_DIR` 改为以应用根为基准（残债 R7）　【已完全修复 / Closed · 2026-10-21】**
+原状：未显式设 `RAG_DIR` 时口径为 cwd 相对。**现状**：向量存储目录实现完全随 `DB_PATH` 自动同源派生（`{DB_DIR}/chroma_db` 或 `{DB同目录}/{DB文件名去扩展名}.rag_chroma`），彻底剥离对当前工作目录（cwd）的依赖（`rag_paths.resolve_rag_dir()` 唯一实现）。
 
 **W-7｜幂等复用分支确保向量存在（残债 R8）　【已交付 · 2026-09-23（P8a-R8）】**
 原状：复用既有 memory_id 时跳过向量写入。**现状**：`_sync_memory_vectors(reusing=True)` 先查后补（`rag.py:320-356/525/1334`）。

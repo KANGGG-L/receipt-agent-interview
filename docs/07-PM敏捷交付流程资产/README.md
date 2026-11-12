@@ -17,7 +17,7 @@
 | 1 | Workflow / Process Flow | [`01-工作流程与流程图.md`](01-工作流程与流程图.md) | 14 步 PRD 流程、阶段 0-4 迭代流程 |
 | 2 | User Stories | [`02-用户故事.md`](02-用户故事.md) | 4 类用户画像、17 个业务场景清单 |
 | 3 | Acceptance Criteria | [`03-验收标准AC.md`](03-验收标准AC.md) | `docs/05-AI产品体系与模块Spec/05-增量模块PRD与ACSpec/EXPORT_CENTER_PRD_AC_SPEC.md`、`docs/05-AI产品体系与模块Spec/05-增量模块PRD与ACSpec/DISHE_MODULE_REPAIR_AC.md` |
-| 4 | Test Cases | [`04-测试用例.md`](04-测试用例.md) | `docs/09-测试与UAT报告/test_report_qa_round2.md`、pytest/Playwright 基线 |
+| 4 | Test Cases | [`04-测试用例.md`](04-测试用例.md) | pytest / Playwright 基线；QA Round 2 复验报告为一次性 UAT 报告，2026-11 已清理（留痕见 git 历史） |
 | 5 | UAT | [`05-UAT用户验收测试.md`](05-UAT用户验收测试.md) | QA Round 1（PASS）/ Round 2（FAIL 驳回）真实实例 |
 | 6 | 跟开发沟通和跟进 | [`06-开发沟通与跟进.md`](06-开发沟通与跟进.md) | issue 工单、交接文档、commit 沟通案例 |
 | 7 | Sprint / Milestone / Task | [`07-Sprint里程碑与任务追踪.md`](07-Sprint里程碑与任务追踪.md) | 阶段 0-4、Wave A-E、T1-T12 任务台账 |

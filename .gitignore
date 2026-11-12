@@ -37,11 +37,19 @@ demo/evalsets/
 .codegraph
 .pi-glla/
 .commandcode/
+.qoder/
+.trae/
+.zcode/
+.pytest_cache/
+
+# 一次性备份/补丁残留（绝不提交）
+*.orig
+*.rej
+*.bak
 
 # 本地运行/实验/QA 产物（绝不提交；仅仓库根目录）
+# 含 artifacts/memory/parse_log*.jsonl 运行时日志与 .jsonl.lock，全部忽略
 /artifacts/
-!/artifacts/memory/
-!/artifacts/memory/**
 work/
 # 根目录测试/调试产物（合成收据图与解析 JSON，人工抽检/调试写入，绝不提交）
 /receipt*.jpg
@@ -60,8 +68,8 @@ work/
 .codebuddy/
 
 # 端到端测试截图与临时转储（本地运行产物，绝不提交）
-scripts/*_result.png
 demo/ocr_out*.txt
+demo/receipts.db
 
 # 本机回滚资产与 GUI 测试产物（2026-09-02 QA workflow）
 .env.bak*
@@ -71,23 +79,9 @@ gui-test-screenshots/
 # 2026-10-13: 本地数据库备份目录（8.2MB，不入库；真备份在 /tmp）
 demo/backups/
 
-# Handoff phase runtime junk (never commit)
-docs/handoff/artifacts/**/venv/
-docs/handoff/artifacts/**/node_modules/
-docs/handoff/artifacts/**/uploads/
-docs/handoff/artifacts/**/.rag_chroma/
-docs/handoff/artifacts/**/rag_chroma/
-docs/handoff/artifacts/**/rag/
-docs/handoff/artifacts/**/artifacts_isolated/
-docs/handoff/artifacts/**/__pycache__/
-docs/handoff/artifacts/**/*.db
-docs/handoff/artifacts/**/*.db-wal
-docs/handoff/artifacts/**/*.db-shm
-docs/handoff/artifacts/**/*.pid
-docs/handoff/artifacts/**/*.lock
-docs/handoff/artifacts/**/chroma.sqlite3
+# 说明：docs/handoff/ 交接证据与流水线产物已于 2026-11 清理，
+# 原「Handoff phase runtime junk」整组规则随目录一并退役，不再保留。
 
-
-!docs/handoff/artifacts/
-!docs/handoff/artifacts/**
+# WorkBuddy 本地 agent 会话记忆（保留在磁盘，不入库）
+/.workbuddy/memory/
 

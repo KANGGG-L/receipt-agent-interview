@@ -1,8 +1,16 @@
 # Agent Memory & Behavioral Directives
 
-用户进一步明确：开发必须通过 Orca `worker-start --agent antigravity` 在 current workspace 新建全新独立 agy process，不得通过 `--terminal` 复用旧 agy。协调器已报告旧会话只读写权检查为零 writer、可交接，常驻 15010 服务正常；本产品任务未独立运行核验该服务，开发前仍需重新记录基线与所有权。
+> **文档状态（2026-11-13 整理）**
+> - 下方第一段（Orca / antigravity 会话）与「本项目平台事实与授权」是 **2026-10 批次的一次性历史会话指令**：对应流水线已收官、交接文档已清理，不再作为当前执行约束，仅保留作追溯。
+> - 「核心指令与格式规范」中的独立 Subagent 编排同属该批次流程约定；当前仍有效的格式红线是**零 Emoji、无附注废话、数据脱敏**三条。
+> - 「解析记忆落盘规范」与「AI 资产工程化治理」为**现行规范**。其中「默认 Provider 策略（2026-08-30）」已被后续实现取代：当前识别腿为百炼 DashScope `qwen3.5-omni-flash`、审核腿为 SiliconFlow `zai-org/GLM-4.5V`（见 `demo/app/llm.py`、`demo/.env.example`）。
+> - `artifacts/memory/parse_log*.jsonl` 是本地运行时日志，**不入库**。
 
-## 本项目平台事实与授权（2026-10-08，项目限定）
+> **历史会话指令（2026-10-08，已归档，不再执行）**：用户进一步明确：开发必须通过 Orca `worker-start --agent antigravity` 在 current workspace 新建全新独立 agy process，不得通过 `--terminal` 复用旧 agy。协调器已报告旧会话只读写权检查为零 writer、可交接，常驻 15010 服务正常；本产品任务未独立运行核验该服务，开发前仍需重新记录基线与所有权。
+
+## 本项目平台事实与授权（2026-10-08，历史会话记录 · 已归档）
+
+> 本节为当时的授权与分工快照（Orca `agy` 开发、Codex Product/Spec、三阶段门禁），对应任务已收官，当前不再按此派发。
 
 - `receipt-agent-interview` 没有 macOS 原生应用；现有 Web 收据工作台是本项目的前端，允许修改 `demo/templates/`、`demo/static/` 及必要的配套后端。
 - 用户最新明确确认：允许修复现有 Web 工作台，并使用 Orca 内嵌浏览器开展 UAT。HarnessHub 的原生端限定属于另一项目，不适用于本仓库；不迁移原生端，不修改其他项目或全局记忆。
@@ -54,7 +62,7 @@
   `extra` 列（`Text`）存结构化 JSON：`{tokens_prompt, tokens_completion, tokens_total, cost_hkd, elapsed_ms:{extract,parse,rag,audit,total}, success:true/false, image_path, supplier, doc_form}`  
   `ai_value` 亦冗余 `tokens_total/cost_hkd/elapsed_ms/success` 便于前端直接读取（`docs/04-AI技术选型与评测/02-L0-L9选型决策档案/L4-多模态VLM直识(定稿冠军).md:21`）。
 - **文件层**：`artifacts/memory/parse_log.jsonl`（JSONL，每行一图，`demo/app/chains/supervisor.py:357 _finalize` 并发安全 `threading.Lock` + `a` 追加）  
-  目录自动创建，Git 忽略需保留（`.gitkeep` 可选）。
+  目录自动创建；该路径为本地运行时产物，由根 `.gitignore` 统一忽略，不入库。
 - **日志层**：`RECEIPT_LATENCY` 与 `TOKENS` 双行结构化日志同时打印到 stdout（uvicorn 捕获），便于 `docker logs` / `orca eval` 追踪。
 
 ### 2. 字段定义
@@ -105,7 +113,7 @@ curl -s http://127.0.0.1:15010/api/admin/metrics -H X-Role:owner | grep avg_toke
 
 **所有 Agent（无论主代理或任何角色的 Subagent）必须通过 `ai_registry/` 工程化管理 Prompt、Skills、Tools、MCP，禁止绕行。**
 
-0. **默认 Provider 策略（用户决策 2026-08-30，随 L4 红灯与两次服务拖死事故确立）**：
+0. **默认 Provider 策略（用户决策 2026-08-30，历史决策 · 已被后续实现取代）**：当前实现以 `demo/app/llm.py` 与 `demo/.env.example` 为准——识别腿走百炼 DashScope `qwen3.5-omni-flash`，审核腿走 SiliconFlow `zai-org/GLM-4.5V`；下列条目保留作决策追溯，不再作为现行配置依据。
    - **SiliconFlow 是本项目的默认 provider**：服务每次重启，识别腿（SF Qwen-VL 系）与审核腿（SF GLM-4.5V，视觉模型——审核 text/vlm/ondemand 三模式都需要；用户指定，因 DeepSeek-V3.2 非视觉模型）都被 `hydrate_engine_config_from_env` 强制装配回 SiliconFlow 通道——管理台对双腿的临时切换不跨重启保留（灰测组配置不受影响）
    - **opencode/CLI 引擎从默认路径移除**：仅作显式选择。依据：opencode CLI 两次挂起拖死 uvicorn 线程池（首页超时），且元评测 audit 模式 25 项中 8 次 30s 超时——CLI 稳定性不足以承担默认链路。**后续收口（2026-09-02）**：opencode 与 CodeBuddy 两个本机 CLI 引擎正式弃用，不再作为默认或可选项（对应的类与枚举已于同日删除）
    - **异构纪律（Gap A3）**：识别腿 Qwen 系 ↔ 审核腿 DeepSeek 系跨厂商；降级链（SF 不可用 → DashScope）期间双腿同家族，异构性弱化必须日志提示
