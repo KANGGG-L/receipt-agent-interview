@@ -397,7 +397,7 @@ def test_single_sample_failure_does_not_break_run(tmp_path):
     for r in _read_manifest(os.path.join(evalset, "manifest.csv")):
         _write_expected(evalset, r["sample_id"], _GT_PAYLOAD)
 
-    def _boom(image_path, sample_id):
+    def _boom(image_path, sample_id, expected=None, **kwargs):
         raise RuntimeError("模拟引擎故障")
 
     report = run_eval.run_eval(split="test", prompt_version="v1_2_0_sku_clean",

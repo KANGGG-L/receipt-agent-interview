@@ -145,8 +145,12 @@ def test_unhandled_exception_returns_envelope_without_internals():
 
 # ---- S1-P3-01 / S4-08 登录、哈希、吊销、Cookie、CSRF -----------------------
 def test_passwords_are_hashed_and_verified_constant_time():
-    for email, (stored, _role, _t) in auth.ACCOUNTS.items():
-        assert stored.startswith("pbkdf2_sha256$")
+    # 只校验产品内置的三个账号：billing / identity v2 等测试夹具会在运行期往
+    # auth.ACCOUNTS 注入明文占位账号（如 test-pw-not-real），那些不是产品数据，
+    # 全量收集顺序不同时把它们算进来会假失败。
+    for email in ("admin@demo.hk", "boss@demo.hk", "staff@demo.hk"):
+        stored = auth.ACCOUNTS[email][0]
+        assert stored.startswith("pbkdf2_sha256$"), (email, stored)
         assert "123" not in stored
     assert auth.authenticate("boss@demo.hk", "boss123")["role"] == "owner"
     assert auth.authenticate("boss@demo.hk", "wrong") is None
@@ -861,8 +865,34 @@ def test_requirements_declare_every_direct_import_with_upper_bounds():
                         imported.update(a.name.split(".")[0] for a in node.names)
                     elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
                         imported.add(node.module.split(".")[0])
+    # sys.stdlib_module_names 是 Python 3.10+ 才有的属性；本仓库固定解释器为
+    # pyenv 3.9.6，裸用会 AttributeError。3.9 回落为按 spec.origin 是否落在
+    # stdlib 目录判断（能覆盖 fcntl / math / unicodedata 这类扩展与内建模块）。
+    import importlib.util
+    import sysconfig
+
+    def _is_stdlib(name):
+        names = getattr(sys, "stdlib_module_names", None)
+        if names is not None:
+            return name in names
+        try:
+            spec = importlib.util.find_spec(name)
+        except (ImportError, ValueError, AttributeError, TypeError):
+            return False
+        origin = getattr(spec, "origin", None) if spec else None
+        if not origin:
+            return False
+        if origin in ("built-in", "frozen"):
+            return True
+        return os.path.realpath(str(origin)).startswith(
+            os.path.realpath(sysconfig.get_paths()["stdlib"]))
+
+    # 仓库内的一等模块不算三方包：app / ai_registry 是包，scripts 及其单文件
+    # 模块（run_eval 等）是 demo/scripts 下被业务代码直接 import 的本地模块。
+    local_modules = ("app", "ai_registry", "scripts", "run_eval",
+                     "memory_extract_replay", "permission_scan")
     third_party = {m for m in imported
-                   if m not in sys.stdlib_module_names and m not in ("app", "ai_registry")
+                   if not _is_stdlib(m) and m not in local_modules
                    and not m.startswith("_")}
     missing = sorted(m for m in third_party
                      if mapping.get(m, m).lower().replace("_", "-") not in declared)

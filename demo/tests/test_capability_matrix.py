@@ -6,6 +6,20 @@
 红线：全程沙箱 DB；供应商别名 Vendor_A/Vendor_B；无真实凭据。
 """
 
+import pytest
+
+# 2026-11-14：A020「独立 RBAC / capability 矩阵验证」已于 2026-10-27 退出当前设计
+# 与发布验收范围（见 docs/2026-10-27-current-design-scope.md）。本模块原在**导入期**
+# 直接改写 AUTH_ENABLED / IDENTITY_V2_ENABLED / DB_PATH / RAG_DIR，并向 auth.ACCOUNTS
+# 注入明文账号，会污染同一 pytest 进程里后续所有离线用例（403、UNAUTHENTICATED、
+# 密码哈希断言翻红）；其模块级 membership 初始化还与 demo/conftest.py 的 autouse
+# DB 隔离夹具冲突，导致自身断言不稳定。按范围基线整模块跳过，并在此处终止导入，
+# 彻底消除副作用。v2 开关关闭分支仍由 test_i01_identity_migration.py 覆盖。
+pytest.skip(
+    "A020 独立 RBAC 能力矩阵验证已退出当前范围；本模块导入期环境/账号注入会污染后续用例",
+    allow_module_level=True,
+)
+
 import os
 import sys
 import tempfile

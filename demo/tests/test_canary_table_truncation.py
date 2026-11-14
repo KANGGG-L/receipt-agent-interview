@@ -94,7 +94,9 @@ def test_canary_table_no_truncation_and_no_duplicate_requests():
         total_text = page.locator("#mGreyTotal").inner_text().strip()
         assert total_text.isdigit(), f"#mGreyTotal should be a number, got: {total_text!r}"
         total = int(total_text)
-        rows = page.locator("#adminGreySamplesBody tr")
+        # 空态会在 tbody 插一行 colspan=8 的「暂无单据样本」占位行；它不是数据行，
+        # 三方核对（指标卡 / 提示 / 行数）必须排除，否则 total=0 时恒差 1。
+        rows = page.locator("#adminGreySamplesBody tr:not(:has(td[colspan]))")
         notice = page.locator("#adminGreySampleLimitNotice")
         if total > 100:
             assert notice.is_visible(), "adminGreySampleLimitNotice should be visible when total > 100"

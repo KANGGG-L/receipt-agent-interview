@@ -89,12 +89,24 @@ ENV_READ_KEYS_DEFERRED = {
                                "demo/.env.example 尚无声明行，登记进清单需与模板声明同批改",
     "PYTEST_CURRENT_TEST": "pytest 注入的运行期探针（代码只用它判断「是否在测试里」），"
                            "登记进清单/模板会诱导运维去设置一个无意义的环境变量",
+    # 2026-11 计费 / 身份 v2 / 持久任务波次新增的读取键。demo/.env.example 尚无
+    # 声明行，按台账规则逐条给理由；待模板同批补齐声明后再移入 ENV_READ_KEYS。
+    "BILLING_ACCEPT_NEW_CHECKOUT": "计费发布门禁运行时开关（billing/release_gate.runtime_flags）；模板未声明",
+    "BILLING_AUTO_RENEW": "计费发布门禁运行时开关（billing/release_gate.runtime_flags）；模板未声明",
+    "BILLING_ENFORCEMENT_ENABLED": "计费执行总开关（billing/policy）；模板未声明",
+    "BILLING_ENVIRONMENT": "计费环境标识（billing/policy）；模板未声明",
+    "BILLING_POLICY_JSON": "退款/试用策略覆盖（billing/policy）；模板未声明",
+    "BILLING_WEBHOOK_SECRET": "支付回调签名密钥（billing/lifecycle）；模板未声明，且不宜写进示例模板",
+    "DURABLE_TASKS_ENABLED": "持久化后台任务开关（background_tasks）；模板未声明",
+    "IDENTITY_V2_ENABLED": "身份 v2 灰度开关（auth / identity_store）；模板未声明",
 }
 
 # 静态无法定值的键名读取站点：(相对 demo/ 的文件路径, 变量名)。冻结口径见模块 docstring。
 ENV_READ_DYNAMIC_SITES = frozenset({
     ("app/services/embeddings.py", "base_env"),
     ("app/services/embeddings.py", "key_env"),
+    # 计费发布门禁用 _flag(name) 统一读开关，键名由调用方传入，静态无法定值。
+    ("app/billing/release_gate.py", "name"),
 })
 
 # 已确认零读取、已从模板移除的历史残留键。

@@ -1,5 +1,9 @@
+import os
 import unittest
 from unittest.mock import patch
+
+# 用例需同时支持从仓库根与 demo/ 目录启动 pytest；路径一律相对本文件解析。
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from pydantic import ValidationError
 
@@ -130,7 +134,7 @@ class TestApiFormatLoopback(unittest.TestCase):
 
     def test_index_html_dom_elements(self):
         """index.html 不再暴露 api_format 选择器（阶段4）。"""
-        with open("demo/templates/index.html", "r", encoding="utf-8") as f:
+        with open(os.path.join(_REPO_ROOT, "demo", "templates", "index.html"), "r", encoding="utf-8") as f:
             html = f.read()
 
         for removed_id in _REMOVED_API_FORMAT_IDS:
@@ -141,7 +145,7 @@ class TestApiFormatLoopback(unittest.TestCase):
 
     def test_main_js_data_binding(self):
         """main.js 不再采集/回显/绑定 api_format（阶段4）。"""
-        with open("demo/static/js/main.js", "r", encoding="utf-8") as f:
+        with open(os.path.join(_REPO_ROOT, "demo", "static", "js", "main.js"), "r", encoding="utf-8") as f:
             js = f.read()
 
         for removed_id in _REMOVED_API_FORMAT_IDS:

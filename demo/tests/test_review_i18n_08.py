@@ -288,7 +288,9 @@ def test_ac6_migration_is_idempotent_and_keeps_assigned_rows(tmp_path):
         versions = [row[0] for row in conn.execute(text(
             "SELECT name FROM schema_version"))]
     assert all("category" not in str(name) for name in versions)
-    assert db.schema_version() == 6  # v6 sku_merge_source_provenance (UAT-031 lineage)
+    # v6（sku_merge_source_provenance / UAT-031 lineage）之后又叠加了多轮幂等迁移，
+    # 当前版本号已到 18；本用例验的是「迁移幂等且保留已分配行」，不是版本必须停在 6。
+    assert db.schema_version() >= 6
 
 
 def test_ac1_to_ac4_sku_identity_and_custom_label():

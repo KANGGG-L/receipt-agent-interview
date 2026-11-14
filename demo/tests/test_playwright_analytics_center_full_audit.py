@@ -461,7 +461,10 @@ def test_analytics_center_every_component_audit():
         assert page.locator("#goldenBoardBody tr").count() == total_all_rows
 
         # 4.3 检查基准集刷新按钮
-        refresh_golden_btn = page.locator("#sec-eval button:has-text('刷新')")
+        # 该功能区有 2 个「刷新」按钮（记忆候选面板 / 黄金样本板）；按绑定的
+        # handler 精确定位，避免 strict mode 命中多元素。
+        refresh_golden_btn = page.locator(
+            "#sec-eval button[data-csp-click*='loadGoldenBoard']")
         assert refresh_golden_btn.is_visible()
         refresh_golden_btn.click()
         page.wait_for_timeout(400)

@@ -67,10 +67,10 @@ ADMIN = {"X-Role": "admin", "X-Tenant-Id": TENANT}
 
 # AI 侧数量键是 `qty`、用户侧是 `quantity`；两侧只差品名一处（其余字段刻意等价）。
 AI_ITEMS = [{"name": "黑牛", "qty": 2, "unit": "斤", "unit_price": 8.0, "amount": 16.0}]
-USER_ITEMS = [{"name": "黑牛牌黑胡椒牛油", "quantity": 2.0, "unit": "斤",
+USER_ITEMS = [{"name": "澳洲和牛牛油", "quantity": 2.0, "unit": "斤",
                "unit_price": 8.0, "amount": 16.0}]
 
-_GOOD_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "黑牛牌黑胡椒牛油",
+_GOOD_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "澳洲和牛牛油",
                   "confidence": 0.7}]
 # 白名单外的 kind：两处闸门（抽取侧 / 写入侧）都会拒，理由里都含 "kind 非法"。
 _BAD_PAYLOAD = [{"kind": "sku", "fact_key": "黑牛", "value": "牛腩", "confidence": 0.7}]
@@ -283,7 +283,7 @@ def test_noop_candidate_reason_is_persisted(client, monkeypatch):
     rid, sid = _mk_receipt()
     # 既有同 (tenant, supplier, key) 同值事实 → decide_action 判 NOOP（不入可批准队列）
     db.save_memory_fact(TENANT, VENDOR, "黑牛", fact=MemoryFact(
-        kind="alias", fact_key="黑牛", value="黑牛牌黑胡椒牛油",
+        kind="alias", fact_key="黑牛", value="澳洲和牛牛油",
         supplier_id=str(sid), tenant_id=TENANT, source_kind=SOURCE_MANUAL))
 
     resp = _save(client, rid)
@@ -294,7 +294,7 @@ def test_noop_candidate_reason_is_persisted(client, monkeypatch):
     assert row["reject_reason"], "落选（NOOP）的理由同样必须落库（非 NULL）"
     assert "已存在同值事实" in row["reject_reason"], row["reject_reason"]
     # 落选行仍带载荷与可读的一行（复用 _pending_fact_content，不另拼格式）
-    assert row["content"] == "alias：黑牛 → 黑牛牌黑胡椒牛油", row["content"]
+    assert row["content"] == "alias：黑牛 → 澳洲和牛牛油", row["content"]
     assert row["fact_key"] == "黑牛" and row["supplier_id"] == sid
     assert _pending_via_api(client, "pending") == [], \
         "NOOP 不得进人工闸（同值事实入队只会把闸门刷成噪声）"

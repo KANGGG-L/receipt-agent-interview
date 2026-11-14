@@ -43,6 +43,7 @@ function mkEl(props) {
         focus() {}, click() {},
         setAttribute(k, v) { this[k] = v; if (k === 'class') this.className = v; },
         getAttribute(k) { return this[k] != null ? this[k] : null; },
+        removeAttribute(k) { delete this[k]; if (k === 'class') this.className = ''; },
         appendChild(c) { c.parentElement = this; c.parentNode = this; this.children.push(c); return c; },
         removeChild(c) {
             const i = this.children.indexOf(c);

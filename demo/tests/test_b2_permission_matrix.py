@@ -46,6 +46,9 @@ def test_every_api_route_has_known_guard():
         ("POST", "/api/auth/login"), ("POST", "/api/auth/logout"), ("GET", "/api/auth/me"),
         ("GET", "/api/health"), ("GET", "/api/payment/voucher/{name}"),
         ("GET", "/api/receipt/{receipt_id}/image"), ("POST", "/api/csp-report"),
+        # 渠道支付回调按设计匿名：靠原 body HMAC + 时间窗 + merchant/env 绑定验签，
+        # 不依赖登录态（见 api_billing.billing_webhook）。
+        ("POST", "/api/billing/webhook/{provider}"),
     }, anon
 
 

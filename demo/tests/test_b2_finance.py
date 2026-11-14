@@ -415,7 +415,16 @@ def test_import_statement_uses_supplier_id_and_merged_alias(client):
     # 同名字符串但没有 supplier_id 的历史单也按别名归到保留方
     legacy, _ = make_receipt(client, tn, [item("菜", 1, "斤", 40)], 40.0, supplier="曾用名公司",
                              date="2026-10-06")
-    db.update_receipt(legacy, supplier_id=None)
+    # db.update_receipt 会跳过值为 None 的字段，必须直接置 NULL 才能构造
+    # 「只有供应商名、没有 supplier_id」的历史单，从而验证合并别名的兜底归并。
+    from sqlalchemy import text
+    s = db.get_session()
+    try:
+        s.execute(text("UPDATE receipts SET supplier_id=NULL WHERE id=:r AND tenant_id=:t"),
+                  {"r": legacy, "t": tn})
+        s.commit()
+    finally:
+        s.close()
     r = client.post("/api/reconciliation/import-statement", headers=hdr(tn), json={
         "supplier_id": keep, "statement_period": "2026-10",
         "external_lines": [{"date": "2026-10-05", "invoice_no": "", "amount": 100.0},

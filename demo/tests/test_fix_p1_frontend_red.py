@@ -49,11 +49,17 @@ def page(server):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(
-            executable_path="/usr/bin/google-chrome",
-            headless=False,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-        )
+        # 默认用 Playwright 自带 chromium（`playwright install chromium`），不再写死
+        # Linux 的 /usr/bin/google-chrome —— 本机 macOS 无该路径，6 个用例会在 setup 期
+        # 直接 error。CI 若要用系统 Chrome，显式给 CHROME_EXECUTABLE 即可。
+        chrome = os.environ.get("CHROME_EXECUTABLE", "").strip()
+        launch_kwargs = {
+            "headless": True,
+            "args": ["--no-sandbox", "--disable-dev-shm-usage"],
+        }
+        if chrome:
+            launch_kwargs["executable_path"] = chrome
+        browser = p.chromium.launch(**launch_kwargs)
         ctx = browser.new_context(viewport={"width": 1440, "height": 900})
         pg = ctx.new_page()
         pg.set_default_timeout(15000)

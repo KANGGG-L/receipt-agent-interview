@@ -193,7 +193,8 @@ def test_f1_g_micro_not_macro(tmp_path):
     pred_b["items"] = pred_b["items"][:1]        # 样本 B 的预测漏 1 行
     ev = _mini_evalset(tmp_path, {"SA1": gt_a, "SB1": gt_b})
 
-    def _predictor(image_path, sample_id):
+    def _predictor(image_path, sample_id, expected=None, **kwargs):
+        # run_eval 自 GT 校验波次起额外传 expected=，自定义 predictor 必须兼容。
         payload = gt_a if sample_id == "SA1" else pred_b
         return json.loads(json.dumps(payload)), {"latency_ms": 0.0, "tokens": 0, "error": None}
 
