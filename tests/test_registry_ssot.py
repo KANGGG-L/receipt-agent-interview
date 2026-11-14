@@ -196,6 +196,14 @@ def test_ac08c_extract_prompt_version_env_switch(monkeypatch):
     """
     from ai_registry.registry import ai_registry
     from app.chains import extract_chain
+    # _resolve_extract_system_prompt() 会改写模块级 SYSTEM_PROMPT_VERSION；monkeypatch
+    # 只负责还原环境变量，若不注册全局还原，灰测版本 v1_2_9 会泄漏给按文件名排在
+    # 后面的沙箱/安全用例，使它们在准入闸处因「请求版本 != inventory 钉住版本」被拒。
+    monkeypatch.setattr(extract_chain, "SYSTEM_PROMPT_VERSION",
+                        extract_chain.SYSTEM_PROMPT_VERSION)
+    monkeypatch.setattr(extract_chain, "SYSTEM_PROMPT", extract_chain.SYSTEM_PROMPT)
+    monkeypatch.setattr(extract_chain, "PROMPT_BLOCKED_REASON",
+                        extract_chain.PROMPT_BLOCKED_REASON)
     assert ai_registry.get_prompt("extract") == \
         ai_registry.get_prompt("extract", "v1_2_0_sku_clean")
 

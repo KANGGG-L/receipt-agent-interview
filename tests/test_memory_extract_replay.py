@@ -51,9 +51,9 @@ OTHER_TENANT = "aa2-other"
 VENDOR = "祥興食品"
 
 AI_ITEMS = [{"name": "黑牛", "qty": 2, "unit": "斤", "unit_price": 8.0, "amount": 16.0}]
-USER_ITEMS = [{"name": "黑牛牌黑胡椒牛油", "quantity": 2.0, "unit": "斤",
+USER_ITEMS = [{"name": "澳洲和牛牛油", "quantity": 2.0, "unit": "斤",
                "unit_price": 8.0, "amount": 16.0}]
-CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "黑牛牌黑胡椒牛油",
+CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "澳洲和牛牛油",
                       "confidence": 0.7}]
 
 
@@ -373,7 +373,7 @@ def test_reject_reason_distribution_is_reported(monkeypatch):
 def test_no_diff_reports_no_diff_not_failure(monkeypatch):
     """无字段差异：不算失败（error 为空），报告单列为 no_diff。"""
     model = _patch_model(monkeypatch)
-    same = [{"name": "黑牛牌黑胡椒牛油", "qty": 2, "unit": "斤",
+    same = [{"name": "澳洲和牛牛油", "qty": 2, "unit": "斤",
              "unit_price": 8.0, "amount": 16.0}]
     rid, _ = _mk_receipt(ai_items=same,
                          final_items=[dict(USER_ITEMS[0])])

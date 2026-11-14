@@ -127,6 +127,14 @@ def _copy_live(dst_dir):
             src.backup(dst)
         finally:
             dst.close()
+        # backup 产物继承源库的 WAL 标记；后续 `_table_counts` 以 mode=ro URI 打开时
+        # SQLite 需要 -shm 却在只读模式下无法创建，实测报 "unable to open database file"。
+        # 副本只是一次性快照，切回 DELETE 日志模式后只读连接可稳定打开（2026-11-14）。
+        settle = sqlite3.connect(copy_path)
+        try:
+            settle.execute("PRAGMA journal_mode=DELETE").fetchone()
+        finally:
+            settle.close()
     finally:
         src.close()
     return copy_path

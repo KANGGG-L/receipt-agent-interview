@@ -48,10 +48,10 @@ STAFF = {"X-Role": "staff", "X-Tenant-Id": TENANT}
 OWNER = {"X-Role": "owner", "X-Tenant-Id": TENANT}
 
 AI_ITEMS = [{"name": "黑牛", "qty": 2, "unit": "斤", "unit_price": 8.0, "amount": 16.0}]
-USER_ITEMS = [{"name": "黑牛牌黑胡椒牛油", "quantity": 2.0, "unit": "斤",
+USER_ITEMS = [{"name": "澳洲和牛牛油", "quantity": 2.0, "unit": "斤",
                "unit_price": 8.0, "amount": 16.0}]
 
-CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "黑牛牌黑胡椒牛油",
+CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "澳洲和牛牛油",
                       "confidence": 0.7}]
 
 _BASE_BODY = {
@@ -312,7 +312,7 @@ def test_no_diff_writes_zero_run_and_does_not_call_model(client, monkeypatch):
     stats = _patch_model(monkeypatch)
     _enable_switch()
     # AI 预填与提交值逐字段等价（AI 侧数量键是 qty、用户侧是 quantity，数值比较）
-    same = [{"name": "黑牛牌黑胡椒牛油", "qty": 2, "unit": "斤",
+    same = [{"name": "澳洲和牛牛油", "qty": 2, "unit": "斤",
              "unit_price": 8.0, "amount": 16.0}]
     rid, _ = _mk_receipt(ai_items=same)
 

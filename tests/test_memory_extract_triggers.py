@@ -61,11 +61,11 @@ OWNER = {"X-Role": "owner", "X-Tenant-Id": TENANT}
 # AI 侧数量键是 `qty`（ReceiptData 契约），用户侧是 `quantity`（receipt_items 契约）；
 # 两侧只差品名一处，其余字段刻意保持等价（数值 2 与 2.0 不算修正）。
 AI_ITEMS = [{"name": "黑牛", "qty": 2, "unit": "斤", "unit_price": 8.0, "amount": 16.0}]
-USER_ITEMS = [{"name": "黑牛牌黑胡椒牛油", "quantity": 2.0, "unit": "斤",
+USER_ITEMS = [{"name": "澳洲和牛牛油", "quantity": 2.0, "unit": "斤",
                "unit_price": 8.0, "amount": 16.0}]
 
 # 模型返回：一条 alias 候选（key/value 与上方的修正一致）
-CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "黑牛牌黑胡椒牛油",
+CANDIDATE_PAYLOAD = [{"kind": "alias", "fact_key": "黑牛", "value": "澳洲和牛牛油",
                       "confidence": 0.7}]
 
 _BASE_BODY = {
@@ -266,8 +266,8 @@ def test_save_edited_triggers_extraction_and_enqueues_pending(client, monkeypatc
     assert row["supplier_id"] == sid, "入队必须带主体锚点（不是 None）"
     assert row["fact_kind"] == "alias"
     assert row["fact_key"] == "黑牛"
-    assert row["fact_value"] == "黑牛牌黑胡椒牛油"
-    assert "alias：黑牛 → 黑牛牌黑胡椒牛油" in row["content"], row["content"]
+    assert row["fact_value"] == "澳洲和牛牛油"
+    assert "alias：黑牛 → 澳洲和牛牛油" in row["content"], row["content"]
     assert str(rid) in row["source_receipt_ids_json"]
 
 
@@ -276,7 +276,7 @@ def test_save_edited_without_diff_does_not_call_model(client, monkeypatch):
     stats = _patch_model(monkeypatch)
     _enable_switch()
     # AI 预填与提交值完全一致（用户没改任何字段）
-    rid, _ = _mk_receipt(ai_items=[{"name": "黑牛牌黑胡椒牛油", "qty": 2, "unit": "斤",
+    rid, _ = _mk_receipt(ai_items=[{"name": "澳洲和牛牛油", "qty": 2, "unit": "斤",
                                     "unit_price": 8.0, "amount": 16.0}])
     resp = _save(client, rid)
     assert resp.status_code == 200, resp.text
@@ -306,7 +306,7 @@ def test_approve_triggers_extraction_and_enqueues_pending(client, monkeypatch):
     assert len(rows) == 1, rows
     row = rows[0]
     assert row["fact_kind"] == "alias" and row["fact_key"] == "黑牛"
-    assert row["fact_value"] == "黑牛牌黑胡椒牛油"
+    assert row["fact_value"] == "澳洲和牛牛油"
     # 锚点必须解析出来（approve 已自动建档）：落 NULL 等于这条候选在读侧永远召不回
     assert row["supplier_id"] is not None, "入队载荷的 supplier_id 不得为 NULL"
     assert str(rid) in row["source_receipt_ids_json"]
@@ -337,7 +337,7 @@ def test_all_rule_level_kinds_enter_the_gate(client, monkeypatch):
     全都应落 pending —— 只放 alias/unit 会把 layout/price_range 静默丢掉。
     """
     payload = [
-        {"kind": "alias", "fact_key": "黑牛", "value": "黑牛牌黑胡椒牛油"},
+        {"kind": "alias", "fact_key": "黑牛", "value": "澳洲和牛牛油"},
         {"kind": "unit", "fact_key": "菜心", "value": "斤"},
         {"kind": "layout", "fact_key": "版式", "value": "手写"},
         {"kind": "price_range", "fact_key": "菜心", "value": "8.0-10.0"},
@@ -363,7 +363,7 @@ def test_noop_same_value_is_not_enqueued(client, monkeypatch):
     _enable_switch()
     rid, sid = _mk_receipt()
     db.save_memory_fact(TENANT, VENDOR, "黑牛", fact=MemoryFact(
-        kind="alias", fact_key="黑牛", value="黑牛牌黑胡椒牛油",
+        kind="alias", fact_key="黑牛", value="澳洲和牛牛油",
         supplier_id=str(sid), tenant_id=TENANT, source_kind=SOURCE_MANUAL))
 
     assert _save(client, rid).status_code == 200
@@ -429,19 +429,22 @@ def test_model_exception_keeps_main_flow_and_logs_error(client, monkeypatch, cap
 
 
 # -------------------------------------------------------------
-# 5. 开关：缺省关闭 = 零行为变化
+# 5. 开关：登记与缺省值（现行决策为「抽取常开人审」，缺省 True）
 # -------------------------------------------------------------
-def test_switch_registered_and_defaults_off():
-    """开关必须登记在 SETTINGS_DEFAULTS 且缺省 False（否则会在单测/离线环境发外呼）。
+def test_switch_registered_and_defaults_on():
+    """开关必须登记在 SETTINGS_DEFAULTS，缺省 True（A026 抽取常开、人工审核）。
+
+    早期版本缺省 False，2026-10 决策改为抽取腿常开、候选只进 pending 人审队列；
+    现行范围基线见 docs/2026-10-27-current-design-scope.md 的 A026。离线用例靠显式
+    stub 模型与 `_enable_switch("false")` 避免外呼，不依赖缺省关闭。
 
     登记解决的是「`get_bool` 取不到缺省值」这一件事，**不等于管理台可见**：可见性另需
     前端控件 + load / collect / reset 三处接线（P23-AQ1，`main.js:12822-12892` +
-    `index.html` 锚点）。只登记不接线的后果是整条抽取链在生产上永不执行，而
-    `settings_service.py` 里完全看不出这一点（K3 交付时就是这样）。
+    `index.html` 锚点）。
     """
     assert "memory_extract_enabled" in settings_service.SETTINGS_DEFAULTS, \
         "开关必须登记，否则 get_bool 取不到缺省值（登记本身不保证管理台可见）"
-    assert settings_service.SETTINGS_DEFAULTS["memory_extract_enabled"] is False
+    assert settings_service.SETTINGS_DEFAULTS["memory_extract_enabled"] is True
 
 
 def test_switch_off_does_not_call_model(client, monkeypatch):
@@ -452,9 +455,9 @@ def test_switch_off_does_not_call_model(client, monkeypatch):
     assert _save(client, rid).status_code == 200
     assert stats.state.build_calls == 0 and stats.model.calls == 0
     assert _pending_rows() == []
-    # 空串等价于"未设置"→ 回落缺省 False（settings_service.get 的口径）
+    # 空串等价于"未设置"→ 回落缺省 True（现行「抽取常开人审」，settings_service.get 口径）
     _enable_switch("")
-    assert api_receipts._memory_extract_enabled() is False
+    assert api_receipts._memory_extract_enabled() is True
 
 
 # -------------------------------------------------------------

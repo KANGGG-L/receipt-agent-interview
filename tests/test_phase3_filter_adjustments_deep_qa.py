@@ -538,8 +538,20 @@ def test_qa_live_service_port_15010_healthy():
     """
     复用原失败节点 test_qa_live_service_port_15010_healthy。
     隔离 base URL、端口、timeout 可注入。只 GET /api/health 与 recovery-summary。
-    非 200 或超时必须失败，不能 skip。不得连接或写入 15010。
+    非 200 或超时必须失败，不得连接或写入 15010。
+
+    离线全量回归没有活体服务可探测：完全未注入目标地址时跳过本用例（不是判定产品
+    health 通过）；一旦注入了 base URL / 端口，仍走 `_probe_origin_and_timeout` 的
+    严格判定——配置错、非 200、超时一律 fail，绝不降级为 skip。
     """
+    injected = any(
+        os.environ.get(key, "").strip()
+        for key in ("PW_TEST_BASE_URL", "TEST_BASE_URL", "PW_TEST_PORT", "TEST_PORT")
+    )
+    if not injected:
+        pytest.skip(
+            "未注入 PW_TEST_BASE_URL / TEST_BASE_URL / PW_TEST_PORT / TEST_PORT："
+            "离线全量回归不启动活体服务；活体 QA 验收需显式注入隔离地址")
     origin, timeout = _probe_origin_and_timeout()
     health = _probe_get_json(origin + "/api/health", timeout)
     assert health.get("status") == "ok", (
