@@ -547,8 +547,15 @@ function createAuthFetchWrapper(originalFetch, opts) {
                 try { onUnauthorized(); } catch (e) { /* 面板异常不影响响应传递 */ }
             }
             if (res && res.status === 403 && isApiUrl(url)) {
-                // E-P1-4 克隆响应读取 detail 以人话 toast，不消费原响应
-                try { res.clone().json().then(b => { toastHttpError(403, b); }).catch(()=>{}); } catch(e) {}
+                // 计费入口探测（billing.js probeBillingAccess）用 403 表达
+                // 「当前账号无计费权限、隐藏入口」，是预期信号而非一次操作失败。
+                // 不弹全局错误 toast，否则每次打开工作台都会给普通店员/老板
+                // 塞一条与本任务无关的计费权限提示（F1a 复核流程回归即因此翻红）。
+                const isSilentProbe = url.indexOf('/api/billing/entitlement') !== -1;
+                if (!isSilentProbe) {
+                    // E-P1-4 克隆响应读取 detail 以人话 toast，不消费原响应
+                    try { res.clone().json().then(b => { toastHttpError(403, b); }).catch(()=>{}); } catch(e) {}
+                }
             }
             return res;
         });

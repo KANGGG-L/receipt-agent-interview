@@ -4,7 +4,7 @@
 
 角色从低到高：staff（店员）< owner（老板）< admin（管理员）。门槛是「至少需要的角色」，高角色自动包含低角色的权限。
 
-共 164 个端点。
+共 185 个端点。
 
 | 方法 | 路径 | 最低角色 | 备注 |
 |---|---|---|---|
@@ -40,6 +40,9 @@
 | GET | `/api/admin/memory-consistency` | admin |  |
 | GET | `/api/admin/memory-metrics` | admin |  |
 | GET | `/api/admin/metrics` | admin |  |
+| GET | `/api/admin/operations/owner` | owner |  |
+| POST | `/api/admin/operations/process-reset` | admin |  |
+| GET | `/api/admin/operations/technical` | admin |  |
 | GET | `/api/admin/parsing-stale` | admin |  |
 | POST | `/api/admin/probe-single-engine` | admin |  |
 | GET | `/api/admin/prompts` | admin |  |
@@ -63,6 +66,19 @@
 | POST | `/api/auth/login` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | POST | `/api/auth/logout` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | GET | `/api/auth/me` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
+| POST | `/api/billing/checkout` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| GET | `/api/billing/entitlement` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| GET | `/api/billing/orders/{order_no}` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/orders/{order_no}/manual-payment` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/reconcile` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/refunds` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| GET | `/api/billing/refunds/{refund_id}` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/refunds/{refund_id}/approve` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/refunds/{refund_id}/cancel` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| GET | `/api/billing/subscription` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/subscription/cancel` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/trial/redeem` | owner | 计费 capability 守卫（api_billing._identity），不走 role rank 继承 |
+| POST | `/api/billing/webhook/{provider}` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
 | POST | `/api/convert-image` | staff |  |
 | GET | `/api/cost` | owner |  |
 | GET | `/api/cost_report` | owner |  |
@@ -122,6 +138,7 @@
 | POST | `/api/memory/pending/{pending_id}/reject` | admin |  |
 | DELETE | `/api/memory/vendor/{vendor_name}` | admin |  |
 | DELETE | `/api/memory/{memory_id}` | admin |  |
+| PATCH | `/api/memory/{memory_id}` | admin |  |
 | POST | `/api/memory/{memory_id}/revive` | admin |  |
 | GET | `/api/payables` | owner |  |
 | GET | `/api/payment/voucher/{name}` | 匿名可访问 | 不要求角色（登录接口、健康检查、签名链接） |
@@ -160,6 +177,10 @@
 | GET | `/api/settings/units` | owner |  |
 | POST | `/api/settings/units` | owner |  |
 | DELETE | `/api/settings/units/{unit_id}` | owner |  |
+| GET | `/api/supplier-credits` | owner |  |
+| POST | `/api/supplier-credits/{credit_id}/allocations` | owner |  |
+| POST | `/api/supplier-credits/{credit_id}/refunds` | owner |  |
+| GET | `/api/supplier-credits/{supplier_id}` | owner |  |
 | GET | `/api/suppliers` | staff |  |
 | POST | `/api/suppliers` | owner |  |
 | POST | `/api/suppliers/merge` | owner |  |

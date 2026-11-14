@@ -65,6 +65,16 @@ def scan():
         note = ""
         if "_enforce_report_role_gate" in src:
             note = "按报表分级，见下表"
+        # 计费域用 api_billing._identity(request, need) 做 capability 门，不走
+        # require_role / rank 继承。不识别这层守卫会把整组 billing 端点误判成
+        # 「匿名可访问」，既让权限矩阵失真，也让新增端点被当成无守卫翻红。
+        if "_identity(" in src:
+            roles.append("owner")
+            note = "计费 capability 守卫（api_billing._identity），不走 role rank 继承"
+        # L06/L07 供应商信用与 admin「owner 商业视图」用的是这两枚守卫，
+        # 不识别同样会被误判为匿名。
+        if "require_merchant_owner" in src or "_require_exact_owner" in src:
+            roles.append("owner")
         if not roles:
             rows.append((key[0], key[1], ANON, note or "不要求角色（登录接口、健康检查、签名链接）"))
             continue
