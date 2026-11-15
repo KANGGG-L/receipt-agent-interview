@@ -401,5 +401,12 @@ def test_uat008_frontend_js_calculate_receipt_issues_logic():
 
     console.log("ALL JS CHECKS PASSED");
     """
+    # review_core.js 用绝对路径注入：本用例曾在 pytest 从仓库根启动时靠「cwd 相对
+    # 路径 demo/static/...」碰巧成立，从 demo/ 启动即 ENOENT。改为按 __file__ 定位，
+    # 与启动目录无关。
+    js_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                           "static", "js", "review_core.js")
+    assert os.path.isfile(js_path), js_path
+    js_code = js_code.replace("'demo/static/js/review_core.js'", json.dumps(js_path))
     proc = subprocess.run(["node", "-e", js_code], capture_output=True, text=True)
     assert proc.returncode == 0, f"JS 逻辑校验失败：stdout={proc.stdout}, stderr={proc.stderr}"

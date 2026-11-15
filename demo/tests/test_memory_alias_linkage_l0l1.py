@@ -38,6 +38,10 @@ _TMP = tempfile.mkdtemp(prefix="memory_alias_l0l1_test_")
 os.environ["DB_PATH"] = os.path.join(_TMP, "init_l0l1.db")
 os.environ["RAG_DIR"] = os.path.join(_TMP, "rag_chroma")
 os.environ["AUTH_ENABLED"] = "0"
+# 本文件的用例断言 save_edited 走同步记忆抽取、候选直接落 pending_memory；
+# DURABLE_TASKS_ENABLED=1 会把抽取任务改投 outbox（字母序靠前的 m04_outbox
+# 顶层声明为 1），不显式钉住就会在全量下看到空队列。
+os.environ["DURABLE_TASKS_ENABLED"] = "0"
 
 _DEMO_DIR = os.path.abspath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -644,8 +648,13 @@ def test_a5_save_edited_and_extraction_do_not_write_alias(monkeypatch):
             prompt = "\n".join(
                 getattr(m, "content", "") or "" for m in (messages or []))
             matched = canary_re.search(prompt)
+            # 标准写法刻意取长名（归一后与缩写「黑牛」的首段残差 >16）：P2-T12
+            # 质量闸（2026-11-13 起）会把「首/尾续接且残差 <=16」的边缘 alias
+            # 直接判 LOW 不入队，本用例验证的是人工闸判别式（候选只进 pending、
+            # 别名表零写入），故候选必须是质量闸放行的形态。
             data = [{"kind": "alias", "fact_key": "黑牛",
-                     "value": "黑牛牌黑胡椒牛油", "confidence": 0.7}]
+                     "value": "黑牛牌進口越南黑胡椒粗粒牛油調味醬家庭裝特大號",
+                     "confidence": 0.7}]
             if matched:
                 data.append({"__guard_token": matched.group(1)})
             return _Msg(json.dumps(data, ensure_ascii=False))
@@ -655,7 +664,7 @@ def test_a5_save_edited_and_extraction_do_not_write_alias(monkeypatch):
     db.set_app_setting(api_receipts.MEMORY_EXTRACT_SETTINGS_KEY, "true")
 
     sup = _mk_supplier("祥興食品")
-    _mk_sku("黑牛牌黑胡椒牛油")
+    _mk_sku("黑牛牌進口越南黑胡椒粗粒牛油調味醬家庭裝特大號")
     ai_items = [{"name": "黑牛", "qty": 2, "unit": "斤", "unit_price": 8.0,
                  "amount": 16.0}]
     rid = db.create_receipt(supplier_name="祥興食品", status="edited",
@@ -675,7 +684,8 @@ def test_a5_save_edited_and_extraction_do_not_write_alias(monkeypatch):
         body = {
             "supplier_name": "祥興食品", "date": "2026-08-01",
             "total_amount": 16.0, "settlement_type": "cash",
-            "items": [{"name": "黑牛牌黑胡椒牛油", "quantity": 2.0, "unit": "斤",
+            "items": [{"name": "黑牛牌進口越南黑胡椒粗粒牛油調味醬家庭裝特大號",
+                       "quantity": 2.0, "unit": "斤",
                        "unit_price": 8.0, "amount": 16.0}],
             "version": db.get_receipt_row(rid).version,
             "source": "manual", "receipt_id": rid,

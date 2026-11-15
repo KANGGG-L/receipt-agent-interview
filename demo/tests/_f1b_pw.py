@@ -69,7 +69,13 @@ def start_server():
     port = _bindable_port(PORT)
     PORT = port
     BASE = "http://127.0.0.1:%d" % port
-    handle = start_pinned_server(port, data_dir, db_path, extra_env={"RAG_DIR": rag})
+    handle = start_pinned_server(port, data_dir, db_path, extra_env={
+        "RAG_DIR": rag,
+        # 评测集目录一并隔离：F1b 的「/evalset 无 manifest → 空状态」用例依赖
+        # 服务看不到评测集语料；demo/evalsets 在开发机常有本地语料，不隔离会
+        # 把「空状态」断言变成「真实语料渲染」。
+        "EVALSET_DIR": os.path.join(data_dir, "evalsets"),
+    })
     return handle, data_dir
 
 
@@ -126,7 +132,12 @@ def new_page(pw, role="owner", viewport=DESKTOP, lang=None, tab=None):
     errors = []
     page.on("pageerror", lambda e: errors.append("pageerror: %s" % e))
     page.on("console", lambda m: errors.append("console: %s" % m.text) if m.type == "error" else None)
-    page.add_init_script("localStorage.setItem('demo_role', '%s')" % role)
+    # 仅在该上下文首次加载、还没有角色时写入；不覆盖页面自己保存的角色——
+    # 演示角色切换（B1）会整页 reload，若这里无条件回写，切换后的角色会在
+    # reload 时被重置回 new_page 的初始角色（test_staff_forced_into_hidden_tab
+    # 的弹回断言因此落空）。
+    page.add_init_script(
+        "if (!localStorage.getItem('demo_role')) localStorage.setItem('demo_role', '%s');" % role)
     page.errors = errors
     page._browser = browser
     return page

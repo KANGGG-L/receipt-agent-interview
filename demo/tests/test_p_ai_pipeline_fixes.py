@@ -21,6 +21,10 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# 本文件全部用例走演示态头认证（X-Role），不显式钉住就会被字母序靠前的
+# AUTH_ENABLED=1 顶层声明（i01/i03/l 系/m 系）盖掉，全量下整族 401。
+os.environ["AUTH_ENABLED"] = "0"
+
 from fastapi.testclient import TestClient
 
 from app import db

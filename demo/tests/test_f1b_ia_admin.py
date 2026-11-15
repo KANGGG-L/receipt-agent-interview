@@ -124,7 +124,11 @@ def test_staff_forced_into_hidden_tab_is_bounced_back(server, pw, seeded):
     try:
         h.open_app(page, "tab-dishes")
         page.select_option("#demoRoleSelect", "staff")
-        page.wait_for_function("() => document.getElementById('tab-scan').classList.contains('active')")
+        # 演示角色切换（B1）会整页 reload：等待谓词必须容忍导航间隙里元素尚未
+        # 解析的瞬时 null，断言语义不变（staff 最终落在店员可见的识别复核 Tab）。
+        page.wait_for_function(
+            "() => { const el = document.getElementById('tab-scan');"
+            " return !!el && el.classList.contains('active'); }")
     finally:
         h.close(page)
 

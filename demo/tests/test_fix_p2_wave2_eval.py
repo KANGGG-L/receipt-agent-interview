@@ -91,6 +91,13 @@ def test_run_eval_first_round_gt_hint_wiring(monkeypatch):
     assert meta_off["vendor_hint"] == ""
     assert meta_off["memory"] == "off"
 
+    # 收尾必须还原 _pipeline_predictor 改写的进程级全局（SYSTEM_PROMPT /
+    # 记忆注入三开关，memory=False 一臂会用 lambda 裸替换它们）。不还原时，
+    # 同进程内排在后面的识别管线用例（memory_first_round 族等）首轮注入被
+    # 静默关闭——这正是 2026-11-15 全量顺序下它们成片翻红的根因。
+    predictor_on._restore_eval_globals()
+    predictor_off._restore_eval_globals()
+
 
 def test_wrong_vendor_injection_prevented_negative_case(tmp_path, monkeypatch):
     """AC-05: 错商注入负向防线：商户 A 记忆绝对不注入商户 B 单据，违规注入即翻红。"""

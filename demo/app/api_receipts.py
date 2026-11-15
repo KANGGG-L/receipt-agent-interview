@@ -2738,9 +2738,13 @@ def approve_receipt(receipt_id: int, body: ApproveBody, request: Request):
                     db.create_supplier(row.supplier_name, tenant_id=tenant_id)
                 # P2-T1/L06：把锚定的权威 supplier_id 回写单据（此前只建档案不回写，
                 # receipts.supplier_id 悬空 → 信用抵扣/应付归属只能按名字回退推断）。
+                # 只回填**悬空**的锚点：行上已有权威 supplier_id（J3，单据行是主体
+                # 权威）时不得被按名解析的结果覆盖——名字在重名变体/自动建档前后
+                # 可能解析到别的档案（如「順發行（新寫法）」approve 时自动建档），
+                # 覆盖会静默篡改主体归属。
                 _sup_row = db.find_supplier_by_name(row.supplier_name, tenant_id=tenant_id) \
                     if row.supplier_name else None
-                if _sup_row is not None and getattr(row, "supplier_id", None) != _sup_row.id:
+                if _sup_row is not None and not getattr(row, "supplier_id", None):
                     db.update_receipt(receipt_id, supplier_id=_sup_row.id)
                 apply_receipt_to_inventory(row, tenant_id=tenant_id, business_action=_action,
                                            return_batch_id=body.return_batch_id)

@@ -12,10 +12,12 @@ import os
 import sys
 import tempfile
 
+import pytest
 from fastapi.testclient import TestClient
 
 _TMP = tempfile.mkdtemp(prefix="test_i03_scope_")
-os.environ["DB_PATH"] = os.path.join(_TMP, "test_i03.db")
+_MODULE_DB_PATH = os.path.join(_TMP, "test_i03.db")
+os.environ["DB_PATH"] = _MODULE_DB_PATH
 os.environ["RAG_DIR"] = os.path.join(_TMP, "test_rag")
 os.environ["AUTH_ENABLED"] = "1"
 os.environ["IDENTITY_V2_ENABLED"] = "1"
@@ -30,6 +32,12 @@ for _p in (_DEMO_DIR, os.path.abspath(os.path.join(_DEMO_DIR, ".."))):
 from app import auth, db, identity_store  # noqa: E402
 from app.main import app  # noqa: E402
 
+# 全量收集下 app.db 可能已被字母序靠前的文件 import：模块级 DB_PATH 冻结在
+# 首个 import 者的环境上，直接 _make_engine() 仍指向别人的库。这里显式把
+# 模块指回本文件声明的环境库并重建引擎，否则下方模块级种子（身份/计费/
+# tenant_b 数据）会落进别人的库，用例读不到（standalone 通过、全量失败的
+# 经典形态）。
+db.DB_PATH = os.path.abspath(os.environ["DB_PATH"])
 db._make_engine()
 
 # admin2：有 admin 角色令牌但无 platform_roles 行（无技术聚合能力）
@@ -43,6 +51,23 @@ identity_store.grant_tenant_membership("boss@demo.hk", "default", "owner")
 db.create_receipt(supplier_name="Vendor_B", status="parsed", tenant_id="tenant_b")
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _pin_module_db():
+    """把每条用例钉回本模块声明的环境库 test_i03.db。
+
+    模块级种子（上方身份/计费/tenant_b）落在 import 期的引擎上；全量收集下
+    字母序靠后的文件会在模块级改写 os.environ["DB_PATH"]，conftest 的 S1 隔离
+    判据据此把用例隔离到陌生临时库 → 种子「丢失」（standalone 通过、全量翻红的
+    根因）。夹具兜底与该时序无关，恒指回本模块自己的库。
+    """
+    old = db.DB_PATH
+    db.DB_PATH = _MODULE_DB_PATH
+    db._make_engine()
+    yield
+    db.DB_PATH = old
+    db._make_engine()
 
 
 def _hdr(email, role, tenant="default"):

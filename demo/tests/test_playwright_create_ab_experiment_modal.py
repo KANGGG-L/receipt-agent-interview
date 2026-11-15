@@ -236,6 +236,12 @@ def test_playwright_create_ab_experiment_modal():
             assert not modal.is_visible(), "Modal should be closed after submit"
 
             print("[Step 9] 校验实验列表已选中新创建的实验并呈现两组模型...")
+            # 列表刷新是提交后的异步 fetch：固定 sleep 800ms 在冷启动/高负载下会
+            # 读到刷新前的旧选中项（时序竞态）。改为轮询等待选中新实验，断言语义不变。
+            page.wait_for_function(
+                "name => { const s = document.getElementById('adminExpSelect');"
+                " const o = s.options[s.selectedIndex]; return !!o && o.text.indexOf(name) !== -1; }",
+                arg=exp_name, timeout=8000)
             selected_text = page.eval_on_selector("#adminExpSelect", "el => el.options[el.selectedIndex]?.text || ''")
             print(f"当前选中实验项: {selected_text}")
             assert exp_name in selected_text, f"Expected '{exp_name}' in selected option text, got '{selected_text}'"

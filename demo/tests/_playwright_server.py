@@ -289,6 +289,13 @@ def start_pinned_server(port, data_dir, db_path, extra_env=None,
     # 覆盖继承来的 DB_PATH（pytest 隔离夹具留下的空库），指向只读副本。
     env["DB_PATH"] = db_path
     env["PW_SERVER_PORT"] = str(port)
+    # 演示态为本启动器的默认契约：全部消费方走 X-Role / demo_role 头认证，
+    # 服务进程不能继承 pytest 进程收集期残留的 AUTH_ENABLED（否则「某批先
+    # import 了 AUTH=1 的文件」会让整套 UI 用例 401）。需要认证态的用例
+    # （如 test_fix_p1_frontend_red）经 extra_env 显式传入 AUTH_ENABLED=1 覆盖。
+    # 注意必须是强制赋值而非 setdefault：收集期残留的 AUTH_ENABLED=1 恰好
+    # 会把 setdefault 变成 no-op，污染原样传给服务进程。
+    env["AUTH_ENABLED"] = "0"
     if extra_env:
         env.update(extra_env)
 

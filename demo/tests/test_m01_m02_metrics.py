@@ -7,10 +7,12 @@ import tempfile
 
 from sqlalchemy import text
 
+import pytest
 from fastapi.testclient import TestClient
 
 _TMP = tempfile.mkdtemp(prefix="test_m01_m02_")
-os.environ["DB_PATH"] = os.path.join(_TMP, "test_m.db")
+_MODULE_DB_PATH = os.path.join(_TMP, "test_m.db")
+os.environ["DB_PATH"] = _MODULE_DB_PATH
 os.environ["RAG_DIR"] = os.path.join(_TMP, "test_rag")
 os.environ["AUTH_ENABLED"] = "1"
 os.environ.setdefault("DEMO_TOKEN_SECRET", "m01-test-secret-not-the-default-value")
@@ -29,6 +31,23 @@ from scripts import memory_metrics  # noqa: E402
 
 db._make_engine()
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _pin_module_db():
+    """把每条用例钉回本模块声明的环境库 test_m.db。
+
+    本文件的用例共享模块级种子（test_no_eval_run_rate_is_null 种下的 Vendor_A
+    记忆被 test_approve_preserves_review_facts 消费）；全量收集下 S1 隔离夹具的
+    落点会随前序文件的泄漏登记漂移（有时每例全新临时库 → 种子跨用例丢失）。
+    夹具兜底与该时序无关，恒指回本模块自己的库。
+    """
+    old = db.DB_PATH
+    db.DB_PATH = os.path.abspath(_MODULE_DB_PATH)
+    db._make_engine()
+    yield
+    db.DB_PATH = old
+    db._make_engine()
 _ACCOUNT_EMAIL = {"staff": "staff@demo.hk", "owner": "boss@demo.hk", "admin": "admin@demo.hk"}
 
 

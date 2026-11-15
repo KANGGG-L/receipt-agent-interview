@@ -682,8 +682,21 @@ def _pipeline_predictor(engine, model, prompt_version, memory=True):
             raise SystemExit("未知引擎：%s" % engine)
     if model:
         cfg.recognition_model = model
+    saved_system_prompt = extract_chain.SYSTEM_PROMPT
     extract_chain.SYSTEM_PROMPT = get_prompt("extract", prompt_version)
-    _set_memory_enabled(bool(memory))
+    _restore_switch = _set_memory_enabled(bool(memory))
+
+    def _restore_eval_globals():
+        """把本构造器改写的进程级全局（SYSTEM_PROMPT / 记忆注入三开关）还原。
+
+        why：_set_memory_enabled(False) 用 lambda **裸替换** supervisor/extract_chain
+        的模块属性；构造 predictor 后若不还原，同进程内后续一切识别管线的首轮记忆
+        注入会被静默关闭——该泄漏曾让 memory_first_round 族测试在全量顺序下成片
+        翻红（2026-11-15 实测定位）。恢复函数挂在 predictor 上，由调用方在评测
+        结束后调用（run_eval 主流程与直接构造 predictor 的调用方各负责一次）。
+        """
+        extract_chain.SYSTEM_PROMPT = saved_system_prompt
+        _restore_switch()
 
     def _predict(image_path, sample_id, expected=None, **kwargs):
         gt_supplier = ""
@@ -709,6 +722,7 @@ def _pipeline_predictor(engine, model, prompt_version, memory=True):
             "vendor_hint": gt_supplier,
             "vendor_context": state.get("vendor_context") or "",
         }
+    _predict._restore_eval_globals = _restore_eval_globals
     return _predict
 
 
@@ -1010,6 +1024,15 @@ def run_eval(split, prompt_version=DEFAULT_PROMPT_VERSION, engine="openai", mode
                 "基线分母校验失败（--baseline-strict 拒绝出分）：%s"
                 "（missing=%d extra=%d sha_ok=%s）"
                 % (bpath, len(missing), len(extra), declared_sha == calc_sha))
+
+    # 评测结束：还原 pipeline 模式改写的进程级全局（SYSTEM_PROMPT / 记忆注入开关）。
+    # 泄漏形态与影响见 _pipeline_predictor._restore_eval_globals 的 docstring。
+    _restore_eval_globals = getattr(predictor, "_restore_eval_globals", None)
+    if _restore_eval_globals is not None:
+        try:
+            _restore_eval_globals()
+        except Exception as e:  # noqa: BLE001 还原失败不吞报告
+            print("!! 评测全局还原失败（进程内后续识别链路可能仍带评测期开关）：%s" % e)
 
     os.makedirs(report_dir, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")

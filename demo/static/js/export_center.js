@@ -925,7 +925,11 @@ function buildExportRowsHtml(rows, headers) {
                 cellContent = `<span class="badge badge-success">${cellContent}</span>`;
             }
 
-            const skipAttr = preserveBiz ? ' data-i18n-skip' : '';
+            // 身份列双标记：data-i18n-skip 让前端转换器跳过；translate="no" 是
+            // W3C「不翻译」标准语义——繁体验收扫描（body innerText 无简体残留）
+            // 以 translate="no" 元素为合法豁免面，身份列原文必须走该豁免而非裸露
+            // 在扫描范围内（与 CSV 原值对齐的 UAT-023 口径不变）。
+            const skipAttr = preserveBiz ? ' data-i18n-skip translate="no"' : '';
             html += `<td class="${alignClass} ${wrapClass}"${skipAttr}>${cellContent}</td>`;
         });
         html += '</tr>';

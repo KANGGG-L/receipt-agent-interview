@@ -36,6 +36,7 @@ import sys
 import tempfile
 import uuid
 from dataclasses import replace
+from datetime import datetime, timedelta
 
 # 隔离环境：独立 DB 与 RAG 目录（必须在首次 import app.* 之前设置）。
 # app.db 在 import 期执行 _make_engine() 的迁移块（ALTER），不带 DB_PATH 就会打到 live 库。
@@ -195,7 +196,17 @@ def test_fact_roundtrip_for_all_kinds_with_real_values():
         # 唯一的归一：supplier_id 列是 INTEGER，SQLite 亲和性把 '4242' 存成 4242，
         # 故期望值用 int 形态对齐（这不是缺字段，是列类型决定的存储形态）。
         got = MemoryFact.from_row(raw)
-        expected = replace(fact, memory_id=res["memory_id"], supplier_id=int(sid))
+        # P2-T20 口径（现行）：分级 TTL 落显式 valid_to —— unit=180 / price_range=90 天，
+        # alias/layout=0（不过期）保持空串。TTL 基准 = 该行 created_at（写入时刻），
+        # 与 save_memory_fact 的 eff_valid_to 计算同一函数、同一基准，确定性无墙钟窗口。
+        ttl_days = _db.memory_ttl_days_for_kind(kind)
+        if ttl_days > 0:
+            expect_vto = (datetime.fromisoformat(raw["created_at"])
+                          + timedelta(days=ttl_days)).isoformat(timespec="seconds")
+        else:
+            expect_vto = ""
+        expected = replace(fact, memory_id=res["memory_id"], supplier_id=int(sid),
+                           valid_to=expect_vto)
         assert got == expected, (
             f"{kind} 往返不等价：{got!r} != {expected!r}")
 

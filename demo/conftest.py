@@ -216,6 +216,171 @@ _MODULE_LOCAL_DB = {}
 _LEAKS_RESCUED = set()
 
 
+# -------------------------------------------------------------
+# 模块级环境声明恢复（收集期污染防护，与 DB_PATH 的 collection-polluted 判据同族）
+# -------------------------------------------------------------
+# 全量收集会依次 import 每个测试文件，文件顶层的 os.environ 赋值留在进程环境里、
+# 后导入的盖住先导入的。执行期「最后收集者获胜」，于是：
+#   - 声明 AUTH_ENABLED="0" 走演示态头认证的文件，被后导入的 AUTH_ENABLED="1" 盖掉
+#     → 401（approve 端点在无身份时拒绝）；
+#   - pop 掉 IDENTITY_V2_ENABLED 的文件，被后导入的 ="1" 盖掉 → owner/staff 角色改走
+#     tenant_memberships 判定（无成员行）→ 403；
+#   - 声明自己环境库 DB_PATH 的文件，被后导入的路径盖掉 → 种子数据落 A 库、用例读 B 库。
+# 这里按「本模块 import 完成时刻」的环境快照，在夹具 setup 时把声明还给当前用例：
+# 声明过的文件拿回自己声明的值；未声明的变量保持现状（不扩大语义变化面）。
+_ENV_TRACKED_VARS = (
+    "AUTH_ENABLED", "IDENTITY_V2_ENABLED",
+    "DURABLE_TASKS_ENABLED", "DISABLE_BACKGROUND_JOBS",
+    "BILLING_POLICY_JSON", "RAG_EMBEDDING_PROVIDER",
+    "DEMO_TOKEN_SECRET", "MEMORY_EXTRACT_ENABLED", "GUARDIAN_INTERVAL_MINUTES",
+)
+# DB_PATH / RAG_DIR / CHROMA_PATH 刻意不在清单里：
+# - DB_PATH：S1 隔离夹具（_isolate_test_db）已按「per-test 临时库 + 环境库判据」
+#   兜底，把声明值还回去反而会让「模块级共享库」压过逐用例隔离——依赖
+#   per-test 新鲜度的模块（memory_consistency / param_wiring 等）会读到
+#   同模块前序用例的残留（2026-11-15 第二次全量踩过的坑）；
+# - RAG_DIR / CHROMA_PATH：_isolate_rag_dir 夹具无条件把落点固定到本轮
+#   tmp_path（向量库没有「模块级声明必须全局共享」的语义），恢复任何值都会
+#   越级压过夹具（CHROMA_PATH 的越级判据见 test_demo_conftest_rag_isolation）。
+# CHROMA_PATH 刻意不在清单里：_isolate_rag_dir 夹具的既定契约就是「清掉高优先级
+# 的 CHROMA_PATH 残留」（见 test_demo_conftest_rag_isolation 的越级压过判据），
+# 仓库里也没有真实声明它的测试文件——唯一的模块级写入是那个元测试**故意**
+# 植入的模拟残留，恢复机制若把它当「模块声明」塞回去，会破坏该判据。
+
+# 声明值哨兵：_ABSENT = 模块显式 pop/del，要求该变量在本模块用例执行期缺席。
+_ABSENT = object()
+_UNKNOWN = object()
+
+# 进程级：{测试模块文件绝对路径: 该模块 import 开始前的开关环境快照}
+_MODULE_ENV_BEFORE_IMPORT = {}
+# 进程级：{测试模块文件绝对路径: 该模块顶层声明的开关环境 {var: 值 | _ABSENT}}
+_MODULE_ENV_DECLARED = {}
+
+
+def _scan_module_env_writes(path):
+    """AST 扫描测试模块**顶层**对 os.environ 的写入，返回 {var: 值 | _ABSENT | _UNKNOWN}。
+
+    只认 Module body 直接子节点（顶层语句），同一变量以后写的为准：
+      os.environ["X"] = "字面量" / os.environ.setdefault("X", "字面量") → 字面量；
+      os.environ["X"] = <表达式>（如 os.path.join(...)） → _UNKNOWN（值编译期不可知，
+        交给 import 前后差分兜底）；
+      del os.environ["X"] / os.environ.pop("X", ...) → _ABSENT。
+    setdefault 也算声明：测试文件的意图是「本模块跑在这个值下」，被别的文件抢先
+    赋值或污染后，差分看不见 setdefault（值未变），只有源码能表达这个意图。
+    函数体内的写入（monkeypatch 之外的手工切换）不在此列——那是用例运行期行为，
+    由 _record_module_local 等既有机制处理。
+    """
+    import ast as _ast
+    result = {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            tree = _ast.parse(fh.read(), filename=str(path))
+    except Exception:  # noqa: BLE001 解析失败按「无声明」处理
+        return result
+
+    def _env_subscript(node):
+        return (isinstance(node, _ast.Subscript)
+                and isinstance(node.value, _ast.Attribute)
+                and node.value.attr == "environ"
+                and isinstance(node.value.value, _ast.Name)
+                and node.value.value.id == "os"
+                and isinstance(node.slice, _ast.Constant)
+                and isinstance(node.slice.value, str))
+
+    for stmt in tree.body:
+        # del os.environ["X"] / os.environ.pop("X", ...)
+        if isinstance(stmt, _ast.Delete):
+            for t in stmt.targets:
+                if _env_subscript(t):
+                    result[t.slice.value] = _ABSENT
+            continue
+        if isinstance(stmt, _ast.Expr) and isinstance(stmt.value, _ast.Call) \
+                and isinstance(stmt.value.func, _ast.Attribute) \
+                and isinstance(stmt.value.func.value, _ast.Attribute) \
+                and stmt.value.func.value.attr == "environ" \
+                and isinstance(stmt.value.func.value.value, _ast.Name) \
+                and stmt.value.func.value.value.id == "os" \
+                and stmt.value.func.attr in ("pop", "setdefault") \
+                and stmt.value.args and isinstance(stmt.value.args[0], _ast.Constant) \
+                and isinstance(stmt.value.args[0].value, str):
+            var = stmt.value.args[0].value
+            if stmt.value.func.attr == "pop":
+                result[var] = _ABSENT
+            elif len(stmt.value.args) > 1 and isinstance(stmt.value.args[1], _ast.Constant) \
+                    and isinstance(stmt.value.args[1].value, str):
+                result[var] = stmt.value.args[1].value
+            continue
+        # os.environ["X"] = ...
+        if isinstance(stmt, _ast.Assign):
+            for t in stmt.targets:
+                if _env_subscript(t):
+                    var = t.slice.value
+                    result[var] = (stmt.value.value
+                                   if isinstance(stmt.value, _ast.Constant)
+                                   and isinstance(stmt.value.value, str)
+                                   else _UNKNOWN)
+    return result
+
+
+def pytest_collectstart(collector):  # noqa: D103
+    # 串行收集下，本 hook 在每个 Module 真正开始 collect（即其测试模块被 import）
+    # 之前触发——这是「import 前环境」的正确采样点。不能用 pytest_collect_file：
+    # 那是在 collect 树构建阶段对所有文件一次性触发（早于任何 import），拿到的
+    # before 全是「收集前环境」，与 import 后差分会把「前面所有模块的写入」误判成
+    # 本模块的声明，恢复机制全局误伤（2026-11-15 首版实现踩过的坑）。
+    if isinstance(collector, pytest.Module):
+        key = os.path.abspath(str(collector.path))
+        _MODULE_ENV_BEFORE_IMPORT[key] = {v: os.environ.get(v) for v in _ENV_TRACKED_VARS}
+
+
+def pytest_pycollect_makeitem(collector, name, obj):  # noqa: D103
+    # 该 hook 在 Module.collect() 导入模块之后、对每个属性触发；首次调用即模块
+    # import 刚完成、下一个文件尚未开始导入的时刻（collect 是串行的）。
+    mod = getattr(collector, "module", None)
+    mod_file = getattr(mod, "__file__", None) if mod is not None else None
+    if mod_file:
+        key = os.path.abspath(mod_file)
+        if key not in _MODULE_ENV_DECLARED:
+            before = _MODULE_ENV_BEFORE_IMPORT.pop(key, {})
+            after = {v: os.environ.get(v) for v in _ENV_TRACKED_VARS}
+            declared = {}
+            for var, val in _scan_module_env_writes(key).items():
+                if var not in _ENV_TRACKED_VARS:
+                    continue
+                if val is _UNKNOWN:
+                    # 表达式赋值（如 os.path.join(...)）：值编译期不可知，按 import
+                    # 前后差分兜底——环境真变了才算本模块的声明。
+                    if before.get(var) != after.get(var):
+                        declared[var] = _ABSENT if after.get(var) is None else after[var]
+                else:
+                    declared[var] = val
+            for var in _ENV_TRACKED_VARS:
+                if var in declared:
+                    continue
+                if before.get(var) != after.get(var):
+                    # import 前后环境变了但源码没写声明：本模块（或其首次触发的
+                    # 应用 import）自己改的，按改完的值还给本模块。
+                    declared[var] = _ABSENT if after.get(var) is None else after[var]
+            _MODULE_ENV_DECLARED[key] = declared
+    return None
+
+
+def _restore_module_env(monkeypatch, module_key):
+    """把本测试文件自己声明的开关环境还给当前用例（见上方块注释）。"""
+    declared = _MODULE_ENV_DECLARED.get(module_key)
+    if not declared:
+        return
+    for var, val in declared.items():
+        current = os.environ.get(var)
+        if val is _ABSENT:
+            if current is not None:
+                monkeypatch.delenv(var, raising=False)
+        elif val is _UNKNOWN:
+            continue  # 值不可知且差分未发现变化：保持现状
+        elif current != val:
+            monkeypatch.setenv(var, val)
+
+
 def _module_key(node):
     """取用例所属模块文件的绝对路径，作为 registry 的键。
 
@@ -370,6 +535,9 @@ def _isolate_test_db(tmp_path, monkeypatch, request):
 
     live_db_path = os.path.abspath(_db._default_db_path)
     module_key = _module_key(request.node)
+    # 先还原本模块自己的环境声明，再分类 DB_PATH（否则声明过的环境库会被
+    # 别的模块的顶层赋值盖掉，分类判据只能落到「泄漏→临时库」分支）。
+    _restore_module_env(monkeypatch, module_key)
     raw_env = os.environ.get("DB_PATH", "").strip()
     env_db_path = os.path.abspath(raw_env) if raw_env else ""
     if env_db_path in (os.path.abspath("./receipt_demo.db"), os.path.abspath("receipt_demo.db")):

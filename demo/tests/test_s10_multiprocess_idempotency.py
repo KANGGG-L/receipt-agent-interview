@@ -31,6 +31,11 @@ for _p in (_DEMO_DIR, _ROOT):
 
 from app import db  # noqa: E402
 
+# 全量收集下 app.db 可能已被字母序靠前的文件 import：模块级 DB_PATH 冻结在
+# 首个 import 者的环境上，直接 _make_engine() 会把 schema 预建打到别人的库，
+# _DB 里没有表 → 两个子进程在 create_all 的 DDL 上竞争 SQLite 写锁，间歇性
+# database is locked（standalone 通过、全量假失败的根因）。显式指回本文件的库。
+db.DB_PATH = os.path.abspath(_DB)
 db._make_engine()
 db.ensure_schema_current()
 
