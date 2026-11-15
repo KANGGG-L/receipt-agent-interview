@@ -2,7 +2,7 @@
 
 > **HR / 面试官速读入口**：本页面专为面试官与招聘团队设计，帮助您在 **3 分钟内** 全面了解候选人的**个人角色贡献、核心业务成果、简历数字证据链与 AI 产品经理（AI-PM）胜任力模型**。
 >
-> **阅读口径（2026-11-13 整理）**：本目录大部分为**历史作品集档案**，下方表格中的数字（163 张单据、730 passed、67 个 API 等）均为当时版本快照，**不是当前实现的通过证据**。当前设计范围以 [2026-10-27-current-design-scope.md](2026-10-27-current-design-scope.md) 为准，当前代码结构、运行命令与测试口径以 [demo/README.md](../demo/README.md) 和 [根 README](../README.md) 为准。`01`–`07` 为方案与面试档案，`issues` 为按日期归档的缺陷工单与合规设计档案；2026-11 已清理一次性报告与执行计划目录（`09`、`qa`、`review-2026-10`、`superpowers`），其当时的结论如需追溯请查 git 历史。
+> **阅读口径（2026-11-15 整理）**：本目录大部分为**历史作品集档案**，下方表格中的数字（163 张单据、730 passed、67 个 API 等）均为当时版本快照，**不是当前实现的通过证据**。当前设计范围以 [2026-10-27-current-design-scope.md](2026-10-27-current-design-scope.md) 为准，当前代码结构、运行命令与测试口径以 [demo/README.md](../demo/README.md) 和 [根 README](../README.md) 为准。`01`–`07` 为方案与面试档案，`issues` 为按日期归档的缺陷工单与合规设计档案；2026-11 已清理一次性报告与执行计划目录（`09`、`qa`、`review-2026-10` 及 `superpowers` 大部分内容），其当时的结论如需追溯请查 git 历史；`superpowers/reports/` 下的 T14 SKU 回归归因报告于 2026-11-13 恢复保留（见 [superpowers/reports/t14-sku-regression-attribution.md](superpowers/reports/t14-sku-regression-attribution.md)）。
 
 ---
 
@@ -71,13 +71,13 @@
 | **[`07-PM敏捷交付流程资产/`](07-PM敏捷交付流程资产/)** | **PM 岗位申请专用**——按敏捷交付九要素组织的完整交付经历（Workflow / User Stories / AC / 测试用例 / UAT / 沟通跟进 / Sprint 追踪 / Rollout / Bug 管理），入口：[README](07-PM敏捷交付流程资产/README.md)。 |
 | **[`issues/`](issues/)** | 按日期归档的真实缺陷工单与安全/合规设计档案（GUI 走查、观测台真实性治理，及 2026-09-27 安全加固 / 护栏网关 / 合规路线三份，共 7 份），入口：[README](issues/README.md)。 |
 
-> 2026-11 清理说明：原 `09-测试与UAT报告/`、`qa/`、`review-2026-10/`、`superpowers/` 四组一次性 UAT 报告、评审矩阵、执行计划与 subagent 任务报告已移出仓库（原始记录见 git 历史）。相关目录在保留文档中的引用已统一改为「已清理退役」口径。
+> 2026-11 清理说明：原 `09-测试与UAT报告/`、`qa/`、`review-2026-10/`、`superpowers/` 四组一次性 UAT 报告、评审矩阵、执行计划与 subagent 任务报告已移出仓库（原始记录见 git 历史）。相关目录在保留文档中的引用已统一改为「已清理退役」口径。例外：`superpowers/reports/t14-sku-regression-attribution.md`（T14 SKU 回归归因报告）于 2026-11-13 恢复保留在 [`superpowers/reports/`](superpowers/reports/) 下。
 
 ### 根级规范文件
 
 | 文件 | 定位 |
 | :--- | :--- |
-| [`2026-10-27-current-design-scope.md`](2026-10-27-current-design-scope.md) | **当前设计范围与验收入口（现行基线）**；被根 README 与 19 份文档引用，目前**未纳入版本控制**，需由维护者手动 `git add`，否则推送后这些链接在远端会断 |
+| [`2026-10-27-current-design-scope.md`](2026-10-27-current-design-scope.md) | **当前设计范围与验收入口（现行基线）**；被根 README 与 19 份文档引用，已纳入版本控制（2026-11-15 核验） |
 | [`api-conventions.md`](api-conventions.md) | API 约定 |
 | [`settings-api-contract.md`](settings-api-contract.md) | 设置接口契约 |
 | [`permission-matrix.md`](permission-matrix.md) | 权限矩阵（历史口径；独立 RBAC 验证已退出当前验收范围） |
